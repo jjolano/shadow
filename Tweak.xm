@@ -10,32 +10,80 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 %group sandboxed
 
 bool is_jb_path(NSString *path) {
 	return (
-		[path hasPrefix:@"/Applications"]
+		[path hasPrefix:@"/Applications/"]
 		|| [path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
 		|| [path hasPrefix:@"/Library/TweakInject"]
-		|| [path hasPrefix:@"/System/Library/LaunchDaemons"]
+		|| [path hasPrefix:@"/Library/LaunchDaemons/"]
+		|| [path hasPrefix:@"/Library/PreferenceBundles"]
+		|| [path hasPrefix:@"/Library/PreferenceLoader"]
+		|| [path hasPrefix:@"/Library/Switches"]
+		|| [path hasPrefix:@"/Library/Themes"]
+		|| [path hasPrefix:@"/Library/dpkg"]
 		|| [path hasPrefix:@"/jb"]
 		|| [path hasPrefix:@"/electra"]
 		|| [path hasPrefix:@"/bin"]
-		|| [path hasPrefix:@"/var/cache"]
+		|| [path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log"]
 		|| [path hasPrefix:@"/var/tmp"]
-		|| [path hasPrefix:@"/usr/sbin"]
-		|| [path hasPrefix:@"/usr/libexec"]
-		|| [path hasPrefix:@"/etc"]
-		|| [path hasPrefix:@"/private/var/cache"]
+		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log"]
 		|| [path hasPrefix:@"/private/var/tmp"]
+		|| [path hasPrefix:@"/usr/bin"]
+		|| [path hasPrefix:@"/usr/sbin"]
+		|| [path hasPrefix:@"/usr/libexec"]
+		|| [path hasPrefix:@"/usr/share"]
+		|| [path hasPrefix:@"/usr/local"]
+		|| [path hasPrefix:@"/usr/lib"]
+		|| [path hasPrefix:@"/usr/include"]
+		|| [path hasPrefix:@"/etc/alternatives"]
+		|| [path hasPrefix:@"/etc/apt"]
+		|| [path hasPrefix:@"/etc/dpkg"]
 		|| [path hasPrefix:@"/."]
+	);
+}
+
+bool is_jb_path_c(const char *path) {
+	return (
+		strstr(path, "/Applications/") == path
+		|| strstr(path, "/Library/MobileSubstrate") == path
+		|| strstr(path, "/Library/substrate") == path
+		|| strstr(path, "/Library/TweakInject") == path
+		|| strstr(path, "/Library/LaunchDaemons/") == path
+		|| strstr(path, "/Library/PreferenceBundles") == path
+		|| strstr(path, "/Library/PreferenceLoader") == path
+		|| strstr(path, "/Library/Switches") == path
+		|| strstr(path, "/Library/Themes") == path
+		|| strstr(path, "/Library/dpkg") == path
+		|| strstr(path, "/jb") == path
+		|| strstr(path, "/electra") == path
+		|| strstr(path, "/bin") == path
+		|| strstr(path, "/var/cache/apt") == path
+		|| strstr(path, "/var/lib") == path
+		|| strstr(path, "/var/log") == path
+		|| strstr(path, "/var/tmp") == path
+		|| strstr(path, "/private/var/cache/apt") == path
+		|| strstr(path, "/private/var/lib") == path
+		|| strstr(path, "/private/var/log") == path
+		|| strstr(path, "/private/var/tmp") == path
+		|| strstr(path, "/usr/bin") == path
+		|| strstr(path, "/usr/sbin") == path
+		|| strstr(path, "/usr/libexec") == path
+		|| strstr(path, "/usr/share") == path
+		|| strstr(path, "/usr/local") == path
+		|| strstr(path, "/usr/lib") == path
+		|| strstr(path, "/usr/include") == path
+		|| strstr(path, "/etc/alternatives") == path
+		|| strstr(path, "/etc/apt") == path
+		|| strstr(path, "/etc/dpkg") == path
+		|| strstr(path, "/.") == path
 	);
 }
 
@@ -85,14 +133,13 @@ bool is_jb_path(NSString *path) {
 }
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
-	NSString *path = [NSString stringWithUTF8String: pathname];
-
-	if(is_jb_path(path)) {
+	if(is_jb_path_c(pathname)) {
 		return NULL;
 	}
 
 	return %orig;
 }
+
 /*
 // This hook seems to cause problems? Maybe it's used by Substrate itself.
 %hookf(int, open, const char *pathname, int flags) {
@@ -105,6 +152,7 @@ bool is_jb_path(NSString *path) {
 	return %orig;
 }
 */
+
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
 	// Handle special cases.
 	if(strcmp(pathname, "/Applications") == 0
@@ -117,9 +165,7 @@ bool is_jb_path(NSString *path) {
 		return %orig;
 	}
 
-	NSString *path = [NSString stringWithUTF8String: pathname];
-
-	if(is_jb_path(path)) {
+	if(is_jb_path_c(pathname)) {
 		return -1;
 	}
 
@@ -145,10 +191,8 @@ bool is_jb_path(NSString *path) {
 		// Use regular stat.
 		return stat(pathname, statbuf);
 	}
-
-	NSString *path = [NSString stringWithUTF8String: pathname];
-
-	if(is_jb_path(path)) {
+	
+	if(is_jb_path_c(pathname)) {
 		return -1;
 	}
 
@@ -166,11 +210,9 @@ bool is_jb_path(NSString *path) {
 	const char *ret = %orig;
 
 	if(ret != NULL) {
-		NSString *image_name = [NSString stringWithUTF8String: ret];
-
-		if([image_name rangeOfString:@"MobileSubstrate"].location != NSNotFound
-		|| [image_name rangeOfString:@"substrate"].location != NSNotFound
-		|| [image_name rangeOfString:@"TweakInject"].location != NSNotFound) {
+		if(strstr(ret, "MobileSubstrate") != NULL
+		|| strstr(ret, "substrate") != NULL
+		|| strstr(ret, "TweakInject") != NULL) {
 			return "";
 		}
 	}

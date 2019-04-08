@@ -3,7 +3,7 @@ Name: Shadow
 Depends: mobilesubstrate
 Version: 0.0.1
 Architecture: iphoneos-arm
-Description: An awesome MobileSubstrate tweak!
+Description: A simple jailbreak detection blocker that defeats basic detection methods.
 Maintainer: jjolano
 Author: jjolano
 Section: Tweaks
