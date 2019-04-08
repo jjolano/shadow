@@ -31,7 +31,9 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log"]
-		|| [path hasPrefix:@"/var/tmp"]
+		|| [path hasPrefix:@"/var/tmp/cydia.log"]
+		|| [path hasPrefix:@"/var/tmp/syslog"]
+		|| [path hasPrefix:@"/var/tmp/slide.txt"]
 		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log"]
@@ -39,7 +41,10 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
 		|| [path hasPrefix:@"/usr/libexec"]
-		|| [path hasPrefix:@"/usr/share"]
+		|| [path hasPrefix:@"/usr/share/dpkg"]
+		|| [path hasPrefix:@"/usr/share/bigboss"]
+		|| [path hasPrefix:@"/usr/share/jailbreak"]
+		|| [path hasPrefix:@"/usr/share/entitlements"]
 		|| [path hasPrefix:@"/usr/local"]
 		|| [path hasPrefix:@"/usr/lib"]
 		|| [path hasPrefix:@"/usr/include"]
@@ -68,7 +73,9 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/var/cache/apt") == path
 		|| strstr(path, "/var/lib") == path
 		|| strstr(path, "/var/log") == path
-		|| strstr(path, "/var/tmp") == path
+		|| strstr(path, "/var/tmp/cydia.log") == path
+		|| strstr(path, "/var/tmp/syslog") == path
+		|| strstr(path, "/var/tmp/slide.txt") == path
 		|| strstr(path, "/private/var/cache/apt") == path
 		|| strstr(path, "/private/var/lib") == path
 		|| strstr(path, "/private/var/log") == path
@@ -76,7 +83,10 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/usr/bin") == path
 		|| strstr(path, "/usr/sbin") == path
 		|| strstr(path, "/usr/libexec") == path
-		|| strstr(path, "/usr/share") == path
+		|| strstr(path, "/usr/share/dpkg") == path
+		|| strstr(path, "/usr/share/bigboss") == path
+		|| strstr(path, "/usr/share/jailbreak") == path
+		|| strstr(path, "/usr/share/entitlements") == path
 		|| strstr(path, "/usr/local") == path
 		|| strstr(path, "/usr/lib") == path
 		|| strstr(path, "/usr/include") == path
@@ -90,6 +100,7 @@ bool is_jb_path_c(const char *path) {
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
 		return NO;
 	}
 
@@ -101,6 +112,7 @@ bool is_jb_path_c(const char *path) {
 - (BOOL)canOpenURL:(NSURL *)url {
 	if([[url scheme] isEqualToString:@"cydia"]
 	|| [[url scheme] isEqualToString:@"sileo"]) {
+		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
 		return NO;
 	}
 
@@ -120,12 +132,14 @@ bool is_jb_path_c(const char *path) {
 */
 
 %hookf(pid_t, fork) {
+	NSLog(@"[shadow] blocked fork");
 	return -1;
 }
 
 %hookf(char *, getenv, const char *name) {
 	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
 	|| strcmp(name, "_MSSafeMode") == 0) {
+		NSLog(@"[shadow] blocked getenv for %s", name);
 		return NULL;
 	}
 
@@ -134,6 +148,7 @@ bool is_jb_path_c(const char *path) {
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
 	if(is_jb_path_c(pathname)) {
+		NSLog(@"[shadow] blocked fopen with path %s", pathname);
 		return NULL;
 	}
 
@@ -166,6 +181,7 @@ bool is_jb_path_c(const char *path) {
 	}
 
 	if(is_jb_path_c(pathname)) {
+		NSLog(@"[shadow] blocked stat with path %s", pathname);
 		return -1;
 	}
 
@@ -191,8 +207,9 @@ bool is_jb_path_c(const char *path) {
 		// Use regular stat.
 		return stat(pathname, statbuf);
 	}
-	
+
 	if(is_jb_path_c(pathname)) {
+		NSLog(@"[shadow] blocked lstat with path %s", pathname);
 		return -1;
 	}
 
@@ -212,6 +229,7 @@ bool is_jb_path_c(const char *path) {
 	if(ret != NULL) {
 		if(strstr(ret, "MobileSubstrate") != NULL
 		|| strstr(ret, "substrate") != NULL
+		|| strstr(ret, "substitute") != NULL
 		|| strstr(ret, "TweakInject") != NULL) {
 			return "";
 		}
@@ -227,6 +245,7 @@ bool is_jb_path_c(const char *path) {
 
 	// Only hook for sandboxed user apps.
 	if([executablePath hasPrefix:@"/var/containers"]) {
+		NSLog(@"[shadow] enabled hooks");
 		%init(sandboxed);
 	}
 }
