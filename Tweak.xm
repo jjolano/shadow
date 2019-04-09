@@ -68,8 +68,7 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/usr/share/bigboss"]
 		|| [path hasPrefix:@"/usr/share/jailbreak"]
 		|| [path hasPrefix:@"/usr/share/entitlements"]
-		|| [path hasPrefix:@"/usr/local"]
-		|| [path hasPrefix:@"/usr/lib"]
+		|| [path hasPrefix:@"/usr/lib/"]
 		|| [path hasPrefix:@"/usr/include"]
 		|| [path hasPrefix:@"/etc/alternatives"]
 		|| [path hasPrefix:@"/etc/apt"]
@@ -85,6 +84,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]
 		|| [path hasPrefix:@"/taig"]
 		|| [path hasPrefix:@"/pguntether"]
+	) && (
+		![path hasPrefix:@"/usr/lib/log"]
 	);
 }
 
@@ -170,7 +171,7 @@ bool is_jb_path_c(const char *path) {
 		return NULL;
 	}
 
-	NSLog(@"[shadow] allowed opendir: %s", name);
+	// NSLog(@"[shadow] allowed opendir: %s", name);
 	return %orig;
 }
 
