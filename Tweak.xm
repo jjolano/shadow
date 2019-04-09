@@ -103,7 +103,7 @@ bool is_jb_path_c(const char *path) {
 		return NO;
 	}
 
-	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
+	NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
 	return %orig;
 }
 
@@ -145,6 +145,7 @@ bool is_jb_path_c(const char *path) {
 		return -1;
 	}
 
+	NSLog(@"[shadow] allowed access: %s", pathname);
 	return %orig;
 }
 
@@ -154,6 +155,7 @@ bool is_jb_path_c(const char *path) {
 		return NULL;
 	}
 
+	NSLog(@"[shadow] alloed opendir: %s", name);
 	return %orig;
 }
 
@@ -192,6 +194,7 @@ bool is_jb_path_c(const char *path) {
 		return NULL;
 	}
 
+	NSLog(@"[shadow] allowed fopen with path %s", pathname);
 	return %orig;
 }
 
@@ -202,6 +205,7 @@ bool is_jb_path_c(const char *path) {
 		return -1;
 	}
 
+	NSLog(@"[shadow] allowed open with path %s", pathname);
 	return %orig;
 }
 
@@ -216,6 +220,7 @@ bool is_jb_path_c(const char *path) {
 		}
 	}
 
+	NSLog(@"[shadow] statfs on %s", path);
 	return ret;
 }
 
@@ -247,6 +252,7 @@ bool is_jb_path_c(const char *path) {
 		}
 	}
 
+	NSLog(@"[shadow] allowed stat with path %s", pathname);
 	return ret;
 }
 
@@ -280,6 +286,7 @@ bool is_jb_path_c(const char *path) {
 		}
 	}
 
+	NSLog(@"[shadow] allowed stat with path %s", pathname);
 	return ret;
 }
 
