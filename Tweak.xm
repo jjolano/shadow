@@ -7,9 +7,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <dirent.h>
 
 %group sandboxed
 
@@ -28,16 +27,19 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/jb"]
 		|| [path hasPrefix:@"/electra"]
 		|| [path hasPrefix:@"/bin"]
+		|| [path hasPrefix:@"/sbin"]
 		|| [path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log"]
-		|| [path hasPrefix:@"/var/tmp/cydia.log"]
-		|| [path hasPrefix:@"/var/tmp/syslog"]
-		|| [path hasPrefix:@"/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/syslog"]
+		|| [path isEqualToString:@"/var/tmp/slide.txt"]
 		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log"]
-		|| [path hasPrefix:@"/private/var/tmp"]
+		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/syslog"]
+		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
 		|| [path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
 		|| [path hasPrefix:@"/usr/libexec"]
@@ -70,16 +72,19 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/jb") == path
 		|| strstr(path, "/electra") == path
 		|| strstr(path, "/bin") == path
+		|| strstr(path, "/sbin") == path
 		|| strstr(path, "/var/cache/apt") == path
 		|| strstr(path, "/var/lib") == path
 		|| strstr(path, "/var/log") == path
-		|| strstr(path, "/var/tmp/cydia.log") == path
-		|| strstr(path, "/var/tmp/syslog") == path
-		|| strstr(path, "/var/tmp/slide.txt") == path
+		|| strcmp(path, "/var/tmp/cydia.log") == 0
+		|| strcmp(path, "/var/tmp/syslog") == 0
+		|| strcmp(path, "/var/tmp/slide.txt") == 0
 		|| strstr(path, "/private/var/cache/apt") == path
 		|| strstr(path, "/private/var/lib") == path
 		|| strstr(path, "/private/var/log") == path
-		|| strstr(path, "/private/var/tmp") == path
+		|| strcmp(path, "/private/var/tmp/cydia.log") == 0
+		|| strcmp(path, "/private/var/tmp/syslog") == 0
+		|| strcmp(path, "/private/var/tmp/slide.txt") == 0
 		|| strstr(path, "/usr/bin") == path
 		|| strstr(path, "/usr/sbin") == path
 		|| strstr(path, "/usr/libexec") == path
@@ -97,24 +102,21 @@ bool is_jb_path_c(const char *path) {
 	);
 }
 
-/*
 %hook NSString
 - (BOOL)writeToFile:
 	(NSString *) path
 	atomically:(BOOL)useAuxiliaryFile
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
-	if([path hasPrefix:@"/private"]
-	|| [path hasPrefix:@"/var"]) {
+	if([path hasPrefix:@"/private"]) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
+		*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		return NO;
 	}
 
-	NSLog(@"[shadow] allowed writeToFile with path %@", path);
 	return %orig;
 }
 %end
-*/
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
@@ -127,10 +129,24 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-// - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-// 	NSLog(@"[shadow] detected contentsOfDirectoryAtPath: %@", path);
-// 	return %orig;
-// }
+- (NSArray<NSString *> *)contentsOfDirectoryAtPath:
+	(NSString *)path
+	error:(NSError * _Nullable *)error {
+
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] detected contentsOfDirectoryAtPath: %@", path);
+	}
+
+	return %orig;
+}
+
+- (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] detected enumeratorAtPath: %@", path);
+	}
+
+	return %orig;
+}
 %end
 
 %hook UIApplication
@@ -145,7 +161,15 @@ bool is_jb_path_c(const char *path) {
 }
 %end
 
-/*
+%hookf(DIR *, opendir, const char *name) {
+	if(is_jb_path_c(name)) {
+		NSLog(@"[shadow] blocked opendir: %s", name);
+		return NULL;
+	}
+
+	return %orig;
+}
+
 // Seems to be disabled in the SDK. Probably no point hooking this.
 %hookf(int, "system", const char *command) {
 	if(command == NULL) {
@@ -154,7 +178,6 @@ bool is_jb_path_c(const char *path) {
 
 	return %orig;
 }
-*/
 
 %hookf(pid_t, fork) {
 	NSLog(@"[shadow] blocked fork");
@@ -211,8 +234,9 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
-		NSLog(@"[shadow] root is not writable ;)");
 		statbuf->st_mode &= ~S_IWUSR;
+		statbuf->st_mode &= ~S_IWGRP;
+		statbuf->st_mode &= ~S_IWOTH;
 	}
 
 	return ret;
@@ -228,6 +252,7 @@ bool is_jb_path_c(const char *path) {
 	|| strcmp(pathname, "/usr/libexec") == 0
 	|| strcmp(pathname, "/usr/share") == 0) {
 		// Use regular stat.
+		NSLog(@"[shadow] lstat on common relocated directories: %s", pathname);
 		return stat(pathname, statbuf);
 	}
 
@@ -240,8 +265,9 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
-		NSLog(@"[shadow] root is not writable ;)");
 		statbuf->st_mode &= ~S_IWUSR;
+		statbuf->st_mode &= ~S_IWGRP;
+		statbuf->st_mode &= ~S_IWOTH;
 	}
 
 	return ret;
