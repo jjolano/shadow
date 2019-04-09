@@ -22,6 +22,7 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/Library/substrate"]
 		|| [path hasPrefix:@"/Library/TweakInject"]
 		|| [path hasPrefix:@"/Library/LaunchDaemons/"]
+		|| [path hasPrefix:@"/System/Library/LaunchDaemons/"]
 		|| [path hasPrefix:@"/Library/PreferenceBundles"]
 		|| [path hasPrefix:@"/Library/PreferenceLoader"]
 		|| [path hasPrefix:@"/Library/Switches"]
@@ -38,10 +39,13 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/db/stash"]
 		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
 		|| [path isEqualToString:@"/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/Cydia.log"]
 		|| [path isEqualToString:@"/var/tmp/syslog"]
 		|| [path isEqualToString:@"/var/tmp/slide.txt"]
 		|| [path isEqualToString:@"/tmp/cydia.log"]
+		|| [path isEqualToString:@"/tmp/Cydia.log"]
 		|| [path isEqualToString:@"/tmp/syslog"]
 		|| [path isEqualToString:@"/tmp/slide.txt"]
 		|| [path hasPrefix:@"/private/var/cache/apt"]
@@ -51,9 +55,12 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/private/var/db/stash"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
 		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/Cydia.log"]
 		|| [path isEqualToString:@"/private/var/tmp/syslog"]
 		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]
 		|| [path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
 		|| [path hasPrefix:@"/usr/libexec/"]
@@ -67,9 +74,17 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/etc/alternatives"]
 		|| [path hasPrefix:@"/etc/apt"]
 		|| [path hasPrefix:@"/etc/dpkg"]
+		|| [path hasPrefix:@"/etc/dropbear"]
+		|| [path hasPrefix:@"/etc/ssh"]
 		|| [path hasPrefix:@"/User/Library/Cydia"]
 		|| [path hasPrefix:@"/User/Library/Logs/Cydia"]
 		|| [path hasPrefix:@"/."]
+		|| [path hasPrefix:@"/meridian"]
+		|| [path hasPrefix:@"/bootstrap"]
+		|| [path hasPrefix:@"/panguaxe"]
+		|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]
+		|| [path hasPrefix:@"/taig"]
+		|| [path hasPrefix:@"/pguntether"]
 	);
 }
 
@@ -155,7 +170,7 @@ bool is_jb_path_c(const char *path) {
 		return NULL;
 	}
 
-	NSLog(@"[shadow] alloed opendir: %s", name);
+	NSLog(@"[shadow] allowed opendir: %s", name);
 	return %orig;
 }
 
@@ -232,7 +247,8 @@ bool is_jb_path_c(const char *path) {
 	|| strcmp(pathname, "/usr/arm-apple-darwin9") == 0
 	|| strcmp(pathname, "/usr/include") == 0
 	|| strcmp(pathname, "/usr/libexec") == 0
-	|| strcmp(pathname, "/usr/share") == 0) {
+	|| strcmp(pathname, "/usr/share") == 0
+	|| strcmp(pathname, "/Library") == 0) {
 		return %orig;
 	}
 
@@ -264,7 +280,8 @@ bool is_jb_path_c(const char *path) {
 	|| strcmp(pathname, "/usr/arm-apple-darwin9") == 0
 	|| strcmp(pathname, "/usr/include") == 0
 	|| strcmp(pathname, "/usr/libexec") == 0
-	|| strcmp(pathname, "/usr/share") == 0) {
+	|| strcmp(pathname, "/usr/share") == 0
+	|| strcmp(pathname, "/Library") == 0) {
 		// Use regular stat.
 		NSLog(@"[shadow] lstat on common relocated directories: %s", pathname);
 		return stat(pathname, statbuf);
