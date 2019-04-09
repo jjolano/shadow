@@ -97,6 +97,25 @@ bool is_jb_path_c(const char *path) {
 	);
 }
 
+/*
+%hook NSString
+- (BOOL)writeToFile:
+	(NSString *) path
+	atomically:(BOOL)useAuxiliaryFile
+	encoding:(NSStringEncoding)enc
+	error:(NSError * _Nullable *)error {
+	if([path hasPrefix:@"/private"]
+	|| [path hasPrefix:@"/var"]) {
+		NSLog(@"[shadow] blocked writeToFile with path %@", path);
+		return NO;
+	}
+
+	NSLog(@"[shadow] allowed writeToFile with path %@", path);
+	return %orig;
+}
+%end
+*/
+
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_jb_path(path)) {
@@ -104,8 +123,14 @@ bool is_jb_path_c(const char *path) {
 		return NO;
 	}
 
+	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
 	return %orig;
 }
+
+// - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+// 	NSLog(@"[shadow] detected contentsOfDirectoryAtPath: %@", path);
+// 	return %orig;
+// }
 %end
 
 %hook UIApplication
@@ -155,18 +180,15 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-/*
 // This hook seems to cause problems? Maybe it's used by Substrate itself.
 %hookf(int, open, const char *pathname, int flags) {
-	NSString *path = [NSString stringWithUTF8String: pathname];
-
-	if(is_jb_path(path)) {
+	if(is_jb_path_c(pathname) && strstr(pathname, "DynamicLibraries") == NULL) {
+		NSLog(@"[shadow] blocked open with path %s", pathname);
 		return -1;
 	}
 
 	return %orig;
 }
-*/
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
 	// Handle special cases.
@@ -189,6 +211,7 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
+		NSLog(@"[shadow] root is not writable ;)");
 		statbuf->st_mode &= ~S_IWUSR;
 	}
 
@@ -217,6 +240,7 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
+		NSLog(@"[shadow] root is not writable ;)");
 		statbuf->st_mode &= ~S_IWUSR;
 	}
 
