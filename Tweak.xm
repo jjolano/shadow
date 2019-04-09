@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
 
 %group sandboxed
 
@@ -127,7 +128,9 @@ bool is_jb_path_c(const char *path) {
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
 	if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
-	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared/AppGroup"]
+	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
+	&& ![path hasPrefix:@"/User/Containers/Shared"]
+	&& ![path hasPrefix:@"/var/mobile/Containers/Shared"]
 	&& [path hasPrefix:@"/private"]) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
 		*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
@@ -180,6 +183,15 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 %end
+
+%hookf(int, access, const char *pathname, int mode) {
+	if(is_jb_path_c(pathname) && strstr(pathname, "DynamicLibraries") == NULL) {
+		NSLog(@"[shadow] blocked access: %s", pathname);
+		return -1;
+	}
+
+	return %orig;
+}
 
 %hookf(DIR *, opendir, const char *name) {
 	if(is_jb_path_c(name)) {
@@ -314,7 +326,7 @@ bool is_jb_path_c(const char *path) {
 	NSString *executablePath = [[NSBundle mainBundle] executablePath];
 
 	// Only hook for sandboxed user apps.
-	if([executablePath hasPrefix:@"/var/containers"]) {
+	if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
 		NSLog(@"[shadow] enabled hooks");
 		%init(sandboxed);
 	}
