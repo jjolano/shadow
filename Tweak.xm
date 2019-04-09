@@ -31,12 +31,19 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log/"]
+		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
+		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
 		|| [path isEqualToString:@"/var/tmp/cydia.log"]
 		|| [path isEqualToString:@"/var/tmp/syslog"]
 		|| [path isEqualToString:@"/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/tmp/cydia.log"]
+		|| [path isEqualToString:@"/tmp/syslog"]
+		|| [path isEqualToString:@"/tmp/slide.txt"]
 		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log/"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
 		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
 		|| [path isEqualToString:@"/private/var/tmp/syslog"]
 		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
@@ -53,6 +60,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/etc/alternatives"]
 		|| [path hasPrefix:@"/etc/apt"]
 		|| [path hasPrefix:@"/etc/dpkg"]
+		|| [path hasPrefix:@"/User/Library/Cydia"]
+		|| [path hasPrefix:@"/User/Library/Logs/Cydia"]
 		|| [path hasPrefix:@"/."]
 	);
 }
@@ -76,12 +85,19 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/var/cache/apt") == path
 		|| strstr(path, "/var/lib") == path
 		|| strstr(path, "/var/log/") == path
+		|| strstr(path, "/var/mobile/Library/Cydia") == path
+		|| strstr(path, "/var/mobile/Library/Logs/Cydia") == path
 		|| strcmp(path, "/var/tmp/cydia.log") == 0
 		|| strcmp(path, "/var/tmp/syslog") == 0
 		|| strcmp(path, "/var/tmp/slide.txt") == 0
+		|| strcmp(path, "/tmp/cydia.log") == 0
+		|| strcmp(path, "/tmp/syslog") == 0
+		|| strcmp(path, "/tmp/slide.txt") == 0
 		|| strstr(path, "/private/var/cache/apt") == path
 		|| strstr(path, "/private/var/lib") == path
 		|| strstr(path, "/private/var/log/") == path
+		|| strstr(path, "/private/var/mobile/Library/Cydia") == path
+		|| strstr(path, "/private/var/mobile/Library/Logs/Cydia") == path
 		|| strcmp(path, "/private/var/tmp/cydia.log") == 0
 		|| strcmp(path, "/private/var/tmp/syslog") == 0
 		|| strcmp(path, "/private/var/tmp/slide.txt") == 0
@@ -98,6 +114,8 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/etc/alternatives") == path
 		|| strstr(path, "/etc/apt") == path
 		|| strstr(path, "/etc/dpkg") == path
+		|| strstr(path, "/User/Library/Cydia") == path
+		|| strstr(path, "/User/Library/Logs/Cydia") == path
 		|| strstr(path, "/.") == path
 	);
 }
@@ -109,6 +127,7 @@ bool is_jb_path_c(const char *path) {
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
 	if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared/AppGroup"]
 	&& [path hasPrefix:@"/private"]) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
 		*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
