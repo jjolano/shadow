@@ -185,7 +185,7 @@ bool is_jb_path_c(const char *path) {
 %end
 
 %hookf(int, access, const char *pathname, int mode) {
-	if(is_jb_path_c(pathname) && strstr(pathname, "DynamicLibraries") == NULL) {
+	if(strstr(pathname, "DynamicLibraries") == NULL && is_jb_path_c(pathname)) {
 		NSLog(@"[shadow] blocked access: %s", pathname);
 		return -1;
 	}
@@ -237,7 +237,7 @@ bool is_jb_path_c(const char *path) {
 
 // This hook seems to cause problems? Maybe it's used by Substrate itself.
 %hookf(int, open, const char *pathname, int flags) {
-	if(is_jb_path_c(pathname) && strstr(pathname, "DynamicLibraries") == NULL) {
+	if(strstr(pathname, "DynamicLibraries") == NULL && is_jb_path_c(pathname)) {
 		NSLog(@"[shadow] blocked open with path %s", pathname);
 		return -1;
 	}
