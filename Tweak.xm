@@ -23,7 +23,7 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/Library/PreferenceBundles"]
 		|| [path hasPrefix:@"/Library/PreferenceLoader"]
 		|| [path hasPrefix:@"/Library/Switches"]
-		|| [path hasPrefix:@"/Library/Themes"]
+		// || [path hasPrefix:@"/Library/Themes"]
 		|| [path hasPrefix:@"/Library/dpkg"]
 		|| [path hasPrefix:@"/jb"]
 		|| [path hasPrefix:@"/electra"]
@@ -77,7 +77,7 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(path, "/Library/PreferenceBundles") == path
 		|| strstr(path, "/Library/PreferenceLoader") == path
 		|| strstr(path, "/Library/Switches") == path
-		|| strstr(path, "/Library/Themes") == path
+		// || strstr(path, "/Library/Themes") == path
 		|| strstr(path, "/Library/dpkg") == path
 		|| strstr(path, "/jb") == path
 		|| strstr(path, "/electra") == path
@@ -202,7 +202,7 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-// Seems to be disabled in the SDK. Probably no point hooking this.
+// Seems to be disabled in the SDK (12.2). Probably no point hooking this.
 %hookf(int, "system", const char *command) {
 	if(command == NULL) {
 		return 0;
@@ -313,7 +313,7 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(ret, "substrate") != NULL
 		|| strstr(ret, "substitute") != NULL
 		|| strstr(ret, "TweakInject") != NULL) {
-			return "";
+			return "/System/Library/Frameworks/UIKit.framework/UIKit";
 		}
 	}
 
