@@ -6,6 +6,8 @@
 #include <mach-o/dyld.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/param.h>
+#include <sys/mount.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -32,6 +34,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log/"]
+		|| [path hasPrefix:@"/var/stash"]
+		|| [path hasPrefix:@"/var/db/stash"]
 		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
 		|| [path isEqualToString:@"/var/tmp/cydia.log"]
@@ -43,6 +47,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log/"]
+		|| [path hasPrefix:@"/private/var/stash"]
+		|| [path hasPrefix:@"/private/var/db/stash"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
 		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
@@ -50,7 +56,7 @@ bool is_jb_path(NSString *path) {
 		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
 		|| [path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
-		|| [path hasPrefix:@"/usr/libexec"]
+		|| [path hasPrefix:@"/usr/libexec/"]
 		|| [path hasPrefix:@"/usr/share/dpkg"]
 		|| [path hasPrefix:@"/usr/share/bigboss"]
 		|| [path hasPrefix:@"/usr/share/jailbreak"]
@@ -68,57 +74,8 @@ bool is_jb_path(NSString *path) {
 }
 
 bool is_jb_path_c(const char *path) {
-	return (
-		strstr(path, "/Applications/") == path
-		|| strstr(path, "/Library/MobileSubstrate") == path
-		|| strstr(path, "/Library/substrate") == path
-		|| strstr(path, "/Library/TweakInject") == path
-		|| strstr(path, "/Library/LaunchDaemons/") == path
-		|| strstr(path, "/Library/PreferenceBundles") == path
-		|| strstr(path, "/Library/PreferenceLoader") == path
-		|| strstr(path, "/Library/Switches") == path
-		// || strstr(path, "/Library/Themes") == path
-		|| strstr(path, "/Library/dpkg") == path
-		|| strstr(path, "/jb") == path
-		|| strstr(path, "/electra") == path
-		|| strstr(path, "/bin") == path
-		|| strstr(path, "/sbin") == path
-		|| strstr(path, "/var/cache/apt") == path
-		|| strstr(path, "/var/lib") == path
-		|| strstr(path, "/var/log/") == path
-		|| strstr(path, "/var/mobile/Library/Cydia") == path
-		|| strstr(path, "/var/mobile/Library/Logs/Cydia") == path
-		|| strcmp(path, "/var/tmp/cydia.log") == 0
-		|| strcmp(path, "/var/tmp/syslog") == 0
-		|| strcmp(path, "/var/tmp/slide.txt") == 0
-		|| strcmp(path, "/tmp/cydia.log") == 0
-		|| strcmp(path, "/tmp/syslog") == 0
-		|| strcmp(path, "/tmp/slide.txt") == 0
-		|| strstr(path, "/private/var/cache/apt") == path
-		|| strstr(path, "/private/var/lib") == path
-		|| strstr(path, "/private/var/log/") == path
-		|| strstr(path, "/private/var/mobile/Library/Cydia") == path
-		|| strstr(path, "/private/var/mobile/Library/Logs/Cydia") == path
-		|| strcmp(path, "/private/var/tmp/cydia.log") == 0
-		|| strcmp(path, "/private/var/tmp/syslog") == 0
-		|| strcmp(path, "/private/var/tmp/slide.txt") == 0
-		|| strstr(path, "/usr/bin") == path
-		|| strstr(path, "/usr/sbin") == path
-		|| strstr(path, "/usr/libexec") == path
-		|| strstr(path, "/usr/share/dpkg") == path
-		|| strstr(path, "/usr/share/bigboss") == path
-		|| strstr(path, "/usr/share/jailbreak") == path
-		|| strstr(path, "/usr/share/entitlements") == path
-		|| strstr(path, "/usr/local") == path
-		|| strstr(path, "/usr/lib") == path
-		|| strstr(path, "/usr/include") == path
-		|| strstr(path, "/etc/alternatives") == path
-		|| strstr(path, "/etc/apt") == path
-		|| strstr(path, "/etc/dpkg") == path
-		|| strstr(path, "/User/Library/Cydia") == path
-		|| strstr(path, "/User/Library/Logs/Cydia") == path
-		|| strstr(path, "/.") == path
-	);
+	NSString *name = [NSString stringWithUTF8String:path];
+	return is_jb_path(name);
 }
 
 %hook NSString
@@ -127,11 +84,9 @@ bool is_jb_path_c(const char *path) {
 	atomically:(BOOL)useAuxiliaryFile
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
-	if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
-	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
-	&& ![path hasPrefix:@"/User/Containers/Shared"]
-	&& ![path hasPrefix:@"/var/mobile/Containers/Shared"]
-	&& [path hasPrefix:@"/private"]) {
+	if([path hasPrefix:@"/private"]
+	&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
 		*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		return NO;
@@ -216,6 +171,11 @@ bool is_jb_path_c(const char *path) {
 	return -1;
 }
 
+%hookf(FILE *, popen, const char *command, const char *type) {
+	NSLog(@"[shadow] blocked popen");
+	return NULL;
+}
+
 %hookf(char *, getenv, const char *name) {
 	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
 	|| strcmp(name, "_MSSafeMode") == 0) {
@@ -245,6 +205,20 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
+%hookf(int, statfs, const char *path, struct statfs *buf) {
+	int ret = %orig;
+
+	if(strcmp(path, "/") == 0) {
+		if(buf != NULL) {
+			// Ensure root is marked read-only.
+			NSLog(@"[shadow] statfs: root is read-only");
+			buf->f_flags |= MNT_RDONLY;
+		}
+	}
+
+	return ret;
+}
+
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
 	// Handle special cases.
 	if(strcmp(pathname, "/Applications") == 0
@@ -266,9 +240,11 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
-		statbuf->st_mode &= ~S_IWUSR;
-		statbuf->st_mode &= ~S_IWGRP;
-		statbuf->st_mode &= ~S_IWOTH;
+		if(statbuf != NULL) {
+			statbuf->st_mode &= ~S_IWUSR;
+			statbuf->st_mode &= ~S_IWGRP;
+			statbuf->st_mode &= ~S_IWOTH;
+		}
 	}
 
 	return ret;
@@ -297,9 +273,11 @@ bool is_jb_path_c(const char *path) {
 
 	if(ret == 0 && strcmp(pathname, "/") == 0) {
 		// Ensure root is not seen as writable.
-		statbuf->st_mode &= ~S_IWUSR;
-		statbuf->st_mode &= ~S_IWGRP;
-		statbuf->st_mode &= ~S_IWOTH;
+		if(statbuf != NULL) {
+			statbuf->st_mode &= ~S_IWUSR;
+			statbuf->st_mode &= ~S_IWGRP;
+			statbuf->st_mode &= ~S_IWOTH;
+		}
 	}
 
 	return ret;
