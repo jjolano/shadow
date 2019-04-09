@@ -1,7 +1,7 @@
 Package: com.jjolano.shadow
 Name: Shadow
 Depends: mobilesubstrate
-Version: 0.0.1
+Version: 0.0.1-20
 Architecture: iphoneos-arm
 Description: A simple jailbreak detection blocker that defeats basic detection methods.
 Maintainer: jjolano
