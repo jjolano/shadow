@@ -94,17 +94,106 @@ bool is_jb_path_c(const char *path) {
 	return is_jb_path(name);
 }
 
+bool is_path_sb_readonly(NSString *path) {
+	return (
+		[path hasPrefix:@"/private"]
+		&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+		&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
+		&& ![path hasPrefix:@"/private/var/mobile/Containers/Data/Application"]
+	);
+}
+
+%hook NSData
+- (BOOL)writeToFile: (NSString *)path
+	atomically:(BOOL)useAuxiliaryFile {
+	
+	if(is_path_sb_readonly(path)) {
+		NSLog(@"[shadow] blocked writeToFile with path %@", path);
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)writeToFile: (NSString *)path
+	options:(NSDataWritingOptions)writeOptionsMask
+	error:(NSError * _Nullable *)errorPtr {
+	
+	if(is_path_sb_readonly(path)) {
+		NSLog(@"[shadow] blocked writeToFile with path %@", path);
+
+		if(errorPtr != NULL) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)writeToURL: (NSURL *)url
+	atomically:(BOOL)useAuxiliaryFile {
+	
+	if(is_path_sb_readonly([url path])) {
+		NSLog(@"[shadow] blocked writeToFile with path %@", [url path]);
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)writeToURL: (NSURL *)url
+	options:(NSDataWritingOptions)writeOptionsMask
+	error:(NSError * _Nullable *)errorPtr {
+	
+	if(is_path_sb_readonly([url path])) {
+		NSLog(@"[shadow] blocked writeToFile with path %@", [url path]);
+
+		if(errorPtr != NULL) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+%end
+
 %hook NSString
 - (BOOL)writeToFile:
-	(NSString *) path
+	(NSString *)path
 	atomically:(BOOL)useAuxiliaryFile
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
-	if([path hasPrefix:@"/private"]
-	&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
-	&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]) {
+	
+	if(is_path_sb_readonly(path)) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
-		*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+
+		if(error != NULL) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)writeToURL:
+	(NSURL *)url
+	atomically:(BOOL)useAuxiliaryFile
+	encoding:(NSStringEncoding)enc
+	error:(NSError * _Nullable *)error {
+	
+	if(is_path_sb_readonly([url path])) {
+		NSLog(@"[shadow] blocked writeToURL with path %@", [url path]);
+
+		if(error != NULL) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
 		return NO;
 	}
 
@@ -156,9 +245,13 @@ bool is_jb_path_c(const char *path) {
 %end
 
 %hookf(int, access, const char *pathname, int mode) {
-	if(strstr(pathname, "DynamicLibraries") == NULL && is_jb_path_c(pathname)) {
-		NSLog(@"[shadow] blocked access: %s", pathname);
-		return -1;
+	if(is_jb_path_c(pathname)) {
+		if(strstr(pathname, "DynamicLibraries") == NULL) {
+			NSLog(@"[shadow] blocked access: %s", pathname);
+			return -1;
+		} else {
+			NSLog(@"[shadow] allowed access: %s", pathname);
+		}
 	}
 
 	// NSLog(@"[shadow] allowed access: %s", pathname);
@@ -216,9 +309,13 @@ bool is_jb_path_c(const char *path) {
 
 // This hook seems to cause problems? Maybe it's used by Substrate itself.
 %hookf(int, open, const char *pathname, int flags) {
-	if(strstr(pathname, "DynamicLibraries") == NULL && is_jb_path_c(pathname)) {
-		NSLog(@"[shadow] blocked open with path %s", pathname);
-		return -1;
+	if(is_jb_path_c(pathname)) {
+		if(strstr(pathname, "DynamicLibraries") == NULL) {
+			NSLog(@"[shadow] blocked open with path %s", pathname);
+			return -1;
+		} else {
+			NSLog(@"[shadow] allowed open with path %s", pathname);
+		}
 	}
 
 	// NSLog(@"[shadow] allowed open with path %s", pathname);
@@ -231,7 +328,6 @@ bool is_jb_path_c(const char *path) {
 	if(strcmp(path, "/") == 0) {
 		if(buf != NULL) {
 			// Ensure root is marked read-only.
-			NSLog(@"[shadow] statfs: root is read-only");
 			buf->f_flags |= MNT_RDONLY;
 		}
 	}
@@ -258,19 +354,8 @@ bool is_jb_path_c(const char *path) {
 		return -1;
 	}
 
-	int ret = %orig;
-
-	if(ret == 0 && strcmp(pathname, "/") == 0) {
-		// Ensure root is not seen as writable.
-		if(statbuf != NULL) {
-			statbuf->st_mode &= ~S_IWUSR;
-			statbuf->st_mode &= ~S_IWGRP;
-			statbuf->st_mode &= ~S_IWOTH;
-		}
-	}
-
 	// NSLog(@"[shadow] allowed stat with path %s", pathname);
-	return ret;
+	return %orig;
 }
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
@@ -293,19 +378,8 @@ bool is_jb_path_c(const char *path) {
 		return -1;
 	}
 
-	int ret = %orig;
-
-	if(ret == 0 && strcmp(pathname, "/") == 0) {
-		// Ensure root is not seen as writable.
-		if(statbuf != NULL) {
-			statbuf->st_mode &= ~S_IWUSR;
-			statbuf->st_mode &= ~S_IWGRP;
-			statbuf->st_mode &= ~S_IWOTH;
-		}
-	}
-
 	// NSLog(@"[shadow] allowed stat with path %s", pathname);
-	return ret;
+	return %orig;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
@@ -316,7 +390,7 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(ret, "substrate") != NULL
 		|| strstr(ret, "substitute") != NULL
 		|| strstr(ret, "TweakInject") != NULL) {
-			return "/System/Library/Frameworks/UIKit.framework/UIKit";
+			return "";
 		}
 	}
 
