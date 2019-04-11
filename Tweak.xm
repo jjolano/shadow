@@ -63,16 +63,16 @@ bool is_jb_path(NSString *path) {
 			}
 		}
 
-		if([path hasPrefix:@"/private/var/tmp"]) {
-			if([path isEqualToString:@"/private/var/tmp/cydia.log"]
-			|| [path isEqualToString:@"/private/var/tmp/syslog"]
-			|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
-			|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]) {
-				return true;
-			}
-		}
-
 		if([path hasPrefix:@"/private/var"]) {
+			if([path hasPrefix:@"/private/var/tmp"]) {
+				if([path isEqualToString:@"/private/var/tmp/cydia.log"]
+				|| [path isEqualToString:@"/private/var/tmp/syslog"]
+				|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
+				|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]) {
+					return true;
+				}
+			}
+			
 			if([path hasPrefix:@"/private/var/mobile"]) {
 				if([path hasPrefix:@"/private/var/mobile/Library/Cydia"]
 				|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
