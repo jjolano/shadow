@@ -72,7 +72,7 @@ bool is_jb_path(NSString *path) {
 					return true;
 				}
 			}
-			
+
 			if([path hasPrefix:@"/private/var/mobile"]) {
 				if([path hasPrefix:@"/private/var/mobile/Library/Cydia"]
 				|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
@@ -161,18 +161,28 @@ bool is_jb_path_c(const char *path) {
 	return is_jb_path([NSString stringWithUTF8String:path]);
 }
 
+// In modern jailbreaks, the sandbox is intact so there is no need for restricting access...
+// This is more for compatibility in case this tweak actually works on old iOS versions.
 bool is_path_sb_readonly(NSString *path) {
-	return (
-		[path hasPrefix:@"/private"]
-		// Exceptions
-		&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
-		&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
-		&& ![path hasPrefix:@"/private/var/mobile/Containers/Data/Application"]
-	);
+	if([path hasPrefix:@"/private"]) {
+		if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+		&& ![path hasPrefix:@"/private/var/mobile"]) {
+			return true;
+		}
+	}
+
+	if([path hasPrefix:@"/var"]) {
+		if(![path hasPrefix:@"/var/MobileDevice/ProvisioningProfiles"]
+		&& ![path hasPrefix:@"/var/mobile"]) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 %hook NSData
-- (BOOL)writeToFile: (NSString *)path
+- (BOOL)writeToFile:(NSString *)path
 	atomically:(BOOL)useAuxiliaryFile {
 	
 	if(is_path_sb_readonly(path)) {
@@ -183,7 +193,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (BOOL)writeToFile: (NSString *)path
+- (BOOL)writeToFile:(NSString *)path
 	options:(NSDataWritingOptions)writeOptionsMask
 	error:(NSError * _Nullable *)errorPtr {
 	
@@ -200,7 +210,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (BOOL)writeToURL: (NSURL *)url
+- (BOOL)writeToURL:(NSURL *)url
 	atomically:(BOOL)useAuxiliaryFile {
 	
 	if(is_path_sb_readonly([url path])) {
@@ -211,7 +221,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (BOOL)writeToURL: (NSURL *)url
+- (BOOL)writeToURL:(NSURL *)url
 	options:(NSDataWritingOptions)writeOptionsMask
 	error:(NSError * _Nullable *)errorPtr {
 	
@@ -230,8 +240,7 @@ bool is_path_sb_readonly(NSString *path) {
 %end
 
 %hook NSString
-- (BOOL)writeToFile:
-	(NSString *)path
+- (BOOL)writeToFile:(NSString *)path
 	atomically:(BOOL)useAuxiliaryFile
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
@@ -249,8 +258,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (BOOL)writeToURL:
-	(NSURL *)url
+- (BOOL)writeToURL:(NSURL *)url
 	atomically:(BOOL)useAuxiliaryFile
 	encoding:(NSStringEncoding)enc
 	error:(NSError * _Nullable *)error {
@@ -280,8 +288,38 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (NSArray<NSString *> *)contentsOfDirectoryAtPath:
-	(NSString *)path
+- (BOOL)fileExistsAtPath:(NSString *)path
+	isDirectory:(BOOL *)isDirectory {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)isReadableFileAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed isReadableFileAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)isExecutableFileAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
+	return %orig;
+}
+
+- (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path
 	error:(NSError * _Nullable *)error {
 
 	if(is_jb_path(path)) {
@@ -390,6 +428,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
+/*
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
@@ -403,6 +442,7 @@ bool is_path_sb_readonly(NSString *path) {
 	// NSLog(@"[shadow] statfs on %s", path);
 	return ret;
 }
+*/
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
 	// Handle special cases.
