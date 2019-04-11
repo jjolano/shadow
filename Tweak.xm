@@ -41,7 +41,7 @@ bool is_jb_path(NSString *path) {
 
 	return (
 		[set containsObject:path]
-		|| [path rangeOfString:@"../"].location != NSNotFound
+		// || [path rangeOfString:@"../"].location != NSNotFound
 		|| [path hasPrefix:@"/Applications/"]
 		|| [path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
