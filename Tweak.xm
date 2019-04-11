@@ -16,71 +16,145 @@
 %group sandboxed
 
 bool is_jb_path(NSString *path) {
-	return ![path hasPrefix:@"/usr/lib/log"] && (
-		[path isEqualToString:@"/private/var/tmp/cydia.log"]
-		|| [path isEqualToString:@"/private/var/tmp/syslog"]
-		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
-		|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]
-		|| [path isEqualToString:@"/var/tmp/cydia.log"]
-		|| [path isEqualToString:@"/var/tmp/syslog"]
-		|| [path isEqualToString:@"/var/tmp/slide.txt"]
-		|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]
-		|| [path isEqualToString:@"/tmp/cydia.log"]
-		|| [path isEqualToString:@"/tmp/syslog"]
-		|| [path isEqualToString:@"/tmp/slide.txt"]
-		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]
-		|| [path hasPrefix:@"/Applications/"]
-		|| [path hasPrefix:@"/Library/MobileSubstrate"]
+	if([path hasPrefix:@"/Library"]) {
+		if([path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
 		|| [path hasPrefix:@"/Library/TweakInject"]
-		|| [path hasPrefix:@"/Library/LaunchDaemons/"]
-		|| [path hasPrefix:@"/System/Library/LaunchDaemons/"]
+		|| [path hasPrefix:@"/Library/LaunchDaemons"]
 		|| [path hasPrefix:@"/Library/PreferenceBundles"]
 		|| [path hasPrefix:@"/Library/PreferenceLoader"]
 		|| [path hasPrefix:@"/Library/Switches"]
-		|| [path hasPrefix:@"/Library/dpkg"]
-		|| [path hasPrefix:@"/jb"]
-		|| [path hasPrefix:@"/electra"]
-		|| [path hasPrefix:@"/bin"]
-		|| [path hasPrefix:@"/sbin"]
-		|| [path hasPrefix:@"/var/cache/apt"]
-		|| [path hasPrefix:@"/var/lib"]
-		|| [path hasPrefix:@"/var/log/"]
-		|| [path hasPrefix:@"/var/stash"]
-		|| [path hasPrefix:@"/var/db/stash"]
-		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
-		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
-		|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
-		|| [path hasPrefix:@"/private/var/cache/apt"]
-		|| [path hasPrefix:@"/private/var/lib"]
-		|| [path hasPrefix:@"/private/var/log/"]
-		|| [path hasPrefix:@"/private/var/stash"]
-		|| [path hasPrefix:@"/private/var/db/stash"]
-		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
-		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
-		|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
-		|| [path hasPrefix:@"/usr/bin"]
+		|| [path hasPrefix:@"/Library/dpkg"]) {
+			return true;
+		}
+	}
+
+	if([path hasPrefix:@"/usr"]) {
+		if([path hasPrefix:@"/usr/lib/log"]) {
+			return false;
+		}
+
+		if([path hasPrefix:@"/usr/share"]) {
+			if([path hasPrefix:@"/usr/share/dpkg"]
+			|| [path hasPrefix:@"/usr/share/bigboss"]
+			|| [path hasPrefix:@"/usr/share/jailbreak"]
+			|| [path hasPrefix:@"/usr/share/entitlements"]) {
+				return true;
+			}
+		}
+
+		if([path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
-		|| [path hasPrefix:@"/usr/libexec/"]
-		|| [path hasPrefix:@"/usr/share/dpkg"]
-		|| [path hasPrefix:@"/usr/share/bigboss"]
-		|| [path hasPrefix:@"/usr/share/jailbreak"]
-		|| [path hasPrefix:@"/usr/share/entitlements"]
+		|| [path hasPrefix:@"/usr/libexec"]
 		|| [path hasPrefix:@"/usr/lib/"]
-		|| [path hasPrefix:@"/usr/include"]
-		|| [path hasPrefix:@"/etc/alternatives"]
+		|| [path hasPrefix:@"/usr/include"]) {
+			return true;
+		}
+	}
+
+	if([path hasPrefix:@"/private"]) {
+		if([path hasPrefix:@"/private/etc"]) {
+			if([path hasPrefix:@"/private/etc/alternatives"]
+			|| [path hasPrefix:@"/private/etc/apt"]
+			|| [path hasPrefix:@"/private/etc/dpkg"]
+			|| [path hasPrefix:@"/private/etc/dropbear"]
+			|| [path hasPrefix:@"/private/etc/ssh"]) {
+				return true;
+			}
+		}
+
+		if([path hasPrefix:@"/private/var/tmp"]) {
+			if([path isEqualToString:@"/private/var/tmp/cydia.log"]
+			|| [path isEqualToString:@"/private/var/tmp/syslog"]
+			|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
+			|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]) {
+				return true;
+			}
+		}
+
+		if([path hasPrefix:@"/private/var"]) {
+			if([path hasPrefix:@"/private/var/mobile"]) {
+				if([path hasPrefix:@"/private/var/mobile/Library/Cydia"]
+				|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
+				|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
+				|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]) {
+					return true;
+				}
+			}
+
+			if([path hasPrefix:@"/private/var/cache/apt"]
+			|| [path hasPrefix:@"/private/var/lib"]
+			|| [path hasPrefix:@"/private/var/log/"]
+			|| [path hasPrefix:@"/private/var/stash"]
+			|| [path hasPrefix:@"/private/var/db/stash"]) {
+				return true;
+			}
+		}
+	}
+
+	if([path hasPrefix:@"/etc"]) {
+		if([path hasPrefix:@"/etc/alternatives"]
 		|| [path hasPrefix:@"/etc/apt"]
 		|| [path hasPrefix:@"/etc/dpkg"]
 		|| [path hasPrefix:@"/etc/dropbear"]
-		|| [path hasPrefix:@"/etc/ssh"]
-		|| [path hasPrefix:@"/."]
-		|| [path hasPrefix:@"/meridian"]
-		|| [path hasPrefix:@"/bootstrap"]
-		|| [path hasPrefix:@"/panguaxe"]
-		|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]
-		|| [path hasPrefix:@"/taig"]
-		|| [path hasPrefix:@"/pguntether"]
-	);
+		|| [path hasPrefix:@"/etc/ssh"]) {
+			return true;
+		}
+	}
+	
+	if([path hasPrefix:@"/var"]) {
+		if([path hasPrefix:@"/var/tmp"]) {
+			if([path isEqualToString:@"/var/tmp/cydia.log"]
+			|| [path isEqualToString:@"/var/tmp/syslog"]
+			|| [path isEqualToString:@"/var/tmp/slide.txt"]
+			|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]) {
+				return true;
+			}
+		}
+
+		if([path hasPrefix:@"/var/mobile"]) {
+			if([path hasPrefix:@"/var/mobile/Library/Cydia"]
+			|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
+			|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
+			|| [path hasPrefix:@"/var/mobile/Media/panguaxe"]) {
+				return true;
+			}
+		}
+
+		if([path hasPrefix:@"/var/cache/apt"]
+		|| [path hasPrefix:@"/var/lib"]
+		|| [path hasPrefix:@"/var/log/"]
+		|| [path hasPrefix:@"/var/stash"]
+		|| [path hasPrefix:@"/var/db/stash"]) {
+			return true;
+		}
+	}
+
+	if([path hasPrefix:@"/tmp"]) {
+		if([path isEqualToString:@"/tmp/cydia.log"]
+		|| [path isEqualToString:@"/tmp/syslog"]
+		|| [path isEqualToString:@"/tmp/slide.txt"]
+		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]) {
+			return true;
+		}
+	}
+
+	if([path hasPrefix:@"/Applications"]
+	|| [path hasPrefix:@"/bin"]
+	|| [path hasPrefix:@"/sbin"]
+	|| [path hasPrefix:@"/jb"]
+	|| [path hasPrefix:@"/electra"]
+	|| [path hasPrefix:@"/."]
+	|| [path hasPrefix:@"/meridian"]
+	|| [path hasPrefix:@"/bootstrap"]
+	|| [path hasPrefix:@"/panguaxe"]
+	|| [path hasPrefix:@"/taig"]
+	|| [path hasPrefix:@"/pguntether"]
+	|| [path hasPrefix:@"/System/Library/LaunchDaemons"]) {
+		return true;
+	}
+
+	return false;
 }
 
 bool is_jb_path_c(const char *path) {
