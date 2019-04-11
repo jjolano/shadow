@@ -16,6 +16,10 @@
 %group sandboxed
 
 bool is_jb_path(NSString *path) {
+	if([path characterAtIndex:0] != '/') {
+		return false;
+	}
+
 	NSSet *set = [NSSet setWithObjects:
 		@"/private/var/tmp/cydia.log",
 		@"/private/var/tmp/Cydia.log",
@@ -35,9 +39,9 @@ bool is_jb_path(NSString *path) {
 		nil
 	];
 
-	return [path characterAtIndex:0] == '/'
-		&& (
+	return (
 		[set containsObject:path]
+		|| [path rangeOfString:@"../"].location != NSNotFound
 		|| [path hasPrefix:@"/Applications/"]
 		|| [path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
