@@ -16,32 +16,23 @@
 %group sandboxed
 
 bool is_jb_path(NSString *path) {
-	if([path characterAtIndex:0] != '/') {
-		return false;
-	}
-
-	NSSet *set = [NSSet setWithObjects:
-		@"/private/var/tmp/cydia.log",
-		@"/private/var/tmp/Cydia.log",
-		@"/private/var/tmp/syslog",
-		@"/private/var/tmp/slide.txt",
-		@"/private/var/tmp/amfidebilitate.out",
-		@"/var/tmp/cydia.log",
-		@"/var/tmp/Cydia.log",
-		@"/var/tmp/syslog",
-		@"/var/tmp/slide.txt",
-		@"/var/tmp/amfidebilitate.out",
-		@"/tmp/cydia.log",
-		@"/tmp/Cydia.log",
-		@"/tmp/syslog",
-		@"/tmp/slide.txt",
-		@"/tmp/amfidebilitate.out",
-		nil
-	];
-
 	return (
-		[set containsObject:path]
-		// || [path rangeOfString:@"../"].location != NSNotFound
+		[path rangeOfString:@"../"].location != NSNotFound
+		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/syslog"]
+		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]
+		|| [path isEqualToString:@"/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/syslog"]
+		|| [path isEqualToString:@"/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]
+		|| [path isEqualToString:@"/tmp/cydia.log"]
+		|| [path isEqualToString:@"/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/tmp/syslog"]
+		|| [path isEqualToString:@"/tmp/slide.txt"]
+		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]
 		|| [path hasPrefix:@"/Applications/"]
 		|| [path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
@@ -108,12 +99,10 @@ bool is_jb_path_c(const char *path) {
 }
 
 bool is_path_sb_readonly(NSString *path) {
-	return [path characterAtIndex:0] == '/'
-		&& (
+	return (
 		[path hasPrefix:@"/private"]
-		) && (
 		// Exceptions
-		![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+		&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
 		&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
 		&& ![path hasPrefix:@"/private/var/mobile/Containers/Data/Application"]
 	);
@@ -422,7 +411,7 @@ bool is_path_sb_readonly(NSString *path) {
 		NSString *executablePath = [bundle executablePath];
 
 		// Only hook for sandboxed user apps.
-		if(executablePath != nil && [executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
+		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
 			NSLog(@"[shadow] enabled hooks");
 			%init(sandboxed);
 		}
