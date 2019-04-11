@@ -277,6 +277,22 @@ bool is_path_sb_readonly(NSString *path) {
 }
 %end
 
+%hook NSURL
+- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
+	if(is_jb_path([self path])) {
+		NSLog(@"[shadow] blocked checkResourceIsReachableAndReturnError with path %@", [self path]);
+
+		if(error != nil) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+%end
+
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_jb_path(path)) {
@@ -316,24 +332,6 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
-	return %orig;
-}
-
-- (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path
-	error:(NSError * _Nullable *)error {
-
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] detected contentsOfDirectoryAtPath: %@", path);
-	}
-
-	return %orig;
-}
-
-- (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] detected enumeratorAtPath: %@", path);
-	}
-
 	return %orig;
 }
 %end
@@ -428,7 +426,6 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-/*
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
@@ -442,7 +439,6 @@ bool is_path_sb_readonly(NSString *path) {
 	// NSLog(@"[shadow] statfs on %s", path);
 	return ret;
 }
-*/
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
 	// Handle special cases.
