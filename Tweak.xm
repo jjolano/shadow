@@ -16,8 +16,29 @@
 %group sandboxed
 
 bool is_jb_path(NSString *path) {
-	return (
-		[path hasPrefix:@"/Applications/"]
+	NSSet *set = [NSSet setWithObjects:
+		@"/private/var/tmp/cydia.log",
+		@"/private/var/tmp/Cydia.log",
+		@"/private/var/tmp/syslog",
+		@"/private/var/tmp/slide.txt",
+		@"/private/var/tmp/amfidebilitate.out",
+		@"/var/tmp/cydia.log",
+		@"/var/tmp/Cydia.log",
+		@"/var/tmp/syslog",
+		@"/var/tmp/slide.txt",
+		@"/var/tmp/amfidebilitate.out",
+		@"/tmp/cydia.log",
+		@"/tmp/Cydia.log",
+		@"/tmp/syslog",
+		@"/tmp/slide.txt",
+		@"/tmp/amfidebilitate.out",
+		nil
+	];
+
+	return [path characterAtIndex:0] == '/'
+		&& (
+		[set containsObject:path]
+		|| [path hasPrefix:@"/Applications/"]
 		|| [path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
 		|| [path hasPrefix:@"/Library/TweakInject"]
@@ -40,14 +61,6 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
 		|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
-		|| [path isEqualToString:@"/var/tmp/cydia.log"]
-		|| [path isEqualToString:@"/var/tmp/Cydia.log"]
-		|| [path isEqualToString:@"/var/tmp/syslog"]
-		|| [path isEqualToString:@"/var/tmp/slide.txt"]
-		|| [path isEqualToString:@"/tmp/cydia.log"]
-		|| [path isEqualToString:@"/tmp/Cydia.log"]
-		|| [path isEqualToString:@"/tmp/syslog"]
-		|| [path isEqualToString:@"/tmp/slide.txt"]
 		|| [path hasPrefix:@"/private/var/cache/apt"]
 		|| [path hasPrefix:@"/private/var/lib"]
 		|| [path hasPrefix:@"/private/var/log/"]
@@ -56,11 +69,6 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
 		|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
-		|| [path isEqualToString:@"/private/var/tmp/cydia.log"]
-		|| [path isEqualToString:@"/private/var/tmp/Cydia.log"]
-		|| [path isEqualToString:@"/private/var/tmp/syslog"]
-		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
-		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]
 		|| [path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
 		|| [path hasPrefix:@"/usr/libexec/"]
@@ -84,7 +92,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]
 		|| [path hasPrefix:@"/taig"]
 		|| [path hasPrefix:@"/pguntether"]
-	) && (
+		) && (
+		// Exceptions
 		![path hasPrefix:@"/usr/lib/log"]
 	);
 }
@@ -95,9 +104,12 @@ bool is_jb_path_c(const char *path) {
 }
 
 bool is_path_sb_readonly(NSString *path) {
-	return (
+	return [path characterAtIndex:0] == '/'
+		&& (
 		[path hasPrefix:@"/private"]
-		&& ![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
+		) && (
+		// Exceptions
+		![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
 		&& ![path hasPrefix:@"/private/var/mobile/Containers/Shared"]
 		&& ![path hasPrefix:@"/private/var/mobile/Containers/Data/Application"]
 	);
@@ -150,7 +162,7 @@ bool is_path_sb_readonly(NSString *path) {
 	if(is_path_sb_readonly([url path])) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", [url path]);
 
-		if(errorPtr != NULL) {
+		if(errorPtr != nil) {
 			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		}
 
@@ -171,7 +183,7 @@ bool is_path_sb_readonly(NSString *path) {
 	if(is_path_sb_readonly(path)) {
 		NSLog(@"[shadow] blocked writeToFile with path %@", path);
 
-		if(error != NULL) {
+		if(error != nil) {
 			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		}
 
@@ -190,7 +202,7 @@ bool is_path_sb_readonly(NSString *path) {
 	if(is_path_sb_readonly([url path])) {
 		NSLog(@"[shadow] blocked writeToURL with path %@", [url path]);
 
-		if(error != NULL) {
+		if(error != nil) {
 			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		}
 
@@ -250,7 +262,7 @@ bool is_path_sb_readonly(NSString *path) {
 			NSLog(@"[shadow] blocked access: %s", pathname);
 			return -1;
 		} else {
-			NSLog(@"[shadow] allowed access: %s", pathname);
+			// NSLog(@"[shadow] allowed access: %s", pathname);
 		}
 	}
 
@@ -314,7 +326,7 @@ bool is_path_sb_readonly(NSString *path) {
 			NSLog(@"[shadow] blocked open with path %s", pathname);
 			return -1;
 		} else {
-			NSLog(@"[shadow] allowed open with path %s", pathname);
+			// NSLog(@"[shadow] allowed open with path %s", pathname);
 		}
 	}
 
@@ -400,11 +412,15 @@ bool is_path_sb_readonly(NSString *path) {
 %end
 
 %ctor {
-	NSString *executablePath = [[NSBundle mainBundle] executablePath];
+	NSBundle *bundle = [NSBundle mainBundle];
 
-	// Only hook for sandboxed user apps.
-	if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
-		NSLog(@"[shadow] enabled hooks");
-		%init(sandboxed);
+	if(bundle != nil) {
+		NSString *executablePath = [bundle executablePath];
+
+		// Only hook for sandboxed user apps.
+		if(executablePath != nil && [executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
+			NSLog(@"[shadow] enabled hooks");
+			%init(sandboxed);
+		}
 	}
 }
