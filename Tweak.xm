@@ -15,85 +15,82 @@
 
 %group sandboxed
 
-bool is_jb_path_c(const char *path) {
-	return !(strstr(path, "/usr/lib/log") == path) && (
-		strstr(path, "../") != NULL
-		|| strcmp(path, "/private/var/tmp/cydia.log") == 0
-		|| strcmp(path, "/private/var/tmp/Cydia.log") == 0
-		|| strcmp(path, "/private/var/tmp/syslog") == 0
-		|| strcmp(path, "/private/var/tmp/slide.txt") == 0
-		|| strcmp(path, "/private/var/tmp/amfidebilitate.out") == 0
-		|| strcmp(path, "/var/tmp/cydia.log") == 0
-		|| strcmp(path, "/var/tmp/Cydia.log") == 0
-		|| strcmp(path, "/var/tmp/syslog") == 0
-		|| strcmp(path, "/var/tmp/slide.txt") == 0
-		|| strcmp(path, "/var/tmp/amfidebilitate.out") == 0
-		|| strcmp(path, "/tmp/cydia.log") == 0
-		|| strcmp(path, "/tmp/Cydia.log") == 0
-		|| strcmp(path, "/tmp/syslog") == 0
-		|| strcmp(path, "/tmp/slide.txt") == 0
-		|| strcmp(path, "/tmp/amfidebilitate.out") == 0
-		|| strstr(path, "/Applications/") == path
-		|| strstr(path, "/Library/MobileSubstrate") == path
-		|| strstr(path, "/Library/substrate") == path
-		|| strstr(path, "/Library/TweakInject") == path
-		|| strstr(path, "/Library/LaunchDaemons/") == path
-		|| strstr(path, "/System/Library/LaunchDaemons/") == path
-		|| strstr(path, "/Library/PreferenceBundles") == path
-		|| strstr(path, "/Library/PreferenceLoader") == path
-		|| strstr(path, "/Library/Switches") == path
-		|| strstr(path, "/Library/dpkg") == path
-		|| strstr(path, "/jb") == path
-		|| strstr(path, "/electra") == path
-		|| strstr(path, "/bin") == path
-		|| strstr(path, "/sbin") == path
-		|| strstr(path, "/var/cache/apt") == path
-		|| strstr(path, "/var/lib") == path
-		|| strstr(path, "/var/log/") == path
-		|| strstr(path, "/var/stash") == path
-		|| strstr(path, "/var/db/stash") == path
-		|| strstr(path, "/var/mobile/Library/Cydia") == path
-		|| strstr(path, "/var/mobile/Library/Logs/Cydia") == path
-		|| strstr(path, "/var/mobile/Library/SBSettings") == path
-		|| strstr(path, "/private/var/cache/apt") == path
-		|| strstr(path, "/private/var/lib") == path
-		|| strstr(path, "/private/var/log/") == path
-		|| strstr(path, "/private/var/stash") == path
-		|| strstr(path, "/private/var/db/stash") == path
-		|| strstr(path, "/private/var/mobile/Library/Cydia") == path
-		|| strstr(path, "/private/var/mobile/Library/Logs/Cydia") == path
-		|| strstr(path, "/private/var/mobile/Library/SBSettings") == path
-		|| strstr(path, "/usr/bin") == path
-		|| strstr(path, "/usr/sbin") == path
-		|| strstr(path, "/usr/libexec/") == path
-		|| strstr(path, "/usr/share/dpkg") == path
-		|| strstr(path, "/usr/share/bigboss") == path
-		|| strstr(path, "/usr/share/jailbreak") == path
-		|| strstr(path, "/usr/share/entitlements") == path
-		|| strstr(path, "/usr/lib/") == path
-		|| strstr(path, "/usr/include") == path
-		|| strstr(path, "/etc/alternatives") == path
-		|| strstr(path, "/etc/apt") == path
-		|| strstr(path, "/etc/dpkg") == path
-		|| strstr(path, "/etc/dropbear") == path
-		|| strstr(path, "/etc/ssh") == path
-		|| strstr(path, "/User/Library/Cydia") == path
-		|| strstr(path, "/User/Library/Logs/Cydia") == path
-		|| strstr(path, "/.") == path
-		|| strstr(path, "/meridian") == path
-		|| strstr(path, "/bootstrap") == path
-		|| strstr(path, "/panguaxe") == path
-		|| strstr(path, "/private/var/mobile/Media/panguaxe") == path
-		|| strstr(path, "/taig") == path
-		|| strstr(path, "/pguntether") == path
+bool is_jb_path(NSString *path) {
+	return ![path hasPrefix:@"/usr/lib/log"] && (
+		[path isEqualToString:@"/private/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/private/var/tmp/syslog"]
+		|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]
+		|| [path isEqualToString:@"/var/tmp/cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/var/tmp/syslog"]
+		|| [path isEqualToString:@"/var/tmp/slide.txt"]
+		|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]
+		|| [path isEqualToString:@"/tmp/cydia.log"]
+		|| [path isEqualToString:@"/tmp/Cydia.log"]
+		|| [path isEqualToString:@"/tmp/syslog"]
+		|| [path isEqualToString:@"/tmp/slide.txt"]
+		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]
+		|| [path hasPrefix:@"/Applications/"]
+		|| [path hasPrefix:@"/Library/MobileSubstrate"]
+		|| [path hasPrefix:@"/Library/substrate"]
+		|| [path hasPrefix:@"/Library/TweakInject"]
+		|| [path hasPrefix:@"/Library/LaunchDaemons/"]
+		|| [path hasPrefix:@"/System/Library/LaunchDaemons/"]
+		|| [path hasPrefix:@"/Library/PreferenceBundles"]
+		|| [path hasPrefix:@"/Library/PreferenceLoader"]
+		|| [path hasPrefix:@"/Library/Switches"]
+		|| [path hasPrefix:@"/Library/dpkg"]
+		|| [path hasPrefix:@"/jb"]
+		|| [path hasPrefix:@"/electra"]
+		|| [path hasPrefix:@"/bin"]
+		|| [path hasPrefix:@"/sbin"]
+		|| [path hasPrefix:@"/var/cache/apt"]
+		|| [path hasPrefix:@"/var/lib"]
+		|| [path hasPrefix:@"/var/log/"]
+		|| [path hasPrefix:@"/var/stash"]
+		|| [path hasPrefix:@"/var/db/stash"]
+		|| [path hasPrefix:@"/var/mobile/Library/Cydia"]
+		|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
+		|| [path hasPrefix:@"/private/var/cache/apt"]
+		|| [path hasPrefix:@"/private/var/lib"]
+		|| [path hasPrefix:@"/private/var/log/"]
+		|| [path hasPrefix:@"/private/var/stash"]
+		|| [path hasPrefix:@"/private/var/db/stash"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/Cydia"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
+		|| [path hasPrefix:@"/usr/bin"]
+		|| [path hasPrefix:@"/usr/sbin"]
+		|| [path hasPrefix:@"/usr/libexec/"]
+		|| [path hasPrefix:@"/usr/share/dpkg"]
+		|| [path hasPrefix:@"/usr/share/bigboss"]
+		|| [path hasPrefix:@"/usr/share/jailbreak"]
+		|| [path hasPrefix:@"/usr/share/entitlements"]
+		|| [path hasPrefix:@"/usr/lib/"]
+		|| [path hasPrefix:@"/usr/include"]
+		|| [path hasPrefix:@"/etc/alternatives"]
+		|| [path hasPrefix:@"/etc/apt"]
+		|| [path hasPrefix:@"/etc/dpkg"]
+		|| [path hasPrefix:@"/etc/dropbear"]
+		|| [path hasPrefix:@"/etc/ssh"]
+		|| [path hasPrefix:@"/User/Library/Cydia"]
+		|| [path hasPrefix:@"/User/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/."]
+		|| [path hasPrefix:@"/meridian"]
+		|| [path hasPrefix:@"/bootstrap"]
+		|| [path hasPrefix:@"/panguaxe"]
+		|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]
+		|| [path hasPrefix:@"/taig"]
+		|| [path hasPrefix:@"/pguntether"]
 	);
 }
 
-bool is_jb_path(NSString *path) {
-	return is_jb_path_c([path UTF8String]);
+bool is_jb_path_c(const char *path) {
+	return is_jb_path([NSString stringWithUTF8String:path]);
 }
-
-
 
 bool is_path_sb_readonly(NSString *path) {
 	return (
