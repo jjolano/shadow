@@ -13,8 +13,6 @@
 #include <dirent.h>
 #include <unistd.h>
 
-%group sandboxed
-
 bool is_jb_path(NSString *path) {
 	if([path hasPrefix:@"/Library"]) {
 		if([path hasPrefix:@"/Library/MobileSubstrate"]
@@ -139,7 +137,7 @@ bool is_jb_path(NSString *path) {
 		}
 	}
 
-	if([path hasPrefix:@"/Applications"]
+	if([path hasPrefix:@"/Applications/"]
 	|| [path hasPrefix:@"/bin"]
 	|| [path hasPrefix:@"/sbin"]
 	|| [path hasPrefix:@"/jb"]
@@ -181,6 +179,9 @@ bool is_path_sb_readonly(NSString *path) {
 	return false;
 }
 
+%group sandboxed
+
+/*
 %hook NSData
 - (BOOL)writeToFile:(NSString *)path
 	atomically:(BOOL)useAuxiliaryFile {
@@ -276,6 +277,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 %end
+*/
 
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
@@ -353,8 +355,6 @@ bool is_path_sb_readonly(NSString *path) {
 		if(strstr(pathname, "DynamicLibraries") == NULL) {
 			NSLog(@"[shadow] blocked access: %s", pathname);
 			return -1;
-		} else {
-			// NSLog(@"[shadow] allowed access: %s", pathname);
 		}
 	}
 
@@ -372,6 +372,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
+/*
 // Seems to be disabled in the SDK (12.2). Probably no point hooking this.
 %hookf(int, "system", const char *command) {
 	if(command == NULL) {
@@ -390,6 +391,7 @@ bool is_path_sb_readonly(NSString *path) {
 	NSLog(@"[shadow] blocked popen");
 	return NULL;
 }
+*/
 
 %hookf(char *, getenv, const char *name) {
 	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
@@ -411,21 +413,6 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-// This hook seems to cause problems? Maybe it's used by Substrate itself.
-%hookf(int, open, const char *pathname, int flags) {
-	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "DynamicLibraries") == NULL) {
-			NSLog(@"[shadow] blocked open with path %s", pathname);
-			return -1;
-		} else {
-			// NSLog(@"[shadow] allowed open with path %s", pathname);
-		}
-	}
-
-	// NSLog(@"[shadow] allowed open with path %s", pathname);
-	return %orig;
-}
-
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
@@ -441,18 +428,6 @@ bool is_path_sb_readonly(NSString *path) {
 }
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
-	// Handle special cases.
-	if(strcmp(pathname, "/Applications") == 0
-	|| strcmp(pathname, "/Library/Ringtones") == 0
-	|| strcmp(pathname, "/Library/Wallpaper") == 0
-	|| strcmp(pathname, "/usr/arm-apple-darwin9") == 0
-	|| strcmp(pathname, "/usr/include") == 0
-	|| strcmp(pathname, "/usr/libexec") == 0
-	|| strcmp(pathname, "/usr/share") == 0
-	|| strcmp(pathname, "/Library") == 0) {
-		return %orig;
-	}
-
 	if(is_jb_path_c(pathname)) {
 		NSLog(@"[shadow] blocked stat with path %s", pathname);
 		return -1;
@@ -463,20 +438,6 @@ bool is_path_sb_readonly(NSString *path) {
 }
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
-	// Handle special cases.
-	if(strcmp(pathname, "/Applications") == 0
-	|| strcmp(pathname, "/Library/Ringtones") == 0
-	|| strcmp(pathname, "/Library/Wallpaper") == 0
-	|| strcmp(pathname, "/usr/arm-apple-darwin9") == 0
-	|| strcmp(pathname, "/usr/include") == 0
-	|| strcmp(pathname, "/usr/libexec") == 0
-	|| strcmp(pathname, "/usr/share") == 0
-	|| strcmp(pathname, "/Library") == 0) {
-		// Use regular stat.
-		NSLog(@"[shadow] lstat on common relocated directories: %s", pathname);
-		return stat(pathname, statbuf);
-	}
-
 	if(is_jb_path_c(pathname)) {
 		NSLog(@"[shadow] blocked lstat with path %s", pathname);
 		return -1;
