@@ -22,9 +22,15 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/Library/PreferenceBundles"]
 		|| [path hasPrefix:@"/Library/PreferenceLoader"]
 		|| [path hasPrefix:@"/Library/Switches"]
-		|| [path hasPrefix:@"/Library/dpkg"]) {
+		|| [path hasPrefix:@"/Library/dpkg"]
+		|| [path hasPrefix:@"/Library/Caches"]
+		|| [path hasPrefix:@"/Library/ControlCenter"]
+		|| [path hasPrefix:@"/Library/Frameworks"]
+		|| [path hasPrefix:@"/Library/Karen"]) {
 			return true;
 		}
+
+		return false;
 	}
 
 	if([path hasPrefix:@"/usr"]) {
@@ -39,15 +45,19 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/usr/share/entitlements"]) {
 				return true;
 			}
+
+			return false;
 		}
 
 		if([path hasPrefix:@"/usr/bin"]
 		|| [path hasPrefix:@"/usr/sbin"]
-		|| [path hasPrefix:@"/usr/libexec"]
-		|| [path hasPrefix:@"/usr/lib/"]
+		|| [path hasPrefix:@"/usr/lib"]
+		|| [path hasPrefix:@"/usr/local"]
 		|| [path hasPrefix:@"/usr/include"]) {
 			return true;
 		}
+
+		return false;
 	}
 
 	if([path hasPrefix:@"/private"]) {
@@ -59,16 +69,29 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/private/etc/ssh"]) {
 				return true;
 			}
+
+			if([path isEqualToString:@"/private/etc/rc.d/substrate"]) {
+				return true;
+			}
+
+			return false;
 		}
 
 		if([path hasPrefix:@"/private/var"]) {
 			if([path hasPrefix:@"/private/var/tmp"]) {
+				if([path hasPrefix:@"/private/var/tmp/substrate"]
+				|| [path hasPrefix:@"/private/var/tmp/Substrate"]) {
+					return true;
+				}
+
 				if([path isEqualToString:@"/private/var/tmp/cydia.log"]
 				|| [path isEqualToString:@"/private/var/tmp/syslog"]
 				|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
 				|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]) {
 					return true;
 				}
+
+				return false;
 			}
 
 			if([path hasPrefix:@"/private/var/mobile"]) {
@@ -78,16 +101,32 @@ bool is_jb_path(NSString *path) {
 				|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]) {
 					return true;
 				}
+
+				return false;
 			}
 
 			if([path hasPrefix:@"/private/var/cache/apt"]
 			|| [path hasPrefix:@"/private/var/lib"]
 			|| [path hasPrefix:@"/private/var/log/"]
 			|| [path hasPrefix:@"/private/var/stash"]
-			|| [path hasPrefix:@"/private/var/db/stash"]) {
+			|| [path hasPrefix:@"/private/var/db/stash"]
+			|| [path hasPrefix:@"/private/var/rocket_stashed"]) {
 				return true;
 			}
 		}
+
+		return false;
+	}
+
+	if([path hasPrefix:@"/User"]) {
+		if([path hasPrefix:@"/User/Library/Cydia"]
+		|| [path hasPrefix:@"/User/Library/Logs/Cydia"]
+		|| [path hasPrefix:@"/User/Library/SBSettings"]
+		|| [path hasPrefix:@"/User/Media/panguaxe"]) {
+			return true;
+		}
+
+		return false;
 	}
 
 	if([path hasPrefix:@"/etc"]) {
@@ -98,16 +137,29 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/etc/ssh"]) {
 			return true;
 		}
+
+		if([path isEqualToString:@"/etc/rc.d/substrate"]) {
+			return true;
+		}
+
+		return false;
 	}
 	
 	if([path hasPrefix:@"/var"]) {
 		if([path hasPrefix:@"/var/tmp"]) {
+			if([path hasPrefix:@"/var/tmp/substrate"]
+			|| [path hasPrefix:@"/var/tmp/Substrate"]) {
+				return true;
+			}
+
 			if([path isEqualToString:@"/var/tmp/cydia.log"]
 			|| [path isEqualToString:@"/var/tmp/syslog"]
 			|| [path isEqualToString:@"/var/tmp/slide.txt"]
 			|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]) {
 				return true;
 			}
+
+			return false;
 		}
 
 		if([path hasPrefix:@"/var/mobile"]) {
@@ -117,24 +169,36 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/var/mobile/Media/panguaxe"]) {
 				return true;
 			}
+
+			return false;
 		}
 
 		if([path hasPrefix:@"/var/cache/apt"]
 		|| [path hasPrefix:@"/var/lib"]
 		|| [path hasPrefix:@"/var/log/"]
 		|| [path hasPrefix:@"/var/stash"]
-		|| [path hasPrefix:@"/var/db/stash"]) {
+		|| [path hasPrefix:@"/var/db/stash"]
+		|| [path hasPrefix:@"/var/rocket_stashed"]) {
 			return true;
 		}
+		
+		return false;
 	}
 
 	if([path hasPrefix:@"/tmp"]) {
+		if([path hasPrefix:@"/tmp/substrate"]
+		|| [path hasPrefix:@"/tmp/Substrate"]) {
+			return true;
+		}
+
 		if([path isEqualToString:@"/tmp/cydia.log"]
 		|| [path isEqualToString:@"/tmp/syslog"]
 		|| [path isEqualToString:@"/tmp/slide.txt"]
 		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]) {
 			return true;
 		}
+
+		return false;
 	}
 
 	if([path hasPrefix:@"/Applications/"]
@@ -147,8 +211,12 @@ bool is_jb_path(NSString *path) {
 	|| [path hasPrefix:@"/bootstrap"]
 	|| [path hasPrefix:@"/panguaxe"]
 	|| [path hasPrefix:@"/taig"]
-	|| [path hasPrefix:@"/pguntether"]
-	|| [path hasPrefix:@"/System/Library/LaunchDaemons"]) {
+	|| [path hasPrefix:@"/pguntether"]) {
+		return true;
+	}
+
+	if([path containsString:@"cydia"]
+	|| [path containsString:@"Cydia"]) {
 		return true;
 	}
 
@@ -277,7 +345,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 %end
-*/
+
 
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
@@ -294,6 +362,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 %end
+*/
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
@@ -413,6 +482,16 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
+%hookf(int, setuid, uid_t uid) {
+	// Block setuid for root.
+	if(uid == 0) {
+		NSLog(@"[shadow] blocked setuid(0)");
+		return -1;
+	}
+
+	return %orig;
+}
+
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
@@ -465,12 +544,15 @@ bool is_path_sb_readonly(NSString *path) {
 %end
 
 %ctor {
+	NSLog(@"[shadow] loaded dylib");
+
 	NSBundle *bundle = [NSBundle mainBundle];
 
 	if(bundle != nil) {
 		NSString *executablePath = [bundle executablePath];
 
 		// Only hook for sandboxed user apps.
+		// Maybe todo: implement preferences and whitelist apps from hooks?
 		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
 			NSLog(@"[shadow] enabled hooks");
 			%init(sandboxed);
