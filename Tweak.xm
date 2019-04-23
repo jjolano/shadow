@@ -12,6 +12,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 bool is_jb_path(NSString *path) {
 	if([path hasPrefix:@"/Library"]) {
@@ -479,6 +480,26 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
+	return %orig;
+}
+
+%hookf(void *, dlopen, const char *path, int mode) {
+	NSLog(@"[shadow] dlopen: %s", path);
+	return %orig;
+}
+
+%hookf(void *, dlsym, void *handle, const char *symbol) {
+	NSLog(@"[shadow] dlsym: %s", symbol);
+	return %orig;
+}
+
+%hookf(int, setgid, gid_t gid) {
+	// Block setgid for root.
+	if(gid == 0) {
+		NSLog(@"[shadow] blocked setgid(0)");
+		return -1;
+	}
+
 	return %orig;
 }
 
