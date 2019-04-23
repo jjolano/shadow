@@ -15,6 +15,10 @@
 #include <dlfcn.h>
 
 bool is_jb_path(NSString *path) {
+	if(path == nil) {
+		return false;
+	}
+
 	if([path hasPrefix:@"/Library"]) {
 		if([path hasPrefix:@"/Library/MobileSubstrate"]
 		|| [path hasPrefix:@"/Library/substrate"]
@@ -35,7 +39,8 @@ bool is_jb_path(NSString *path) {
 	}
 
 	if([path hasPrefix:@"/usr"]) {
-		if([path hasPrefix:@"/usr/lib/log"]) {
+		if([path hasPrefix:@"/usr/lib/log"]
+		|| [path hasPrefix:@"/usr/local/lib/log"]) {
 			return false;
 		}
 
@@ -225,12 +230,20 @@ bool is_jb_path(NSString *path) {
 }
 
 bool is_jb_path_c(const char *path) {
+	if(path == NULL) {
+		return false;
+	}
+
 	return is_jb_path([NSString stringWithUTF8String:path]);
 }
 
 // In modern jailbreaks, the sandbox is intact so there is no need for restricting access...
 // This is more for compatibility in case this tweak actually works on old iOS versions.
 bool is_path_sb_readonly(NSString *path) {
+	if(path == nil) {
+		return false;
+	}
+
 	if([path hasPrefix:@"/private"]) {
 		if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
 		&& ![path hasPrefix:@"/private/var/mobile"]) {
@@ -410,6 +423,10 @@ bool is_path_sb_readonly(NSString *path) {
 
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
+	if(url == nil) {
+		return %orig;
+	}
+
 	if([[url scheme] isEqualToString:@"cydia"]
 	|| [[url scheme] isEqualToString:@"sileo"]) {
 		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
@@ -464,6 +481,10 @@ bool is_path_sb_readonly(NSString *path) {
 */
 
 %hookf(char *, getenv, const char *name) {
+	if(name == NULL) {
+		return %orig;
+	}
+
 	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
 	|| strcmp(name, "_MSSafeMode") == 0) {
 		NSLog(@"[shadow] blocked getenv for %s", name);
@@ -480,16 +501,6 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
-	return %orig;
-}
-
-%hookf(void *, dlopen, const char *path, int mode) {
-	NSLog(@"[shadow] dlopen: %s", path);
-	return %orig;
-}
-
-%hookf(void *, dlsym, void *handle, const char *symbol) {
-	NSLog(@"[shadow] dlsym: %s", symbol);
 	return %orig;
 }
 
@@ -516,7 +527,7 @@ bool is_path_sb_readonly(NSString *path) {
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
-	if(strcmp(path, "/") == 0) {
+	if(path != NULL && strcmp(path, "/") == 0) {
 		if(buf != NULL) {
 			// Ensure root is marked read-only.
 			buf->f_flags |= MNT_RDONLY;
@@ -554,8 +565,11 @@ bool is_path_sb_readonly(NSString *path) {
 		if(strstr(ret, "MobileSubstrate") != NULL
 		|| strstr(ret, "substrate") != NULL
 		|| strstr(ret, "substitute") != NULL
-		|| strstr(ret, "TweakInject") != NULL) {
-			return "";
+		|| strstr(ret, "TweakInject") != NULL
+		|| strstr(ret, "Unrestrict") != NULL
+		|| strstr(ret, "unrestrict") != NULL
+		|| strstr(ret, "libjailbreak") != NULL) {
+			return "/usr/lib/system/libdyld.dylib";
 		}
 	}
 
