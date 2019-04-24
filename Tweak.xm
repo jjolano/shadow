@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <spawn.h>
 
 const char DYLD_FAKE_NAME[] = "/usr/lib/system/libdyld.dylib";
 
@@ -469,7 +470,6 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-/*
 // Seems to be disabled in the SDK (12.2). Probably no point hooking this.
 %hookf(int, "system", const char *command) {
 	if(command == NULL) {
@@ -488,7 +488,16 @@ bool is_path_sb_readonly(NSString *path) {
 	NSLog(@"[shadow] blocked popen");
 	return NULL;
 }
-*/
+
+%hookf(int, posix_spawn, pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+	NSLog(@"[shadow] blocked posix_spawn");
+	return -1;
+}
+
+%hookf(int, posix_spawnp, pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+	NSLog(@"[shadow] blocked posix_spawnp");
+	return -1;
+}
 
 %hookf(char *, getenv, const char *name) {
 	if(name == NULL) {
@@ -528,6 +537,64 @@ bool is_path_sb_readonly(NSString *path) {
 	// Block setuid for root.
 	if(uid == 0) {
 		NSLog(@"[shadow] blocked setuid(0)");
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, setegid, gid_t gid) {
+	// Block setegid for root.
+	if(gid == 0) {
+		NSLog(@"[shadow] blocked setegid(0)");
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, seteuid, uid_t uid) {
+	// Block seteuid for root.
+	if(uid == 0) {
+		NSLog(@"[shadow] blocked seteuid(0)");
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(uid_t, getuid) {
+	// Return uid for mobile.
+	return 501;
+}
+
+%hookf(gid_t, getgid) {
+	// Return gid for mobile.
+	return 501;
+}
+
+%hookf(uid_t, geteuid) {
+	// Return uid for mobile.
+	return 501;
+}
+
+%hookf(uid_t, getegid) {
+	// Return gid for mobile.
+	return 501;
+}
+
+%hookf(int, setreuid, uid_t ruid, uid_t euid) {
+	// Block for root.
+	if(ruid == 0 || euid == 0) {
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, setregid, gid_t rgid, gid_t egid) {
+	// Block for root.
+	if(rgid == 0 || egid == 0) {
 		return -1;
 	}
 
