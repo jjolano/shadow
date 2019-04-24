@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <dlfcn.h>
 
+const char DYLD_FAKE_NAME[] = "/usr/lib/system/libdyld.dylib";
+
 bool is_jb_path(NSString *path) {
 	if(path == nil) {
 		return false;
@@ -76,7 +78,8 @@ bool is_jb_path(NSString *path) {
 				return true;
 			}
 
-			if([path isEqualToString:@"/private/etc/rc.d/substrate"]) {
+			if([path isEqualToString:@"/private/etc/rc.d/substrate"]
+			|| [path isEqualToString:@"/private/etc/motd"]) {
 				return true;
 			}
 
@@ -144,7 +147,8 @@ bool is_jb_path(NSString *path) {
 			return true;
 		}
 
-		if([path isEqualToString:@"/etc/rc.d/substrate"]) {
+		if([path isEqualToString:@"/etc/rc.d/substrate"]
+		|| [path isEqualToString:@"/etc/motd"]) {
 			return true;
 		}
 
@@ -207,6 +211,10 @@ bool is_jb_path(NSString *path) {
 		return false;
 	}
 
+	if([path isEqualToString:@"/.file"]) {
+		return false;
+	}
+
 	if([path hasPrefix:@"/Applications/"]
 	|| [path hasPrefix:@"/bin"]
 	|| [path hasPrefix:@"/sbin"]
@@ -217,7 +225,8 @@ bool is_jb_path(NSString *path) {
 	|| [path hasPrefix:@"/bootstrap"]
 	|| [path hasPrefix:@"/panguaxe"]
 	|| [path hasPrefix:@"/taig"]
-	|| [path hasPrefix:@"/pguntether"]) {
+	|| [path hasPrefix:@"/pguntether"]
+	|| [path hasPrefix:@"/OsirisJB"]) {
 		return true;
 	}
 
@@ -428,7 +437,8 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	if([[url scheme] isEqualToString:@"cydia"]
-	|| [[url scheme] isEqualToString:@"sileo"]) {
+	|| [[url scheme] isEqualToString:@"sileo"]
+	|| [[url scheme] isEqualToString:@"zbra"]) {
 		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
 		return NO;
 	}
@@ -527,7 +537,7 @@ bool is_path_sb_readonly(NSString *path) {
 %hookf(int, statfs, const char *path, struct statfs *buf) {
 	int ret = %orig;
 
-	if(path != NULL && strcmp(path, "/") == 0) {
+	if(ret == 0 && strcmp(path, "/") == 0) {
 		if(buf != NULL) {
 			// Ensure root is marked read-only.
 			buf->f_flags |= MNT_RDONLY;
@@ -569,7 +579,7 @@ bool is_path_sb_readonly(NSString *path) {
 		|| strstr(ret, "Unrestrict") != NULL
 		|| strstr(ret, "unrestrict") != NULL
 		|| strstr(ret, "libjailbreak") != NULL) {
-			return "/usr/lib/system/libdyld.dylib";
+			return DYLD_FAKE_NAME;
 		}
 	}
 
