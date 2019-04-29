@@ -388,6 +388,27 @@ bool is_path_sb_readonly(NSString *path) {
 %end
 */
 
+%hook NSBundle
++ (NSBundle *)bundleWithIdentifier:(NSString *)identifier {
+	if([identifier isEqualToString:@"com.saurik.Cydia"]
+	|| [identifier isEqualToString:@"com.coolstar.sileo"]) {
+		NSLog(@"[shadow] blocked bundleWithIdentifier with identifier %@", identifier);
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)bundleWithPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked bundleWithPath with path %@", path);
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_jb_path(path)) {
@@ -427,6 +448,134 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)createSymbolicLinkAtPath:(NSString *)path
+	withDestinationPath:(NSString *)destPath
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(destPath)) {
+		NSLog(@"[shadow] blocked createSymbolicLinkAtPath with destPath %@", destPath);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)linkItemAtPath:(NSString *)srcPath
+	toPath:(NSString *)dstPath
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(dstPath)) {
+		NSLog(@"[shadow] blocked linkItemAtPath with dstPath %@", dstPath);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked destinationOfSymbolicLinkAtPath with path %@", path);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked subpathsAtPath with path %@", path);
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked subpathsOfDirectoryAtPath with path %@", path);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked enumeratorAtPath with path %@", path);
+		return %orig(NSHomeDirectory());
+	}
+
+	return %orig;
+}
+
+- (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked attributesOfItemAtPath with path %@", path);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (NSString *)displayNameAtPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked displayNameAtPath with path %@", path);
+		return path;
+	}
+
+	return %orig;
+}
+
+- (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked componentsToDisplayForPath with path %@", path);
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path
+	error:(NSError * _Nullable *)error {
+	if(is_jb_path(path)) {
+		NSLog(@"[shadow] blocked contentsOfDirectoryAtPath with path %@", path);
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
 	return %orig;
 }
 %end
@@ -645,7 +794,8 @@ bool is_path_sb_readonly(NSString *path) {
 		|| strstr(ret, "TweakInject") != NULL
 		|| strstr(ret, "Unrestrict") != NULL
 		|| strstr(ret, "unrestrict") != NULL
-		|| strstr(ret, "libjailbreak") != NULL) {
+		|| strstr(ret, "libjailbreak") != NULL
+		|| strstr(ret, "cycript") != NULL) {
 			return DYLD_FAKE_NAME;
 		}
 	}
@@ -656,8 +806,6 @@ bool is_path_sb_readonly(NSString *path) {
 %end
 
 %ctor {
-	NSLog(@"[shadow] loaded dylib");
-
 	NSBundle *bundle = [NSBundle mainBundle];
 
 	if(bundle != nil) {
