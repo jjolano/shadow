@@ -133,6 +133,17 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/private/var/tweak"]) {
 				return true;
 			}
+
+			// rootlessJB
+			if([path hasPrefix:@"/private/var/LIB"]
+			|| [path hasPrefix:@"/private/var/ulb"]
+			|| [path hasPrefix:@"/private/var/bin"]
+			|| [path hasPrefix:@"/private/var/sbin"]
+			|| [path hasPrefix:@"/private/var/profile"]
+			|| [path hasPrefix:@"/private/var/motd"]
+			|| [path hasPrefix:@"/private/var/dropbear"]) {
+				return true;
+			}
 		}
 
 		return false;
@@ -207,6 +218,17 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/tweak"]) {
 			return true;
 		}
+
+		// rootlessJB
+		if([path hasPrefix:@"/var/LIB"]
+		|| [path hasPrefix:@"/var/ulb"]
+		|| [path hasPrefix:@"/var/bin"]
+		|| [path hasPrefix:@"/var/sbin"]
+		|| [path hasPrefix:@"/var/profile"]
+		|| [path hasPrefix:@"/var/motd"]
+		|| [path hasPrefix:@"/var/dropbear"]) {
+			return true;
+		}
 		
 		return false;
 	}
@@ -231,7 +253,8 @@ bool is_jb_path(NSString *path) {
 		return false;
 	}
 
-	if([path isEqualToString:@"/authorize.sh"]) {
+	if([path isEqualToString:@"/authorize.sh"]
+	|| [path isEqualToString:@"/RWTEST"]) {
 		return true;
 	}
 
