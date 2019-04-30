@@ -34,7 +34,9 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/Library/Caches"]
 		|| [path hasPrefix:@"/Library/ControlCenter"]
 		|| [path hasPrefix:@"/Library/Frameworks"]
-		|| [path hasPrefix:@"/Library/Karen"]) {
+		|| [path hasPrefix:@"/Library/Karen"]
+		|| [path hasPrefix:@"/Library/Cylinder"]
+		|| [path hasPrefix:@"/Library/Zeppelin"]) {
 			return true;
 		}
 
@@ -51,7 +53,10 @@ bool is_jb_path(NSString *path) {
 			if([path hasPrefix:@"/usr/share/dpkg"]
 			|| [path hasPrefix:@"/usr/share/bigboss"]
 			|| [path hasPrefix:@"/usr/share/jailbreak"]
-			|| [path hasPrefix:@"/usr/share/entitlements"]) {
+			|| [path hasPrefix:@"/usr/share/entitlements"]
+			|| [path hasPrefix:@"/usr/share/gnupg"]
+			|| [path hasPrefix:@"/usr/share/tabset"]
+			|| [path hasPrefix:@"/usr/share/terminfo"]) {
 				return true;
 			}
 
@@ -75,7 +80,11 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/private/etc/apt"]
 			|| [path hasPrefix:@"/private/etc/dpkg"]
 			|| [path hasPrefix:@"/private/etc/dropbear"]
-			|| [path hasPrefix:@"/private/etc/ssh"]) {
+			|| [path hasPrefix:@"/private/etc/ssh"]
+			|| [path hasPrefix:@"/private/etc/pam.d"]
+			|| [path hasPrefix:@"/private/etc/profile"]
+			|| [path hasPrefix:@"/private/etc/ssl"]
+			|| [path hasPrefix:@"/private/etc/default"]) {
 				return true;
 			}
 
@@ -120,7 +129,8 @@ bool is_jb_path(NSString *path) {
 			|| [path hasPrefix:@"/private/var/log/"]
 			|| [path hasPrefix:@"/private/var/stash"]
 			|| [path hasPrefix:@"/private/var/db/stash"]
-			|| [path hasPrefix:@"/private/var/rocket_stashed"]) {
+			|| [path hasPrefix:@"/private/var/rocket_stashed"]
+			|| [path hasPrefix:@"/private/var/tweak"]) {
 				return true;
 			}
 		}
@@ -144,7 +154,11 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/etc/apt"]
 		|| [path hasPrefix:@"/etc/dpkg"]
 		|| [path hasPrefix:@"/etc/dropbear"]
-		|| [path hasPrefix:@"/etc/ssh"]) {
+		|| [path hasPrefix:@"/etc/ssh"]
+		|| [path hasPrefix:@"/etc/pam.d"]
+		|| [path hasPrefix:@"/etc/profile"]
+		|| [path hasPrefix:@"/etc/ssl"]
+		|| [path hasPrefix:@"/etc/default"]) {
 			return true;
 		}
 
@@ -189,7 +203,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/var/log/"]
 		|| [path hasPrefix:@"/var/stash"]
 		|| [path hasPrefix:@"/var/db/stash"]
-		|| [path hasPrefix:@"/var/rocket_stashed"]) {
+		|| [path hasPrefix:@"/var/rocket_stashed"]
+		|| [path hasPrefix:@"/var/tweak"]) {
 			return true;
 		}
 		
@@ -214,6 +229,10 @@ bool is_jb_path(NSString *path) {
 
 	if([path isEqualToString:@"/.file"]) {
 		return false;
+	}
+
+	if([path isEqualToString:@"/authorize.sh"]) {
+		return true;
 	}
 
 	if([path hasPrefix:@"/Applications/"]
@@ -792,10 +811,9 @@ bool is_path_sb_readonly(NSString *path) {
 		|| strstr(ret, "substrate") != NULL
 		|| strstr(ret, "substitute") != NULL
 		|| strstr(ret, "TweakInject") != NULL
-		|| strstr(ret, "Unrestrict") != NULL
-		|| strstr(ret, "unrestrict") != NULL
 		|| strstr(ret, "libjailbreak") != NULL
-		|| strstr(ret, "cycript") != NULL) {
+		|| strstr(ret, "cycript") != NULL
+		|| strstr(ret, "SBInject") != NULL) {
 			return DYLD_FAKE_NAME;
 		}
 	}
