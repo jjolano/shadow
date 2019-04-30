@@ -849,10 +849,10 @@ bool is_path_sb_readonly(NSString *path) {
 %ctor {
 	NSBundle *bundle = [NSBundle mainBundle];
 
-	if(bundle != nil) {
+	if(bundle != nil && ![[bundle bundleIdentifier] hasPrefix:@"com.apple"]) {
 		NSString *executablePath = [bundle executablePath];
 
-		// Only hook for sandboxed user apps.
+		// Only hook for non-Apple sandboxed user apps.
 		// Maybe todo: implement preferences and whitelist apps from hooks?
 		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
 			NSLog(@"[shadow] enabled hooks");
