@@ -1,5 +1,5 @@
 // Shadow by jjolano
-// Simple jailbreak detection blocker tested on iOS 12.1.2.
+// Simple jailbreak detection blocker tested on iOS 12.1.2 (unc0ver).
 
 #include <Foundation/Foundation.h>
 #include <UIKit/UIKit.h>
@@ -18,7 +18,7 @@
 const char DYLD_FAKE_NAME[] = "/usr/lib/system/libdyld.dylib";
 int DYLD_FAKE_COUNT = -1;
 
-bool is_jb_path(NSString *path) {
+inline bool is_jb_path(NSString *path) {
 	if(path == nil) {
 		return false;
 	}
@@ -517,17 +517,6 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-%hookf(int, open, const char *pathname, int flags) {
-	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "TweakInject") == NULL && strstr(pathname, "DynamicLibraries") == NULL) {
-			NSLog(@"[shadow] blocked open: %s", pathname);
-			return -1;
-		}
-	}
-
-	return %orig;
-}
-
 %hookf(DIR *, opendir, const char *name) {
 	if(is_jb_path_c(name)) {
 		NSLog(@"[shadow] blocked opendir: %s", name);
@@ -625,7 +614,8 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(ret, "TweakInject") != NULL
 		|| strstr(ret, "libjailbreak") != NULL
 		|| strstr(ret, "cycript") != NULL
-		|| strstr(ret, "SBInject") != NULL) {
+		|| strstr(ret, "SBInject") != NULL
+		|| strstr(ret, "pspawn") != NULL) {
 			return DYLD_FAKE_NAME;
 		}
 	}
