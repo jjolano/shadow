@@ -507,7 +507,7 @@ bool is_jb_path_c(const char *path) {
 
 %hookf(int, access, const char *pathname, int mode) {
 	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "TweakInject") == NULL || strstr(pathname, "DynamicLibraries") == NULL) {
+		if(strstr(pathname, "DynamicLibraries") == NULL) {
 			NSLog(@"[shadow] blocked access: %s", pathname);
 			return -1;
 		}
@@ -519,7 +519,7 @@ bool is_jb_path_c(const char *path) {
 
 %hookf(int, open, const char *pathname, int flags) {
 	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "TweakInject") == NULL || strstr(pathname, "DynamicLibraries") == NULL) {
+		if(strstr(pathname, "TweakInject") == NULL && strstr(pathname, "DynamicLibraries") == NULL) {
 			NSLog(@"[shadow] blocked open: %s", pathname);
 			return -1;
 		}
