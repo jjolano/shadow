@@ -16,6 +16,7 @@
 #include <spawn.h>
 
 const char DYLD_FAKE_NAME[] = "/usr/lib/system/libdyld.dylib";
+int DYLD_FAKE_COUNT = -1;
 
 bool is_jb_path(NSString *path) {
 	if(path == nil) {
@@ -36,7 +37,8 @@ bool is_jb_path(NSString *path) {
 		|| [path hasPrefix:@"/Library/Frameworks"]
 		|| [path hasPrefix:@"/Library/Karen"]
 		|| [path hasPrefix:@"/Library/Cylinder"]
-		|| [path hasPrefix:@"/Library/Zeppelin"]) {
+		|| [path hasPrefix:@"/Library/Zeppelin"]
+		|| [path hasPrefix:@"/Library/CustomFonts"]) {
 			return true;
 		}
 
@@ -269,7 +271,8 @@ bool is_jb_path(NSString *path) {
 	|| [path hasPrefix:@"/panguaxe"]
 	|| [path hasPrefix:@"/taig"]
 	|| [path hasPrefix:@"/pguntether"]
-	|| [path hasPrefix:@"/OsirisJB"]) {
+	|| [path hasPrefix:@"/OsirisJB"]
+	|| [path hasPrefix:@"/chimera"]) {
 		return true;
 	}
 
@@ -289,147 +292,9 @@ bool is_jb_path_c(const char *path) {
 	return is_jb_path([NSString stringWithUTF8String:path]);
 }
 
-// In modern jailbreaks, the sandbox is intact so there is no need for restricting access...
-// This is more for compatibility in case this tweak actually works on old iOS versions.
-bool is_path_sb_readonly(NSString *path) {
-	if(path == nil) {
-		return false;
-	}
-
-	if([path hasPrefix:@"/private"]) {
-		if(![path hasPrefix:@"/private/var/MobileDevice/ProvisioningProfiles"]
-		&& ![path hasPrefix:@"/private/var/mobile"]) {
-			return true;
-		}
-	}
-
-	if([path hasPrefix:@"/var"]) {
-		if(![path hasPrefix:@"/var/MobileDevice/ProvisioningProfiles"]
-		&& ![path hasPrefix:@"/var/mobile"]) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 %group sandboxed
 
 /*
-%hook NSData
-- (BOOL)writeToFile:(NSString *)path
-	atomically:(BOOL)useAuxiliaryFile {
-	
-	if(is_path_sb_readonly(path)) {
-		NSLog(@"[shadow] blocked writeToFile with path %@", path);
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)writeToFile:(NSString *)path
-	options:(NSDataWritingOptions)writeOptionsMask
-	error:(NSError * _Nullable *)errorPtr {
-	
-	if(is_path_sb_readonly(path)) {
-		NSLog(@"[shadow] blocked writeToFile with path %@", path);
-
-		if(errorPtr != NULL) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)writeToURL:(NSURL *)url
-	atomically:(BOOL)useAuxiliaryFile {
-	
-	if(is_path_sb_readonly([url path])) {
-		NSLog(@"[shadow] blocked writeToFile with path %@", [url path]);
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)writeToURL:(NSURL *)url
-	options:(NSDataWritingOptions)writeOptionsMask
-	error:(NSError * _Nullable *)errorPtr {
-	
-	if(is_path_sb_readonly([url path])) {
-		NSLog(@"[shadow] blocked writeToFile with path %@", [url path]);
-
-		if(errorPtr != nil) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-%end
-
-%hook NSString
-- (BOOL)writeToFile:(NSString *)path
-	atomically:(BOOL)useAuxiliaryFile
-	encoding:(NSStringEncoding)enc
-	error:(NSError * _Nullable *)error {
-	
-	if(is_path_sb_readonly(path)) {
-		NSLog(@"[shadow] blocked writeToFile with path %@", path);
-
-		if(error != nil) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)writeToURL:(NSURL *)url
-	atomically:(BOOL)useAuxiliaryFile
-	encoding:(NSStringEncoding)enc
-	error:(NSError * _Nullable *)error {
-	
-	if(is_path_sb_readonly([url path])) {
-		NSLog(@"[shadow] blocked writeToURL with path %@", [url path]);
-
-		if(error != nil) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-%end
-
-
-%hook NSURL
-- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
-	if(is_jb_path([self path])) {
-		NSLog(@"[shadow] blocked checkResourceIsReachableAndReturnError with path %@", [self path]);
-
-		if(error != nil) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-%end
-*/
-
 %hook NSBundle
 + (NSBundle *)bundleWithIdentifier:(NSString *)identifier {
 	if([identifier isEqualToString:@"com.saurik.Cydia"]
@@ -450,6 +315,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 %end
+*/
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
@@ -473,7 +339,7 @@ bool is_path_sb_readonly(NSString *path) {
 	return %orig;
 }
 
-- (BOOL)isReadableFileAtPath:(NSString *)path {
+/*- (BOOL)isReadableFileAtPath:(NSString *)path {
 	if(is_jb_path(path)) {
 		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
 		return NO;
@@ -619,7 +485,7 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	return %orig;
-}
+}*/
 %end
 
 %hook UIApplication
@@ -641,13 +507,24 @@ bool is_path_sb_readonly(NSString *path) {
 
 %hookf(int, access, const char *pathname, int mode) {
 	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "DynamicLibraries") == NULL) {
+		if(strstr(pathname, "TweakInject") == NULL || strstr(pathname, "DynamicLibraries") == NULL) {
 			NSLog(@"[shadow] blocked access: %s", pathname);
 			return -1;
 		}
 	}
 
 	// NSLog(@"[shadow] allowed access: %s", pathname);
+	return %orig;
+}
+
+%hookf(int, open, const char *pathname, int flags) {
+	if(is_jb_path_c(pathname)) {
+		if(strstr(pathname, "TweakInject") == NULL || strstr(pathname, "DynamicLibraries") == NULL) {
+			NSLog(@"[shadow] blocked open: %s", pathname);
+			return -1;
+		}
+	}
+
 	return %orig;
 }
 
@@ -659,35 +536,6 @@ bool is_path_sb_readonly(NSString *path) {
 
 	// NSLog(@"[shadow] allowed opendir: %s", name);
 	return %orig;
-}
-
-// Seems to be disabled in the SDK (12.2). Probably no point hooking this.
-%hookf(int, "system", const char *command) {
-	if(command == NULL) {
-		return 0;
-	}
-
-	return %orig;
-}
-
-%hookf(pid_t, fork) {
-	NSLog(@"[shadow] blocked fork");
-	return -1;
-}
-
-%hookf(FILE *, popen, const char *command, const char *type) {
-	NSLog(@"[shadow] blocked popen");
-	return NULL;
-}
-
-%hookf(int, posix_spawn, pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
-	NSLog(@"[shadow] blocked posix_spawn");
-	return -1;
-}
-
-%hookf(int, posix_spawnp, pid_t *pid, const char *path, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
-	NSLog(@"[shadow] blocked posix_spawnp");
-	return -1;
 }
 
 %hookf(char *, getenv, const char *name) {
@@ -711,84 +559,6 @@ bool is_path_sb_readonly(NSString *path) {
 	}
 
 	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
-	return %orig;
-}
-
-%hookf(int, setgid, gid_t gid) {
-	// Block setgid for root.
-	if(gid == 0) {
-		NSLog(@"[shadow] blocked setgid(0)");
-		return -1;
-	}
-
-	return %orig;
-}
-
-%hookf(int, setuid, uid_t uid) {
-	// Block setuid for root.
-	if(uid == 0) {
-		NSLog(@"[shadow] blocked setuid(0)");
-		return -1;
-	}
-
-	return %orig;
-}
-
-%hookf(int, setegid, gid_t gid) {
-	// Block setegid for root.
-	if(gid == 0) {
-		NSLog(@"[shadow] blocked setegid(0)");
-		return -1;
-	}
-
-	return %orig;
-}
-
-%hookf(int, seteuid, uid_t uid) {
-	// Block seteuid for root.
-	if(uid == 0) {
-		NSLog(@"[shadow] blocked seteuid(0)");
-		return -1;
-	}
-
-	return %orig;
-}
-
-%hookf(uid_t, getuid) {
-	// Return uid for mobile.
-	return 501;
-}
-
-%hookf(gid_t, getgid) {
-	// Return gid for mobile.
-	return 501;
-}
-
-%hookf(uid_t, geteuid) {
-	// Return uid for mobile.
-	return 501;
-}
-
-%hookf(uid_t, getegid) {
-	// Return gid for mobile.
-	return 501;
-}
-
-%hookf(int, setreuid, uid_t ruid, uid_t euid) {
-	// Block for root.
-	if(ruid == 0 || euid == 0) {
-		return -1;
-	}
-
-	return %orig;
-}
-
-%hookf(int, setregid, gid_t rgid, gid_t egid) {
-	// Block for root.
-	if(rgid == 0 || egid == 0) {
-		return -1;
-	}
-
 	return %orig;
 }
 
@@ -825,6 +595,25 @@ bool is_path_sb_readonly(NSString *path) {
 	// NSLog(@"[shadow] allowed stat with path %s", pathname);
 	return %orig;
 }
+
+/*
+%hookf(bool, dlopen_preflight, const char* path) {
+	if(is_jb_path_c(path)) {
+		NSLog(@"[shadow] blocked dlopen_preflight with path %s", path);
+		return false;
+	}
+
+	return %orig;
+}
+
+%hookf(uint32_t, _dyld_image_count) {
+	if(DYLD_FAKE_COUNT != -1) {
+		return DYLD_FAKE_COUNT;
+	}
+
+	return %orig;
+}
+*/
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
 	const char *ret = %orig;

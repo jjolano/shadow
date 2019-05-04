@@ -1,7 +1,8 @@
 include $(THEOS)/makefiles/common.mk
 
-ARCHS := armv7 arm64 arm64e
+ARCHS := arm64 arm64e
 TWEAK_NAME = Shadow
+Shadow_CFLAGS = -fobjc-arc
 Shadow_FILES = Tweak.xm
 
 include $(THEOS_MAKE_PATH)/tweak.mk
