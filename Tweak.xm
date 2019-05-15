@@ -199,12 +199,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
-		// Workaround - this hook seems to break iPadStatusBar loading in apps..
-		if(strstr(pathname, "iPadStatusBar")) {
-			return %orig;
-		}
+	NSString *path = [NSString stringWithUTF8String:pathname];
 
+	if([path containsString:@"DynamicLibraries"]) {
+		// Workaround for some tweak loading issues :(
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked access: %s", pathname);
 		#endif
