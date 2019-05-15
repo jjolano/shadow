@@ -14,313 +14,161 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <spawn.h>
+#include <errno.h>
 
-const char DYLD_FAKE_NAME[] = "/usr/lib/system/libdyld.dylib";
-int DYLD_FAKE_COUNT = -1;
+NSMutableDictionary *jb_map = nil;
 
-inline bool is_jb_path(NSString *path) {
-	if(path == nil) {
-		return false;
-	}
+void init_jb_map() {
+	NSMutableDictionary *jb_map_etc = [[NSMutableDictionary alloc] init];
 
-	if([path hasPrefix:@"/Library"]) {
-		if([path hasPrefix:@"/Library/MobileSubstrate"]
-		|| [path hasPrefix:@"/Library/substrate"]
-		|| [path hasPrefix:@"/Library/TweakInject"]
-		|| [path hasPrefix:@"/Library/LaunchDaemons"]
-		|| [path hasPrefix:@"/Library/PreferenceBundles"]
-		|| [path hasPrefix:@"/Library/PreferenceLoader"]
-		|| [path hasPrefix:@"/Library/Switches"]
-		|| [path hasPrefix:@"/Library/dpkg"]
-		|| [path hasPrefix:@"/Library/Caches"]
-		|| [path hasPrefix:@"/Library/ControlCenter"]
-		|| [path hasPrefix:@"/Library/Frameworks"]
-		|| [path hasPrefix:@"/Library/Karen"]
-		|| [path hasPrefix:@"/Library/Cylinder"]
-		|| [path hasPrefix:@"/Library/Zeppelin"]
-		|| [path hasPrefix:@"/Library/CustomFonts"]) {
-			return true;
-		}
+	[jb_map_etc setValue:@YES forKey:@"/alternatives"];
+	[jb_map_etc setValue:@YES forKey:@"/apt"];
+	[jb_map_etc setValue:@YES forKey:@"/dpkg"];
+	[jb_map_etc setValue:@YES forKey:@"/dropbear"];
+	[jb_map_etc setValue:@YES forKey:@"/ssh"];
+	[jb_map_etc setValue:@YES forKey:@"/pam.d"];
+	[jb_map_etc setValue:@YES forKey:@"/profile"];
+	[jb_map_etc setValue:@YES forKey:@"/ssl"];
+	[jb_map_etc setValue:@YES forKey:@"/default"];
+	[jb_map_etc setValue:@YES forKey:@"/rc.d/substrate"];
+	[jb_map_etc setValue:@YES forKey:@"/motd"];
 
-		return false;
-	}
+	NSMutableDictionary *jb_map_tmp = [[NSMutableDictionary alloc] init];
 
-	if([path hasPrefix:@"/usr"]) {
-		if([path hasPrefix:@"/usr/lib/log"]
-		|| [path hasPrefix:@"/usr/local/lib/log"]) {
-			return false;
-		}
+	[jb_map_tmp setValue:@YES forKey:@"/substrate"];
+	[jb_map_tmp setValue:@YES forKey:@"/Substrate"];
+	[jb_map_tmp setValue:@YES forKey:@"/cydia.log"];
+	[jb_map_tmp setValue:@YES forKey:@"/syslog"];
+	[jb_map_tmp setValue:@YES forKey:@"/slide.txt"];
+	[jb_map_tmp setValue:@YES forKey:@"/amfidebilitate.out"];
 
-		if([path hasPrefix:@"/usr/share"]) {
-			if([path hasPrefix:@"/usr/share/dpkg"]
-			|| [path hasPrefix:@"/usr/share/bigboss"]
-			|| [path hasPrefix:@"/usr/share/jailbreak"]
-			|| [path hasPrefix:@"/usr/share/entitlements"]
-			|| [path hasPrefix:@"/usr/share/gnupg"]
-			|| [path hasPrefix:@"/usr/share/tabset"]
-			|| [path hasPrefix:@"/usr/share/terminfo"]) {
-				return true;
-			}
-
-			return false;
-		}
-
-		if([path hasPrefix:@"/usr/bin"]
-		|| [path hasPrefix:@"/usr/sbin"]
-		|| [path hasPrefix:@"/usr/lib"]
-		|| [path hasPrefix:@"/usr/local"]
-		|| [path hasPrefix:@"/usr/include"]) {
-			return true;
-		}
-
-		return false;
-	}
-
-	if([path hasPrefix:@"/private"]) {
-		if([path hasPrefix:@"/private/etc"]) {
-			if([path hasPrefix:@"/private/etc/alternatives"]
-			|| [path hasPrefix:@"/private/etc/apt"]
-			|| [path hasPrefix:@"/private/etc/dpkg"]
-			|| [path hasPrefix:@"/private/etc/dropbear"]
-			|| [path hasPrefix:@"/private/etc/ssh"]
-			|| [path hasPrefix:@"/private/etc/pam.d"]
-			|| [path hasPrefix:@"/private/etc/profile"]
-			|| [path hasPrefix:@"/private/etc/ssl"]
-			|| [path hasPrefix:@"/private/etc/default"]) {
-				return true;
-			}
-
-			if([path isEqualToString:@"/private/etc/rc.d/substrate"]
-			|| [path isEqualToString:@"/private/etc/motd"]) {
-				return true;
-			}
-
-			return false;
-		}
-
-		if([path hasPrefix:@"/private/var"]) {
-			if([path hasPrefix:@"/private/var/tmp"]) {
-				if([path hasPrefix:@"/private/var/tmp/substrate"]
-				|| [path hasPrefix:@"/private/var/tmp/Substrate"]) {
-					return true;
-				}
-
-				if([path isEqualToString:@"/private/var/tmp/cydia.log"]
-				|| [path isEqualToString:@"/private/var/tmp/syslog"]
-				|| [path isEqualToString:@"/private/var/tmp/slide.txt"]
-				|| [path isEqualToString:@"/private/var/tmp/amfidebilitate.out"]) {
-					return true;
-				}
-
-				return false;
-			}
-
-			if([path hasPrefix:@"/private/var/mobile"]) {
-				if([path hasPrefix:@"/private/var/mobile/Library/Cydia"]
-				|| [path hasPrefix:@"/private/var/mobile/Library/Logs/Cydia"]
-				|| [path hasPrefix:@"/private/var/mobile/Library/SBSettings"]
-				|| [path hasPrefix:@"/private/var/mobile/Media/panguaxe"]) {
-					return true;
-				}
-
-				return false;
-			}
-
-			if([path hasPrefix:@"/private/var/cache/apt"]
-			|| [path hasPrefix:@"/private/var/lib"]
-			|| [path hasPrefix:@"/private/var/log/"]
-			|| [path hasPrefix:@"/private/var/stash"]
-			|| [path hasPrefix:@"/private/var/db/stash"]
-			|| [path hasPrefix:@"/private/var/rocket_stashed"]
-			|| [path hasPrefix:@"/private/var/tweak"]) {
-				return true;
-			}
-
-			// rootlessJB
-			if([path hasPrefix:@"/private/var/LIB"]
-			|| [path hasPrefix:@"/private/var/ulb"]
-			|| [path hasPrefix:@"/private/var/bin"]
-			|| [path hasPrefix:@"/private/var/sbin"]
-			|| [path hasPrefix:@"/private/var/profile"]
-			|| [path hasPrefix:@"/private/var/motd"]
-			|| [path hasPrefix:@"/private/var/dropbear"]) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	if([path hasPrefix:@"/User"]) {
-		if([path hasPrefix:@"/User/Library/Cydia"]
-		|| [path hasPrefix:@"/User/Library/Logs/Cydia"]
-		|| [path hasPrefix:@"/User/Library/SBSettings"]
-		|| [path hasPrefix:@"/User/Media/panguaxe"]) {
-			return true;
-		}
-
-		return false;
-	}
-
-	if([path hasPrefix:@"/etc"]) {
-		if([path hasPrefix:@"/etc/alternatives"]
-		|| [path hasPrefix:@"/etc/apt"]
-		|| [path hasPrefix:@"/etc/dpkg"]
-		|| [path hasPrefix:@"/etc/dropbear"]
-		|| [path hasPrefix:@"/etc/ssh"]
-		|| [path hasPrefix:@"/etc/pam.d"]
-		|| [path hasPrefix:@"/etc/profile"]
-		|| [path hasPrefix:@"/etc/ssl"]
-		|| [path hasPrefix:@"/etc/default"]) {
-			return true;
-		}
-
-		if([path isEqualToString:@"/etc/rc.d/substrate"]
-		|| [path isEqualToString:@"/etc/motd"]) {
-			return true;
-		}
-
-		return false;
-	}
+	NSMutableDictionary *jb_map_mobile = [[NSMutableDictionary alloc] init];
 	
-	if([path hasPrefix:@"/var"]) {
-		if([path hasPrefix:@"/var/tmp"]) {
-			if([path hasPrefix:@"/var/tmp/substrate"]
-			|| [path hasPrefix:@"/var/tmp/Substrate"]) {
-				return true;
+	[jb_map_mobile setValue:@YES forKey:@"/Library/Cydia"];
+	[jb_map_mobile setValue:@YES forKey:@"/Library/Logs/Cydia"];
+	[jb_map_mobile setValue:@YES forKey:@"/Library/SBSettings"];
+	[jb_map_mobile setValue:@YES forKey:@"/Media/panguaxe"];
+
+	NSMutableDictionary *jb_map_var = [[NSMutableDictionary alloc] init];
+	
+	[jb_map_var setValue:jb_map_tmp forKey:@"/tmp"];
+	[jb_map_var setValue:jb_map_mobile forKey:@"/mobile"];
+	[jb_map_var setValue:@YES forKey:@"/cache/apt"];
+	[jb_map_var setValue:@YES forKey:@"/lib"];
+	[jb_map_var setValue:@YES forKey:@"/log/"];
+	[jb_map_var setValue:@YES forKey:@"/stash"];
+	[jb_map_var setValue:@YES forKey:@"/db/stash"];
+	[jb_map_var setValue:@YES forKey:@"/rocket_stashed"];
+	[jb_map_var setValue:@YES forKey:@"/tweak"];
+	[jb_map_var setValue:@YES forKey:@"/LIB"];
+	[jb_map_var setValue:@YES forKey:@"/ulb"];
+	[jb_map_var setValue:@YES forKey:@"/bin"];
+	[jb_map_var setValue:@YES forKey:@"/sbin"];
+	[jb_map_var setValue:@YES forKey:@"/profile"];
+	[jb_map_var setValue:@YES forKey:@"/motd"];
+	[jb_map_var setValue:@YES forKey:@"/dropbear"];
+
+	NSMutableDictionary *jb_map_library = [[NSMutableDictionary alloc] init];
+
+	[jb_map_library setValue:@YES forKey:@"/MobileSubstrate"];
+	[jb_map_library setValue:@YES forKey:@"/substrate"];
+	[jb_map_library setValue:@YES forKey:@"/TweakInject"];
+	[jb_map_library setValue:@YES forKey:@"/LaunchDaemons"];
+	[jb_map_library setValue:@YES forKey:@"/PreferenceBundles"];
+	[jb_map_library setValue:@YES forKey:@"/PreferenceLoader"];
+	[jb_map_library setValue:@YES forKey:@"/Switches"];
+	[jb_map_library setValue:@YES forKey:@"/dpkg"];
+	[jb_map_library setValue:@YES forKey:@"/Caches"];
+	[jb_map_library setValue:@YES forKey:@"/ControlCenter"];
+	[jb_map_library setValue:@YES forKey:@"/Frameworks"];
+	[jb_map_library setValue:@YES forKey:@"/Karen"];
+	[jb_map_library setValue:@YES forKey:@"/Cylinder"];
+	[jb_map_library setValue:@YES forKey:@"/Zeppelin"];
+	[jb_map_library setValue:@YES forKey:@"/CustomFonts"];
+
+	NSMutableDictionary *jb_map_usr_share = [[NSMutableDictionary alloc] init];
+
+	[jb_map_usr_share setValue:@YES forKey:@"/dpkg"];
+	[jb_map_usr_share setValue:@YES forKey:@"/bigboss"];
+	[jb_map_usr_share setValue:@YES forKey:@"/jailbreak"];
+	[jb_map_usr_share setValue:@YES forKey:@"/entitlements"];
+	[jb_map_usr_share setValue:@YES forKey:@"/gnupg"];
+	[jb_map_usr_share setValue:@YES forKey:@"/tabset"];
+	[jb_map_usr_share setValue:@YES forKey:@"/terminfo"];
+
+	NSMutableDictionary *jb_map_usr = [[NSMutableDictionary alloc] init];
+
+	[jb_map_usr setValue:@NO forKey:@"/lib/log"];
+	[jb_map_usr setValue:@NO forKey:@"/local/lib/log"];
+	[jb_map_usr setValue:jb_map_usr_share forKey:@"/share"];
+	[jb_map_usr setValue:@YES forKey:@"/bin"];
+	[jb_map_usr setValue:@YES forKey:@"/sbin"];
+	[jb_map_usr setValue:@YES forKey:@"/lib"];
+	[jb_map_usr setValue:@YES forKey:@"/local"];
+	[jb_map_usr setValue:@YES forKey:@"/include"];
+
+	NSMutableDictionary *jb_map_private = [[NSMutableDictionary alloc] init];
+
+	[jb_map_private setValue:jb_map_etc forKey:@"/etc"];
+	[jb_map_private setValue:jb_map_var forKey:@"/var"];
+
+	jb_map = [[NSMutableDictionary alloc] init];
+
+	[jb_map setValue:jb_map_library forKey:@"/Library"];
+	[jb_map setValue:jb_map_usr forKey:@"/usr"];
+	[jb_map setValue:jb_map_private forKey:@"/private"];
+	[jb_map setValue:jb_map_mobile forKey:@"/User"];
+	[jb_map setValue:jb_map_etc forKey:@"/etc"];
+	[jb_map setValue:jb_map_var forKey:@"/var"];
+	[jb_map setValue:jb_map_tmp forKey:@"/tmp"];
+	[jb_map setValue:@NO forKey:@"/.file"];
+	[jb_map setValue:@YES forKey:@"/authorize.sh"];
+	[jb_map setValue:@YES forKey:@"/RWTEST"];
+	[jb_map setValue:@YES forKey:@"/Applications/"];
+	[jb_map setValue:@YES forKey:@"/bin"];
+	[jb_map setValue:@YES forKey:@"/sbin"];
+	[jb_map setValue:@YES forKey:@"/jb"];
+	[jb_map setValue:@YES forKey:@"/electra"];
+	[jb_map setValue:@YES forKey:@"/."];
+	[jb_map setValue:@YES forKey:@"/meridian"];
+	[jb_map setValue:@YES forKey:@"/bootstrap"];
+	[jb_map setValue:@YES forKey:@"/panguaxe"];
+	[jb_map setValue:@YES forKey:@"/OsirisJB"];
+	[jb_map setValue:@YES forKey:@"/chimera"];
+}
+
+BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
+	if(!map || !path || ![path respondsToSelector:@selector(hasPrefix:)]) {
+		return NO;
+	}
+
+	// Find key in dictionary.
+	for(NSString *key in map) {
+		if([path hasPrefix:key]) {
+			id val = [map objectForKey:key];
+
+			// Check if value is set.
+			if([val isKindOfClass:[NSNumber class]]) {
+				return [val boolValue];
 			}
 
-			if([path isEqualToString:@"/var/tmp/cydia.log"]
-			|| [path isEqualToString:@"/var/tmp/syslog"]
-			|| [path isEqualToString:@"/var/tmp/slide.txt"]
-			|| [path isEqualToString:@"/var/tmp/amfidebilitate.out"]) {
-				return true;
-			}
-
-			return false;
+			// Recurse into this dictionary.
+			return is_path_restricted(val, [path substringFromIndex:[key length]]);
 		}
-
-		if([path hasPrefix:@"/var/mobile"]) {
-			if([path hasPrefix:@"/var/mobile/Library/Cydia"]
-			|| [path hasPrefix:@"/var/mobile/Library/Logs/Cydia"]
-			|| [path hasPrefix:@"/var/mobile/Library/SBSettings"]
-			|| [path hasPrefix:@"/var/mobile/Media/panguaxe"]) {
-				return true;
-			}
-
-			return false;
-		}
-
-		if([path hasPrefix:@"/var/cache/apt"]
-		|| [path hasPrefix:@"/var/lib"]
-		|| [path hasPrefix:@"/var/log/"]
-		|| [path hasPrefix:@"/var/stash"]
-		|| [path hasPrefix:@"/var/db/stash"]
-		|| [path hasPrefix:@"/var/rocket_stashed"]
-		|| [path hasPrefix:@"/var/tweak"]) {
-			return true;
-		}
-
-		// rootlessJB
-		if([path hasPrefix:@"/var/LIB"]
-		|| [path hasPrefix:@"/var/ulb"]
-		|| [path hasPrefix:@"/var/bin"]
-		|| [path hasPrefix:@"/var/sbin"]
-		|| [path hasPrefix:@"/var/profile"]
-		|| [path hasPrefix:@"/var/motd"]
-		|| [path hasPrefix:@"/var/dropbear"]) {
-			return true;
-		}
-		
-		return false;
 	}
 
-	if([path hasPrefix:@"/tmp"]) {
-		if([path hasPrefix:@"/tmp/substrate"]
-		|| [path hasPrefix:@"/tmp/Substrate"]) {
-			return true;
-		}
-
-		if([path isEqualToString:@"/tmp/cydia.log"]
-		|| [path isEqualToString:@"/tmp/syslog"]
-		|| [path isEqualToString:@"/tmp/slide.txt"]
-		|| [path isEqualToString:@"/tmp/amfidebilitate.out"]) {
-			return true;
-		}
-
-		return false;
-	}
-
-	if([path isEqualToString:@"/.file"]) {
-		return false;
-	}
-
-	if([path isEqualToString:@"/authorize.sh"]
-	|| [path isEqualToString:@"/RWTEST"]) {
-		return true;
-	}
-
-	if([path hasPrefix:@"/Applications/"]
-	|| [path hasPrefix:@"/bin"]
-	|| [path hasPrefix:@"/sbin"]
-	|| [path hasPrefix:@"/jb"]
-	|| [path hasPrefix:@"/electra"]
-	|| [path hasPrefix:@"/."]
-	|| [path hasPrefix:@"/meridian"]
-	|| [path hasPrefix:@"/bootstrap"]
-	|| [path hasPrefix:@"/panguaxe"]
-	|| [path hasPrefix:@"/taig"]
-	|| [path hasPrefix:@"/pguntether"]
-	|| [path hasPrefix:@"/OsirisJB"]
-	|| [path hasPrefix:@"/chimera"]) {
-		return true;
-	}
-
-	if([path containsString:@"cydia"]
-	|| [path containsString:@"Cydia"]) {
-		return true;
-	}
-
-	return false;
+	return NO;
 }
 
-bool is_jb_path_c(const char *path) {
-	if(path == NULL) {
-		return false;
-	}
-
-	return is_jb_path([NSString stringWithUTF8String:path]);
-}
-
-%group sandboxed
-
-/*
-%hook NSBundle
-+ (NSBundle *)bundleWithIdentifier:(NSString *)identifier {
-	if([identifier isEqualToString:@"com.saurik.Cydia"]
-	|| [identifier isEqualToString:@"com.coolstar.sileo"]) {
-		NSLog(@"[shadow] blocked bundleWithIdentifier with identifier %@", identifier);
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)bundleWithPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked bundleWithPath with path %@", path);
-		return nil;
-	}
-
-	return %orig;
-}
-%end
-*/
+%group sandboxed_app_hooks
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		#endif
+
 		return NO;
 	}
 
@@ -328,10 +176,12 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-- (BOOL)fileExistsAtPath:(NSString *)path
-	isDirectory:(BOOL *)isDirectory {
-	if(is_jb_path(path)) {
+- (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		#endif
+
 		return NO;
 	}
 
@@ -339,9 +189,12 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-/*- (BOOL)isReadableFileAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
+- (BOOL)isReadableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		#endif
+
 		return NO;
 	}
 
@@ -350,154 +203,32 @@ bool is_jb_path_c(const char *path) {
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
+		#endif
+
 		return NO;
 	}
 
 	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
 	return %orig;
 }
-
-- (BOOL)createSymbolicLinkAtPath:(NSString *)path
-	withDestinationPath:(NSString *)destPath
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(destPath)) {
-		NSLog(@"[shadow] blocked createSymbolicLinkAtPath with destPath %@", destPath);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)linkItemAtPath:(NSString *)srcPath
-	toPath:(NSString *)dstPath
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(dstPath)) {
-		NSLog(@"[shadow] blocked linkItemAtPath with dstPath %@", dstPath);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked destinationOfSymbolicLinkAtPath with path %@", path);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked subpathsAtPath with path %@", path);
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked subpathsOfDirectoryAtPath with path %@", path);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked enumeratorAtPath with path %@", path);
-		return %orig(NSHomeDirectory());
-	}
-
-	return %orig;
-}
-
-- (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked attributesOfItemAtPath with path %@", path);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (NSString *)displayNameAtPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked displayNameAtPath with path %@", path);
-		return path;
-	}
-
-	return %orig;
-}
-
-- (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked componentsToDisplayForPath with path %@", path);
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path
-	error:(NSError * _Nullable *)error {
-	if(is_jb_path(path)) {
-		NSLog(@"[shadow] blocked contentsOfDirectoryAtPath with path %@", path);
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}*/
 %end
 
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
-	if(url == nil) {
+	if(!url) {
 		return %orig;
 	}
 
 	if([[url scheme] isEqualToString:@"cydia"]
 	|| [[url scheme] isEqualToString:@"sileo"]
 	|| [[url scheme] isEqualToString:@"zbra"]) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
+		#endif
+
 		return NO;
 	}
 
@@ -506,11 +237,17 @@ bool is_jb_path_c(const char *path) {
 %end
 
 %hookf(int, access, const char *pathname, int mode) {
-	if(is_jb_path_c(pathname)) {
-		if(strstr(pathname, "DynamicLibraries") == NULL) {
-			NSLog(@"[shadow] blocked access: %s", pathname);
-			return -1;
-		}
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked access: %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return -1;
 	}
 
 	// NSLog(@"[shadow] allowed access: %s", pathname);
@@ -518,8 +255,16 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(DIR *, opendir, const char *name) {
-	if(is_jb_path_c(name)) {
+	if(!name) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:name])) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked opendir: %s", name);
+		#endif
+
+		errno = ENOENT;
 		return NULL;
 	}
 
@@ -528,13 +273,17 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(char *, getenv, const char *name) {
-	if(name == NULL) {
+	if(!name) {
 		return %orig;
 	}
 
 	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
-	|| strcmp(name, "_MSSafeMode") == 0) {
+	|| strcmp(name, "_MSSafeMode") == 0
+	|| strcmp(name, "_SafeMode") == 0) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked getenv for %s", name);
+		#endif
+
 		return NULL;
 	}
 
@@ -542,8 +291,16 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
-	if(is_jb_path_c(pathname)) {
+	if(!pathname) {
+		return %orig;
+	}
+	
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fopen with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
 		return NULL;
 	}
 
@@ -552,6 +309,10 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(int, statfs, const char *path, struct statfs *buf) {
+	if(!path) {
+		return %orig;
+	}
+
 	int ret = %orig;
 
 	if(ret == 0 && strcmp(path, "/") == 0) {
@@ -566,8 +327,16 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
-	if(is_jb_path_c(pathname)) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked stat with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
 		return -1;
 	}
 
@@ -576,8 +345,16 @@ bool is_jb_path_c(const char *path) {
 }
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
-	if(is_jb_path_c(pathname)) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked lstat with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
 		return -1;
 	}
 
@@ -585,24 +362,21 @@ bool is_jb_path_c(const char *path) {
 	return %orig;
 }
 
-/*
 %hookf(bool, dlopen_preflight, const char* path) {
-	if(is_jb_path_c(path)) {
+	if(!path) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path])) {
+		#ifdef DEBUG
 		NSLog(@"[shadow] blocked dlopen_preflight with path %s", path);
+		#endif
+
 		return false;
 	}
 
 	return %orig;
 }
-
-%hookf(uint32_t, _dyld_image_count) {
-	if(DYLD_FAKE_COUNT != -1) {
-		return DYLD_FAKE_COUNT;
-	}
-
-	return %orig;
-}
-*/
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
 	const char *ret = %orig;
@@ -616,7 +390,7 @@ bool is_jb_path_c(const char *path) {
 		|| strstr(ret, "cycript") != NULL
 		|| strstr(ret, "SBInject") != NULL
 		|| strstr(ret, "pspawn") != NULL) {
-			return DYLD_FAKE_NAME;
+			return "/usr/lib/system/libdyld.dylib";
 		}
 	}
 
@@ -628,14 +402,40 @@ bool is_jb_path_c(const char *path) {
 %ctor {
 	NSBundle *bundle = [NSBundle mainBundle];
 
-	if(bundle != nil && ![[bundle bundleIdentifier] hasPrefix:@"com.apple"]) {
+	if(bundle != nil) {
 		NSString *executablePath = [bundle executablePath];
 
-		// Only hook for non-Apple sandboxed user apps.
-		// Maybe todo: implement preferences and whitelist apps from hooks?
+		// Check if this app is executing from sandbox.
 		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
-			NSLog(@"[shadow] enabled hooks");
-			%init(sandboxed);
+			bool should_hook = true;
+
+			// Check bundleIdentifier if it is excluded from bypass hooks.
+			#ifdef DEBUG
+			NSLog(@"[shadow] bundleIdentifier: %@", [bundle bundleIdentifier]);
+			#endif
+
+			NSArray *excluded_bundleids = @[
+				@"com.apple", // Apple apps
+				@"is.workflow.my.app" // Shortcuts
+			];
+
+			for(NSString *bundle_id in excluded_bundleids) {
+				if([[bundle bundleIdentifier] hasPrefix:bundle_id]) {
+					should_hook = false;
+					break;
+				}
+			}
+
+			if(should_hook) {
+				#ifdef DEBUG
+				NSLog(@"[shadow] bypass hooks enabled");
+				#endif
+
+				%init(sandboxed_app_hooks);
+
+				// Allocate and initialize restricted paths map.
+				init_jb_map();
+			}
 		}
 	}
 }
