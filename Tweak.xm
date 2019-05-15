@@ -20,7 +20,7 @@ NSMutableDictionary *jb_map = nil;
 NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_orig_count = 0;
 
-NSMutableArray *generate_dlyd_array(uint32_t count) {
+NSMutableArray *generate_dyld_array(uint32_t count) {
 	NSMutableArray *dyld_array = [NSMutableArray new];
 
 	for(int i = 0; i < count; i++) {
@@ -130,8 +130,6 @@ void init_jb_map() {
 
 	NSMutableDictionary *jb_map_usr = [[NSMutableDictionary alloc] init];
 
-	[jb_map_usr setValue:@NO forKey:@"/lib/log"];
-	[jb_map_usr setValue:@NO forKey:@"/local/lib/log"];
 	[jb_map_usr setValue:jb_map_usr_share forKey:@"/share"];
 	[jb_map_usr setValue:@YES forKey:@"/bin"];
 	[jb_map_usr setValue:@YES forKey:@"/sbin"];
@@ -153,7 +151,6 @@ void init_jb_map() {
 	[jb_map setValue:jb_map_etc forKey:@"/etc"];
 	[jb_map setValue:jb_map_var forKey:@"/var"];
 	[jb_map setValue:jb_map_tmp forKey:@"/tmp"];
-	[jb_map setValue:@NO forKey:@"/.file"];
 	[jb_map setValue:@YES forKey:@"/authorize.sh"];
 	[jb_map setValue:@YES forKey:@"/RWTEST"];
 	[jb_map setValue:@YES forKey:@"/Applications/"];
@@ -194,6 +191,80 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 %group sandboxed_app_hooks
 
+%hook NSFileManager
+- (BOOL)fileExistsAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)isReadableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed isReadableFileAtPath with path %@", path);
+	return %orig;
+}
+
+- (BOOL)isExecutableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
+	return %orig;
+}
+%end
+
+%hook UIApplication
+- (BOOL)canOpenURL:(NSURL *)url {
+	if(!url) {
+		return %orig;
+	}
+
+	if([[url scheme] isEqualToString:@"cydia"]
+	|| [[url scheme] isEqualToString:@"sileo"]
+	|| [[url scheme] isEqualToString:@"zbra"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+%end
+
 %hookf(int, access, const char *pathname, int mode) {
 	if(!pathname) {
 		return %orig;
@@ -201,14 +272,9 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
-	if([path containsString:@"DynamicLibraries"]) {
-		// Workaround for some tweak loading issues :(
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, path)) {
+	if(![path containsString:@"DynamicLibraries"] && is_path_restricted(jb_map, path)) {
 		#ifdef DEBUG
-		NSLog(@"[shadow] blocked access: %s", pathname);
+		NSLog(@"[shadow] blocked access: %@", path);
 		#endif
 
 		errno = ENOENT;
@@ -343,7 +409,11 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		}
 
 		dyld_orig_count = ret;
-		dyld_clean_array = generate_dlyd_array(ret);
+		dyld_clean_array = generate_dyld_array(ret);
+
+		#ifdef DEBUG
+		NSLog(@"[shadow] generated new clean dyld array");
+		#endif
 	}
 
 	if(dyld_clean_array && [dyld_clean_array count] > 0) {
@@ -364,80 +434,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return %orig;
 }
-
-%hook NSFileManager
-- (BOOL)fileExistsAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
-	return %orig;
-}
-
-- (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
-	return %orig;
-}
-
-- (BOOL)isReadableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed isReadableFileAtPath with path %@", path);
-	return %orig;
-}
-
-- (BOOL)isExecutableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
-	return %orig;
-}
-%end
-
-%hook UIApplication
-- (BOOL)canOpenURL:(NSURL *)url {
-	if(!url) {
-		return %orig;
-	}
-
-	if([[url scheme] isEqualToString:@"cydia"]
-	|| [[url scheme] isEqualToString:@"sileo"]
-	|| [[url scheme] isEqualToString:@"zbra"]) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
-		#endif
-
-		return NO;
-	}
-
-	return %orig;
-}
-%end
 
 %end
 
