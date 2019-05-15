@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>shadowprefs</string>
+	<string>ShadowPreferences</string>
 	<key>CFBundleIdentifier</key>
 	<string>me.jjolano.shadow</string>
 	<key>CFBundleInfoDictionaryVersion</key>

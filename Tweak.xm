@@ -18,6 +18,7 @@
 
 NSMutableDictionary *jb_map = nil;
 NSMutableArray *dyld_clean_array = nil;
+uint32_t dyld_clean_array_count = 0;
 uint32_t dyld_orig_count = 0;
 
 NSMutableArray *generate_dyld_array(uint32_t count) {
@@ -37,7 +38,10 @@ NSMutableArray *generate_dyld_array(uint32_t count) {
 			|| [name containsString:@"cycript"]
 			|| [name containsString:@"SBInject"]
 			|| [name containsString:@"pspawn"]
-			|| [name containsString:@"applist"]) {
+			|| [name containsString:@"applist"]
+			|| [name hasPrefix:@"/Library/Frameworks"]
+			|| [name containsString:@"librocketbootstrap"]
+			|| [name containsString:@"libcolorpicker"]) {
 				// Skip adding this to clean dyld array.
 				continue;
 			}
@@ -402,30 +406,25 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 %hookf(uint32_t, _dyld_image_count) {
 	uint32_t ret = %orig;
 
-	if(ret != dyld_orig_count) {
-		// Update dyld_clean_array
-		if(dyld_clean_array) {
-			[dyld_clean_array removeAllObjects];
-		}
-
-		dyld_orig_count = ret;
+	if(!dyld_clean_array) {
 		dyld_clean_array = generate_dyld_array(ret);
+		dyld_clean_array_count = [dyld_clean_array count];
 
 		#ifdef DEBUG
-		NSLog(@"[shadow] generated new clean dyld array");
+		NSLog(@"[shadow] generated new clean dyld array (%d/%d)", dyld_clean_array_count, ret);
 		#endif
 	}
 
-	if(dyld_clean_array && [dyld_clean_array count] > 0) {
-		return [dyld_clean_array count];
+	if(dyld_clean_array_count > 0) {
+		return dyld_clean_array_count;
 	}
 
 	return ret;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-	if(dyld_clean_array && [dyld_clean_array count] > 0) {
-		if(image_index >= [dyld_clean_array count]) {
+	if(dyld_clean_array && dyld_clean_array_count > 0) {
+		if(image_index >= dyld_clean_array_count) {
 			return NULL;
 		}
 
