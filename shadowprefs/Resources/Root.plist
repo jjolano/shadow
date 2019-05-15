@@ -43,8 +43,6 @@
 			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
-			<key>ALChangeNotification</key>
-			<string></string>
 			<key>ALSectionDescriptors</key>
 			<array>
 				<dict>

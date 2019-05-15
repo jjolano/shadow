@@ -17,6 +17,38 @@
 #include <errno.h>
 
 NSMutableDictionary *jb_map = nil;
+NSMutableArray *dyld_clean_array = nil;
+uint32_t dyld_orig_count = 0;
+
+NSMutableArray *generate_dlyd_array(uint32_t count) {
+	NSMutableArray *dyld_array = [NSMutableArray new];
+
+	for(int i = 0; i < count; i++) {
+		const char *cname = _dyld_get_image_name(i);
+
+		if(cname) {
+			NSString *name = [NSString stringWithUTF8String:cname];
+
+			if([name containsString:@"MobileSubstrate"]
+			|| [name containsString:@"substrate"]
+			|| [name containsString:@"substitute"]
+			|| [name containsString:@"TweakInject"]
+			|| [name containsString:@"libjailbreak"]
+			|| [name containsString:@"cycript"]
+			|| [name containsString:@"SBInject"]
+			|| [name containsString:@"pspawn"]
+			|| [name containsString:@"applist"]) {
+				// Skip adding this to clean dyld array.
+				continue;
+			}
+
+			// Add this to clean dyld array.
+			[dyld_array addObject:name];
+		}
+	}
+
+	return dyld_array;
+}
 
 void init_jb_map() {
 	NSMutableDictionary *jb_map_etc = [[NSMutableDictionary alloc] init];
@@ -162,6 +194,175 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 %group sandboxed_app_hooks
 
+%hookf(int, access, const char *pathname, int mode) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		// Workaround - this hook seems to break iPadStatusBar loading in apps..
+		if(strstr(pathname, "iPadStatusBar")) {
+			return %orig;
+		}
+
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked access: %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	// NSLog(@"[shadow] allowed access: %s", pathname);
+	return %orig;
+}
+
+%hookf(DIR *, opendir, const char *name) {
+	if(!name) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:name])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked opendir: %s", name);
+		#endif
+
+		errno = ENOENT;
+		return NULL;
+	}
+
+	// NSLog(@"[shadow] allowed opendir: %s", name);
+	return %orig;
+}
+
+%hookf(char *, getenv, const char *name) {
+	if(!name) {
+		return %orig;
+	}
+
+	NSString *env = [NSString stringWithUTF8String:name];
+
+	if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
+	|| [env isEqualToString:@"_MSSafeMode"]
+	|| [env isEqualToString:@"_SafeMode"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked getenv for %s", name);
+		#endif
+
+		return NULL;
+	}
+
+	return %orig;
+}
+
+%hookf(FILE *, fopen, const char *pathname, const char *mode) {
+	if(!pathname) {
+		return %orig;
+	}
+	
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fopen with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return NULL;
+	}
+
+	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
+	return %orig;
+}
+
+%hookf(int, statfs, const char *path, struct statfs *buf) {
+	if(!path) {
+		return %orig;
+	}
+
+	int ret = %orig;
+
+	if(ret == 0) {
+		NSString *pathname = [NSString stringWithUTF8String:path];
+		
+		if([pathname isEqualToString:@"/"]) {
+			if(buf != NULL) {
+				// Ensure root is marked read-only.
+				buf->f_flags |= MNT_RDONLY;
+			}
+		}
+	}
+
+	// NSLog(@"[shadow] statfs on %s", path);
+	return ret;
+}
+
+%hookf(int, stat, const char *pathname, struct stat *statbuf) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked stat with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	// NSLog(@"[shadow] allowed stat with path %s", pathname);
+	return %orig;
+}
+
+%hookf(int, lstat, const char *pathname, struct stat *statbuf) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked lstat with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	// NSLog(@"[shadow] allowed stat with path %s", pathname);
+	return %orig;
+}
+
+%hookf(uint32_t, _dyld_image_count) {
+	uint32_t ret = %orig;
+
+	if(ret != dyld_orig_count) {
+		// Update dyld_clean_array
+		if(dyld_clean_array) {
+			[dyld_clean_array removeAllObjects];
+		}
+
+		dyld_orig_count = ret;
+		dyld_clean_array = generate_dlyd_array(ret);
+	}
+
+	if(dyld_clean_array && [dyld_clean_array count] > 0) {
+		return [dyld_clean_array count];
+	}
+
+	return ret;
+}
+
+%hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
+	if(dyld_clean_array && [dyld_clean_array count] > 0) {
+		if(image_index >= [dyld_clean_array count]) {
+			return NULL;
+		}
+
+		return [dyld_clean_array[image_index] UTF8String];
+	}
+
+	return %orig;
+}
+
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_path_restricted(jb_map, path)) {
@@ -235,167 +436,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 %end
-
-%hookf(int, access, const char *pathname, int mode) {
-	if(!pathname) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked access: %s", pathname);
-		#endif
-
-		errno = ENOENT;
-		return -1;
-	}
-
-	// NSLog(@"[shadow] allowed access: %s", pathname);
-	return %orig;
-}
-
-%hookf(DIR *, opendir, const char *name) {
-	if(!name) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:name])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked opendir: %s", name);
-		#endif
-
-		errno = ENOENT;
-		return NULL;
-	}
-
-	// NSLog(@"[shadow] allowed opendir: %s", name);
-	return %orig;
-}
-
-%hookf(char *, getenv, const char *name) {
-	if(!name) {
-		return %orig;
-	}
-
-	if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
-	|| strcmp(name, "_MSSafeMode") == 0
-	|| strcmp(name, "_SafeMode") == 0) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked getenv for %s", name);
-		#endif
-
-		return NULL;
-	}
-
-	return %orig;
-}
-
-%hookf(FILE *, fopen, const char *pathname, const char *mode) {
-	if(!pathname) {
-		return %orig;
-	}
-	
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fopen with path %s", pathname);
-		#endif
-
-		errno = ENOENT;
-		return NULL;
-	}
-
-	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
-	return %orig;
-}
-
-%hookf(int, statfs, const char *path, struct statfs *buf) {
-	if(!path) {
-		return %orig;
-	}
-
-	int ret = %orig;
-
-	if(ret == 0 && strcmp(path, "/") == 0) {
-		if(buf != NULL) {
-			// Ensure root is marked read-only.
-			buf->f_flags |= MNT_RDONLY;
-		}
-	}
-
-	// NSLog(@"[shadow] statfs on %s", path);
-	return ret;
-}
-
-%hookf(int, stat, const char *pathname, struct stat *statbuf) {
-	if(!pathname) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked stat with path %s", pathname);
-		#endif
-
-		errno = ENOENT;
-		return -1;
-	}
-
-	// NSLog(@"[shadow] allowed stat with path %s", pathname);
-	return %orig;
-}
-
-%hookf(int, lstat, const char *pathname, struct stat *statbuf) {
-	if(!pathname) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked lstat with path %s", pathname);
-		#endif
-
-		errno = ENOENT;
-		return -1;
-	}
-
-	// NSLog(@"[shadow] allowed stat with path %s", pathname);
-	return %orig;
-}
-
-%hookf(bool, dlopen_preflight, const char* path) {
-	if(!path) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked dlopen_preflight with path %s", path);
-		#endif
-
-		return false;
-	}
-
-	return %orig;
-}
-
-%hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-	const char *ret = %orig;
-
-	if(ret != NULL) {
-		if(strstr(ret, "MobileSubstrate") != NULL
-		|| strstr(ret, "substrate") != NULL
-		|| strstr(ret, "substitute") != NULL
-		|| strstr(ret, "TweakInject") != NULL
-		|| strstr(ret, "libjailbreak") != NULL
-		|| strstr(ret, "cycript") != NULL
-		|| strstr(ret, "SBInject") != NULL
-		|| strstr(ret, "pspawn") != NULL) {
-			return "/usr/lib/system/libdyld.dylib";
-		}
-	}
-
-	return ret;
-}
 
 %end
 

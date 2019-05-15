@@ -1,13 +1,12 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: mobilesubstrate, applist, preferenceloader, com.rpetrich.rocketbootstrap
+Depends: mobilesubstrate, applist, preferenceloader, firmware (>= 9.0)
 Provides: com.jjolano.shadow
 Conflicts: com.jjolano.shadow
 Replaces: com.jjolano.shadow
-Version: 0.5
+Version: 0.9
 Architecture: iphoneos-arm
 Description: A simple jailbreak detection blocker that defeats basic detection methods.
 Maintainer: jjolano
 Author: jjolano
 Section: Tweaks
-Depiction: https://jjolano.github.io/depictions/?p=me.jjolano.shadow
