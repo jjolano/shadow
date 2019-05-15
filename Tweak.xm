@@ -408,10 +408,11 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		// Check if this app is executing from sandbox.
 		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
 			bool should_hook = true;
+			NSString *bundleIdentifier = [bundle bundleIdentifier];
 
 			// Check bundleIdentifier if it is excluded from bypass hooks.
 			#ifdef DEBUG
-			NSLog(@"[shadow] bundleIdentifier: %@", [bundle bundleIdentifier]);
+			NSLog(@"[shadow] bundleIdentifier: %@", bundleIdentifier);
 			#endif
 
 			NSArray *excluded_bundleids = @[
@@ -420,9 +421,24 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			];
 
 			for(NSString *bundle_id in excluded_bundleids) {
-				if([[bundle bundleIdentifier] hasPrefix:bundle_id]) {
+				if([bundleIdentifier hasPrefix:bundle_id]) {
 					should_hook = false;
 					break;
+				}
+			}
+
+			// Load preference file
+			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
+			
+			if(prefs) {
+				if(prefs[@"enabled"] && ![prefs[@"enabled"] boolValue]) {
+					// Shadow disabled in preferences
+					should_hook = false;
+				}
+
+				if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
+					// App blacklisted in preferences
+					should_hook = false;
 				}
 			}
 
