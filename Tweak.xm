@@ -454,7 +454,8 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 			NSArray *excluded_bundleids = @[
 				@"com.apple", // Apple apps
-				@"is.workflow.my.app" // Shortcuts
+				@"is.workflow.my.app", // Shortcuts
+				@"science.xnu.undecimus" // unc0ver
 			];
 
 			for(NSString *bundle_id in excluded_bundleids) {
