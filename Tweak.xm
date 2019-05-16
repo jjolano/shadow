@@ -16,6 +16,8 @@
 #include <spawn.h>
 #include <errno.h>
 
+#include "codesign.h"
+
 NSMutableDictionary *jb_map = nil;
 NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
@@ -40,6 +42,7 @@ NSMutableArray *generate_dyld_array(uint32_t count) {
 			|| [name containsString:@"pspawn"]
 			|| [name containsString:@"applist"]
 			|| [name hasPrefix:@"/Library/Frameworks"]
+			|| [name hasPrefix:@"/Library/Caches"]
 			|| [name containsString:@"librocketbootstrap"]
 			|| [name containsString:@"libcolorpicker"]) {
 				// Skip adding this to clean dyld array.
@@ -171,7 +174,7 @@ void init_jb_map() {
 }
 
 BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
-	if(!map || !path || ![path respondsToSelector:@selector(hasPrefix:)]) {
+	if(!map || !path || [path length] == 0) {
 		return NO;
 	}
 
@@ -276,7 +279,12 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
-	if(![path containsString:@"DynamicLibraries"] && is_path_restricted(jb_map, path)) {
+	// workaround for tweaks not loading properly - access for anything DynamicLibraries is allowed :x
+	if([path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked access: %@", path);
 		#endif
@@ -411,7 +419,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		dyld_clean_array_count = [dyld_clean_array count];
 
 		#ifdef DEBUG
-		NSLog(@"[shadow] generated new clean dyld array (%d/%d)", dyld_clean_array_count, ret);
+		NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, ret);
 		#endif
 	}
 
@@ -434,6 +442,22 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
+%hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
+	int ret = %orig;
+	pid_t self_pid = getpid();
+
+	if(pid == self_pid && ops == CS_OPS_STATUS) {
+		// Ensure that the platform binary flag is not set.
+		ret &= ~CS_PLATFORM_BINARY;
+
+		#ifdef DEBUG
+		NSLog(@"[shadow] csops invoked - removed platform binary flag");
+		#endif
+	}
+
+	return ret;
+}
+
 %end
 
 %ctor {
@@ -444,7 +468,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 		// Check if this app is executing from sandbox.
 		if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
-			bool should_hook = true;
 			NSString *bundleIdentifier = [bundle bundleIdentifier];
 
 			// Check bundleIdentifier if it is excluded from bypass hooks.
@@ -455,13 +478,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			NSArray *excluded_bundleids = @[
 				@"com.apple", // Apple apps
 				@"is.workflow.my.app", // Shortcuts
-				@"science.xnu.undecimus" // unc0ver
+				@"science.xnu.undecimus", // unc0ver
+				@"com.electrateam.chimera", // Chimera
+				@"org.coolstar.electra1141" // Electra
 			];
 
 			for(NSString *bundle_id in excluded_bundleids) {
 				if([bundleIdentifier hasPrefix:bundle_id]) {
-					should_hook = false;
-					break;
+					return;
 				}
 			}
 
@@ -471,25 +495,27 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			if(prefs) {
 				if(prefs[@"enabled"] && ![prefs[@"enabled"] boolValue]) {
 					// Shadow disabled in preferences
-					should_hook = false;
+					return;
 				}
 
 				if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
 					// App blacklisted in preferences
-					should_hook = false;
+					return;
 				}
 			}
 
-			if(should_hook) {
-				#ifdef DEBUG
-				NSLog(@"[shadow] bypass hooks enabled");
-				#endif
+			%init(sandboxed_app_hooks);
 
-				%init(sandboxed_app_hooks);
+			#ifdef DEBUG
+			NSLog(@"[shadow] bypass hooks enabled");
+			#endif
 
-				// Allocate and initialize restricted paths map.
-				init_jb_map();
-			}
+			// Allocate and initialize restricted paths map.
+			init_jb_map();
+
+			#ifdef DEBUG
+			NSLog(@"[shadow] initialized restricted paths map");
+			#endif
 		}
 	}
 }
