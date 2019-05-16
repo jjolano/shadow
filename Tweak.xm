@@ -297,6 +297,8 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
+/*
+// This hook causes issues on Chimera/Substitute apparently.
 %hookf(DIR *, opendir, const char *name) {
 	if(!name) {
 		return %orig;
@@ -314,6 +316,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	// NSLog(@"[shadow] allowed opendir: %s", name);
 	return %orig;
 }
+*/
 
 %hookf(char *, getenv, const char *name) {
 	if(!name) {
