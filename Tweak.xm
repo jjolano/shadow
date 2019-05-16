@@ -23,6 +23,8 @@ NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
 BOOL generated_dyld_array = NO;
 
+BOOL use_access_workaround = YES;
+
 void generate_dyld_array(uint32_t count) {
 	if(dyld_clean_array) {
 		[dyld_clean_array removeAllObjects];
@@ -288,7 +290,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
 	// workaround for tweaks not loading properly - access for anything DynamicLibraries is allowed :x
-	if([path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
+	if(use_access_workaround && [path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] allowed access: %@", path);
 		#endif
@@ -470,6 +472,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return cname;
 }
 
+%end
+
+%group private_methods
+
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
 	int ret = %orig;
 
@@ -502,20 +508,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			NSLog(@"[shadow] bundleIdentifier: %@", bundleIdentifier);
 			#endif
 
-			NSArray *excluded_bundleids = @[
-				@"com.apple", // Apple apps
-				@"is.workflow.my.app", // Shortcuts
-				@"science.xnu.undecimus", // unc0ver
-				@"com.electrateam.chimera", // Chimera
-				@"org.coolstar.electra1141" // Electra
-			];
-
-			for(NSString *bundle_id in excluded_bundleids) {
-				if([bundleIdentifier hasPrefix:bundle_id]) {
-					return;
-				}
-			}
-
 			// Load preference file
 			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
 			
@@ -525,19 +517,64 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 					return;
 				}
 
-				if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
-					// App blacklisted in preferences
-					return;
+				if(!prefs[@"exclude_system_apps"] || [prefs[@"exclude_system_apps"] boolValue]) {
+					// Disable Shadow for Apple and jailbreak apps
+					NSArray *excluded_bundleids = @[
+						@"com.apple", // Apple apps
+						@"is.workflow.my.app", // Shortcuts
+						@"science.xnu.undecimus", // unc0ver
+						@"com.electrateam.chimera", // Chimera
+						@"org.coolstar.electra1141" // Electra
+					];
+
+					for(NSString *bundle_id in excluded_bundleids) {
+						if([bundleIdentifier hasPrefix:bundle_id]) {
+							return;
+						}
+					}
+				}
+				
+				if(prefs[@"mode"] && [prefs[@"mode"] isEqualToString:@"whitelist"]) {
+					// Whitelist mode
+					#ifdef DEBUG
+					NSLog(@"[shadow] using %@ mode", prefs[@"mode"]);
+					#endif
+
+					if(!prefs[bundleIdentifier] || (prefs[bundleIdentifier] && ![prefs[bundleIdentifier] boolValue])) {
+						// App is not whitelisted in preferences
+						return;
+					}
+				} else {
+					// Blacklist mode
+					#ifdef DEBUG
+					NSLog(@"[shadow] using %@ mode", prefs[@"mode"]);
+					#endif
+
+					if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
+						// App is blacklisted in preferences
+						return;
+					}
+				}
+
+				if(!prefs[@"private_methods"] || [prefs[@"enabled"] boolValue]) {
+					// Hook private methods
+					%init(private_methods);
+				}
+
+				if(prefs[@"workaround_access"]) {
+					use_access_workaround = [prefs[@"workaround_access"] boolValue];
+				}
+
+				if(!prefs[@"dyld_array_enabled"] || [prefs[@"dyld_array_enabled"] boolValue]) {
+					// Generate clean dyld array.
+					uint32_t dyld_orig_count = _dyld_image_count();
+					generate_dyld_array(dyld_orig_count);
+
+					#ifdef DEBUG
+					NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
+					#endif
 				}
 			}
-
-			// Generate clean dyld array.
-			uint32_t dyld_orig_count = _dyld_image_count();
-			generate_dyld_array(dyld_orig_count);
-
-			#ifdef DEBUG
-			NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
-			#endif
 
 			// Allocate and initialize restricted paths map.
 			init_jb_map();

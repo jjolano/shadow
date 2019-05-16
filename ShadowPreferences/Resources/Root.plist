@@ -8,7 +8,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Jailbreak Detection Bypass</string>
+			<string>Bypass Options</string>
+			<key>isStaticText</key>
+			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -26,13 +28,21 @@
 		<!-- Application List -->
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Application Options</string>
+			<key>isStaticText</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSLinkCell</string>
 			<key>bundle</key>
 			<string>AppList</string>
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>Application Blacklist</string>
+			<string>Applications</string>
 			<key>ALAllowsSelection</key>
 			<string>1</string>
 			<key>ALSettingsKeyPrefix</key>
@@ -53,20 +63,102 @@
 					<key>suppress-hidden-apps</key>
 					<string>1</string>
 					<key>title</key>
-					<string>Select apps to exclude</string>
+					<string>Select apps to include/exclude</string>
 					<key>predicate</key>
 					<string>isSystemApplication = FALSE</string>
 				</dict>
 			</array>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>key</key>
+			<string>mode</string>
+			<key>default</key>
+			<string>blacklist</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>validValues</key>
+			<array>
+				<string>blacklist</string>
+				<string>whitelist</string>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>Blacklist Mode</string>
+				<string>Whitelist Mode</string>
+			</array>
+			<key>shortTitles</key>
+			<array>
+				<string>Blacklist Mode</string>
+				<string>Whitelist Mode</string>
+			</array>
+		</dict>
 
+		<!-- Advanced Settings -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Note: Changes applied on next app launch</string>
+			<string>Advanced Options</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>exclude_system_apps</string>
+			<key>label</key>
+			<string>Exclude Apple and jailbreak apps</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>dyld_array_enabled</string>
+			<key>label</key>
+			<string>Generate clean dyld array</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>private_methods</string>
+			<key>label</key>
+			<string>Hook private methods</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>workaround_access</string>
+			<key>label</key>
+			<string>access() workaround (Substrate)</string>
 		</dict>
 
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Changes are applied on next app launch. Workarounds will reduce bypass effectiveness, but may be necessary due to how some tweaks are loaded.</string>
+			<key>isStaticText</key>
+			<true/>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>Shadow</string>
