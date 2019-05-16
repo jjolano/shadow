@@ -21,10 +21,17 @@
 NSMutableDictionary *jb_map = nil;
 NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
-uint32_t dyld_orig_count = 0;
+BOOL generated_dyld_array = NO;
 
-NSMutableArray *generate_dyld_array(uint32_t count) {
-	NSMutableArray *dyld_array = [NSMutableArray new];
+void generate_dyld_array(uint32_t count) {
+	if(dyld_clean_array) {
+		[dyld_clean_array removeAllObjects];
+	} else {
+		dyld_clean_array = [NSMutableArray new];
+	}
+
+	dyld_clean_array_count = 0;
+	generated_dyld_array = NO;
 
 	for(int i = 0; i < count; i++) {
 		const char *cname = _dyld_get_image_name(i);
@@ -50,11 +57,12 @@ NSMutableArray *generate_dyld_array(uint32_t count) {
 			}
 
 			// Add this to clean dyld array.
-			[dyld_array addObject:name];
+			[dyld_clean_array addObject:name];
+			dyld_clean_array_count++;
 		}
 	}
 
-	return dyld_array;
+	generated_dyld_array = YES;
 }
 
 void init_jb_map() {
@@ -281,6 +289,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	// workaround for tweaks not loading properly - access for anything DynamicLibraries is allowed :x
 	if([path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] allowed access: %@", path);
+		#endif
+
 		return %orig;
 	}
 
@@ -415,26 +427,16 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 }
 
 %hookf(uint32_t, _dyld_image_count) {
-	uint32_t ret = %orig;
-
-	if(!dyld_clean_array) {
-		dyld_clean_array = generate_dyld_array(ret);
-		dyld_clean_array_count = [dyld_clean_array count];
-
-		#ifdef DEBUG
-		NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, ret);
-		#endif
-	}
-
-	if(dyld_clean_array_count > 0) {
+	if(generated_dyld_array) {
 		return dyld_clean_array_count;
 	}
 
-	return ret;
+	return %orig;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-	if(dyld_clean_array && dyld_clean_array_count > 0) {
+	if(generated_dyld_array) {
+		// Use generated dyld array.
 		if(image_index >= dyld_clean_array_count) {
 			return NULL;
 		}
@@ -442,19 +444,41 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return [dyld_clean_array[image_index] UTF8String];
 	}
 
-	return %orig;
+	// Fallback to masking return value.
+	const char *cname = %orig;
+
+	if(cname) {
+		NSString *name = [NSString stringWithUTF8String:cname];
+
+		if([name containsString:@"MobileSubstrate"]
+		|| [name containsString:@"substrate"]
+		|| [name containsString:@"substitute"]
+		|| [name containsString:@"TweakInject"]
+		|| [name containsString:@"libjailbreak"]
+		|| [name containsString:@"cycript"]
+		|| [name containsString:@"SBInject"]
+		|| [name containsString:@"pspawn"]
+		|| [name containsString:@"applist"]
+		|| [name hasPrefix:@"/Library/Frameworks"]
+		|| [name hasPrefix:@"/Library/Caches"]
+		|| [name containsString:@"librocketbootstrap"]
+		|| [name containsString:@"libcolorpicker"]) {
+			return %orig(0);
+		}
+	}
+
+	return cname;
 }
 
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
 	int ret = %orig;
-	pid_t self_pid = getpid();
 
-	if(pid == self_pid && ops == CS_OPS_STATUS) {
+	if(ops == CS_OPS_STATUS && pid == getpid()) {
 		// Ensure that the platform binary flag is not set.
 		ret &= ~CS_PLATFORM_BINARY;
 
 		#ifdef DEBUG
-		NSLog(@"[shadow] csops invoked - removed platform binary flag");
+		NSLog(@"[shadow] csops - removed platform binary flag");
 		#endif
 	}
 
@@ -507,10 +531,12 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 				}
 			}
 
-			%init(sandboxed_app_hooks);
+			// Generate clean dyld array.
+			uint32_t dyld_orig_count = _dyld_image_count();
+			generate_dyld_array(dyld_orig_count);
 
 			#ifdef DEBUG
-			NSLog(@"[shadow] bypass hooks enabled");
+			NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
 			#endif
 
 			// Allocate and initialize restricted paths map.
@@ -518,6 +544,13 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 			#ifdef DEBUG
 			NSLog(@"[shadow] initialized restricted paths map");
+			#endif
+
+			// Hook bypass methods.
+			%init(sandboxed_app_hooks);
+
+			#ifdef DEBUG
+			NSLog(@"[shadow] bypass hooks enabled");
 			#endif
 		}
 	}
