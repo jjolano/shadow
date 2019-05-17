@@ -70,7 +70,6 @@ void generate_dyld_array(uint32_t count) {
 void init_jb_map() {
 	NSMutableDictionary *jb_map_etc = [[NSMutableDictionary alloc] init];
 
-	[jb_map_etc setValue:@YES forKey:@"/alternatives"];
 	[jb_map_etc setValue:@YES forKey:@"/apt"];
 	[jb_map_etc setValue:@YES forKey:@"/dpkg"];
 	[jb_map_etc setValue:@YES forKey:@"/dropbear"];
@@ -81,6 +80,7 @@ void init_jb_map() {
 	[jb_map_etc setValue:@YES forKey:@"/default"];
 	[jb_map_etc setValue:@YES forKey:@"/rc.d/substrate"];
 	[jb_map_etc setValue:@YES forKey:@"/motd"];
+	[jb_map_etc setValue:@YES forKey:@"/."];
 
 	NSMutableDictionary *jb_map_tmp = [[NSMutableDictionary alloc] init];
 
@@ -126,8 +126,9 @@ void init_jb_map() {
 	[jb_map_library setValue:@YES forKey:@"/PreferenceBundles"];
 	[jb_map_library setValue:@YES forKey:@"/PreferenceLoader"];
 	[jb_map_library setValue:@YES forKey:@"/Switches"];
+	[jb_map_library setValue:@YES forKey:@"/Themes"];
 	[jb_map_library setValue:@YES forKey:@"/dpkg"];
-	[jb_map_library setValue:@YES forKey:@"/Caches"];
+	[jb_map_library setValue:@YES forKey:@"/Caches/"];
 	[jb_map_library setValue:@YES forKey:@"/ControlCenter"];
 	[jb_map_library setValue:@YES forKey:@"/Frameworks"];
 	[jb_map_library setValue:@YES forKey:@"/Karen"];
@@ -144,6 +145,7 @@ void init_jb_map() {
 	[jb_map_usr_share setValue:@YES forKey:@"/gnupg"];
 	[jb_map_usr_share setValue:@YES forKey:@"/tabset"];
 	[jb_map_usr_share setValue:@YES forKey:@"/terminfo"];
+	[jb_map_usr_share setValue:@YES forKey:@"/locale"];
 
 	NSMutableDictionary *jb_map_usr = [[NSMutableDictionary alloc] init];
 
@@ -168,8 +170,7 @@ void init_jb_map() {
 	[jb_map setValue:jb_map_etc forKey:@"/etc"];
 	[jb_map setValue:jb_map_var forKey:@"/var"];
 	[jb_map setValue:jb_map_tmp forKey:@"/tmp"];
-	[jb_map setValue:@YES forKey:@"/authorize.sh"];
-	[jb_map setValue:@YES forKey:@"/RWTEST"];
+	[jb_map setValue:@YES forKey:@"/System/Library/PreferenceBundles/AppList.bundle"];
 	[jb_map setValue:@YES forKey:@"/Applications/"];
 	[jb_map setValue:@YES forKey:@"/bin"];
 	[jb_map setValue:@YES forKey:@"/sbin"];
@@ -311,27 +312,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
-/*
-// This hook causes issues on Chimera/Substitute apparently.
-%hookf(DIR *, opendir, const char *name) {
-	if(!name) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:name])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked opendir: %s", name);
-		#endif
-
-		errno = ENOENT;
-		return NULL;
-	}
-
-	// NSLog(@"[shadow] allowed opendir: %s", name);
-	return %orig;
-}
-*/
-
 %hookf(char *, getenv, const char *name) {
 	if(!name) {
 		return %orig;
@@ -446,30 +426,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return [dyld_clean_array[image_index] UTF8String];
 	}
 
-	// Fallback to masking return value.
-	const char *cname = %orig;
-
-	if(cname) {
-		NSString *name = [NSString stringWithUTF8String:cname];
-
-		if([name containsString:@"MobileSubstrate"]
-		|| [name containsString:@"substrate"]
-		|| [name containsString:@"substitute"]
-		|| [name containsString:@"TweakInject"]
-		|| [name containsString:@"libjailbreak"]
-		|| [name containsString:@"cycript"]
-		|| [name containsString:@"SBInject"]
-		|| [name containsString:@"pspawn"]
-		|| [name containsString:@"applist"]
-		|| [name hasPrefix:@"/Library/Frameworks"]
-		|| [name hasPrefix:@"/Library/Caches"]
-		|| [name containsString:@"librocketbootstrap"]
-		|| [name containsString:@"libcolorpicker"]) {
-			return %orig(0);
-		}
-	}
-
-	return cname;
+	return %orig;
 }
 
 %end
@@ -489,6 +446,213 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	}
 
 	return ret;
+}
+
+%end
+
+%group experimental_hooks
+
+%hook NSBundle
+- (id)objectForInfoDictionaryKey:(NSString *)key {
+	if([key isEqualToString:@"SignerIdentity"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked objectForInfoDictionaryKey (SignerIdentity)");
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hook NSFileManager
+- (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, destPath)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked createSymbolicLinkAtPath for path %@ -> %@", path, destPath);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, dstPath)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked linkItemAtPath for path %@ -> %@", srcPath, dstPath);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked destinationOfSymbolicLinkAtPath for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hookf(int, "system", const char *command) {
+	if(command == NULL) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked system() shell check");
+		#endif
+
+		return 0;
+	}
+
+	#ifdef DEBUG
+	NSLog(@"[shadow] blocked system() command: %s", command);
+	#endif
+
+	errno = ENOSYS;
+	return -1;
+}
+
+%hookf(pid_t, fork) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] blocked fork()");
+	#endif
+	
+	errno = ENOSYS;
+	return -1;
+}
+
+%hookf(FILE *, popen, const char *command, const char *type) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] blocked popen()");
+	#endif
+
+	errno = ENOSYS;
+	return NULL;
+}
+
+%hookf(int, posix_spawn, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	NSString *path = [NSString stringWithUTF8String:pathname];
+
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked posix_spawn");
+		#endif
+
+		return ENOSYS;
+	}
+
+	return %orig;
+}
+
+%hookf(int, posix_spawnp, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	NSString *path = [NSString stringWithUTF8String:pathname];
+
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked posix_spawnp");
+		#endif
+
+		return ENOSYS;
+	}
+
+	return %orig;
+}
+
+%hookf(char *, realpath, const char *pathname, char *resolved_path) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked realpath for path %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return NULL;
+	}
+
+	return %orig;
+}
+
+%hookf(int, symlink, const char *path1, const char *path2) {
+	if(!path1 || !path2) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path2])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked symlink for path %s -> %s", path1, path2);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, link, const char *path1, const char *path2) {
+	if(!path1 || !path2) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path2])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked link for path %s -> %s", path1, path2);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(ssize_t, readlink, const char *path, char *buf, size_t bufsize) {
+	if(!path) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked readlink for path %s", path);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	return %orig;
 }
 
 %end
@@ -524,7 +688,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 						@"is.workflow.my.app", // Shortcuts
 						@"science.xnu.undecimus", // unc0ver
 						@"com.electrateam.chimera", // Chimera
-						@"org.coolstar.electra1141" // Electra
+						@"org.coolstar.electra" // Electra
 					];
 
 					for(NSString *bundle_id in excluded_bundleids) {
@@ -556,9 +720,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 					}
 				}
 
-				if(!prefs[@"private_methods"] || [prefs[@"enabled"] boolValue]) {
+				if(!prefs[@"private_methods"] || [prefs[@"private_methods"] boolValue]) {
 					// Hook private methods
 					%init(private_methods);
+				}
+
+				if(!prefs[@"experimental_hooks"] || [prefs[@"experimental_hooks"] boolValue]) {
+					// Hook experimental stuff
+					%init(experimental_hooks);
 				}
 
 				if(prefs[@"workaround_access"]) {

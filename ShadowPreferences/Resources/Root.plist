@@ -8,7 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Bypass Options</string>
+			<string>Bypass Settings</string>
 			<key>isStaticText</key>
 			<true/>
 		</dict>
@@ -22,7 +22,7 @@
 			<key>key</key>
 			<string>enabled</string>
 			<key>label</key>
-			<string>Enabled</string>
+			<string>Enable Shadow</string>
 		</dict>
 
 		<!-- Application List -->
@@ -30,9 +30,21 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Application Options</string>
+			<string>Application Settings</string>
 			<key>isStaticText</key>
 			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>exclude_system_apps</string>
+			<key>label</key>
+			<string>Exclude Apple and Jailbreak Apps</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -100,19 +112,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Advanced Options</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>exclude_system_apps</string>
-			<key>label</key>
-			<string>Exclude Apple and jailbreak apps</string>
+			<string>Advanced Settings</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -124,7 +124,7 @@
 			<key>key</key>
 			<string>dyld_array_enabled</string>
 			<key>label</key>
-			<string>Generate clean dyld array</string>
+			<string>Filter Dynamic Libraries</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -136,7 +136,19 @@
 			<key>key</key>
 			<string>private_methods</string>
 			<key>label</key>
-			<string>Hook private methods</string>
+			<string>Hook Private Methods</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>experimental_hooks</string>
+			<key>label</key>
+			<string>Experimental Hooks</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -148,14 +160,16 @@
 			<key>key</key>
 			<string>workaround_access</string>
 			<key>label</key>
-			<string>access() workaround (Substrate)</string>
+			<string>access() Workaround</string>
 		</dict>
 
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Changes are applied on next app launch. Workarounds will reduce bypass effectiveness, but may be necessary due to how some tweaks are loaded.</string>
+			<string>Changes are applied on next app launch.
+
+The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). It can safely be disabled for Substitute (Chimera/Electra).</string>
 			<key>isStaticText</key>
 			<true/>
 		</dict>
