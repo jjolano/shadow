@@ -672,77 +672,100 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			NSLog(@"[shadow] bundleIdentifier: %@", bundleIdentifier);
 			#endif
 
+			// Specify default preferences
+			BOOL prefs_enabled = YES;
+			BOOL prefs_exclude_system_apps = YES;
+			NSString *prefs_mode = @"blacklist";
+			BOOL prefs_private_methods = YES;
+			BOOL prefs_experimental_hooks = YES;
+			BOOL prefs_dyld_array_enabled = YES;
+			BOOL prefs_bundleid_enabled = NO;
+
 			// Load preference file
 			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
 			
 			if(prefs) {
-				if(prefs[@"enabled"] && ![prefs[@"enabled"] boolValue]) {
-					// Shadow disabled in preferences
-					return;
+				if(prefs[@"enabled"]) {
+					prefs_enabled = [prefs[@"enabled"] boolValue];
 				}
 
-				if(!prefs[@"exclude_system_apps"] || [prefs[@"exclude_system_apps"] boolValue]) {
-					// Disable Shadow for Apple and jailbreak apps
-					NSArray *excluded_bundleids = @[
-						@"com.apple", // Apple apps
-						@"is.workflow.my.app", // Shortcuts
-						@"science.xnu.undecimus", // unc0ver
-						@"com.electrateam.chimera", // Chimera
-						@"org.coolstar.electra" // Electra
-					];
-
-					for(NSString *bundle_id in excluded_bundleids) {
-						if([bundleIdentifier hasPrefix:bundle_id]) {
-							return;
-						}
-					}
-				}
-				
-				if(prefs[@"mode"] && [prefs[@"mode"] isEqualToString:@"whitelist"]) {
-					// Whitelist mode
-					#ifdef DEBUG
-					NSLog(@"[shadow] using %@ mode", prefs[@"mode"]);
-					#endif
-
-					if(!prefs[bundleIdentifier] || (prefs[bundleIdentifier] && ![prefs[bundleIdentifier] boolValue])) {
-						// App is not whitelisted in preferences
-						return;
-					}
-				} else {
-					// Blacklist mode
-					#ifdef DEBUG
-					NSLog(@"[shadow] using %@ mode", prefs[@"mode"]);
-					#endif
-
-					if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
-						// App is blacklisted in preferences
-						return;
-					}
+				if(prefs[@"exclude_system_apps"]) {
+					prefs_exclude_system_apps = [prefs[@"exclude_system_apps"] boolValue];
 				}
 
-				if(!prefs[@"private_methods"] || [prefs[@"private_methods"] boolValue]) {
-					// Hook private methods
-					%init(private_methods);
+				if(prefs[@"mode"]) {
+					prefs_mode = prefs[@"mode"];
 				}
 
-				if(!prefs[@"experimental_hooks"] || [prefs[@"experimental_hooks"] boolValue]) {
-					// Hook experimental stuff
-					%init(experimental_hooks);
+				if(prefs[@"private_methods"]) {
+					prefs_private_methods = [prefs[@"private_methods"] boolValue];
+				}
+
+				if(prefs[@"experimental_hooks"]) {
+					prefs_experimental_hooks = [prefs[@"experimental_hooks"] boolValue];
 				}
 
 				if(prefs[@"workaround_access"]) {
 					use_access_workaround = [prefs[@"workaround_access"] boolValue];
 				}
 
-				if(!prefs[@"dyld_array_enabled"] || [prefs[@"dyld_array_enabled"] boolValue]) {
-					// Generate clean dyld array.
-					uint32_t dyld_orig_count = _dyld_image_count();
-					generate_dyld_array(dyld_orig_count);
-
-					#ifdef DEBUG
-					NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
-					#endif
+				if(prefs[@"dyld_array_enabled"]) {
+					prefs_dyld_array_enabled = [prefs[@"dyld_array_enabled"] boolValue];
 				}
+
+				if(prefs[bundleIdentifier]) {
+					prefs_bundleid_enabled = [prefs[bundleIdentifier] boolValue];
+				}
+			}
+
+			if(!prefs_enabled) {
+				// Shadow disabled in preferences.
+				return;
+			}
+
+			if(prefs_exclude_system_apps) {
+				// Disable Shadow for Apple and jailbreak apps
+				NSArray *excluded_bundleids = @[
+					@"com.apple", // Apple apps
+					@"is.workflow.my.app", // Shortcuts
+					@"science.xnu.undecimus", // unc0ver
+					@"com.electrateam.chimera", // Chimera
+					@"org.coolstar.electra" // Electra
+				];
+
+				for(NSString *bundle_id in excluded_bundleids) {
+					if([bundleIdentifier hasPrefix:bundle_id]) {
+						return;
+					}
+				}
+			}
+
+			#ifdef DEBUG
+			NSLog(@"[shadow] using %@ mode", prefs_mode);
+			#endif
+
+			if([prefs_mode isEqualToString:@"whitelist"]) {
+				// Whitelist mode - activate hooks only for enabled bundleids
+				if(!prefs_bundleid_enabled) {
+					// App is not whitelisted in preferences
+					return;
+				}
+			} else {
+				// Blacklist mode - disable hooks for enabled bundleids
+				if(prefs_bundleid_enabled) {
+					// App is blacklisted in preferences
+					return;
+				}
+			}
+
+			if(prefs_dyld_array_enabled) {
+				// Generate clean dyld array.
+				uint32_t dyld_orig_count = _dyld_image_count();
+				generate_dyld_array(dyld_orig_count);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
+				#endif
 			}
 
 			// Allocate and initialize restricted paths map.
@@ -756,8 +779,24 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			%init(sandboxed_app_hooks);
 
 			#ifdef DEBUG
-			NSLog(@"[shadow] bypass hooks enabled");
+			NSLog(@"[shadow] hooked basic detection methods");
 			#endif
+
+			if(prefs_private_methods) {
+				%init(private_methods);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked private methods");
+				#endif
+			}
+
+			if(prefs_experimental_hooks) {
+				%init(experimental_hooks);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked experimental methods");
+				#endif
+			}
 		}
 	}
 }
