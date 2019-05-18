@@ -193,7 +193,7 @@ void init_jb_map() {
 }
 
 BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
-	if(!map || !path) {
+	if(!map || !path || [path length] == 0) {
 		return NO;
 	}
 
@@ -208,13 +208,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			}
 
 			// Recurse into this dictionary.
-			NSString *next = [path substringFromIndex:[key length]];
-
-			if([next length] == 0) {
-				return NO;
-			}
-
-			return is_path_restricted(val, next);
+			return is_path_restricted(val, [path substringFromIndex:[key length]]);
 		}
 	}
 
