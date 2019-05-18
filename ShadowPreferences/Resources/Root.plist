@@ -9,8 +9,6 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Bypass Settings</string>
-			<key>isStaticText</key>
-			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -31,8 +29,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Application Settings</string>
-			<key>isStaticText</key>
-			<true/>
+			<key>footerText</key>
+			<string>Blacklist mode enables Shadow for all except selected apps. Whitelist mode enables Shadow only for selected apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -113,6 +111,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Advanced Settings</string>
+			<key>footerText</key>
+			<string>Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -162,14 +162,6 @@
 			<key>label</key>
 			<string>Hook dlsym()</string>
 		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
-			<key>isStaticText</key>
-			<true/>
-		</dict>
 
 		<!-- Workarounds -->
 		<dict>
@@ -177,6 +169,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Workarounds</string>
+			<key>footerText</key>
+			<string>The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). It can safely be disabled for Substitute (Chimera/Electra).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -189,17 +183,6 @@
 			<string>workaround_access</string>
 			<key>label</key>
 			<string>access() Workaround</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>Changes are applied on next app launch.
-
-The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). It can safely be disabled for Substitute (Chimera/Electra).</string>
-			<key>isStaticText</key>
-			<true/>
 		</dict>
 	</array>
 	<key>title</key>
