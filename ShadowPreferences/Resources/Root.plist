@@ -148,7 +148,7 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 			<key>label</key>
 			<string>Experimental Settings</string>
 			<key>footerText</key>
-			<string>Experimental hooks are newly added hooks to Shadow that will eventually become standard. They shouldn't cause issues in most cases.
+			<string>Experimental hooks are newly added hooks to Shadow that will eventually become standard. Turn this option off if you encounter issues in apps.
 
 Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
 		</dict>
@@ -156,7 +156,7 @@ Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, s
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<true/>
+			<false/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>

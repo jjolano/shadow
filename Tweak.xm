@@ -672,22 +672,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
-%hookf(ssize_t, readlink, const char *path, char *buf, size_t bufsize) {
-	if(!path) {
-		return %orig;
-	}
-
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path])) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked readlink for path %s", path);
-		#endif
-
-		errno = ENOENT;
-		return -1;
-	}
-
-	return %orig;
-}
 
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
 	int ret = %orig;
@@ -789,7 +773,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			BOOL prefs_exclude_system_apps = YES;
 			NSString *prefs_mode = @"blacklist";
 			BOOL prefs_private_methods = YES;
-			BOOL prefs_experimental_hooks = YES;
+			BOOL prefs_experimental_hooks = NO;
 			BOOL prefs_dlsym_hook = NO;
 			BOOL prefs_dyld_array_enabled = YES;
 			BOOL prefs_bundleid_enabled = NO;
