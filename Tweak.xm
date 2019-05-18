@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/mount.h>
+#include <sys/sysctl.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -35,7 +36,7 @@ void generate_dyld_array(uint32_t count) {
 	dyld_clean_array_count = 0;
 	generated_dyld_array = NO;
 
-	for(int i = 0; i < count; i++) {
+	for(uint32_t i = 0; i < count; i++) {
 		const char *cname = _dyld_get_image_name(i);
 
 		if(cname) {
@@ -59,7 +60,7 @@ void generate_dyld_array(uint32_t count) {
 			}
 
 			// Add this to clean dyld array.
-			[dyld_clean_array addObject:name];
+			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
 			dyld_clean_array_count++;
 		}
 	}
@@ -116,6 +117,7 @@ void init_jb_map() {
 	[jb_map_var setValue:@YES forKey:@"/profile"];
 	[jb_map_var setValue:@YES forKey:@"/motd"];
 	[jb_map_var setValue:@YES forKey:@"/dropbear"];
+	[jb_map_var setValue:@YES forKey:@"/run/jailbreakd"];
 
 	NSMutableDictionary *jb_map_library = [[NSMutableDictionary alloc] init];
 
@@ -170,6 +172,7 @@ void init_jb_map() {
 	[jb_map setValue:jb_map_etc forKey:@"/etc"];
 	[jb_map setValue:jb_map_var forKey:@"/var"];
 	[jb_map setValue:jb_map_tmp forKey:@"/tmp"];
+	[jb_map setValue:@NO forKey:@"/.file"];
 	[jb_map setValue:@YES forKey:@"/System/Library/PreferenceBundles/AppList.bundle"];
 	[jb_map setValue:@YES forKey:@"/Applications/"];
 	[jb_map setValue:@YES forKey:@"/bin"];
@@ -290,7 +293,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
-	// workaround for tweaks not loading properly - access for anything DynamicLibraries is allowed :x
+	// workaround for tweaks not loading properly in Substrate
 	if(use_access_workaround && [path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] allowed access: %@", path);
@@ -308,7 +311,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return -1;
 	}
 
+	#ifdef DEBUG
 	// NSLog(@"[shadow] allowed access: %s", pathname);
+	#endif
+
 	return %orig;
 }
 
@@ -423,7 +429,33 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			return NULL;
 		}
 
-		return [dyld_clean_array[image_index] UTF8String];
+		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+	}
+
+	return %orig;
+}
+
+%hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
+	if(generated_dyld_array) {
+		// Use generated dyld array.
+		if(image_index >= dyld_clean_array_count) {
+			return NULL;
+		}
+
+		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+	}
+
+	return %orig;
+}
+
+%hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
+	if(generated_dyld_array) {
+		// Use generated dyld array.
+		if(image_index >= dyld_clean_array_count) {
+			return 0;
+		}
+
+		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
 	}
 
 	return %orig;
@@ -655,6 +687,84 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
+%hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+	int ret = %orig;
+
+	if(ret == 0
+	&& name[0] == CTL_KERN
+	&& name[1] == KERN_PROC
+	&& name[2] == KERN_PROC_PID
+	&& name[3] == getpid()) {
+		// Remove trace flag.
+		if(oldp) {
+			((struct kinfo_proc *) oldp)->kp_proc.p_flag &= ~P_TRACED;
+
+			#ifdef DEBUG
+			NSLog(@"[shadow] sysctl: removed trace flag");
+			#endif
+		}
+	}
+
+	return ret;
+}
+
+%hookf(pid_t, getppid) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] spoofed getppid");
+	#endif
+
+	return 1;
+}
+
+%hookf(int, fstatat, int fd, const char *pathname, struct stat *buf, int flag) {
+	if(!pathname) {
+		return %orig;
+	}
+
+	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fstatat with path %s", pathname);
+		#endif
+
+		errno = ENOENT;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%end
+
+%group dlsym_hook
+
+%hookf(void *, dlsym, void *handle, const char *symbol) {
+	if(!symbol) {
+		return %orig;
+	}
+
+	NSString *sym = [NSString stringWithUTF8String:symbol];
+
+	if([sym isEqualToString:@"MSHookFunction"]
+	|| [sym isEqualToString:@"MSHookMessageEx"]
+	|| [sym isEqualToString:@"MSHookClassPair"]
+	|| [sym isEqualToString:@"_Z17replaced_readlinkPKcPcm"]
+	|| [sym isEqualToString:@"hooksArray"]
+	|| [sym isEqualToString:@"_OBJC_METACLASS_$__xxx"]
+	|| [sym isEqualToString:@"_OBJC_CLASS_$_PHSSaverV2"]
+	|| [sym isEqualToString:@"plist"]
+	|| [sym isEqualToString:@"flexBreakPoint"]
+	|| [sym isEqualToString:@"convert_coordinates_from_device_to_interface"]
+	|| [sym isEqualToString:@"OBJC_METACLASS_$_DzSnapHelper"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked dlsym for symbol %@", sym);
+		#endif
+
+		return NULL;
+	}
+
+	return %orig;
+}
+
 %end
 
 %ctor {
@@ -678,6 +788,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			NSString *prefs_mode = @"blacklist";
 			BOOL prefs_private_methods = YES;
 			BOOL prefs_experimental_hooks = YES;
+			BOOL prefs_dlsym_hook = NO;
 			BOOL prefs_dyld_array_enabled = YES;
 			BOOL prefs_bundleid_enabled = NO;
 
@@ -703,6 +814,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				if(prefs[@"experimental_hooks"]) {
 					prefs_experimental_hooks = [prefs[@"experimental_hooks"] boolValue];
+				}
+
+				if(prefs[@"dlsym_hook"]) {
+					prefs_dlsym_hook = [prefs[@"dlsym_hook"] boolValue];
 				}
 
 				if(prefs[@"workaround_access"]) {
@@ -795,6 +910,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				#ifdef DEBUG
 				NSLog(@"[shadow] hooked experimental methods");
+				#endif
+			}
+
+			if(prefs_dlsym_hook) {
+				%init(dlsym_hook);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked dlsym");
 				#endif
 			}
 		}
