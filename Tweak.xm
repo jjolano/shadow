@@ -69,6 +69,8 @@ void generate_dyld_array(uint32_t count) {
 }
 
 void init_jb_map() {
+	// TODO: design this map system better to handle exceptions
+
 	NSMutableDictionary *jb_map_etc = [[NSMutableDictionary alloc] init];
 
 	[jb_map_etc setValue:@YES forKey:@"/apt"];
