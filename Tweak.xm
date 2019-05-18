@@ -26,7 +26,25 @@ BOOL generated_dyld_array = NO;
 
 BOOL use_access_workaround = YES;
 
+bool is_dyld_restricted(NSString *name) {
+	return ([name containsString:@"MobileSubstrate"]
+	|| [name containsString:@"substrate"]
+	|| [name containsString:@"substitute"]
+	|| [name containsString:@"TweakInject"]
+	|| [name containsString:@"libjailbreak"]
+	|| [name containsString:@"cycript"]
+	|| [name containsString:@"SBInject"]
+	|| [name containsString:@"pspawn"]
+	|| [name containsString:@"applist"]
+	|| [name hasPrefix:@"/Library/Frameworks"]
+	|| [name hasPrefix:@"/Library/Caches"]
+	|| [name containsString:@"librocketbootstrap"]
+	|| [name containsString:@"libcolorpicker"]);
+}
+
 void generate_dyld_array(uint32_t count) {
+	generated_dyld_array = NO;
+
 	if(dyld_clean_array) {
 		[dyld_clean_array removeAllObjects];
 	} else {
@@ -34,37 +52,22 @@ void generate_dyld_array(uint32_t count) {
 	}
 
 	dyld_clean_array_count = 0;
-	generated_dyld_array = NO;
 
 	for(uint32_t i = 0; i < count; i++) {
 		const char *cname = _dyld_get_image_name(i);
 
 		if(cname) {
-			NSString *name = [NSString stringWithUTF8String:cname];
-
-			if([name containsString:@"MobileSubstrate"]
-			|| [name containsString:@"substrate"]
-			|| [name containsString:@"substitute"]
-			|| [name containsString:@"TweakInject"]
-			|| [name containsString:@"libjailbreak"]
-			|| [name containsString:@"cycript"]
-			|| [name containsString:@"SBInject"]
-			|| [name containsString:@"pspawn"]
-			|| [name containsString:@"applist"]
-			|| [name hasPrefix:@"/Library/Frameworks"]
-			|| [name hasPrefix:@"/Library/Caches"]
-			|| [name containsString:@"librocketbootstrap"]
-			|| [name containsString:@"libcolorpicker"]) {
+			if(is_dyld_restricted([NSString stringWithUTF8String:cname])) {
 				// Skip adding this to clean dyld array.
 				continue;
 			}
 
 			// Add this to clean dyld array.
 			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
-			dyld_clean_array_count++;
 		}
 	}
 
+	dyld_clean_array_count = [dyld_clean_array count];
 	generated_dyld_array = YES;
 }
 
@@ -119,7 +122,7 @@ void init_jb_map() {
 	[jb_map_var setValue:@YES forKey:@"/profile"];
 	[jb_map_var setValue:@YES forKey:@"/motd"];
 	[jb_map_var setValue:@YES forKey:@"/dropbear"];
-	[jb_map_var setValue:@YES forKey:@"/run/jailbreakd"];
+	[jb_map_var setValue:@YES forKey:@"/run"];
 
 	NSMutableDictionary *jb_map_library = [[NSMutableDictionary alloc] init];
 
@@ -190,7 +193,7 @@ void init_jb_map() {
 }
 
 BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
-	if(!map || !path || [path length] == 0) {
+	if(!map || !path) {
 		return NO;
 	}
 
@@ -205,7 +208,13 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			}
 
 			// Recurse into this dictionary.
-			return is_path_restricted(val, [path substringFromIndex:[key length]]);
+			NSString *next = [path substringFromIndex:[key length]];
+
+			if([next length] == 0) {
+				return NO;
+			}
+
+			return is_path_restricted(val, next);
 		}
 	}
 
@@ -213,7 +222,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 }
 
 %group sandboxed_app_hooks
-
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_path_restricted(jb_map, path)) {
@@ -434,9 +442,17 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
 	}
 
-	return %orig;
+	// Basic filter.
+	const char *ret = %orig;
+
+	if(ret && is_dyld_restricted([NSString stringWithUTF8String:ret])) {
+		return %orig(0);
+	}
+
+	return ret;
 }
 
+/*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
 	if(generated_dyld_array) {
 		// Use generated dyld array.
@@ -462,30 +478,29 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return %orig;
 }
-
+*/
 %end
 
 %group private_methods
-
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
 	int ret = %orig;
 
 	if(ops == CS_OPS_STATUS && pid == getpid()) {
 		// Ensure that the platform binary flag is not set.
-		ret &= ~CS_PLATFORM_BINARY;
+		if(ret & CS_PLATFORM_BINARY) {
+			ret &= ~CS_PLATFORM_BINARY;
 
-		#ifdef DEBUG
-		NSLog(@"[shadow] csops - removed platform binary flag");
-		#endif
+			#ifdef DEBUG
+			NSLog(@"[shadow] csops (private) - removed platform binary flag");
+			#endif
+		}
 	}
 
 	return ret;
 }
-
 %end
 
 %group experimental_hooks
-
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
 	if([key isEqualToString:@"SignerIdentity"]) {
@@ -549,23 +564,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 %end
-
-%hookf(int, "system", const char *command) {
-	if(command == NULL) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked system() shell check");
-		#endif
-
-		return 0;
-	}
-
-	#ifdef DEBUG
-	NSLog(@"[shadow] blocked system() command: %s", command);
-	#endif
-
-	errno = ENOSYS;
-	return -1;
-}
 
 %hookf(pid_t, fork) {
 	#ifdef DEBUG
@@ -672,36 +670,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 
-
-%hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-	int ret = %orig;
-
-	if(ret == 0
-	&& name[0] == CTL_KERN
-	&& name[1] == KERN_PROC
-	&& name[2] == KERN_PROC_PID
-	&& name[3] == getpid()) {
-		// Remove trace flag.
-		if(oldp) {
-			((struct kinfo_proc *) oldp)->kp_proc.p_flag &= ~P_TRACED;
-
-			#ifdef DEBUG
-			NSLog(@"[shadow] sysctl: removed trace flag");
-			#endif
-		}
-	}
-
-	return ret;
-}
-
-%hookf(pid_t, getppid) {
-	#ifdef DEBUG
-	NSLog(@"[shadow] spoofed getppid");
-	#endif
-
-	return 1;
-}
-
 %hookf(int, fstatat, int fd, const char *pathname, struct stat *buf, int flag) {
 	if(!pathname) {
 		return %orig;
@@ -718,11 +686,9 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return %orig;
 }
-
 %end
 
 %group dlsym_hook
-
 %hookf(void *, dlsym, void *handle, const char *symbol) {
 	if(!symbol) {
 		return %orig;
@@ -750,7 +716,41 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return %orig;
 }
+%end
 
+%group hook_debugging
+%hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+	int ret = %orig;
+
+	if(ret == 0
+	&& name[0] == CTL_KERN
+	&& name[1] == KERN_PROC
+	&& name[2] == KERN_PROC_PID
+	&& name[3] == getpid()) {
+		// Remove trace flag.
+		if(oldp) {
+			struct kinfo_proc *p = ((struct kinfo_proc *) oldp);
+
+			if(p->kp_proc.p_flag & P_TRACED) {
+				p->kp_proc.p_flag &= ~P_TRACED;
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] sysctl: removed trace flag");
+				#endif
+			}
+		}
+	}
+
+	return ret;
+}
+
+%hookf(pid_t, getppid) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] spoofed getppid");
+	#endif
+
+	return 1;
+}
 %end
 
 %ctor {
@@ -772,11 +772,12 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			BOOL prefs_enabled = YES;
 			BOOL prefs_exclude_system_apps = YES;
 			NSString *prefs_mode = @"blacklist";
-			BOOL prefs_private_methods = YES;
+			BOOL prefs_private_methods = NO;
 			BOOL prefs_experimental_hooks = NO;
 			BOOL prefs_dlsym_hook = NO;
-			BOOL prefs_dyld_array_enabled = YES;
+			BOOL prefs_dyld_array_enabled = NO;
 			BOOL prefs_bundleid_enabled = NO;
+			BOOL prefs_hook_debugging = NO;
 
 			// Load preference file
 			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
@@ -796,6 +797,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				if(prefs[@"private_methods"]) {
 					prefs_private_methods = [prefs[@"private_methods"] boolValue];
+				}
+
+				if(prefs[@"hook_debugging"]) {
+					prefs_hook_debugging = [prefs[@"hook_debugging"] boolValue];
 				}
 
 				if(prefs[@"experimental_hooks"]) {
@@ -896,6 +901,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				#ifdef DEBUG
 				NSLog(@"[shadow] hooked private methods");
+				#endif
+			}
+
+			if(prefs_hook_debugging) {
+				%init(hook_debugging);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked debugging checks");
 				#endif
 			}
 
