@@ -54,7 +54,7 @@
 			<key>label</key>
 			<string>Applications</string>
 			<key>ALAllowsSelection</key>
-			<string>1</string>
+			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
 			<string></string>
 			<key>ALSettingsDefaultValue</key>
@@ -111,6 +111,10 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Advanced Settings</string>
+			<key>footerText</key>
+			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. This setting will eventually become standard as implementation stability is confirmed.
+
+Private methods are undocumented Apple methods that can be used by apps to detect jailbreak status. These methods are probably not allowed to be used by App Store apps anyway.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -144,7 +148,9 @@
 			<key>label</key>
 			<string>Experimental Settings</string>
 			<key>footerText</key>
-			<string>Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
+			<string>Experimental hooks are newly added hooks to Shadow that will eventually become standard. They shouldn't cause issues in most cases.
+
+Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -178,9 +184,9 @@
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>dlsym() Applications</string>
+			<string>Hook dlsym()</string>
 			<key>ALAllowsSelection</key>
-			<string>1</string>
+			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
 			<string></string>
 			<key>ALSettingsDefaultValue</key>
