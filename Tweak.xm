@@ -818,9 +818,9 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 					prefs_experimental_hooks = [prefs[@"experimental_hooks"] boolValue];
 				}
 
-				if(prefs[@"dlsym_hook"]) {
+				/*if(prefs[@"dlsym_hook"]) {
 					prefs_dlsym_hook = [prefs[@"dlsym_hook"] boolValue];
-				}
+				}*/
 
 				if(prefs[@"workaround_access"]) {
 					use_access_workaround = [prefs[@"workaround_access"] boolValue];
@@ -832,6 +832,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				if(prefs[bundleIdentifier]) {
 					prefs_bundleid_enabled = [prefs[bundleIdentifier] boolValue];
+				}
+			}
+
+			NSMutableDictionary *prefs_dlsym = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.dlsym.plist"];
+
+			if(prefs_dlsym) {
+				if(prefs_dlsym[bundleIdentifier]) {
+					prefs_dlsym_hook = [prefs_dlsym[bundleIdentifier] boolValue];
 				}
 			}
 

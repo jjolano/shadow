@@ -22,16 +22,6 @@
 			<key>label</key>
 			<string>Enable Shadow</string>
 		</dict>
-
-		<!-- Application List -->
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Application Settings</string>
-			<key>footerText</key>
-			<string>Blacklist mode enables Shadow for all except selected apps. Whitelist mode enables Shadow only for selected apps.</string>
-		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
@@ -42,7 +32,17 @@
 			<key>key</key>
 			<string>exclude_system_apps</string>
 			<key>label</key>
-			<string>Exclude Apple and Jailbreak Apps</string>
+			<string>Disable Shadow for Safe Apps</string>
+		</dict>
+
+		<!-- Application List -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Application Settings</string>
+			<key>footerText</key>
+			<string>Blacklist mode enables Shadow for all except selected apps. Whitelist mode enables Shadow only for selected apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -111,8 +111,6 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Advanced Settings</string>
-			<key>footerText</key>
-			<string>Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -138,6 +136,16 @@
 			<key>label</key>
 			<string>Hook Private Methods</string>
 		</dict>
+
+		<!-- Experimental Settings -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Experimental Settings</string>
+			<key>footerText</key>
+			<string>Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
+		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
@@ -150,7 +158,7 @@
 			<key>label</key>
 			<string>Experimental Hooks</string>
 		</dict>
-		<dict>
+		<!--<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
@@ -161,6 +169,41 @@
 			<string>dlsym_hook</string>
 			<key>label</key>
 			<string>Hook dlsym()</string>
+		</dict>-->
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
+			<key>label</key>
+			<string>dlsym() Applications</string>
+			<key>ALAllowsSelection</key>
+			<string>1</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string></string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.dlsym.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to enable dlsym() hook</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
 		</dict>
 
 		<!-- Workarounds -->
