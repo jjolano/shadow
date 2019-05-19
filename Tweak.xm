@@ -20,6 +20,7 @@
 #include "codesign.h"
 
 NSMutableDictionary *jb_map = nil;
+NSSet *jb_file_map = nil;
 NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
 BOOL generated_dyld_array = NO;
@@ -195,6 +196,17 @@ void init_jb_map() {
 BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	if(!map || !path || [path length] == 0) {
 		return NO;
+	}
+
+	if(map == jb_map) {
+		path = [path stringByStandardizingPath];
+
+		if(jb_file_map) {
+			// Check if this path is in file map.
+			if([jb_file_map containsObject:path]) {
+				return YES;
+			}
+		}
 	}
 
 	// Find key in dictionary.
@@ -874,6 +886,18 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 				#ifdef DEBUG
 				NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
 				#endif
+			}
+
+			NSMutableDictionary *prefs_map = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.map.plist"];
+
+			if(prefs_map && prefs_map[@"blacklist"]) {
+				if(prefs_map[bundleIdentifier] && [prefs_map[bundleIdentifier] boolValue]) {
+					jb_file_map = [NSSet setWithArray:prefs_map[@"blacklist"]];
+
+					#ifdef DEBUG
+					NSLog(@"[shadow] loaded file map (%lu files)", (unsigned long) [jb_file_map count]);
+					#endif
+				}
 			}
 
 			// Allocate and initialize restricted paths map.

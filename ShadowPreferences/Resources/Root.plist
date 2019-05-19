@@ -162,7 +162,9 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 			<key>footerText</key>
 			<string>Experimental hooks are newly added bypass methods to Shadow that will eventually become standard. Turn this option off if you encounter issues in apps.
 
-Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.</string>
+Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.
+
+File map is an experimental feature of Shadow, which reads installed package files and prevents apps from accessing them. This feature will need to be ran after new packages are installed, to ensure all files are covered. Activating this feature may interfere with how some tweaks operate within apps, however.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -222,6 +224,60 @@ Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, s
 					<string>isSystemApplication = FALSE</string>
 				</dict>
 			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
+			<key>label</key>
+			<string>Use File Map</string>
+			<key>ALAllowsSelection</key>
+			<string>0</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string></string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.map.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to enable file map filtering</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>generate_map:</string>
+			<key>label</key>
+			<string>Generate File Map</string>
+			<key>confirmation</key>
+			<dict>
+				<key>prompt</key>
+				<string>This will read all your installed package files and compile it into a database for Shadow to use in bypassing jailbreak detection. This may take a while, depending on how many packages are installed.</string>
+				<key>title</key>
+				<string>Continue</string>
+				<key>okTitle</key>
+				<string>Continue</string>
+				<key>cancelTitle</key>
+				<string>Cancel</string>
+			</dict>
 		</dict>
 
 		<!-- Workarounds -->
