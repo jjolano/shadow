@@ -9,6 +9,8 @@
 #include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/sysctl.h>
+#include <sys/syslimits.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
@@ -58,12 +60,25 @@ void generate_dyld_array(uint32_t count) {
 		const char *cname = _dyld_get_image_name(i);
 
 		if(cname) {
-			if(is_dyld_restricted([NSString stringWithUTF8String:cname])) {
+			NSString *name = [NSString stringWithUTF8String:cname];
+
+			if(is_dyld_restricted(name)) {
 				// Skip adding this to clean dyld array.
 				continue;
 			}
 
+			// Get other info about this dyld which may be requested.
+			// const struct mach_header *header = _dyld_get_image_header(i);
+			// intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+
 			// Add this to clean dyld array.
+			// [dyld_clean_array addObject:@{
+			// 	@"image_index" : [NSNumber numberWithUnsignedInt:i],
+			// 	@"name" : name,
+			// 	@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
+			// 	@"slide" : [NSValue valueWithPointer:(const void *)slide]
+			// }];
+
 			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
 		}
 	}
@@ -199,7 +214,9 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	}
 
 	if(map == jb_map) {
-		path = [path stringByStandardizingPath];
+		// if([path containsString:@"/./"] || [path containsString:@"/../"]) {
+		// 	path = [path stringByStandardizingPath];
+		// }
 
 		if(jb_file_map) {
 			// Check if this path is in file map.
@@ -310,11 +327,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
 	// workaround for tweaks not loading properly in Substrate
-	if(use_access_workaround && [path hasSuffix:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] allowed access: %@", path);
-		#endif
-
+	if(use_access_workaround && [[path pathExtension] isEqualToString:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
 		return %orig;
 	}
 
@@ -326,10 +339,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		errno = ENOENT;
 		return -1;
 	}
-
-	#ifdef DEBUG
-	// NSLog(@"[shadow] allowed access: %s", pathname);
-	#endif
 
 	return %orig;
 }
@@ -445,6 +454,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			return NULL;
 		}
 
+		// return [dyld_clean_array[image_index][@"name"] UTF8String];
 		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
 	}
 
@@ -457,7 +467,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return ret;
 }
-
 /*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
 	if(generated_dyld_array) {
@@ -466,7 +475,10 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			return NULL;
 		}
 
-		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+		static struct mach_header header;
+		[dyld_clean_array[image_index][@"header"] getBytes:&header length:sizeof(struct mach_header)];
+
+		return &header;
 	}
 
 	return %orig;
@@ -479,7 +491,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			return 0;
 		}
 
-		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+		return (intptr_t) [dyld_clean_array[image_index][@"slide"] pointerValue];
 	}
 
 	return %orig;
@@ -681,7 +693,21 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+	BOOL restricted = NO;
+	char cfdpath[PATH_MAX];
+	
+	if(fcntl(fd, F_GETPATH, cfdpath) != -1) {
+		NSString *fdpath = [NSString stringWithUTF8String:cfdpath];
+		NSString *path = [NSString stringWithUTF8String:pathname];
+
+		restricted = is_path_restricted(jb_map, fdpath);
+
+		if(!restricted && [fdpath isEqualToString:@"/"]) {
+			restricted = is_path_restricted(jb_map, [NSString stringWithFormat:@"/%@", path]);
+		}
+	}
+
+	if(restricted) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fstatat with path %s", pathname);
 		#endif

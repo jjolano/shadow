@@ -164,7 +164,7 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 
 Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.
 
-File map is an experimental feature of Shadow, which reads installed package files and prevents apps from accessing them. This feature will need to be ran after new packages are installed, to ensure all files are covered. Activating this feature may interfere with how some tweaks operate within apps, however.</string>
+File map is an experimental feature of Shadow, which reads installed package files and prevents apps from accessing them. The file map will need to be regenerated after new packages are installed to ensure any new files are covered. Activating this feature may interfere with how some tweaks operate within apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -254,7 +254,7 @@ File map is an experimental feature of Shadow, which reads installed package fil
 					<key>suppress-hidden-apps</key>
 					<string>1</string>
 					<key>title</key>
-					<string>Select apps to enable file map filtering</string>
+					<string>Select apps to enable file map</string>
 					<key>predicate</key>
 					<string>isSystemApplication = FALSE</string>
 				</dict>
