@@ -43,10 +43,10 @@
 
 							if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file isDirectory:&isDir]) {
 								if(!isDir
-								/*|| [[dpkg_file pathExtension] isEqualToString:@"app"]
+								|| [[dpkg_file pathExtension] isEqualToString:@"app"]
 								|| [[dpkg_file pathExtension] isEqualToString:@"framework"]
 								|| [[dpkg_file pathExtension] isEqualToString:@"bundle"]
-								|| [[dpkg_file pathExtension] isEqualToString:@"theme"]*/) {
+								|| [[dpkg_file pathExtension] isEqualToString:@"theme"]) {
 									[blacklist addObject:dpkg_file];
 								}
 							}
@@ -73,7 +73,7 @@
 			[alert dismissViewControllerAnimated:YES completion:nil];
 		}];
 	} else {
-		UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Failed to open dpkg info directory." preferredStyle:UIAlertControllerStyleAlert];
+		UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Cannot generate file map: failed to open dpkg info directory." preferredStyle:UIAlertControllerStyleAlert];
 		UIAlertAction *defaultAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
 		[alert addAction:defaultAction];
 		[self presentViewController:alert animated:YES completion:nil];

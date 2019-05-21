@@ -7,8 +7,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Bypass Settings</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -112,9 +110,7 @@
 			<key>label</key>
 			<string>Advanced Settings</string>
 			<key>footerText</key>
-			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. This setting will eventually become standard as implementation stability is confirmed.
-
-Private methods are undocumented Apple methods that can be used by apps to detect jailbreak status. These methods are probably not allowed to be used by App Store apps anyway.</string>
+			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. This setting will eventually become standard as implementation stability is confirmed.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -130,6 +126,12 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Private methods are undocumented Apple methods that can be used by apps to detect jailbreak status. These methods are not allowed to be used by App Store apps, but it shouldn't hurt to hook them anyway.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
 			<false/>
@@ -139,6 +141,12 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 			<string>private_methods</string>
 			<key>label</key>
 			<string>Hook Private Methods</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText<key>
+			<string>Some apps check if the app is being traced or debugged by an external process. Enabling these hooks will prevent these checks.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -152,6 +160,24 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 			<key>label</key>
 			<string>Hook Debugging Checks</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText<key>
+			<string>This hook is only necessary if apps are able to use methods that are otherwise restricted by the sandbox.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>hook_sandboxed</string>
+			<key>label</key>
+			<string>Hook Sandboxed Methods</string>
+		</dict>
 
 		<!-- Experimental Settings -->
 		<dict>
@@ -160,11 +186,7 @@ Private methods are undocumented Apple methods that can be used by apps to detec
 			<key>label</key>
 			<string>Experimental Settings</string>
 			<key>footerText</key>
-			<string>Experimental hooks are newly added bypass methods to Shadow that will eventually become standard. Turn this option off if you encounter issues in apps.
-
-Hooking dlsym() is an advanced form of bypassing jailbreak detection. However, some apps may be sensitive to this hooking and encounter issues such as crashing or freezing.
-
-File map is an experimental feature of Shadow, which reads installed package files and prevents apps from accessing them. The file map will need to be regenerated after new packages are installed to ensure any new files are covered. Activating this feature may interfere with how some tweaks operate within apps.</string>
+			<string>Experimental hooks are newly added bypass methods to Shadow and may potentially cause issues in some apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -178,7 +200,13 @@ File map is an experimental feature of Shadow, which reads installed package fil
 			<key>label</key>
 			<string>Experimental Hooks</string>
 		</dict>
-		<!--<dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText<key>
+			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers.</string>
+		</dict>
+		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
@@ -186,10 +214,16 @@ File map is an experimental feature of Shadow, which reads installed package fil
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
-			<string>dlsym_hook</string>
+			<string>standardize_path</string>
 			<key>label</key>
-			<string>Hook dlsym()</string>
-		</dict>-->
+			<string>Standardize Path Strings</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText<key>
+			<string>Hooking dlsym() is an advanced jailbreak detection bypass. This hook is unstable in some apps, and may cause issues.</string>
+		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
@@ -224,6 +258,12 @@ File map is an experimental feature of Shadow, which reads installed package fil
 					<string>isSystemApplication = FALSE</string>
 				</dict>
 			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText<key>
+			<string>File map enables Shadow to efficiently perform file path checks. Generating a file map will scan installed package files and "blacklist" them. Due to the nature of this file map generation, tweaks that rely on their files during runtime will have issues.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

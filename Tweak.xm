@@ -10,6 +10,7 @@
 #include <sys/mount.h>
 #include <sys/sysctl.h>
 #include <sys/syslimits.h>
+#include <uuid/uuid.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include <dlfcn.h>
 #include <spawn.h>
 #include <errno.h>
+#include <pwd.h>
 
 #include "codesign.h"
 
@@ -27,10 +29,14 @@ NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
 BOOL generated_dyld_array = NO;
 
+BOOL standardize_paths = NO;
 BOOL use_access_workaround = YES;
 
 bool is_dyld_restricted(NSString *name) {
-	return ([name containsString:@"MobileSubstrate"]
+	return (jb_file_map && [jb_file_map containsObject:name])
+	|| ([name hasPrefix:@"/Library/Frameworks"]
+	|| [name hasPrefix:@"/Library/Caches"]
+	|| [name containsString:@"MobileSubstrate"]
 	|| [name containsString:@"substrate"]
 	|| [name containsString:@"substitute"]
 	|| [name containsString:@"TweakInject"]
@@ -39,8 +45,6 @@ bool is_dyld_restricted(NSString *name) {
 	|| [name containsString:@"SBInject"]
 	|| [name containsString:@"pspawn"]
 	|| [name containsString:@"applist"]
-	|| [name hasPrefix:@"/Library/Frameworks"]
-	|| [name hasPrefix:@"/Library/Caches"]
 	|| [name containsString:@"librocketbootstrap"]
 	|| [name containsString:@"libcolorpicker"]);
 }
@@ -149,7 +153,6 @@ void init_jb_map() {
 	[jb_map_library setValue:@YES forKey:@"/PreferenceBundles"];
 	[jb_map_library setValue:@YES forKey:@"/PreferenceLoader"];
 	[jb_map_library setValue:@YES forKey:@"/Switches"];
-	[jb_map_library setValue:@YES forKey:@"/Themes"];
 	[jb_map_library setValue:@YES forKey:@"/dpkg"];
 	[jb_map_library setValue:@YES forKey:@"/Caches/"];
 	[jb_map_library setValue:@YES forKey:@"/ControlCenter"];
@@ -214,9 +217,9 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	}
 
 	if(map == jb_map) {
-		// if([path containsString:@"/./"] || [path containsString:@"/../"]) {
-		// 	path = [path stringByStandardizingPath];
-		// }
+		if(standardize_paths && [path isAbsolutePath]) {
+			path = [path stringByStandardizingPath];
+		}
 
 		if(jb_file_map) {
 			// Check if this path is in file map.
@@ -244,7 +247,19 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return NO;
 }
 
-%group sandboxed_app_hooks
+BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
+	if(!map || !url) {
+		return NO;
+	}
+
+	if([[url scheme] isEqualToString:@"file"]) {
+		return is_path_restricted(map, [url path]);
+	}
+
+	return NO;
+}
+
+%group stable_hooks
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
 	if(is_path_restricted(jb_map, path)) {
@@ -255,7 +270,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return NO;
 	}
 
-	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
 	return %orig;
 }
 
@@ -268,48 +282,25 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return NO;
 	}
 
-	// NSLog(@"[shadow] allowed fileExistsAtPath with path %@", path);
-	return %orig;
-}
-
-- (BOOL)isReadableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed isReadableFileAtPath with path %@", path);
-	return %orig;
-}
-
-- (BOOL)isExecutableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	// NSLog(@"[shadow] allowed isExecutableFileAtPath with path %@", path);
 	return %orig;
 }
 %end
 
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
-	if(!url) {
-		return %orig;
-	}
-
 	if([[url scheme] isEqualToString:@"cydia"]
 	|| [[url scheme] isEqualToString:@"sileo"]
 	|| [[url scheme] isEqualToString:@"zbra"]) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
+		#endif
+
+		return NO;
+	}
+
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked canOpenURL for path %@", [url path]);
 		#endif
 
 		return NO;
@@ -377,30 +368,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return NULL;
 	}
 
-	// NSLog(@"[shadow] allowed fopen with path %s", pathname);
 	return %orig;
-}
-
-%hookf(int, statfs, const char *path, struct statfs *buf) {
-	if(!path) {
-		return %orig;
-	}
-
-	int ret = %orig;
-
-	if(ret == 0) {
-		NSString *pathname = [NSString stringWithUTF8String:path];
-		
-		if([pathname isEqualToString:@"/"]) {
-			if(buf != NULL) {
-				// Ensure root is marked read-only.
-				buf->f_flags |= MNT_RDONLY;
-			}
-		}
-	}
-
-	// NSLog(@"[shadow] statfs on %s", path);
-	return ret;
 }
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
@@ -417,7 +385,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return -1;
 	}
 
-	// NSLog(@"[shadow] allowed stat with path %s", pathname);
 	return %orig;
 }
 
@@ -435,7 +402,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return -1;
 	}
 
-	// NSLog(@"[shadow] allowed stat with path %s", pathname);
 	return %orig;
 }
 
@@ -503,18 +469,144 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
 	int ret = %orig;
 
-	if(ops == CS_OPS_STATUS && pid == getpid()) {
+	if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) && pid == getpid()) {
 		// Ensure that the platform binary flag is not set.
-		if(ret & CS_PLATFORM_BINARY) {
-			ret &= ~CS_PLATFORM_BINARY;
+		#ifdef DEBUG
+		NSLog(@"[shadow] csops (private) - removed platform binary flag");
+		#endif
 
-			#ifdef DEBUG
-			NSLog(@"[shadow] csops (private) - removed platform binary flag");
-			#endif
-		}
+		ret &= ~CS_PLATFORM_BINARY;
 	}
 
 	return ret;
+}
+%end
+
+%group sandboxed_methods
+%hookf(pid_t, fork) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] blocked fork()");
+	#endif
+	
+	errno = ENOSYS;
+	return -1;
+}
+
+%hookf(FILE *, popen, const char *command, const char *type) {
+	#ifdef DEBUG
+	NSLog(@"[shadow] blocked popen()");
+	#endif
+
+	errno = ENOSYS;
+	return NULL;
+}
+
+%hookf(int, setgid, gid_t gid) {
+	// Block setgid for root.
+	if(gid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked setgid(0)");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, setuid, uid_t uid) {
+	// Block setuid for root.
+	if(uid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked setuid(0)");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, setegid, gid_t gid) {
+	// Block setegid for root.
+	if(gid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked setegid(0)");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, seteuid, uid_t uid) {
+	// Block seteuid for root.
+	if(uid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked seteuid(0)");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(uid_t, getuid) {
+	// Return uid for mobile.
+	struct passwd *pw = getpwnam("mobile");
+	return pw ? pw->pw_uid : 501;
+}
+
+%hookf(gid_t, getgid) {
+	// Return gid for mobile.
+	struct passwd *pw = getpwnam("mobile");
+	return pw ? pw->pw_gid : 501;
+}
+
+%hookf(uid_t, geteuid) {
+	// Return uid for mobile.
+	struct passwd *pw = getpwnam("mobile");
+	return pw ? pw->pw_uid : 501;
+}
+
+%hookf(uid_t, getegid) {
+	// Return gid for mobile.
+	struct passwd *pw = getpwnam("mobile");
+	return pw ? pw->pw_gid : 501;
+}
+
+%hookf(int, setreuid, uid_t ruid, uid_t euid) {
+	// Block for root.
+	if(ruid == 0 || euid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked setreuid");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
+}
+
+%hookf(int, setregid, gid_t rgid, gid_t egid) {
+	// Block for root.
+	if(rgid == 0 || egid == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked setregid");
+		#endif
+
+		errno = EPERM;
+		return -1;
+	}
+
+	return %orig;
 }
 %end
 
@@ -534,6 +626,30 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 %end
 
 %hook NSFileManager
+- (BOOL)isReadableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isExecutableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
 	if(is_path_restricted(jb_map, destPath)) {
 		#ifdef DEBUG
@@ -582,24 +698,6 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	return %orig;
 }
 %end
-
-%hookf(pid_t, fork) {
-	#ifdef DEBUG
-	NSLog(@"[shadow] blocked fork()");
-	#endif
-	
-	errno = ENOSYS;
-	return -1;
-}
-
-%hookf(FILE *, popen, const char *command, const char *type) {
-	#ifdef DEBUG
-	NSLog(@"[shadow] blocked popen()");
-	#endif
-
-	errno = ENOSYS;
-	return NULL;
-}
 
 %hookf(int, posix_spawn, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
 	if(!pathname) {
@@ -718,12 +816,47 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 	return %orig;
 }
+
+%hookf(int, statfs, const char *path, struct statfs *buf) {
+	if(!path) {
+		return %orig;
+	}
+
+	int ret = %orig;
+
+	if(ret == 0) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] statfs on %s", path);
+		#endif
+
+		NSString *pathname = [NSString stringWithUTF8String:path];
+		
+		if([pathname isEqualToString:@"/"]) {
+			if(buf) {
+				// Ensure root is marked read-only.
+				buf->f_flags |= MNT_RDONLY;
+				return ret;
+			}
+		}
+
+		if(is_path_restricted(jb_map, pathname)) {
+			#ifdef DEBUG
+			NSLog(@"[shadow] blocked statfs on %s", path);
+			#endif
+
+			errno = ENOENT;
+			return -1;
+		}
+	}
+
+	return ret;
+}
 %end
 
 %group dlsym_hook
 %hookf(void *, dlsym, void *handle, const char *symbol) {
 	if(!symbol) {
-		return %orig;
+		return %orig(handle, symbol);
 	}
 
 	NSString *sym = [NSString stringWithUTF8String:symbol];
@@ -746,7 +879,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 		return NULL;
 	}
 
-	return %orig;
+	return %orig(handle, symbol);
 }
 %end
 
@@ -810,6 +943,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			BOOL prefs_dyld_array_enabled = NO;
 			BOOL prefs_bundleid_enabled = NO;
 			BOOL prefs_hook_debugging = NO;
+			BOOL prefs_hook_sandboxed = NO;
 
 			// Load preference file
 			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
@@ -839,9 +973,13 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 					prefs_experimental_hooks = [prefs[@"experimental_hooks"] boolValue];
 				}
 
-				/*if(prefs[@"dlsym_hook"]) {
-					prefs_dlsym_hook = [prefs[@"dlsym_hook"] boolValue];
-				}*/
+				if(prefs[@"standardize_path"]) {
+					standardize_paths = [prefs[@"standardize_path"] boolValue];
+				}
+
+				if(prefs[@"hook_sandboxed"]) {
+					prefs_hook_sandboxed = [prefs[@"hook_sandboxed"] boolValue];
+				}
 
 				if(prefs[@"workaround_access"]) {
 					use_access_workaround = [prefs[@"workaround_access"] boolValue];
@@ -934,7 +1072,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			#endif
 
 			// Hook bypass methods.
-			%init(sandboxed_app_hooks);
+			%init(stable_hooks);
 
 			#ifdef DEBUG
 			NSLog(@"[shadow] hooked basic detection methods");
@@ -945,6 +1083,14 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 
 				#ifdef DEBUG
 				NSLog(@"[shadow] hooked private methods");
+				#endif
+			}
+
+			if(prefs_hook_sandboxed) {
+				%init(sandboxed_methods);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked sandboxed methods");
 				#endif
 			}
 
