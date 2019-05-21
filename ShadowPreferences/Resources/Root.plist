@@ -7,6 +7,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Shadow Settings</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -127,6 +129,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
 			<key>footerText</key>
 			<string>Private methods are undocumented Apple methods that can be used by apps to detect jailbreak status. These methods are not allowed to be used by App Store apps, but it shouldn't hurt to hook them anyway.</string>
 		</dict>
@@ -145,7 +149,9 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText<key>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
 			<string>Some apps check if the app is being traced or debugged by an external process. Enabling these hooks will prevent these checks.</string>
 		</dict>
 		<dict>
@@ -163,7 +169,9 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText<key>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
 			<string>This hook is only necessary if apps are able to use methods that are otherwise restricted by the sandbox.</string>
 		</dict>
 		<dict>
@@ -203,7 +211,9 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText<key>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
 			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers.</string>
 		</dict>
 		<dict>
@@ -221,7 +231,9 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText<key>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
 			<string>Hooking dlsym() is an advanced jailbreak detection bypass. This hook is unstable in some apps, and may cause issues.</string>
 		</dict>
 		<dict>
@@ -262,7 +274,9 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText<key>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
 			<string>File map enables Shadow to efficiently perform file path checks. Generating a file map will scan installed package files and "blacklist" them. Due to the nature of this file map generation, tweaks that rely on their files during runtime will have issues.</string>
 		</dict>
 		<dict>

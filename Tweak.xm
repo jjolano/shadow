@@ -626,10 +626,110 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 %end
 
 %hook NSFileManager
+- (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
+	if(jb_file_map) {
+
+	}
+
+	return %orig;
+}
+
+- (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+	if(jb_file_map) {
+
+	}
+
+	return %orig;
+}
+
+- (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
+	return %orig;
+}
+
+- (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
+	return %orig;
+}
+
+- (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
+	return %orig;
+}
+
+- (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
+	return %orig;
+}
+
+- (NSString *)displayNameAtPath:(NSString *)path {
+	return %orig;
+}
+
+- (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (NSData *)contentsAtPath:(NSString *)path {
+	return %orig;
+}
+
+- (NSData *)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
+	return %orig;
+}
+
+- (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
+- (BOOL)changeCurrentDirectoryPath:(NSString *)path {
+	return %orig;
+}
+
 - (BOOL)isReadableFileAtPath:(NSString *)path {
 	if(is_path_restricted(jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isWritableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isWritableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isDeletableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isDeletableFileAtPath with path %@", path);
 		#endif
 
 		return NO;
@@ -650,6 +750,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	return %orig;
 }
 
+- (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
+	return %orig;
+}
+
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
 	if(is_path_restricted(jb_map, destPath)) {
 		#ifdef DEBUG
@@ -663,6 +767,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return NO;
 	}
 
+	return %orig;
+}
+
+- (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
 	return %orig;
 }
 
