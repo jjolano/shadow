@@ -627,78 +627,334 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 %hook NSFileManager
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
-	if(jb_file_map) {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked contentsOfDirectoryAtURL for path %@", [url path]);
+		#endif
 
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+	
+	/*
+	if(jb_file_map && [[url scheme] isEqualToString:@"file"]) {
+		if([jb_file_map containsObject:[url path]]) {
+			#ifdef DEBUG
+			NSLog(@"[shadow] blocked contentsOfDirectoryAtURL for path %@", [url path]);
+			#endif
+
+			if(error) {
+				*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+			}
+
+			return nil;
+		}
+	}
+	*/
+
+	NSArray *ret = %orig;
+
+	if(ret && jb_file_map) {
+		NSMutableArray *newret = [NSMutableArray new];
+
+		// Filter the array.
+		for(NSURL *content_url in ret) {
+			if(![jb_file_map containsObject:[content_url path]]) {
+				[newret addObject:content_url];
+			} else {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered contentsOfDirectoryAtURL for path %@", [content_url path]);
+				#endif
+			}
+		}
+
+		return newret;
 	}
 
-	return %orig;
+	return ret;
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	if(jb_file_map) {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked contentsOfDirectoryAtPath for path %@", path);
+		#endif
 
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
 	}
 
-	return %orig;
+	/*
+	if(jb_file_map) {
+		if([jb_file_map containsObject:path]) {
+			#ifdef DEBUG
+			NSLog(@"[shadow] blocked contentsOfDirectoryAtPath for path %@", path);
+			#endif
+
+			if(error) {
+				*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+			}
+
+			return nil;
+		}
+	}
+	*/
+
+	NSArray *ret = %orig;
+
+	if(ret && jb_file_map) {
+		NSMutableArray *newret = [NSMutableArray new];
+
+		// Filter the array.
+		for(NSString *content_path in ret) {
+			if(![jb_file_map containsObject:content_path]) {
+				[newret addObject:content_path];
+			} else {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered contentsOfDirectoryAtPath for path %@", content_path);
+				#endif
+			}
+		}
+
+		return newret;
+	}
+
+	return ret;
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked enumeratorAtURL for path %@", [url path]);
+		#endif
+
+		return %orig([NSURL fileURLWithPath:@"file:///.file"], keys, mask, handler);
+	}
+
 	return %orig;
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked enumeratorAtPath for path %@", path);
+		#endif
+
+		return %orig(@"/.file");
+	}
+
 	return %orig;
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	return %orig;
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked subpathsOfDirectoryAtPath for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	NSArray *ret = %orig;
+
+	if(ret && jb_file_map) {
+		NSMutableArray *newret = [NSMutableArray new];
+
+		// Filter the array.
+		for(NSString *content_path in ret) {
+			if(![jb_file_map containsObject:content_path]) {
+				[newret addObject:content_path];
+			} else {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered subpathsOfDirectoryAtPath for path %@", content_path);
+				#endif
+			}
+		}
+
+		return newret;
+	}
+
+	return ret;
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-	return %orig;
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked subpathsAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	NSArray *ret = %orig;
+
+	if(ret && jb_file_map) {
+		NSMutableArray *newret = [NSMutableArray new];
+
+		// Filter the array.
+		for(NSString *content_path in ret) {
+			if(![jb_file_map containsObject:content_path]) {
+				[newret addObject:content_path];
+			} else {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered subpathsAtPath for path %@", content_path);
+				#endif
+			}
+		}
+
+		return newret;
+	}
+
+	return ret;
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, srcURL)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked copyItemAtURL for path %@", [srcURL path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, srcPath)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked copyItemAtPath for path %@", srcPath);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked componentsToDisplayForPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
 	return %orig;
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked displayNameAtPath for path %@", path);
+		#endif
+
+		return path;
+	}
+
 	return %orig;
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	return %orig;
-}
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked attributesOfItemAtPath for path %@", path);
+		#endif
 
-- (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
 	return %orig;
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked contentsAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
 	return %orig;
 }
 
-- (NSData *)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
+- (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
+	if(is_path_restricted(jb_map, path1) || is_path_restricted(jb_map, path2)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked contentsEqualAtPath for paths %@ | %@", path1, path2);
+		#endif
+
+		return NO;
+	}
+
 	return %orig;
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, directoryURL) || is_url_restricted(jb_map, otherURL)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked getRelationship for paths %@ | %@", [directoryURL path], [otherURL path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, otherURL)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked getRelationship for path %@", [otherURL path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked changeCurrentDirectoryPath for path %@", path);
+		#endif
+
+		return NO;
+	}
+
 	return %orig;
 }
 
@@ -751,6 +1007,18 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, destURL)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked createSymbolicLinkAtURL for path %@ -> %@", [url path], [destURL path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
@@ -771,6 +1039,18 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, dstURL)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked linkItemAtURL for path %@ -> %@", [srcURL path], [dstURL path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return NO;
+	}
+
 	return %orig;
 }
 
@@ -798,6 +1078,336 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 		if(error) {
 			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hook NSFileHandle
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForReadingAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForReadingFromURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForWritingAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForWritingAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForWritingToURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForUpdatingAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForUpdatingURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hook NSString
++ (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked stringWithContentsOfFile for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked stringWithContentsOfFile for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)stringWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked stringWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)stringWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked stringWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hook NSData
++ (instancetype)dataWithContentsOfFile:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked dataWithContentsOfFile for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked dataWithContentsOfFile for path %@", path);
+		#endif
+
+		if(errorPtr) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked dataWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked dataWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(errorPtr) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
+		#endif
+
+		if(errorPtr) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
+		#endif
+
+		if(errorPtr) {
+			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
 		}
 
 		return nil;
@@ -933,14 +1543,14 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	int ret = %orig;
 
 	if(ret == 0) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] statfs on %s", path);
-		#endif
-
 		NSString *pathname = [NSString stringWithUTF8String:path];
 		
 		if([pathname isEqualToString:@"/"]) {
 			if(buf) {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered statfs on %s", path);
+				#endif
+
 				// Ensure root is marked read-only.
 				buf->f_flags |= MNT_RDONLY;
 				return ret;
