@@ -214,7 +214,7 @@
 			<key>label</key>
 			<string></string>
 			<key>footerText</key>
-			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers.</string>
+			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers. Some apps may be sensitive to these modifications and crash.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
