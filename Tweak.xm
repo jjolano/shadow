@@ -72,18 +72,16 @@ void generate_dyld_array(uint32_t count) {
 			}
 
 			// Get other info about this dyld which may be requested.
-			// const struct mach_header *header = _dyld_get_image_header(i);
-			// intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+			const struct mach_header *header = _dyld_get_image_header(i);
+			intptr_t slide = _dyld_get_image_vmaddr_slide(i);
 
 			// Add this to clean dyld array.
-			// [dyld_clean_array addObject:@{
-			// 	@"image_index" : [NSNumber numberWithUnsignedInt:i],
-			// 	@"name" : name,
-			// 	@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
-			// 	@"slide" : [NSValue valueWithPointer:(const void *)slide]
-			// }];
-
-			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
+			[dyld_clean_array addObject:@{
+				@"image_index" : [NSNumber numberWithUnsignedInt:i],
+				@"name" : name,
+				@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
+				@"slide" : [NSValue valueWithPointer:(const void *)slide]
+			}];
 		}
 	}
 
@@ -420,8 +418,8 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			return NULL;
 		}
 
-		// return [dyld_clean_array[image_index][@"name"] UTF8String];
-		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+		return [dyld_clean_array[image_index][@"name"] UTF8String];
+		//return %orig([dyld_clean_array[image_index] unsignedIntValue]);
 	}
 
 	// Basic filter.
@@ -1574,20 +1572,14 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 %group dlsym_hook
 %hookf(void *, dlsym, void *handle, const char *symbol) {
 	if(!symbol) {
-		return %orig(handle, symbol);
+		return NULL;
 	}
 
 	NSString *sym = [NSString stringWithUTF8String:symbol];
 
 	if([sym hasPrefix:@"MS"]
-	|| [sym isEqualToString:@"_Z17replaced_readlinkPKcPcm"]
-	|| [sym isEqualToString:@"hooksArray"]
-	|| [sym isEqualToString:@"_OBJC_METACLASS_$__xxx"]
-	|| [sym isEqualToString:@"_OBJC_CLASS_$_PHSSaverV2"]
-	|| [sym isEqualToString:@"plist"]
-	|| [sym isEqualToString:@"flexBreakPoint"]
-	|| [sym isEqualToString:@"convert_coordinates_from_device_to_interface"]
-	|| [sym isEqualToString:@"OBJC_METACLASS_$_DzSnapHelper"]) {
+	|| [sym hasPrefix:@"Sub"]
+	|| [sym hasPrefix:@"substitute_"]) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked dlsym for symbol %@", sym);
 		#endif
@@ -1595,7 +1587,8 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return NULL;
 	}
 
-	return %orig(handle, symbol);
+	void *ret = %orig;
+	return ret;
 }
 %end
 
