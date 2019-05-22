@@ -1579,9 +1579,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	NSString *sym = [NSString stringWithUTF8String:symbol];
 
-	if([sym isEqualToString:@"MSHookFunction"]
-	|| [sym isEqualToString:@"MSHookMessageEx"]
-	|| [sym isEqualToString:@"MSHookClassPair"]
+	if([sym hasPrefix:@"MS"]
 	|| [sym isEqualToString:@"_Z17replaced_readlinkPKcPcm"]
 	|| [sym isEqualToString:@"hooksArray"]
 	|| [sym isEqualToString:@"_OBJC_METACLASS_$__xxx"]
