@@ -4,9 +4,9 @@ Depends: mobilesubstrate, applist, preferenceloader, firmware (>= 9.0)
 Provides: com.jjolano.shadow
 Conflicts: com.jjolano.shadow
 Replaces: com.jjolano.shadow
-Version: 1.10
+Version: 1.11
 Architecture: iphoneos-arm
-Description: A simple jailbreak detection blocker that defeats basic detection methods.
+Description: A lightweight general jailbreak detection bypass.
 Maintainer: jjolano
 Author: jjolano
 Section: Tweaks
