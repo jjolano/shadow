@@ -71,17 +71,19 @@ void generate_dyld_array(uint32_t count) {
 				continue;
 			}
 
-			// Get other info about this dyld which may be requested.
-			const struct mach_header *header = _dyld_get_image_header(i);
-			intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
 
-			// Add this to clean dyld array.
-			[dyld_clean_array addObject:@{
-				@"image_index" : [NSNumber numberWithUnsignedInt:i],
-				@"name" : name,
-				@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
-				@"slide" : [NSValue valueWithPointer:(const void *)slide]
-			}];
+			// Get other info about this dyld which may be requested.
+			// const struct mach_header *header = _dyld_get_image_header(i);
+			// intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+
+			// // Add this to clean dyld array.
+			// [dyld_clean_array addObject:@{
+			// 	@"image_index" : [NSNumber numberWithUnsignedInt:i],
+			// 	@"name" : name,
+			// 	@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
+			// 	@"slide" : [NSValue valueWithPointer:(const void *)slide]
+			// }];
 		}
 	}
 
@@ -215,7 +217,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 	}
 
 	if(map == jb_map) {
-		if(standardize_paths && [path isAbsolutePath]) {
+		if(standardize_paths) {
 			path = [path stringByStandardizingPath];
 		}
 
@@ -275,6 +277,54 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	if(is_path_restricted(jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isReadableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isWritableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isWritableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isDeletableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isDeletableFileAtPath with path %@", path);
+		#endif
+
+		return NO;
+	}
+
+	return %orig;
+}
+
+- (BOOL)isExecutableFileAtPath:(NSString *)path {
+	if(is_path_restricted(jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
 		#endif
 
 		return NO;
@@ -403,6 +453,42 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	return %orig;
 }
 
+%hookf(int, statfs, const char *path, struct statfs *buf) {
+	if(!path) {
+		return %orig;
+	}
+
+	int ret = %orig;
+
+	if(ret == 0) {
+		NSString *pathname = [NSString stringWithUTF8String:path];
+		
+		if(![pathname hasPrefix:@"/var"]
+		&& ![pathname hasPrefix:@"/private/var"]) {
+			if(buf) {
+				#ifdef DEBUG
+				NSLog(@"[shadow] filtered statfs on %s", path);
+				#endif
+
+				// Ensure root is marked read-only.
+				buf->f_flags |= MNT_RDONLY;
+				return ret;
+			}
+		}
+
+		if(is_path_restricted(jb_map, pathname)) {
+			#ifdef DEBUG
+			NSLog(@"[shadow] blocked statfs on %s", path);
+			#endif
+
+			errno = ENOENT;
+			return -1;
+		}
+	}
+
+	return ret;
+}
+
 %hookf(uint32_t, _dyld_image_count) {
 	if(generated_dyld_array) {
 		return dyld_clean_array_count;
@@ -418,8 +504,8 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			return NULL;
 		}
 
-		return [dyld_clean_array[image_index][@"name"] UTF8String];
-		//return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+		// return [dyld_clean_array[image_index][@"name"] UTF8String];
+		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
 	}
 
 	// Basic filter.
@@ -956,54 +1042,6 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	return %orig;
 }
 
-- (BOOL)isReadableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)isWritableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isWritableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)isDeletableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isDeletableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	return %orig;
-}
-
-- (BOOL)isExecutableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
-		#endif
-
-		return NO;
-	}
-
-	return %orig;
-}
-
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
 	if(is_url_restricted(jb_map, destURL)) {
 		#ifdef DEBUG
@@ -1171,250 +1209,6 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 %end
 
-%hook NSString
-+ (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked stringWithContentsOfFile for path %@", path);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked stringWithContentsOfFile for path %@", path);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)stringWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked stringWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)stringWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked stringWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-%end
-
-%hook NSData
-+ (instancetype)dataWithContentsOfFile:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked dataWithContentsOfFile for path %@", path);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked dataWithContentsOfFile for path %@", path);
-		#endif
-
-		if(errorPtr) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked dataWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked dataWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(errorPtr) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfFile for path %@", path);
-		#endif
-
-		if(errorPtr) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked initWithContentsOfURL for path %@", [url path]);
-		#endif
-
-		if(errorPtr) {
-			*errorPtr = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-%end
-
 %hookf(int, posix_spawn, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
 	if(!pathname) {
 		return %orig;
@@ -1532,54 +1326,20 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	return %orig;
 }
-
-%hookf(int, statfs, const char *path, struct statfs *buf) {
-	if(!path) {
-		return %orig;
-	}
-
-	int ret = %orig;
-
-	if(ret == 0) {
-		NSString *pathname = [NSString stringWithUTF8String:path];
-		
-		if([pathname isEqualToString:@"/"]) {
-			if(buf) {
-				#ifdef DEBUG
-				NSLog(@"[shadow] filtered statfs on %s", path);
-				#endif
-
-				// Ensure root is marked read-only.
-				buf->f_flags |= MNT_RDONLY;
-				return ret;
-			}
-		}
-
-		if(is_path_restricted(jb_map, pathname)) {
-			#ifdef DEBUG
-			NSLog(@"[shadow] blocked statfs on %s", path);
-			#endif
-
-			errno = ENOENT;
-			return -1;
-		}
-	}
-
-	return ret;
-}
 %end
 
 %group dlsym_hook
 %hookf(void *, dlsym, void *handle, const char *symbol) {
 	if(!symbol) {
-		return NULL;
+		return %orig;
 	}
 
 	NSString *sym = [NSString stringWithUTF8String:symbol];
 
 	if([sym hasPrefix:@"MS"]
 	|| [sym hasPrefix:@"Sub"]
-	|| [sym hasPrefix:@"substitute_"]) {
+	|| [sym hasPrefix:@"substitute_"]
+	|| [sym hasPrefix:@"transform_"]) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked dlsym for symbol %@", sym);
 		#endif
@@ -1587,8 +1347,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return NULL;
 	}
 
-	void *ret = %orig;
-	return ret;
+	return %orig;
 }
 %end
 
@@ -1625,6 +1384,92 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	return 1;
 }
+
+%hookf(int, "_ptrace", int request, pid_t pid, caddr_t addr, int data) {
+	if(request == 31 /* PTRACE_DENY_ATTACH */) {
+		// "Success"
+		return 0;
+	}
+
+	return %orig;
+}
+%end
+
+%group hook_jb_libraries
+%hook UIDevice
++ (BOOL)isJailbroken {
+	return NO;
+}
+
+- (BOOL)isJailBreak {
+	return NO;
+}
+
+- (BOOL)isJailBroken {
+	return NO;
+}
+%end
+
+// %hook SFAntiPiracy
+// + (int)isJailbroken {
+// 	// Probably should not hook with a hard coded value.
+// 	// This value may be changed by developers using this library.
+// 	// Best to defeat the checks rather than skip them.
+// 	return 4783242;
+// }
+// %end
+
+%hook JailbreakDetectionVC
+- (BOOL)isJailbroken {
+	return NO;
+}
+%end
+
+%hook DTTJailbreakDetection
++ (BOOL)isJailbroken {
+	return NO;
+}
+%end
+
+%hook ANSMetadata
+- (BOOL)computeIsJailbroken {
+	return NO;
+}
+
+- (BOOL)isJailbroken {
+	return NO;
+}
+%end
+
+%hook AppsFlyerUtils
++ (BOOL)isJailBreakon {
+	return NO;
+}
+%end
+
+%hook GBDeviceInfo
+- (BOOL)isJailbroken {
+	return NO;
+}
+%end
+
+%hook CMARAppRestrictionsDelegate
+- (bool)isDeviceNonCompliant {
+	return false;
+}
+%end
+
+%hook ADYSecurityChecks
++ (bool)isDeviceJailbroken {
+	return false;
+}
+%end
+
+%hook UBReportMetadataDevice
+- (void *)is_rooted {
+	return NULL;
+}
+%end
 %end
 
 %ctor {
@@ -1653,6 +1498,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			BOOL prefs_bundleid_enabled = NO;
 			BOOL prefs_hook_debugging = NO;
 			BOOL prefs_hook_sandboxed = NO;
+			BOOL prefs_hook_jb_libraries = YES;
 
 			// Load preference file
 			NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
@@ -1688,6 +1534,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 				if(prefs[@"hook_sandboxed"]) {
 					prefs_hook_sandboxed = [prefs[@"hook_sandboxed"] boolValue];
+				}
+
+				if(prefs[@"hook_jb_libraries"]) {
+					prefs_hook_jb_libraries = [prefs[@"hook_jb_libraries"] boolValue];
 				}
 
 				if(prefs[@"workaround_access"]) {
@@ -1800,6 +1650,14 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 				#ifdef DEBUG
 				NSLog(@"[shadow] hooked sandboxed methods");
+				#endif
+			}
+
+			if(prefs_hook_jb_libraries) {
+				%init(hook_jb_libraries);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] hooked detection libraries");
 				#endif
 			}
 
