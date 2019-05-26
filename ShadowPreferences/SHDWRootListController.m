@@ -12,6 +12,18 @@
 	return _specifiers;
 }
 
+- (void)support_reddit:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://www.reddit.com/r/jailbreak/comments/bp59zs/release_shadow_a_simple_open_source_jailbreak/"]];
+}
+
+- (void)support_github:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"]];
+}
+
+- (void)support_paypal:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://paypal.me/jjolano"]];
+}
+
 - (void)generate_map:(id)sender {
 	#ifdef DEBUG
 	NSLog(@"[shadow] prefs: generating file map");
@@ -32,7 +44,8 @@
 					NSLog(@"[shadow] prefs: found dpkg list file %@", file);
 					#endif
 
-					NSString *contents = [NSString stringWithContentsOfFile:[NSString stringWithFormat:@"%@/%@", dpkg, file] encoding:NSUTF8StringEncoding error:NULL];
+					NSString *file_abs = [dpkg stringByAppendingPathComponent:file];
+					NSString *contents = [NSString stringWithContentsOfFile:file_abs encoding:NSUTF8StringEncoding error:NULL];
 
 					if(contents) {
 						NSArray *dpkg_files = [contents componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];

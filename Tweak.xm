@@ -29,24 +29,26 @@ NSMutableArray *dyld_clean_array = nil;
 uint32_t dyld_clean_array_count = 0;
 BOOL generated_dyld_array = NO;
 
-BOOL standardize_paths = NO;
+BOOL standardize_paths = YES;
 BOOL use_access_workaround = YES;
 
 bool is_dyld_restricted(NSString *name) {
 	return (jb_file_map && [jb_file_map containsObject:name])
 	|| ([name hasPrefix:@"/Library/Frameworks"]
 	|| [name hasPrefix:@"/Library/Caches"]
-	|| [name containsString:@"MobileSubstrate"]
+	|| [name containsString:@"Substrate"]
 	|| [name containsString:@"substrate"]
 	|| [name containsString:@"substitute"]
+	|| [name containsString:@"Substitrate"]
 	|| [name containsString:@"TweakInject"]
 	|| [name containsString:@"libjailbreak"]
 	|| [name containsString:@"cycript"]
 	|| [name containsString:@"SBInject"]
 	|| [name containsString:@"pspawn"]
-	|| [name containsString:@"applist"]
 	|| [name containsString:@"librocketbootstrap"]
-	|| [name containsString:@"libcolorpicker"]);
+	|| [name containsString:@"libcolorpicker"]
+	|| [name containsString:@"libCS"]
+	|| [name containsString:@"bfdecrypt"]);
 }
 
 void generate_dyld_array(uint32_t count) {
@@ -72,18 +74,6 @@ void generate_dyld_array(uint32_t count) {
 			}
 
 			[dyld_clean_array addObject:[NSNumber numberWithUnsignedInt:i]];
-
-			// Get other info about this dyld which may be requested.
-			// const struct mach_header *header = _dyld_get_image_header(i);
-			// intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-
-			// // Add this to clean dyld array.
-			// [dyld_clean_array addObject:@{
-			// 	@"image_index" : [NSNumber numberWithUnsignedInt:i],
-			// 	@"name" : name,
-			// 	@"header" : [NSData dataWithBytes:header length:sizeof(struct mach_header)],
-			// 	@"slide" : [NSValue valueWithPointer:(const void *)slide]
-			// }];
 		}
 	}
 
@@ -211,19 +201,32 @@ void init_jb_map() {
 	[jb_map setValue:@YES forKey:@"/chimera"];
 }
 
-BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
+BOOL is_path_restricted(NSFileManager *fm, NSMutableDictionary *map, NSString *path) {
 	if(!map || !path || [path length] == 0) {
 		return NO;
 	}
 
 	if(map == jb_map) {
 		if(standardize_paths) {
+			if(![path isAbsolutePath]) {
+				// Get current directory and change path to absolute
+				if(!fm) {
+					fm = [NSFileManager defaultManager];
+				}
+
+				path = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
+			}
+
 			path = [path stringByStandardizingPath];
 		}
 
 		if(jb_file_map) {
 			// Check if this path is in file map.
 			if([jb_file_map containsObject:path]) {
+				#ifdef DEBUG
+				NSLog(@"[shadow] found in file map: %@", path);
+				#endif
+
 				return YES;
 			}
 		}
@@ -240,7 +243,7 @@ BOOL is_path_restricted(NSMutableDictionary *map, NSString *path) {
 			}
 
 			// Recurse into this dictionary.
-			return is_path_restricted(val, [path substringFromIndex:[key length]]);
+			return is_path_restricted(fm, val, [path substringFromIndex:[key length]]);
 		}
 	}
 
@@ -252,8 +255,14 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return NO;
 	}
 
-	if([[url scheme] isEqualToString:@"file"]) {
-		return is_path_restricted(map, [url path]);
+	if([[url scheme] isEqualToString:@"cydia"]
+	|| [[url scheme] isEqualToString:@"sileo"]
+	|| [[url scheme] isEqualToString:@"zbra"]) {
+		return YES;
+	}
+
+	if([url isFileURL]) {
+		return is_path_restricted(nil, map, [url path]);
 	}
 
 	return NO;
@@ -262,7 +271,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 %group stable_hooks
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
 		#endif
@@ -274,7 +283,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fileExistsAtPath with path %@", path);
 		#endif
@@ -286,7 +295,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isReadableFileAtPath with path %@", path);
 		#endif
@@ -298,7 +307,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isWritableFileAtPath with path %@", path);
 		#endif
@@ -310,7 +319,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isDeletableFileAtPath with path %@", path);
 		#endif
@@ -322,7 +331,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked isExecutableFileAtPath with path %@", path);
 		#endif
@@ -334,18 +343,112 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 %end
 
-%hook UIApplication
-- (BOOL)canOpenURL:(NSURL *)url {
-	if([[url scheme] isEqualToString:@"cydia"]
-	|| [[url scheme] isEqualToString:@"sileo"]
-	|| [[url scheme] isEqualToString:@"zbra"]) {
+%hook NSFileHandle
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
+	if(is_path_restricted(nil, jb_map, path)) {
 		#ifdef DEBUG
-		NSLog(@"[shadow] blocked canOpenURL for scheme %@", [url scheme]);
+		NSLog(@"[shadow] blocked fileHandleForReadingAtPath for path %@", path);
 		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForReadingFromURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForWritingAtPath:(NSString *)path {
+	if(is_path_restricted(nil, jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForWritingAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForWritingToURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
+	if(is_path_restricted(nil, jb_map, path)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForUpdatingAtPath for path %@", path);
+		#endif
+
+		return nil;
+	}
+
+	return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, url)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked fileHandleForUpdatingURL for path %@", [url path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
+
+		return nil;
+	}
+
+	return %orig;
+}
+%end
+
+%hook NSURL
+- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
+	if(is_url_restricted(jb_map, self)) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] blocked checkResourceIsReachableAndReturnError for path %@", [self path]);
+		#endif
+
+		if(error) {
+			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+		}
 
 		return NO;
 	}
 
+	return %orig;
+}
+%end
+
+%hook UIApplication
+- (BOOL)canOpenURL:(NSURL *)url {
 	if(is_url_restricted(jb_map, url)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked canOpenURL for path %@", [url path]);
@@ -370,7 +473,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(nil, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked access: %@", path);
 		#endif
@@ -407,7 +510,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 	
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:pathname])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked fopen with path %s", pathname);
 		#endif
@@ -424,7 +527,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:pathname])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked stat with path %s", pathname);
 		#endif
@@ -441,7 +544,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:pathname])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked lstat with path %s", pathname);
 		#endif
@@ -476,7 +579,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			}
 		}
 
-		if(is_path_restricted(jb_map, pathname)) {
+		if(is_path_restricted(nil, jb_map, pathname)) {
 			#ifdef DEBUG
 			NSLog(@"[shadow] blocked statfs on %s", path);
 			#endif
@@ -504,12 +607,11 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			return NULL;
 		}
 
-		// return [dyld_clean_array[image_index][@"name"] UTF8String];
-		return %orig([dyld_clean_array[image_index] unsignedIntValue]);
+		image_index = [dyld_clean_array[image_index] unsignedIntegerValue];
 	}
 
 	// Basic filter.
-	const char *ret = %orig;
+	const char *ret = %orig(image_index);
 
 	if(ret && is_dyld_restricted([NSString stringWithUTF8String:ret])) {
 		return %orig(0);
@@ -525,13 +627,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			return NULL;
 		}
 
-		static struct mach_header header;
-		[dyld_clean_array[image_index][@"header"] getBytes:&header length:sizeof(struct mach_header)];
-
-		return &header;
+		image_index = [dyld_clean_array[image_index] unsignedIntegerValue];
 	}
 
-	return %orig;
+	return %orig(image_index);
 }
 
 %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
@@ -541,10 +640,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			return 0;
 		}
 
-		return (intptr_t) [dyld_clean_array[image_index][@"slide"] pointerValue];
+		image_index = [dyld_clean_array[image_index] unsignedIntegerValue];
 	}
 
-	return %orig;
+	return %orig(image_index);
 }
 */
 %end
@@ -762,7 +861,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked contentsOfDirectoryAtPath for path %@", path);
 		#endif
@@ -825,7 +924,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked enumeratorAtPath for path %@", path);
 		#endif
@@ -837,7 +936,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked subpathsOfDirectoryAtPath for path %@", path);
 		#endif
@@ -872,7 +971,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked subpathsAtPath for path %@", path);
 		#endif
@@ -919,7 +1018,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, srcPath)) {
+	if(is_path_restricted(self, jb_map, srcPath)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked copyItemAtPath for path %@", srcPath);
 		#endif
@@ -935,7 +1034,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked componentsToDisplayForPath for path %@", path);
 		#endif
@@ -947,7 +1046,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked displayNameAtPath for path %@", path);
 		#endif
@@ -959,7 +1058,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked attributesOfItemAtPath for path %@", path);
 		#endif
@@ -975,7 +1074,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked contentsAtPath for path %@", path);
 		#endif
@@ -987,7 +1086,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
-	if(is_path_restricted(jb_map, path1) || is_path_restricted(jb_map, path2)) {
+	if(is_path_restricted(self, jb_map, path1) || is_path_restricted(self, jb_map, path2)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked contentsEqualAtPath for paths %@ | %@", path1, path2);
 		#endif
@@ -1031,7 +1130,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked changeCurrentDirectoryPath for path %@", path);
 		#endif
@@ -1059,7 +1158,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, destPath)) {
+	if(is_path_restricted(self, jb_map, destPath)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked createSymbolicLinkAtPath for path %@ -> %@", path, destPath);
 		#endif
@@ -1091,7 +1190,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, dstPath)) {
+	if(is_path_restricted(self, jb_map, dstPath)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked linkItemAtPath for path %@ -> %@", srcPath, dstPath);
 		#endif
@@ -1107,95 +1206,9 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 }
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(self, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked destinationOfSymbolicLinkAtPath for path %@", path);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-%end
-
-%hook NSFileHandle
-+ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForReadingAtPath for path %@", path);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForReadingFromURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)fileHandleForWritingAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForWritingAtPath for path %@", path);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForWritingToURL for path %@", [url path]);
-		#endif
-
-		if(error) {
-			*error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-		}
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
-	if(is_path_restricted(jb_map, path)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForUpdatingAtPath for path %@", path);
-		#endif
-
-		return nil;
-	}
-
-	return %orig;
-}
-
-+ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
-	if(is_url_restricted(jb_map, url)) {
-		#ifdef DEBUG
-		NSLog(@"[shadow] blocked fileHandleForUpdatingURL for path %@", [url path]);
 		#endif
 
 		if(error) {
@@ -1216,7 +1229,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(nil, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked posix_spawn");
 		#endif
@@ -1234,7 +1247,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	NSString *path = [NSString stringWithUTF8String:pathname];
 
-	if(is_path_restricted(jb_map, path)) {
+	if(is_path_restricted(nil, jb_map, path)) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked posix_spawnp");
 		#endif
@@ -1250,7 +1263,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:pathname])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:pathname])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked realpath for path %s", pathname);
 		#endif
@@ -1267,7 +1280,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path2])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:path2])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked symlink for path %s -> %s", path1, path2);
 		#endif
@@ -1284,7 +1297,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		return %orig;
 	}
 
-	if(is_path_restricted(jb_map, [NSString stringWithUTF8String:path2])) {
+	if(is_path_restricted(nil, jb_map, [NSString stringWithUTF8String:path2])) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked link for path %s -> %s", path1, path2);
 		#endif
@@ -1308,10 +1321,10 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 		NSString *fdpath = [NSString stringWithUTF8String:cfdpath];
 		NSString *path = [NSString stringWithUTF8String:pathname];
 
-		restricted = is_path_restricted(jb_map, fdpath);
+		restricted = is_path_restricted(nil, jb_map, fdpath);
 
 		if(!restricted && [fdpath isEqualToString:@"/"]) {
-			restricted = is_path_restricted(jb_map, [NSString stringWithFormat:@"/%@", path]);
+			restricted = is_path_restricted(nil, jb_map, [NSString stringWithFormat:@"/%@", path]);
 		}
 	}
 
@@ -1336,10 +1349,9 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 
 	NSString *sym = [NSString stringWithUTF8String:symbol];
 
-	if([sym hasPrefix:@"MS"]
-	|| [sym hasPrefix:@"Sub"]
-	|| [sym hasPrefix:@"substitute_"]
-	|| [sym hasPrefix:@"transform_"]) {
+	if([sym hasPrefix:@"MS"] /* Substrate */
+	|| [sym hasPrefix:@"Sub"] /* Substitute */
+	|| [sym hasPrefix:@"PS"] /* Substitrate */) {
 		#ifdef DEBUG
 		NSLog(@"[shadow] blocked dlsym for symbol %@", sym);
 		#endif
@@ -1470,6 +1482,94 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 	return NULL;
 }
 %end
+
+%hook UtilitySystem
++ (bool)isJailbreak {
+	return false;
+}
+%end
+
+%hook GemaltoConfiguration
++ (bool)isJailbreak {
+	return false;
+}
+%end
+
+%hook CPWRDeviceInfo
+- (bool)isJailbroken {
+	return false;
+}
+%end
+
+%hook CPWRSessionInfo
+- (bool)isJailbroken {
+	return false;
+}
+%end
+
+%hook KSSystemInfo
++ (bool)isJailbroken {
+	return false;
+}
+%end
+
+%hook EMDSKPPConfiguration
+- (bool)jailBroken {
+	return false;
+}
+%end
+
+%hook EnrollParameters
+- (void *)jailbroken {
+	return NULL;
+}
+%end
+
+%hook EMDskppConfigurationBuilder
+- (bool)jailbreakStatus {
+	return false;
+}
+%end
+
+%hook FCRSystemMetadata
+- (bool)isJailbroken {
+	return false;
+}
+%end
+
+%hook v_VDMap
+- (bool)isJailBrokenDetectedByVOS {
+	return false;
+}
+%end
+%end
+
+%group lockdown
+%hookf(void *, dlopen, const char *path, int mode) {
+	if(!path) {
+		return %orig;
+	}
+
+	NSString *dylib = [NSString stringWithUTF8String:path];
+
+	if([dylib containsString:@"DynamicLibraries/"] || [dylib containsString:@"TweakInject/"]) {
+		#ifdef DEBUG
+		NSLog(@"[shadow] dlopen: %@", dylib);
+		#endif
+		
+		NSString *tweak = [dylib lastPathComponent];
+
+		if(![tweak isEqualToString:@"Shadow.dylib"]) {
+			#ifdef DEBUG
+			NSLog(@"[shadow] blocked dlopen: %@", dylib);
+			#endif
+
+			return NULL;
+		}
+	}
+
+	return %orig;
+}
 %end
 
 %ctor {
@@ -1491,12 +1591,12 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 			BOOL prefs_enabled = YES;
 			BOOL prefs_exclude_system_apps = YES;
 			NSString *prefs_mode = @"blacklist";
-			BOOL prefs_private_methods = NO;
+			BOOL prefs_private_methods = YES;
 			BOOL prefs_experimental_hooks = NO;
-			BOOL prefs_dlsym_hook = NO;
-			BOOL prefs_dyld_array_enabled = NO;
+			BOOL prefs_hook_dlsym = NO;
+			BOOL prefs_dyld_array_enabled = YES;
 			BOOL prefs_bundleid_enabled = NO;
-			BOOL prefs_hook_debugging = NO;
+			BOOL prefs_hook_debugging = YES;
 			BOOL prefs_hook_sandboxed = NO;
 			BOOL prefs_hook_jb_libraries = YES;
 
@@ -1553,11 +1653,16 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 				}
 			}
 
+			if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"]) {
+				// Forcibly disable access() workaround if substitute exists.
+				use_access_workaround = NO;
+			}
+
 			NSMutableDictionary *prefs_dlsym = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.dlsym.plist"];
 
 			if(prefs_dlsym) {
 				if(prefs_dlsym[bundleIdentifier]) {
-					prefs_dlsym_hook = [prefs_dlsym[bundleIdentifier] boolValue];
+					prefs_hook_dlsym = [prefs_dlsym[bundleIdentifier] boolValue];
 				}
 			}
 
@@ -1601,16 +1706,6 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 				}
 			}
 
-			if(prefs_dyld_array_enabled) {
-				// Generate clean dyld array.
-				uint32_t dyld_orig_count = _dyld_image_count();
-				generate_dyld_array(dyld_orig_count);
-
-				#ifdef DEBUG
-				NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
-				#endif
-			}
-
 			NSMutableDictionary *prefs_map = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.map.plist"];
 
 			if(prefs_map && prefs_map[@"blacklist"]) {
@@ -1621,6 +1716,34 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 					NSLog(@"[shadow] loaded file map (%lu files)", (unsigned long) [jb_file_map count]);
 					#endif
 				}
+			}
+
+			NSMutableDictionary *prefs_lockdown = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.lockdown.plist"];
+
+			if(prefs_lockdown && prefs_lockdown[bundleIdentifier] && [prefs_lockdown[bundleIdentifier] boolValue]) {
+				// Lockdown mode. Hook dlopen to prevent other tweaks from loading, and forcibly enable hooks.
+				#ifdef DEBUG
+				NSLog(@"[shadow] lockdown mode enabled");
+				#endif
+
+				prefs_dyld_array_enabled = YES;
+				prefs_experimental_hooks = YES;
+				prefs_hook_debugging = YES;
+				prefs_hook_jb_libraries = YES;
+				prefs_hook_sandboxed = YES;
+				prefs_hook_dlsym = YES;
+				use_access_workaround = NO;
+
+				// Attempt to load file map if not loaded already.
+				if(prefs_map && prefs_map[@"blacklist"] && !jb_file_map) {
+					jb_file_map = [NSSet setWithArray:prefs_map[@"blacklist"]];
+
+					#ifdef DEBUG
+					NSLog(@"[shadow] loaded file map (%lu files)", (unsigned long) [jb_file_map count]);
+					#endif
+				}
+
+				%init(lockdown);
 			}
 
 			// Allocate and initialize restricted paths map.
@@ -1677,11 +1800,21 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 				#endif
 			}
 
-			if(prefs_dlsym_hook) {
+			if(prefs_hook_dlsym) {
 				%init(dlsym_hook);
 
 				#ifdef DEBUG
 				NSLog(@"[shadow] hooked dlsym");
+				#endif
+			}
+
+			if(prefs_dyld_array_enabled) {
+				// Generate clean dyld array.
+				uint32_t dyld_orig_count = _dyld_image_count();
+				generate_dyld_array(dyld_orig_count);
+
+				#ifdef DEBUG
+				NSLog(@"[shadow] generated clean dyld array (%d/%d)", dyld_clean_array_count, dyld_orig_count);
 				#endif
 			}
 		}

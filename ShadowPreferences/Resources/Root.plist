@@ -34,6 +34,40 @@
 			<key>label</key>
 			<string>Disable Shadow for Safe Apps</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Support</string>
+			<key>footerText</key>
+			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
+
+Thank you for using Shadow!</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_reddit:</string>
+			<key>label</key>
+			<string>Original Reddit Thread</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_github:</string>
+			<key>label</key>
+			<string>View Source Code (via GitHub)</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_paypal:</string>
+			<key>label</key>
+			<string>Donate (via PayPal.me)</string>
+		</dict>
 
 		<!-- Application List -->
 		<dict>
@@ -118,7 +152,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<false/>
+			<true/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
@@ -138,7 +172,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<false/>
+			<true/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
@@ -158,7 +192,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<false/>
+			<true/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
@@ -234,13 +268,13 @@
 			<key>label</key>
 			<string></string>
 			<key>footerText</key>
-			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers. Some apps may be sensitive to these modifications and crash.</string>
+			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<false/>
+			<true/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
@@ -353,6 +387,49 @@
 				<string>Cancel</string>
 			</dict>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
+			<string>Enabling this setting will disable all tweaks except Shadow for selected apps. It will forcibly enable all hooks in Shadow. It is recommended to generate a file map before using this feature.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
+			<key>label</key>
+			<string>Lockdown Mode (Beta)</string>
+			<key>ALAllowsSelection</key>
+			<string>0</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string></string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.lockdown.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to enable lockdown mode</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
+		</dict>
 
 		<!-- Workarounds -->
 		<dict>
@@ -361,7 +438,7 @@
 			<key>label</key>
 			<string>Workarounds</string>
 			<key>footerText</key>
-			<string>The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). It can safely be disabled for Substitute (Chimera/Electra).</string>
+			<string>The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). This setting has no effect on Substitute (Chimera/Electra).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
