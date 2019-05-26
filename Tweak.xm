@@ -1731,7 +1731,7 @@ BOOL is_url_restricted(NSMutableDictionary *map, NSURL *url) {
 				prefs_hook_debugging = YES;
 				prefs_hook_jb_libraries = YES;
 				prefs_hook_sandboxed = YES;
-				prefs_hook_dlsym = YES;
+				// prefs_hook_dlsym = YES;
 				use_access_workaround = NO;
 
 				// Attempt to load file map if not loaded already.
