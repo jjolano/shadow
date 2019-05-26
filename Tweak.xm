@@ -217,7 +217,7 @@ BOOL is_path_restricted(NSFileManager *fm, NSMutableDictionary *map, NSString *p
 				path = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
 			}
 
-			path = [path stringByStandardizingPath];
+			// path = [path stringByStandardizingPath];
 		}
 
 		if(jb_file_map) {
