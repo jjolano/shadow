@@ -5,6 +5,7 @@
 #import "Includes/Shadow.h"
 
 Shadow *_shadow = nil;
+NSArray *dyld_array = nil;
 
 // Stable Hooks
 %group hook_libc
@@ -347,56 +348,7 @@ Shadow *_shadow = nil;
 
     return %orig;
 }
-%end
-%end
 
-%group hook_NSURL
-// #include "Hooks/Stable/NSURL.xm"
-%hook NSURL
-- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:self]) {
-        if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-        }
-
-        return NO;
-    }
-
-    return %orig;
-}
-%end
-%end
-
-%group hook_UIApplication
-// #include "Hooks/Stable/UIApplication.xm"
-%hook UIApplication
-- (BOOL)canOpenURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url]) {
-        return NO;
-    }
-
-    return %orig;
-}
-%end
-%end
-
-// Testing Hooks
-%group hook_NSBundle
-// #include "Hooks/Testing/NSBundle.xm"
-%hook NSBundle
-- (id)objectForInfoDictionaryKey:(NSString *)key {
-    if([key isEqualToString:@"SignerIdentity"]) {
-        return nil;
-    }
-
-    return %orig;
-}
-%end
-%end
-
-%group hook_NSFileManager_testing
-// #include "Hooks/Testing/NSFileManager.xm"
-%hook NSFileManager
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
@@ -647,6 +599,49 @@ Shadow *_shadow = nil;
 %end
 %end
 
+%group hook_NSURL
+// #include "Hooks/Stable/NSURL.xm"
+%hook NSURL
+- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+%end
+
+%group hook_UIApplication
+// #include "Hooks/Stable/UIApplication.xm"
+%hook UIApplication
+- (BOOL)canOpenURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+%end
+
+%group hook_NSBundle
+// #include "Hooks/Testing/NSBundle.xm"
+%hook NSBundle
+- (id)objectForInfoDictionaryKey:(NSString *)key {
+    if([key isEqualToString:@"SignerIdentity"]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+%end
+
 // Other Hooks
 %group hook_private
 // #include "Hooks/ApplePrivate.xm"
@@ -710,55 +705,39 @@ Shadow *_shadow = nil;
 #include <mach-o/dyld.h>
 
 %hookf(uint32_t, _dyld_image_count) {
-    if([_shadow isDyldArrayGenerated]) {
-        return [_shadow dyldArrayCount];
+    if(dyld_array) {
+        return (uint32_t) [dyld_array count];
     }
 
     return %orig;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-    if([_shadow isDyldArrayGenerated]) {
-        // Use generated dyld array.
-        return [_shadow getDyldImageName:image_index];
+    if(dyld_array) {
+        if(image_index >= (uint32_t) [dyld_array count]) {
+            return NULL;
+        }
+
+        return %orig((uint32_t) [dyld_array[image_index] unsignedIntValue]);
     }
 
     // Basic filter.
     const char *ret = %orig;
 
     if(ret && [_shadow isImageRestricted:[NSString stringWithUTF8String:ret]]) {
-        return [[_shadow dyldSelfImageName] UTF8String];
+        return %orig(0);
     }
 
     return ret;
 }
-/*
+
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
-    if(generated_dyld_array) {
-        // Use generated dyld array.
-        if(image_index >= dyld_clean_array_count) {
-            return NULL;
-        }
-
-        image_index = [dyld_clean_array[image_index] unsignedIntegerValue];
-    }
-
-    return %orig(image_index);
+    return %orig;
 }
 
 %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
-    if(generated_dyld_array) {
-        // Use generated dyld array.
-        if(image_index >= dyld_clean_array_count) {
-            return 0;
-        }
-
-        image_index = [dyld_clean_array[image_index] unsignedIntegerValue];
-    }
-
-    return %orig(image_index);
+    return %orig;
 }
-*/
 %end
 
 %group hook_dyld_dlsym
@@ -775,167 +754,12 @@ Shadow *_shadow = nil;
     if([sym hasPrefix:@"MS"] /* Substrate */
     || [sym hasPrefix:@"Sub"] /* Substitute */
     || [sym hasPrefix:@"PS"] /* Substitrate */) {
+        NSLog(@"blocked dlsym lookup: %@", sym);
         return NULL;
     }
 
     return %orig;
 }
-%end
-
-%group hook_libraries
-// #include "Hooks/Libraries.xm"
-%hook UIDevice
-+ (BOOL)isJailbroken {
-    return NO;
-}
-
-- (BOOL)isJailBreak {
-    return NO;
-}
-
-- (BOOL)isJailBroken {
-    return NO;
-}
-%end
-
-// %hook SFAntiPiracy
-// + (int)isJailbroken {
-// 	// Probably should not hook with a hard coded value.
-// 	// This value may be changed by developers using this library.
-// 	// Best to defeat the checks rather than skip them.
-// 	return 4783242;
-// }
-// %end
-
-%hook JailbreakDetectionVC
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook DTTJailbreakDetection
-+ (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook ANSMetadata
-- (BOOL)computeIsJailbroken {
-    return NO;
-}
-
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook AppsFlyerUtils
-+ (BOOL)isJailBreakon {
-    return NO;
-}
-%end
-
-%hook GBDeviceInfo
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook CMARAppRestrictionsDelegate
-- (bool)isDeviceNonCompliant {
-    return false;
-}
-%end
-
-%hook ADYSecurityChecks
-+ (bool)isDeviceJailbroken {
-    return false;
-}
-%end
-
-%hook UBReportMetadataDevice
-- (void *)is_rooted {
-    return NULL;
-}
-%end
-
-%hook UtilitySystem
-+ (bool)isJailbreak {
-    return false;
-}
-%end
-
-%hook GemaltoConfiguration
-+ (bool)isJailbreak {
-    return false;
-}
-%end
-
-%hook CPWRDeviceInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook CPWRSessionInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook KSSystemInfo
-+ (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook EMDSKPPConfiguration
-- (bool)jailBroken {
-    return false;
-}
-%end
-
-%hook EnrollParameters
-- (void *)jailbroken {
-    return NULL;
-}
-%end
-
-%hook EMDskppConfigurationBuilder
-- (bool)jailbreakStatus {
-    return false;
-}
-%end
-
-%hook FCRSystemMetadata
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook v_VDMap
-- (bool)isJailBrokenDetectedByVOS {
-    return false;
-}
-%end
-
-%hook TuneUtils
-- (bool)checkJailBreak {
-    return false;
-}
-%end
-
-%hook TuneUserProfile
-- (id)jailbroken {
-    return nil;
-}
-%end
-
-%hook PPJailbreakInfo
-- (bool)isDeviceJailBroken {
-    return false;
-}
-%end
 %end
 
 %group hook_sandbox
@@ -1215,8 +1039,27 @@ void init_path_map(Shadow *shadow) {
             }
         }
 
+        // Set default settings
+        if(!prefs[@"dyld_hooks_enabled"]) {
+            prefs[@"dyld_hooks_enabled"] = @YES;
+        }
+
+        if(!prefs[@"dyld_filter_enabled"]) {
+            prefs[@"dyld_filter_enabled"] = @YES;
+        }
+
+        if(!prefs[@"tweak_compatibility_mode"]) {
+            prefs[@"tweak_compatibility_mode"] = @YES;
+        }
+
+        if(!prefs[@"inject_compatibility_mode"]) {
+            prefs[@"inject_compatibility_mode"] = @YES;
+        }
+
         // SpringBoard
         if([bundleIdentifier isEqualToString:@"com.apple.SpringBoard"]) {
+            NSLog(@"springboard");
+
             if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
                 %init(hook_springboard);
             }
@@ -1243,10 +1086,34 @@ void init_path_map(Shadow *shadow) {
 
             // Initialize restricted path map
             init_path_map(_shadow);
+            NSLog(@"initialized restricted path map");
 
             // Initialize file map
             if(prefs[@"file_map"]) {
-                [_shadow generateFileMapWithArray:prefs[@"file_map"]];
+                [_shadow addPathsFromFileMap:prefs[@"file_map"]];
+                NSLog(@"initialized file map");
+            }
+
+            // Compatibility mode
+            if(prefs[@"tweak_compatibility_mode"]) {
+                [_shadow setUseTweakCompatibilityMode:[prefs[@"tweak_compatibility_mode"] boolValue]];
+
+                if([_shadow useTweakCompatibilityMode]) {
+                    NSLog(@"using tweak compatibility mode");
+                }
+            }
+
+            if(prefs[@"inject_compatibility_mode"]) {
+                [_shadow setUseInjectCompatibilityMode:[prefs[@"inject_compatibility_mode"] boolValue]];
+
+                // Disable this if we are using Substitute.
+                if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"]) {
+                    [_shadow setUseInjectCompatibilityMode:NO];
+                }
+
+                if([_shadow useInjectCompatibilityMode]) {
+                    NSLog(@"using injection compatibility mode");
+                }
             }
 
             // Initialize stable hooks
@@ -1255,42 +1122,51 @@ void init_path_map(Shadow *shadow) {
             %init(hook_NSFileManager);
             %init(hook_NSURL);
             %init(hook_UIApplication);
+            %init(hook_NSBundle);
 
-            // Initialize testing hooks (if enabled)
-            if(prefs[@"testing_hooks_enabled"] && [prefs[@"testing_hooks_enabled"] boolValue]) {
-                %init(hook_NSBundle);
-                %init(hook_NSFileManager_testing);
-            }
+            NSLog(@"hooked bypass methods");
 
             // Initialize other hooks
             if(prefs[@"private_hooks_enabled"] && [prefs[@"private_hooks_enabled"] boolValue]) {
                 %init(hook_private);
+
+                NSLog(@"hooked private methods");
             }
 
             if(prefs[@"debugging_hooks_enabled"] && [prefs[@"debugging_hooks_enabled"] boolValue]) {
                 %init(hook_debugging);
+
+                NSLog(@"hooked debugging methods");
             }
 
             if(prefs[@"dyld_hooks_enabled"] && [prefs[@"dyld_hooks_enabled"] boolValue]) {
                 %init(hook_dyld_image);
 
-                if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
-                    // Generate filtered dyld array
-                    [_shadow generateDyldArray];
-                }
+                NSLog(@"hooked dyld image methods");
             }
 
             if(prefs[@"dlsym_hook_enabled"] && [prefs[@"dlsym_hook_enabled"] boolValue]) {
                 %init(hook_dyld_dlsym);
-            }
 
-            if(prefs[@"library_hooks_enabled"] && [prefs[@"library_hooks_enabled"] boolValue]) {
-                %init(hook_libraries);
+                NSLog(@"hooked dlsym");
             }
 
             if(prefs[@"sandbox_hooks_enabled"] && [prefs[@"sandbox_hooks_enabled"] boolValue]) {
                 %init(hook_sandbox);
+
+                NSLog(@"hooked sandbox methods");
             }
+
+            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
+                // Generate filtered dyld array
+                uint32_t orig_count = _dyld_image_count();
+
+                dyld_array = [_shadow generateDyldArray];
+
+                NSLog(@"generated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
+            }
+
+            NSLog(@"ready");
         }
     }
 }
