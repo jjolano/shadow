@@ -642,9 +642,171 @@ NSArray *dyld_array = nil;
 %end
 %end
 
-%group hook_NSUtilities
-%hook NSData
+%group hook_CoreFoundation
+%hookf(CFReadStreamRef, CFReadStreamCreateWithFile, CFAllocatorRef alloc, CFURLRef fileURL) {
+    NSURL *nsurl = (__bridge NSURL *)fileURL;
 
+    if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
+        return NULL;
+    }
+
+    return %orig;
+}
+
+%hookf(CFWriteStreamRef, CFWriteStreamCreateWithFile, CFAllocatorRef alloc, CFURLRef fileURL) {
+    NSURL *nsurl = (__bridge NSURL *)fileURL;
+
+    if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
+        return NULL;
+    }
+
+    return %orig;
+}
+
+%hookf(CFURLRef, CFURLCreateFilePathURL, CFAllocatorRef allocator, CFURLRef url, CFErrorRef *error) {
+    NSURL *nsurl = (__bridge NSURL *)url;
+
+    if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
+        if(error) {
+            *error = (__bridge CFErrorRef) [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+        
+        return NULL;
+    }
+
+    return %orig;
+}
+
+%hookf(CFURLRef, CFURLCreateFileReferenceURL, CFAllocatorRef allocator, CFURLRef url, CFErrorRef *error) {
+    NSURL *nsurl = (__bridge NSURL *)url;
+
+    if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
+        if(error) {
+            *error = (__bridge CFErrorRef) [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+        
+        return NULL;
+    }
+
+    return %orig;
+}
+%end
+
+%group hook_NSUtilities
+%hook UIImage
+- (instancetype)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (UIImage *)imageWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSData
+- (id)initWithContentsOfMappedFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)dataWithContentsOfMappedFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+        
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
 %end
 
 %hook NSMutableArray
