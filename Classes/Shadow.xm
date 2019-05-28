@@ -223,7 +223,7 @@
     }
 
     // Exclude some paths under tweak compatibility mode.
-    if(_useTweakCompatibilityMode) {
+    if(ret && _useTweakCompatibilityMode) {
         if([path hasPrefix:@"/Library/Application Support"]
         || [path hasPrefix:@"/Library/Frameworks"]
         || [path hasPrefix:@"/Library/Themes"]

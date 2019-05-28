@@ -730,6 +730,63 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
+/*
+%hookf(void *, dlopen, const char *path, int mode) {
+    void *ret = %orig;
+
+    if(ret && path) {
+        if(dyld_array && !(mode & RTLD_NOLOAD)) {
+            // Regenerate dyld array.
+            dyld_array = nil;
+            uint32_t orig_count = _dyld_image_count();
+            dyld_array = [_shadow generateDyldArray];
+
+            NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
+        }
+
+        if(mode & RTLD_NOLOAD) {
+            NSString *image_name = [NSString stringWithUTF8String:path];
+
+            if([_shadow isImageRestricted:image_name]) {
+                NSLog(@"blocked dlopen: %@", image_name);
+                return NULL;
+            }
+        }
+    }
+
+    return ret;
+}
+
+%hookf(int, dlclose, void *handle) {
+    int ret = %orig;
+
+    if(ret == 0) {
+        // Regenerate dyld array.
+        dyld_array = nil;
+        uint32_t orig_count = _dyld_image_count();
+        dyld_array = [_shadow generateDyldArray];
+
+        NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
+    }
+
+    return ret;
+}
+
+%hookf(bool, dlopen_preflight, const char *path) {
+    bool ret = %orig;
+
+    if(ret) {
+        NSString *image_name = [NSString stringWithUTF8String:path];
+
+        if([_shadow isImageRestricted:image_name]) {
+            NSLog(@"blocked dlopen_preflight: %@", image_name);
+            return false;
+        }
+    }
+
+    return ret;
+}
+*/
 %end
 
 %group hook_dyld_dlsym
@@ -1108,6 +1165,8 @@ void init_path_map(Shadow *shadow) {
 
     if(shadow) {
         [shadow generateFileMap];
+
+        NSLog(@"generated file map (automatic)");
     } else {
         NSLog(@"failed to initialize Shadow");
     }
@@ -1116,6 +1175,25 @@ void init_path_map(Shadow *shadow) {
 %end
 
 %ctor {
+    NSString *processName = [[NSProcessInfo processInfo] processName];
+
+    if([processName isEqualToString:@"SpringBoard"]) {
+        // Load preferences file
+        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
+
+        if(!prefs) {
+            // Create new preferences file
+            prefs = [NSMutableDictionary new];
+            [prefs writeToFile:PREFS_PATH atomically:YES];
+        }
+
+        if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
+            %init(hook_springboard);
+        }
+
+        return;
+    }
+
     NSBundle *bundle = [NSBundle mainBundle];
 
     if(bundle != nil) {
@@ -1177,15 +1255,6 @@ void init_path_map(Shadow *shadow) {
 
         if(!prefs[@"inject_compatibility_mode"]) {
             prefs[@"inject_compatibility_mode"] = @YES;
-        }
-
-        // SpringBoard
-        if([bundleIdentifier isEqualToString:@"com.apple.SpringBoard"]) {
-            if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
-                %init(hook_springboard);
-            }
-
-            return;
         }
 
         // System Applications
