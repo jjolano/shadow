@@ -43,7 +43,7 @@
     return [dyldArray copy];
 }
 
-- (void)generateFileMap {
+- (BOOL)generateFileMap {
     // Generate file map.
     NSString *dpkg_info_path = DPKG_INFO_PATH;
     NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
@@ -85,10 +85,12 @@
             [prefs setValue:blacklist forKey:@"file_map"];
 
             if([prefs writeToFile:PREFS_PATH atomically:YES]) {
-                NSLog(@"wrote file map to preferences");
+                return YES;
             }
         }
     }
+
+    return NO;
 }
 
 - (BOOL)isImageRestricted:(NSString *)name {
