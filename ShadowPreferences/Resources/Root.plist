@@ -34,40 +34,6 @@
 			<key>label</key>
 			<string>Disable Shadow for Safe Apps</string>
 		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Support</string>
-			<key>footerText</key>
-			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
-
-Thank you for using Shadow!</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_reddit:</string>
-			<key>label</key>
-			<string>Original Reddit Thread</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_github:</string>
-			<key>label</key>
-			<string>View Source Code (via GitHub)</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_paypal:</string>
-			<key>label</key>
-			<string>Donate (via PayPal.me)</string>
-		</dict>
 
 		<!-- Application List -->
 		<dict>
@@ -451,6 +417,61 @@ Thank you for using Shadow!</string>
 			<string>workaround_access</string>
 			<key>label</key>
 			<string>access() Workaround</string>
+		</dict>
+
+		<!-- Footer -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Support</string>
+			<key>footerText</key>
+			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
+
+Thank you for using Shadow!
+- jjolano</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_reddit:</string>
+			<key>label</key>
+			<string>Original Reddit Thread</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_reddit2:</string>
+			<key>label</key>
+			<string>Latest Reddit Thread</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_github:</string>
+			<key>label</key>
+			<string>View Source Code (via GitHub)</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>support_paypal:</string>
+			<key>label</key>
+			<string>Donate (via PayPal.me)</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+			<key>footerAlignment</key>
+			<integer>1</integer>
+			<key>footerText</key>
+			<string>Shadow version 1.14</string>
 		</dict>
 	</array>
 	<key>title</key>
