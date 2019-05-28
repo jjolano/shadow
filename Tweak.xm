@@ -1804,6 +1804,8 @@ void init_path_map(Shadow *shadow) {
             // Create new preferences file
             prefs = [NSMutableDictionary new];
             [prefs writeToFile:PREFS_PATH atomically:YES];
+
+            return;
         }
 
         if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
@@ -1901,7 +1903,7 @@ void init_path_map(Shadow *shadow) {
             if(prefs[@"file_map"]) {
                 [_shadow addPathsFromFileMap:prefs[@"file_map"]];
 
-                NSLog(@"initialized file map");
+                NSLog(@"initialized file map (%lu items)", (unsigned long) [prefs[@"file_map"] count]);
             }
 
             // Compatibility mode
