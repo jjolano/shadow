@@ -10,33 +10,28 @@
 #define PREFS_PATH      @"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
 @interface Shadow : NSObject {
-    NSSet *file_map;
     NSMutableDictionary *link_map;
     NSMutableDictionary *path_map;
-    NSMutableArray *dyld_array;
 
     BOOL passthrough;
 }
 
-@property (readonly) BOOL isDyldArrayGenerated;
-@property (nonatomic) BOOL useTweakCompatibilityMode;
-@property (nonatomic) BOOL useInjectCompatibilityMode;
-@property (readonly) uint32_t dyldArrayCount;
-@property (readonly) NSString *dyldSelfImageName;
+@property (nonatomic, assign) BOOL useTweakCompatibilityMode;
+@property (nonatomic, assign) BOOL useInjectCompatibilityMode;
 
-- (void)generateDyldArray;
+- (NSArray *)generateDyldArray;
 - (void)generateFileMap;
-- (void)generateFileMapWithArray:(NSArray *)file_map_array;
 
 - (BOOL)isImageRestricted:(NSString *)name;
 - (BOOL)isPathRestricted:(NSString *)path;
+- (BOOL)isPathRestricted:(NSString *)path partial:(BOOL)partial;
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm;
+- (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial;
 - (BOOL)isURLRestricted:(NSURL *)url;
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted;
+- (void)addPathsFromFileMap:(NSArray *)file_map;
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to;
 - (NSString *)resolveLinkInPath:(NSString *)path;
-
-- (const char *)getDyldImageName:(uint32_t)image_index;
 
 @end

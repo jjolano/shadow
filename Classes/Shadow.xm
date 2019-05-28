@@ -1,47 +1,26 @@
-#import "../Includes/Shadow.h"
-
 #include <mach-o/dyld.h>
 
+#import "../Includes/Shadow.h"
+
 @implementation Shadow
-- (instancetype)init {
+- (id)init {
     self = [super init];
 
     if(self) {
-        file_map = nil;
-        link_map = [NSMutableDictionary new];
-        path_map = [NSMutableDictionary new];
-        dyld_array = [NSMutableArray new];
+        link_map = nil;
+        path_map = nil;
 
-        [path_map setValue:@NO forKey:@"restricted"];
-
-        _isDyldArrayGenerated = NO;
         _useTweakCompatibilityMode = NO;
         _useInjectCompatibilityMode = NO;
 
-        passthrough = YES;
-
-        const char *image_name = _dyld_get_image_name(0);
-
-        if(image_name) {
-            _dyldSelfImageName = [NSString stringWithUTF8String:image_name];
-        } else {
-            _dyldSelfImageName = @"";
-        }
-
-        passthrough = NO;
+        NSLog("initialized class");
     }
 
     return self;
 }
 
-- (void)generateDyldArray {
-    passthrough = YES;
-
-    if(_isDyldArrayGenerated) {
-        [dyld_array removeAllObjects];
-        _isDyldArrayGenerated = NO;
-        _dyldArrayCount = 0;
-    }
+- (NSArray *)generateDyldArray {
+    NSMutableArray *dyldArray = [NSMutableArray new];
 
     uint32_t i;
     uint32_t count = _dyld_image_count();
@@ -57,18 +36,14 @@
                 continue;
             }
 
-            [dyld_array addObject:image_name_ns];
-            _dyldArrayCount++;
+            [dyldArray addObject:[NSNumber numberWithUnsignedInt:i]];
         }
     }
 
-    passthrough = NO;
-    _isDyldArrayGenerated = YES;
+    return [dyldArray copy];
 }
 
 - (void)generateFileMap {
-    passthrough = YES;
-
     // Generate file map.
     NSString *dpkg_info_path = DPKG_INFO_PATH;
     NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
@@ -113,16 +88,7 @@
                 NSLog(@"wrote file map to preferences");
             }
         }
-
-        // Set internal file map to this newly generated one.
-        [self generateFileMapWithArray:blacklist];
     }
-
-    passthrough = NO;
-}
-
-- (void)generateFileMapWithArray:(NSArray *)file_map_array {
-    file_map = [NSSet setWithArray:file_map_array];
 }
 
 - (BOOL)isImageRestricted:(NSString *)name {
@@ -132,13 +98,9 @@
 
     BOOL ret = NO;
 
-    passthrough = YES;
-
-    // Use file map if available.
-    if(file_map) {
-        if([file_map containsObject:name]) {
-            ret = YES;
-        }
+    // Find exact match.
+    if([self isPathRestricted:name partial:NO]) {
+        ret = YES;
     }
 
     // Match some known dylib paths/names.
@@ -162,19 +124,29 @@
         }
     }
 
-    passthrough = NO;
-
     return ret;
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
-    return [self isPathRestricted:path manager:[NSFileManager defaultManager]];
+    return [self isPathRestricted:path manager:[NSFileManager defaultManager] partial:YES];
+}
+
+- (BOOL)isPathRestricted:(NSString *)path partial:(BOOL)partial {
+    return [self isPathRestricted:path manager:[NSFileManager defaultManager] partial:partial];
 }
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm {
-    if(passthrough) {
+    return [self isPathRestricted:path manager:fm partial:YES];
+}
+
+- (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
+    if(passthrough || !path_map) {
         return NO;
     }
+
+    // Trim whitespace
+    NSString *path_trimmed = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    path = path_trimmed;
 
     // Root itself is never restricted
     if([path isEqualToString:@"/"]) {
@@ -183,44 +155,39 @@
 
     BOOL ret = NO;
 
-    passthrough = YES;
-
     // Change symlink path to real path if in link map.
-    path = [self resolveLinkInPath:path];
+    NSString *path_resolved = [self resolveLinkInPath:path];
+    path = path_resolved;
 
     // Ensure we are working with absolute path.
     if(![path isAbsolutePath]) {
-        path = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
+        NSString *path_abs = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
+        path = path_abs;
+
+        // Change symlink path to real path if in link map (again).
+        path_resolved = [self resolveLinkInPath:path];
+        path = path_resolved;
     }
 
-    // Change symlink path to real path if in link map (again).
-    path = [self resolveLinkInPath:path];
-
     // Remove extra path names.
-    if([path hasPrefix:@"/private"]) {
+    if([path hasPrefix:@"/private/var"]
+    || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
         [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
+        path = [NSString pathWithComponents:[pathComponents copy]];
     }
 
     if([path hasPrefix:@"/var/tmp"]) {
         NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
         [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
+        path = [NSString pathWithComponents:[pathComponents copy]];
     }
 
     if([path hasPrefix:@"/var/mobile"]) {
         NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
         [pathComponents removeObjectAtIndex:1];
         pathComponents[1] = @"User";
-        path = [NSString pathWithComponents:pathComponents];
-    }
-
-    // Use file map if available.
-    if(file_map) {
-        if([file_map containsObject:path]) {
-            ret = YES;
-        }
+        path = [NSString pathWithComponents:[pathComponents copy]];
     }
 
     // Check path components with path map.
@@ -230,25 +197,31 @@
 
         for(NSString *value in pathComponents) {
             if(!current_path_map[value]) {
-                BOOL match = NO;
+                if(partial) {
+                    BOOL match = NO;
 
-                // Attempt partial match
-                for(NSString *value_match in current_path_map) {
-                    if([value hasPrefix:value_match]) {
-                        match = YES;
+                    // Attempt partial match
+                    for(NSString *value_match in current_path_map) {
+                        if([value hasPrefix:value_match]) {
+                            match = YES;
+                            break;
+                        }
+                    }
+
+                    if(!match) {
                         break;
                     }
-                }
-
-                if(!match) {
-                    break;
+                } else {
+                    return NO;
                 }
             }
 
             current_path_map = current_path_map[value];
         }
 
-        ret = [current_path_map[@"restricted"] boolValue];
+        if(current_path_map[@"restricted"]) {
+            ret = [current_path_map[@"restricted"] boolValue];
+        }
     }
 
     // Exclude some paths under tweak compatibility mode.
@@ -256,6 +229,7 @@
         if([path hasPrefix:@"/Library/Application Support"]
         || [path hasPrefix:@"/Library/Frameworks"]
         || [path hasPrefix:@"/Library/Themes"]) {
+            NSLog(@"unrestricted path (tweak compatibility): %@", path);
             ret = NO;
         }
     }
@@ -263,8 +237,6 @@
     if(ret) {
         NSLog(@"restricted path: %@", path);
     }
-
-    passthrough = NO;
 
     return ret;
 }
@@ -276,16 +248,12 @@
 
     BOOL ret = NO;
 
-    passthrough = YES;
-
     // Package manager URL scheme checks
     if([[url scheme] isEqualToString:@"cydia"]
     || [[url scheme] isEqualToString:@"sileo"]
     || [[url scheme] isEqualToString:@"zbra"]) {
         ret = YES;
     }
-
-    passthrough = NO;
 
     // File URL checks
     if(!ret && [url isFileURL]) {
@@ -296,6 +264,10 @@
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted {
+    if(!path_map) {
+        path_map = [NSMutableDictionary new];
+    }
+
     NSArray *pathComponents = [path pathComponents];
     NSMutableDictionary *current_path_map = path_map;
 
@@ -311,26 +283,36 @@
     [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];
 }
 
+- (void)addPathsFromFileMap:(NSArray *)file_map {
+    for(NSString *path in file_map) {
+        [self addPath:path restricted:YES];
+    }
+}
+
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to {
+    if(!link_map) {
+        link_map = [NSMutableDictionary new];
+    }
+
+    NSLog(@"tracking link %@ -> %@", from, to);
     [link_map setValue:to forKey:from];
 }
 
 - (NSString *)resolveLinkInPath:(NSString *)path {
+    if(!link_map) {
+        return path;
+    }
+
     for(NSString *key in link_map) {
         if([path hasPrefix:key]) {
             NSString *value = link_map[key];
-            path = [value stringByAppendingPathComponent:[path substringFromIndex:[key length]]];
+            NSString *new_path = [value stringByAppendingPathComponent:[path substringFromIndex:[key length]]];
+            NSLog(@"resolved link %@ -> %@", path, new_path);
+            path = new_path;
+            break;
         }
     }
 
     return path;
-}
-
-- (const char *)getDyldImageName:(uint32_t)image_index {
-    if(image_index > _dyldArrayCount) {
-        return NULL;
-    }
-
-    return [dyld_array[image_index] UTF8String];
 }
 @end

@@ -9,6 +9,10 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Shadow Settings</string>
+			<key>footerAlignment</key>
+			<integer>1</integer>
+			<key>footerText</key>
+			<string>Shadow version 2.0</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -429,6 +433,7 @@
 			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
 
 Thank you for using Shadow!
+
 - jjolano</string>
 		</dict>
 		<dict>
@@ -462,16 +467,6 @@ Thank you for using Shadow!
 			<string>support_paypal:</string>
 			<key>label</key>
 			<string>Donate (via PayPal.me)</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerAlignment</key>
-			<integer>1</integer>
-			<key>footerText</key>
-			<string>Shadow version 1.14</string>
 		</dict>
 	</array>
 	<key>title</key>
