@@ -1,4 +1,3 @@
-%group hook_libraries
 %hook UIDevice
 + (BOOL)isJailbroken {
     return NO;
@@ -150,5 +149,4 @@
 - (bool)isDeviceJailBroken {
     return false;
 }
-%end
 %end

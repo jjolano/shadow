@@ -1,7 +1,6 @@
 #include <unistd.h>
 #include "Includes/codesign.h"
 
-%group hook_private
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
 
@@ -12,4 +11,3 @@
 
     return ret;
 }
-%end

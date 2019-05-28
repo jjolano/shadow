@@ -1,4 +1,3 @@
-%group hook_NSBundle
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if([key isEqualToString:@"SignerIdentity"]) {

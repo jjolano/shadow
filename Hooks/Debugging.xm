@@ -1,6 +1,5 @@
 #include <unistd.h>
 
-%group hook_debugging
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     int ret = %orig;
 
@@ -34,4 +33,3 @@
 
     return %orig;
 }
-%end

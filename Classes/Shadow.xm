@@ -1,6 +1,6 @@
-#import "Includes/Shadow.h"
+#import "../Includes/Shadow.h"
 
-#include <dlfcn.h>
+#include <mach-o/dyld.h>
 
 @implementation Shadow
 - (instancetype)init {
@@ -86,17 +86,17 @@
                 if(dpkg_info_contents) {
                     NSArray *dpkg_info_contents_files = [dpkg_info_contents componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 
-                    for(NSString *dpkg_file in dpkg_files) {
+                    for(NSString *dpkg_file in dpkg_info_contents_files) {
                         BOOL isDir;
-                        dpkg_file = [dpkg_file stringByStandardizingPath];
+                        NSString *dpkg_file_std = [dpkg_file stringByStandardizingPath];
 
-                        if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file isDirectory:&isDir]) {
+                        if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file_std isDirectory:&isDir]) {
                             if(!isDir
                             || [[dpkg_file pathExtension] isEqualToString:@"app"]
                             || [[dpkg_file pathExtension] isEqualToString:@"framework"]
                             || [[dpkg_file pathExtension] isEqualToString:@"bundle"]
                             || [[dpkg_file pathExtension] isEqualToString:@"theme"]) {
-                                [blacklist addObject:dpkg_file];
+                                [blacklist addObject:dpkg_file_std];
                             }
                         }
                     }
@@ -109,7 +109,7 @@
         if(prefs) {
             [prefs setValue:blacklist forKey:@"file_map"];
 
-            if([prefs writeToFile:prefs atomically:YES]) {
+            if([prefs writeToFile:PREFS_PATH atomically:YES]) {
                 NSLog(@"wrote file map to preferences");
             }
         }
@@ -218,7 +218,7 @@
 
     // Use file map if available.
     if(file_map) {
-        if([file_map containsObject:name]) {
+        if([file_map containsObject:path]) {
             ret = YES;
         }
     }

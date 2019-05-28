@@ -1,25 +1,5 @@
 #include <mach-o/dyld.h>
-#include <dlfcn.h>
 
-%group hook_dyld_dlsym
-%hookf(void *, dlsym, void *handle, const char *symbol) {
-    if(!symbol) {
-        return %orig;
-    }
-
-    NSString *sym = [NSString stringWithUTF8String:symbol];
-
-    if([sym hasPrefix:@"MS"] /* Substrate */
-    || [sym hasPrefix:@"Sub"] /* Substitute */
-    || [sym hasPrefix:@"PS"] /* Substitrate */) {
-        return NULL;
-    }
-
-    return %orig;
-}
-%end
-
-%group hook_dyld_image
 %hookf(uint32_t, _dyld_image_count) {
     if([_shadow isDyldArrayGenerated]) {
         return [_shadow dyldArrayCount];
@@ -70,4 +50,3 @@
     return %orig(image_index);
 }
 */
-%end

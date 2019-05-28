@@ -1,4 +1,3 @@
-%group hook_NSFileManager_testing
 %hook NSFileManager
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
@@ -247,5 +246,4 @@
 
     return %orig;
 }
-%end
 %end
