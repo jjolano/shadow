@@ -642,6 +642,7 @@ NSArray *dyld_array = nil;
 %end
 %end
 
+/*
 %group hook_CoreFoundation
 %hookf(CFReadStreamRef, CFReadStreamCreateWithFile, CFAllocatorRef alloc, CFURLRef fileURL) {
     NSURL *nsurl = (__bridge NSURL *)fileURL;
@@ -691,6 +692,7 @@ NSArray *dyld_array = nil;
     return %orig;
 }
 %end
+*/
 
 %group hook_NSUtilities
 %hook UIImage
@@ -1527,11 +1529,19 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/bin" restricted:YES hidden:NO];
     [shadow addPath:@"/boot" restricted:NO];
     [shadow addPath:@"/cores" restricted:NO];
-    [shadow addPath:@"/dev" restricted:NO];
     [shadow addPath:@"/Developer" restricted:NO];
     [shadow addPath:@"/lib" restricted:NO];
     [shadow addPath:@"/mnt" restricted:NO];
     [shadow addPath:@"/sbin" restricted:YES hidden:NO];
+
+    // Restrict /dev
+    [shadow addPath:@"/dev" restricted:NO];
+    [shadow addPath:@"/dev/dlci." restricted:YES];
+    [shadow addPath:@"/dev/vn0" restricted:YES];
+    [shadow addPath:@"/dev/vn1" restricted:YES];
+    [shadow addPath:@"/dev/ptmx" restricted:YES];
+    [shadow addPath:@"/dev/kmem" restricted:YES];
+    [shadow addPath:@"/dev/mem" restricted:YES];
 
     // Restrict /private
     [shadow addPath:@"/private" restricted:YES hidden:NO];
@@ -1540,17 +1550,26 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/private/var" restricted:NO];
     [shadow addPath:@"/private/xarts" restricted:NO];
 
-    // Restrict /etc
-    [shadow addPath:@"/etc" restricted:NO];
-    [shadow addPath:@"/etc/." restricted:YES];
-    [shadow addPath:@"/etc/apt" restricted:YES];
-    [shadow addPath:@"/etc/dpkg" restricted:YES];
-    [shadow addPath:@"/etc/ssh" restricted:YES];
-    [shadow addPath:@"/etc/dropbear" restricted:YES];
-    [shadow addPath:@"/etc/rc.d" restricted:YES];
-    [shadow addPath:@"/etc/pam.d" restricted:YES];
-    [shadow addPath:@"/etc/default" restricted:YES];
-    [shadow addPath:@"/etc/motd" restricted:YES];
+    // Restrict /etc by whitelisting
+    [shadow addPath:@"/etc" restricted:YES hidden:NO];
+    [shadow addPath:@"/etc/asl" restricted:NO];
+    [shadow addPath:@"/etc/asl.conf" restricted:NO];
+    [shadow addPath:@"/etc/fstab" restricted:NO];
+    [shadow addPath:@"/etc/group" restricted:NO];
+    [shadow addPath:@"/etc/hosts" restricted:NO];
+    [shadow addPath:@"/etc/hosts.equiv" restricted:NO];
+    [shadow addPath:@"/etc/master.passwd" restricted:NO];
+    [shadow addPath:@"/etc/networks" restricted:NO];
+    [shadow addPath:@"/etc/notify.conf" restricted:NO];
+    [shadow addPath:@"/etc/passwd" restricted:NO];
+    [shadow addPath:@"/etc/ppp" restricted:NO];
+    [shadow addPath:@"/etc/profile" restricted:NO];
+    [shadow addPath:@"/etc/profile.d" restricted:NO];
+    [shadow addPath:@"/etc/protocols" restricted:NO];
+    [shadow addPath:@"/etc/racoon" restricted:NO];
+    [shadow addPath:@"/etc/services" restricted:NO];
+    [shadow addPath:@"/etc/ssl" restricted:NO];
+    [shadow addPath:@"/etc/ttys" restricted:NO];
     
     // Restrict /Library by whitelisting
     [shadow addPath:@"/Library" restricted:YES hidden:NO];
@@ -1571,7 +1590,6 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Library/Preferences" restricted:NO];
     [shadow addPath:@"/Library/Printers" restricted:NO];
     [shadow addPath:@"/Library/Ringtones" restricted:NO];
-    [shadow addPath:@"/Library/Themes" restricted:YES hidden:NO];
     [shadow addPath:@"/Library/Updates" restricted:NO];
     [shadow addPath:@"/Library/Wallpaper" restricted:NO];
     
@@ -1657,7 +1675,7 @@ void init_path_map(Shadow *shadow) {
     
     // Restrict /var
     [shadow addPath:@"/var" restricted:NO];
-    [shadow addPath:@"/var/cache/apt" restricted:YES];
+    [shadow addPath:@"/var/cache" restricted:YES hidden:NO];
     [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
     [shadow addPath:@"/var/log" restricted:YES hidden:NO];
     [shadow addPath:@"/var/stash" restricted:YES];
@@ -1672,6 +1690,19 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/motd" restricted:YES];
     [shadow addPath:@"/var/dropbear" restricted:YES];
     [shadow addPath:@"/var/run" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/run/lockdown" restricted:NO];
+    [shadow addPath:@"/var/run/lockdown.sock" restricted:NO];
+    [shadow addPath:@"/var/run/lockdown_first_run" restricted:NO];
+    [shadow addPath:@"/var/run/mDNSResponder" restricted:NO];
+    [shadow addPath:@"/var/run/printd" restricted:NO];
+    [shadow addPath:@"/var/run/syslog" restricted:NO];
+    [shadow addPath:@"/var/run/syslog.pid" restricted:NO];
+    [shadow addPath:@"/var/run/utmpx" restricted:NO];
+    [shadow addPath:@"/var/run/vpncontrol.sock" restricted:NO];
+    [shadow addPath:@"/var/run/asl_input" restricted:NO];
+    [shadow addPath:@"/var/run/configd.pid" restricted:NO];
+    [shadow addPath:@"/var/run/lockbot" restricted:NO];
+    [shadow addPath:@"/var/run/pppconfd" restricted:NO];
 
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
