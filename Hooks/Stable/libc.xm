@@ -5,7 +5,6 @@
 #include <spawn.h>
 #include <fcntl.h>
 
-%group hook_libc
 %hookf(int, access, const char *pathname, int mode) {
     if(!pathname) {
         return %orig;
@@ -218,4 +217,3 @@
 
     return %orig;
 }
-%end

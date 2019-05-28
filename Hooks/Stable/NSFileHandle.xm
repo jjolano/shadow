@@ -1,4 +1,3 @@
-%group hook_NSFileHandle
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
     if([_shadow isPathRestricted:path]) {
@@ -59,5 +58,4 @@
 
     return %orig;
 }
-%end
 %end

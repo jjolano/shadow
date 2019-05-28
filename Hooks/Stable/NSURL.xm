@@ -1,4 +1,3 @@
-%group hook_NSURL
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:self]) {
@@ -11,5 +10,4 @@
 
     return %orig;
 }
-%end
 %end

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-%group hook_sandbox
 %hookf(pid_t, fork) {
     errno = ENOSYS;
     return -1;
@@ -95,4 +94,3 @@
 
     return %orig;
 }
-%end

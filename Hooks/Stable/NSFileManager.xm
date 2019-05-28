@@ -1,4 +1,3 @@
-%group hook_NSFileManager
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
     if([_shadow isPathRestricted:path manager:self]) {
@@ -47,5 +46,4 @@
 
     return %orig;
 }
-%end
 %end
