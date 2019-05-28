@@ -68,6 +68,7 @@ NSArray *dyld_array = nil;
     return %orig;
 }
 
+/*
 %hookf(int, open, const char *pathname, int flags) {
     if(!pathname) {
         return %orig;
@@ -105,6 +106,7 @@ NSArray *dyld_array = nil;
 
     return %orig;
 }
+*/
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(!pathname) {
