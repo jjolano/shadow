@@ -146,10 +146,6 @@
         return NO;
     }
 
-    // Trim whitespace
-    NSString *path_trimmed = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    path = path_trimmed;
-
     // Root itself is never restricted
     if([path isEqualToString:@"/"]) {
         return NO;
@@ -230,7 +226,8 @@
     if(_useTweakCompatibilityMode) {
         if([path hasPrefix:@"/Library/Application Support"]
         || [path hasPrefix:@"/Library/Frameworks"]
-        || [path hasPrefix:@"/Library/Themes"]) {
+        || [path hasPrefix:@"/Library/Themes"]
+        || [path hasPrefix:@"/User/Library/Preferences"]) {
             NSLog(@"unrestricted path (tweak compatibility): %@", path);
             ret = NO;
         }
