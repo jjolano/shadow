@@ -12,7 +12,7 @@
 			<key>footerAlignment</key>
 			<integer>1</integer>
 			<key>footerText</key>
-			<string>Shadow version 2.0</string>
+			<string>Shadow version 2.0 by jjolano</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -77,7 +77,7 @@
 					<key>suppress-hidden-apps</key>
 					<string>1</string>
 					<key>title</key>
-					<string>Select apps to include/exclude</string>
+					<string>Select apps to blacklist/whitelist</string>
 					<key>predicate</key>
 					<string>isSystemApplication = FALSE</string>
 				</dict>
@@ -109,14 +109,14 @@
 			</array>
 		</dict>
 
-		<!-- Advanced Settings -->
+		<!-- Dynamic Libraries -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Advanced Settings</string>
+			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. This setting will eventually become standard as implementation stability is confirmed.</string>
+			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -126,57 +126,9 @@
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
-			<string>dyld_array_enabled</string>
+			<string>dyld_hooks_enabled</string>
 			<key>label</key>
-			<string>Filter Dynamic Libraries</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerText</key>
-			<string>Private methods are undocumented Apple methods that can be used by apps to detect jailbreak status. These methods are not allowed to be used by App Store apps, but it shouldn't hurt to hook them anyway.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>private_methods</string>
-			<key>label</key>
-			<string>Hook Private Methods</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerText</key>
-			<string>Some apps check if the app is being traced or debugged by an external process. Enabling these hooks will prevent these checks.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>hook_debugging</string>
-			<key>label</key>
-			<string>Hook Debugging Checks</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerText</key>
-			<string>This hook is only necessary if apps are able to use methods that are otherwise restricted by the sandbox.</string>
+			<string>Enable Basic Filters</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -186,39 +138,62 @@
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
-			<string>hook_sandboxed</string>
+			<string>dyld_filter_enabled</string>
 			<key>label</key>
-			<string>Hook Sandboxed Methods</string>
+			<string>Enable Advanced Filters</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string></string>
+			<string>Dynamic Linker</string>
 			<key>footerText</key>
-			<string>Attempts to hook on jailbreak detection library classes and skips their checking methods.</string>
+			<string>An advanced form of jailbreak detection bypass. May be unstable in some apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>hook_jb_libraries</string>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
 			<key>label</key>
-			<string>Hook Detection Libraries</string>
+			<string>Bypass Dynamic Linker</string>
+			<key>ALAllowsSelection</key>
+			<string>0</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string>dlfcn</string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to enable dynamic linker bypass</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
 		</dict>
 
-		<!-- Experimental Settings -->
+		<!-- Sandbox Integrity -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Experimental Settings</string>
+			<string>Sandbox Integrity</string>
 			<key>footerText</key>
-			<string>Experimental hooks are newly added bypass methods to Shadow and may potentially cause issues in some apps.</string>
+			<string>Attempts to restore original sandbox functionality. Only necessary if apps are able to use methods that are otherwise restricted by the sandbox.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -228,115 +203,19 @@
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
-			<string>experimental_hooks</string>
+			<string>sandbox_hooks_enabled</string>
 			<key>label</key>
-			<string>Experimental Hooks</string>
+			<string>Restore Original Sandbox</string>
 		</dict>
+
+		<!-- File Map -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string></string>
+			<string>File Map</string>
 			<key>footerText</key>
-			<string>Processes each path string passed through Shadow's path filters by resolving any special path characters. This mitigates any funny business put in path strings by developers.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>standardize_path</string>
-			<key>label</key>
-			<string>Standardize Path Strings</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerText</key>
-			<string>Hooking dlsym() is an advanced jailbreak detection bypass. This hook is unstable in some apps, and may cause issues.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>bundle</key>
-			<string>AppList</string>
-			<key>isController</key>
-			<string>1</string>
-			<key>label</key>
-			<string>Hook dlsym()</string>
-			<key>ALAllowsSelection</key>
-			<string>0</string>
-			<key>ALSettingsKeyPrefix</key>
-			<string></string>
-			<key>ALSettingsDefaultValue</key>
-			<string>0</string>
-			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.dlsym.plist</string>
-			<key>ALSingleEnabledMode</key>
-			<false/>
-			<key>ALSectionDescriptors</key>
-			<array>
-				<dict>
-					<key>cell-class-name</key>
-					<string>ALSwitchCell</string>
-					<key>icon-size</key>
-					<string>29</string>
-					<key>suppress-hidden-apps</key>
-					<string>1</string>
-					<key>title</key>
-					<string>Select apps to enable dlsym() hook</string>
-					<key>predicate</key>
-					<string>isSystemApplication = FALSE</string>
-				</dict>
-			</array>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string></string>
-			<key>footerText</key>
-			<string>File map enables Shadow to efficiently perform file path checks. Generating a file map will scan installed package files and "blacklist" them. Due to the nature of this file map generation, tweaks that rely on their files during runtime will have issues.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>bundle</key>
-			<string>AppList</string>
-			<key>isController</key>
-			<string>1</string>
-			<key>label</key>
-			<string>Use File Map</string>
-			<key>ALAllowsSelection</key>
-			<string>0</string>
-			<key>ALSettingsKeyPrefix</key>
-			<string></string>
-			<key>ALSettingsDefaultValue</key>
-			<string>0</string>
-			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.map.plist</string>
-			<key>ALSingleEnabledMode</key>
-			<false/>
-			<key>ALSectionDescriptors</key>
-			<array>
-				<dict>
-					<key>cell-class-name</key>
-					<string>ALSwitchCell</string>
-					<key>icon-size</key>
-					<string>29</string>
-					<key>suppress-hidden-apps</key>
-					<string>1</string>
-					<key>title</key>
-					<string>Select apps to enable file map</string>
-					<key>predicate</key>
-					<string>isSystemApplication = FALSE</string>
-				</dict>
-			</array>
+			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -348,9 +227,9 @@
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>
-				<string>This will read all your installed package files and compile it into a database for Shadow to use in bypassing jailbreak detection. This may take a while, depending on how many packages are installed.</string>
+				<string>This will read all installed package files. This may take a while, depending on how many packages are installed.</string>
 				<key>title</key>
-				<string>Continue</string>
+				<string>Generate File Map</string>
 				<key>okTitle</key>
 				<string>Continue</string>
 				<key>cancelTitle</key>
@@ -359,11 +238,25 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>auto_file_map_generation_enabled</string>
+			<key>label</key>
+			<string>Automatically Generate</string>
+		</dict>
+
+		<!-- Compatibilty -->
+		<dict>
+			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string></string>
+			<string>Compatibility</string>
 			<key>footerText</key>
-			<string>Enabling this setting will disable all tweaks except Shadow for selected apps. It will forcibly enable all hooks in Shadow. It is recommended to generate a file map before using this feature.</string>
+			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -373,15 +266,15 @@
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>Lockdown Mode (Beta)</string>
+			<string>Tweak Compatibility</string>
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string></string>
+			<string>tweak_compat</string>
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.lockdown.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
@@ -394,21 +287,11 @@
 					<key>suppress-hidden-apps</key>
 					<string>1</string>
 					<key>title</key>
-					<string>Select apps to enable lockdown mode</string>
+					<string>Select apps to disable tweak compatibility mode</string>
 					<key>predicate</key>
 					<string>isSystemApplication = FALSE</string>
 				</dict>
 			</array>
-		</dict>
-
-		<!-- Workarounds -->
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Workarounds</string>
-			<key>footerText</key>
-			<string>The access() workaround will reduce bypass effectiveness, but may be necessary due to how tweaks are loaded by Substrate (unc0ver). This setting has no effect on Substitute (Chimera/Electra).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -418,9 +301,9 @@
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
-			<string>workaround_access</string>
+			<string>inject_compatibility_mode</string>
 			<key>label</key>
-			<string>access() Workaround</string>
+			<string>Injection Compatibility</string>
 		</dict>
 
 		<!-- Footer -->
@@ -432,9 +315,7 @@
 			<key>footerText</key>
 			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
 
-Thank you for using Shadow!
-
-- jjolano</string>
+Thank you for using Shadow!</string>
 		</dict>
 		<dict>
 			<key>cell</key>

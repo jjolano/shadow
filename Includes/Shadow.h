@@ -20,7 +20,7 @@
 @property (nonatomic, assign) BOOL useInjectCompatibilityMode;
 
 - (NSArray *)generateDyldArray;
-- (void)generateFileMap;
+- (BOOL)generateFileMap;
 
 - (BOOL)isImageRestricted:(NSString *)name;
 - (BOOL)isPathRestricted:(NSString *)path;
