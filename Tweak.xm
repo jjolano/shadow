@@ -1655,7 +1655,20 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/User/Library/Preferences/ckkeyrolld.plist" restricted:NO];
     [shadow addPath:@"/User/Library/Preferences/nfcd.plist" restricted:NO];
     [shadow addPath:@"/User/Library/Preferences/.GlobalPreferences.plist" restricted:NO];
-    [shadow addPath:@"/User/Media/panguaxe" restricted:YES];
+    [shadow addPath:@"/User/Media" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Media/AirFair" restricted:NO];
+    [shadow addPath:@"/User/Media/Books" restricted:NO];
+    [shadow addPath:@"/User/Media/CloudAssets" restricted:NO];
+    [shadow addPath:@"/User/Media/DCIM" restricted:NO];
+    [shadow addPath:@"/User/Media/Downloads" restricted:NO];
+    [shadow addPath:@"/User/Media/iTunes_Control" restricted:NO];
+    [shadow addPath:@"/User/Media/LoFiCloudAssets" restricted:NO];
+    [shadow addPath:@"/User/Media/MediaAnalysis" restricted:NO];
+    [shadow addPath:@"/User/Media/PhotoData" restricted:NO];
+    [shadow addPath:@"/User/Media/Photos" restricted:NO];
+    [shadow addPath:@"/User/Media/Purchases" restricted:NO];
+    [shadow addPath:@"/User/Media/Radio" restricted:NO];
+    [shadow addPath:@"/User/Media/Recordings" restricted:NO];
 
     // Restrict /usr
     [shadow addPath:@"/usr" restricted:NO];
