@@ -730,14 +730,6 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
-
-%hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
-    return %orig;
-}
-
-%hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
-    return %orig;
-}
 %end
 
 %group hook_dyld_dlsym
@@ -998,24 +990,6 @@ NSArray *dyld_array = nil;
     return false;
 }
 %end
-
-%hook TuneUtils
-- (bool)checkJailBreak {
-    return false;
-}
-%end
-
-%hook TuneUserProfile
-- (id)jailbroken {
-    return nil;
-}
-%end
-
-%hook PPJailbreakInfo
-- (bool)isDeviceJailBroken {
-    return false;
-}
-%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -1081,6 +1055,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/User/Library/Cydia" restricted:YES];
     [shadow addPath:@"/User/Library/Logs/Cydia" restricted:YES];
     [shadow addPath:@"/User/Library/SBSettings" restricted:YES];
+    [shadow addPath:@"/User/Library/Preferences" restricted:YES];
+    [shadow addPath:@"/User/Library/Preferences/com.apple." restricted:NO];
     [shadow addPath:@"/User/Media/panguaxe" restricted:YES];
 
     // Restrict /usr
@@ -1199,10 +1175,6 @@ void init_path_map(Shadow *shadow) {
             prefs[@"dyld_hooks_enabled"] = @YES;
         }
 
-        if(!prefs[@"tweak_compatibility_mode"]) {
-            prefs[@"tweak_compatibility_mode"] = @YES;
-        }
-
         if(!prefs[@"inject_compatibility_mode"]) {
             prefs[@"inject_compatibility_mode"] = @YES;
         }
@@ -1245,12 +1217,16 @@ void init_path_map(Shadow *shadow) {
             }
 
             // Compatibility mode
-            if(prefs[@"tweak_compatibility_mode"]) {
-                [_shadow setUseTweakCompatibilityMode:[prefs[@"tweak_compatibility_mode"] boolValue]];
+            NSString *bundleIdentifier_compat = [NSString stringWithFormat:@"tweak_compat%@", bundleIdentifier];
 
-                if([_shadow useTweakCompatibilityMode]) {
-                    NSLog(@"using tweak compatibility mode");
-                }
+            [_shadow setUseTweakCompatibilityMode:YES];
+
+            if(prefs[bundleIdentifier_compat] && [prefs[bundleIdentifier_compat] boolValue]) {
+                [_shadow setUseTweakCompatibilityMode:NO];
+            }
+
+            if([_shadow useTweakCompatibilityMode]) {
+                NSLog(@"using tweak compatibility mode");
             }
 
             if(prefs[@"inject_compatibility_mode"]) {
@@ -1286,10 +1262,12 @@ void init_path_map(Shadow *shadow) {
                 NSLog(@"hooked dyld image methods");
             }
 
-            if(prefs[@"dlsym_hook_enabled"] && [prefs[@"dlsym_hook_enabled"] boolValue]) {
+            NSString *bundleIdentifier_dlfcn = [NSString stringWithFormat:@"dlfcn%@", bundleIdentifier];
+
+            if(prefs[bundleIdentifier_dlfcn] && [prefs[bundleIdentifier_dlfcn] boolValue]) {
                 %init(hook_dyld_dlsym);
 
-                NSLog(@"hooked dlsym");
+                NSLog(@"hooked dynamic linker methods");
             }
 
             if(prefs[@"sandbox_hooks_enabled"] && [prefs[@"sandbox_hooks_enabled"] boolValue]) {

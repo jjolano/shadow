@@ -109,6 +109,47 @@
 			</array>
 		</dict>
 
+		<!-- File Map -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>File Map</string>
+			<key>footerText</key>
+			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>generate_map:</string>
+			<key>label</key>
+			<string>Generate File Map</string>
+			<key>confirmation</key>
+			<dict>
+				<key>prompt</key>
+				<string>This will read all installed package files. This may take a while, depending on how many packages are installed.</string>
+				<key>title</key>
+				<string>Continue</string>
+				<key>okTitle</key>
+				<string>Continue</string>
+				<key>cancelTitle</key>
+				<string>Cancel</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>auto_file_map_generation_enabled</string>
+			<key>label</key>
+			<string>Automatically Generate</string>
+		</dict>
+
 		<!-- Dynamic Libraries -->
 		<dict>
 			<key>cell</key>
@@ -128,7 +169,7 @@
 			<key>key</key>
 			<string>dyld_hooks_enabled</string>
 			<key>label</key>
-			<string>Enable Basic Filters</string>
+			<string>Enable Filtering</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -148,7 +189,7 @@
 			<key>label</key>
 			<string>Dynamic Linker</string>
 			<key>footerText</key>
-			<string>An advanced form of jailbreak detection bypass. May be unstable in some apps.</string>
+			<string>Advanced jailbreak detection bypass. May be unstable in some apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -158,7 +199,7 @@
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>Bypass Dynamic Linker</string>
+			<string>Filter Dynamic Linker</string>
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
@@ -205,48 +246,7 @@
 			<key>key</key>
 			<string>sandbox_hooks_enabled</string>
 			<key>label</key>
-			<string>Restore Original Sandbox</string>
-		</dict>
-
-		<!-- File Map -->
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>File Map</string>
-			<key>footerText</key>
-			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>generate_map:</string>
-			<key>label</key>
-			<string>Generate File Map</string>
-			<key>confirmation</key>
-			<dict>
-				<key>prompt</key>
-				<string>This will read all installed package files. This may take a while, depending on how many packages are installed.</string>
-				<key>title</key>
-				<string>Generate File Map</string>
-				<key>okTitle</key>
-				<string>Continue</string>
-				<key>cancelTitle</key>
-				<string>Cancel</string>
-			</dict>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<false/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>auto_file_map_generation_enabled</string>
-			<key>label</key>
-			<string>Automatically Generate</string>
+			<string>Restore Sandbox</string>
 		</dict>
 
 		<!-- Compatibilty -->
@@ -256,7 +256,7 @@
 			<key>label</key>
 			<string>Compatibility</string>
 			<key>footerText</key>
-			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps.</string>
+			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps. Injection compatibility applies to Substrate.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -287,7 +287,7 @@
 					<key>suppress-hidden-apps</key>
 					<string>1</string>
 					<key>title</key>
-					<string>Select apps to disable tweak compatibility mode</string>
+					<string>Select apps to disable tweak compatibility</string>
 					<key>predicate</key>
 					<string>isSystemApplication = FALSE</string>
 				</dict>

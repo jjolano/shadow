@@ -30,21 +30,12 @@
 }
 
 - (void)generate_map:(id)sender {
-    BOOL success = NO;
-
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Processing packages..." preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
         Shadow *shadow = [Shadow new];
-        success = [shadow generateFileMap];
+        [shadow generateFileMap];
         [alert dismissViewControllerAnimated:YES completion:nil];
     }];
-
-    if(!success) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Failed to generate file map." preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction *defaultAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
-        [alert addAction:defaultAction];
-        [self presentViewController:alert animated:YES completion:nil];
-    }
 }
 
 @end
