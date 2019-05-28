@@ -68,6 +68,44 @@ NSArray *dyld_array = nil;
     return %orig;
 }
 
+%hookf(int, open, const char *pathname, int flags) {
+    if(!pathname) {
+        return %orig;
+    }
+    
+    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, openat, int dirfd, const char *pathname, int flags) {
+    if(!pathname) {
+        return %orig;
+    }
+
+    NSString *path = [NSString stringWithUTF8String:pathname];
+
+    if(![path isAbsolutePath]) {
+        // Get path of dirfd.
+        char dirfdpath[PATH_MAX];
+    
+        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+            path = [dirfd_path stringByAppendingPathComponent:path];
+        }
+    }
+    
+    if([_shadow isPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(!pathname) {
         return %orig;
@@ -104,6 +142,11 @@ NSArray *dyld_array = nil;
     if(ret == 0) {
         NSString *pathname = [NSString stringWithUTF8String:path];
 
+        if([_shadow isPathRestricted:pathname]) {
+            errno = ENOENT;
+            return -1;
+        }
+
         pathname = [_shadow resolveLinkInPath:pathname];
         
         if(![pathname hasPrefix:@"/var"]
@@ -113,11 +156,6 @@ NSArray *dyld_array = nil;
                 buf->f_flags |= MNT_RDONLY;
                 return ret;
             }
-        }
-
-        if([_shadow isPathRestricted:pathname]) {
-            errno = ENOENT;
-            return -1;
         }
     }
 
@@ -205,26 +243,24 @@ NSArray *dyld_array = nil;
     return ret;
 }
 
-%hookf(int, fstatat, int fd, const char *pathname, struct stat *buf, int flag) {
+%hookf(int, fstatat, int dirfd, const char *pathname, struct stat *buf, int flags) {
     if(!pathname) {
         return %orig;
     }
 
-    BOOL restricted = NO;
-    char cfdpath[PATH_MAX];
+    NSString *path = [NSString stringWithUTF8String:pathname];
+
+    if(![path isAbsolutePath]) {
+        // Get path of dirfd.
+        char dirfdpath[PATH_MAX];
     
-    if(fcntl(fd, F_GETPATH, cfdpath) != -1) {
-        NSString *fdpath = [NSString stringWithUTF8String:cfdpath];
-        NSString *path = [NSString stringWithUTF8String:pathname];
-
-        restricted = [_shadow isPathRestricted:fdpath];
-
-        if(!restricted && [fdpath isEqualToString:@"/"]) {
-            restricted = [_shadow isPathRestricted:[NSString stringWithFormat:@"/%@", path]];
+        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+            path = [dirfd_path stringByAppendingPathComponent:path];
         }
     }
-
-    if(restricted) {
+    
+    if([_shadow isPathRestricted:path]) {
         errno = ENOENT;
         return -1;
     }
@@ -1287,6 +1323,19 @@ NSArray *dyld_array = nil;
     return %orig;
 }
 %end
+
+%hookf(int, creat, const char *pathname, mode_t mode) {
+    if(!pathname) {
+        return %orig;
+    }
+    
+    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        errno = EACCES;
+        return -1;
+    }
+
+    return %orig;
+}
 
 %hookf(pid_t, fork) {
     errno = ENOSYS;
