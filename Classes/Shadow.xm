@@ -220,6 +220,10 @@
         if(current_path_map[@"restricted"]) {
             ret = [current_path_map[@"restricted"] boolValue];
         }
+
+        if(ret && path_map[[pathComponents lastObject]] == current_path_map && current_path_map[@"hidden"]) {
+            ret = [current_path_map[@"hidden"] boolValue];
+        }
     }
 
     // Exclude some paths under tweak compatibility mode.
@@ -263,6 +267,10 @@
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted {
+    return [self addPath:path restricted:restricted hidden:YES];
+}
+
+- (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden {
     if(!path_map) {
         path_map = [NSMutableDictionary new];
     }
@@ -274,12 +282,14 @@
         if(!current_path_map[value]) {
             current_path_map[value] = [NSMutableDictionary new];
             [current_path_map[value] setValue:@NO forKey:@"restricted"];
+            [current_path_map[value] setValue:@NO forKey:@"hidden"];
         }
 
         current_path_map = current_path_map[value];
     }
 
     [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];
+    [current_path_map setValue:[NSNumber numberWithBool:hidden] forKey:@"hidden"];
 }
 
 - (void)addPathsFromFileMap:(NSArray *)file_map {
