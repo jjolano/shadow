@@ -12,14 +12,12 @@
 
         _useTweakCompatibilityMode = NO;
         _useInjectCompatibilityMode = NO;
-
-        NSLog("initialized class");
     }
 
     return self;
 }
 
-- (NSArray *)generateDyldArray {
++ (NSArray *)generateDyldArray {
     NSMutableArray *dyldArray = [NSMutableArray new];
 
     uint32_t i;
@@ -43,7 +41,7 @@
     return [dyldArray copy];
 }
 
-- (BOOL)generateFileMap {
++ (BOOL)generateFileMap {
     // Generate file map.
     NSString *dpkg_info_path = DPKG_INFO_PATH;
     NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
@@ -146,11 +144,6 @@
         return NO;
     }
 
-    // Root itself is never restricted
-    if([path isEqualToString:@"/"]) {
-        return NO;
-    }
-
     BOOL ret = NO;
 
     // Change symlink path to real path if in link map.
@@ -191,10 +184,12 @@
     // Check path components with path map.
     if(!ret) {
         NSArray *pathComponents = [path pathComponents];
-        NSMutableDictionary *current_path_map = path_map;
+        NSDictionary *current_path_map = [path_map copy];
 
         for(NSString *value in pathComponents) {
-            if(!current_path_map[value]) {
+            NSDictionary *next_path_map = [current_path_map[value] copy];
+
+            if(!next_path_map) {
                 if(partial) {
                     BOOL match = NO;
 
@@ -214,7 +209,7 @@
                 }
             }
 
-            current_path_map = current_path_map[value];
+            current_path_map = next_path_map;
         }
 
         if(current_path_map[@"restricted"]) {
@@ -279,13 +274,15 @@
     NSMutableDictionary *current_path_map = path_map;
 
     for(NSString *value in pathComponents) {
-        if(!current_path_map[value]) {
-            current_path_map[value] = [NSMutableDictionary new];
-            [current_path_map[value] setValue:@NO forKey:@"restricted"];
-            [current_path_map[value] setValue:@NO forKey:@"hidden"];
+        NSMutableDictionary *next_path_map = current_path_map[value];
+
+        if(!next_path_map) {
+            next_path_map = [NSMutableDictionary new];
+            [next_path_map setValue:@NO forKey:@"restricted"];
+            [next_path_map setValue:@NO forKey:@"hidden"];
         }
 
-        current_path_map = current_path_map[value];
+        current_path_map = next_path_map;
     }
 
     [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];

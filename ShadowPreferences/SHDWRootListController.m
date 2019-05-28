@@ -28,8 +28,7 @@
 - (void)generate_map:(id)sender {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Processing packages..." preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
-        Shadow *shadow = [Shadow new];
-        [shadow generateFileMap];
+        [Shadow generateFileMap];
         [alert dismissViewControllerAnimated:YES completion:nil];
     }];
 }

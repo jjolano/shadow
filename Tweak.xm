@@ -1134,7 +1134,7 @@ NSArray *dyld_array = nil;
             // Regenerate dyld array.
             dyld_array = nil;
             uint32_t orig_count = _dyld_image_count();
-            dyld_array = [_shadow generateDyldArray];
+            dyld_array = [Shadow generateDyldArray];
 
             NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
         }
@@ -1159,7 +1159,7 @@ NSArray *dyld_array = nil;
         // Regenerate dyld array.
         dyld_array = nil;
         uint32_t orig_count = _dyld_image_count();
-        dyld_array = [_shadow generateDyldArray];
+        dyld_array = [Shadow generateDyldArray];
 
         NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
     }
@@ -1576,7 +1576,6 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/.HFS" restricted:NO];
     [shadow addPath:@"/.Trashes" restricted:NO];
     [shadow addPath:@"/AppleInternal" restricted:NO];
-    [shadow addPath:@"/Applications" restricted:NO];
     [shadow addPath:@"/bin" restricted:YES hidden:NO];
     [shadow addPath:@"/boot" restricted:NO];
     [shadow addPath:@"/cores" restricted:NO];
@@ -1584,6 +1583,12 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/lib" restricted:NO];
     [shadow addPath:@"/mnt" restricted:NO];
     [shadow addPath:@"/sbin" restricted:YES hidden:NO];
+
+    // Restrict /Applications
+    [shadow addPath:@"/Applications" restricted:NO];
+    [shadow addPath:@"/Applications/Cydia.app" restricted:YES];
+    [shadow addPath:@"/Applications/Sileo.app" restricted:YES];
+    [shadow addPath:@"/Applications/Zebra.app" restricted:YES];
 
     // Restrict /dev
     [shadow addPath:@"/dev" restricted:NO];
@@ -1780,14 +1785,8 @@ void init_path_map(Shadow *shadow) {
     %orig;
 
     // Generate file map.
-    Shadow *shadow = [Shadow new];
-
-    if(shadow) {
-        [shadow generateFileMap];
-
+    if([Shadow generateFileMap]) {
         NSLog(@"generated file map (automatic)");
-    } else {
-        NSLog(@"failed to initialize Shadow");
     }
 }
 %end
@@ -1971,7 +1970,7 @@ void init_path_map(Shadow *shadow) {
                 // Generate filtered dyld array
                 uint32_t orig_count = _dyld_image_count();
 
-                dyld_array = [_shadow generateDyldArray];
+                dyld_array = [Shadow generateDyldArray];
 
                 NSLog(@"generated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
             }

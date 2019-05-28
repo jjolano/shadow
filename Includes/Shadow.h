@@ -19,8 +19,8 @@
 @property (nonatomic, assign) BOOL useTweakCompatibilityMode;
 @property (nonatomic, assign) BOOL useInjectCompatibilityMode;
 
-- (NSArray *)generateDyldArray;
-- (BOOL)generateFileMap;
++ (NSArray *)generateDyldArray;
++ (BOOL)generateFileMap;
 
 - (BOOL)isImageRestricted:(NSString *)name;
 - (BOOL)isPathRestricted:(NSString *)path;
