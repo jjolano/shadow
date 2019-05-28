@@ -642,6 +642,198 @@ NSArray *dyld_array = nil;
 %end
 %end
 
+%group hook_NSUtilities
+%hook NSData
+
+%end
+
+%hook NSMutableArray
+- (id)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (id)initWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)arrayWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)arrayWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSArray
+- (id)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)arrayWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)arrayWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSMutableDictionary
+- (id)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (id)initWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSDictionary
+- (id)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (id)initWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)dictionaryWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)dictionaryWithContentsOfURL:(NSURL *)url {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSString
+- (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+%end
+
 // Other Hooks
 %group hook_private
 // #include "Hooks/ApplePrivate.xm"
@@ -772,7 +964,7 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
-
+*/
 %hookf(bool, dlopen_preflight, const char *path) {
     bool ret = %orig;
 
@@ -787,7 +979,6 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
-*/
 %end
 
 %group hook_dyld_dlsym
@@ -816,7 +1007,122 @@ NSArray *dyld_array = nil;
 // #include "Hooks/Sandbox.xm"
 #include <stdio.h>
 #include <unistd.h>
-#include <pwd.h>
+
+%hook NSArray
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSDictionary
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSData
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSString
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+%end
 
 %hookf(pid_t, fork) {
     errno = ENOSYS;
@@ -870,26 +1176,22 @@ NSArray *dyld_array = nil;
 
 %hookf(uid_t, getuid) {
     // Return uid for mobile.
-    struct passwd *pw = getpwnam("mobile");
-    return pw ? pw->pw_uid : 501;
+    return 501;
 }
 
 %hookf(gid_t, getgid) {
     // Return gid for mobile.
-    struct passwd *pw = getpwnam("mobile");
-    return pw ? pw->pw_gid : 501;
+    return 501;
 }
 
 %hookf(uid_t, geteuid) {
     // Return uid for mobile.
-    struct passwd *pw = getpwnam("mobile");
-    return pw ? pw->pw_uid : 501;
+    return 501;
 }
 
 %hookf(uid_t, getegid) {
     // Return gid for mobile.
-    struct passwd *pw = getpwnam("mobile");
-    return pw ? pw->pw_gid : 501;
+    return 501;
 }
 
 %hookf(int, setreuid, uid_t ruid, uid_t euid) {
@@ -1378,6 +1680,7 @@ void init_path_map(Shadow *shadow) {
             %init(hook_NSURL);
             %init(hook_UIApplication);
             %init(hook_NSBundle);
+            %init(hook_NSUtilities);
             %init(hook_libraries);
             %init(hook_private);
             %init(hook_debugging);

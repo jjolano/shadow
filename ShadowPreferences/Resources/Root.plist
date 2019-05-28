@@ -323,15 +323,7 @@ Thank you for using Shadow!</string>
 			<key>action</key>
 			<string>support_reddit:</string>
 			<key>label</key>
-			<string>Original Reddit Thread</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_reddit2:</string>
-			<key>label</key>
-			<string>Latest Reddit Thread</string>
+			<string>Shadow on Reddit</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -339,7 +331,7 @@ Thank you for using Shadow!</string>
 			<key>action</key>
 			<string>support_github:</string>
 			<key>label</key>
-			<string>View Source Code (via GitHub)</string>
+			<string>View Source Code</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -347,7 +339,7 @@ Thank you for using Shadow!</string>
 			<key>action</key>
 			<string>support_paypal:</string>
 			<key>label</key>
-			<string>Donate (via PayPal.me)</string>
+			<string>Donate</string>
 		</dict>
 	</array>
 	<key>title</key>
