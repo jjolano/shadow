@@ -30,6 +30,7 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted;
+- (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden;
 - (void)addPathsFromFileMap:(NSArray *)file_map;
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to;
 - (NSString *)resolveLinkInPath:(NSString *)path;

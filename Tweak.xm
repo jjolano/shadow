@@ -664,6 +664,7 @@ NSArray *dyld_array = nil;
 // #include "Hooks/Debugging.xm"
 #include <sys/sysctl.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     int ret = %orig;
@@ -1051,19 +1052,29 @@ NSArray *dyld_array = nil;
 
 void init_path_map(Shadow *shadow) {
     // Restrict / by whitelisting
-    [shadow addPath:@"/" restricted:YES];
+    [shadow addPath:@"/" restricted:YES hidden:NO];
     [shadow addPath:@"/.file" restricted:NO];
+    [shadow addPath:@"/.ba" restricted:NO];
+    [shadow addPath:@"/.mb" restricted:NO];
+    [shadow addPath:@"/.HFS" restricted:NO];
+    [shadow addPath:@"/.Trashes" restricted:NO];
     [shadow addPath:@"/AppleInternal" restricted:NO];
     [shadow addPath:@"/Applications" restricted:NO];
-    [shadow addPath:@"/bin" restricted:YES];
+    [shadow addPath:@"/bin" restricted:YES hidden:NO];
     [shadow addPath:@"/boot" restricted:NO];
     [shadow addPath:@"/cores" restricted:NO];
     [shadow addPath:@"/dev" restricted:NO];
     [shadow addPath:@"/Developer" restricted:NO];
     [shadow addPath:@"/lib" restricted:NO];
     [shadow addPath:@"/mnt" restricted:NO];
-    [shadow addPath:@"/private" restricted:NO];
-    [shadow addPath:@"/sbin" restricted:YES];
+    [shadow addPath:@"/sbin" restricted:YES hidden:NO];
+
+    // Restrict /private
+    [shadow addPath:@"/private" restricted:YES hidden:NO];
+    [shadow addPath:@"/private/etc" restricted:NO];
+    [shadow addPath:@"/private/system_data" restricted:NO];
+    [shadow addPath:@"/private/var" restricted:NO];
+    [shadow addPath:@"/private/xarts" restricted:NO];
 
     // Restrict /etc
     [shadow addPath:@"/etc" restricted:NO];
@@ -1078,8 +1089,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/etc/motd" restricted:YES];
     
     // Restrict /Library by whitelisting
-    [shadow addPath:@"/Library" restricted:YES];
-    [shadow addPath:@"/Library/Application Support" restricted:YES];
+    [shadow addPath:@"/Library" restricted:YES hidden:NO];
+    [shadow addPath:@"/Library/Application Support" restricted:YES hidden:NO];
     [shadow addPath:@"/Library/Application Support/AggregateDictionary" restricted:NO];
     [shadow addPath:@"/Library/Application Support/BTServer" restricted:NO];
     [shadow addPath:@"/Library/Audio" restricted:NO];
@@ -1088,6 +1099,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Library/Internet Plug-Ins" restricted:NO];
     [shadow addPath:@"/Library/Keychains" restricted:NO];
     [shadow addPath:@"/Library/LaunchAgents" restricted:NO];
+    [shadow addPath:@"/Library/LaunchDaemons" restricted:YES hidden:NO];
     [shadow addPath:@"/Library/Logs" restricted:NO];
     [shadow addPath:@"/Library/Managed Preferences" restricted:NO];
     [shadow addPath:@"/Library/MobileDevice" restricted:NO];
@@ -1095,6 +1107,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Library/Preferences" restricted:NO];
     [shadow addPath:@"/Library/Printers" restricted:NO];
     [shadow addPath:@"/Library/Ringtones" restricted:NO];
+    [shadow addPath:@"/Library/Themes" restricted:YES hidden:NO];
     [shadow addPath:@"/Library/Updates" restricted:NO];
     [shadow addPath:@"/Library/Wallpaper" restricted:NO];
     
@@ -1106,24 +1119,70 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/tmp/syslog" restricted:YES];
     [shadow addPath:@"/tmp/slide.txt" restricted:YES];
     [shadow addPath:@"/tmp/amfidebilitate.out" restricted:YES];
+    [shadow addPath:@"/tmp/org.coolstar" restricted:YES];
     
     // Restrict /User
     [shadow addPath:@"/User" restricted:NO];
+    [shadow addPath:@"/User/." restricted:YES];
+    [shadow addPath:@"/User/Containers" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Containers/Data" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Containers/Data/Application" restricted:NO];
+    [shadow addPath:@"/User/Containers/Data/InternalDaemon" restricted:NO];
+    [shadow addPath:@"/User/Containers/Data/PluginKitPlugin" restricted:NO];
+    [shadow addPath:@"/User/Containers/Data/TempDir" restricted:NO];
+    [shadow addPath:@"/User/Containers/Data/VPNPlugin" restricted:NO];
+    [shadow addPath:@"/User/Containers/Data/XPCService" restricted:NO];
+    [shadow addPath:@"/User/Containers/Shared" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Containers/Shared/AppGroup" restricted:NO];
+    [shadow addPath:@"/User/Documents" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Documents/com.apple" restricted:NO];
+    [shadow addPath:@"/User/Downloads" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Downloads/com.apple" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Library/Caches/com.apple" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/.com.apple" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/AdMob" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/AccountMigrationInProgress" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/ACMigrationLock" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/BTAvrcp" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/cache" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/Checkpoint.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/ckkeyrolld" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/CloudKit" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/DateFormats.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/FamilyCircle" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/GameKit" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/GeoServices" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/AccountMigrationInProgress" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/MappedImageCache" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/OTACrashCopier" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/PassKit" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/rtcreportingd" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/sharedCaches" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/Snapshots" restricted:YES hidden:NO];
+    [shadow addPath:@"/User/Library/Caches/Snapshots/com.apple" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/TelephonyUI" restricted:NO];
+    [shadow addPath:@"/User/Library/Caches/Weather" restricted:NO];
     [shadow addPath:@"/User/Library/Cydia" restricted:YES];
     [shadow addPath:@"/User/Library/Logs/Cydia" restricted:YES];
     [shadow addPath:@"/User/Library/SBSettings" restricted:YES];
-    [shadow addPath:@"/User/Library/Preferences" restricted:YES];
+    [shadow addPath:@"/User/Library/Sileo" restricted:YES];
+    [shadow addPath:@"/User/Library/Preferences" restricted:YES hidden:NO];
     [shadow addPath:@"/User/Library/Preferences/com.apple." restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/.GlobalPreferences.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/ckkeyrolld.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/nfcd.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/.GlobalPreferences.plist" restricted:NO];
     [shadow addPath:@"/User/Media/panguaxe" restricted:YES];
 
     // Restrict /usr
     [shadow addPath:@"/usr" restricted:NO];
-    [shadow addPath:@"/usr/bin" restricted:YES];
-    [shadow addPath:@"/usr/include" restricted:YES];
-    [shadow addPath:@"/usr/lib" restricted:YES];
-    [shadow addPath:@"/usr/libexec" restricted:YES];
-    [shadow addPath:@"/usr/local" restricted:YES];
-    [shadow addPath:@"/usr/sbin" restricted:YES];
+    [shadow addPath:@"/usr/bin" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/include" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/libexec" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/local" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/sbin" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/share/dpkg" restricted:YES];
     [shadow addPath:@"/usr/share/gnupg" restricted:YES];
     [shadow addPath:@"/usr/share/bigboss" restricted:YES];
@@ -1135,7 +1194,8 @@ void init_path_map(Shadow *shadow) {
     // Restrict /var
     [shadow addPath:@"/var" restricted:NO];
     [shadow addPath:@"/var/cache/apt" restricted:YES];
-    [shadow addPath:@"/var/lib" restricted:YES];
+    [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/log" restricted:YES hidden:NO];
     [shadow addPath:@"/var/stash" restricted:YES];
     [shadow addPath:@"/var/db/stash" restricted:YES];
     [shadow addPath:@"/var/rocket_stashed" restricted:YES];
@@ -1147,7 +1207,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/profile" restricted:YES];
     [shadow addPath:@"/var/motd" restricted:YES];
     [shadow addPath:@"/var/dropbear" restricted:YES];
-    [shadow addPath:@"/var/run" restricted:YES];
+    [shadow addPath:@"/var/run" restricted:YES hidden:NO];
 
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
