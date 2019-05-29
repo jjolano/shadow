@@ -392,6 +392,18 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 
+- (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:originalItemURL manager:self] || [_shadow isURLRestricted:newItemURL manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self]) {
         if(error) {
@@ -401,7 +413,21 @@ intptr_t *dyld_array_slides = NULL;
         return nil;
     }
 
-    return %orig;
+    // Filter array.
+    NSMutableArray *filtered_ret = nil;
+    NSArray *ret = %orig;
+
+    if(ret) {
+        filtered_ret = [NSMutableArray new];
+
+        for(NSURL *ret_url in ret) {
+            if(![_shadow isURLRestricted:ret_url manager:self]) {
+                [filtered_ret addObject:ret_url];
+            }
+        }
+    }
+
+    return ret ? filtered_ret : ret;
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
@@ -413,7 +439,22 @@ intptr_t *dyld_array_slides = NULL;
         return nil;
     }
 
-    return %orig;
+    // Filter array.
+    NSMutableArray *filtered_ret = nil;
+    NSArray *ret = %orig;
+
+    if(ret) {
+        filtered_ret = [NSMutableArray new];
+
+        for(NSString *ret_path in ret) {
+            // Ensure absolute path for path.
+            if(![_shadow isPathRestricted:[path stringByAppendingPathComponent:ret_path] manager:self]) {
+                [filtered_ret addObject:ret_path];
+            }
+        }
+    }
+
+    return ret ? filtered_ret : ret;
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
@@ -441,7 +482,22 @@ intptr_t *dyld_array_slides = NULL;
         return nil;
     }
 
-    return %orig;
+    // Filter array.
+    NSMutableArray *filtered_ret = nil;
+    NSArray *ret = %orig;
+
+    if(ret) {
+        filtered_ret = [NSMutableArray new];
+
+        for(NSString *ret_path in ret) {
+            // Ensure absolute path for path.
+            if(![_shadow isPathRestricted:[path stringByAppendingPathComponent:ret_path] manager:self]) {
+                [filtered_ret addObject:ret_path];
+            }
+        }
+    }
+
+    return ret ? filtered_ret : ret;
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
@@ -449,11 +505,26 @@ intptr_t *dyld_array_slides = NULL;
         return nil;
     }
 
-    return %orig;
+    // Filter array.
+    NSMutableArray *filtered_ret = nil;
+    NSArray *ret = %orig;
+
+    if(ret) {
+        filtered_ret = [NSMutableArray new];
+
+        for(NSString *ret_path in ret) {
+            // Ensure absolute path for path.
+            if(![_shadow isPathRestricted:[path stringByAppendingPathComponent:ret_path] manager:self]) {
+                [filtered_ret addObject:ret_path];
+            }
+        }
+    }
+
+    return ret ? filtered_ret : ret;
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:srcURL manager:self]) {
+    if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -465,7 +536,31 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:srcPath manager:self]) {
+    if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -499,6 +594,30 @@ intptr_t *dyld_array_slides = NULL;
         }
 
         return nil;
+    }
+
+    return %orig;
+}
+
+- (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
     }
 
     return %orig;
@@ -553,7 +672,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:destURL manager:self]) {
+    if([_shadow isURLRestricted:url manager:self] || [_shadow isURLRestricted:destURL manager:self]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -572,7 +691,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:destPath]) {
+    if([_shadow isPathRestricted:path] || [_shadow isPathRestricted:destPath]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -591,7 +710,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:dstURL manager:self]) {
+    if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -610,7 +729,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:dstPath manager:self]) {
+    if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -637,7 +756,18 @@ intptr_t *dyld_array_slides = NULL;
         return nil;
     }
 
-    return %orig;
+    NSString *ret = %orig;
+
+    // Double check the destination if restricted.
+    if([_shadow isPathRestricted:ret manager:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return ret;
 }
 %end
 %end
@@ -1352,6 +1482,40 @@ intptr_t *dyld_array_slides = NULL;
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
 
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+
+%hook NSFileManager
+- (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
+    if([_shadow isPathRestricted:path partial:NO]) {
         return NO;
     }
 
