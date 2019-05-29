@@ -349,7 +349,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries.</string>
+			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, dynamic loader filtering will need to be enabled separately (see caveats).</string>
 		</dict>
 		<dict>
 			<key>cell</key>

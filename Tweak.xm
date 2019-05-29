@@ -215,7 +215,7 @@ intptr_t *dyld_array_slides = NULL;
         return %orig;
     }
 
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
         errno = ENOENT;
         return -1;
     }
@@ -235,7 +235,7 @@ intptr_t *dyld_array_slides = NULL;
         return %orig;
     }
 
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
         errno = ENOENT;
         return -1;
     }
@@ -2192,11 +2192,10 @@ void init_path_map(Shadow *shadow) {
             if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
                 uint32_t orig_count = _dyld_image_count();
 
-                NSMutableArray *arr = [_shadow generateDyldNameArray];
+                dyld_array = [_shadow generateDyldNameArray];
                 // dyld_array_headers = [_shadow generateDyldHeaderArray];
                 // dyld_array_slides = [_shadow generateDyldSlideArray];
                 dyld_array_count = (uint32_t) [dyld_array count];
-                dyld_array = arr;
 
                 NSLog(@"generated dyld array (%d/%d)", dyld_array_count, orig_count);
             }
