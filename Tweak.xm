@@ -756,6 +756,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 %end
 
+/*
 %hook NSData
 - (id)initWithContentsOfMappedFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
@@ -853,6 +854,7 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 %end
+*/
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
