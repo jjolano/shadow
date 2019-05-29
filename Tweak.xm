@@ -1134,6 +1134,7 @@ intptr_t *dyld_array_slides = NULL;
     return ret;
 }
 
+/*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
     if(dyld_array_headers && dyld_array_count > 0) {
         if(image_index >= dyld_array_count) {
@@ -1158,7 +1159,6 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 
-/*
 %hookf(void *, dlopen, const char *path, int mode) {
     void *ret = %orig;
 
@@ -1199,7 +1199,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return ret;
 }
-*/
+
 %hookf(bool, dlopen_preflight, const char *path) {
     bool ret = %orig;
 
@@ -1214,6 +1214,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return ret;
 }
+*/
 %end
 
 %group hook_dyld_dlsym
