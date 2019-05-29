@@ -282,7 +282,7 @@
             ret = [current_path_map[@"restricted"] boolValue];
         }
 
-        if(ret && path_map[[pathComponents lastObject]] == current_path_map && current_path_map[@"hidden"]) {
+        if(ret && current_path_map[@"hidden"] && [[pathComponents lastObject] isEqualToString:current_path_map[@"name"]]) {
             ret = [current_path_map[@"hidden"] boolValue];
         }
     }
@@ -354,6 +354,7 @@
     for(NSString *value in pathComponents) {
         if(!current_path_map[value]) {
             current_path_map[value] = [NSMutableDictionary new];
+            [current_path_map[value] setValue:value forKey:@"name"];
             [current_path_map[value] setValue:@NO forKey:@"restricted"];
             [current_path_map[value] setValue:@NO forKey:@"hidden"];
         }
@@ -376,6 +377,7 @@
     for(NSString *value in pathComponents) {
         if(!current_path_map[value]) {
             current_path_map[value] = [NSMutableDictionary new];
+            [current_path_map[value] setValue:value forKey:@"name"];
             [current_path_map[value] setValue:@YES forKey:@"restricted"];
             [current_path_map[value] setValue:@YES forKey:@"hidden"];
         }
