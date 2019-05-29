@@ -1290,7 +1290,7 @@ intptr_t *dyld_array_slides = NULL;
     const char *ret = %orig;
 
     if(ret && [_shadow isImageRestricted:[NSString stringWithUTF8String:ret]]) {
-        return self_image_name;
+        return self_image_name ? self_image_name : %orig(0);
     }
 
     return ret;
