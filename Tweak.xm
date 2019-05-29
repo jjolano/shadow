@@ -1828,7 +1828,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/dev/kmem" restricted:YES];
     [shadow addPath:@"/dev/mem" restricted:YES];
 
-    // Restrict /private
+    // Restrict /private by whitelisting
     [shadow addPath:@"/private" restricted:YES hidden:NO];
     [shadow addPath:@"/private/etc" restricted:NO];
     [shadow addPath:@"/private/system_data" restricted:NO];
@@ -1954,38 +1954,73 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/User/Media/Radio" restricted:NO];
     [shadow addPath:@"/User/Media/Recordings" restricted:NO];
 
-    // Restrict /usr
-    [shadow addPath:@"/usr" restricted:NO];
+    // Restrict /usr by whitelisting
+    [shadow addPath:@"/usr" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/bin" restricted:YES hidden:NO];
-    [shadow addPath:@"/usr/include" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/libexec" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/local" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/local/bin" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/local/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/local/standalone" restricted:NO];
     [shadow addPath:@"/usr/sbin" restricted:YES hidden:NO];
-    [shadow addPath:@"/usr/share/dpkg" restricted:YES];
-    [shadow addPath:@"/usr/share/gnupg" restricted:YES];
-    [shadow addPath:@"/usr/share/bigboss" restricted:YES];
-    [shadow addPath:@"/usr/share/jailbreak" restricted:YES];
-    [shadow addPath:@"/usr/share/entitlements" restricted:YES];
-    [shadow addPath:@"/usr/share/tabset" restricted:YES];
-    [shadow addPath:@"/usr/share/terminfo" restricted:YES];
+    [shadow addPath:@"/usr/share" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/share/com.apple.languageassetd" restricted:NO];
+    [shadow addPath:@"/usr/share/CSI" restricted:NO];
+    [shadow addPath:@"/usr/share/dict" restricted:NO];
+    [shadow addPath:@"/usr/share/firmware" restricted:NO];
+    [shadow addPath:@"/usr/share/icu" restricted:NO];
+    [shadow addPath:@"/usr/share/langid" restricted:NO];
+    [shadow addPath:@"/usr/share/locale" restricted:NO];
+    [shadow addPath:@"/usr/share/mecabra" restricted:NO];
+    [shadow addPath:@"/usr/share/misc" restricted:NO];
+    [shadow addPath:@"/usr/share/progressui" restricted:NO];
+    [shadow addPath:@"/usr/share/tokenizer" restricted:NO];
+    [shadow addPath:@"/usr/share/zoneinfo" restricted:NO];
+    [shadow addPath:@"/usr/share/zoneinfo.default" restricted:NO];
+    [shadow addPath:@"/usr/standalone" restricted:NO];
     
-    // Restrict /var
-    [shadow addPath:@"/var" restricted:NO];
-    [shadow addPath:@"/var/cache" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/log" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/stash" restricted:YES];
+    // Restrict /var by whitelisting
+    [shadow addPath:@"/var" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/.DocumentRevisions" restricted:NO];
+    [shadow addPath:@"/var/.fseventsd" restricted:NO];
+    [shadow addPath:@"/var/.overprovisioning_file" restricted:NO];
+    [shadow addPath:@"/var/audit" restricted:NO];
+    [shadow addPath:@"/var/backups" restricted:NO];
+    [shadow addPath:@"/var/buddy" restricted:NO];
+    [shadow addPath:@"/var/containers" restricted:NO];
+    [shadow addPath:@"/var/cores" restricted:NO];
+    [shadow addPath:@"/var/db" restricted:NO];
     [shadow addPath:@"/var/db/stash" restricted:YES];
-    [shadow addPath:@"/var/rocket_stashed" restricted:YES];
-    [shadow addPath:@"/var/tweak" restricted:YES];
-    [shadow addPath:@"/var/LIB" restricted:YES];
-    [shadow addPath:@"/var/ulb" restricted:YES];
-    [shadow addPath:@"/var/bin" restricted:YES];
-    [shadow addPath:@"/var/sbin" restricted:YES];
-    [shadow addPath:@"/var/profile" restricted:YES];
-    [shadow addPath:@"/var/motd" restricted:YES];
-    [shadow addPath:@"/var/dropbear" restricted:YES];
+    [shadow addPath:@"/var/ea" restricted:NO];
+    [shadow addPath:@"/var/empty" restricted:NO];
+    [shadow addPath:@"/var/folders" restricted:NO];
+    [shadow addPath:@"/var/hardware" restricted:NO];
+    [shadow addPath:@"/var/installd" restricted:NO];
+    [shadow addPath:@"/var/internal" restricted:NO];
+    [shadow addPath:@"/var/keybags" restricted:NO];
+    [shadow addPath:@"/var/Keychains" restricted:NO];
+    [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/local" restricted:NO];
+    [shadow addPath:@"/var/lock" restricted:NO];
+    [shadow addPath:@"/var/log" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/log/asl" restricted:NO];
+    [shadow addPath:@"/var/log/com.apple.xpc.launchd" restricted:NO];
+    [shadow addPath:@"/var/log/corecaptured.log" restricted:NO];
+    [shadow addPath:@"/var/log/ppp" restricted:NO];
+    [shadow addPath:@"/var/log/ppp.log" restricted:NO];
+    [shadow addPath:@"/var/log/racoon.log" restricted:NO];
+    [shadow addPath:@"/var/log/sa" restricted:NO];
+    [shadow addPath:@"/var/logs" restricted:NO];
+    [shadow addPath:@"/var/Managed Preferences" restricted:NO];
+    [shadow addPath:@"/var/mobile" restricted:NO];
+    [shadow addPath:@"/var/MobileAsset" restricted:NO];
+    [shadow addPath:@"/var/MobileDevice" restricted:NO];
+    [shadow addPath:@"/var/MobileSoftwareUpdate" restricted:NO];
+    [shadow addPath:@"/var/msgs" restricted:NO];
+    [shadow addPath:@"/var/networkd" restricted:NO];
+    [shadow addPath:@"/var/preferences" restricted:NO];
+    [shadow addPath:@"/var/root" restricted:NO];
     [shadow addPath:@"/var/run" restricted:YES hidden:NO];
     [shadow addPath:@"/var/run/lockdown" restricted:NO];
     [shadow addPath:@"/var/run/lockdown.sock" restricted:NO];
@@ -2001,6 +2036,11 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/run/lockbot" restricted:NO];
     [shadow addPath:@"/var/run/pppconfd" restricted:NO];
     [shadow addPath:@"/var/run/fudinit" restricted:NO];
+    [shadow addPath:@"/var/spool" restricted:NO];
+    [shadow addPath:@"/var/staged_system_apps" restricted:NO];
+    [shadow addPath:@"/var/tmp" restricted:NO];
+    [shadow addPath:@"/var/vm" restricted:NO];
+    [shadow addPath:@"/var/wireless" restricted:NO];
 
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
