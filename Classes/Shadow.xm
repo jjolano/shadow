@@ -301,6 +301,18 @@
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
+    return [self isURLRestricted:url manager:[NSFileManager defaultManager] partial:YES];
+}
+
+- (BOOL)isURLRestricted:(NSURL *)url partial:(BOOL)partial {
+    return [self isURLRestricted:url manager:[NSFileManager defaultManager] partial:partial];
+}
+
+- (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm {
+    return [self isURLRestricted:url manager:fm partial:YES];
+}
+
+- (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm partial:(BOOL)partial {
     if(passthrough) {
         return NO;
     }
@@ -316,7 +328,7 @@
 
     // File URL checks
     if(!ret && [url isFileURL]) {
-        ret = [self isPathRestricted:[url path]];
+        ret = [self isPathRestricted:[url path] manager:fm partial:partial];
     }
 
     return ret;
