@@ -162,7 +162,8 @@
     BOOL ret = NO;
 
     if(![name isAbsolutePath]) {
-        name = @["/usr/lib" stringByAppendingPathComponent:name];
+        NSString *libdir = @"/usr/lib";
+        name = [libdir stringByAppendingPathComponent:name];
     }
 
     // Find exact match.
