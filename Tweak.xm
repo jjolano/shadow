@@ -783,7 +783,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -803,7 +803,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -823,7 +823,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -843,7 +843,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -866,7 +866,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -882,7 +882,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -908,7 +908,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -926,7 +926,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -944,7 +944,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -952,7 +952,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -972,7 +972,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -984,7 +984,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return nil;
     }
 
@@ -1199,7 +1199,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return ret;
 }
-
+*/
 %hookf(bool, dlopen_preflight, const char *path) {
     bool ret = %orig;
 
@@ -1214,7 +1214,6 @@ intptr_t *dyld_array_slides = NULL;
 
     return ret;
 }
-*/
 %end
 
 %group hook_dyld_dlsym
@@ -1254,7 +1253,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return NO;
     }
 
@@ -1272,7 +1271,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -1284,7 +1283,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return NO;
     }
 
@@ -1314,7 +1313,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         return NO;
     }
 
@@ -1322,7 +1321,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -1348,7 +1347,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if([url isFileURL] && [_shadow isPathRestricted:[url path] partial:NO]) {
+    if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
             *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
         }
