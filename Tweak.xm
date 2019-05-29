@@ -2190,14 +2190,12 @@ void init_path_map(Shadow *shadow) {
 
             // Generate filtered dyld array
             if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
-                uint32_t orig_count = _dyld_image_count();
-
                 dyld_array = [_shadow generateDyldNameArray];
                 // dyld_array_headers = [_shadow generateDyldHeaderArray];
                 // dyld_array_slides = [_shadow generateDyldSlideArray];
                 dyld_array_count = (uint32_t) [dyld_array count];
 
-                NSLog(@"generated dyld array (%d/%d)", dyld_array_count, orig_count);
+                NSLog(@"generated dyld array (%d items)", dyld_array_count);
             }
 
             NSLog(@"ready");
