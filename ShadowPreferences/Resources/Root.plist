@@ -116,7 +116,7 @@
 			<key>label</key>
 			<string>File Map</string>
 			<key>footerText</key>
-			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages.</string>
+			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages. The file map will need to be regenerated when any changes to installed packages are made. Live generation will generate the file map upon application launch, which may increase launch times.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -147,7 +147,7 @@
 			<key>key</key>
 			<string>auto_file_map_generation_enabled</string>
 			<key>label</key>
-			<string>Automatically Generate</string>
+			<string>Live Generation</string>
 		</dict>
 
 		<!-- Dynamic Libraries -->
@@ -256,7 +256,7 @@
 			<key>label</key>
 			<string>Compatibility</string>
 			<key>footerText</key>
-			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps. Injection compatibility applies to Substrate.</string>
+			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps. Injection compatibility applies to Substrate. If disabled, Substrate may not load some tweaks properly.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -295,15 +295,38 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<true/>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>key</key>
-			<string>inject_compatibility_mode</string>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
 			<key>label</key>
 			<string>Injection Compatibility</string>
+			<key>ALAllowsSelection</key>
+			<string>0</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string>inject_compat</string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to disable injection compatibility</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
 		</dict>
 
 		<!-- Footer -->
@@ -323,7 +346,7 @@ Thank you for using Shadow!</string>
 			<key>action</key>
 			<string>support_reddit:</string>
 			<key>label</key>
-			<string>Shadow on Reddit</string>
+			<string>Shadow Release Thread</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -339,7 +362,7 @@ Thank you for using Shadow!</string>
 			<key>action</key>
 			<string>support_paypal:</string>
 			<key>label</key>
-			<string>Donate</string>
+			<string>Donate to Developer</string>
 		</dict>
 	</array>
 	<key>title</key>

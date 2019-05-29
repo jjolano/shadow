@@ -17,7 +17,7 @@
     return self;
 }
 
-+ (NSArray *)generateDyldArray {
+- (NSArray *)generateDyldArray {
     NSMutableArray *dyldArray = [NSMutableArray new];
 
     uint32_t i;
@@ -41,14 +41,14 @@
     return [dyldArray copy];
 }
 
-+ (BOOL)generateFileMap {
++ (NSArray *)generateFileMap {
     // Generate file map.
+    NSMutableArray *blacklist = [NSMutableArray new];
+
     NSString *dpkg_info_path = DPKG_INFO_PATH;
     NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
 
     if(dpkg_info) {
-        NSMutableArray *blacklist = [NSMutableArray new];
-
         for(NSString *dpkg_info_file in dpkg_info) {
             // Read only .list files.
             if([[dpkg_info_file pathExtension] isEqualToString:@"list"]) {
@@ -65,10 +65,10 @@
 
                         if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file_std isDirectory:&isDir]) {
                             if(!isDir
-                            || [[dpkg_file pathExtension] isEqualToString:@"app"]
+                            /*|| [[dpkg_file pathExtension] isEqualToString:@"app"]
                             || [[dpkg_file pathExtension] isEqualToString:@"framework"]
                             || [[dpkg_file pathExtension] isEqualToString:@"bundle"]
-                            || [[dpkg_file pathExtension] isEqualToString:@"theme"]) {
+                            || [[dpkg_file pathExtension] isEqualToString:@"theme"]*/) {
                                 [blacklist addObject:dpkg_file_std];
                             }
                         }
@@ -76,19 +76,9 @@
                 }
             }
         }
-
-        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
-
-        if(prefs) {
-            [prefs setValue:blacklist forKey:@"file_map"];
-
-            if([prefs writeToFile:PREFS_PATH atomically:YES]) {
-                return YES;
-            }
-        }
     }
 
-    return NO;
+    return [blacklist copy];
 }
 
 - (BOOL)isImageRestricted:(NSString *)name {
@@ -184,12 +174,10 @@
     // Check path components with path map.
     if(!ret) {
         NSArray *pathComponents = [path pathComponents];
-        NSDictionary *current_path_map = [path_map copy];
+        NSMutableDictionary *current_path_map = path_map;
 
         for(NSString *value in pathComponents) {
-            NSDictionary *next_path_map = [current_path_map[value] copy];
-
-            if(!next_path_map) {
+            if(!current_path_map[value]) {
                 if(partial) {
                     BOOL match = NO;
 
@@ -209,7 +197,7 @@
                 }
             }
 
-            current_path_map = next_path_map;
+            current_path_map = current_path_map[value];
         }
 
         if(current_path_map[@"restricted"]) {
@@ -274,24 +262,44 @@
     NSMutableDictionary *current_path_map = path_map;
 
     for(NSString *value in pathComponents) {
-        NSMutableDictionary *next_path_map = current_path_map[value];
-
-        if(!next_path_map) {
-            next_path_map = [NSMutableDictionary new];
-            [next_path_map setValue:@NO forKey:@"restricted"];
-            [next_path_map setValue:@NO forKey:@"hidden"];
+        if(!current_path_map[value]) {
+            current_path_map[value] = [NSMutableDictionary new];
+            [current_path_map[value] setValue:@NO forKey:@"restricted"];
+            [current_path_map[value] setValue:@NO forKey:@"hidden"];
         }
 
-        current_path_map = next_path_map;
+        current_path_map = current_path_map[value];
     }
 
     [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];
     [current_path_map setValue:[NSNumber numberWithBool:hidden] forKey:@"hidden"];
 }
 
+- (void)addRestrictedPath:(NSString *)path {
+    if(!path_map) {
+        path_map = [NSMutableDictionary new];
+    }
+
+    NSArray *pathComponents = [path pathComponents];
+    NSMutableDictionary *current_path_map = path_map;
+
+    for(NSString *value in pathComponents) {
+        if(!current_path_map[value]) {
+            current_path_map[value] = [NSMutableDictionary new];
+            [current_path_map[value] setValue:@YES forKey:@"restricted"];
+            [current_path_map[value] setValue:@YES forKey:@"hidden"];
+        }
+
+        current_path_map = current_path_map[value];
+    }
+
+    [current_path_map setValue:@YES forKey:@"restricted"];
+    [current_path_map setValue:@YES forKey:@"hidden"];
+}
+
 - (void)addPathsFromFileMap:(NSArray *)file_map {
     for(NSString *path in file_map) {
-        [self addPath:path restricted:YES];
+        [self addRestrictedPath:path];
     }
 }
 

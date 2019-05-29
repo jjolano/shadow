@@ -1134,7 +1134,7 @@ NSArray *dyld_array = nil;
             // Regenerate dyld array.
             dyld_array = nil;
             uint32_t orig_count = _dyld_image_count();
-            dyld_array = [Shadow generateDyldArray];
+            dyld_array = [_shadow generateDyldArray];
 
             NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
         }
@@ -1159,7 +1159,7 @@ NSArray *dyld_array = nil;
         // Regenerate dyld array.
         dyld_array = nil;
         uint32_t orig_count = _dyld_image_count();
-        dyld_array = [Shadow generateDyldArray];
+        dyld_array = [_shadow generateDyldArray];
 
         NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
     }
@@ -1778,42 +1778,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/System/Library/PreferenceBundles/AppList.bundle" restricted:YES];
 }
 
-// SpringBoard hook
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-
-    // Generate file map.
-    if([Shadow generateFileMap]) {
-        NSLog(@"generated file map (automatic)");
-    }
-}
-%end
-%end
-
 %ctor {
-    NSString *processName = [[NSProcessInfo processInfo] processName];
-
-    if([processName isEqualToString:@"SpringBoard"]) {
-        // Load preferences file
-        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
-
-        if(!prefs) {
-            // Create new preferences file
-            prefs = [NSMutableDictionary new];
-            [prefs writeToFile:PREFS_PATH atomically:YES];
-
-            return;
-        }
-
-        if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
-            %init(hook_springboard);
-        }
-
-        return;
-    }
-
     NSBundle *bundle = [NSBundle mainBundle];
 
     if(bundle != nil) {
@@ -1899,6 +1864,10 @@ void init_path_map(Shadow *shadow) {
             NSLog(@"initialized internal path map");
 
             // Initialize file map
+            if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
+                prefs[@"file_map"] = [Shadow generateFileMap];
+            }
+
             if(prefs[@"file_map"]) {
                 [_shadow addPathsFromFileMap:prefs[@"file_map"]];
 
@@ -1918,17 +1887,21 @@ void init_path_map(Shadow *shadow) {
                 NSLog(@"using tweak compatibility mode");
             }
 
-            if(prefs[@"inject_compatibility_mode"]) {
-                [_shadow setUseInjectCompatibilityMode:[prefs[@"inject_compatibility_mode"] boolValue]];
+            bundleIdentifier_compat = [NSString stringWithFormat:@"inject_compat%@", bundleIdentifier];
 
-                // Disable this if we are using Substitute.
-                if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"]) {
-                    [_shadow setUseInjectCompatibilityMode:NO];
-                }
+            [_shadow setUseInjectCompatibilityMode:YES];
 
-                if([_shadow useInjectCompatibilityMode]) {
-                    NSLog(@"using injection compatibility mode");
-                }
+            if(prefs[bundleIdentifier_compat] && [prefs[bundleIdentifier_compat] boolValue]) {
+                [_shadow setUseInjectCompatibilityMode:NO];
+            }
+
+            // Disable this if we are using Substitute.
+            if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"]) {
+                [_shadow setUseInjectCompatibilityMode:NO];
+            }
+
+            if([_shadow useInjectCompatibilityMode]) {
+                NSLog(@"using injection compatibility mode");
             }
 
             // Initialize stable hooks
@@ -1970,7 +1943,7 @@ void init_path_map(Shadow *shadow) {
                 // Generate filtered dyld array
                 uint32_t orig_count = _dyld_image_count();
 
-                dyld_array = [Shadow generateDyldArray];
+                dyld_array = [_shadow generateDyldArray];
 
                 NSLog(@"generated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
             }
