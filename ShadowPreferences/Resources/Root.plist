@@ -170,7 +170,7 @@
 			<key>label</key>
 			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters may trigger detection on some apps, while bypassing it on others.</string>
+			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters may trigger detection on some apps, and may also be unstable.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
