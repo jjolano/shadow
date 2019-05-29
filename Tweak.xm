@@ -139,22 +139,6 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 
-%hookf(int, fstat, int fd, struct stat *buf) {
-    // Get path of dirfd.
-    char fdpath[PATH_MAX];
-
-    if(fcntl(fd, F_GETPATH, fdpath) != -1) {
-        NSString *fd_path = [NSString stringWithUTF8String:fdpath];
-        
-        if([_shadow isPathRestricted:fd_path]) {
-            errno = EBADF;
-            return -1;
-        }
-    }
-
-    return %orig;
-}
-
 %hookf(int, statfs, const char *path, struct statfs *buf) {
     if(!path) {
         return %orig;
@@ -286,6 +270,40 @@ intptr_t *dyld_array_slides = NULL;
     if([_shadow isPathRestricted:path]) {
         errno = ENOENT;
         return -1;
+    }
+
+    return %orig;
+}
+%end
+
+%group hook_libc_inject
+%hookf(int, fstat, int fd, struct stat *buf) {
+    // Get path of dirfd.
+    char fdpath[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, fdpath) != -1) {
+        NSString *fd_path = [NSString stringWithUTF8String:fdpath];
+        
+        if([_shadow isPathRestricted:fd_path]) {
+            errno = EBADF;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+%end
+
+%group hook_dlopen_inject
+%hookf(void *, dlopen, const char *path, int mode) {
+    if(!path) {
+        return %orig;
+    }
+
+    NSString *image_name = [NSString stringWithUTF8String:path];
+
+    if([_shadow isImageRestricted:image_name]) {
+        return NULL;
     }
 
     return %orig;
@@ -2089,18 +2107,6 @@ void init_path_map(Shadow *shadow) {
                 NSLog(@"initialized file map (%lu items)", (unsigned long) [prefs[@"file_map"] count]);
             }
 
-            // Generate filtered dyld array
-            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
-                uint32_t orig_count = _dyld_image_count();
-
-                dyld_array = [_shadow generateDyldNameArray];
-                // dyld_array_headers = [_shadow generateDyldHeaderArray];
-                // dyld_array_slides = [_shadow generateDyldSlideArray];
-                dyld_array_count = (uint32_t) [dyld_array count];
-
-                NSLog(@"generated dyld array (%d/%d)", dyld_array_count, orig_count);
-            }
-
             // Compatibility mode
             NSString *bundleIdentifier_compat = [NSString stringWithFormat:@"tweak_compat%@", bundleIdentifier];
 
@@ -2108,10 +2114,6 @@ void init_path_map(Shadow *shadow) {
 
             if(prefs[bundleIdentifier_compat] && [prefs[bundleIdentifier_compat] boolValue]) {
                 [_shadow setUseTweakCompatibilityMode:NO];
-            }
-
-            if([_shadow useTweakCompatibilityMode]) {
-                NSLog(@"using tweak compatibility mode");
             }
 
             bundleIdentifier_compat = [NSString stringWithFormat:@"inject_compat%@", bundleIdentifier];
@@ -2127,8 +2129,28 @@ void init_path_map(Shadow *shadow) {
                 [_shadow setUseInjectCompatibilityMode:NO];
             }
 
+            // Lockdown mode
+            NSString *bundleIdentifier_lockdown = [NSString stringWithFormat:@"lockdown%@", bundleIdentifier];
+
+            if(prefs[bundleIdentifier_lockdown] && [prefs[bundleIdentifier_lockdown] boolValue]) {
+                %init(hook_libc_inject);
+                %init(hook_dlopen_inject);
+                
+                prefs[@"dyld_hooks_enabled"] = @YES;
+                prefs[@"dyld_filter_enabled"] = @YES;
+
+                [_shadow setUseInjectCompatibilityMode:NO];
+                [_shadow setUseTweakCompatibilityMode:NO];
+
+                NSLog(@"enabled lockdown mode");
+            }
+
             if([_shadow useInjectCompatibilityMode]) {
                 NSLog(@"using injection compatibility mode");
+            }
+
+            if([_shadow useTweakCompatibilityMode]) {
+                NSLog(@"using tweak compatibility mode");
             }
 
             // Initialize stable hooks
@@ -2164,6 +2186,19 @@ void init_path_map(Shadow *shadow) {
                 %init(hook_sandbox);
 
                 NSLog(@"hooked sandbox methods");
+            }
+
+            // Generate filtered dyld array
+            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
+                uint32_t orig_count = _dyld_image_count();
+
+                NSMutableArray *arr = [_shadow generateDyldNameArray];
+                // dyld_array_headers = [_shadow generateDyldHeaderArray];
+                // dyld_array_slides = [_shadow generateDyldSlideArray];
+                dyld_array_count = (uint32_t) [dyld_array count];
+                dyld_array = arr;
+
+                NSLog(@"generated dyld array (%d/%d)", dyld_array_count, orig_count);
             }
 
             NSLog(@"ready");

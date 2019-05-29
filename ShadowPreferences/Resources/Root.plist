@@ -342,6 +342,51 @@
 			</array>
 		</dict>
 
+		<!-- Lockdown Mode -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Lockdown Mode</string>
+			<key>footerText</key>
+			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>bundle</key>
+			<string>AppList</string>
+			<key>isController</key>
+			<string>1</string>
+			<key>label</key>
+			<string>Lockdown Mode</string>
+			<key>ALAllowsSelection</key>
+			<string>0</string>
+			<key>ALSettingsKeyPrefix</key>
+			<string>lockdown</string>
+			<key>ALSettingsDefaultValue</key>
+			<string>0</string>
+			<key>ALSettingsPath</key>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<key>ALSingleEnabledMode</key>
+			<false/>
+			<key>ALSectionDescriptors</key>
+			<array>
+				<dict>
+					<key>cell-class-name</key>
+					<string>ALSwitchCell</string>
+					<key>icon-size</key>
+					<string>29</string>
+					<key>suppress-hidden-apps</key>
+					<string>1</string>
+					<key>title</key>
+					<string>Select apps to enable lockdown mode</string>
+					<key>predicate</key>
+					<string>isSystemApplication = FALSE</string>
+				</dict>
+			</array>
+		</dict>
+
 		<!-- Footer -->
 		<dict>
 			<key>cell</key>
