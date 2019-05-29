@@ -1125,7 +1125,7 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
-/*
+
 %hookf(void *, dlopen, const char *path, int mode) {
     void *ret = %orig;
 
@@ -1166,7 +1166,7 @@ NSArray *dyld_array = nil;
 
     return ret;
 }
-*/
+
 %hookf(bool, dlopen_preflight, const char *path) {
     bool ret = %orig;
 
