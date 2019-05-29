@@ -139,6 +139,22 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 
+%hookf(int, fstat, int fd, struct stat *buf) {
+    // Get path of dirfd.
+    char fdpath[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, fdpath) != -1) {
+        NSString *fd_path = [NSString stringWithUTF8String:fdpath];
+        
+        if([_shadow isPathRestricted:fd_path]) {
+            errno = EBADF;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
 %hookf(int, statfs, const char *path, struct statfs *buf) {
     if(!path) {
         return %orig;
