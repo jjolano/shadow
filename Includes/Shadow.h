@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#include <mach-o/dyld.h>
 
 #ifdef DEBUG
 #define NSLog(args...) NSLog(@"[shadow] "args)
@@ -19,7 +20,9 @@
 @property (nonatomic, assign) BOOL useTweakCompatibilityMode;
 @property (nonatomic, assign) BOOL useInjectCompatibilityMode;
 
-- (NSArray *)generateDyldArray;
+- (NSMutableArray *)generateDyldNameArray;
+- (struct mach_header *)generateDyldHeaderArray;
+- (intptr_t *)generateDyldSlideArray;
 + (NSArray *)generateFileMap;
 
 - (BOOL)isImageRestricted:(NSString *)name;

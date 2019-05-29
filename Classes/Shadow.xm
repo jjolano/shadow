@@ -1,4 +1,5 @@
 #include <mach-o/dyld.h>
+#include <stdlib.h>
 
 #import "../Includes/Shadow.h"
 
@@ -17,7 +18,7 @@
     return self;
 }
 
-- (NSArray *)generateDyldArray {
+- (NSMutableArray *)generateDyldNameArray {
     NSMutableArray *dyldArray = [NSMutableArray new];
 
     uint32_t i;
@@ -34,11 +35,83 @@
                 continue;
             }
 
-            [dyldArray addObject:[NSNumber numberWithUnsignedInt:i]];
+            // [dyldArray addObject:[NSNumber numberWithUnsignedInt:i]];
+            [dyldArray addObject:image_name_ns];
         }
     }
 
-    return [dyldArray copy];
+    return dyldArray;
+}
+
+- (struct mach_header *)generateDyldHeaderArray {
+    uint32_t i;
+    uint32_t j = 0;
+    uint32_t count = _dyld_image_count();
+
+    struct mach_header *headers = (struct mach_header *) malloc(count * sizeof(struct mach_header));
+
+    if(!headers) {
+        return NULL;
+    }
+
+    for(i = 0; i < count; i++) {
+        const char *image_name = _dyld_get_image_name(i);
+
+        if(image_name) {
+            NSString *image_name_ns = [NSString stringWithUTF8String:image_name];
+
+            if([self isImageRestricted:image_name_ns]) {
+                // Skip restricted image name.
+                continue;
+            }
+
+            const struct mach_header *header = _dyld_get_image_header(i);
+
+            headers[j].magic = header->magic;
+            headers[j].cputype = header->cputype;
+            headers[j].cpusubtype = header->cpusubtype;
+            headers[j].filetype = header->filetype;
+            headers[j].ncmds = header->ncmds;
+            headers[j].sizeofcmds = header->sizeofcmds;
+            headers[j].flags = header->flags;
+
+            j++;
+        }
+    }
+
+    struct mach_header *ret = (struct mach_header *) realloc(headers, j * sizeof(struct mach_header));
+    return ret ? ret : headers;
+}
+
+- (intptr_t *)generateDyldSlideArray {
+    uint32_t i;
+    uint32_t j = 0;
+    uint32_t count = _dyld_image_count();
+
+    intptr_t *slides = (intptr_t *) malloc(count * sizeof(intptr_t));
+
+    if(!slides) {
+        return NULL;
+    }
+
+    for(i = 0; i < count; i++) {
+        const char *image_name = _dyld_get_image_name(i);
+
+        if(image_name) {
+            NSString *image_name_ns = [NSString stringWithUTF8String:image_name];
+
+            if([self isImageRestricted:image_name_ns]) {
+                // Skip restricted image name.
+                continue;
+            }
+
+            intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+            slides[j++] = slide;
+        }
+    }
+
+    intptr_t *ret = (intptr_t *) realloc(slides, j * sizeof(intptr_t));
+    return ret ? ret : slides;
 }
 
 + (NSArray *)generateFileMap {

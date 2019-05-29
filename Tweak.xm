@@ -5,7 +5,12 @@
 #import "Includes/Shadow.h"
 
 Shadow *_shadow = nil;
-NSArray *dyld_array = nil;
+
+NSMutableArray *dyld_array = nil;
+uint32_t dyld_array_count = 0;
+
+struct mach_header *dyld_array_headers = NULL;
+intptr_t *dyld_array_slides = NULL;
 
 // Stable Hooks
 %group hook_libc
@@ -1100,20 +1105,21 @@ NSArray *dyld_array = nil;
 #include <mach-o/dyld.h>
 
 %hookf(uint32_t, _dyld_image_count) {
-    if(dyld_array) {
-        return (uint32_t) [dyld_array count];
+    if(dyld_array && dyld_array_count > 0) {
+        return dyld_array_count;
     }
 
     return %orig;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-    if(dyld_array) {
-        if(image_index >= (uint32_t) [dyld_array count]) {
+    if(dyld_array && dyld_array_count > 0) {
+        if(image_index >= dyld_array_count) {
             return NULL;
         }
 
-        return %orig((uint32_t) [dyld_array[image_index] unsignedIntValue]);
+        // return %orig((uint32_t) [dyld_array[image_index] unsignedIntValue]);
+        return [dyld_array[image_index] UTF8String];
     }
 
     // Basic filter.
@@ -1126,25 +1132,48 @@ NSArray *dyld_array = nil;
     return ret;
 }
 
+%hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
+    if(dyld_array_headers && dyld_array_count > 0) {
+        if(image_index >= dyld_array_count) {
+            return NULL;
+        }
+
+        return &(dyld_array_headers[image_index]);
+    }
+
+    return %orig;
+}
+
+%hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
+    if(dyld_array_slides && dyld_array_count > 0) {
+        if(image_index >= dyld_array_count) {
+            return 0;
+        }
+
+        return dyld_array_slides[image_index];
+    }
+
+    return %orig;
+}
+
+/*
 %hookf(void *, dlopen, const char *path, int mode) {
     void *ret = %orig;
 
     if(ret && path) {
-        if(dyld_array && !(mode & RTLD_NOLOAD)) {
-            // Regenerate dyld array.
-            dyld_array = nil;
-            uint32_t orig_count = _dyld_image_count();
-            dyld_array = [_shadow generateDyldArray];
+        NSString *image_name = [NSString stringWithUTF8String:path];
 
-            NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
-        }
-
-        if(mode & RTLD_NOLOAD) {
-            NSString *image_name = [NSString stringWithUTF8String:path];
-
+        if((mode & RTLD_NOLOAD) == RTLD_NOLOAD) {
             if([_shadow isImageRestricted:image_name]) {
                 NSLog(@"blocked dlopen: %@", image_name);
                 return NULL;
+            }
+        } else {
+            if(dyld_array && ![dyld_array containsObject:image_name] && ![_shadow isImageRestricted:image_name]) {
+                [dyld_array addObject:image_name];
+                dyld_array_count++;
+
+                NSLog(@"added to dyld array: %@", image_name);
             }
         }
     }
@@ -1155,18 +1184,20 @@ NSArray *dyld_array = nil;
 %hookf(int, dlclose, void *handle) {
     int ret = %orig;
 
-    if(ret == 0) {
+    if(ret == 0 && dyld_array) {
         // Regenerate dyld array.
         dyld_array = nil;
+        dyld_array_count = 0;
         uint32_t orig_count = _dyld_image_count();
-        dyld_array = [_shadow generateDyldArray];
+        dyld_array = [_shadow generateDyldNameArray];
+        dyld_array_count = (uint32_t) [dyld_array count];
 
-        NSLog(@"regenerated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
+        NSLog(@"dlclose regenerated dyld array (%d/%d)", dyld_array_count, orig_count);
     }
 
     return ret;
 }
-
+*/
 %hookf(bool, dlopen_preflight, const char *path) {
     bool ret = %orig;
 
@@ -1874,6 +1905,18 @@ void init_path_map(Shadow *shadow) {
                 NSLog(@"initialized file map (%lu items)", (unsigned long) [prefs[@"file_map"] count]);
             }
 
+            // Generate filtered dyld array
+            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
+                uint32_t orig_count = _dyld_image_count();
+
+                dyld_array = [_shadow generateDyldNameArray];
+                // dyld_array_headers = [_shadow generateDyldHeaderArray];
+                // dyld_array_slides = [_shadow generateDyldSlideArray];
+                dyld_array_count = (uint32_t) [dyld_array count];
+
+                NSLog(@"generated dyld array (%d/%d)", dyld_array_count, orig_count);
+            }
+
             // Compatibility mode
             NSString *bundleIdentifier_compat = [NSString stringWithFormat:@"tweak_compat%@", bundleIdentifier];
 
@@ -1939,16 +1982,17 @@ void init_path_map(Shadow *shadow) {
                 NSLog(@"hooked sandbox methods");
             }
 
-            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
-                // Generate filtered dyld array
-                uint32_t orig_count = _dyld_image_count();
-
-                dyld_array = [_shadow generateDyldArray];
-
-                NSLog(@"generated dyld array (%d/%d)", (uint32_t) [dyld_array count], orig_count);
-            }
-
             NSLog(@"ready");
         }
+    }
+}
+
+%dtor {
+    if(dyld_array_headers) {
+        free(dyld_array_headers);
+    }
+
+    if(dyld_array_slides) {
+        free(dyld_array_slides);
     }
 }
