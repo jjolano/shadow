@@ -321,7 +321,6 @@
         if([path hasPrefix:key]) {
             NSString *value = link_map[key];
             NSString *new_path = [value stringByAppendingPathComponent:[path substringFromIndex:[key length]]];
-            NSLog(@"resolved link %@ -> %@", path, new_path);
             path = new_path;
             break;
         }

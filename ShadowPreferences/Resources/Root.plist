@@ -9,10 +9,6 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Shadow Settings</string>
-			<key>footerAlignment</key>
-			<integer>1</integer>
-			<key>footerText</key>
-			<string>Shadow version 2.0 by jjolano</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -37,6 +33,23 @@
 			<string>exclude_system_apps</string>
 			<key>label</key>
 			<string>Disable Shadow for Safe Apps</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerAlignment</key>
+			<integer>1</integer>
+			<key>footerText</key>
+			<string>Shadow version 2.0 by jjolano</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>respring:</string>
+			<key>label</key>
+			<string>Restart SpringBoard</string>
 		</dict>
 
 		<!-- Application List -->
@@ -249,12 +262,12 @@
 			<string>Restore Sandbox</string>
 		</dict>
 
-		<!-- Compatibilty -->
+		<!-- Tweak Compatibilty -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Compatibility</string>
+			<string>Tweak Compatibility</string>
 			<key>footerText</key>
 			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps. Injection compatibility applies to Substrate. If disabled, Substrate may not load some tweaks properly.</string>
 		</dict>
