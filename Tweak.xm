@@ -1222,14 +1222,16 @@ intptr_t *dyld_array_slides = NULL;
     return 1;
 }
 
+/*
 %hookf(int, "_ptrace", int request, pid_t pid, caddr_t addr, int data) {
-    if(request == 31 /* PTRACE_DENY_ATTACH */) {
-        // "Success"
+    // PTRACE_DENY_ATTACH = 31
+    if(request == 31) {
         return 0;
     }
 
     return %orig;
 }
+*/
 %end
 
 %group hook_dyld_image
