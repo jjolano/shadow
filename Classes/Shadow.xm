@@ -161,6 +161,10 @@
 
     BOOL ret = NO;
 
+    if(![name isAbsolutePath]) {
+        name = @["/usr/lib" stringByAppendingPathComponent:name];
+    }
+
     // Find exact match.
     if([self isPathRestricted:name partial:NO]) {
         ret = YES;
@@ -169,7 +173,7 @@
     // Match some known dylib paths/names.
     if(!ret) {
         if([name hasPrefix:@"/Library/Frameworks"]
-        || [name hasPrefix:@"/Library/Caches"]
+        || [name hasPrefix:@"/Library/Caches/cy-"]
         || [name containsString:@"Substrate"]
         || [name containsString:@"substrate"]
         || [name containsString:@"substitute"]
