@@ -202,7 +202,7 @@
 			<key>label</key>
 			<string>Dynamic Linker</string>
 			<key>footerText</key>
-			<string>Advanced jailbreak detection bypass. May be unstable in some apps.</string>
+			<string>Advanced jailbreak detection bypass. May be unstable in some apps, causing crashes or other issues.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -349,7 +349,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, dynamic loader filtering will need to be enabled separately (see caveats).</string>
+			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, Dynamic Linker filtering will need to be enabled separately (see caveats).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
