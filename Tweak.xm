@@ -1835,7 +1835,7 @@ void init_path_map(Shadow *shadow) {
         }
 
         // Check if safe bundleIdentifier
-        if(prefs[@"exclude_system_apps"]) {
+        if(prefs[@"exclude_system_apps"] && [prefs[@"exclude_system_apps"] boolValue]) {
             // Disable Shadow for Apple and jailbreak apps
             NSArray *excluded_bundleids = @[
                 @"com.apple", // Apple apps
