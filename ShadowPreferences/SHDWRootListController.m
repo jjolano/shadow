@@ -28,7 +28,15 @@
 - (void)generate_map:(id)sender {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Processing packages..." preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
-        [Shadow generateFileMap];
+        NSArray *file_map = [Shadow generateFileMap];
+
+        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
+
+        if(prefs) {
+            [prefs setValue:file_map forKey:@"file_map"];
+            [prefs writeToFile:PREFS_PATH atomically:YES];
+        }
+        
         [alert dismissViewControllerAnimated:YES completion:nil];
     }];
 }
