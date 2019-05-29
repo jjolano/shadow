@@ -31,6 +31,9 @@
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm;
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial;
 - (BOOL)isURLRestricted:(NSURL *)url;
+- (BOOL)isURLRestricted:(NSURL *)url partial:(BOOL)partial;
+- (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm;
+- (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm partial:(BOOL)partial;
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted;
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden;
