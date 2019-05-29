@@ -2112,6 +2112,10 @@ void init_path_map(Shadow *shadow) {
             prefs[@"inject_compatibility_mode"] = @YES;
         }
 
+        if(!prefs[@"bypass_checks"]) {
+            prefs[@"bypass_checks"] = @YES;
+        }
+
         // System Applications
         if([executablePath hasPrefix:@"/Applications"]) {
             return;
@@ -2198,13 +2202,18 @@ void init_path_map(Shadow *shadow) {
             %init(hook_UIApplication);
             %init(hook_NSBundle);
             %init(hook_NSUtilities);
-            %init(hook_libraries);
             %init(hook_private);
             %init(hook_debugging);
 
             NSLog(@"hooked bypass methods");
 
             // Initialize other hooks
+            if(prefs[@"bypass_checks"] && [prefs[@"bypass_checks"] boolValue]) {
+                %init(hook_libraries);
+
+                NSLog(@"hooked detection libraries");
+            }
+
             if(prefs[@"dyld_hooks_enabled"] && [prefs[@"dyld_hooks_enabled"] boolValue]) {
                 self_image_name = _dyld_get_image_name(0);
 
