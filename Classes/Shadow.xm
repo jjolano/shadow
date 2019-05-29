@@ -204,7 +204,6 @@
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
     if(passthrough || !path_map) {
-        NSLog(@"passthrough: %@", path);
         return NO;
     }
 
@@ -216,16 +215,6 @@
 
     // Ensure we are working with absolute path.
     if(![path isAbsolutePath]) {
-        // Check if this file exists.
-        // passthrough = YES;
-
-        // if(![fm fileExistsAtPath:path]) {
-        //     passthrough = NO;
-        //     return NO;
-        // }
-
-        // passthrough = NO;
-
         NSString *path_abs = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
         path = path_abs;
 
