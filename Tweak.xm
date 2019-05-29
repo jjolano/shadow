@@ -254,7 +254,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
-
+/*
 %hookf(int, open, const char *pathname, int flags) {
     if(pathname && [_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
         errno = ENOENT;
@@ -288,6 +288,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
+*/
 %end
 
 %group hook_dlopen_inject
