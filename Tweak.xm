@@ -6,6 +6,8 @@
 
 Shadow *_shadow = nil;
 
+const char *self_image_name = NULL;
+
 NSMutableArray *dyld_array = nil;
 uint32_t dyld_array_count = 0;
 
@@ -72,46 +74,6 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
-
-/*
-%hookf(int, open, const char *pathname, int flags) {
-    if(!pathname) {
-        return %orig;
-    }
-    
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return %orig;
-}
-
-%hookf(int, openat, int dirfd, const char *pathname, int flags) {
-    if(!pathname) {
-        return %orig;
-    }
-
-    NSString *path = [NSString stringWithUTF8String:pathname];
-
-    if(![path isAbsolutePath]) {
-        // Get path of dirfd.
-        char dirfdpath[PATH_MAX];
-    
-        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
-            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
-            path = [dirfd_path stringByAppendingPathComponent:path];
-        }
-    }
-    
-    if([_shadow isPathRestricted:path]) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return %orig;
-}
-*/
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(!pathname) {
@@ -288,6 +250,40 @@ intptr_t *dyld_array_slides = NULL;
             errno = EBADF;
             return -1;
         }
+    }
+
+    return %orig;
+}
+
+%hookf(int, open, const char *pathname, int flags) {
+    if(pathname && [_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, openat, int dirfd, const char *pathname, int flags) {
+    if(!pathname) {
+        return %orig;
+    }
+
+    NSString *path = [NSString stringWithUTF8String:pathname];
+
+    if(![path isAbsolutePath]) {
+        // Get path of dirfd.
+        char dirfdpath[PATH_MAX];
+    
+        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+            path = [dirfd_path stringByAppendingPathComponent:path];
+        }
+    }
+    
+    if([_shadow isPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
     }
 
     return %orig;
@@ -1294,7 +1290,7 @@ intptr_t *dyld_array_slides = NULL;
     const char *ret = %orig;
 
     if(ret && [_shadow isImageRestricted:[NSString stringWithUTF8String:ret]]) {
-        return %orig(0);
+        return self_image_name;
     }
 
     return ret;
@@ -2169,6 +2165,8 @@ void init_path_map(Shadow *shadow) {
 
             // Initialize other hooks
             if(prefs[@"dyld_hooks_enabled"] && [prefs[@"dyld_hooks_enabled"] boolValue]) {
+                self_image_name = _dyld_get_image_name(0);
+
                 %init(hook_dyld_image);
 
                 NSLog(@"hooked dyld image methods");
