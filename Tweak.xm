@@ -1654,11 +1654,9 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/etc/passwd" restricted:NO];
     [shadow addPath:@"/etc/ppp" restricted:NO];
     [shadow addPath:@"/etc/profile" restricted:NO];
-    [shadow addPath:@"/etc/profile.d" restricted:NO];
     [shadow addPath:@"/etc/protocols" restricted:NO];
     [shadow addPath:@"/etc/racoon" restricted:NO];
     [shadow addPath:@"/etc/services" restricted:NO];
-    [shadow addPath:@"/etc/ssl" restricted:NO];
     [shadow addPath:@"/etc/ttys" restricted:NO];
     
     // Restrict /Library by whitelisting
@@ -1668,6 +1666,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Library/Application Support/BTServer" restricted:NO];
     [shadow addPath:@"/Library/Audio" restricted:NO];
     [shadow addPath:@"/Library/Caches" restricted:NO];
+    [shadow addPath:@"/Library/Caches/cy-" restricted:YES];
     [shadow addPath:@"/Library/Filesystems" restricted:NO];
     [shadow addPath:@"/Library/Internet Plug-Ins" restricted:NO];
     [shadow addPath:@"/Library/Keychains" restricted:NO];
@@ -1806,6 +1805,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/run/configd.pid" restricted:NO];
     [shadow addPath:@"/var/run/lockbot" restricted:NO];
     [shadow addPath:@"/var/run/pppconfd" restricted:NO];
+    [shadow addPath:@"/var/run/fudinit" restricted:NO];
 
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
