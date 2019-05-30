@@ -1821,6 +1821,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Applications/Cydia.app" restricted:YES];
     [shadow addPath:@"/Applications/Sileo.app" restricted:YES];
     [shadow addPath:@"/Applications/Zebra.app" restricted:YES];
+    [shadow addPath:@"/Applications/SafeMode.app" restricted:YES];
 
     // Restrict /dev
     [shadow addPath:@"/dev" restricted:NO];
