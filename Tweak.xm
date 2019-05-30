@@ -2048,6 +2048,73 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/System/Library/PreferenceBundles/AppList.bundle" restricted:YES];
 }
 
+// Manual hooks for variadic functions
+static int (*orig_open)(const char *path, int oflag, ...);
+static int hook_open(const char *path, int oflag, ...) {
+    int result = 0;
+
+    if(path) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path]]) {
+            errno = ((oflag & O_CREAT) == O_CREAT) ? EACCES : ENOENT;
+            return -1;
+        }
+    }
+    
+    if((oflag & O_CREAT) == O_CREAT) {
+        mode_t mode;
+        va_list args;
+        
+        va_start(args, oflag);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+
+        result = orig_open(path, oflag, mode);
+    } else {
+        result = orig_open(path, oflag);
+    }
+
+    return result;
+}
+
+static int (*orig_openat)(int fd, const char *path, int oflag, ...);
+static int hook_openat(int fd, const char *path, int oflag, ...) {
+    int result = 0;
+
+    if(path) {
+        NSString *nspath = [NSString stringWithUTF8String:path];
+
+        if(![nspath isAbsolutePath]) {
+            // Get path of dirfd.
+            char dirfdpath[PATH_MAX];
+        
+            if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
+                NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+                nspath = [dirfd_path stringByAppendingPathComponent:nspath];
+            }
+        }
+        
+        if([_shadow isPathRestricted:nspath]) {
+            errno = ((oflag & O_CREAT) == O_CREAT) ? EACCES : ENOENT;
+            return -1;
+        }
+    }
+    
+    if((oflag & O_CREAT) == O_CREAT) {
+        mode_t mode;
+        va_list args;
+        
+        va_start(args, oflag);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+
+        result = orig_openat(fd, path, oflag, mode);
+    } else {
+        result = orig_openat(fd, path, oflag);
+    }
+
+    return result;
+}
+
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
 
@@ -2176,6 +2243,9 @@ void init_path_map(Shadow *shadow) {
             if(prefs[bundleIdentifier_lockdown] && [prefs[bundleIdentifier_lockdown] boolValue]) {
                 %init(hook_libc_inject);
                 %init(hook_dlopen_inject);
+
+                MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
+                MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
                 
                 prefs[@"dyld_hooks_enabled"] = @YES;
                 prefs[@"dyld_filter_enabled"] = @YES;
