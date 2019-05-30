@@ -1960,7 +1960,19 @@ void init_path_map(Shadow *shadow) {
     // Restrict /usr by whitelisting
     [shadow addPath:@"/usr" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/bin" restricted:YES hidden:NO];
-    [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/lib" restricted:NO];
+    [shadow addPath:@"/usr/lib/bash" restricted:YES];
+    [shadow addPath:@"/usr/lib/librocketbootstrap.dylib" restricted:YES];
+    [shadow addPath:@"/usr/lib/libapplist.dylib" restricted:YES];
+    [shadow addPath:@"/usr/lib/libjailbreak.dylib" restricted:YES];
+    [shadow addPath:@"/usr/lib/libapt" restricted:YES];
+    [shadow addPath:@"/usr/lib/libsubstitute" restricted:YES];
+    [shadow addPath:@"/usr/lib/libsubstrate" restricted:YES];
+    [shadow addPath:@"/usr/lib/libSubstitrate" restricted:YES];
+    [shadow addPath:@"/usr/lib/TweakInject.dylib" restricted:YES];
+    [shadow addPath:@"/usr/lib/TweakInject" restricted:YES];
+    [shadow addPath:@"/usr/lib/pspawn" restricted:YES];
+    [shadow addPath:@"/usr/lib/substrate" restricted:YES];
     [shadow addPath:@"/usr/libexec" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/local" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/local/bin" restricted:YES hidden:NO];
