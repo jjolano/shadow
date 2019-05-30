@@ -166,30 +166,28 @@
         name = [libdir stringByAppendingPathComponent:name];
     }
 
-    // Find exact match.
-    if([self isPathRestricted:name partial:NO]) {
+    // Match some known dylib paths/names.
+    if([name hasPrefix:@"/Library/Frameworks"]
+    || [name hasPrefix:@"/Library/Caches/cy-"]
+    || [name containsString:@"Substrate"]
+    || [name containsString:@"substrate"]
+    || [name containsString:@"substitute"]
+    || [name containsString:@"Substitrate"]
+    || [name containsString:@"TweakInject"]
+    || [name containsString:@"libjailbreak"]
+    || [name containsString:@"cycript"]
+    || [name containsString:@"SBInject"]
+    || [name containsString:@"pspawn"]
+    || [name containsString:@"librocketbootstrap"]
+    || [name containsString:@"libcolorpicker"]
+    || [name containsString:@"libCS"]
+    || [name containsString:@"bfdecrypt"]) {
         ret = YES;
     }
 
-    // Match some known dylib paths/names.
-    if(!ret) {
-        if([name hasPrefix:@"/Library/Frameworks"]
-        || [name hasPrefix:@"/Library/Caches/cy-"]
-        || [name containsString:@"Substrate"]
-        || [name containsString:@"substrate"]
-        || [name containsString:@"substitute"]
-        || [name containsString:@"Substitrate"]
-        || [name containsString:@"TweakInject"]
-        || [name containsString:@"libjailbreak"]
-        || [name containsString:@"cycript"]
-        || [name containsString:@"SBInject"]
-        || [name containsString:@"pspawn"]
-        || [name containsString:@"librocketbootstrap"]
-        || [name containsString:@"libcolorpicker"]
-        || [name containsString:@"libCS"]
-        || [name containsString:@"bfdecrypt"]) {
-            ret = YES;
-        }
+    // Find exact match.
+    if(!ret && [self isPathRestricted:name partial:NO]) {
+        ret = YES;
     }
 
     return ret;

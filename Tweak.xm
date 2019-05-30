@@ -1379,6 +1379,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 %end
 
+/*
 %group hook_dyld_dlsym
 // #include "Hooks/dlsym.xm"
 #include <dlfcn.h>
@@ -1390,9 +1391,9 @@ intptr_t *dyld_array_slides = NULL;
 
     NSString *sym = [NSString stringWithUTF8String:symbol];
 
-    if([sym hasPrefix:@"MS"] /* Substrate */
-    || [sym hasPrefix:@"Sub"] /* Substitute */
-    || [sym hasPrefix:@"PS"] /* Substitrate */) {
+    if([sym hasPrefix:@"MS"]
+    || [sym hasPrefix:@"Sub"]
+    || [sym hasPrefix:@"PS"]) {
         NSLog(@"blocked dlsym lookup: %@", sym);
         return NULL;
     }
@@ -1400,6 +1401,7 @@ intptr_t *dyld_array_slides = NULL;
     return %orig;
 }
 %end
+*/
 
 %group hook_sandbox
 // #include "Hooks/Sandbox.xm"
@@ -2048,7 +2050,9 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/System/Library/PreferenceBundles/AppList.bundle" restricted:YES];
 }
 
-// Manual hooks for variadic functions
+// Manual hooks
+#include <dirent.h>
+
 static int (*orig_open)(const char *path, int oflag, ...);
 static int hook_open(const char *path, int oflag, ...) {
     int result = 0;
@@ -2114,6 +2118,36 @@ static int hook_openat(int fd, const char *path, int oflag, ...) {
 
     return result;
 }
+
+static DIR *(*orig_opendir)(const char *filename);
+static DIR *hook_opendir(const char *filename) {
+    if(filename) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:filename]]) {
+            errno = ENOENT;
+            return NULL;
+        }
+    }
+
+    return orig_opendir(filename);
+}
+
+#include <dlfcn.h>
+
+static void *(*orig_dlsym)(void *handle, const char *symbol);
+static void *hook_dlsym(void *handle, const char *symbol) {
+    if(symbol) {
+        NSString *sym = [NSString stringWithUTF8String:symbol];
+
+        if([sym hasPrefix:@"MS"]
+        || [sym hasPrefix:@"Sub"]
+        || [sym hasPrefix:@"PS"]) {
+            NSLog(@"blocked dlsym lookup: %@", sym);
+            return NULL;
+        }
+    }
+
+    return orig_dlsym(handle, symbol);
+}    
 
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
@@ -2275,6 +2309,8 @@ static int hook_openat(int fd, const char *path, int oflag, ...) {
             %init(hook_private);
             %init(hook_debugging);
 
+            MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+
             NSLog(@"hooked bypass methods");
 
             // Initialize other hooks
@@ -2295,7 +2331,8 @@ static int hook_openat(int fd, const char *path, int oflag, ...) {
             NSString *bundleIdentifier_dlfcn = [NSString stringWithFormat:@"dlfcn%@", bundleIdentifier];
 
             if(prefs[bundleIdentifier_dlfcn] && [prefs[bundleIdentifier_dlfcn] boolValue]) {
-                %init(hook_dyld_dlsym);
+                // %init(hook_dyld_dlsym);
+                MSHookFunction((void *) dlsym, (void *) hook_dlsym, (void **) &orig_dlsym);
 
                 NSLog(@"hooked dynamic linker methods");
             }
