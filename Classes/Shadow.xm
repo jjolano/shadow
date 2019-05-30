@@ -161,11 +161,6 @@
 
     BOOL ret = NO;
 
-    if(![name isAbsolutePath]) {
-        NSString *libdir = @"/usr/lib";
-        name = [libdir stringByAppendingPathComponent:name];
-    }
-
     // Match some known dylib paths/names.
     if([name hasPrefix:@"/Library/Frameworks"]
     || [name hasPrefix:@"/Library/Caches/cy-"]
@@ -186,8 +181,15 @@
     }
 
     // Find exact match.
-    if(!ret && [self isPathRestricted:name partial:NO]) {
-        ret = YES;
+    if(!ret) {
+        if(![name isAbsolutePath]) {
+            NSString *libdir = @"/usr/lib";
+            name = [libdir stringByAppendingPathComponent:name];
+        }
+        
+        if([self isPathRestricted:name partial:NO]) {
+            ret = YES;
+        }
     }
 
     return ret;
