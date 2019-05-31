@@ -842,8 +842,35 @@ intptr_t *dyld_array_slides = NULL;
 %end
 %end
 
-/*
 %group hook_CoreFoundation
+%hookf(CFArrayRef, CFBundleGetAllBundles) {
+    CFArrayRef cfbundles = %orig;
+    CFIndex cfcount = CFArrayGetCount(cfbundles);
+
+    NSMutableArray *filter = [NSMutableArray new];
+    NSMutableArray *bundles = [NSMutableArray arrayWithArray:(__bridge NSArray *) cfbundles];
+
+    // Filter return value.
+    int i;
+    for(i = 0; i < cfcount; i++) {
+        CFBundleRef cfbundle = (CFBundleRef) CFArrayGetValueAtIndex(cfbundles, i);
+        CFURLRef cfbundle_cfurl = CFBundleCopyExecutableURL(cfbundle);
+
+        if(cfbundle_cfurl) {
+            NSURL *bundle_url = (__bridge NSURL *) cfbundle_cfurl;
+
+            if([_shadow isURLRestricted:bundle_url]) {
+                continue;
+            }
+        }
+
+        [filter addObject:bundles[i]];
+    }
+
+    return (__bridge CFArrayRef) [filter copy];
+}
+
+/*
 %hookf(CFReadStreamRef, CFReadStreamCreateWithFile, CFAllocatorRef alloc, CFURLRef fileURL) {
     NSURL *nsurl = (__bridge NSURL *)fileURL;
 
@@ -891,8 +918,8 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
-%end
 */
+%end
 
 %group hook_NSUtilities
 %hook UIImage
@@ -2270,6 +2297,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
     ssize_t ret = orig_readlinkat(fd, path, tmp, bufsiz);
 
     if(ret != -1) {
+        tmp[ret] = '\0';
         strncpy(buf, tmp, bufsiz);
 
         // Track this symlink in Shadow
@@ -2373,9 +2401,8 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             // Initialize file map
             if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
                 prefs[@"file_map"] = [Shadow generateFileMap];
-                prefs[@"url_set"] = [Shadow generateSchemeSet];
 
-                NSLog(@"generated file map");
+                NSLog(@"scanned installed packages");
             }
 
             if(prefs[@"file_map"]) {
@@ -2449,6 +2476,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             %init(hook_NSURL);
             %init(hook_UIApplication);
             %init(hook_NSBundle);
+            %init(hook_CoreFoundation);
             %init(hook_NSUtilities);
             %init(hook_private);
             %init(hook_debugging);

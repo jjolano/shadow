@@ -10,6 +10,8 @@
     if(self) {
         link_map = [NSMutableDictionary new];
         path_map = [NSMutableDictionary new];
+        url_set = [NSMutableArray new];
+
         rpath = (char *) malloc(PATH_MAX * sizeof(char));
 
         _useTweakCompatibilityMode = NO;
@@ -164,9 +166,9 @@
     return [blacklist copy];
 }
 
-+ (NSSet *)generateSchemeSet {
++ (NSArray *)generateSchemeArray {
     // Generate URL scheme set from installed packages.
-    NSMutableSet *blacklist = [NSMutableSet new];
+    NSMutableArray *blacklist = [NSMutableArray new];
 
     NSString *dpkg_info_path = DPKG_INFO_PATH;
     NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
@@ -195,8 +197,6 @@
                                         for(NSDictionary *type in plist_info[@"CFBundleURLTypes"]) {
                                             for(NSString *scheme in type[@"CFBundleURLSchemes"]) {
                                                 [blacklist addObject:scheme];
-
-                                                NSLog(@"added url scheme: %@", scheme);
                                             }
                                         }
                                     }
