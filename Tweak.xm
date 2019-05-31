@@ -2214,6 +2214,45 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
     return ret;
 }
 
+static ssize_t (*orig_readlinkat)(int fd, const char *path, char *buf, size_t bufsiz);
+static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsiz) {
+    if(!path || !buf) {
+        return orig_readlinkat(fd, path, buf, bufsiz);
+    }
+
+    NSString *nspath = [NSString stringWithUTF8String:path];
+
+    if(![nspath isAbsolutePath]) {
+        // Get path of dirfd.
+        char dirfdpath[PATH_MAX];
+    
+        if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
+            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+            nspath = [dirfd_path stringByAppendingPathComponent:nspath];
+        }
+    }
+
+    if([_shadow isPathRestricted:nspath]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    char *tmp = (char *) malloc(bufsiz * sizeof(char));
+
+    ssize_t ret = orig_readlinkat(fd, path, tmp, bufsiz);
+
+    if(ret != -1) {
+        strncpy(buf, tmp, bufsiz);
+
+        // Track this symlink in Shadow
+        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:tmp]];
+    }
+
+    free(tmp);
+
+    return ret;
+}
+
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
 
@@ -2379,6 +2418,7 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
             MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
             MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
             MSHookFunction((void *) readlink, (void *) hook_readlink, (void **) &orig_readlink);
+            MSHookFunction((void *) readlinkat, (void *) hook_readlinkat, (void **) &orig_readlinkat);
 
             NSLog(@"hooked bypass methods");
 
