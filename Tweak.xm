@@ -2144,17 +2144,45 @@ static DIR *hook_opendir(const char *filename) {
     return orig_opendir(filename);
 }
 
+static struct dirent *(*orig_readdir)(DIR *dirp);
+static struct dirent *hook_readdir(DIR *dirp) {
+    struct dirent *ret = NULL;
+    NSString *path = nil;
+
+    // Get path of dirfd.
+    NSString *dirfd_path = nil;
+    int fd = dirfd(dirp);
+    char dirfdpath[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
+        dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+    } else {
+        return orig_readdir(dirp);
+    }
+
+    // Filter returned results, skipping over restricted paths.
+    do {
+        ret = orig_readdir(dirp);
+
+        if(ret) {
+            path = [dirfd_path stringByAppendingPathComponent:[NSString stringWithUTF8String:ret->d_name]];
+        } else {
+            break;
+        }
+    } while([_shadow isPathRestricted:path]);
+
+    return ret;
+}
+
 #include <dlfcn.h>
 
 static void *(*orig_dlsym)(void *handle, const char *symbol);
 static void *hook_dlsym(void *handle, const char *symbol) {
     if(symbol) {
-        NSString *sym = [NSString stringWithUTF8String:symbol];
-
-        if([sym hasPrefix:@"MS"]
-        || [sym hasPrefix:@"Sub"]
-        || [sym hasPrefix:@"PS"]) {
-            NSLog(@"blocked dlsym lookup: %@", sym);
+        if(strstr(symbol, "MS") == symbol
+        || strstr(symbol, "Sub") == symbol
+        || strstr(symbol, "PS") == symbol) {
+            NSLog(@"blocked dlsym lookup: %s", symbol);
             return NULL;
         }
     }
@@ -2323,6 +2351,7 @@ static void *hook_dlsym(void *handle, const char *symbol) {
             %init(hook_debugging);
 
             MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+            MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
 
             NSLog(@"hooked bypass methods");
 
