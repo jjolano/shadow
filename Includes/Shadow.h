@@ -15,6 +15,7 @@
     NSMutableDictionary *path_map;
 
     BOOL passthrough;
+    char *rpath;
 }
 
 @property (nonatomic, assign) BOOL useTweakCompatibilityMode;
