@@ -10,12 +10,23 @@
     if(self) {
         link_map = nil;
         path_map = nil;
+        rpath = (char *) malloc(PATH_MAX * sizeof(char));
 
         _useTweakCompatibilityMode = NO;
         _useInjectCompatibilityMode = NO;
     }
 
     return self;
+}
+
+- (void)dealloc {
+    #if !__has_feature(objc_arc)
+    [super dealloc];
+    #endif
+
+    if(rpath) {
+        free(rpath);
+    }
 }
 
 - (NSMutableArray *)generateDyldNameArray {
@@ -212,6 +223,11 @@
         return NO;
     }
 
+    // Bypass illegal characters.
+    if([path containsString:@":"]) {
+        return NO;
+    }
+
     BOOL ret = NO;
 
     // Change symlink path to real path if in link map.
@@ -221,11 +237,19 @@
     // Ensure we are working with absolute path.
     if(![path isAbsolutePath]) {
         NSString *path_abs = [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
+        // NSString *path_abs = [NSString stringWithFormat:@"%@/%@", [fm currentDirectoryPath], path];
         path = path_abs;
+    }
 
-        // Change symlink path to real path if in link map (again).
-        path_resolved = [self resolveLinkInPath:path];
-        path = path_resolved;
+    // Attempt to resolve symlinks with filesystem.
+    passthrough = YES;
+    realpath([path UTF8String], rpath);
+    passthrough = NO;
+
+    if(rpath) {
+        path = [NSString stringWithUTF8String:rpath];
+    } else {
+        return NO;
     }
 
     // Remove extra path names.
@@ -398,6 +422,16 @@
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to {
     if(!link_map) {
         link_map = [NSMutableDictionary new];
+    }
+
+    // Exception for /Library/Frameworks.
+    if([from hasPrefix:@"/Library/Frameworks"]) {
+        return;
+    }
+
+    // Exception for relative destination paths.
+    if(![to isAbsolutePath]) {
+        return;
     }
 
     NSLog(@"tracking link %@ -> %@", from, to);

@@ -2203,6 +2203,7 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
     ssize_t ret = orig_readlink(path, tmp, bufsiz);
 
     if(ret != -1) {
+        tmp[ret] = '\0';
         strncpy(buf, tmp, bufsiz);
 
         // Track this symlink in Shadow
