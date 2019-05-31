@@ -789,13 +789,9 @@ intptr_t *dyld_array_slides = NULL;
 
     NSString *ret = %orig;
 
-    // Double check the destination if restricted.
-    if([_shadow isPathRestricted:ret manager:self]) {
-        if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
-        }
-
-        return nil;
+    if(ret) {
+        // Track this symlink in Shadow
+        [_shadow addLinkFromPath:path toPath:ret];
     }
 
     return ret;
@@ -2187,7 +2183,30 @@ static void *hook_dlsym(void *handle, const char *symbol) {
     }
 
     return orig_dlsym(handle, symbol);
-}    
+}
+
+static ssize_t (*orig_readlink)(const char *path, char *buf, size_t bufsiz);
+static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
+    if(!path) {
+        return orig_readlink(path, buf, bufsiz);
+    }
+
+    NSString *nspath = [NSString stringWithUTF8String:path];
+
+    if([_shadow isPathRestricted:nspath]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    ssize_t ret = orig_readlink(path, buf, bufsiz);
+
+    if(ret != -1) {
+        // Track this symlink in Shadow
+        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:buf]];
+    }
+
+    return ret;
+}
 
 %ctor {
     NSBundle *bundle = [NSBundle mainBundle];
@@ -2353,6 +2372,7 @@ static void *hook_dlsym(void *handle, const char *symbol) {
 
             MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
             MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
+            MSHookFunction((void *) readlink, (void *) hook_readlink, (void **) &orig_readlink);
 
             NSLog(@"hooked bypass methods");
 
