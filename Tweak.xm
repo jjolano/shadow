@@ -2187,7 +2187,7 @@ static void *hook_dlsym(void *handle, const char *symbol) {
 
 static ssize_t (*orig_readlink)(const char *path, char *buf, size_t bufsiz);
 static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
-    if(!path) {
+    if(!path || !buf) {
         return orig_readlink(path, buf, bufsiz);
     }
 
@@ -2198,12 +2198,18 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
         return -1;
     }
 
-    ssize_t ret = orig_readlink(path, buf, bufsiz);
+    char *tmp = (char *) malloc(bufsiz * sizeof(char));
+
+    ssize_t ret = orig_readlink(path, tmp, bufsiz);
 
     if(ret != -1) {
+        strncpy(buf, tmp, bufsiz);
+
         // Track this symlink in Shadow
-        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:buf]];
+        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:tmp]];
     }
+
+    free(tmp);
 
     return ret;
 }
