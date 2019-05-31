@@ -8,8 +8,8 @@
     self = [super init];
 
     if(self) {
-        link_map = nil;
-        path_map = nil;
+        link_map = [NSMutableDictionary new];
+        path_map = [NSMutableDictionary new];
         rpath = (char *) malloc(PATH_MAX * sizeof(char));
 
         _useTweakCompatibilityMode = NO;
@@ -145,15 +145,62 @@
 
                     for(NSString *dpkg_file in dpkg_info_contents_files) {
                         BOOL isDir;
-                        NSString *dpkg_file_std = [dpkg_file stringByStandardizingPath];
 
-                        if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file_std isDirectory:&isDir]) {
+                        if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file isDirectory:&isDir]) {
                             if(!isDir
                             /*|| [[dpkg_file pathExtension] isEqualToString:@"app"]
                             || [[dpkg_file pathExtension] isEqualToString:@"framework"]
                             || [[dpkg_file pathExtension] isEqualToString:@"bundle"]
                             || [[dpkg_file pathExtension] isEqualToString:@"theme"]*/) {
-                                [blacklist addObject:dpkg_file_std];
+                                [blacklist addObject:dpkg_file];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return [blacklist copy];
+}
+
++ (NSSet *)generateSchemeSet {
+    // Generate URL scheme set from installed packages.
+    NSMutableSet *blacklist = [NSMutableSet new];
+
+    NSString *dpkg_info_path = DPKG_INFO_PATH;
+    NSArray *dpkg_info = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dpkg_info_path error:nil];
+
+    if(dpkg_info) {
+        for(NSString *dpkg_info_file in dpkg_info) {
+            // Read only .list files.
+            if([[dpkg_info_file pathExtension] isEqualToString:@"list"]) {
+                NSString *dpkg_info_file_a = [dpkg_info_path stringByAppendingPathComponent:dpkg_info_file];
+                NSString *dpkg_info_contents = [NSString stringWithContentsOfFile:dpkg_info_file_a encoding:NSUTF8StringEncoding error:NULL];
+
+                // Read file paths line by line.
+                if(dpkg_info_contents) {
+                    NSArray *dpkg_info_contents_files = [dpkg_info_contents componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+
+                    for(NSString *dpkg_file in dpkg_info_contents_files) {
+                        if([dpkg_file hasPrefix:@"/Applications"]) {
+                            BOOL isDir;
+
+                            if([[NSFileManager defaultManager] fileExistsAtPath:dpkg_file isDirectory:&isDir]) {
+                                if(isDir && [[dpkg_file pathExtension] isEqualToString:@"app"]) {
+                                    // Open Info.plist
+                                    NSMutableDictionary *plist_info = [NSMutableDictionary dictionaryWithContentsOfFile:[dpkg_file stringByAppendingPathComponent:@"Info.plist"]];
+
+                                    if(plist_info) {
+                                        for(NSDictionary *type in plist_info[@"CFBundleURLTypes"]) {
+                                            for(NSString *scheme in type[@"CFBundleURLSchemes"]) {
+                                                [blacklist addObject:scheme];
+
+                                                NSLog(@"added url scheme: %@", scheme);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -169,8 +216,6 @@
     if(passthrough) {
         return NO;
     }
-
-    BOOL ret = NO;
 
     // Match some known dylib paths/names.
     if([name hasPrefix:@"/Library/Frameworks"]
@@ -188,22 +233,20 @@
     || [name containsString:@"libcolorpicker"]
     || [name containsString:@"libCS"]
     || [name containsString:@"bfdecrypt"]) {
-        ret = YES;
+        return YES;
     }
 
     // Find exact match.
-    if(!ret) {
-        if(![name isAbsolutePath]) {
-            NSString *libdir = @"/usr/lib";
-            name = [libdir stringByAppendingPathComponent:name];
-        }
-        
-        if([self isPathRestricted:name partial:NO]) {
-            ret = YES;
-        }
+    if(![name isAbsolutePath]) {
+        NSString *libdir = @"/usr/lib";
+        name = [libdir stringByAppendingPathComponent:name];
+    }
+    
+    if([self isPathRestricted:name partial:NO]) {
+        return YES;
     }
 
-    return ret;
+    return NO;
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
@@ -220,11 +263,6 @@
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
     if(passthrough || !path_map) {
-        return NO;
-    }
-
-    // Bypass illegal characters.
-    if([path containsString:@":"]) {
         return NO;
     }
 
@@ -346,21 +384,24 @@
         return NO;
     }
 
-    BOOL ret = NO;
+    // URL set checks
+    if([url_set containsObject:[url scheme]]) {
+        return YES;
+    }
 
     // Package manager URL scheme checks
     if([[url scheme] isEqualToString:@"cydia"]
     || [[url scheme] isEqualToString:@"sileo"]
     || [[url scheme] isEqualToString:@"zbra"]) {
-        ret = YES;
+        return YES;
     }
 
     // File URL checks
-    if(!ret && [url isFileURL]) {
-        ret = [self isPathRestricted:[url path] manager:fm partial:partial];
+    if([url isFileURL]) {
+        return [self isPathRestricted:[url path] manager:fm partial:partial];
     }
 
-    return ret;
+    return NO;
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted {
@@ -368,10 +409,6 @@
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden {
-    if(!path_map) {
-        path_map = [NSMutableDictionary new];
-    }
-
     NSArray *pathComponents = [path pathComponents];
     NSMutableDictionary *current_path_map = path_map;
 
@@ -391,10 +428,6 @@
 }
 
 - (void)addRestrictedPath:(NSString *)path {
-    if(!path_map) {
-        path_map = [NSMutableDictionary new];
-    }
-
     NSArray *pathComponents = [path pathComponents];
     NSMutableDictionary *current_path_map = path_map;
 
@@ -419,14 +452,19 @@
     }
 }
 
-- (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to {
-    if(!link_map) {
-        link_map = [NSMutableDictionary new];
-    }
+- (void)addSchemesFromURLSet:(NSArray *)set {
+    [url_set addObjectsFromArray:set];
+}
 
-    // Exception for /Library/Frameworks.
-    if([from hasPrefix:@"/Library/Frameworks"]) {
-        return;
+- (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to {
+    // Exclude some paths under tweak compatibility mode.
+    if(_useTweakCompatibilityMode) {
+        if([from hasPrefix:@"/Library/Application Support"]
+        || [from hasPrefix:@"/Library/Frameworks"]
+        || [from hasPrefix:@"/Library/Themes"]
+        || [from hasPrefix:@"/User/Library/Preferences"]) {
+            return;
+        }
     }
 
     // Exception for relative destination paths.

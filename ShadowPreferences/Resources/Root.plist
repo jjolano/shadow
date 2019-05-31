@@ -38,19 +38,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>respring:</string>
-			<key>label</key>
-			<string>Restart SpringBoard</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
 			<key>footerText</key>
 			<string>Bypassing detection libraries attempts to hook common jailbreak detection libraries and skip their checking methods. Disable if you want Shadow to work hard.</string>
 		</dict>
@@ -135,6 +122,19 @@
 				<string>Blacklist Mode</string>
 				<string>Whitelist Mode</string>
 			</array>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>respring:</string>
+			<key>label</key>
+			<string>Restart SpringBoard</string>
 		</dict>
 
 		<!-- File Map -->
