@@ -249,6 +249,17 @@
         path = [NSString pathWithComponents:[pathComponents copy]];
     }
 
+    // Exclude some paths under tweak compatibility mode.
+    if(_useTweakCompatibilityMode) {
+        if([path hasPrefix:@"/Library/Application Support"]
+        || [path hasPrefix:@"/Library/Frameworks"]
+        || [path hasPrefix:@"/Library/Themes"]
+        || [path hasPrefix:@"/User/Library/Preferences"]) {
+            NSLog(@"unrestricted path (tweak compatibility): %@", path);
+            return NO;
+        }
+    }
+
     // Check path components with path map.
     if(!ret) {
         NSArray *pathComponents = [path pathComponents];
@@ -284,17 +295,6 @@
 
         if(ret && current_path_map[@"hidden"] && [[pathComponents lastObject] isEqualToString:current_path_map[@"name"]]) {
             ret = [current_path_map[@"hidden"] boolValue];
-        }
-    }
-
-    // Exclude some paths under tweak compatibility mode.
-    if(ret && _useTweakCompatibilityMode) {
-        if([path hasPrefix:@"/Library/Application Support"]
-        || [path hasPrefix:@"/Library/Frameworks"]
-        || [path hasPrefix:@"/Library/Themes"]
-        || [path hasPrefix:@"/User/Library/Preferences"]) {
-            NSLog(@"unrestricted path (tweak compatibility): %@", path);
-            ret = NO;
         }
     }
 

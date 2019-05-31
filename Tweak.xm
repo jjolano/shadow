@@ -458,7 +458,7 @@ intptr_t *dyld_array_slides = NULL;
         }
     }
 
-    return ret ? filtered_ret : ret;
+    return ret ? [filtered_ret copy] : ret;
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
@@ -485,7 +485,7 @@ intptr_t *dyld_array_slides = NULL;
         }
     }
 
-    return ret ? filtered_ret : ret;
+    return ret ? [filtered_ret copy] : ret;
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
@@ -528,7 +528,7 @@ intptr_t *dyld_array_slides = NULL;
         }
     }
 
-    return ret ? filtered_ret : ret;
+    return ret ? [filtered_ret copy] : ret;
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
@@ -551,7 +551,7 @@ intptr_t *dyld_array_slides = NULL;
         }
     }
 
-    return ret ? filtered_ret : ret;
+    return ret ? [filtered_ret copy] : ret;
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
@@ -1297,7 +1297,6 @@ intptr_t *dyld_array_slides = NULL;
     return ret;
 }
 
-/*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
     if(dyld_array_headers && dyld_array_count > 0) {
         if(image_index >= dyld_array_count) {
@@ -1321,7 +1320,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
-
+/*
 %hookf(void *, dlopen, const char *path, int mode) {
     void *ret = %orig;
 
@@ -2282,6 +2281,8 @@ static void *hook_dlsym(void *handle, const char *symbol) {
             // Initialize file map
             if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
                 prefs[@"file_map"] = [Shadow generateFileMap];
+
+                NSLog(@"generated file map");
             }
 
             if(prefs[@"file_map"]) {
