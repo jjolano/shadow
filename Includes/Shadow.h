@@ -13,6 +13,7 @@
 @interface Shadow : NSObject {
     NSMutableDictionary *link_map;
     NSMutableDictionary *path_map;
+    NSMutableSet *url_set;
 
     BOOL passthrough;
     char *rpath;
@@ -24,7 +25,9 @@
 - (NSMutableArray *)generateDyldNameArray;
 - (struct mach_header *)generateDyldHeaderArray;
 - (intptr_t *)generateDyldSlideArray;
+
 + (NSArray *)generateFileMap;
++ (NSSet *)generateSchemeSet;
 
 - (BOOL)isImageRestricted:(NSString *)name;
 - (BOOL)isPathRestricted:(NSString *)path;
@@ -40,6 +43,7 @@
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden;
 - (void)addRestrictedPath:(NSString *)path;
 - (void)addPathsFromFileMap:(NSArray *)file_map;
+- (void)addSchemesFromURLSet:(NSArray *)set;
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to;
 - (NSString *)resolveLinkInPath:(NSString *)path;
 

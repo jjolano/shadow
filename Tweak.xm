@@ -1266,7 +1266,7 @@ intptr_t *dyld_array_slides = NULL;
 #include <mach-o/dyld.h>
 
 %hookf(uint32_t, _dyld_image_count) {
-    if(dyld_array && dyld_array_count > 0) {
+    if(dyld_array_count > 0) {
         return dyld_array_count;
     }
 
@@ -1292,7 +1292,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return ret;
 }
-
+/*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
     if(dyld_array_headers && dyld_array_count > 0) {
         if(image_index >= dyld_array_count) {
@@ -1316,6 +1316,7 @@ intptr_t *dyld_array_slides = NULL;
 
     return %orig;
 }
+*/
 /*
 %hookf(void *, dlopen, const char *path, int mode) {
     void *ret = %orig;
@@ -1359,9 +1360,7 @@ intptr_t *dyld_array_slides = NULL;
 }
 */
 %hookf(bool, dlopen_preflight, const char *path) {
-    bool ret = %orig;
-
-    if(ret) {
+    if(path) {
         NSString *image_name = [NSString stringWithUTF8String:path];
 
         if([_shadow isImageRestricted:image_name]) {
@@ -1370,7 +1369,7 @@ intptr_t *dyld_array_slides = NULL;
         }
     }
 
-    return ret;
+    return %orig;
 }
 %end
 
@@ -1564,6 +1563,11 @@ intptr_t *dyld_array_slides = NULL;
     }
 
     return %orig;
+}
+
+%hookf(pid_t, vfork) {
+    errno = ENOSYS;
+    return -1;
 }
 
 %hookf(pid_t, fork) {
@@ -1957,7 +1961,11 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/bin" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/lib" restricted:NO];
+    [shadow addPath:@"/usr/lib/_ncurses" restricted:YES];
+    [shadow addPath:@"/usr/lib/apt" restricted:YES];
     [shadow addPath:@"/usr/lib/bash" restricted:YES];
+    [shadow addPath:@"/usr/lib/cycript" restricted:YES];
+    [shadow addPath:@"/usr/lib/libdpkg.a" restricted:YES];
     [shadow addPath:@"/usr/lib/librocketbootstrap.dylib" restricted:YES];
     [shadow addPath:@"/usr/lib/libapplist.dylib" restricted:YES];
     [shadow addPath:@"/usr/lib/libjailbreak.dylib" restricted:YES];
@@ -2173,7 +2181,9 @@ static struct dirent *hook_readdir(DIR *dirp) {
 
 static void *(*orig_dlsym)(void *handle, const char *symbol);
 static void *hook_dlsym(void *handle, const char *symbol) {
-    if(symbol) {
+    void *ret = orig_dlsym(handle, symbol);
+
+    if(ret) {
         if(strstr(symbol, "MS") == symbol
         || strstr(symbol, "Sub") == symbol
         || strstr(symbol, "PS") == symbol) {
@@ -2182,7 +2192,24 @@ static void *hook_dlsym(void *handle, const char *symbol) {
         }
     }
 
-    return orig_dlsym(handle, symbol);
+    return ret;
+}
+
+static int (*orig_dladdr)(const void *addr, Dl_info *info);
+static int hook_dladdr(const void *addr, Dl_info *info) {
+    int ret = orig_dladdr(addr, info);
+
+    if(ret) {
+        NSString *path = [NSString stringWithUTF8String:info->dli_fname];
+
+        if([_shadow isImageRestricted:path]) {
+            // Clear the returned structure.
+            bzero(info, sizeof(Dl_info));
+            return 0;
+        }
+    }
+
+    return ret;
 }
 
 static ssize_t (*orig_readlink)(const char *path, char *buf, size_t bufsiz);
@@ -2346,6 +2373,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             // Initialize file map
             if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
                 prefs[@"file_map"] = [Shadow generateFileMap];
+                prefs[@"url_set"] = [Shadow generateSchemeSet];
 
                 NSLog(@"generated file map");
             }
@@ -2354,6 +2382,12 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 [_shadow addPathsFromFileMap:prefs[@"file_map"]];
 
                 NSLog(@"initialized file map (%lu items)", (unsigned long) [prefs[@"file_map"] count]);
+            }
+
+            if(prefs[@"url_set"]) {
+                [_shadow addSchemesFromURLSet:prefs[@"url_set"]];
+
+                NSLog(@"initialized url set (%lu items)", (unsigned long) [prefs[@"url_set"] count]);
             }
 
             // Compatibility mode
@@ -2399,6 +2433,9 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             if([_shadow useInjectCompatibilityMode]) {
                 NSLog(@"using injection compatibility mode");
+            } else {
+                MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
             }
 
             if([_shadow useTweakCompatibilityMode]) {
@@ -2416,8 +2453,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             %init(hook_private);
             %init(hook_debugging);
 
-            MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
-            MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
             MSHookFunction((void *) readlink, (void *) hook_readlink, (void **) &orig_readlink);
             MSHookFunction((void *) readlinkat, (void *) hook_readlinkat, (void **) &orig_readlinkat);
 
@@ -2438,15 +2473,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 NSLog(@"hooked dyld image methods");
             }
 
-            NSString *bundleIdentifier_dlfcn = [NSString stringWithFormat:@"dlfcn%@", bundleIdentifier];
-
-            if(prefs[bundleIdentifier_dlfcn] && [prefs[bundleIdentifier_dlfcn] boolValue]) {
-                // %init(hook_dyld_dlsym);
-                MSHookFunction((void *) dlsym, (void *) hook_dlsym, (void **) &orig_dlsym);
-
-                NSLog(@"hooked dynamic linker methods");
-            }
-
             if(prefs[@"sandbox_hooks_enabled"] && [prefs[@"sandbox_hooks_enabled"] boolValue]) {
                 %init(hook_sandbox);
 
@@ -2458,9 +2484,21 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 dyld_array = [_shadow generateDyldNameArray];
                 // dyld_array_headers = [_shadow generateDyldHeaderArray];
                 // dyld_array_slides = [_shadow generateDyldSlideArray];
+
                 dyld_array_count = (uint32_t) [dyld_array count];
 
+                MSHookFunction((void *) dladdr, (void *) hook_dladdr, (void **) &orig_dladdr);
+
                 NSLog(@"generated dyld array (%d items)", dyld_array_count);
+            }
+
+            NSString *bundleIdentifier_dlfcn = [NSString stringWithFormat:@"dlfcn%@", bundleIdentifier];
+
+            if(prefs[bundleIdentifier_dlfcn] && [prefs[bundleIdentifier_dlfcn] boolValue]) {
+                // %init(hook_dyld_dlsym);
+                MSHookFunction((void *) dlsym, (void *) hook_dlsym, (void **) &orig_dlsym);
+
+                NSLog(@"hooked dynamic linker methods");
             }
 
             NSLog(@"ready");

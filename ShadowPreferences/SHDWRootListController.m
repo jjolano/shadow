@@ -29,11 +29,13 @@
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Processing packages..." preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
         NSArray *file_map = [Shadow generateFileMap];
+        NSSet *url_set = [Shadow generateSchemeSet];
 
         NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
 
         if(prefs) {
             [prefs setValue:file_map forKey:@"file_map"];
+            [prefs setValue:url_set forKey:@"url_set"];
             [prefs writeToFile:PREFS_PATH atomically:YES];
         }
         
