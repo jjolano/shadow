@@ -796,6 +796,34 @@ uint32_t dyld_array_count = 0;
 %end
 %end
 
+%group hook_NSEnumerator
+%hook NSEnumerator
+- (id)nextObject {
+    if([self isKindOfClass:[NSDirectoryEnumerator class]]) {
+        id ret = nil;
+
+        while((ret = %orig)) {
+            if([ret isKindOfClass:[NSURL class]]) {
+                if([_shadow isURLRestricted:ret]) {
+                    continue;
+                }
+            }
+
+            if([ret isKindOfClass:[NSString class]]) {
+                // TODO: convert to absolute path
+            }
+
+            break;
+        }
+
+        return ret;
+    }
+
+    return %orig;
+}
+%end
+%end
+
 %group hook_NSURL
 // #include "Hooks/Stable/NSURL.xm"
 %hook NSURL
@@ -2481,6 +2509,7 @@ void updateDyldArray(void) {
             %init(hook_libc);
             %init(hook_NSFileHandle);
             %init(hook_NSFileManager);
+            %init(hook_NSEnumerator);
             %init(hook_NSURL);
             %init(hook_UIApplication);
             %init(hook_NSBundle);
