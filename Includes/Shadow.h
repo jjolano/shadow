@@ -22,9 +22,7 @@
 @property (nonatomic, assign) BOOL useTweakCompatibilityMode;
 @property (nonatomic, assign) BOOL useInjectCompatibilityMode;
 
-- (NSMutableArray *)generateDyldNameArray;
-- (struct mach_header *)generateDyldHeaderArray;
-- (intptr_t *)generateDyldSlideArray;
+- (NSArray *)generateDyldArray;
 
 + (NSArray *)generateFileMap;
 + (NSArray *)generateSchemeArray;
