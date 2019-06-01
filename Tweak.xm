@@ -1811,6 +1811,12 @@ uint32_t dyld_array_count = 0;
     return false;
 }
 %end
+
+%hook SDMUtils
+- (BOOL)isJailBroken {
+    return NO;
+}
+%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -2431,7 +2437,9 @@ void updateDyldArray(void) {
             }
 
             // Disable this if we are using Substitute.
-            if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"]) {
+            BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
+
+            if(isSubstitute) {
                 [_shadow setUseInjectCompatibilityMode:NO];
             }
 
@@ -2457,7 +2465,11 @@ void updateDyldArray(void) {
             if([_shadow useInjectCompatibilityMode]) {
                 NSLog(@"using injection compatibility mode");
             } else {
-                MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                // Substitute doesn't like hooking opendir :(
+                if(!isSubstitute) {
+                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                }
+
                 MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
             }
 
