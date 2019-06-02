@@ -1278,10 +1278,10 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     if(namelen == 4
-    && name[0] = CTL_KERN
-    && name[1] = KERN_PROC
-    && name[2] = KERN_PROC_ALL
-    && name[3] = 0) {
+    && name[0] == CTL_KERN
+    && name[1] == KERN_PROC
+    && name[2] == KERN_PROC_ALL
+    && name[3] == 0) {
         // Running process check.
         *oldlenp = 0;
         return 0;
