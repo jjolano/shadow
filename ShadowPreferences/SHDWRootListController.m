@@ -60,13 +60,13 @@
 
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Shadow preferences reset. Settings will now exit." preferredStyle:UIAlertControllerStyleAlert];
 
-        UIAlertAction *action = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^{
-            [[UIApplication sharedApplication] suspend];
+        UIAlertAction *defaultAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [[UIApplication sharedApplication] performSelector:@selector(suspend)];
             [NSThread sleepForTimeInterval:2.0];
             exit(0);
         }];
 
-        [alert addAction:action];
+        [alert addAction:defaultAction];
         [self presentViewController:alert animated:YES completion:nil];
     }
 }
