@@ -134,7 +134,28 @@
 			<key>action</key>
 			<string>respring:</string>
 			<key>label</key>
-			<string>Restart SpringBoard</string>
+			<string>Respring</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>reset_respring:</string>
+			<key>label</key>
+			<string>Reset Settings and Respring</string>
+			<key>isDestructive</key>
+			<true/>
+			<key>confirmation</key>
+			<dict>
+				<key>prompt</key>
+				<string>This will return Shadow to it's initially installed state. The file map will need to be regenerated.</string>
+				<key>title</key>
+				<string>Reset</string>
+				<key>okTitle</key>
+				<string>Reset</string>
+				<key>cancelTitle</key>
+				<string>Cancel</string>
+			</dict>
 		</dict>
 
 		<!-- File Map -->

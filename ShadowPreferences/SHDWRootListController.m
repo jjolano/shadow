@@ -49,4 +49,16 @@
     [task setArguments:[NSArray arrayWithObjects:@"backboardd", nil]];
     [task launch];
 }
+
+- (void)reset_respring:(id)sender {
+    // Delete the preference file and kill the preference caching daemon.
+    [[NSFileManager defaultManager] removeItemAtPath:PREFS_PATH error:nil];
+
+    NSTask *task = [[[NSTask alloc] init] autorelease];
+    [task setLaunchPath:@"/usr/bin/killall"];
+    [task setArguments:[NSArray arrayWithObjects:@"cfprefsd", nil]];
+    [task launch];
+
+    [self respring:sender];
+}
 @end

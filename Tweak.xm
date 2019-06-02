@@ -2001,7 +2001,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/User/Library/Preferences/.GlobalPreferences.plist" restricted:NO];
     [shadow addPath:@"/User/Library/Preferences/ckkeyrolld.plist" restricted:NO];
     [shadow addPath:@"/User/Library/Preferences/nfcd.plist" restricted:NO];
-    [shadow addPath:@"/User/Library/Preferences/.GlobalPreferences.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/UITextInputContextIdentifiers.plist" restricted:NO];
+    [shadow addPath:@"/User/Library/Preferences/Wallpaper.png" restricted:NO];
     [shadow addPath:@"/User/Media" restricted:YES hidden:NO];
     [shadow addPath:@"/User/Media/AirFair" restricted:NO];
     [shadow addPath:@"/User/Media/Books" restricted:NO];
@@ -2132,6 +2133,7 @@ void init_path_map(Shadow *shadow) {
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
     [shadow addPath:@"/System/Library/PreferenceBundles/AppList.bundle" restricted:YES];
+    [shadow addPath:@"/System/Library/Caches/apticket.der" restricted:YES];
 }
 
 // Manual hooks
