@@ -248,19 +248,12 @@
         path = [NSString pathWithComponents:[pathComponents copy]];
     }
 
-    if([path hasPrefix:@"/var/mobile"]) {
-        NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
-        [pathComponents removeObjectAtIndex:1];
-        pathComponents[1] = @"User";
-        path = [NSString pathWithComponents:[pathComponents copy]];
-    }
-
     // Exclude some paths under tweak compatibility mode.
     if(_useTweakCompatibilityMode) {
         if([path hasPrefix:@"/Library/Application Support"]
         || [path hasPrefix:@"/Library/Frameworks"]
         || [path hasPrefix:@"/Library/Themes"]
-        || [path hasPrefix:@"/User/Library/Preferences"]) {
+        || [path hasPrefix:@"/var/mobile/Library/Preferences"]) {
             NSLog(@"unrestricted path (tweak compatibility): %@", path);
             return NO;
         }
