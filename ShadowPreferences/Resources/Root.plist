@@ -134,15 +134,15 @@
 			<key>action</key>
 			<string>respring:</string>
 			<key>label</key>
-			<string>Respring</string>
+			<string>Restart SpringBoard</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>action</key>
-			<string>reset_respring:</string>
+			<string>reset:</string>
 			<key>label</key>
-			<string>Reset Settings and Respring</string>
+			<string>Reset Settings</string>
 			<key>isDestructive</key>
 			<true/>
 			<key>confirmation</key>
@@ -218,7 +218,7 @@
 			<key>key</key>
 			<string>dyld_hooks_enabled</string>
 			<key>label</key>
-			<string>Enable Filtering</string>
+			<string>Enable Filters</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -385,7 +385,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode will bypass all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, Dynamic Linker filtering will need to be enabled separately (see caveats).</string>
+			<string>Lockdown mode will disable all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, Dynamic Linker filtering will need to be enabled separately (see caveats).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
