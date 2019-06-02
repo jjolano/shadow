@@ -1845,13 +1845,6 @@ uint32_t dyld_array_count = 0;
     return NO;
 }
 %end
-
-// NemID
-%hook d3by4Fls
-- (bool)suspended {
-    return false;
-}
-%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -2406,10 +2399,6 @@ void updateDyldArray(void) {
         // Set default settings
         if(!prefs[@"dyld_hooks_enabled"]) {
             prefs[@"dyld_hooks_enabled"] = @YES;
-        }
-
-        if(!prefs[@"inject_compatibility_mode"]) {
-            prefs[@"inject_compatibility_mode"] = @YES;
         }
 
         if(!prefs[@"bypass_checks"]) {

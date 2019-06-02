@@ -222,6 +222,7 @@
     }
 
     // Attempt to resolve symlinks with filesystem.
+    /*
     passthrough = YES;
     realpath([path UTF8String], rpath);
     passthrough = NO;
@@ -231,6 +232,7 @@
     } else {
         return NO;
     }
+    */
 
     // Remove extra path names.
     if([path hasPrefix:@"/private/var"]

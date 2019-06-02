@@ -31,7 +31,7 @@
         NSArray *file_map = [Shadow generateFileMap];
         NSArray *url_set = [Shadow generateSchemeArray];
 
-        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
+        NSMutableDictionary *prefs = [[[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH] autorelease];
 
         if(prefs) {
             [prefs setValue:file_map forKey:@"file_map"];
@@ -50,15 +50,24 @@
     [task launch];
 }
 
-- (void)reset_respring:(id)sender {
+- (void)reset:(id)sender {
     // Delete the preference file and kill the preference caching daemon.
-    [[NSFileManager defaultManager] removeItemAtPath:PREFS_PATH error:nil];
+    if([[NSFileManager defaultManager] removeItemAtPath:PREFS_PATH error:nil]) {
+        NSTask *task = [[[NSTask alloc] init] autorelease];
+        [task setLaunchPath:@"/usr/bin/killall"];
+        [task setArguments:[NSArray arrayWithObjects:@"cfprefsd", nil]];
+        [task launch];
 
-    NSTask *task = [[[NSTask alloc] init] autorelease];
-    [task setLaunchPath:@"/usr/bin/killall"];
-    [task setArguments:[NSArray arrayWithObjects:@"cfprefsd", nil]];
-    [task launch];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Shadow preferences reset. Settings will now exit." preferredStyle:UIAlertControllerStyleAlert];
 
-    [self respring:sender];
+        UIAlertAction *action = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^{
+            [[UIApplication sharedApplication] suspend];
+            [NSThread sleepForTimeInterval:2.0];
+            exit(0);
+        }];
+
+        [alert addAction:action];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
 }
 @end

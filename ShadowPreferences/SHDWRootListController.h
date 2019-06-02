@@ -31,5 +31,5 @@
 - (void)support_github:(id)sender;
 - (void)support_paypal:(id)sender;
 - (void)respring:(id)sender;
-- (void)reset_respring:(id)sender;
+- (void)reset:(id)sender;
 @end
