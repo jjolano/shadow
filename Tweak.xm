@@ -1277,6 +1277,16 @@ uint32_t dyld_array_count = 0;
 #include <fcntl.h>
 
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    if(namelen == 4
+    && name[0] = CTL_KERN
+    && name[1] = KERN_PROC
+    && name[2] = KERN_PROC_ALL
+    && name[3] = 0) {
+        // Running process check.
+        *oldlenp = 0;
+        return 0;
+    }
+
     int ret = %orig;
 
     if(ret == 0
@@ -2249,7 +2259,9 @@ static void *hook_dlsym(void *handle, const char *symbol) {
     if(ret) {
         if(strstr(symbol, "MS") == symbol
         || strstr(symbol, "Sub") == symbol
-        || strstr(symbol, "PS") == symbol) {
+        || strstr(symbol, "PS") == symbol
+        || strstr(symbol, "rocketbootstrap") == symbol
+        || strstr(symbol, "LM") == symbol) {
             NSLog(@"blocked dlsym lookup: %s", symbol);
             return NULL;
         }
@@ -2357,6 +2369,31 @@ void updateDyldArray(void) {
             [prefs writeToFile:PREFS_PATH atomically:YES];
         }
 
+        // Set default settings
+        if(!prefs[@"enabled"]) {
+            prefs[@"enabled"] = @YES;
+        }
+
+        if(!prefs[@"mode"]) {
+            prefs[@"mode"] = @"blacklist";
+        }
+
+        if(!prefs[@"dyld_hooks_enabled"]) {
+            prefs[@"dyld_hooks_enabled"] = @YES;
+        }
+
+        if(!prefs[@"bypass_checks"]) {
+            prefs[@"bypass_checks"] = @YES;
+        }
+
+        if(!prefs[@"exclude_system_apps"]) {
+            prefs[@"exclude_system_apps"] = @YES;
+        }
+
+        if(!prefs[@"auto_file_map_generation_enabled"]) {
+            prefs[@"auto_file_map_generation_enabled"] = @YES;
+        }
+
         // Check if Shadow is enabled
         if(prefs[@"enabled"] && ![prefs[@"enabled"] boolValue]) {
             // Shadow disabled in preferences
@@ -2394,15 +2431,6 @@ void updateDyldArray(void) {
                     return;
                 }
             }
-        }
-
-        // Set default settings
-        if(!prefs[@"dyld_hooks_enabled"]) {
-            prefs[@"dyld_hooks_enabled"] = @YES;
-        }
-
-        if(!prefs[@"bypass_checks"]) {
-            prefs[@"bypass_checks"] = @YES;
         }
 
         // System Applications
