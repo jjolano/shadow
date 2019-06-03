@@ -2,6 +2,7 @@
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Cephei/HBPreferences.h>
 #import "Includes/Shadow.h"
 
 Shadow *_shadow = nil;
@@ -947,6 +948,14 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_NSUtilities
+%hookf(Class, NSClassFromString, NSString *aClassName) {
+    if([aClassName isEqualToString:@"Shadow"]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
@@ -2662,7 +2671,34 @@ void updateDyldArray(void) {
     NSLog(@"generated dyld array (%d items)", dyld_array_count);
 }
 
+%group hook_springboard
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+
+    NSArray *file_map = [Shadow generateFileMap];
+    NSArray *url_set = [Shadow generateSchemeArray];
+
+    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+
+    [prefs setObject:file_map forKey:@"files"];
+    [prefs setObject:url_set forKey:@"schemes"];
+}
+%end
+%end
+
 %ctor {
+    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+
+    if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
+        NSString *processName = [[NSProcessInfo processInfo] processName];
+
+        if([processName isEqualToString:@"SpringBoard"]) {
+            %init(hook_springboard);
+            return;
+        }
+    }
+
     NSBundle *bundle = [NSBundle mainBundle];
 
     if(bundle != nil) {
@@ -2670,47 +2706,25 @@ void updateDyldArray(void) {
         NSString *bundleIdentifier = [bundle bundleIdentifier];
 
         // Load preferences file
-        NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH];
+        HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
 
-        if(!prefs) {
-            // Create new preferences file
-            prefs = [NSMutableDictionary new];
-            [prefs writeToFile:PREFS_PATH atomically:YES];
-        }
-
-        // Set default settings
-        if(!prefs[@"enabled"]) {
-            prefs[@"enabled"] = @YES;
-        }
-
-        if(!prefs[@"mode"]) {
-            prefs[@"mode"] = @"blacklist";
-        }
-
-        if(!prefs[@"dyld_hooks_enabled"]) {
-            prefs[@"dyld_hooks_enabled"] = @YES;
-        }
-
-        if(!prefs[@"bypass_checks"]) {
-            prefs[@"bypass_checks"] = @YES;
-        }
-
-        if(!prefs[@"exclude_system_apps"]) {
-            prefs[@"exclude_system_apps"] = @YES;
-        }
-
-        if(!prefs[@"auto_file_map_generation_enabled"]) {
-            prefs[@"auto_file_map_generation_enabled"] = @YES;
-        }
-
+        [prefs registerDefaults:@{
+            @"enabled" : @YES,
+            @"mode" : @"blacklist",
+            @"dyld_hooks_enabled" : @YES,
+            @"bypass_checks" : @YES,
+            @"exclude_system_apps" : @YES,
+            @"sandbox_hooks_enabled" : @YES
+        }];
+        
         // Check if Shadow is enabled
-        if(prefs[@"enabled"] && ![prefs[@"enabled"] boolValue]) {
+        if(![prefs boolForKey:@"enabled"]) {
             // Shadow disabled in preferences
             return;
         }
 
         // Check if safe bundleIdentifier
-        if(prefs[@"exclude_system_apps"] && [prefs[@"exclude_system_apps"] boolValue]) {
+        if([prefs boolForKey:@"exclude_system_apps"]) {
             // Disable Shadow for Apple and jailbreak apps
             NSArray *excluded_bundleids = @[
                 @"com.apple", // Apple apps
@@ -2728,17 +2742,17 @@ void updateDyldArray(void) {
         }
 
         // Check if excluded bundleIdentifier
-        if(prefs[@"mode"]) {
-            if([prefs[@"mode"] isEqualToString:@"whitelist"]) {
-                // Whitelist - disable Shadow if not enabled for this bundleIdentifier
-                if(!prefs[bundleIdentifier] || ![prefs[bundleIdentifier] boolValue]) {
-                    return;
-                }
-            } else {
-                // Blacklist - disable Shadow if enabled for this bundleIdentifier
-                if(prefs[bundleIdentifier] && [prefs[bundleIdentifier] boolValue]) {
-                    return;
-                }
+        NSString *mode = [prefs objectForKey:@"mode"];
+
+        if([mode isEqualToString:@"whitelist"]) {
+            // Whitelist - disable Shadow if not enabled for this bundleIdentifier
+            if(![prefs_apps boolForKey:bundleIdentifier]) {
+                return;
+            }
+        } else {
+            // Blacklist - disable Shadow if enabled for this bundleIdentifier
+            if([prefs_apps boolForKey:bundleIdentifier]) {
+                return;
             }
         }
 
@@ -2750,6 +2764,12 @@ void updateDyldArray(void) {
         // User (Sandboxed) Applications
         if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
             NSLog(@"bundleIdentifier: %@", bundleIdentifier);
+
+            HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+            HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
+            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
+            HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
+            HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
             // Initialize Shadow
             _shadow = [Shadow new];
@@ -2764,42 +2784,34 @@ void updateDyldArray(void) {
             NSLog(@"initialized internal path map");
 
             // Initialize file map
-            if(prefs[@"auto_file_map_generation_enabled"] && [prefs[@"auto_file_map_generation_enabled"] boolValue]) {
-                prefs[@"file_map"] = [Shadow generateFileMap];
+            NSArray *file_map = [prefs_blacklist objectForKey:@"files"];
+            NSArray *url_set = [prefs_blacklist objectForKey:@"schemes"];
 
-                NSLog(@"scanned installed packages");
+            if(file_map) {
+                [_shadow addPathsFromFileMap:file_map];
+
+                NSLog(@"initialized file map (%lu items)", (unsigned long) [file_map count]);
             }
 
-            if(prefs[@"file_map"]) {
-                [_shadow addPathsFromFileMap:prefs[@"file_map"]];
+            if(url_set) {
+                [_shadow addSchemesFromURLSet:url_set];
 
-                NSLog(@"initialized file map (%lu items)", (unsigned long) [prefs[@"file_map"] count]);
-            }
-
-            if(prefs[@"url_set"]) {
-                [_shadow addSchemesFromURLSet:prefs[@"url_set"]];
-
-                NSLog(@"initialized url set (%lu items)", (unsigned long) [prefs[@"url_set"] count]);
+                NSLog(@"initialized url set (%lu items)", (unsigned long) [url_set count]);
             }
 
             // Compatibility mode
-            NSString *bundleIdentifier_compat = [NSString stringWithFormat:@"tweak_compat%@", bundleIdentifier];
-
             [_shadow setUseTweakCompatibilityMode:YES];
+            [_shadow setUseInjectCompatibilityMode:YES];
 
-            if(prefs[bundleIdentifier_compat] && [prefs[bundleIdentifier_compat] boolValue]) {
+            if([prefs_tweakcompat boolForKey:bundleIdentifier]) {
                 [_shadow setUseTweakCompatibilityMode:NO];
             }
 
-            bundleIdentifier_compat = [NSString stringWithFormat:@"inject_compat%@", bundleIdentifier];
-
-            [_shadow setUseInjectCompatibilityMode:YES];
-
-            if(prefs[bundleIdentifier_compat] && [prefs[bundleIdentifier_compat] boolValue]) {
+            if([prefs_injectcompat boolForKey:bundleIdentifier]) {
                 [_shadow setUseInjectCompatibilityMode:NO];
             }
 
-            // Disable this if we are using Substitute.
+            // Disable inject compatibility if we are using Substitute.
             BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
 
             if(isSubstitute) {
@@ -2807,17 +2819,12 @@ void updateDyldArray(void) {
             }
 
             // Lockdown mode
-            NSString *bundleIdentifier_lockdown = [NSString stringWithFormat:@"lockdown%@", bundleIdentifier];
-
-            if(prefs[bundleIdentifier_lockdown] && [prefs[bundleIdentifier_lockdown] boolValue]) {
+            if([prefs_lockdown boolForKey:bundleIdentifier]) {
                 %init(hook_libc_inject);
                 %init(hook_dlopen_inject);
 
                 MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
                 MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
-                
-                prefs[@"dyld_hooks_enabled"] = @YES;
-                prefs[@"dyld_filter_enabled"] = @YES;
 
                 [_shadow setUseInjectCompatibilityMode:NO];
                 [_shadow setUseTweakCompatibilityMode:NO];
@@ -2858,13 +2865,13 @@ void updateDyldArray(void) {
             NSLog(@"hooked bypass methods");
 
             // Initialize other hooks
-            if(prefs[@"bypass_checks"] && [prefs[@"bypass_checks"] boolValue]) {
+            if([prefs boolForKey:@"bypass_checks"]) {
                 %init(hook_libraries);
 
                 NSLog(@"hooked detection libraries");
             }
 
-            if(prefs[@"dyld_hooks_enabled"] && [prefs[@"dyld_hooks_enabled"] boolValue]) {
+            if([prefs boolForKey:@"dyld_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
                 self_image_name = _dyld_get_image_name(0);
 
                 %init(hook_dyld_image);
@@ -2872,14 +2879,14 @@ void updateDyldArray(void) {
                 NSLog(@"filtering dynamic libraries");
             }
 
-            if(prefs[@"sandbox_hooks_enabled"] && [prefs[@"sandbox_hooks_enabled"] boolValue]) {
+            if([prefs boolForKey:@"sandbox_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
                 %init(hook_sandbox);
 
                 NSLog(@"hooked sandbox methods");
             }
 
             // Generate filtered dyld array
-            if(prefs[@"dyld_filter_enabled"] && [prefs[@"dyld_filter_enabled"] boolValue]) {
+            if([prefs boolForKey:@"dyld_filter_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
                 updateDyldArray();
 
                 %init(hook_dyld_advanced);
@@ -2889,9 +2896,7 @@ void updateDyldArray(void) {
                 NSLog(@"enabled advanced dynamic library filtering");
             }
 
-            NSString *bundleIdentifier_dlfcn = [NSString stringWithFormat:@"dlfcn%@", bundleIdentifier];
-
-            if(prefs[bundleIdentifier_dlfcn] && [prefs[bundleIdentifier_dlfcn] boolValue]) {
+            if([prefs_dlfcn boolForKey:bundleIdentifier]) {
                 // %init(hook_dyld_dlsym);
                 MSHookFunction((void *) dlsym, (void *) hook_dlsym, (void **) &orig_dlsym);
 

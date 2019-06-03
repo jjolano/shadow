@@ -79,7 +79,7 @@
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
@@ -165,7 +165,7 @@
 			<key>label</key>
 			<string>File Map</string>
 			<key>footerText</key>
-			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages. The file map will need to be regenerated when any changes to installed packages are made. Live generation will generate the file map upon application launch, which may increase launch times.</string>
+			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages. The file map will need to be regenerated when any changes to installed packages are made. Auto generation will automatically generate the file map when SpringBoard restarts.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -190,13 +190,13 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<true/>
+			<false/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
 			<string>auto_file_map_generation_enabled</string>
 			<key>label</key>
-			<string>Live Generation</string>
+			<string>Automatically Generate</string>
 		</dict>
 
 		<!-- Dynamic Libraries -->
@@ -252,11 +252,11 @@
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string>dlfcn</string>
+			<string></string>
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.dlfcn.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
@@ -283,13 +283,13 @@
 			<key>label</key>
 			<string>Sandbox Integrity</string>
 			<key>footerText</key>
-			<string>Attempts to restore original sandbox functionality. Only necessary if apps are able to use methods that are otherwise restricted by the sandbox.</string>
+			<string>Attempts to restore original sandbox functionality by limiting file write and creation access for apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
-			<false/>
+			<true/>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>key</key>
@@ -319,11 +319,11 @@
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string>tweak_compat</string>
+			<string></string>
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.compat.tweak.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
@@ -354,11 +354,11 @@
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string>inject_compat</string>
+			<string></string>
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.compat.inject.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
@@ -385,7 +385,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode will disable all compatibility options and attempt to hide injected libraries. Tweaks are not guaranteed to be loaded. To ensure full coverage, Dynamic Linker filtering will need to be enabled separately (see caveats).</string>
+			<string>Lockdown mode will disable all compatibility options, enable all available hooks, and enable additional hooks that will interfere with tweaks. For full coverage, filter dynamic linker (beware of potential issues).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -399,11 +399,11 @@
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
-			<string>lockdown</string>
+			<string></string>
 			<key>ALSettingsDefaultValue</key>
 			<string>0</string>
 			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
+			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.lockdown.plist</string>
 			<key>ALSingleEnabledMode</key>
 			<false/>
 			<key>ALSectionDescriptors</key>
