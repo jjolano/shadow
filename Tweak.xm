@@ -2696,7 +2696,8 @@ void updateDyldArray(void) {
         @"dyld_hooks_enabled" : @YES,
         @"bypass_checks" : @YES,
         @"exclude_system_apps" : @YES,
-        @"sandbox_hooks_enabled" : @YES
+        @"sandbox_hooks_enabled" : @YES,
+        @"auto_file_map_generation_enabled" : @YES
     }];
 
     if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
