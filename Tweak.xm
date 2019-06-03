@@ -2690,6 +2690,15 @@ void updateDyldArray(void) {
 %ctor {
     HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
+    [prefs registerDefaults:@{
+        @"enabled" : @YES,
+        @"mode" : @"blacklist",
+        @"dyld_hooks_enabled" : @YES,
+        @"bypass_checks" : @YES,
+        @"exclude_system_apps" : @YES,
+        @"sandbox_hooks_enabled" : @YES
+    }];
+
     if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
         NSString *processName = [[NSProcessInfo processInfo] processName];
 
@@ -2707,15 +2716,6 @@ void updateDyldArray(void) {
 
         // Load preferences file
         HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
-
-        [prefs registerDefaults:@{
-            @"enabled" : @YES,
-            @"mode" : @"blacklist",
-            @"dyld_hooks_enabled" : @YES,
-            @"bypass_checks" : @YES,
-            @"exclude_system_apps" : @YES,
-            @"sandbox_hooks_enabled" : @YES
-        }];
         
         // Check if Shadow is enabled
         if(![prefs boolForKey:@"enabled"]) {
