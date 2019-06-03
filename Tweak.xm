@@ -2721,65 +2721,6 @@ void updateDyldArray(void) {
         NSString *executablePath = [bundle executablePath];
         NSString *bundleIdentifier = [bundle bundleIdentifier];
 
-        // Load preferences file
-        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
-
-        [prefs registerDefaults:@{
-            @"enabled" : @YES,
-            @"mode" : @"blacklist",
-            @"dyld_hooks_enabled" : @YES,
-            @"bypass_checks" : @YES,
-            @"exclude_system_apps" : @YES,
-            @"sandbox_hooks_enabled" : @YES,
-            @"auto_file_map_generation_enabled" : @YES
-        }];
-        
-        HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
-        
-        // Check if Shadow is enabled
-        if(![prefs boolForKey:@"enabled"]) {
-            // Shadow disabled in preferences
-            return;
-        }
-
-        // Check if safe bundleIdentifier
-        if([prefs boolForKey:@"exclude_system_apps"]) {
-            // Disable Shadow for Apple and jailbreak apps
-            NSArray *excluded_bundleids = @[
-                @"com.apple", // Apple apps
-                @"is.workflow.my.app", // Shortcuts
-                @"science.xnu.undecimus", // unc0ver
-                @"com.electrateam.chimera", // Chimera
-                @"org.coolstar.electra" // Electra
-            ];
-
-            for(NSString *bundle_id in excluded_bundleids) {
-                if([bundleIdentifier hasPrefix:bundle_id]) {
-                    return;
-                }
-            }
-        }
-
-        // Check if excluded bundleIdentifier
-        NSString *mode = [prefs objectForKey:@"mode"];
-
-        if([mode isEqualToString:@"whitelist"]) {
-            // Whitelist - disable Shadow if not enabled for this bundleIdentifier
-            if(![prefs_apps boolForKey:bundleIdentifier]) {
-                return;
-            }
-        } else {
-            // Blacklist - disable Shadow if enabled for this bundleIdentifier
-            if([prefs_apps boolForKey:bundleIdentifier]) {
-                return;
-            }
-        }
-
-        // System Applications
-        if([executablePath hasPrefix:@"/Applications"]) {
-            return;
-        }
-
         // User (Sandboxed) Applications
         if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
             NSLog(@"bundleIdentifier: %@", bundleIdentifier);
@@ -2789,6 +2730,57 @@ void updateDyldArray(void) {
             HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
             HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
             HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
+            HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
+            HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+
+            [prefs registerDefaults:@{
+                @"enabled" : @YES,
+                @"mode" : @"blacklist",
+                @"dyld_hooks_enabled" : @YES,
+                @"bypass_checks" : @YES,
+                @"exclude_system_apps" : @YES,
+                @"sandbox_hooks_enabled" : @YES,
+                @"auto_file_map_generation_enabled" : @YES
+            }];
+            
+            // Check if Shadow is enabled
+            if(![prefs boolForKey:@"enabled"]) {
+                // Shadow disabled in preferences
+                return;
+            }
+
+            // Check if safe bundleIdentifier
+            if([prefs boolForKey:@"exclude_system_apps"]) {
+                // Disable Shadow for Apple and jailbreak apps
+                NSArray *excluded_bundleids = @[
+                    @"com.apple", // Apple apps
+                    @"is.workflow.my.app", // Shortcuts
+                    @"science.xnu.undecimus", // unc0ver
+                    @"com.electrateam.chimera", // Chimera
+                    @"org.coolstar.electra" // Electra
+                ];
+
+                for(NSString *bundle_id in excluded_bundleids) {
+                    if([bundleIdentifier hasPrefix:bundle_id]) {
+                        return;
+                    }
+                }
+            }
+
+            // Check if excluded bundleIdentifier
+            NSString *mode = [prefs objectForKey:@"mode"];
+
+            if([mode isEqualToString:@"whitelist"]) {
+                // Whitelist - disable Shadow if not enabled for this bundleIdentifier
+                if(![prefs_apps boolForKey:bundleIdentifier]) {
+                    return;
+                }
+            } else {
+                // Blacklist - disable Shadow if enabled for this bundleIdentifier
+                if([prefs_apps boolForKey:bundleIdentifier]) {
+                    return;
+                }
+            }
 
             // Initialize Shadow
             _shadow = [Shadow new];
