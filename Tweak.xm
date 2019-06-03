@@ -948,14 +948,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_NSUtilities
-%hookf(Class, NSClassFromString, NSString *aClassName) {
-    if([aClassName isEqualToString:@"Shadow"]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
