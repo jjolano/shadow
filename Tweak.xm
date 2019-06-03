@@ -2693,25 +2693,26 @@ void updateDyldArray(void) {
 %end
 
 %ctor {
-    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+    NSString *processName = [[NSProcessInfo processInfo] processName];
 
-    [prefs registerDefaults:@{
-        @"enabled" : @YES,
-        @"mode" : @"blacklist",
-        @"dyld_hooks_enabled" : @YES,
-        @"bypass_checks" : @YES,
-        @"exclude_system_apps" : @YES,
-        @"sandbox_hooks_enabled" : @YES,
-        @"auto_file_map_generation_enabled" : @YES
-    }];
+    if([processName isEqualToString:@"SpringBoard"]) {
+        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
-    if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
-        NSString *processName = [[NSProcessInfo processInfo] processName];
+        [prefs registerDefaults:@{
+            @"enabled" : @YES,
+            @"mode" : @"blacklist",
+            @"dyld_hooks_enabled" : @YES,
+            @"bypass_checks" : @YES,
+            @"exclude_system_apps" : @YES,
+            @"sandbox_hooks_enabled" : @YES,
+            @"auto_file_map_generation_enabled" : @YES
+        }];
 
-        if([processName isEqualToString:@"SpringBoard"]) {
+        if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
             %init(hook_springboard);
-            return;
         }
+
+        return;
     }
 
     NSBundle *bundle = [NSBundle mainBundle];
@@ -2721,6 +2722,18 @@ void updateDyldArray(void) {
         NSString *bundleIdentifier = [bundle bundleIdentifier];
 
         // Load preferences file
+        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+
+        [prefs registerDefaults:@{
+            @"enabled" : @YES,
+            @"mode" : @"blacklist",
+            @"dyld_hooks_enabled" : @YES,
+            @"bypass_checks" : @YES,
+            @"exclude_system_apps" : @YES,
+            @"sandbox_hooks_enabled" : @YES,
+            @"auto_file_map_generation_enabled" : @YES
+        }];
+        
         HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
         
         // Check if Shadow is enabled
