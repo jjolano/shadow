@@ -199,14 +199,11 @@
 
     BOOL ret = NO;
 
-    // Check if path is actually a file URL.
-    if([path hasPrefix:@"file:"]) {
-        // Convert to NSURL, then back to string.
-        NSURL *url = [NSURL URLWithString:path];
+    // Attempt to convert to NSURL, then back to string.
+    NSURL *url = [NSURL URLWithString:path];
 
-        if(url) {
-            path = [url path];
-        }
+    if(url) {
+        path = [url path];
     }
 
     // Change symlink path to real path if in link map.
@@ -363,7 +360,12 @@
 
 - (void)addPathsFromFileMap:(NSArray *)file_map {
     for(NSString *path in file_map) {
-        [self addRestrictedPath:path];
+        if([path hasPrefix:@"/System"]) {
+            // Don't restrict paths along the way for /System
+            [self addPath:path restricted:YES];
+        } else {
+            [self addRestrictedPath:path];
+        }
     }
 }
 

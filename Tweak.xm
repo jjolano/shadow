@@ -1362,8 +1362,10 @@ uint32_t dyld_array_count = 0;
 
     return ret;
 }
-
+/*
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
+    static struct mach_header ret;
+
     if(dyld_array_count > 0) {
         if(image_index >= dyld_array_count) {
             return NULL;
@@ -1372,7 +1374,9 @@ uint32_t dyld_array_count = 0;
         // image_index = (uint32_t) [dyld_array[image_index] unsignedIntValue];
     }
 
-    return %orig(image_index);
+    ret = *(%orig(image_index));
+
+    return &ret;
 }
 
 %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
@@ -1386,7 +1390,7 @@ uint32_t dyld_array_count = 0;
 
     return %orig(image_index);
 }
-
+*/
 %hookf(bool, dlopen_preflight, const char *path) {
     if(path) {
         NSString *image_name = [NSString stringWithUTF8String:path];
@@ -1425,7 +1429,7 @@ uint32_t dyld_array_count = 0;
     
     return %orig;
 }
-
+/*
 %hookf(void, _dyld_register_func_for_add_image, void (*func)(const struct mach_header *mh, intptr_t vmaddr_slide)) {
     %orig;
 }
@@ -1433,6 +1437,7 @@ uint32_t dyld_array_count = 0;
 %hookf(void, _dyld_register_func_for_remove_image, void (*func)(const struct mach_header *mh, intptr_t vmaddr_slide)) {
     %orig;
 }
+*/
 %end
 
 /*
