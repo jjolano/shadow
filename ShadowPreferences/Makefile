@@ -1,5 +1,5 @@
 ARCHS := armv7 armv7s arm64 arm64e
-TARGET := iphone:clang:11.2:7.0
+TARGET := iphone:clang:11.2:8.0
 
 include $(THEOS)/makefiles/common.mk
 
@@ -7,6 +7,7 @@ BUNDLE_NAME = ShadowPreferences
 $(BUNDLE_NAME)_FILES = SHDWRootListController.m ../Classes/Shadow.xm
 $(BUNDLE_NAME)_INSTALL_PATH = /Library/PreferenceBundles
 $(BUNDLE_NAME)_FRAMEWORKS = UIKit
+$(BUNDLE_NAME)_EXTRA_FRAMEWORKS = Cephei CepheiPrefs
 $(BUNDLE_NAME)_PRIVATE_FRAMEWORKS = Preferences
 $(BUNDLE_NAME)_LIBRARIES = applist
 

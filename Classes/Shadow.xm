@@ -12,23 +12,12 @@
         path_map = [NSMutableDictionary new];
         url_set = [NSMutableArray new];
 
-        rpath = (char *) malloc(PATH_MAX * sizeof(char));
-
         _useTweakCompatibilityMode = NO;
         _useInjectCompatibilityMode = NO;
+        _passthrough = NO;
     }
 
     return self;
-}
-
-- (void)dealloc {
-    #if !__has_feature(objc_arc)
-    [super dealloc];
-    #endif
-
-    if(rpath) {
-        free(rpath);
-    }
 }
 
 - (NSArray *)generateDyldArray {
@@ -156,7 +145,7 @@
 }
 
 - (BOOL)isImageRestricted:(NSString *)name {
-    if(passthrough) {
+    if(_passthrough) {
         return NO;
     }
 
@@ -204,11 +193,21 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
-    if(passthrough || !path_map) {
+    if(_passthrough || !path_map) {
         return NO;
     }
 
     BOOL ret = NO;
+
+    // Check if path is actually a file URL.
+    if([path hasPrefix:@"file:"]) {
+        // Convert to NSURL, then back to string.
+        NSURL *url = [NSURL URLWithString:path];
+
+        if(url) {
+            path = [url path];
+        }
+    }
 
     // Change symlink path to real path if in link map.
     NSString *path_resolved = [self resolveLinkInPath:path];
@@ -220,19 +219,6 @@
         // NSString *path_abs = [NSString stringWithFormat:@"%@/%@", [fm currentDirectoryPath], path];
         path = path_abs;
     }
-
-    // Attempt to resolve symlinks with filesystem.
-    /*
-    passthrough = YES;
-    realpath([path UTF8String], rpath);
-    passthrough = NO;
-
-    if(rpath) {
-        path = [NSString stringWithUTF8String:rpath];
-    } else {
-        return NO;
-    }
-    */
 
     // Remove extra path names.
     if([path hasPrefix:@"/private/var"]
@@ -253,7 +239,10 @@
         if([path hasPrefix:@"/Library/Application Support"]
         || [path hasPrefix:@"/Library/Frameworks"]
         || [path hasPrefix:@"/Library/Themes"]
-        || [path hasPrefix:@"/var/mobile/Library/Preferences"]) {
+        || [path hasPrefix:@"/Library/SnowBoard"]
+        || [path hasPrefix:@"/Library/PreferenceBundles"]
+        || [path hasPrefix:@"/var/mobile/Library/Preferences"]
+        || [path hasPrefix:@"/User/Library/Preferences"]) {
             NSLog(@"unrestricted path (tweak compatibility): %@", path);
             return NO;
         }
@@ -317,7 +306,7 @@
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm partial:(BOOL)partial {
-    if(passthrough) {
+    if(_passthrough) {
         return NO;
     }
 
@@ -342,10 +331,14 @@
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted {
-    return [self addPath:path restricted:restricted hidden:YES];
+    [self addPath:path restricted:restricted hidden:YES prestricted:NO phidden:NO];
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden {
+    [self addPath:path restricted:restricted hidden:hidden prestricted:NO phidden:NO];
+}
+
+- (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden prestricted:(BOOL)prestricted phidden:(BOOL)phidden {
     NSArray *pathComponents = [path pathComponents];
     NSMutableDictionary *current_path_map = path_map;
 
@@ -353,8 +346,8 @@
         if(!current_path_map[value]) {
             current_path_map[value] = [NSMutableDictionary new];
             [current_path_map[value] setValue:value forKey:@"name"];
-            [current_path_map[value] setValue:@NO forKey:@"restricted"];
-            [current_path_map[value] setValue:@NO forKey:@"hidden"];
+            [current_path_map[value] setValue:[NSNumber numberWithBool:prestricted] forKey:@"restricted"];
+            [current_path_map[value] setValue:[NSNumber numberWithBool:phidden] forKey:@"hidden"];
         }
 
         current_path_map = current_path_map[value];
@@ -365,22 +358,7 @@
 }
 
 - (void)addRestrictedPath:(NSString *)path {
-    NSArray *pathComponents = [path pathComponents];
-    NSMutableDictionary *current_path_map = path_map;
-
-    for(NSString *value in pathComponents) {
-        if(!current_path_map[value]) {
-            current_path_map[value] = [NSMutableDictionary new];
-            [current_path_map[value] setValue:value forKey:@"name"];
-            [current_path_map[value] setValue:@YES forKey:@"restricted"];
-            [current_path_map[value] setValue:@YES forKey:@"hidden"];
-        }
-
-        current_path_map = current_path_map[value];
-    }
-
-    [current_path_map setValue:@YES forKey:@"restricted"];
-    [current_path_map setValue:@YES forKey:@"hidden"];
+    [self addPath:path restricted:YES hidden:YES prestricted:YES phidden:YES];
 }
 
 - (void)addPathsFromFileMap:(NSArray *)file_map {

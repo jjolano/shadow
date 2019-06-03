@@ -1,7 +1,4 @@
-#include <Foundation/Foundation.h>
-#include <UIKit/UIKit.h>
 #include "SHDWRootListController.h"
-#include "../Includes/Shadow.h"
 
 @implementation SHDWRootListController
 
@@ -31,13 +28,10 @@
         NSArray *file_map = [Shadow generateFileMap];
         NSArray *url_set = [Shadow generateSchemeArray];
 
-        NSMutableDictionary *prefs = [[[NSMutableDictionary alloc] initWithContentsOfFile:PREFS_PATH] autorelease];
+        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
 
-        if(prefs) {
-            [prefs setValue:file_map forKey:@"file_map"];
-            [prefs setValue:url_set forKey:@"url_set"];
-            [prefs writeToFile:PREFS_PATH atomically:YES];
-        }
+        [prefs setObject:file_map forKey:@"files"];
+        [prefs setObject:url_set forKey:@"schemes"];
         
         [alert dismissViewControllerAnimated:YES completion:nil];
     }];
@@ -51,23 +45,22 @@
 }
 
 - (void)reset:(id)sender {
-    // Delete the preference file and kill the preference caching daemon.
-    if([[NSFileManager defaultManager] removeItemAtPath:PREFS_PATH error:nil]) {
-        NSTask *task = [[[NSTask alloc] init] autorelease];
-        [task setLaunchPath:@"/usr/bin/killall"];
-        [task setArguments:[NSArray arrayWithObjects:@"cfprefsd", nil]];
-        [task launch];
+    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+    HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
+    HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+    HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
+    HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
+    HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
+    HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Shadow preferences reset. Settings will now exit." preferredStyle:UIAlertControllerStyleAlert];
-
-        UIAlertAction *defaultAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [[UIApplication sharedApplication] performSelector:@selector(suspend)];
-            [NSThread sleepForTimeInterval:2.0];
-            exit(0);
-        }];
-
-        [alert addAction:defaultAction];
-        [self presentViewController:alert animated:YES completion:nil];
-    }
+    [prefs removeAllObjects];
+    [prefs_apps removeAllObjects];
+    [prefs_blacklist removeAllObjects];
+    [prefs_tweakcompat removeAllObjects];
+    [prefs_injectcompat removeAllObjects];
+    [prefs_lockdown removeAllObjects];
+    [prefs_dlfcn removeAllObjects];
+    
+    [self respring:sender];
 }
 @end
