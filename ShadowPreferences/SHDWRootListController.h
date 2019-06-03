@@ -4,6 +4,7 @@
 #import <CepheiPrefs/HBRootListController.h>
 #import <CepheiPrefs/HBAppearanceSettings.h>
 #import <Cephei/HBPreferences.h>
+#import <Cephei/HBRespringController.h>
 #import "../Includes/Shadow.h"
 
 @interface SHDWRootListController : PSListController
