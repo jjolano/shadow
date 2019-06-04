@@ -144,6 +144,17 @@
     return [blacklist copy];
 }
 
++ (NSError *)generateFileNotFoundError {
+    NSDictionary *userInfo = @{
+        NSLocalizedDescriptionKey: NSLocalizedString(@"Operation was unsuccessful.", nil),
+        NSLocalizedFailureReasonErrorKey: NSLocalizedString(@"Object does not exist.", nil),
+        NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString(@"Don't access this again :)", nil)
+    };
+
+    NSError *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:userInfo];
+    return error;
+}
+
 - (BOOL)isImageRestricted:(NSString *)name {
     if(_passthrough) {
         return NO;

@@ -319,7 +319,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -339,7 +339,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -359,7 +359,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -424,7 +424,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:originalItemURL manager:self] || [_shadow isURLRestricted:newItemURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -436,7 +436,7 @@ uint32_t dyld_array_count = 0;
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -462,7 +462,7 @@ uint32_t dyld_array_count = 0;
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -505,7 +505,7 @@ uint32_t dyld_array_count = 0;
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -555,7 +555,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -567,7 +567,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -579,7 +579,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -591,7 +591,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -619,7 +619,7 @@ uint32_t dyld_array_count = 0;
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -631,7 +631,7 @@ uint32_t dyld_array_count = 0;
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -643,7 +643,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -671,7 +671,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:directoryURL manager:self] || [_shadow isURLRestricted:otherURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -683,7 +683,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:otherURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -703,7 +703,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self] || [_shadow isURLRestricted:destURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -722,7 +722,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path] || [_shadow isPathRestricted:destPath]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -741,7 +741,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -760,7 +760,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -779,7 +779,7 @@ uint32_t dyld_array_count = 0;
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -831,7 +831,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:self]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -922,7 +922,7 @@ uint32_t dyld_array_count = 0;
 
     if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
         if(error) {
-            *error = (__bridge CFErrorRef) [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = (__bridge CFErrorRef) [Shadow generateFileNotFoundError];
         }
         
         return NULL;
@@ -936,7 +936,7 @@ uint32_t dyld_array_count = 0;
 
     if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
         if(error) {
-            *error = (__bridge CFErrorRef) [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = (__bridge CFErrorRef) [Shadow generateFileNotFoundError];
         }
         
         return NULL;
@@ -1003,7 +1003,7 @@ uint32_t dyld_array_count = 0;
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1015,7 +1015,7 @@ uint32_t dyld_array_count = 0;
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
         
         return nil;
@@ -1043,7 +1043,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1055,7 +1055,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1164,7 +1164,7 @@ uint32_t dyld_array_count = 0;
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1184,7 +1184,7 @@ uint32_t dyld_array_count = 0;
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1206,7 +1206,7 @@ uint32_t dyld_array_count = 0;
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1218,7 +1218,7 @@ uint32_t dyld_array_count = 0;
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1230,7 +1230,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1242,7 +1242,7 @@ uint32_t dyld_array_count = 0;
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return nil;
@@ -1491,7 +1491,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1521,7 +1521,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1541,7 +1541,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1555,7 +1555,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1567,7 +1567,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1581,7 +1581,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -1593,7 +1593,7 @@ uint32_t dyld_array_count = 0;
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = [NSError errorWithDomain:@"NSCocoaErrorDomain" code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow generateFileNotFoundError];
         }
 
         return NO;
@@ -2095,8 +2095,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/vm" restricted:NO];
     [shadow addPath:@"/var/wireless" restricted:NO];
     
-    // Restrict /var/mobile
-    [shadow addPath:@"/var/mobile" restricted:YES];
+    // Restrict /var/mobile by whitelisting
+    [shadow addPath:@"/var/mobile" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Applications" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Data" restricted:YES hidden:NO];
