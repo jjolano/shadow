@@ -1861,6 +1861,12 @@ uint32_t dyld_array_count = 0;
     return NO;
 }
 %end
+
+%hook OneSignalJailbreakDetection
++ (BOOL)isJailbroken {
+    return NO;
+}
+%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -2027,9 +2033,71 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/tmp/slide.txt" restricted:YES];
     [shadow addPath:@"/tmp/amfidebilitate.out" restricted:YES];
     [shadow addPath:@"/tmp/org.coolstar" restricted:YES];
+
+    // Restrict /var by whitelisting
+    [shadow addPath:@"/var" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/.DocumentRevisions" restricted:NO];
+    [shadow addPath:@"/var/.fseventsd" restricted:NO];
+    [shadow addPath:@"/var/.overprovisioning_file" restricted:NO];
+    [shadow addPath:@"/var/audit" restricted:NO];
+    [shadow addPath:@"/var/backups" restricted:NO];
+    [shadow addPath:@"/var/buddy" restricted:NO];
+    [shadow addPath:@"/var/containers" restricted:NO];
+    [shadow addPath:@"/var/cores" restricted:NO];
+    [shadow addPath:@"/var/db" restricted:NO];
+    [shadow addPath:@"/var/db/stash" restricted:YES];
+    [shadow addPath:@"/var/ea" restricted:NO];
+    [shadow addPath:@"/var/empty" restricted:NO];
+    [shadow addPath:@"/var/folders" restricted:NO];
+    [shadow addPath:@"/var/hardware" restricted:NO];
+    [shadow addPath:@"/var/installd" restricted:NO];
+    [shadow addPath:@"/var/internal" restricted:NO];
+    [shadow addPath:@"/var/keybags" restricted:NO];
+    [shadow addPath:@"/var/Keychains" restricted:NO];
+    [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/local" restricted:NO];
+    [shadow addPath:@"/var/lock" restricted:NO];
+    [shadow addPath:@"/var/log" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/log/asl" restricted:NO];
+    [shadow addPath:@"/var/log/com.apple.xpc.launchd" restricted:NO];
+    [shadow addPath:@"/var/log/corecaptured.log" restricted:NO];
+    [shadow addPath:@"/var/log/ppp" restricted:NO];
+    [shadow addPath:@"/var/log/ppp.log" restricted:NO];
+    [shadow addPath:@"/var/log/racoon.log" restricted:NO];
+    [shadow addPath:@"/var/log/sa" restricted:NO];
+    [shadow addPath:@"/var/logs" restricted:NO];
+    [shadow addPath:@"/var/Managed Preferences" restricted:NO];
+    [shadow addPath:@"/var/MobileAsset" restricted:NO];
+    [shadow addPath:@"/var/MobileDevice" restricted:NO];
+    [shadow addPath:@"/var/MobileSoftwareUpdate" restricted:NO];
+    [shadow addPath:@"/var/msgs" restricted:NO];
+    [shadow addPath:@"/var/networkd" restricted:NO];
+    [shadow addPath:@"/var/preferences" restricted:NO];
+    [shadow addPath:@"/var/root" restricted:NO];
+    [shadow addPath:@"/var/run" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/run/lockdown" restricted:NO];
+    [shadow addPath:@"/var/run/lockdown.sock" restricted:NO];
+    [shadow addPath:@"/var/run/lockdown_first_run" restricted:NO];
+    [shadow addPath:@"/var/run/mDNSResponder" restricted:NO];
+    [shadow addPath:@"/var/run/printd" restricted:NO];
+    [shadow addPath:@"/var/run/syslog" restricted:NO];
+    [shadow addPath:@"/var/run/syslog.pid" restricted:NO];
+    [shadow addPath:@"/var/run/utmpx" restricted:NO];
+    [shadow addPath:@"/var/run/vpncontrol.sock" restricted:NO];
+    [shadow addPath:@"/var/run/asl_input" restricted:NO];
+    [shadow addPath:@"/var/run/configd.pid" restricted:NO];
+    [shadow addPath:@"/var/run/lockbot" restricted:NO];
+    [shadow addPath:@"/var/run/pppconfd" restricted:NO];
+    [shadow addPath:@"/var/run/fudinit" restricted:NO];
+    [shadow addPath:@"/var/spool" restricted:NO];
+    [shadow addPath:@"/var/staged_system_apps" restricted:NO];
+    [shadow addPath:@"/var/tmp" restricted:NO];
+    [shadow addPath:@"/var/vm" restricted:NO];
+    [shadow addPath:@"/var/wireless" restricted:NO];
     
     // Restrict /var/mobile
-    [shadow addPath:@"/var/mobile/." restricted:YES];
+    [shadow addPath:@"/var/mobile" restricted:YES];
+    [shadow addPath:@"/var/mobile/Applications" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Data" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Data/Application" restricted:NO];
@@ -2044,6 +2112,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Documents/com.apple" restricted:NO];
     [shadow addPath:@"/var/mobile/Downloads" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Downloads/com.apple" restricted:NO];
+    [shadow addPath:@"/var/mobile/Library" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/com.apple" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/.com.apple" restricted:NO];
@@ -2069,6 +2138,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Library/Caches/Snapshots/com.apple" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/TelephonyUI" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/Weather" restricted:NO];
+    [shadow addPath:@"/var/mobile/Library/ControlCenter" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/mobile/Library/ControlCenter/ModuleConfiguration.plist" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Cydia" restricted:YES];
     [shadow addPath:@"/var/mobile/Library/Logs/Cydia" restricted:YES];
     [shadow addPath:@"/var/mobile/Library/SBSettings" restricted:YES];
@@ -2094,6 +2165,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Media/Purchases" restricted:NO];
     [shadow addPath:@"/var/mobile/Media/Radio" restricted:NO];
     [shadow addPath:@"/var/mobile/Media/Recordings" restricted:NO];
+    [shadow addPath:@"/var/mobile/MobileSoftwareUpdate" restricted:NO];
 
     // Restrict /usr by whitelisting
     [shadow addPath:@"/usr" restricted:YES hidden:NO];
@@ -2385,68 +2457,6 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr/share/zoneinfo" restricted:NO];
     [shadow addPath:@"/usr/share/zoneinfo.default" restricted:NO];
     [shadow addPath:@"/usr/standalone" restricted:NO];
-    
-    // Restrict /var by whitelisting
-    [shadow addPath:@"/var" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/.DocumentRevisions" restricted:NO];
-    [shadow addPath:@"/var/.fseventsd" restricted:NO];
-    [shadow addPath:@"/var/.overprovisioning_file" restricted:NO];
-    [shadow addPath:@"/var/audit" restricted:NO];
-    [shadow addPath:@"/var/backups" restricted:NO];
-    [shadow addPath:@"/var/buddy" restricted:NO];
-    [shadow addPath:@"/var/containers" restricted:NO];
-    [shadow addPath:@"/var/cores" restricted:NO];
-    [shadow addPath:@"/var/db" restricted:NO];
-    [shadow addPath:@"/var/db/stash" restricted:YES];
-    [shadow addPath:@"/var/ea" restricted:NO];
-    [shadow addPath:@"/var/empty" restricted:NO];
-    [shadow addPath:@"/var/folders" restricted:NO];
-    [shadow addPath:@"/var/hardware" restricted:NO];
-    [shadow addPath:@"/var/installd" restricted:NO];
-    [shadow addPath:@"/var/internal" restricted:NO];
-    [shadow addPath:@"/var/keybags" restricted:NO];
-    [shadow addPath:@"/var/Keychains" restricted:NO];
-    [shadow addPath:@"/var/lib" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/local" restricted:NO];
-    [shadow addPath:@"/var/lock" restricted:NO];
-    [shadow addPath:@"/var/log" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/log/asl" restricted:NO];
-    [shadow addPath:@"/var/log/com.apple.xpc.launchd" restricted:NO];
-    [shadow addPath:@"/var/log/corecaptured.log" restricted:NO];
-    [shadow addPath:@"/var/log/ppp" restricted:NO];
-    [shadow addPath:@"/var/log/ppp.log" restricted:NO];
-    [shadow addPath:@"/var/log/racoon.log" restricted:NO];
-    [shadow addPath:@"/var/log/sa" restricted:NO];
-    [shadow addPath:@"/var/logs" restricted:NO];
-    [shadow addPath:@"/var/Managed Preferences" restricted:NO];
-    [shadow addPath:@"/var/mobile" restricted:NO];
-    [shadow addPath:@"/var/MobileAsset" restricted:NO];
-    [shadow addPath:@"/var/MobileDevice" restricted:NO];
-    [shadow addPath:@"/var/MobileSoftwareUpdate" restricted:NO];
-    [shadow addPath:@"/var/msgs" restricted:NO];
-    [shadow addPath:@"/var/networkd" restricted:NO];
-    [shadow addPath:@"/var/preferences" restricted:NO];
-    [shadow addPath:@"/var/root" restricted:NO];
-    [shadow addPath:@"/var/run" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/run/lockdown" restricted:NO];
-    [shadow addPath:@"/var/run/lockdown.sock" restricted:NO];
-    [shadow addPath:@"/var/run/lockdown_first_run" restricted:NO];
-    [shadow addPath:@"/var/run/mDNSResponder" restricted:NO];
-    [shadow addPath:@"/var/run/printd" restricted:NO];
-    [shadow addPath:@"/var/run/syslog" restricted:NO];
-    [shadow addPath:@"/var/run/syslog.pid" restricted:NO];
-    [shadow addPath:@"/var/run/utmpx" restricted:NO];
-    [shadow addPath:@"/var/run/vpncontrol.sock" restricted:NO];
-    [shadow addPath:@"/var/run/asl_input" restricted:NO];
-    [shadow addPath:@"/var/run/configd.pid" restricted:NO];
-    [shadow addPath:@"/var/run/lockbot" restricted:NO];
-    [shadow addPath:@"/var/run/pppconfd" restricted:NO];
-    [shadow addPath:@"/var/run/fudinit" restricted:NO];
-    [shadow addPath:@"/var/spool" restricted:NO];
-    [shadow addPath:@"/var/staged_system_apps" restricted:NO];
-    [shadow addPath:@"/var/tmp" restricted:NO];
-    [shadow addPath:@"/var/vm" restricted:NO];
-    [shadow addPath:@"/var/wireless" restricted:NO];
 
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
