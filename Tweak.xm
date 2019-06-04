@@ -25,85 +25,118 @@ uint32_t dyld_array_count = 0;
 #include <errno.h>
 
 %hookf(int, access, const char *pathname, int mode) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
 
-    NSString *path = [NSString stringWithUTF8String:pathname];
+        // workaround for tweaks not loading properly in Substrate
+        if([_shadow useInjectCompatibilityMode]) {
+            if([[path pathExtension] isEqualToString:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
+                return %orig;
+            }
+        }
 
-    // workaround for tweaks not loading properly in Substrate
-    if([_shadow useInjectCompatibilityMode] && [[path pathExtension] isEqualToString:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
-        return %orig;
-    }
-
-    if([_shadow isPathRestricted:path]) {
-        errno = ENOENT;
-        return -1;
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     return %orig;
 }
 
 %hookf(char *, getenv, const char *name) {
-    if(!name) {
-        return %orig;
-    }
+    if(name) {
+        NSString *env = [NSString stringWithUTF8String:name];
 
-    NSString *env = [NSString stringWithUTF8String:name];
-
-    if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
-    || [env isEqualToString:@"_MSSafeMode"]
-    || [env isEqualToString:@"_SafeMode"]) {
-        return NULL;
+        if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
+        || [env isEqualToString:@"_MSSafeMode"]
+        || [env isEqualToString:@"_SafeMode"]) {
+            return NULL;
+        }
     }
 
     return %orig;
 }
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
-    if(!pathname) {
-        return %orig;
-    }
-    
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return NULL;
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            errno = ENOENT;
+            return NULL;
+        }
     }
 
     return %orig;
 }
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            errno = ENOENT;
+            return -1;
+        }
 
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return -1;
+        // Maybe some filesize overrides?
+
     }
 
     return %orig;
 }
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            errno = ENOENT;
+            return -1;
+        }
 
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return -1;
+        // Maybe some filesize overrides?
+
     }
 
     return %orig;
 }
 
-%hookf(int, statfs, const char *path, struct statfs *buf) {
-    if(!path) {
-        return %orig;
+%hookf(int, fstatfs, int fd, struct statfs *buf) {
+    int ret = %orig;
+
+    if(ret == 0) {
+        // Get path of dirfd.
+        char path[PATH_MAX];
+
+        if(fcntl(fd, F_GETPATH, path) != -1) {
+            NSString *pathname = [NSString stringWithUTF8String:path];
+
+            if([_shadow isPathRestricted:pathname]) {
+                errno = ENOENT;
+                return -1;
+            }
+
+            pathname = [_shadow resolveLinkInPath:pathname];
+
+            if([pathname hasPrefix:@"/var/mobile/Containers/Data/Application"]) {
+                if(buf) {
+                    // Ensure application sandbox is marked NOSUID.
+                    buf->f_flags |= MNT_NOSUID | MNT_NODEV;
+                    return ret;
+                }
+            }
+            
+            if(![pathname hasPrefix:@"/var"]
+            && ![pathname hasPrefix:@"/private/var"]) {
+                if(buf) {
+                    // Ensure root is marked read-only.
+                    buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
+                    return ret;
+                }
+            }
+        }
     }
 
+    return ret;
+}
+
+%hookf(int, statfs, const char *path, struct statfs *buf) {
     int ret = %orig;
 
     if(ret == 0) {
@@ -115,12 +148,20 @@ uint32_t dyld_array_count = 0;
         }
 
         pathname = [_shadow resolveLinkInPath:pathname];
+
+        if([pathname hasPrefix:@"/var/mobile/Containers/Data/Application"]) {
+            if(buf) {
+                // Ensure application sandbox is marked NOSUID.
+                buf->f_flags |= MNT_NOSUID | MNT_NODEV;
+                return ret;
+            }
+        }
         
         if(![pathname hasPrefix:@"/var"]
         && ![pathname hasPrefix:@"/private/var"]) {
             if(buf) {
                 // Ensure root is marked read-only.
-                buf->f_flags |= MNT_RDONLY;
+                buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
                 return ret;
             }
         }
@@ -130,54 +171,69 @@ uint32_t dyld_array_count = 0;
 }
 
 %hookf(int, posix_spawn, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
 
-    NSString *path = [NSString stringWithUTF8String:pathname];
-
-    if([_shadow isPathRestricted:path]) {
-        return ENOSYS;
+        if([_shadow isPathRestricted:path]) {
+            return ENOENT;
+        }
     }
 
     return %orig;
 }
 
 %hookf(int, posix_spawnp, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
 
-    NSString *path = [NSString stringWithUTF8String:pathname];
-
-    if([_shadow isPathRestricted:path]) {
-        return ENOSYS;
+        if([_shadow isPathRestricted:path]) {
+            return ENOENT;
+        }
     }
 
     return %orig;
 }
 
 %hookf(char *, realpath, const char *pathname, char *resolved_path) {
-    if(!pathname) {
-        return %orig;
+    BOOL doFree = (resolved_path != NULL);
+
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            errno = ENOENT;
+            return NULL;
+        }
     }
 
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return NULL;
+    char *ret = %orig;
+
+    // Recheck resolved path.
+    if(ret) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:ret]]) {
+            errno = ENOENT;
+
+            // Free resolved_path if it was allocated by libc.
+            if(doFree) {
+                free(ret);
+            }
+
+            return NULL;
+        }
+
+        if(strcmp(ret, pathname) != 0) {
+            // Possible symbolic link? Track it in Shadow
+            [_shadow addLinkFromPath:[NSString stringWithUTF8String:pathname] toPath:[NSString stringWithUTF8String:ret]];
+        }
     }
 
-    return %orig;
+    return ret;
 }
 
 %hookf(int, symlink, const char *path1, const char *path2) {
-    if(!path1 || !path2) {
-        return %orig;
-    }
-
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
-        errno = ENOENT;
-        return -1;
+    if(path1 && path2) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     int ret = %orig;
@@ -191,13 +247,11 @@ uint32_t dyld_array_count = 0;
 }
 
 %hookf(int, link, const char *path1, const char *path2) {
-    if(!path1 || !path2) {
-        return %orig;
-    }
-
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
-        errno = ENOENT;
-        return -1;
+    if(path1 && path2) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     int ret = %orig;
@@ -211,25 +265,23 @@ uint32_t dyld_array_count = 0;
 }
 
 %hookf(int, fstatat, int dirfd, const char *pathname, struct stat *buf, int flags) {
-    if(!pathname) {
-        return %orig;
-    }
+    if(pathname) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
 
-    NSString *path = [NSString stringWithUTF8String:pathname];
-
-    if(![path isAbsolutePath]) {
-        // Get path of dirfd.
-        char dirfdpath[PATH_MAX];
-    
-        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
-            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
-            path = [dirfd_path stringByAppendingPathComponent:path];
+        if(![path isAbsolutePath]) {
+            // Get path of dirfd.
+            char dirfdpath[PATH_MAX];
+        
+            if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+                NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+                path = [dirfd_path stringByAppendingPathComponent:path];
+            }
         }
-    }
-    
-    if([_shadow isPathRestricted:path]) {
-        errno = ENOENT;
-        return -1;
+        
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     return %orig;
@@ -252,53 +304,16 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
-/*
-%hookf(int, open, const char *pathname, int flags) {
-    if(pathname && [_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return %orig;
-}
-
-%hookf(int, openat, int dirfd, const char *pathname, int flags) {
-    if(!pathname) {
-        return %orig;
-    }
-
-    NSString *path = [NSString stringWithUTF8String:pathname];
-
-    if(![path isAbsolutePath]) {
-        // Get path of dirfd.
-        char dirfdpath[PATH_MAX];
-    
-        if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
-            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
-            path = [dirfd_path stringByAppendingPathComponent:path];
-        }
-    }
-    
-    if([_shadow isPathRestricted:path]) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return %orig;
-}
-*/
 %end
 
 %group hook_dlopen_inject
 %hookf(void *, dlopen, const char *path, int mode) {
-    if(!path) {
-        return %orig;
-    }
+    if(path) {
+        NSString *image_name = [NSString stringWithUTF8String:path];
 
-    NSString *image_name = [NSString stringWithUTF8String:path];
-
-    if([_shadow isImageRestricted:image_name]) {
-        return NULL;
+        if([_shadow isImageRestricted:image_name]) {
+            return NULL;
+        }
     }
 
     return %orig;
@@ -798,29 +813,25 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_NSEnumerator
-%hook NSEnumerator
+%hook NSDirectoryEnumerator
 - (id)nextObject {
-    if([self isKindOfClass:[NSDirectoryEnumerator class]]) {
-        id ret = nil;
+    id ret = nil;
 
-        while((ret = %orig)) {
-            if([ret isKindOfClass:[NSURL class]]) {
-                if([_shadow isURLRestricted:ret]) {
-                    continue;
-                }
+    while((ret = %orig)) {
+        if([ret isKindOfClass:[NSURL class]]) {
+            if([_shadow isURLRestricted:ret]) {
+                continue;
             }
-
-            if([ret isKindOfClass:[NSString class]]) {
-                // TODO: convert to absolute path
-            }
-
-            break;
         }
 
-        return ret;
+        if([ret isKindOfClass:[NSString class]]) {
+            // TODO: convert to absolute path
+        }
+
+        break;
     }
 
-    return %orig;
+    return ret;
 }
 %end
 %end
@@ -966,8 +977,8 @@ uint32_t dyld_array_count = 0;
 }
 %end
 
-/*
 %hook NSData
+/*
 - (id)initWithContentsOfMappedFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
         return nil;
@@ -991,6 +1002,7 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
+*/
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1000,6 +1012,7 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
+/*
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
@@ -1011,6 +1024,7 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
+*/
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1024,6 +1038,7 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
+/*
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
         return nil;
@@ -1031,6 +1046,7 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
+*/
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1040,6 +1056,7 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
+/*
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
@@ -1051,6 +1068,7 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
+*/
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1064,7 +1082,6 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 %end
-*/
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
@@ -1262,7 +1279,7 @@ uint32_t dyld_array_count = 0;
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
 
-    if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) && pid == getpid()) {
+    if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) == CS_PLATFORM_BINARY && pid == getpid()) {
         // Ensure that the platform binary flag is not set.
         ret &= ~CS_PLATFORM_BINARY;
     }
@@ -1299,7 +1316,7 @@ uint32_t dyld_array_count = 0;
         if(oldp) {
             struct kinfo_proc *p = ((struct kinfo_proc *) oldp);
 
-            if(p->kp_proc.p_flag & P_TRACED) {
+            if((p->kp_proc.p_flag & P_TRACED) == P_TRACED) {
                 p->kp_proc.p_flag &= ~P_TRACED;
             }
         }
@@ -1432,29 +1449,27 @@ uint32_t dyld_array_count = 0;
 */
 %end
 
-/*
 %group hook_dyld_dlsym
 // #include "Hooks/dlsym.xm"
 #include <dlfcn.h>
 
 %hookf(void *, dlsym, void *handle, const char *symbol) {
-    if(!symbol) {
-        return %orig;
-    }
+    if(symbol) {
+        NSString *sym = [NSString stringWithUTF8String:symbol];
 
-    NSString *sym = [NSString stringWithUTF8String:symbol];
-
-    if([sym hasPrefix:@"MS"]
-    || [sym hasPrefix:@"Sub"]
-    || [sym hasPrefix:@"PS"]) {
-        NSLog(@"blocked dlsym lookup: %@", sym);
-        return NULL;
+        if([sym hasPrefix:@"MS"]
+        || [sym hasPrefix:@"Sub"]
+        || [sym hasPrefix:@"PS"]
+        || [sym hasPrefix:@"rocketbootstrap"]
+        || [sym hasPrefix:@"LM"]) {
+            NSLog(@"blocked dlsym lookup: %@", sym);
+            return NULL;
+        }
     }
 
     return %orig;
 }
 %end
-*/
 
 %group hook_sandbox
 // #include "Hooks/Sandbox.xm"
@@ -1612,13 +1627,11 @@ uint32_t dyld_array_count = 0;
 %end
 
 %hookf(int, creat, const char *pathname, mode_t mode) {
-    if(!pathname) {
-        return %orig;
-    }
-    
-    if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
-        errno = EACCES;
-        return -1;
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            errno = EACCES;
+            return -1;
+        }
     }
 
     return %orig;
@@ -2095,8 +2108,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/vm" restricted:NO];
     [shadow addPath:@"/var/wireless" restricted:NO];
     
-    // Restrict /var/mobile by whitelisting
-    [shadow addPath:@"/var/mobile" restricted:YES hidden:NO];
+    // Restrict /var/mobile
+    [shadow addPath:@"/var/mobile" restricted:NO];
     [shadow addPath:@"/var/mobile/Applications" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Data" restricted:YES hidden:NO];
@@ -2108,10 +2121,6 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Containers/Data/XPCService" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers/Shared" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Shared/AppGroup" restricted:NO];
-    [shadow addPath:@"/var/mobile/Documents" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/mobile/Documents/com.apple" restricted:NO];
-    [shadow addPath:@"/var/mobile/Downloads" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/mobile/Downloads/com.apple" restricted:NO];
     [shadow addPath:@"/var/mobile/Library" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/com.apple" restricted:NO];
@@ -2151,21 +2160,6 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Library/Preferences/nfcd.plist" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Preferences/UITextInputContextIdentifiers.plist" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Preferences/Wallpaper.png" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media" restricted:YES hidden:NO];
-    [shadow addPath:@"/var/mobile/Media/AirFair" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Books" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/CloudAssets" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/DCIM" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Downloads" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/iTunes_Control" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/LoFiCloudAssets" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/MediaAnalysis" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/PhotoData" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Photos" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Purchases" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Radio" restricted:NO];
-    [shadow addPath:@"/var/mobile/Media/Recordings" restricted:NO];
-    [shadow addPath:@"/var/mobile/MobileSoftwareUpdate" restricted:NO];
 
     // Restrict /usr by whitelisting
     [shadow addPath:@"/usr" restricted:YES hidden:NO];
@@ -2577,24 +2571,6 @@ static struct dirent *hook_readdir(DIR *dirp) {
 
 #include <dlfcn.h>
 
-static void *(*orig_dlsym)(void *handle, const char *symbol);
-static void *hook_dlsym(void *handle, const char *symbol) {
-    void *ret = orig_dlsym(handle, symbol);
-
-    if(ret) {
-        if(strstr(symbol, "MS") == symbol
-        || strstr(symbol, "Sub") == symbol
-        || strstr(symbol, "PS") == symbol
-        || strstr(symbol, "rocketbootstrap") == symbol
-        || strstr(symbol, "LM") == symbol) {
-            NSLog(@"blocked dlsym lookup: %s", symbol);
-            return NULL;
-        }
-    }
-
-    return ret;
-}
-
 static int (*orig_dladdr)(const void *addr, Dl_info *info);
 static int hook_dladdr(const void *addr, Dl_info *info) {
     int ret = orig_dladdr(addr, info);
@@ -2910,8 +2886,7 @@ void updateDyldArray(void) {
             }
 
             if([prefs_dlfcn boolForKey:bundleIdentifier]) {
-                // %init(hook_dyld_dlsym);
-                MSHookFunction((void *) dlsym, (void *) hook_dlsym, (void **) &orig_dlsym);
+                %init(hook_dyld_dlsym);
 
                 NSLog(@"hooked dynamic linker methods");
             }

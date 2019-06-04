@@ -210,13 +210,6 @@
 
     BOOL ret = NO;
 
-    // Attempt to convert to NSURL, then back to string.
-    NSURL *url = [NSURL URLWithString:path];
-
-    if(url) {
-        path = [url path];
-    }
-
     // Change symlink path to real path if in link map.
     NSString *path_resolved = [self resolveLinkInPath:path];
     path = path_resolved;
