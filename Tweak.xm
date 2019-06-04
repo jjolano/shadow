@@ -2789,16 +2789,8 @@ void updateDyldArray(void) {
             }
 
             // Compatibility mode
-            [_shadow setUseTweakCompatibilityMode:YES];
-            [_shadow setUseInjectCompatibilityMode:YES];
-
-            if([prefs_tweakcompat boolForKey:bundleIdentifier]) {
-                [_shadow setUseTweakCompatibilityMode:NO];
-            }
-
-            if([prefs_injectcompat boolForKey:bundleIdentifier]) {
-                [_shadow setUseInjectCompatibilityMode:NO];
-            }
+            [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
+            [_shadow setUseInjectCompatibilityMode:[prefs_injectcompat boolForKey:bundleIdentifier] ? NO : YES];
 
             // Disable inject compatibility if we are using Substitute.
             BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
