@@ -7,8 +7,6 @@
 
 Shadow *_shadow = nil;
 
-const char *self_image_name = NULL;
-
 NSArray *dyld_array = nil;
 uint32_t dyld_array_count = 0;
 
@@ -1366,7 +1364,7 @@ uint32_t dyld_array_count = 0;
     const char *ret = %orig(image_index);
 
     if(ret && [_shadow isImageRestricted:[NSString stringWithUTF8String:ret]]) {
-        return self_image_name ? self_image_name : %orig(0);
+        return %orig(0);
     }
 
     return ret;
@@ -2853,8 +2851,6 @@ void updateDyldArray(void) {
             }
 
             if([prefs boolForKey:@"dyld_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
-                self_image_name = _dyld_get_image_name(0);
-
                 %init(hook_dyld_image);
 
                 NSLog(@"filtering dynamic libraries");
