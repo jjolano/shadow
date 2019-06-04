@@ -31,6 +31,8 @@
 + (NSArray *)generateFileMap;
 + (NSArray *)generateSchemeArray;
 
++ (NSError *)generateFileNotFoundError;
+
 - (BOOL)isImageRestricted:(NSString *)name;
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isPathRestricted:(NSString *)path partial:(BOOL)partial;
