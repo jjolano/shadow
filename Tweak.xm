@@ -2090,6 +2090,11 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/backups" restricted:NO];
     [shadow addPath:@"/var/buddy" restricted:NO];
     [shadow addPath:@"/var/containers" restricted:NO];
+    [shadow addPath:@"/var/containers/Bundle" restricted:YES hidden:NO];
+    [shadow addPath:@"/var/containers/Bundle/Application" restricted:NO];
+    [shadow addPath:@"/var/containers/Bundle/Framework" restricted:NO];
+    [shadow addPath:@"/var/containers/Bundle/PluginKitPlugin" restricted:NO];
+    [shadow addPath:@"/var/containers/Bundle/VPNPlugin" restricted:NO];
     [shadow addPath:@"/var/cores" restricted:NO];
     [shadow addPath:@"/var/db" restricted:NO];
     [shadow addPath:@"/var/db/stash" restricted:YES];
@@ -2142,8 +2147,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/vm" restricted:NO];
     [shadow addPath:@"/var/wireless" restricted:NO];
     
-    // Restrict /var/mobile
-    [shadow addPath:@"/var/mobile" restricted:NO];
+    // Restrict /var/mobile by whitelisting
+    [shadow addPath:@"/var/mobile" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Applications" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Data" restricted:YES hidden:NO];
@@ -2155,6 +2160,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Containers/Data/XPCService" restricted:NO];
     [shadow addPath:@"/var/mobile/Containers/Shared" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Containers/Shared/AppGroup" restricted:NO];
+    [shadow addPath:@"/var/mobile/Documents" restricted:NO];
+    [shadow addPath:@"/var/mobile/Downloads" restricted:NO];
     [shadow addPath:@"/var/mobile/Library" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Caches" restricted:YES hidden:NO];
     [shadow addPath:@"/var/mobile/Library/Caches/com.apple" restricted:NO];
@@ -2194,6 +2201,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/var/mobile/Library/Preferences/nfcd.plist" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Preferences/UITextInputContextIdentifiers.plist" restricted:NO];
     [shadow addPath:@"/var/mobile/Library/Preferences/Wallpaper.png" restricted:NO];
+    [shadow addPath:@"/var/mobile/Media" restricted:NO];
+    [shadow addPath:@"/var/mobile/MobileSoftwareUpdate" restricted:NO];
 
     // Restrict /usr by whitelisting
     [shadow addPath:@"/usr" restricted:YES hidden:NO];
@@ -2693,13 +2702,36 @@ void updateDyldArray(void) {
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-    NSArray *file_map = [Shadow generateFileMap];
-    NSArray *url_set = [Shadow generateSchemeArray];
+    if(![[NSFileManager defaultManager] fileExistsAtPath:@"/var/lib/dpkg/info/me.jjolano.shadow.list"]) {
+        // Tweak was not installed properly. Notify the user.
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"An improper installation of Shadow has been detected. Please ensure you install the latest version of Shadow from https://ios.jjolano.me/." preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertAction *action = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
+        
+        [alert addAction:action];
+        [[[application keyWindow] rootViewController] presentViewController:alert animated:YES completion:nil];
+    }
 
-    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
-    [prefs setObject:file_map forKey:@"files"];
-    [prefs setObject:url_set forKey:@"schemes"];
+    [prefs registerDefaults:@{
+        @"enabled" : @YES,
+        @"mode" : @"blacklist",
+        @"dyld_hooks_enabled" : @YES,
+        @"bypass_checks" : @YES,
+        @"exclude_system_apps" : @YES,
+        @"sandbox_hooks_enabled" : @YES,
+        @"auto_file_map_generation_enabled" : @YES
+    }];
+
+    if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
+        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+
+        NSArray *file_map = [Shadow generateFileMap];
+        NSArray *url_set = [Shadow generateSchemeArray];
+
+        [prefs setObject:file_map forKey:@"files"];
+        [prefs setObject:url_set forKey:@"schemes"];
+    }
 }
 %end
 %end
@@ -2708,22 +2740,7 @@ void updateDyldArray(void) {
     NSString *processName = [[NSProcessInfo processInfo] processName];
 
     if([processName isEqualToString:@"SpringBoard"]) {
-        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
-
-        [prefs registerDefaults:@{
-            @"enabled" : @YES,
-            @"mode" : @"blacklist",
-            @"dyld_hooks_enabled" : @YES,
-            @"bypass_checks" : @YES,
-            @"exclude_system_apps" : @YES,
-            @"sandbox_hooks_enabled" : @YES,
-            @"auto_file_map_generation_enabled" : @YES
-        }];
-
-        if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
-            %init(hook_springboard);
-        }
-
+        %init(hook_springboard);
         return;
     }
 
