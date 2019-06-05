@@ -974,9 +974,8 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 %end
-
-%hook NSData
 /*
+%hook NSData
 - (id)initWithContentsOfMappedFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
         return nil;
@@ -1000,7 +999,6 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
-*/
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1010,7 +1008,6 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
-/*
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
@@ -1022,7 +1019,6 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
-*/
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1036,7 +1032,6 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
-/*
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
         return nil;
@@ -1044,7 +1039,6 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
-*/
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1054,7 +1048,6 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
-/*
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
@@ -1066,7 +1059,6 @@ uint32_t dyld_array_count = 0;
 
     return %orig;
 }
-*/
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
@@ -1080,6 +1072,7 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 %end
+*/
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
