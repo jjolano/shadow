@@ -67,6 +67,18 @@ uint32_t dyld_array_count = 0;
     return %orig;
 }
 
+%hookf(FILE *, freopen, const char *pathname, const char *mode, FILE *stream) {
+    if(pathname) {
+        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+            fclose(stream);
+            errno = ENOENT;
+            return NULL;
+        }
+    }
+
+    return %orig;
+}
+
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
         NSString *path = [NSString stringWithUTF8String:pathname];
@@ -2708,7 +2720,7 @@ void updateDyldArray(void) {
         // Tweak was not installed properly. Notify the user.
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"An improper installation of Shadow has been detected. Please ensure you install the latest version of Shadow from https://ios.jjolano.me/." preferredStyle:UIAlertControllerStyleAlert];
         UIAlertAction *action = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
-        
+
         [alert addAction:action];
         [[[application keyWindow] rootViewController] presentViewController:alert animated:YES completion:nil];
     }
