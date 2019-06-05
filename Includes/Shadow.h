@@ -7,6 +7,10 @@
 #define NSLog(...);
 #endif
 
+#if GIT_VERSION
+#define Shadow GIT_VERSION
+#endif
+
 #define DPKG_INFO_PATH      @"/var/lib/dpkg/info"
 #define PREFS_TWEAK_ID      @"me.jjolano.shadow"
 #define BLACKLIST_PATH      @"me.jjolano.shadow.blacklist"
