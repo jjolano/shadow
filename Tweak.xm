@@ -69,13 +69,24 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
+
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
 
         // Maybe some filesize overrides?
+        if(statbuf) {
+            if([path isEqualToString:@"/bin"]) {
+                int ret = %orig;
 
+                if(ret == 0 && statbuf->st_size > 128) {
+                    statbuf->st_size = 128;
+                    return ret;
+                }
+            }
+        }
     }
 
     return %orig;
@@ -83,13 +94,38 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        NSString *path = [NSString stringWithUTF8String:pathname];
+
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
 
         // Maybe some filesize overrides?
+        if(statbuf) {
+            if([path isEqualToString:@"/Applications"]
+            || [path isEqualToString:@"/usr/share"]
+            || [path isEqualToString:@"/usr/libexec"]
+            || [path isEqualToString:@"/usr/include"]
+            || [path isEqualToString:@"/Library/Ringtones"]
+            || [path isEqualToString:@"/Library/Wallpaper"]) {
+                int ret = %orig;
 
+                if(ret == 0 && (statbuf->st_mode & S_IFLNK) == S_IFLNK) {
+                    statbuf->st_mode &= ~S_IFLNK;
+                    return ret;
+                }
+            }
+
+            if([path isEqualToString:@"/bin"]) {
+                int ret = %orig;
+
+                if(ret == 0 && statbuf->st_size > 128) {
+                    statbuf->st_size = 128;
+                    return ret;
+                }
+            }
+        }
     }
 
     return %orig;
@@ -111,22 +147,18 @@ uint32_t dyld_array_count = 0;
             }
 
             pathname = [_shadow resolveLinkInPath:pathname];
-
-            if([pathname hasPrefix:@"/var/mobile/Containers/Data/Application"]) {
-                if(buf) {
-                    // Ensure application sandbox is marked NOSUID.
-                    buf->f_flags |= MNT_NOSUID | MNT_NODEV;
-                    return ret;
-                }
-            }
             
             if(![pathname hasPrefix:@"/var"]
             && ![pathname hasPrefix:@"/private/var"]) {
                 if(buf) {
-                    // Ensure root is marked read-only.
+                    // Ensure root fs is marked read-only.
                     buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
                     return ret;
                 }
+            } else {
+                // Ensure var fs is marked NOSUID.
+                buf->f_flags |= MNT_NOSUID | MNT_NODEV;
+                return ret;
             }
         }
     }
@@ -297,6 +329,17 @@ uint32_t dyld_array_count = 0;
         if([_shadow isPathRestricted:fd_path]) {
             errno = EBADF;
             return -1;
+        }
+
+        if(buf) {
+            if([fd_path isEqualToString:@"/bin"]) {
+                int ret = %orig;
+
+                if(ret == 0 && buf->st_size > 128) {
+                    buf->st_size = 128;
+                    return ret;
+                }
+            }
         }
     }
 
