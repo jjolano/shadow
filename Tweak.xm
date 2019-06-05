@@ -1495,7 +1495,9 @@ uint32_t dyld_array_count = 0;
         || [sym hasPrefix:@"Sub"]
         || [sym hasPrefix:@"PS"]
         || [sym hasPrefix:@"rocketbootstrap"]
-        || [sym hasPrefix:@"LM"]) {
+        || [sym hasPrefix:@"LM"]
+        || [sym hasPrefix:@"substitute_"]
+        || [sym hasPrefix:@"_logos"]) {
             NSLog(@"blocked dlsym lookup: %@", sym);
             return NULL;
         }
@@ -2716,10 +2718,8 @@ void updateDyldArray(void) {
     [prefs registerDefaults:@{
         @"enabled" : @YES,
         @"mode" : @"blacklist",
-        @"dyld_hooks_enabled" : @YES,
         @"bypass_checks" : @YES,
         @"exclude_system_apps" : @YES,
-        @"sandbox_hooks_enabled" : @YES,
         @"auto_file_map_generation_enabled" : @YES
     }];
 
@@ -2765,10 +2765,8 @@ void updateDyldArray(void) {
             [prefs registerDefaults:@{
                 @"enabled" : @YES,
                 @"mode" : @"blacklist",
-                @"dyld_hooks_enabled" : @YES,
                 @"bypass_checks" : @YES,
                 @"exclude_system_apps" : @YES,
-                @"sandbox_hooks_enabled" : @YES,
                 @"auto_file_map_generation_enabled" : @YES
             }];
             
@@ -2880,16 +2878,17 @@ void updateDyldArray(void) {
             }
 
             // Initialize stable hooks
+            %init(hook_private);
             %init(hook_libc);
+            %init(hook_debugging);
+
             %init(hook_NSFileHandle);
             %init(hook_NSFileManager);
-            %init(hook_NSEnumerator);
             %init(hook_NSURL);
             %init(hook_UIApplication);
             %init(hook_NSBundle);
             %init(hook_NSUtilities);
-            %init(hook_private);
-            %init(hook_debugging);
+            %init(hook_NSEnumerator);
 
             MSHookFunction((void *) readlink, (void *) hook_readlink, (void **) &orig_readlink);
             MSHookFunction((void *) readlinkat, (void *) hook_readlinkat, (void **) &orig_readlinkat);

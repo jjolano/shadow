@@ -4,7 +4,7 @@ Depends: mobilesubstrate, ws.hbang.common (>= 1.13.1), applist, preferenceloader
 Provides: com.jjolano.shadow
 Conflicts: com.jjolano.shadow
 Replaces: com.jjolano.shadow
-Version: 2.0.5
+Version: 2.0.6
 Architecture: iphoneos-arm
 Description: A lightweight general jailbreak detection bypass.
 Maintainer: jjolano
