@@ -1,7 +1,15 @@
 ARCHS := armv7 armv7s arm64 arm64e
 TARGET := iphone:clang:11.2:8.0
 
-ifeq ($(DEBUG),)
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = _Shadow
+$(TWEAK_NAME)_FILES = Classes/Shadow.xm Tweak.xm
+$(TWEAK_NAME)_EXTRA_FRAMEWORKS = Cephei
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc
+
+# Obfuscation for final builds
+ifeq ($(FINALPACKAGE),1)
 CLASS_NAME := $(shell openssl rand -hex 8)
 FUNC_GEN_DYLD := $(shell openssl rand -hex 8)
 FUNC_GEN_FMAP := $(shell openssl rand -hex 8)
@@ -16,17 +24,7 @@ FUNC_ADD_FILE_MAP := $(shell openssl rand -hex 8)
 FUNC_ADD_SCHEMES := $(shell openssl rand -hex 8)
 FUNC_ADD_LINK := $(shell openssl rand -hex 8)
 FUNC_RESOLVE_LINK := $(shell openssl rand -hex 8)
-endif
 
-include $(THEOS)/makefiles/common.mk
-
-TWEAK_NAME = _Shadow
-$(TWEAK_NAME)_FILES = Classes/Shadow.xm Tweak.xm
-$(TWEAK_NAME)_EXTRA_FRAMEWORKS = Cephei
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc
-
-# Obfuscation for final builds
-ifeq ($(DEBUG),)
 $(TWEAK_NAME)_CFLAGS += -DShadow=_$(CLASS_NAME)
 $(TWEAK_NAME)_CFLAGS += -DgenerateDyldArray=_$(FUNC_GEN_DYLD)
 $(TWEAK_NAME)_CFLAGS += -DgenerateFileMap=_$(FUNC_GEN_FMAP)
