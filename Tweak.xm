@@ -2731,8 +2731,7 @@ void updateDyldArray(void) {
         @"enabled" : @YES,
         @"mode" : @"blacklist",
         @"bypass_checks" : @YES,
-        @"exclude_system_apps" : @YES,
-        @"auto_file_map_generation_enabled" : @YES
+        @"exclude_system_apps" : @YES
     }];
 
     if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
@@ -2778,8 +2777,7 @@ void updateDyldArray(void) {
                 @"enabled" : @YES,
                 @"mode" : @"blacklist",
                 @"bypass_checks" : @YES,
-                @"exclude_system_apps" : @YES,
-                @"auto_file_map_generation_enabled" : @YES
+                @"exclude_system_apps" : @YES
             }];
             
             // Check if Shadow is enabled
