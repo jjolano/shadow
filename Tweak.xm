@@ -2716,15 +2716,6 @@ void updateDyldArray(void) {
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-    if(![[NSFileManager defaultManager] fileExistsAtPath:@"/var/lib/dpkg/info/me.jjolano.shadow.list"]) {
-        // Tweak was not installed properly. Notify the user.
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"An improper installation of Shadow has been detected. Please ensure you install the latest version of Shadow from https://ios.jjolano.me/." preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction *action = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
-
-        [alert addAction:action];
-        [[[application keyWindow] rootViewController] presentViewController:alert animated:YES completion:nil];
-    }
-
     HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
     [prefs registerDefaults:@{
