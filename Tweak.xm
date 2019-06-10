@@ -2716,24 +2716,13 @@ void updateDyldArray(void) {
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+    HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
 
-    [prefs registerDefaults:@{
-        @"enabled" : @YES,
-        @"mode" : @"blacklist",
-        @"bypass_checks" : @YES,
-        @"exclude_system_apps" : @YES
-    }];
+    NSArray *file_map = [Shadow generateFileMap];
+    NSArray *url_set = [Shadow generateSchemeArray];
 
-    if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
-        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
-
-        NSArray *file_map = [Shadow generateFileMap];
-        NSArray *url_set = [Shadow generateSchemeArray];
-
-        [prefs setObject:file_map forKey:@"files"];
-        [prefs setObject:url_set forKey:@"schemes"];
-    }
+    [prefs setObject:file_map forKey:@"files"];
+    [prefs setObject:url_set forKey:@"schemes"];
 }
 %end
 %end
@@ -2742,7 +2731,19 @@ void updateDyldArray(void) {
     NSString *processName = [[NSProcessInfo processInfo] processName];
 
     if([processName isEqualToString:@"SpringBoard"]) {
-        %init(hook_springboard);
+        HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
+
+        [prefs registerDefaults:@{
+            @"enabled" : @YES,
+            @"mode" : @"blacklist",
+            @"bypass_checks" : @YES,
+            @"exclude_system_apps" : @YES
+        }];
+
+        if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
+            %init(hook_springboard);
+        }
+
         return;
     }
 
@@ -2756,12 +2757,6 @@ void updateDyldArray(void) {
         if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
             NSLog(@"bundleIdentifier: %@", bundleIdentifier);
 
-            HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
-            HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
-            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
-            HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
-            HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
-            HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
             HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
             [prefs registerDefaults:@{
@@ -2794,6 +2789,13 @@ void updateDyldArray(void) {
                     }
                 }
             }
+
+            HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+            HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
+            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
+            HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
+            HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
+            HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
 
             // Check if excluded bundleIdentifier
             NSString *mode = [prefs objectForKey:@"mode"];
