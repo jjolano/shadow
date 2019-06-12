@@ -10,6 +10,8 @@ Shadow *_shadow = nil;
 NSArray *dyld_array = nil;
 uint32_t dyld_array_count = 0;
 
+BOOL passthrough = NO;
+
 // Stable Hooks
 %group hook_libc
 // #include "Hooks/Stable/libc.xm"
@@ -361,7 +363,7 @@ uint32_t dyld_array_count = 0;
 
 %group hook_dlopen_inject
 %hookf(void *, dlopen, const char *path, int mode) {
-    if(path) {
+    if(!passthrough && path) {
         NSString *image_name = [NSString stringWithUTF8String:path];
 
         if([_shadow isImageRestricted:image_name]) {
@@ -2632,7 +2634,7 @@ static int (*orig_dladdr)(const void *addr, Dl_info *info);
 static int hook_dladdr(const void *addr, Dl_info *info) {
     int ret = orig_dladdr(addr, info);
 
-    if(ret) {
+    if(!passthrough && ret) {
         NSString *path = [NSString stringWithUTF8String:info->dli_fname];
 
         if([_shadow isImageRestricted:path]) {
@@ -2703,14 +2705,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
     return ret;
 }
 
-void updateDyldArray(void) {
-    dyld_array_count = 0;
-    dyld_array = [_shadow generateDyldArray];
-    dyld_array_count = (uint32_t) [dyld_array count];
-
-    NSLog(@"generated dyld array (%d items)", dyld_array_count);
-}
-
 %group hook_springboard
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
@@ -2727,18 +2721,40 @@ void updateDyldArray(void) {
 %end
 %end
 
+void updateDyldArray(void) {
+    dyld_array_count = 0;
+    dyld_array = [_shadow generateDyldArray];
+    dyld_array_count = (uint32_t) [dyld_array count];
+
+    NSLog(@"generated dyld array (%d items)", dyld_array_count);
+}
+
+void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
+    passthrough = YES;
+
+    Dl_info info;
+    int addr = dladdr(mh, &info);
+
+    if(addr) {
+        NSString *path = [NSString stringWithUTF8String:info->dli_fname];
+
+        if([_shadow isImageRestricted:path]) {
+            void *handle = dlopen(info->dli_fname, RTLD_NOLOAD);
+
+            if(handle) {
+                dlclose(handle);
+            }
+        }
+    }
+
+    passthrough = NO;
+}
+
 %ctor {
     NSString *processName = [[NSProcessInfo processInfo] processName];
 
     if([processName isEqualToString:@"SpringBoard"]) {
         HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
-
-        [prefs registerDefaults:@{
-            @"enabled" : @YES,
-            @"mode" : @"blacklist",
-            @"bypass_checks" : @YES,
-            @"exclude_system_apps" : @YES
-        }];
 
         if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
             %init(hook_springboard);
@@ -2790,11 +2806,6 @@ void updateDyldArray(void) {
                 }
             }
 
-            HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
-            HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
-            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
-            HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
-            HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
             HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
 
             // Check if excluded bundleIdentifier
@@ -2811,6 +2822,12 @@ void updateDyldArray(void) {
                     return;
                 }
             }
+
+            HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
+            HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
+            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
+            HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
+            HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
             // Initialize Shadow
             _shadow = [Shadow new];
@@ -2861,6 +2878,8 @@ void updateDyldArray(void) {
 
                 [_shadow setUseInjectCompatibilityMode:NO];
                 [_shadow setUseTweakCompatibilityMode:NO];
+
+                _dyld_register_func_for_add_image(dyld_image_added);
 
                 NSLog(@"enabled lockdown mode");
             }
