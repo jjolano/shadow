@@ -226,13 +226,13 @@
     || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
         [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:[pathComponents copy]];
+        path = [NSString pathWithComponents:pathComponents];
     }
 
     if([path hasPrefix:@"/var/tmp"]) {
         NSMutableArray *pathComponents = [NSMutableArray arrayWithArray:[path pathComponents]];
         [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:[pathComponents copy]];
+        path = [NSString pathWithComponents:pathComponents];
     }
 
     // Exclude some paths under tweak compatibility mode.
