@@ -2759,10 +2759,10 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     int addr = dladdr(mh, &info);
 
     if(addr) {
-        NSString *path = [NSString stringWithUTF8String:info->dli_fname];
+        NSString *path = [NSString stringWithUTF8String:info.dli_fname];
 
         if([_shadow isImageRestricted:path]) {
-            void *handle = dlopen(info->dli_fname, RTLD_NOLOAD);
+            void *handle = dlopen(info.dli_fname, RTLD_NOLOAD);
 
             if(handle) {
                 dlclose(handle);
