@@ -429,6 +429,31 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Support</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>cellClass</key>
+			<string>HBLinkTableCell</string>
+			<key>label</key>
+			<string>Shadow on Reddit</string>
+			<key>url</key>
+			<string>https://www.reddit.com/r/jailbreak/comments/bp59zs/release_shadow_a_simple_open_source_jailbreak/</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>cellClass</key>
+			<string>HBLinkTableCell</string>
+			<key>label</key>
+			<string>View Source on GitHub</string>
+			<key>url</key>
+			<string>https://github.com/jjolano/shadow</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
 			<key>footerText</key>
 			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
 
@@ -436,27 +461,13 @@ Thank you for using Shadow!</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_reddit:</string>
+			<string>PSLinkCell</string>
+			<key>cellClass</key>
+			<string>HBLinkTableCell</string>
 			<key>label</key>
-			<string>Shadow Release Thread</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_github:</string>
-			<key>label</key>
-			<string>View Source Code</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>support_paypal:</string>
-			<key>label</key>
-			<string>Donate to Developer</string>
+			<string>Donate</string>
+			<key>url</key>
+			<string>https://paypal.me/jjolano</string>
 		</dict>
 
 		<dict>
