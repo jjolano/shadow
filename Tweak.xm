@@ -5,14 +5,6 @@
 #import <Cephei/HBPreferences.h>
 #import "Includes/Shadow.h"
 
-Shadow *_shadow = nil;
-
-NSArray *dyld_array = nil;
-uint32_t dyld_array_count = 0;
-
-// Stable Hooks
-%group hook_libc
-// #include "Hooks/Stable/libc.xm"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -21,10 +13,22 @@ uint32_t dyld_array_count = 0;
 #include <spawn.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
+#include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <sys/sysctl.h>
+#include "Includes/codesign.h"
 
+Shadow *_shadow = nil;
+
+NSArray *dyld_array = nil;
+uint32_t dyld_array_count = 0;
+
+// Stable Hooks
+%group hook_libc
 %hookf(int, access, const char *pathname, int mode) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         // workaround for tweaks not loading properly in Substrate
         if([_shadow useInjectCompatibilityMode]) {
@@ -58,7 +62,9 @@ uint32_t dyld_array_count = 0;
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return NULL;
         }
@@ -69,7 +75,9 @@ uint32_t dyld_array_count = 0;
 
 %hookf(FILE *, freopen, const char *pathname, const char *mode, FILE *stream) {
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
             fclose(stream);
             errno = ENOENT;
             return NULL;
@@ -81,7 +89,7 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
@@ -106,7 +114,7 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
@@ -151,7 +159,7 @@ uint32_t dyld_array_count = 0;
         char path[PATH_MAX];
 
         if(fcntl(fd, F_GETPATH, path) != -1) {
-            NSString *pathname = [NSString stringWithUTF8String:path];
+            NSString *pathname = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
             if([_shadow isPathRestricted:pathname]) {
                 errno = ENOENT;
@@ -182,7 +190,7 @@ uint32_t dyld_array_count = 0;
     int ret = %orig;
 
     if(ret == 0) {
-        NSString *pathname = [NSString stringWithUTF8String:path];
+        NSString *pathname = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if([_shadow isPathRestricted:pathname]) {
             errno = ENOENT;
@@ -191,21 +199,17 @@ uint32_t dyld_array_count = 0;
 
         pathname = [_shadow resolveLinkInPath:pathname];
 
-        if([pathname hasPrefix:@"/var/mobile/Containers/Data/Application"]) {
-            if(buf) {
-                // Ensure application sandbox is marked NOSUID.
-                buf->f_flags |= MNT_NOSUID | MNT_NODEV;
-                return ret;
-            }
-        }
-        
         if(![pathname hasPrefix:@"/var"]
         && ![pathname hasPrefix:@"/private/var"]) {
             if(buf) {
-                // Ensure root is marked read-only.
+                // Ensure root fs is marked read-only.
                 buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
                 return ret;
             }
+        } else {
+            // Ensure var fs is marked NOSUID.
+            buf->f_flags |= MNT_NOSUID | MNT_NODEV;
+            return ret;
         }
     }
 
@@ -214,7 +218,7 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, posix_spawn, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if([_shadow isPathRestricted:path]) {
             return ENOENT;
@@ -226,7 +230,7 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, posix_spawnp, pid_t *pid, const char *pathname, const posix_spawn_file_actions_t *file_actions, const posix_spawnattr_t *attrp, char *const argv[], char *const envp[]) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if([_shadow isPathRestricted:path]) {
             return ENOENT;
@@ -238,9 +242,12 @@ uint32_t dyld_array_count = 0;
 
 %hookf(char *, realpath, const char *pathname, char *resolved_path) {
     BOOL doFree = (resolved_path != NULL);
+    NSString *path = nil;
 
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return NULL;
         }
@@ -250,7 +257,9 @@ uint32_t dyld_array_count = 0;
 
     // Recheck resolved path.
     if(ret) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:ret]]) {
+        NSString *resolved_path_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:ret length:strlen(ret)];
+
+        if([_shadow isPathRestricted:resolved_path_ns]) {
             errno = ENOENT;
 
             // Free resolved_path if it was allocated by libc.
@@ -263,7 +272,7 @@ uint32_t dyld_array_count = 0;
 
         if(strcmp(ret, pathname) != 0) {
             // Possible symbolic link? Track it in Shadow
-            [_shadow addLinkFromPath:[NSString stringWithUTF8String:pathname] toPath:[NSString stringWithUTF8String:ret]];
+            [_shadow addLinkFromPath:path toPath:resolved_path_ns];
         }
     }
 
@@ -271,8 +280,14 @@ uint32_t dyld_array_count = 0;
 }
 
 %hookf(int, symlink, const char *path1, const char *path2) {
+    NSString *path1_ns = nil;
+    NSString *path2_ns = nil;
+
     if(path1 && path2) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+        path1_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path1 length:strlen(path1)];
+        path2_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path2 length:strlen(path2)];
+
+        if([_shadow isPathRestricted:path1_ns] || [_shadow isPathRestricted:path2_ns]) {
             errno = ENOENT;
             return -1;
         }
@@ -282,15 +297,21 @@ uint32_t dyld_array_count = 0;
 
     if(ret == 0) {
         // Track this symlink in Shadow
-        [_shadow addLinkFromPath:[NSString stringWithUTF8String:path1] toPath:[NSString stringWithUTF8String:path2]];
+        [_shadow addLinkFromPath:path1_ns toPath:path2_ns];
     }
 
     return ret;
 }
 
 %hookf(int, link, const char *path1, const char *path2) {
+    NSString *path1_ns = nil;
+    NSString *path2_ns = nil;
+
     if(path1 && path2) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path1]] || [_shadow isPathRestricted:[NSString stringWithUTF8String:path2]]) {
+        path1_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path1 length:strlen(path1)];
+        path2_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path2 length:strlen(path2)];
+
+        if([_shadow isPathRestricted:path1_ns] || [_shadow isPathRestricted:path2_ns]) {
             errno = ENOENT;
             return -1;
         }
@@ -300,7 +321,7 @@ uint32_t dyld_array_count = 0;
 
     if(ret == 0) {
         // Track this symlink in Shadow
-        [_shadow addLinkFromPath:[NSString stringWithUTF8String:path1] toPath:[NSString stringWithUTF8String:path2]];
+        [_shadow addLinkFromPath:path1_ns toPath:path2_ns];
     }
 
     return ret;
@@ -308,14 +329,14 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, fstatat, int dirfd, const char *pathname, struct stat *buf, int flags) {
     if(pathname) {
-        NSString *path = [NSString stringWithUTF8String:pathname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if(![path isAbsolutePath]) {
             // Get path of dirfd.
             char dirfdpath[PATH_MAX];
         
             if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
-                NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+                NSString *dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
                 path = [dirfd_path stringByAppendingPathComponent:path];
             }
         }
@@ -336,7 +357,7 @@ uint32_t dyld_array_count = 0;
     char fdpath[PATH_MAX];
 
     if(fcntl(fd, F_GETPATH, fdpath) != -1) {
-        NSString *fd_path = [NSString stringWithUTF8String:fdpath];
+        NSString *fd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:fdpath length:strlen(fdpath)];
         
         if([_shadow isPathRestricted:fd_path]) {
             errno = EBADF;
@@ -362,7 +383,7 @@ uint32_t dyld_array_count = 0;
 %group hook_dlopen_inject
 %hookf(void *, dlopen, const char *path, int mode) {
     if(path) {
-        NSString *image_name = [NSString stringWithUTF8String:path];
+        NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if([_shadow isImageRestricted:image_name]) {
             return NULL;
@@ -439,7 +460,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_NSFileManager
-// #include "Hooks/Stable/NSFileManager.xm"
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
     if([_shadow isPathRestricted:path manager:self]) {
@@ -890,7 +910,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_NSURL
-// #include "Hooks/Stable/NSURL.xm"
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:self]) {
@@ -907,7 +926,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_UIApplication
-// #include "Hooks/Stable/UIApplication.xm"
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
     if([_shadow isURLRestricted:url]) {
@@ -1318,10 +1336,6 @@ uint32_t dyld_array_count = 0;
 
 // Other Hooks
 %group hook_private
-// #include "Hooks/ApplePrivate.xm"
-#include <unistd.h>
-#include "Includes/codesign.h"
-
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
 
@@ -1335,11 +1349,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_debugging
-// #include "Hooks/Debugging.xm"
-#include <sys/sysctl.h>
-#include <unistd.h>
-#include <fcntl.h>
-
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     if(namelen == 4
     && name[0] == CTL_KERN
@@ -1388,9 +1397,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_dyld_image
-// #include "Hooks/dyld.xm"
-#include <mach-o/dyld.h>
-
 %hookf(uint32_t, _dyld_image_count) {
     if(dyld_array_count > 0) {
         return dyld_array_count;
@@ -1448,7 +1454,7 @@ uint32_t dyld_array_count = 0;
 */
 %hookf(bool, dlopen_preflight, const char *path) {
     if(path) {
-        NSString *image_name = [NSString stringWithUTF8String:path];
+        NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if([_shadow isImageRestricted:image_name]) {
             NSLog(@"blocked dlopen_preflight: %@", image_name);
@@ -1496,9 +1502,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_dyld_dlsym
-// #include "Hooks/dlsym.xm"
-#include <dlfcn.h>
-
 %hookf(void *, dlsym, void *handle, const char *symbol) {
     if(symbol) {
         NSString *sym = [NSString stringWithUTF8String:symbol];
@@ -1520,10 +1523,6 @@ uint32_t dyld_array_count = 0;
 %end
 
 %group hook_sandbox
-// #include "Hooks/Sandbox.xm"
-#include <stdio.h>
-#include <unistd.h>
-
 %hook NSArray
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
     if([_shadow isPathRestricted:path partial:NO]) {
@@ -1676,7 +1675,9 @@ uint32_t dyld_array_count = 0;
 
 %hookf(int, creat, const char *pathname, mode_t mode) {
     if(pathname) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]]) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
             errno = EACCES;
             return -1;
         }
@@ -1913,6 +1914,26 @@ uint32_t dyld_array_count = 0;
 
 %hook v_VDMap
 - (bool)isJailBrokenDetectedByVOS {
+    return false;
+}
+
+- (bool)isDFPHookedDetecedByVOS {
+    return false;
+}
+
+- (bool)isCodeInjectionDetectedByVOS {
+    return false;
+}
+
+- (bool)isDebuggerCheckDetectedByVOS {
+    return false;
+}
+
+- (bool)isAppSignerCheckDetectedByVOS {
+    return false;
+}
+
+- (bool)v_checkAModified {
     return false;
 }
 %end
@@ -2523,7 +2544,9 @@ static int hook_open(const char *path, int oflag, ...) {
     int result = 0;
 
     if(path) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:path]]) {
+        NSString *pathname = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
+
+        if([_shadow isPathRestricted:pathname]) {
             errno = ((oflag & O_CREAT) == O_CREAT) ? EACCES : ENOENT;
             return -1;
         }
@@ -2550,14 +2573,14 @@ static int hook_openat(int fd, const char *path, int oflag, ...) {
     int result = 0;
 
     if(path) {
-        NSString *nspath = [NSString stringWithUTF8String:path];
+        NSString *nspath = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if(![nspath isAbsolutePath]) {
             // Get path of dirfd.
             char dirfdpath[PATH_MAX];
         
             if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
-                NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+                NSString *dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
                 nspath = [dirfd_path stringByAppendingPathComponent:nspath];
             }
         }
@@ -2587,7 +2610,9 @@ static int hook_openat(int fd, const char *path, int oflag, ...) {
 static DIR *(*orig_opendir)(const char *filename);
 static DIR *hook_opendir(const char *filename) {
     if(filename) {
-        if([_shadow isPathRestricted:[NSString stringWithUTF8String:filename]]) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:filename length:strlen(filename)];
+
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return NULL;
         }
@@ -2607,7 +2632,7 @@ static struct dirent *hook_readdir(DIR *dirp) {
     char dirfdpath[PATH_MAX];
 
     if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
-        dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+        dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
     } else {
         return orig_readdir(dirp);
     }
@@ -2626,14 +2651,12 @@ static struct dirent *hook_readdir(DIR *dirp) {
     return ret;
 }
 
-#include <dlfcn.h>
-
 static int (*orig_dladdr)(const void *addr, Dl_info *info);
 static int hook_dladdr(const void *addr, Dl_info *info) {
     int ret = orig_dladdr(addr, info);
 
     if(ret) {
-        NSString *path = [NSString stringWithUTF8String:info->dli_fname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
 
         if([_shadow isImageRestricted:path]) {
             return 0;
@@ -2649,7 +2672,7 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
         return orig_readlink(path, buf, bufsiz);
     }
 
-    NSString *nspath = [NSString stringWithUTF8String:path];
+    NSString *nspath = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
     if([_shadow isPathRestricted:nspath]) {
         errno = ENOENT;
@@ -2662,7 +2685,7 @@ static ssize_t hook_readlink(const char *path, char *buf, size_t bufsiz) {
         buf[ret] = '\0';
 
         // Track this symlink in Shadow
-        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:buf]];
+        [_shadow addLinkFromPath:nspath toPath:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:buf length:strlen(buf)]];
     }
 
     return ret;
@@ -2674,14 +2697,14 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
         return orig_readlinkat(fd, path, buf, bufsiz);
     }
 
-    NSString *nspath = [NSString stringWithUTF8String:path];
+    NSString *nspath = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
     if(![nspath isAbsolutePath]) {
         // Get path of dirfd.
         char dirfdpath[PATH_MAX];
     
         if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
-            NSString *dirfd_path = [NSString stringWithUTF8String:dirfdpath];
+            NSString *dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
             nspath = [dirfd_path stringByAppendingPathComponent:nspath];
         }
     }
@@ -2697,7 +2720,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
         buf[ret] = '\0';
 
         // Track this symlink in Shadow
-        [_shadow addLinkFromPath:nspath toPath:[NSString stringWithUTF8String:buf]];
+        [_shadow addLinkFromPath:nspath toPath:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:buf length:strlen(buf)]];
     }
 
     return ret;
