@@ -405,8 +405,7 @@
     for(NSString *key in link_map) {
         if([path hasPrefix:key]) {
             NSString *value = link_map[key];
-            NSString *new_path = [value stringByAppendingPathComponent:[path substringFromIndex:[key length]]];
-            path = new_path;
+            path = [path stringByReplacingOccurrencesOfString:key withString:value];
             break;
         }
     }
