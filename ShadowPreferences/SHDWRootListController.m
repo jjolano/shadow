@@ -10,18 +10,6 @@
     return _specifiers;
 }
 
-- (void)support_reddit:(id)sender {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://www.reddit.com/r/jailbreak/comments/bp59zs/release_shadow_a_simple_open_source_jailbreak/"]];
-}
-
-- (void)support_github:(id)sender {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"]];
-}
-
-- (void)support_paypal:(id)sender {
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://paypal.me/jjolano"]];
-}
-
 - (void)generate_map:(id)sender {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Shadow" message:@"Processing packages..." preferredStyle:UIAlertControllerStyleAlert];
     [self presentViewController:alert animated:YES completion:^{
@@ -50,13 +38,33 @@
     HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
     HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
-    [prefs removeAllObjects];
-    [prefs_apps removeAllObjects];
-    [prefs_blacklist removeAllObjects];
-    [prefs_tweakcompat removeAllObjects];
-    [prefs_injectcompat removeAllObjects];
-    [prefs_lockdown removeAllObjects];
-    [prefs_dlfcn removeAllObjects];
+    if(prefs) {
+        [prefs removeAllObjects];
+    }
+
+    if(prefs_apps) {
+        [prefs_apps removeAllObjects];
+    }
+
+    if(prefs_blacklist) {
+        [prefs_blacklist removeAllObjects];
+    }
+
+    if(prefs_tweakcompat) {
+        [prefs_tweakcompat removeAllObjects];
+    }
+
+    if(prefs_injectcompat) {
+        [prefs_injectcompat removeAllObjects];
+    }
+
+    if(prefs_lockdown) {
+        [prefs_lockdown removeAllObjects];
+    }
+
+    if(prefs_dlfcn) {
+        [prefs_dlfcn removeAllObjects];
+    }
     
     [self respring:sender];
 }

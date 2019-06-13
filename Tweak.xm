@@ -1337,6 +1337,7 @@ BOOL passthrough = NO;
 %end
 
 // Other Hooks
+/*
 %group hook_private
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
@@ -1349,6 +1350,7 @@ BOOL passthrough = NO;
     return ret;
 }
 %end
+*/
 
 %group hook_debugging
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
@@ -1419,8 +1421,12 @@ BOOL passthrough = NO;
     // Basic filter.
     const char *ret = %orig(image_index);
 
-    if(ret && [_shadow isImageRestricted:[NSString stringWithUTF8String:ret]]) {
-        return %orig(0);
+    if(ret) {
+        NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:ret length:strlen(ret)];
+
+        if([_shadow isImageRestricted:image_name]) {
+            return "/.file";
+        }
     }
 
     return ret;
@@ -2759,7 +2765,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     int addr = dladdr(mh, &info);
 
     if(addr) {
-        NSString *path = [NSString stringWithUTF8String:info.dli_fname];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
 
         if([_shadow isImageRestricted:path]) {
             void *handle = dlopen(info.dli_fname, RTLD_NOLOAD);
@@ -2923,7 +2929,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
             }
 
             // Initialize stable hooks
-            %init(hook_private);
+            // %init(hook_private);
             %init(hook_libc);
             %init(hook_debugging);
 
