@@ -24,7 +24,7 @@ Shadow *_shadow = nil;
 NSArray *dyld_array = nil;
 uint32_t dyld_array_count = 0;
 
-NSError *_error = nil;
+NSError *_error_file_not_found = nil;
 
 BOOL passthrough = NO;
 
@@ -412,7 +412,7 @@ BOOL passthrough = NO;
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -432,7 +432,7 @@ BOOL passthrough = NO;
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -452,7 +452,7 @@ BOOL passthrough = NO;
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -516,7 +516,7 @@ BOOL passthrough = NO;
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:originalItemURL manager:self] || [_shadow isURLRestricted:newItemURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -528,7 +528,7 @@ BOOL passthrough = NO;
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -554,7 +554,7 @@ BOOL passthrough = NO;
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -597,7 +597,7 @@ BOOL passthrough = NO;
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -647,7 +647,7 @@ BOOL passthrough = NO;
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -659,7 +659,7 @@ BOOL passthrough = NO;
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -671,7 +671,7 @@ BOOL passthrough = NO;
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -683,7 +683,7 @@ BOOL passthrough = NO;
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -711,7 +711,7 @@ BOOL passthrough = NO;
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -723,7 +723,7 @@ BOOL passthrough = NO;
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -735,7 +735,7 @@ BOOL passthrough = NO;
 - (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -763,7 +763,7 @@ BOOL passthrough = NO;
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:directoryURL manager:self] || [_shadow isURLRestricted:otherURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -775,7 +775,7 @@ BOOL passthrough = NO;
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:otherURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -795,7 +795,7 @@ BOOL passthrough = NO;
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self] || [_shadow isURLRestricted:destURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -814,7 +814,7 @@ BOOL passthrough = NO;
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path] || [_shadow isPathRestricted:destPath]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -833,7 +833,7 @@ BOOL passthrough = NO;
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:srcURL manager:self] || [_shadow isURLRestricted:dstURL manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -852,7 +852,7 @@ BOOL passthrough = NO;
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:srcPath manager:self] || [_shadow isPathRestricted:dstPath manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -871,7 +871,7 @@ BOOL passthrough = NO;
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -918,7 +918,7 @@ BOOL passthrough = NO;
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:self]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1008,7 +1008,7 @@ BOOL passthrough = NO;
 
     if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
         if(error) {
-            *error = (__bridge CFErrorRef) _error;
+            *error = (__bridge CFErrorRef) _error_file_not_found;
         }
         
         return NULL;
@@ -1022,7 +1022,7 @@ BOOL passthrough = NO;
 
     if([nsurl isFileURL] && [_shadow isPathRestricted:[nsurl path] partial:NO]) {
         if(error) {
-            *error = (__bridge CFErrorRef) _error;
+            *error = (__bridge CFErrorRef) _error_file_not_found;
         }
         
         return NULL;
@@ -1088,7 +1088,7 @@ BOOL passthrough = NO;
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1100,7 +1100,7 @@ BOOL passthrough = NO;
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
         
         return nil;
@@ -1128,7 +1128,7 @@ BOOL passthrough = NO;
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1140,7 +1140,7 @@ BOOL passthrough = NO;
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1249,7 +1249,7 @@ BOOL passthrough = NO;
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1269,7 +1269,7 @@ BOOL passthrough = NO;
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1291,7 +1291,7 @@ BOOL passthrough = NO;
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1303,7 +1303,7 @@ BOOL passthrough = NO;
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1315,7 +1315,7 @@ BOOL passthrough = NO;
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1327,7 +1327,7 @@ BOOL passthrough = NO;
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return nil;
@@ -1563,7 +1563,7 @@ BOOL passthrough = NO;
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1593,7 +1593,7 @@ BOOL passthrough = NO;
 - (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1613,7 +1613,7 @@ BOOL passthrough = NO;
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1627,7 +1627,7 @@ BOOL passthrough = NO;
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1639,7 +1639,7 @@ BOOL passthrough = NO;
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1653,7 +1653,7 @@ BOOL passthrough = NO;
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -1665,7 +1665,7 @@ BOOL passthrough = NO;
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path partial:NO]) {
         if(error) {
-            *error = _error;
+            *error = _error_file_not_found;
         }
 
         return NO;
@@ -2985,7 +2985,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
                 NSLog(@"hooked dynamic linker methods");
             }
 
-            _error = [Shadow generateFileNotFoundError];
+            _error_file_not_found = [Shadow generateFileNotFoundError];
 
             NSLog(@"ready");
         }
