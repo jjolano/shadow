@@ -307,6 +307,113 @@ BOOL passthrough = NO;
     return ret;
 }
 
+%hookf(int, rename, const char *oldname, const char *newname) {
+    NSString *oldname_ns = nil;
+    NSString *newname_ns = nil;
+
+    if(oldname && newname) {
+        oldname_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:oldname length:strlen(oldname)];
+        newname_ns = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:newname length:strlen(newname)];
+
+        if([_shadow isPathRestricted:oldname_ns] || [_shadow isPathRestricted:newname_ns]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, remove, const char *filename) {
+    if(filename) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:filename length:strlen(filename)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, unlink, const char *pathname) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, unlinkat, int dirfd, const char *pathname, int flags) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get path of dirfd.
+            char dirfdpath[PATH_MAX];
+        
+            if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+                NSString *dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
+                path = [dirfd_path stringByAppendingPathComponent:path];
+            }
+        }
+        
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, rmdir, const char *pathname) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, chdir, const char *pathname) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, fchdir, int fd) {
+    char dirfdpath[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, dirfdpath) != -1) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
 %hookf(int, link, const char *path1, const char *path2) {
     NSString *path1_ns = nil;
     NSString *path2_ns = nil;
@@ -332,6 +439,29 @@ BOOL passthrough = NO;
 }
 
 %hookf(int, fstatat, int dirfd, const char *pathname, struct stat *buf, int flags) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get path of dirfd.
+            char dirfdpath[PATH_MAX];
+        
+            if(fcntl(dirfd, F_GETPATH, dirfdpath) != -1) {
+                NSString *dirfd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirfdpath length:strlen(dirfdpath)];
+                path = [dirfd_path stringByAppendingPathComponent:path];
+            }
+        }
+        
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, faccessat, int dirfd, const char *pathname, int mode, int flags) {
     if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
@@ -2893,11 +3023,14 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
             [_shadow setUseInjectCompatibilityMode:[prefs_injectcompat boolForKey:bundleIdentifier] ? NO : YES];
 
             // Disable inject compatibility if we are using Substitute.
-            // BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
-            BOOL isSubstitute = dlsym(RTLD_DEFAULT, "SubHookFunction") ? YES : NO;
+            BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
 
             if(isSubstitute) {
                 [_shadow setUseInjectCompatibilityMode:NO];
+
+                NSLog(@"detected Substitute");
+            } else {
+                NSLog(@"detected Substrate");
             }
 
             // Lockdown mode
