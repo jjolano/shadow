@@ -36,7 +36,7 @@ BOOL passthrough = NO;
 
         // workaround for tweaks not loading properly in Substrate
         if([_shadow useInjectCompatibilityMode]) {
-            if([[path pathExtension] isEqualToString:@"plist"] && [path containsString:@"DynamicLibraries/"]) {
+            if([[path pathExtension] isEqualToString:@"plist"] && [path hasPrefix:@"/Library/MobileSubstrate"]) {
                 return %orig;
             }
         }
@@ -1806,6 +1806,18 @@ BOOL passthrough = NO;
 
 - (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
     if([_shadow isPathRestricted:path partial:NO]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path manager:self]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
         return NO;
     }
 

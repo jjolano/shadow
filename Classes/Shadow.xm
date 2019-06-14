@@ -204,8 +204,12 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
-    if(_passthrough || !path_map) {
+    if(!path || _passthrough || !path_map) {
         return NO;
+    }
+
+    if(!fm) {
+        fm = [NSFileManager defaultManager];
     }
 
     BOOL ret = NO;
@@ -307,7 +311,7 @@
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url manager:(NSFileManager *)fm partial:(BOOL)partial {
-    if(_passthrough) {
+    if(!url || _passthrough) {
         return NO;
     }
 
