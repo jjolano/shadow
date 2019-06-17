@@ -391,13 +391,13 @@
     if(from && to) {
         // Exclude some paths under tweak compatibility mode.
         if(_useTweakCompatibilityMode) {
-            if([path hasPrefix:@"/Library/Application Support"]
-            || [path hasPrefix:@"/Library/Frameworks"]
-            || [path hasPrefix:@"/Library/Themes"]
-            || [path hasPrefix:@"/Library/SnowBoard"]
-            || [path hasPrefix:@"/Library/PreferenceBundles"]
-            || [path hasPrefix:@"/var/mobile/Library/Preferences"]
-            || [path hasPrefix:@"/User/Library/Preferences"]) {
+            if([from hasPrefix:@"/Library/Application Support"]
+            || [from hasPrefix:@"/Library/Frameworks"]
+            || [from hasPrefix:@"/Library/Themes"]
+            || [from hasPrefix:@"/Library/SnowBoard"]
+            || [from hasPrefix:@"/Library/PreferenceBundles"]
+            || [from hasPrefix:@"/var/mobile/Library/Preferences"]
+            || [from hasPrefix:@"/User/Library/Preferences"]) {
                 return;
             }
         }
