@@ -1068,7 +1068,7 @@ BOOL passthrough = NO;
 
     return %orig;
 }
-
+/*
 - (BOOL)openURL:(NSURL *)url {
     if([_shadow isURLRestricted:url]) {
         return NO;
@@ -1085,6 +1085,7 @@ BOOL passthrough = NO;
 
     %orig;
 }
+*/
 %end
 %end
 
