@@ -2432,6 +2432,11 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr/bin/vm_stat" restricted:NO];
     [shadow addPath:@"/usr/bin/zprint" restricted:NO];
     [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
+    [shadow addPath:@"/usr/lib/libsubstrate" restricted:YES];
+    [shadow addPath:@"/usr/lib/libsubstitute" restricted:YES];
+    [shadow addPath:@"/usr/lib/libSubstitrate" restricted:YES];
+    [shadow addPath:@"/usr/lib/TweakInject" restricted:YES];
+    [shadow addPath:@"/usr/lib/substrate" restricted:YES];
     [shadow addPath:@"/usr/lib/FDRSealingMap.plist" restricted:NO];
     [shadow addPath:@"/usr/lib/bbmasks" restricted:NO];
     [shadow addPath:@"/usr/lib/dyld" restricted:NO];
@@ -3097,6 +3102,8 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
             }
 
             if([_shadow useTweakCompatibilityMode]) {
+                [shadow addPath:@"/usr/lib" restricted:NO];
+
                 NSLog(@"using tweak compatibility mode");
             }
 
