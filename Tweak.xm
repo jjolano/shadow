@@ -3103,7 +3103,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
             }
 
             if([_shadow useTweakCompatibilityMode]) {
-                [_shadow addPath:@"/usr/lib" restricted:NO];
+                // [_shadow addPath:@"/usr/lib" restricted:NO];
 
                 NSLog(@"using tweak compatibility mode");
             }
