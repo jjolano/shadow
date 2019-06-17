@@ -1068,6 +1068,23 @@ BOOL passthrough = NO;
 
     return %orig;
 }
+
+- (BOOL)openURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (void)openURL:(NSURL *)url options:(NSDictionary<id, id> *)options completionHandler:(void (^)(BOOL success))completion {
+    if([_shadow isURLRestricted:url]) {
+        completion(NO);
+        return;
+    }
+
+    %orig;
+}
 %end
 %end
 
@@ -2101,6 +2118,12 @@ BOOL passthrough = NO;
     return NO;
 }
 %end
+
+%hook DigiPassHandler
+- (BOOL)rootedDeviceTestResult {
+    return NO;
+}
+%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -2929,7 +2952,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     if([processName isEqualToString:@"SpringBoard"]) {
         HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
 
-        if([prefs boolForKey:@"auto_file_map_generation_enabled"]) {
+        if(prefs && [prefs boolForKey:@"auto_file_map_generation_enabled"]) {
             %init(hook_springboard);
         }
 
@@ -2952,7 +2975,8 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
                 @"enabled" : @YES,
                 @"mode" : @"blacklist",
                 @"bypass_checks" : @YES,
-                @"exclude_system_apps" : @YES
+                @"exclude_system_apps" : @YES,
+                @"dyld_hooks_enabled" : @YES
             }];
             
             // Check if Shadow is enabled
