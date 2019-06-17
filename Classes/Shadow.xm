@@ -156,7 +156,7 @@
 }
 
 - (BOOL)isImageRestricted:(NSString *)name {
-    if(_passthrough) {
+    if(!name || _passthrough) {
         return NO;
     }
 
@@ -256,7 +256,7 @@
     // Check path components with path map.
     if(!ret) {
         NSArray *pathComponents = [path pathComponents];
-        NSMutableDictionary *current_path_map = path_map;
+        NSDictionary *current_path_map = [path_map copy];
 
         for(NSString *value in pathComponents) {
             if(!current_path_map[value]) {
@@ -279,7 +279,7 @@
                 }
             }
 
-            current_path_map = current_path_map[value];
+            current_path_map = [current_path_map[value] copy];
         }
 
         if(current_path_map[@"restricted"]) {
@@ -344,22 +344,24 @@
 }
 
 - (void)addPath:(NSString *)path restricted:(BOOL)restricted hidden:(BOOL)hidden prestricted:(BOOL)prestricted phidden:(BOOL)phidden {
-    NSArray *pathComponents = [path pathComponents];
-    NSMutableDictionary *current_path_map = path_map;
+    if(path) {
+        NSArray *pathComponents = [path pathComponents];
+        NSMutableDictionary *current_path_map = path_map;
 
-    for(NSString *value in pathComponents) {
-        if(!current_path_map[value]) {
-            current_path_map[value] = [NSMutableDictionary new];
-            [current_path_map[value] setValue:value forKey:@"name"];
-            [current_path_map[value] setValue:[NSNumber numberWithBool:prestricted] forKey:@"restricted"];
-            [current_path_map[value] setValue:[NSNumber numberWithBool:phidden] forKey:@"hidden"];
+        for(NSString *value in pathComponents) {
+            if(!current_path_map[value]) {
+                current_path_map[value] = [NSMutableDictionary new];
+                [current_path_map[value] setValue:value forKey:@"name"];
+                [current_path_map[value] setValue:[NSNumber numberWithBool:prestricted] forKey:@"restricted"];
+                [current_path_map[value] setValue:[NSNumber numberWithBool:phidden] forKey:@"hidden"];
+            }
+
+            current_path_map = current_path_map[value];
         }
 
-        current_path_map = current_path_map[value];
+        [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];
+        [current_path_map setValue:[NSNumber numberWithBool:hidden] forKey:@"hidden"];
     }
-
-    [current_path_map setValue:[NSNumber numberWithBool:restricted] forKey:@"restricted"];
-    [current_path_map setValue:[NSNumber numberWithBool:hidden] forKey:@"hidden"];
 }
 
 - (void)addRestrictedPath:(NSString *)path {
@@ -367,50 +369,59 @@
 }
 
 - (void)addPathsFromFileMap:(NSArray *)file_map {
-    for(NSString *path in file_map) {
-        if([path hasPrefix:@"/System"]) {
-            // Don't restrict paths along the way for /System
-            [self addPath:path restricted:YES];
-        } else {
-            [self addRestrictedPath:path];
+    if(file_map) {
+        for(NSString *path in file_map) {
+            if([path hasPrefix:@"/System"]) {
+                // Don't restrict paths along the way for /System
+                [self addPath:path restricted:YES];
+            } else {
+                [self addRestrictedPath:path];
+            }
         }
     }
 }
 
 - (void)addSchemesFromURLSet:(NSArray *)set {
-    [url_set addObjectsFromArray:set];
+    if(set) {
+        [url_set addObjectsFromArray:set];
+    }
 }
 
 - (void)addLinkFromPath:(NSString *)from toPath:(NSString *)to {
-    // Exclude some paths under tweak compatibility mode.
-    if(_useTweakCompatibilityMode) {
-        if([from hasPrefix:@"/Library/Application Support"]
-        || [from hasPrefix:@"/Library/Frameworks"]
-        || [from hasPrefix:@"/Library/Themes"]
-        || [from hasPrefix:@"/User/Library/Preferences"]) {
+    if(from && to) {
+        // Exclude some paths under tweak compatibility mode.
+        if(_useTweakCompatibilityMode) {
+            if([path hasPrefix:@"/Library/Application Support"]
+            || [path hasPrefix:@"/Library/Frameworks"]
+            || [path hasPrefix:@"/Library/Themes"]
+            || [path hasPrefix:@"/Library/SnowBoard"]
+            || [path hasPrefix:@"/Library/PreferenceBundles"]
+            || [path hasPrefix:@"/var/mobile/Library/Preferences"]
+            || [path hasPrefix:@"/User/Library/Preferences"]) {
+                return;
+            }
+        }
+
+        // Exception for relative destination paths.
+        if(![to isAbsolutePath]) {
             return;
         }
-    }
 
-    // Exception for relative destination paths.
-    if(![to isAbsolutePath]) {
-        return;
+        NSLog(@"tracking link %@ -> %@", from, to);
+        [link_map setValue:to forKey:from];
     }
-
-    NSLog(@"tracking link %@ -> %@", from, to);
-    [link_map setValue:to forKey:from];
 }
 
 - (NSString *)resolveLinkInPath:(NSString *)path {
-    if(!link_map) {
-        return path;
-    }
+    if(path) {
+        NSDictionary *links = [link_map copy];
 
-    for(NSString *key in link_map) {
-        if([path hasPrefix:key]) {
-            NSString *value = link_map[key];
-            path = [path stringByReplacingOccurrencesOfString:key withString:value];
-            break;
+        for(NSString *key in links) {
+            if([path hasPrefix:key]) {
+                NSString *value = links[key];
+                path = [path stringByReplacingOccurrencesOfString:key withString:value];
+                break;
+            }
         }
     }
 
