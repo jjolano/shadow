@@ -19,14 +19,14 @@
 #include <sys/sysctl.h>
 #include "Includes/codesign.h"
 
-Shadow *_shadow = nil;
+static Shadow *_shadow = nil;
 
-NSArray *dyld_array = nil;
-uint32_t dyld_array_count = 0;
+static NSArray *dyld_array = nil;
+static uint32_t dyld_array_count = 0;
 
-NSError *_error_file_not_found = nil;
+static NSError *_error_file_not_found = nil;
 
-BOOL passthrough = NO;
+static BOOL passthrough = NO;
 
 // Stable Hooks
 %group hook_libc
@@ -1553,6 +1553,7 @@ BOOL passthrough = NO;
 %group hook_dyld_image
 %hookf(uint32_t, _dyld_image_count) {
     if(dyld_array_count > 0) {
+        updateDyldArray();
         return dyld_array_count;
     }
 
@@ -2923,7 +2924,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 %end
 %end
 
-void updateDyldArray(void) {
+static void updateDyldArray(void) {
     dyld_array_count = 0;
     dyld_array = [_shadow generateDyldArray];
     dyld_array_count = (uint32_t) [dyld_array count];
@@ -2931,7 +2932,7 @@ void updateDyldArray(void) {
     NSLog(@"generated dyld array (%d items)", dyld_array_count);
 }
 
-void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
+static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     passthrough = YES;
 
     Dl_info info;
@@ -3135,6 +3136,7 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
             if([prefs boolForKey:@"dyld_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
                 %init(hook_dyld_image);
+                MSHookFunction((void *) dladdr, (void *) hook_dladdr, (void **) &orig_dladdr);
 
                 NSLog(@"filtering dynamic libraries");
             }
@@ -3151,7 +3153,6 @@ void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
                 %init(hook_dyld_advanced);
                 %init(hook_CoreFoundation);
-                MSHookFunction((void *) dladdr, (void *) hook_dladdr, (void **) &orig_dladdr);
 
                 NSLog(@"enabled advanced dynamic library filtering");
             }
