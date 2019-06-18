@@ -2968,7 +2968,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             [prefs registerDefaults:@{
                 @"enabled" : @YES,
-                @"mode" : @"blacklist",
+                @"mode" : @"whitelist",
                 @"bypass_checks" : @YES,
                 @"exclude_system_apps" : @YES,
                 @"dyld_hooks_enabled" : @YES
