@@ -104,7 +104,7 @@
 			<key>key</key>
 			<string>mode</string>
 			<key>default</key>
-			<string>blacklist</string>
+			<string>whitelist</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>validValues</key>
@@ -206,7 +206,7 @@
 			<key>label</key>
 			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters may trigger detection on some apps, and may also be unstable.</string>
+			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters are currently in active development, and may cause crashes in some apps.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
