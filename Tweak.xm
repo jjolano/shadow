@@ -1130,7 +1130,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 }
 %end
 %end
-
+/*
 %group hook_CoreFoundation
 %hookf(CFArrayRef, CFBundleGetAllBundles) {
     CFArrayRef cfbundles = %orig;
@@ -1159,7 +1159,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return (__bridge CFArrayRef) [filter copy];
 }
 
-/*
 %hookf(CFReadStreamRef, CFReadStreamCreateWithFile, CFAllocatorRef alloc, CFURLRef fileURL) {
     NSURL *nsurl = (__bridge NSURL *)fileURL;
 
@@ -1207,9 +1206,8 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
     return %orig;
 }
-*/
 %end
-
+*/
 %group hook_NSUtilities
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
@@ -1652,7 +1650,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 %end
-
+/*
 %group hook_dyld_advanced
 %hookf(int32_t, NSVersionOfRunTimeLibrary, const char *libraryName) {
     if(libraryName) {
@@ -1677,17 +1675,8 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     
     return %orig;
 }
-/*
-%hookf(void, _dyld_register_func_for_add_image, void (*func)(const struct mach_header *mh, intptr_t vmaddr_slide)) {
-    %orig;
-}
-
-%hookf(void, _dyld_register_func_for_remove_image, void (*func)(const struct mach_header *mh, intptr_t vmaddr_slide)) {
-    %orig;
-}
-*/
 %end
-
+*/
 %group hook_dyld_dlsym
 %hookf(void *, dlsym, void *handle, const char *symbol) {
     if(symbol) {
