@@ -28,6 +28,35 @@ static NSError *_error_file_not_found = nil;
 
 static BOOL passthrough = NO;
 
+static void updateDyldArray(void) {
+    dyld_array_count = 0;
+    dyld_array = [_shadow generateDyldArray];
+    dyld_array_count = (uint32_t) [dyld_array count];
+
+    NSLog(@"generated dyld array (%d items)", dyld_array_count);
+}
+
+static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
+    passthrough = YES;
+
+    Dl_info info;
+    int addr = dladdr(mh, &info);
+
+    if(addr) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
+
+        if([_shadow isImageRestricted:path]) {
+            void *handle = dlopen(info.dli_fname, RTLD_NOLOAD);
+
+            if(handle) {
+                dlclose(handle);
+            }
+        }
+    }
+
+    passthrough = NO;
+}
+
 // Stable Hooks
 %group hook_libc
 %hookf(int, access, const char *pathname, int mode) {
@@ -2923,35 +2952,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 }
 %end
 %end
-
-static void updateDyldArray(void) {
-    dyld_array_count = 0;
-    dyld_array = [_shadow generateDyldArray];
-    dyld_array_count = (uint32_t) [dyld_array count];
-
-    NSLog(@"generated dyld array (%d items)", dyld_array_count);
-}
-
-static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
-    passthrough = YES;
-
-    Dl_info info;
-    int addr = dladdr(mh, &info);
-
-    if(addr) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
-
-        if([_shadow isImageRestricted:path]) {
-            void *handle = dlopen(info.dli_fname, RTLD_NOLOAD);
-
-            if(handle) {
-                dlclose(handle);
-            }
-        }
-    }
-
-    passthrough = NO;
-}
 
 %ctor {
     NSString *processName = [[NSProcessInfo processInfo] processName];
