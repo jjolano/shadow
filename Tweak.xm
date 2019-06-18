@@ -1582,7 +1582,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %group hook_dyld_image
 %hookf(uint32_t, _dyld_image_count) {
     if(dyld_array_count > 0) {
-        updateDyldArray();
         return dyld_array_count;
     }
 
@@ -3151,8 +3150,8 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             if([prefs boolForKey:@"dyld_filter_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
                 updateDyldArray();
 
-                %init(hook_dyld_advanced);
-                %init(hook_CoreFoundation);
+                // %init(hook_dyld_advanced);
+                // %init(hook_CoreFoundation);
 
                 NSLog(@"enabled advanced dynamic library filtering");
             }
