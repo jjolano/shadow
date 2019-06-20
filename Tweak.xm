@@ -3113,11 +3113,10 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             // Initialize stable hooks
             // %init(hook_private);
+            %init(hook_NSFileManager);
             %init(hook_libc);
             %init(hook_debugging);
-
             %init(hook_NSFileHandle);
-            %init(hook_NSFileManager);
             %init(hook_NSURL);
             %init(hook_UIApplication);
             %init(hook_NSBundle);
@@ -3136,21 +3135,21 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 NSLog(@"hooked detection libraries");
             }
 
-            if([prefs boolForKey:@"dyld_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
+            if([prefs boolForKey:@"dyld_hooks_enabled"]) {
                 %init(hook_dyld_image);
                 MSHookFunction((void *) dladdr, (void *) hook_dladdr, (void **) &orig_dladdr);
 
                 NSLog(@"filtering dynamic libraries");
             }
 
-            if([prefs boolForKey:@"sandbox_hooks_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
+            if([prefs boolForKey:@"sandbox_hooks_enabled"]) {
                 %init(hook_sandbox);
 
                 NSLog(@"hooked sandbox methods");
             }
 
             // Generate filtered dyld array
-            if([prefs boolForKey:@"dyld_filter_enabled"] || [prefs_lockdown boolForKey:bundleIdentifier]) {
+            if([prefs boolForKey:@"dyld_filter_enabled"]) {
                 updateDyldArray();
 
                 // %init(hook_dyld_advanced);
