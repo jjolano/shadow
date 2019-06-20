@@ -1604,6 +1604,10 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
         if([_shadow isImageRestricted:image_name]) {
             return "/.file";
         }
+    } else {
+        if(dyld_array_count > 0) {
+            updateDyldArray();
+        }
     }
 
     return ret;
@@ -2143,6 +2147,12 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return NO;
 }
 %end
+
+%hook AWMyDeviceGeneralInfo
+- (bool)isCompliant {
+    return true;
+}
+%end
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -2302,6 +2312,7 @@ void init_path_map(Shadow *shadow) {
     
     // Restrict /tmp
     [shadow addPath:@"/tmp" restricted:YES hidden:NO];
+    [shadow addPath:@"/tmp/com.apple" restricted:NO];
     [shadow addPath:@"/tmp/substrate" restricted:YES];
     [shadow addPath:@"/tmp/Substrate" restricted:YES];
     [shadow addPath:@"/tmp/cydia.log" restricted:YES];
@@ -3032,6 +3043,10 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 return;
             }
 
+            // Compatibility mode
+            [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
+            [_shadow setUseInjectCompatibilityMode:[prefs_injectcompat boolForKey:bundleIdentifier] ? NO : YES];
+
             // Initialize restricted path map
             init_path_map(_shadow);
             NSLog(@"initialized internal path map");
@@ -3051,10 +3066,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
                 NSLog(@"initialized url set (%lu items)", (unsigned long) [url_set count]);
             }
-
-            // Compatibility mode
-            [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
-            [_shadow setUseInjectCompatibilityMode:[prefs_injectcompat boolForKey:bundleIdentifier] ? NO : YES];
 
             // Disable inject compatibility if we are using Substitute.
             BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
