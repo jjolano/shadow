@@ -206,7 +206,7 @@
 			<key>label</key>
 			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters are currently in active development, and may cause crashes in some apps.</string>
+			<string>Prevents apps from detecting loaded tweaks when checking loaded dylibs. Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -238,7 +238,7 @@
 			<key>label</key>
 			<string>Dynamic Linker</string>
 			<key>footerText</key>
-			<string>Advanced jailbreak detection bypass. May be unstable in some apps, causing crashes or other issues.</string>
+			<string>Prevents apps from detecting Substrate/Substitute via exported functions. May be unstable in some apps, causing crashes or other issues.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
