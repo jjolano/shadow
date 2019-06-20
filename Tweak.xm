@@ -50,6 +50,8 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
             if(handle) {
                 dlclose(handle);
+                
+                NSLog(@"unloaded %s", info.dli_fname);
             }
         }
     }
@@ -3078,39 +3080,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 NSLog(@"detected Substrate");
             }
 
-            // Lockdown mode
-            if([prefs_lockdown boolForKey:bundleIdentifier]) {
-                %init(hook_libc_inject);
-                %init(hook_dlopen_inject);
-
-                MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
-                MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
-
-                [_shadow setUseInjectCompatibilityMode:NO];
-                [_shadow setUseTweakCompatibilityMode:NO];
-
-                _dyld_register_func_for_add_image(dyld_image_added);
-
-                NSLog(@"enabled lockdown mode");
-            }
-
-            if([_shadow useInjectCompatibilityMode]) {
-                NSLog(@"using injection compatibility mode");
-            } else {
-                // Substitute doesn't like hooking opendir :(
-                if(!isSubstitute) {
-                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
-                }
-
-                MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
-            }
-
-            if([_shadow useTweakCompatibilityMode]) {
-                // [_shadow addPath:@"/usr/lib" restricted:NO];
-
-                NSLog(@"using tweak compatibility mode");
-            }
-
             // Initialize stable hooks
             // %init(hook_private);
             %init(hook_NSFileManager);
@@ -3162,6 +3131,37 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 %init(hook_dyld_dlsym);
 
                 NSLog(@"hooked dynamic linker methods");
+            }
+
+            // Lockdown mode
+            if([prefs_lockdown boolForKey:bundleIdentifier]) {
+                %init(hook_libc_inject);
+                %init(hook_dlopen_inject);
+
+                MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
+                MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
+
+                [_shadow setUseInjectCompatibilityMode:NO];
+                [_shadow setUseTweakCompatibilityMode:NO];
+
+                _dyld_register_func_for_add_image(dyld_image_added);
+
+                NSLog(@"enabled lockdown mode");
+            }
+
+            if([_shadow useInjectCompatibilityMode]) {
+                NSLog(@"using injection compatibility mode");
+            } else {
+                // Substitute doesn't like hooking opendir :(
+                if(!isSubstitute) {
+                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                }
+
+                MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
+            }
+
+            if([_shadow useTweakCompatibilityMode]) {
+                NSLog(@"using tweak compatibility mode");
             }
 
             _error_file_not_found = [Shadow generateFileNotFoundError];
