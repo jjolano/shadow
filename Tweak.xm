@@ -2301,7 +2301,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/Library/Wallpaper" restricted:NO];
     
     // Restrict /tmp
-    [shadow addPath:@"/tmp" restricted:NO];
+    [shadow addPath:@"/tmp" restricted:YES hidden:NO];
     [shadow addPath:@"/tmp/substrate" restricted:YES];
     [shadow addPath:@"/tmp/Substrate" restricted:YES];
     [shadow addPath:@"/tmp/cydia.log" restricted:YES];
@@ -2309,6 +2309,8 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/tmp/slide.txt" restricted:YES];
     [shadow addPath:@"/tmp/amfidebilitate.out" restricted:YES];
     [shadow addPath:@"/tmp/org.coolstar" restricted:YES];
+    [shadow addPath:@"/tmp/amfid_payload.alive" restricted:YES];
+    [shadow addPath:@"/tmp/jailbreakd.pid" restricted:YES];
 
     // Restrict /var by whitelisting
     [shadow addPath:@"/var" restricted:YES hidden:NO];
@@ -2456,6 +2458,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr/lib/libSubstitrate" restricted:YES];
     [shadow addPath:@"/usr/lib/TweakInject" restricted:YES];
     [shadow addPath:@"/usr/lib/substrate" restricted:YES];
+    [shadow addPath:@"/usr/lib/tweaks" restricted:YES];
     [shadow addPath:@"/usr/lib/FDRSealingMap.plist" restricted:NO];
     [shadow addPath:@"/usr/lib/bbmasks" restricted:NO];
     [shadow addPath:@"/usr/lib/dyld" restricted:NO];
