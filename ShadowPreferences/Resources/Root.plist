@@ -385,7 +385,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode will disable all compatibility options, enable all available hooks, and enable additional hooks that will interfere with tweaks. For full coverage, filter dynamic linker (beware of potential issues).</string>
+			<string>Lockdown mode unloads all tweaks except Shadow from apps. Substrate may still be detected by advanced methods, so enable dynamic linker and dynamic library filtering for full coverage.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
