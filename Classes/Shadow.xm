@@ -433,9 +433,11 @@
         NSDictionary *links = [link_map copy];
 
         for(NSString *key in links) {
-            if([path hasPrefix:key]) {
+            NSRange prefix = [path rangeOfString:key];
+            
+            if(prefix.location != NSNotFound) {
                 NSString *value = links[key];
-                path = [path stringByReplacingOccurrencesOfString:key withString:value];
+                path = [path stringByReplacingCharactersInRange:prefix withString:value];
                 break;
             }
         }
