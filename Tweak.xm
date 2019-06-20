@@ -50,7 +50,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
             if(handle) {
                 dlclose(handle);
-                
+
                 NSLog(@"unloaded %s", info.dli_fname);
             }
         }
@@ -513,6 +513,25 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     }
 
     return %orig;
+}
+
+%hookf(int, chroot, const char *dirname) {
+    if(dirname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirname length:strlen(dirname)];
+
+        if([_shadow isPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    int ret = %orig;
+
+    if(ret == 0) {
+        [_shadow addLinkFromPath:@"/" toPath:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:dirname length:strlen(dirname)]];
+    }
+
+    return ret;
 }
 %end
 
