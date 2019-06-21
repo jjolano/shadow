@@ -178,8 +178,6 @@
     || [name containsString:@"SBInject"]
     || [name containsString:@"pspawn"]
     || [name containsString:@"rocketbootstrap"]
-    || [name containsString:@"colorpicker"]
-    || [name containsString:@"CS"]
     || [name containsString:@"bfdecrypt"]) {
         return YES;
     }

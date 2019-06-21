@@ -1535,7 +1535,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %end
 
 // Other Hooks
-/*
 %group hook_private
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
@@ -1548,7 +1547,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return ret;
 }
 %end
-*/
 
 %group hook_debugging
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
@@ -1989,6 +1987,44 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     if(rgid == 0 || egid == 0) {
         errno = EPERM;
         return -1;
+    }
+
+    return %orig;
+}
+%end
+
+%group hook_runtime
+%hookf(const char * _Nonnull *, objc_copyImageNames, unsigned int *outCount) {
+    const char * _Nonnull *ret = %orig;
+
+    if(ret && outCount) {
+        NSLog(@"copyImageNames: %d", *outCount);
+
+        const char *exec_name = _dyld_get_image_name(0);
+        unsigned int i;
+
+        for(i = 0; i < *outCount; i++) {
+            if(strcmp(ret[i], exec_name) == 0) {
+                // Stop after app executable.
+                *outCount = (i + 1);
+                break;
+            }
+        }
+    }
+
+    return ret;
+}
+
+%hookf(const char * _Nonnull *, objc_copyClassNamesForImage, const char *image, unsigned int *outCount) {
+    if(image) {
+        NSLog(@"copyClassNamesForImage: %s", image);
+
+        NSString *image_ns = [NSString stringWithUTF8String:image];
+
+        if([_shadow isImageRestricted:image_ns]) {
+            *outCount = 0;
+            return NULL;
+        }
     }
 
     return %orig;
@@ -3100,7 +3136,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             }
 
             // Initialize stable hooks
-            // %init(hook_private);
+            %init(hook_private);
             %init(hook_NSFileManager);
             %init(hook_libc);
             %init(hook_debugging);
@@ -3142,6 +3178,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
                 // %init(hook_dyld_advanced);
                 // %init(hook_CoreFoundation);
+                %init(hook_runtime);
 
                 NSLog(@"enabled advanced dynamic library filtering");
             }
