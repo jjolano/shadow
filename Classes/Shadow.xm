@@ -163,6 +163,11 @@
     // Match some known dylib paths/names.
     if([name hasPrefix:@"/Library/Frameworks"]
     || [name hasPrefix:@"/Library/Caches/cy-"]
+    || [name hasPrefix:@"/Library/MobileSubstrate"]
+    || [name hasPrefix:@"/usr/lib/tweaks"]
+    || [name hasPrefix:@"/usr/lib/TweakInject"]
+    || [name hasPrefix:@"/var/containers/Bundle/tweaksupport"]
+    || [name hasPrefix:@"/var/containers/Bundle/dylibs"]
     || [name containsString:@"Substrate"]
     || [name containsString:@"substrate"]
     || [name containsString:@"substitute"]
@@ -329,7 +334,18 @@
 
     // File URL checks
     if([url isFileURL]) {
-        return [self isPathRestricted:[url path] manager:fm partial:partial];
+        NSString *path = [url path];
+
+        // Handle File Reference URLs
+        if([url isFileReferenceURL]) {
+            NSURL *surl = [url standardizedURL];
+
+            if(surl) {
+                path = [surl path];
+            }
+        }
+
+        return [self isPathRestricted:path manager:fm partial:partial];
     }
 
     return NO;
