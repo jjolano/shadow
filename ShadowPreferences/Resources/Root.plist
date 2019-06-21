@@ -385,7 +385,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode unloads all tweaks except Shadow from apps. Substrate may still be detected by advanced methods, so enable dynamic linker and dynamic library filtering for full coverage.</string>
+			<string>Lockdown mode unloads all tweaks from selected apps while maintaining bypass functionality. Substrate/Substitute may still be detected, so enable dynamic linker and dynamic library filtering for maximum coverage.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
