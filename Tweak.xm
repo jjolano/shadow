@@ -1607,9 +1607,9 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
     if(dyld_array_count > 0) {
-        if(image_index == 0) {
-            updateDyldArray();
-        }
+        // if(image_index == 0) {
+        //     updateDyldArray();
+        // }
 
         if(image_index >= dyld_array_count) {
             return NULL;
