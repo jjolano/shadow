@@ -1,6 +1,6 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: mobilesubstrate, ws.hbang.common, applist, preferenceloader, com.rpetrich.rocketbootstrap
+Depends: mobilesubstrate, ws.hbang.common, applist, preferenceloader
 Version: 2.0.10
 Architecture: iphoneos-arm
 Description: A lightweight general jailbreak detection bypass.
