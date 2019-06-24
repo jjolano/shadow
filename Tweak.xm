@@ -757,17 +757,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 
-- (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary<NSFileProviderServiceName,NSFileProviderService *> *services, NSError *error))completionHandler {
-    if([_shadow isURLRestricted:url manager:self]) {
-        if(completionHandler) {
-            completionHandler(nil, _error_file_not_found);
-            return;
-        }
-    }
-
-    %orig;
-}
-
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url manager:self]) {
         if(error) {
@@ -1164,7 +1153,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
             *outError = _error_file_not_found;
         }
 
-        return NO;
+        return 0;
     }
 
     return %orig;
@@ -1172,7 +1161,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
 - (instancetype)initSymbolicLinkWithDestinationURL:(NSURL *)url {
     if([_shadow isURLRestricted:url]) {
-        return NO;
+        return 0;
     }
 
     return %orig;
@@ -1280,8 +1269,8 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
 + (BOOL)removeOtherVersionsOfItemAtURL:(NSURL *)url error:(NSError * _Nullable *)outError {
     if([_shadow isURLRestricted:url]) {
-        if(error) {
-            *error = _error_file_not_found;
+        if(outError) {
+            *outError = _error_file_not_found;
         }
 
         return NO;
@@ -3381,6 +3370,8 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             // Initialize stable hooks
             %init(hook_private);
             %init(hook_NSFileManager);
+            %init(hook_NSFileWrapper);
+            %init(hook_NSFileVersion);
             %init(hook_libc);
             %init(hook_debugging);
             %init(hook_NSFileHandle);
