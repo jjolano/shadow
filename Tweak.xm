@@ -3339,7 +3339,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
             HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
-            HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
             HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
             HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
@@ -3353,7 +3352,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             // Compatibility mode
             [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
-            [_shadow setUseInjectCompatibilityMode:[prefs_injectcompat boolForKey:bundleIdentifier] ? NO : YES];
 
             // Initialize restricted path map
             init_path_map(_shadow);
@@ -3380,9 +3378,9 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
             if(isSubstitute) {
                 [_shadow setUseInjectCompatibilityMode:NO];
-
                 NSLog(@"detected Substitute");
             } else {
+                [_shadow setUseInjectCompatibilityMode:YES];
                 NSLog(@"detected Substrate");
             }
 

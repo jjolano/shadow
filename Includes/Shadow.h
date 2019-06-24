@@ -13,7 +13,6 @@
 #define APPS_PATH           @"me.jjolano.shadow.apps"
 #define DLFCN_PATH          @"me.jjolano.shadow.apps.dlfcn"
 #define TWEAKCOMPAT_PATH    @"me.jjolano.shadow.apps.compat.tweak"
-#define INJECTCOMPAT_PATH   @"me.jjolano.shadow.apps.compat.injection"
 #define LOCKDOWN_PATH       @"me.jjolano.shadow.apps.lockdown"
 
 @interface Shadow : NSObject {
