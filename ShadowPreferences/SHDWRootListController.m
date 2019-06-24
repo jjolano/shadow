@@ -41,7 +41,6 @@
     HBPreferences *prefs_apps = [HBPreferences preferencesForIdentifier:APPS_PATH];
     HBPreferences *prefs_blacklist = [HBPreferences preferencesForIdentifier:BLACKLIST_PATH];
     HBPreferences *prefs_tweakcompat = [HBPreferences preferencesForIdentifier:TWEAKCOMPAT_PATH];
-    HBPreferences *prefs_injectcompat = [HBPreferences preferencesForIdentifier:INJECTCOMPAT_PATH];
     HBPreferences *prefs_lockdown = [HBPreferences preferencesForIdentifier:LOCKDOWN_PATH];
     HBPreferences *prefs_dlfcn = [HBPreferences preferencesForIdentifier:DLFCN_PATH];
 
@@ -60,11 +59,7 @@
     if(prefs_tweakcompat) {
         [prefs_tweakcompat removeAllObjects];
     }
-
-    if(prefs_injectcompat) {
-        [prefs_injectcompat removeAllObjects];
-    }
-
+    
     if(prefs_lockdown) {
         [prefs_lockdown removeAllObjects];
     }

@@ -9,6 +9,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Shadow Settings</string>
+			<key>footerText</key>
+			<string>Please note: when tweak injection is disabled in an app, bypass functionality will not be available. Use Lockdown Mode (below) to disable other tweaks while maintaining bypass functionality.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -39,7 +41,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Bypassing detection libraries attempts to hook common jailbreak detection libraries and skip their checking methods. Disable if you want Shadow to work hard.</string>
+			<string>Skips some common jailbreak checks. May also be useful for app-specific bypasses.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -165,7 +167,7 @@
 			<key>label</key>
 			<string>File Map</string>
 			<key>footerText</key>
-			<string>File map enhances Shadow's ability to perform path checks by scanning all installed packages. The file map will need to be regenerated when any changes to installed packages are made. Auto generation will automatically generate the file map when SpringBoard restarts.</string>
+			<string>Dynamically enhances bypass functionality by reading all installed package files.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -206,7 +208,7 @@
 			<key>label</key>
 			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Prevents apps from detecting loaded tweaks when checking loaded libraries. Filtering dynamic libraries helps defeat intermediate levels of jailbreak detection. Advanced filters will perform additional runtime filtering that may increase app launch times.</string>
+			<string>Prevents apps from detecting loaded tweaks in most cases. Advanced filters will perform additional runtime filtering which may increase app launch times.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -238,7 +240,7 @@
 			<key>label</key>
 			<string>Dynamic Linker</string>
 			<key>footerText</key>
-			<string>Prevents apps from detecting Substrate/Substitute via exported functions. May be unstable in some apps, causing crashes or other issues.</string>
+			<string>Prevents apps from detecting Substrate or Substitute via exported hooking functions. May be unstable in some apps, causing crashes or other issues.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -283,7 +285,7 @@
 			<key>label</key>
 			<string>Sandbox Integrity</string>
 			<key>footerText</key>
-			<string>Attempts to restore original sandbox functionality by limiting file write and creation access for apps.</string>
+			<string>Attempts to restore sandbox functionality. Intended for iOS 10 and lower. Not necessary for iOS 11 and up, but may be useful as a last resort.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -305,7 +307,7 @@
 			<key>label</key>
 			<string>Tweak Compatibility</string>
 			<key>footerText</key>
-			<string>Compatibility settings will reduce bypass effectiveness. Tweak compatibility mode is enabled by default for all apps. Injection compatibility applies to Substrate. If disabled, Substrate may not load some tweaks properly.</string>
+			<string>Compatibility settings reduce bypass effectiveness in exchange for tweak functionality.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -315,7 +317,7 @@
 			<key>isController</key>
 			<string>1</string>
 			<key>label</key>
-			<string>Tweak Compatibility</string>
+			<string>Disable Tweak Compatibility</string>
 			<key>ALAllowsSelection</key>
 			<string>0</string>
 			<key>ALSettingsKeyPrefix</key>
@@ -342,41 +344,6 @@
 				</dict>
 			</array>
 		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>bundle</key>
-			<string>AppList</string>
-			<key>isController</key>
-			<string>1</string>
-			<key>label</key>
-			<string>Injection Compatibility</string>
-			<key>ALAllowsSelection</key>
-			<string>0</string>
-			<key>ALSettingsKeyPrefix</key>
-			<string></string>
-			<key>ALSettingsDefaultValue</key>
-			<string>0</string>
-			<key>ALSettingsPath</key>
-			<string>/var/mobile/Library/Preferences/me.jjolano.shadow.apps.compat.inject.plist</string>
-			<key>ALSingleEnabledMode</key>
-			<false/>
-			<key>ALSectionDescriptors</key>
-			<array>
-				<dict>
-					<key>cell-class-name</key>
-					<string>ALSwitchCell</string>
-					<key>icon-size</key>
-					<string>29</string>
-					<key>suppress-hidden-apps</key>
-					<string>1</string>
-					<key>title</key>
-					<string>Select apps to disable injection compatibility</string>
-					<key>predicate</key>
-					<string>isSystemApplication = FALSE</string>
-				</dict>
-			</array>
-		</dict>
 
 		<!-- Lockdown Mode -->
 		<dict>
@@ -385,7 +352,7 @@
 			<key>label</key>
 			<string>Lockdown Mode</string>
 			<key>footerText</key>
-			<string>Lockdown mode unloads all tweaks from selected apps while maintaining bypass functionality. Tweak and injection compatibility options will automatically be disabled. Substrate/Substitute may still be detected, so enable dynamic linker and dynamic library filtering for maximum coverage.</string>
+			<string>Disables tweaks while maintaining bypass functionality. Substrate or Substitute may still be detected, so enable dynamic linker and dynamic library filtering for maximum coverage.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -428,7 +395,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Support</string>
+			<string>Technical Support</string>
+			<key>footerText</key>
+			<string>Please report app crashes with a crash log from CrashReporter. This helps pinpoint the issue. Thank you!</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -446,7 +415,7 @@
 			<key>cellClass</key>
 			<string>HBLinkTableCell</string>
 			<key>label</key>
-			<string>View Source on GitHub</string>
+			<string>View Source Code on GitHub</string>
 			<key>url</key>
 			<string>https://github.com/jjolano/shadow</string>
 		</dict>
@@ -454,10 +423,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Developer Support</string>
 			<key>footerText</key>
-			<string>Shadow is under active development. If this bypass has worked for you, I would greatly appreciate your support through supportive messages and/or donations. I do read every message, and will consider feature requests.
-
-Thank you for using Shadow!</string>
+			<string>Shadow is currently in active development. If this tweak has been successful for you, I would greatly appreciate monetary donations and/or supportive messages. Your support keeps me motivated to keep developing the best jailbreak detection bypass :).</string>
 		</dict>
 		<dict>
 			<key>cell</key>
