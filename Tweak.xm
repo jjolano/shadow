@@ -3365,6 +3365,17 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             // Compatibility mode
             [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
 
+            // Disable inject compatibility if we are using Substitute.
+            BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
+
+            if(isSubstitute) {
+                [_shadow setUseInjectCompatibilityMode:NO];
+                NSLog(@"detected Substitute");
+            } else {
+                [_shadow setUseInjectCompatibilityMode:YES];
+                NSLog(@"detected Substrate");
+            }
+
             // Lockdown mode
             if([prefs_lockdown boolForKey:bundleIdentifier]) {
                 %init(hook_libc_inject);
@@ -3414,17 +3425,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 [_shadow addSchemesFromURLSet:url_set];
 
                 NSLog(@"initialized url set (%lu items)", (unsigned long) [url_set count]);
-            }
-
-            // Disable inject compatibility if we are using Substitute.
-            BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
-
-            if(isSubstitute) {
-                [_shadow setUseInjectCompatibilityMode:NO];
-                NSLog(@"detected Substitute");
-            } else {
-                [_shadow setUseInjectCompatibilityMode:YES];
-                NSLog(@"detected Substrate");
             }
 
             // Initialize stable hooks
