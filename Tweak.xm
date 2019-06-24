@@ -829,7 +829,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
     if(ret && enum_path) {
         // Store this path.
-        [enum_path setObject:path forKey:[NSNumber numberWithUnsignedInt:[ret hash]]];
+        [enum_path setObject:path forKey:[NSValue valueWithNonretainedObject:ret]];
     }
 
     return ret;
@@ -1137,7 +1137,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     NSString *parent = nil;
 
     if(enum_path) {
-        parent = enum_path[[NSNumber numberWithUnsignedInt:[self hash]]];
+        parent = enum_path[[NSValue valueWithNonretainedObject:self]];
     }
 
     while((ret = %orig)) {
