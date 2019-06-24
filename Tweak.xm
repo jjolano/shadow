@@ -693,6 +693,58 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 
+- (NSURL *)URLForDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domain appropriateForURL:(NSURL *)url create:(BOOL)shouldCreate error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url manager:self]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (NSArray<NSURL *> *)URLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domainMask {
+    NSArray *ret = %orig;
+
+    if(ret) {
+        NSMutableArray *toRemove = [NSMutableArray new];
+        NSMutableArray *filtered = [ret mutableCopy];
+
+        for(NSURL *url in filtered) {
+            if([_shadow isURLRestricted:url manager:self]) {
+                [toRemove addObject:url];
+            }
+        }
+
+        [filtered removeObjectsInArray:toRemove];
+        ret = [filtered copy];
+    }
+
+    return ret;
+}
+
+- (BOOL)isUbiquitousItemAtURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url manager:self]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url manager:self]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:originalItemURL manager:self] || [_shadow isURLRestricted:newItemURL manager:self]) {
         if(error) {
@@ -703,6 +755,17 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     }
 
     return %orig;
+}
+
+- (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary<NSFileProviderServiceName,NSFileProviderService *> *services, NSError *error))completionHandler {
+    if([_shadow isURLRestricted:url manager:self]) {
+        if(completionHandler) {
+            completionHandler(nil, _error_file_not_found);
+            return;
+        }
+    }
+
+    %orig;
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
@@ -760,7 +823,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
     if([_shadow isURLRestricted:url manager:self]) {
-        return %orig([NSURL fileURLWithPath:@"file:///.file"], keys, mask, handler);
+        return %orig([NSURL fileURLWithPath:@"/.file"], keys, mask, handler);
     }
 
     return %orig;
@@ -1093,6 +1156,154 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %end
 %end
 
+%group hook_NSFileWrapper
+%hook NSFileWrapper
+- (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
+    if([_shadow isURLRestricted:url]) {
+        if(outError) {
+            *outError = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initSymbolicLinkWithDestinationURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)matchesContentsOfURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
+    if([_shadow isURLRestricted:url]) {
+        if(outError) {
+            *outError = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
+    if([_shadow isURLRestricted:url]) {
+        if(outError) {
+            *outError = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+%end
+
+%group hook_NSFileVersion
+%hook NSFileVersion
++ (NSFileVersion *)currentVersionOfItemAtURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (NSArray<NSFileVersion *> *)otherVersionsOfItemAtURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (NSFileVersion *)versionOfItemAtURL:(NSURL *)url forPersistentIdentifier:(id)persistentIdentifier {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (NSURL *)temporaryDirectoryURLForNewVersionOfItemAtURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (NSFileVersion *)addVersionOfItemAtURL:(NSURL *)url withContentsOfURL:(NSURL *)contentsURL options:(NSFileVersionAddingOptions)options error:(NSError * _Nullable *)outError {
+    if([_shadow isURLRestricted:url] || [_shadow isURLRestricted:contentsURL]) {
+        if(outError) {
+            *outError = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (NSArray<NSFileVersion *> *)unresolvedConflictVersionsOfItemAtURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)replaceItemAtURL:(NSURL *)url options:(NSFileVersionReplacingOptions)options error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (BOOL)removeOtherVersionsOfItemAtURL:(NSURL *)url error:(NSError * _Nullable *)outError {
+    if([_shadow isURLRestricted:url]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
++ (void)getNonlocalVersionsOfItemAtURL:(NSURL *)url completionHandler:(void (^)(NSArray<NSFileVersion *> *nonlocalFileVersions, NSError *error))completionHandler {
+    if([_shadow isURLRestricted:url]) {
+        if(completionHandler) {
+            completionHandler(nil, _error_file_not_found);
+        }
+
+        return;
+    }
+
+    %orig;
+}
+%end
+%end
+
 %group hook_NSURL
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
@@ -1102,6 +1313,14 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
         }
 
         return NO;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)fileReferenceURL {
+    if([_shadow isURLRestricted:self]) {
+        return nil;
     }
 
     return %orig;
@@ -1871,8 +2090,32 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 
+- (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:URL manager:self]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if([_shadow isPathRestricted:path manager:self]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url manager:self]) {
         if(error) {
             *error = _error_file_not_found;
         }

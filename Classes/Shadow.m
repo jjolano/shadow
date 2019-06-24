@@ -318,11 +318,6 @@
         return NO;
     }
 
-    // URL set checks
-    if([url_set containsObject:[url scheme]]) {
-        return YES;
-    }
-
     // Package manager URL scheme checks
     if([[url scheme] isEqualToString:@"cydia"]
     || [[url scheme] isEqualToString:@"sileo"]
@@ -344,6 +339,11 @@
         }
 
         return [self isPathRestricted:path manager:fm partial:partial];
+    }
+
+    // URL set checks
+    if([url_set containsObject:[url scheme]]) {
+        return YES;
     }
 
     return NO;
