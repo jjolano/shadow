@@ -1134,7 +1134,11 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %hook NSDirectoryEnumerator
 - (id)nextObject {
     id ret = nil;
-    NSString *parent = enum_path[[NSNumber numberWithUnsignedInt:[self hash]]];
+    NSString *parent = nil;
+
+    if(enum_path) {
+        parent = enum_path[[NSNumber numberWithUnsignedInt:[self hash]]];
+    }
 
     while((ret = %orig)) {
         if([ret isKindOfClass:[NSURL class]]) {
