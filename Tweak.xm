@@ -3283,7 +3283,10 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
         NSString *bundleIdentifier = [bundle bundleIdentifier];
 
         // User (Sandboxed) Applications
-        if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]) {
+        if([executablePath hasPrefix:@"/var/containers/Bundle/Application"]
+        || [executablePath hasPrefix:@"/private/var/containers/Bundle/Application"]
+        || [executablePath hasPrefix:@"/var/mobile/Containers/Bundle/Application"]
+        || [executablePath hasPrefix:@"/private/var/mobile/Containers/Bundle/Application"]) {
             NSLog(@"bundleIdentifier: %@", bundleIdentifier);
 
             HBPreferences *prefs = [HBPreferences preferencesForIdentifier:PREFS_TWEAK_ID];
