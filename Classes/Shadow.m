@@ -389,6 +389,12 @@
                 // Don't restrict paths along the way for /System
                 [self addPath:path restricted:YES];
             } else {
+                if(_useTweakCompatibilityMode) {
+                    if([path hasPrefix:@"/usr/lib"]) {
+                        continue;
+                    }
+                }
+
                 [self addRestrictedPath:path];
             }
         }
