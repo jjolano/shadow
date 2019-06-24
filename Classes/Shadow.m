@@ -10,6 +10,7 @@
     if(self) {
         link_map = [NSMutableDictionary new];
         path_map = [NSMutableDictionary new];
+        image_set = [NSMutableArray new];
         url_set = [NSMutableArray new];
 
         _useTweakCompatibilityMode = NO;
@@ -185,6 +186,10 @@
     // Find exact match.
     if(![name isAbsolutePath]) {
         name = [NSString stringWithFormat:@"/usr/lib/lib%@.dylib", name];
+    }
+
+    if([image_set containsObject:name]) {
+        return YES;
     }
     
     if([self isPathRestricted:name partial:NO]) {
@@ -390,8 +395,11 @@
                 // Don't restrict paths along the way for /System
                 [self addPath:path restricted:YES];
             } else {
-                if(_useTweakCompatibilityMode) {
-                    if([path hasPrefix:@"/usr/lib"]) {
+                if([path hasPrefix:@"/usr/lib"]
+                || [path hasPrefix:@"/Library/MobileSubstrate"]) {
+                    [image_set addObject:path];
+
+                    if(_useTweakCompatibilityMode) {
                         continue;
                     }
                 }

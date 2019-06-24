@@ -18,6 +18,7 @@
 @interface Shadow : NSObject {
     NSMutableDictionary *link_map;
     NSMutableDictionary *path_map;
+    NSMutableArray *image_set;
     NSMutableArray *url_set;
 }
 
