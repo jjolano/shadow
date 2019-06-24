@@ -262,27 +262,28 @@
         NSDictionary *current_path_map = [path_map copy];
 
         for(NSString *value in pathComponents) {
-            if(!current_path_map[value]) {
-                if(partial) {
-                    BOOL match = NO;
+            NSDictionary *next = [current_path_map[value] copy];
 
-                    // Attempt partial match
+            if(!next) {
+                if(partial) {
+                    // Attempt partial match.
                     for(NSString *value_match in current_path_map) {
                         if([value hasPrefix:value_match]) {
-                            match = YES;
+                            next = [current_path_map[value_match] copy];
                             break;
                         }
                     }
 
-                    if(!match) {
+                    if(!next) {
                         break;
                     }
                 } else {
+                    // Did not exact match.
                     return NO;
                 }
             }
 
-            current_path_map = [current_path_map[value] copy];
+            current_path_map = next;
         }
 
         if(current_path_map[@"restricted"]) {
