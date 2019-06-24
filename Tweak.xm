@@ -21,6 +21,8 @@
 
 static Shadow *_shadow = nil;
 
+static NSMutableDictionary *enum_path = nil;
+
 static NSArray *dyld_array = nil;
 static uint32_t dyld_array_count = 0;
 
@@ -823,7 +825,14 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
         return %orig(@"/.file");
     }
 
-    return %orig;
+    NSDirectoryEnumerator *ret = %orig;
+
+    if(ret && enum_path) {
+        // Store this path.
+        [enum_path setObject:path forKey:[NSNumber numberWithUnsignedInt:[ret hash]]];
+    }
+
+    return ret;
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
@@ -1125,19 +1134,26 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %hook NSDirectoryEnumerator
 - (id)nextObject {
     id ret = nil;
+    NSString *parent = enum_path[[NSNumber numberWithUnsignedInt:[self hash]]];
 
     while((ret = %orig)) {
         if([ret isKindOfClass:[NSURL class]]) {
-            if([_shadow isURLRestricted:ret]) {
-                continue;
+            if(![_shadow isURLRestricted:ret]) {
+                break;
             }
         }
 
         if([ret isKindOfClass:[NSString class]]) {
-            // TODO: convert to absolute path
-        }
+            if(parent) {
+                NSString *path = [parent stringByAppendingPathComponent:ret];
 
-        break;
+                if(![_shadow isPathRestricted:path]) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
     }
 
     return ret;
@@ -1554,7 +1570,6 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 }
 %end
 */
-
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
@@ -3455,6 +3470,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             }
 
             _error_file_not_found = [Shadow generateFileNotFoundError];
+            enum_path = [NSMutableDictionary new];
 
             NSLog(@"ready");
         }
