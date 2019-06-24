@@ -150,7 +150,7 @@
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>
-				<string>This will return Shadow to it's initially installed state. The file map will need to be regenerated.</string>
+				<string>This will reset all preferences to defaults and remove the generated file map.</string>
 				<key>title</key>
 				<string>Reset</string>
 				<key>okTitle</key>
@@ -208,7 +208,7 @@
 			<key>label</key>
 			<string>Dynamic Libraries</string>
 			<key>footerText</key>
-			<string>Prevents apps from detecting loaded tweaks in most cases. Advanced filters will perform additional runtime filtering which may increase app launch times.</string>
+			<string>Prevents apps from detecting tweaks in most cases. Advanced filters will perform additional runtime filtering which may increase app launch times.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -397,7 +397,7 @@
 			<key>label</key>
 			<string>Technical Support</string>
 			<key>footerText</key>
-			<string>Please report app crashes with a crash log from CrashReporter. This helps pinpoint the issue. Thank you!</string>
+			<string>Please report app crashes with a crash log from CrashReporter. This helps pinpoint any issues related to Shadow. Thank you!</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -405,9 +405,9 @@
 			<key>cellClass</key>
 			<string>HBLinkTableCell</string>
 			<key>label</key>
-			<string>Shadow on Reddit</string>
+			<string>jjolano on Reddit</string>
 			<key>url</key>
-			<string>https://www.reddit.com/r/jailbreak/comments/bp59zs/release_shadow_a_simple_open_source_jailbreak/</string>
+			<string>https://www.reddit.com/user/jjolano</string>
 		</dict>
 		<dict>
 			<key>cell</key>
