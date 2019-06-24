@@ -207,7 +207,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path manager:(NSFileManager *)fm partial:(BOOL)partial {
-    if(!path || _passthrough || !path_map) {
+    if(!path || _passthrough || !path_map || [path containsString:@"file:"]) {
         return NO;
     }
 
