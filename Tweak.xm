@@ -2771,64 +2771,73 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr/bin/taskinfo" restricted:NO];
     [shadow addPath:@"/usr/bin/vm_stat" restricted:NO];
     [shadow addPath:@"/usr/bin/zprint" restricted:NO];
-    [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
-    [shadow addPath:@"/usr/lib/libsubstrate" restricted:YES];
-    [shadow addPath:@"/usr/lib/libsubstitute" restricted:YES];
-    [shadow addPath:@"/usr/lib/libSubstitrate" restricted:YES];
-    [shadow addPath:@"/usr/lib/TweakInject" restricted:YES];
-    [shadow addPath:@"/usr/lib/substrate" restricted:YES];
-    [shadow addPath:@"/usr/lib/tweaks" restricted:YES];
-    [shadow addPath:@"/usr/lib/FDRSealingMap.plist" restricted:NO];
-    [shadow addPath:@"/usr/lib/bbmasks" restricted:NO];
-    [shadow addPath:@"/usr/lib/dyld" restricted:NO];
-    [shadow addPath:@"/usr/lib/libCRFSuite" restricted:NO];
-    [shadow addPath:@"/usr/lib/libDHCPServer" restricted:NO];
-    [shadow addPath:@"/usr/lib/libMatch" restricted:NO];
-    [shadow addPath:@"/usr/lib/libSystem" restricted:NO];
-    [shadow addPath:@"/usr/lib/libarchive" restricted:NO];
-    [shadow addPath:@"/usr/lib/libbsm" restricted:NO];
-    [shadow addPath:@"/usr/lib/libbz2" restricted:NO];
-    [shadow addPath:@"/usr/lib/libc++" restricted:NO];
-    [shadow addPath:@"/usr/lib/libc" restricted:NO];
-    [shadow addPath:@"/usr/lib/libcharset" restricted:NO];
-    [shadow addPath:@"/usr/lib/libcurses" restricted:NO];
-    [shadow addPath:@"/usr/lib/libdbm" restricted:NO];
-    [shadow addPath:@"/usr/lib/libdl" restricted:NO];
-    [shadow addPath:@"/usr/lib/libeasyperf" restricted:NO];
-    [shadow addPath:@"/usr/lib/libedit" restricted:NO];
-    [shadow addPath:@"/usr/lib/libexslt" restricted:NO];
-    [shadow addPath:@"/usr/lib/libextension" restricted:NO];
-    [shadow addPath:@"/usr/lib/libform" restricted:NO];
-    [shadow addPath:@"/usr/lib/libiconv" restricted:NO];
-    [shadow addPath:@"/usr/lib/libicucore" restricted:NO];
-    [shadow addPath:@"/usr/lib/libinfo" restricted:NO];
-    [shadow addPath:@"/usr/lib/libipsec" restricted:NO];
-    [shadow addPath:@"/usr/lib/liblzma" restricted:NO];
-    [shadow addPath:@"/usr/lib/libm" restricted:NO];
-    [shadow addPath:@"/usr/lib/libmecab" restricted:NO];
-    [shadow addPath:@"/usr/lib/libncurses" restricted:NO];
-    [shadow addPath:@"/usr/lib/libobjc" restricted:NO];
-    [shadow addPath:@"/usr/lib/libpcap" restricted:NO];
-    [shadow addPath:@"/usr/lib/libpmsample" restricted:NO];
-    [shadow addPath:@"/usr/lib/libpoll" restricted:NO];
-    [shadow addPath:@"/usr/lib/libproc" restricted:NO];
-    [shadow addPath:@"/usr/lib/libpthread" restricted:NO];
-    [shadow addPath:@"/usr/lib/libresolv" restricted:NO];
-    [shadow addPath:@"/usr/lib/librpcsvc" restricted:NO];
-    [shadow addPath:@"/usr/lib/libsandbox" restricted:NO];
-    [shadow addPath:@"/usr/lib/libsqlite3" restricted:NO];
-    [shadow addPath:@"/usr/lib/libstdc++" restricted:NO];
-    [shadow addPath:@"/usr/lib/libtidy" restricted:NO];
-    [shadow addPath:@"/usr/lib/libutil" restricted:NO];
-    [shadow addPath:@"/usr/lib/libxml2" restricted:NO];
-    [shadow addPath:@"/usr/lib/libxslt" restricted:NO];
-    [shadow addPath:@"/usr/lib/libz" restricted:NO];
-    [shadow addPath:@"/usr/lib/libperfcheck" restricted:NO];
-    [shadow addPath:@"/usr/lib/libedit" restricted:NO];
-    [shadow addPath:@"/usr/lib/log" restricted:NO];
-    [shadow addPath:@"/usr/lib/system" restricted:NO];
-    [shadow addPath:@"/usr/lib/updaters" restricted:NO];
-    [shadow addPath:@"/usr/lib/xpc" restricted:NO];
+
+    if([shadow useTweakCompatibilityMode]) {
+        [shadow addPath:@"/usr/lib" restricted:NO];
+        [shadow addPath:@"/usr/lib/libsubstrate" restricted:YES];
+        [shadow addPath:@"/usr/lib/libsubstitute" restricted:YES];
+        [shadow addPath:@"/usr/lib/libSubstitrate" restricted:YES];
+        [shadow addPath:@"/usr/lib/TweakInject" restricted:YES];
+        [shadow addPath:@"/usr/lib/substrate" restricted:YES];
+        [shadow addPath:@"/usr/lib/tweaks" restricted:YES];
+        [shadow addPath:@"/usr/lib/apt" restricted:YES];
+        [shadow addPath:@"/usr/lib/bash" restricted:YES];
+        [shadow addPath:@"/usr/lib/cycript" restricted:YES];
+    } else {
+        [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
+        [shadow addPath:@"/usr/lib/FDRSealingMap.plist" restricted:NO];
+        [shadow addPath:@"/usr/lib/bbmasks" restricted:NO];
+        [shadow addPath:@"/usr/lib/dyld" restricted:NO];
+        [shadow addPath:@"/usr/lib/libCRFSuite" restricted:NO];
+        [shadow addPath:@"/usr/lib/libDHCPServer" restricted:NO];
+        [shadow addPath:@"/usr/lib/libMatch" restricted:NO];
+        [shadow addPath:@"/usr/lib/libSystem" restricted:NO];
+        [shadow addPath:@"/usr/lib/libarchive" restricted:NO];
+        [shadow addPath:@"/usr/lib/libbsm" restricted:NO];
+        [shadow addPath:@"/usr/lib/libbz2" restricted:NO];
+        [shadow addPath:@"/usr/lib/libc++" restricted:NO];
+        [shadow addPath:@"/usr/lib/libc" restricted:NO];
+        [shadow addPath:@"/usr/lib/libcharset" restricted:NO];
+        [shadow addPath:@"/usr/lib/libcurses" restricted:NO];
+        [shadow addPath:@"/usr/lib/libdbm" restricted:NO];
+        [shadow addPath:@"/usr/lib/libdl" restricted:NO];
+        [shadow addPath:@"/usr/lib/libeasyperf" restricted:NO];
+        [shadow addPath:@"/usr/lib/libedit" restricted:NO];
+        [shadow addPath:@"/usr/lib/libexslt" restricted:NO];
+        [shadow addPath:@"/usr/lib/libextension" restricted:NO];
+        [shadow addPath:@"/usr/lib/libform" restricted:NO];
+        [shadow addPath:@"/usr/lib/libiconv" restricted:NO];
+        [shadow addPath:@"/usr/lib/libicucore" restricted:NO];
+        [shadow addPath:@"/usr/lib/libinfo" restricted:NO];
+        [shadow addPath:@"/usr/lib/libipsec" restricted:NO];
+        [shadow addPath:@"/usr/lib/liblzma" restricted:NO];
+        [shadow addPath:@"/usr/lib/libm" restricted:NO];
+        [shadow addPath:@"/usr/lib/libmecab" restricted:NO];
+        [shadow addPath:@"/usr/lib/libncurses" restricted:NO];
+        [shadow addPath:@"/usr/lib/libobjc" restricted:NO];
+        [shadow addPath:@"/usr/lib/libpcap" restricted:NO];
+        [shadow addPath:@"/usr/lib/libpmsample" restricted:NO];
+        [shadow addPath:@"/usr/lib/libpoll" restricted:NO];
+        [shadow addPath:@"/usr/lib/libproc" restricted:NO];
+        [shadow addPath:@"/usr/lib/libpthread" restricted:NO];
+        [shadow addPath:@"/usr/lib/libresolv" restricted:NO];
+        [shadow addPath:@"/usr/lib/librpcsvc" restricted:NO];
+        [shadow addPath:@"/usr/lib/libsandbox" restricted:NO];
+        [shadow addPath:@"/usr/lib/libsqlite3" restricted:NO];
+        [shadow addPath:@"/usr/lib/libstdc++" restricted:NO];
+        [shadow addPath:@"/usr/lib/libtidy" restricted:NO];
+        [shadow addPath:@"/usr/lib/libutil" restricted:NO];
+        [shadow addPath:@"/usr/lib/libxml2" restricted:NO];
+        [shadow addPath:@"/usr/lib/libxslt" restricted:NO];
+        [shadow addPath:@"/usr/lib/libz" restricted:NO];
+        [shadow addPath:@"/usr/lib/libperfcheck" restricted:NO];
+        [shadow addPath:@"/usr/lib/libedit" restricted:NO];
+        [shadow addPath:@"/usr/lib/log" restricted:NO];
+        [shadow addPath:@"/usr/lib/system" restricted:NO];
+        [shadow addPath:@"/usr/lib/updaters" restricted:NO];
+        [shadow addPath:@"/usr/lib/xpc" restricted:NO];
+    }
+    
     [shadow addPath:@"/usr/libexec" restricted:YES hidden:NO];
     [shadow addPath:@"/usr/libexec/BackupAgent" restricted:NO];
     [shadow addPath:@"/usr/libexec/BackupAgent2" restricted:NO];
@@ -3356,6 +3365,37 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             // Compatibility mode
             [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
 
+            // Lockdown mode
+            if([prefs_lockdown boolForKey:bundleIdentifier]) {
+                %init(hook_libc_inject);
+                %init(hook_dlopen_inject);
+
+                MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
+                MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
+
+                [_shadow setUseInjectCompatibilityMode:NO];
+                [_shadow setUseTweakCompatibilityMode:NO];
+
+                _dyld_register_func_for_add_image(dyld_image_added);
+
+                NSLog(@"enabled lockdown mode");
+            }
+
+            if([_shadow useInjectCompatibilityMode]) {
+                NSLog(@"using injection compatibility mode");
+            } else {
+                // Substitute doesn't like hooking opendir :(
+                if(!isSubstitute) {
+                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                }
+
+                MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
+            }
+
+            if([_shadow useTweakCompatibilityMode]) {
+                NSLog(@"using tweak compatibility mode");
+            }
+
             // Initialize restricted path map
             init_path_map(_shadow);
             NSLog(@"initialized internal path map");
@@ -3441,37 +3481,6 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 %init(hook_dyld_dlsym);
 
                 NSLog(@"hooked dynamic linker methods");
-            }
-
-            // Lockdown mode
-            if([prefs_lockdown boolForKey:bundleIdentifier]) {
-                %init(hook_libc_inject);
-                %init(hook_dlopen_inject);
-
-                MSHookFunction((void *) open, (void *) hook_open, (void **) &orig_open);
-                MSHookFunction((void *) openat, (void *) hook_openat, (void **) &orig_openat);
-
-                [_shadow setUseInjectCompatibilityMode:NO];
-                [_shadow setUseTweakCompatibilityMode:NO];
-
-                _dyld_register_func_for_add_image(dyld_image_added);
-
-                NSLog(@"enabled lockdown mode");
-            }
-
-            if([_shadow useInjectCompatibilityMode]) {
-                NSLog(@"using injection compatibility mode");
-            } else {
-                // Substitute doesn't like hooking opendir :(
-                if(!isSubstitute) {
-                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
-                }
-
-                MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
-            }
-
-            if([_shadow useTweakCompatibilityMode]) {
-                NSLog(@"using tweak compatibility mode");
             }
 
             _error_file_not_found = [Shadow generateFileNotFoundError];
