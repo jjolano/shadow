@@ -3063,7 +3063,6 @@ void init_path_map(Shadow *shadow) {
     // Restrict /System
     [shadow addPath:@"/System" restricted:NO];
     [shadow addPath:@"/System/Library/PreferenceBundles/AppList.bundle" restricted:YES];
-    [shadow addPath:@"/System/Library/Caches/apticket.der" restricted:YES];
 }
 
 // Manual hooks
