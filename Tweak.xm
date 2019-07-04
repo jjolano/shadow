@@ -29,6 +29,7 @@ static uint32_t dyld_array_count = 0;
 static NSError *_error_file_not_found = nil;
 
 static BOOL passthrough = NO;
+static BOOL extra_compat = YES;
 
 static void updateDyldArray(void) {
     dyld_array_count = 0;
@@ -2772,7 +2773,7 @@ void init_path_map(Shadow *shadow) {
     [shadow addPath:@"/usr/bin/vm_stat" restricted:NO];
     [shadow addPath:@"/usr/bin/zprint" restricted:NO];
 
-    if([shadow useTweakCompatibilityMode]) {
+    if([shadow useTweakCompatibilityMode] && extra_compat) {
         [shadow addPath:@"/usr/lib" restricted:NO];
         [shadow addPath:@"/usr/lib/libsubstrate" restricted:YES];
         [shadow addPath:@"/usr/lib/libsubstitute" restricted:YES];
@@ -3304,8 +3305,11 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 @"mode" : @"whitelist",
                 @"bypass_checks" : @YES,
                 @"exclude_system_apps" : @YES,
-                @"dyld_hooks_enabled" : @YES
+                @"dyld_hooks_enabled" : @YES,
+                @"extra_compat_enabled" : @YES
             }];
+
+            extra_compat = [prefs boolForKey:@"extra_compat_enabled"];
             
             // Check if Shadow is enabled
             if(![prefs boolForKey:@"enabled"]) {

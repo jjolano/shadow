@@ -344,6 +344,18 @@
 				</dict>
 			</array>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<true/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>extra_compat_enabled</string>
+			<key>label</key>
+			<string>Extra Compatibility</string>
+		</dict>
 
 		<!-- Lockdown Mode -->
 		<dict>
