@@ -167,6 +167,7 @@
     || [name hasPrefix:@"/Library/MobileSubstrate"]
     || [name hasPrefix:@"/Library/TweakInject"]
     || [name hasPrefix:@"/usr/lib/tweaks"]
+    || [name hasPrefix:@"/usr/lib/TweakInject"]
     || [name hasPrefix:@"/var/containers/Bundle/tweaksupport"]
     || [name hasPrefix:@"/var/containers/Bundle/dylibs"]
     || [name containsString:@"Substrate"]
