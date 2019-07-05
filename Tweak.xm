@@ -1459,6 +1459,13 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 %end
 */
 %group hook_NSUtilities
+%hook NSProcessInfo
+- (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+    // Override version checks that use this method.
+    return YES;
+}
+%end
+
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
