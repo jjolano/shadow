@@ -3406,8 +3406,14 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 NSLog(@"using injection compatibility mode");
             } else {
                 // Substitute doesn't like hooking opendir :(
-                if(!isSubstitute) {
-                    MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                // if(!isSubstitute) {
+                //     MSHookFunction((void *) opendir, (void *) hook_opendir, (void **) &orig_opendir);
+                // }
+
+                void *opendir_fnptr = dlsym(RTLD_DEFAULT, "opendir");
+
+                if(opendir_fnptr) {
+                    MSHookFunction((void *) opendir_fnptr, (void *) hook_opendir, (void **) &orig_opendir);
                 }
 
                 MSHookFunction((void *) readdir, (void *) hook_readdir, (void **) &orig_readdir);
