@@ -1483,105 +1483,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 %end
-/*
-%hook NSData
-- (id)initWithContentsOfMappedFile:(NSString *)path {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        return nil;
-    }
 
-    return %orig;
-}
-
-+ (id)dataWithContentsOfMappedFile:(NSString *)path {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url partial:NO]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        if(error) {
-            *error = _error_file_not_found;
-        }
-
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url partial:NO]) {
-        if(error) {
-            *error = _error_file_not_found;
-        }
-        
-        return nil;
-    }
-
-    return %orig;
-}
-
-+ (instancetype)dataWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url partial:NO]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-+ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path partial:NO]) {
-        if(error) {
-            *error = _error_file_not_found;
-        }
-
-        return nil;
-    }
-
-    return %orig;
-}
-
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url partial:NO]) {
-        if(error) {
-            *error = _error_file_not_found;
-        }
-
-        return nil;
-    }
-
-    return %orig;
-}
-%end
-*/
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
     if([_shadow isPathRestricted:path partial:NO]) {
@@ -1908,33 +1810,7 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return %orig;
 }
 %end
-/*
-%group hook_dyld_advanced
-%hookf(int32_t, NSVersionOfRunTimeLibrary, const char *libraryName) {
-    if(libraryName) {
-        NSString *name = [NSString stringWithUTF8String:libraryName];
 
-        if([_shadow isImageRestricted:name]) {
-            return -1;
-        }
-    }
-    
-    return %orig;
-}
-
-%hookf(int32_t, NSVersionOfLinkTimeLibrary, const char *libraryName) {
-    if(libraryName) {
-        NSString *name = [NSString stringWithUTF8String:libraryName];
-
-        if([_shadow isImageRestricted:name]) {
-            return -1;
-        }
-    }
-    
-    return %orig;
-}
-%end
-*/
 %group hook_dyld_dlsym
 %hookf(void *, dlsym, void *handle, const char *symbol) {
     if(symbol) {
@@ -2469,6 +2345,130 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
     return true;
 }
 %end
+%end
+
+%group hook_experimental
+%hook NSData
+- (id)initWithContentsOfMappedFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (id)dataWithContentsOfMappedFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url partial:NO]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+        
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url partial:NO]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path partial:NO]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url partial:NO]) {
+        if(error) {
+            *error = _error_file_not_found;
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+
+%hookf(int32_t, NSVersionOfRunTimeLibrary, const char *libraryName) {
+    if(libraryName) {
+        NSString *name = [NSString stringWithUTF8String:libraryName];
+
+        if([_shadow isImageRestricted:name]) {
+            return -1;
+        }
+    }
+    
+    return %orig;
+}
+
+%hookf(int32_t, NSVersionOfLinkTimeLibrary, const char *libraryName) {
+    if(libraryName) {
+        NSString *name = [NSString stringWithUTF8String:libraryName];
+
+        if([_shadow isImageRestricted:name]) {
+            return -1;
+        }
+    }
+    
+    return %orig;
+}
 %end
 
 void init_path_map(Shadow *shadow) {
@@ -3398,6 +3398,10 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
                 [_shadow setUseTweakCompatibilityMode:NO];
 
                 _dyld_register_func_for_add_image(dyld_image_added);
+
+                if([prefs boolForKey:@"experimental_enabled"]) {
+                    %init(hook_experimental);
+                }
 
                 NSLog(@"enabled lockdown mode");
             }
