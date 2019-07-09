@@ -413,6 +413,18 @@
 			<key>label</key>
 			<string>Enable Experimental Methods</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>key</key>
+			<string>standardize_paths</string>
+			<key>label</key>
+			<string>Path Resolving (beta)</string>
+		</dict>
 
 		<!-- Footer -->
 		<dict>

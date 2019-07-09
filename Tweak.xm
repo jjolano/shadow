@@ -3401,6 +3401,9 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
                 if([prefs boolForKey:@"experimental_enabled"]) {
                     %init(hook_experimental);
+                }
+
+                if([prefs boolForKey:@"standardize_paths"]) {
                     [_shadow setUsePathStandardization:YES];
                 }
 
