@@ -3401,6 +3401,7 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
 
                 if([prefs boolForKey:@"experimental_enabled"]) {
                     %init(hook_experimental);
+                    [_shadow setUsePathStandardization:YES];
                 }
 
                 NSLog(@"enabled lockdown mode");

@@ -24,6 +24,7 @@
 
 @property (nonatomic, assign) BOOL useTweakCompatibilityMode;
 @property (nonatomic, assign) BOOL useInjectCompatibilityMode;
+@property (nonatomic, assign) BOOL usePathStandardization;
 @property (readonly) BOOL passthrough;
 
 - (NSArray *)generateDyldArray;

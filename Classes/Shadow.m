@@ -15,6 +15,7 @@
 
         _useTweakCompatibilityMode = NO;
         _useInjectCompatibilityMode = NO;
+        _usePathStandardization = NO;
         _passthrough = NO;
     }
 
@@ -226,6 +227,11 @@
     // Change symlink path to real path if in link map.
     NSString *path_resolved = [self resolveLinkInPath:path];
     path = path_resolved;
+
+    // Standardize path if enabled.
+    if(_usePathStandardization) {
+        path = [path stringByStandardizingPath];
+    }
 
     // Ensure we are working with absolute path.
     if(![path isAbsolutePath]) {
