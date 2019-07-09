@@ -423,7 +423,7 @@
 			<key>key</key>
 			<string>standardize_paths</string>
 			<key>label</key>
-			<string>Path Resolving (beta)</string>
+			<string>Enable Path Resolving (beta)</string>
 		</dict>
 
 		<!-- Footer -->
