@@ -1668,6 +1668,17 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
     return %orig;
 }
+
+- (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
+    if([_shadow isPathRestricted:self]) {
+        *outputName = nil;
+        *outputArray = nil;
+
+        return 0;
+    }
+
+    return %orig;
+}
 %end
 %end
 
@@ -2791,6 +2802,7 @@ void init_path_map(Shadow *shadow) {
         [shadow addPath:@"/usr/lib/apt" restricted:YES];
         [shadow addPath:@"/usr/lib/bash" restricted:YES];
         [shadow addPath:@"/usr/lib/cycript" restricted:YES];
+        [shadow addPath:@"/usr/lib/libmis.dylib" restricted:YES];
     } else {
         [shadow addPath:@"/usr/lib" restricted:YES hidden:NO];
         [shadow addPath:@"/usr/lib/FDRSealingMap.plist" restricted:NO];
