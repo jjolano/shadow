@@ -1,0 +1,66 @@
+"SHADOW_SETTINGS_GROUP" = "Shadow Settings";
+"SHADOW_SETTINGS_FOOTER_TEXT" = "Please note: when tweak injection is disabled in an app, bypass functionality will not be available. Use Lockdown Mode (below) to disable other tweaks while maintaining bypass functionality.";
+
+"TOGGLE_ENABLE_SHADOW" = "Enable Shadow";
+"TOGGLE_SAFE_APPS" = "Disable Shadow for Safe Apps";
+
+"BYPASS_DETECTION_LIB_FOOTER_TEXT" = "Skips some common jailbreak checks. May also be useful for app-specific bypasses.";
+"TOGGLE_DETECTION_LIB" = "Bypass Detection Libraries";
+
+"APP_SETTINGS_GROUP" = "Application Settings";
+"APP_SETTINGS_FOOTER_TEXT" = "Blacklist mode enables Shadow for all except selected apps. Whitelist mode enables Shadow only for selected apps.";
+"APPLICATIONS" = "Applications";
+
+"BLACKLIST_MODE" = "Blacklist Mode";
+"WHITELIST_MODE" = "Whitelist Mode";
+
+"RESPRING" = "Restart SpringBoard";
+"RESET" = "Reset Settings";
+"RESET_DESC" = "This will reset all preferences to defaults and remove the generated file map.";
+"RESET_BTN" = "Reset";
+"CANCEL_BTN" = "Cancel";
+
+"FILE_MAP" = "File Map";
+"FILE_MAP_DESC" = "Dynamically enhances bypass functionality by reading all installed package files.";
+
+"GENERATE_FILE_MAP" = "Generate File Map";
+"GENERATE_FILE_MAP_DESC" = "This will read all installed package files. This may take a while, depending on how many packages are installed.";
+"CONTINUE_BTN" = "Continue";
+
+"AUTO_GENERATE" = "Automatically Generate";
+
+"DYNAMIC_LIB_GROUP" = "Dynamic Libraries";
+"DYNAMIC_LIB_FOOTER_TEXT" = "Prevents apps from detecting tweaks in most cases. Advanced filters will perform additional runtime filtering which may increase app launch times.";
+"TOGGLE_STANDARD_FILTERS" = "Enable Standard Filters";
+"TOGGLE_ADVANCED_FILTERS" = "Enable Advanced Filters";
+
+"DYNAMIC_LINKER_GROUP" = "Dynamic Linker";
+"DYNAMIC_LINKER_FOOTER_TEXT" = "Prevents apps from detecting Substrate or Substitute via exported hooking functions. May be unstable in some apps, causing crashes or other issues.";
+"FILTER_DYNAMIC_LINKER" = "Filter Dynamic Linker";
+
+"SANDBOX_INTEGRITY_GROUP" = "Sandbox Integrity";
+"SANDBOX_INTEGRITY_FOOTER_TEXT" = "Attempts to restore sandbox functionality. Intended for iOS 10 and lower. Not necessary for iOS 11 and up, but may be useful as a last resort.";
+"TOGGLE_RESTORE_SANDBOX" = "Restore Sandbox";
+
+"TWEAK_COMPAT_GROUP" = "Tweak Compatibility";
+"TWEAK_COMPAT_FOOTER_TEXT" = "Compatibility settings reduce bypass effectiveness in exchange for tweak functionality.";
+"DISABLE_TWEAK_COMPAT" = "Disable Tweak Compatibility";
+"TOGGLE_EXTRA_COMPAT" = "Extra Tweak Compatibility";
+
+"LOCKDOWN_MODE_GROUP" = "Lockdown Mode";
+"LOCKDOWN_MODE_FOOTER_TEXT" = "Comprehensive bypass method that disables tweaks while maintaining bypass functionality. Additional methods to bypass jailbreak detection are enabled in this mode. Substrate or Substitute may still be detected, so enable dynamic linker and dynamic library filtering for maximum coverage.";
+
+"TOGGLE_EXPERIMENTAL" = "Enable Experimental Methods";
+"TOGGLE_PATH_RESOLVE" = "Enable Path Resolving (beta)";
+
+"TECHNICAL_SUPPORT_GROUP" = "Technical Support";
+"TECHNICAL_SUPPORT_FOOTER_TEXT" = "Please report app crashes with a crash log from CrashReporter. This helps pinpoint any issues related to Shadow. Thank you!";
+
+"DEV_REDDIT" = "jjolano on Reddit";
+"SOURCE_CODE" = "View Source Code on GitHub";
+
+"DEV_SUPPORT_GROUP" = "Developer Support";
+"DEV_SUPPORT_FOOTER_TEXT" = "Shadow is currently in active development. If this tweak has been successful for you, I would greatly appreciate monetary donations and/or supportive messages. Your support keeps me motivated to keep developing the best jailbreak detection bypass :).";
+"DONATE" = "Donate";
+
+"FOOTER" = "Shadow by jjolano";
