@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = 0Shadow
 $(TWEAK_NAME)_FILES = Classes/Shadow.m Tweak.xm
 $(TWEAK_NAME)_EXTRA_FRAMEWORKS = Cephei
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc -DShadow=$(shell git describe --always)
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
