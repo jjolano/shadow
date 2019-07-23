@@ -1378,6 +1378,38 @@ static void dyld_image_added(const struct mach_header *mh, intptr_t slide) {
 
     return %orig;
 }
+
++ (instancetype)bundleWithURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+    
+    return %orig;
+}
+
++ (instancetype)bundleWithPath:(NSString *)path {
+    if([_shadow isPathRestricted:path]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithURL:(NSURL *)url {
+    if([_shadow isURLRestricted:url]) {
+        return nil;
+    }
+    
+    return %orig;
+}
+
+- (instancetype)initWithPath:(NSString *)path {
+    if([_shadow isPathRestricted:path]) {
+        return nil;
+    }
+
+    return %orig;
+}
 %end
 %end
 /*
