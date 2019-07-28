@@ -3420,7 +3420,8 @@ static ssize_t hook_readlinkat(int fd, const char *path, char *buf, size_t bufsi
             [_shadow setUseTweakCompatibilityMode:[prefs_tweakcompat boolForKey:bundleIdentifier] ? NO : YES];
 
             // Disable inject compatibility if we are using Substitute.
-            BOOL isSubstitute = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"];
+            NSFileManager *fm = [NSFileManager defaultManager];
+            BOOL isSubstitute = ([fm fileExistsAtPath:@"/usr/lib/libsubstitute.dylib"] && ![fm fileExistsAtPath:@"/usr/lib/substrate"]);
 
             if(isSubstitute) {
                 [_shadow setUseInjectCompatibilityMode:NO];
