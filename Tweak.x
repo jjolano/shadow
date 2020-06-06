@@ -1,34 +1,56 @@
-/* How to Hook with Logos
-Hooks are written with syntax similar to that of an Objective-C @implementation.
-You don't need to #include <substrate.h>, it will be done automatically, as will
-the generation of a class list and an automatic constructor.
+#import <Cephei/HBPreferences.h>
+#import <rocketbootstrap/rocketbootstrap.h>
+#import <AppSupport/CPDistributedMessagingCenter.h>
 
-%hook ClassName
+#import "hooks/hooks.h"
 
-// Hooking a class method
-+ (id)sharedInstance {
-	return %orig;
+static CPDistributedMessagingCenter* c = nil;
+
+BOOL isPathRestricted(NSString* path) {
+	if(!c) {
+		return NO;
+	}
+
+	// Query shadowd with path.
+	NSDictionary* result = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+		@"path" : path
+	}];
+
+	if(!result || ![result[@"restricted"] boolValue]) {
+		return NO;
+	}
+
+	return YES;
 }
 
-// Hooking an instance method with an argument.
-- (void)messageName:(int)argument {
-	%log; // Write a message about this call, including its class, name and arguments, to the system log.
+%ctor {
+	// Determine the application we're injected into.
+	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 
-	%orig; // Call through to the original function with its original arguments.
-	%orig(nil); // Call through to the original function with a custom argument.
+	// Injected into SpringBoard.
+	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+		// Unlock shadowd service for IPC.
+		rocketbootstrap_unlock("me.jjolano.shadow");
+		return;
+	}
 
-	// If you use %orig(), you MUST supply all arguments (except for self and _cmd, the automatically generated ones.)
+	// Load tweak preferences.
+	HBPreferences* shadowPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+
+	// Check if Shadow is enabled in this application.
+	NSDictionary* bundlePrefs = [shadowPrefs objectForKey:bundleIdentifier];
+
+	if(!bundlePrefs || !bundlePrefs[@"enabled"]) {
+		return;
+	}
+
+	// Initialize connection to shadowd.
+	c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
+	rocketbootstrap_distributedmessagingcenter_apply(c);
+
+	// Activate base hooks.
+	
+	
+	// Activate extra features (if enabled).
+	
 }
-
-// Hooking an instance method with no arguments.
-- (id)noArguments {
-	%log;
-	id awesome = %orig;
-	[awesome doSomethingElse];
-
-	return awesome;
-}
-
-// Always make sure you clean up after yourself; Not doing so could have grave consequences!
-%end
-*/

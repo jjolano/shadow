@@ -1,0 +1,9 @@
+Package: me.jjolano.shadow.daemon
+Name: shadowd
+Depends:
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: An awesome XPC service!
+Maintainer: jjolano
+Author: jjolano
+Section: System

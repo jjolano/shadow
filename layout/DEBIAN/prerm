@@ -1,0 +1,2 @@
+#!/bin/sh
+launchctl unload /Library/LaunchDaemons/me.jjolano.shadow.daemon.plist
