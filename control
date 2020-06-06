@@ -1,9 +1,9 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: mobilesubstrate, ws.hbang.common, applist, preferenceloader
-Version: 2.0.19
+Depends: mobilesubstrate
+Version: 0.0.1
 Architecture: iphoneos-arm
-Description: A lightweight general jailbreak detection bypass.
+Description: An awesome MobileSubstrate tweak!
 Maintainer: jjolano
 Author: jjolano
 Section: Tweaks
