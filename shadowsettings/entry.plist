@@ -11,7 +11,7 @@
 		<key>detail</key>
 		<string>SHDWRootListController</string>
 		<key>icon</key>
-		<string>Icon.png</string>
+		<string>icon.png</string>
 		<key>isController</key>
 		<true/>
 		<key>label</key>
