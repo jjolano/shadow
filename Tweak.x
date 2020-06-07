@@ -5,6 +5,7 @@
 #import "hooks/hooks.h"
 
 static CPDistributedMessagingCenter* c = nil;
+NSString* bundleIdentifier = nil;
 
 BOOL isPathRestricted(NSString* path) {
 	if(!c) {
@@ -13,6 +14,7 @@ BOOL isPathRestricted(NSString* path) {
 
 	// Query shadowd with path.
 	NSDictionary* result = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+		@"bundleIdentifier" : bundleIdentifier,
 		@"path" : path
 	}];
 
@@ -25,7 +27,7 @@ BOOL isPathRestricted(NSString* path) {
 
 %ctor {
 	// Determine the application we're injected into.
-	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+	bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
