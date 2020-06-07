@@ -8,17 +8,15 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Jailbreak Detection Bypass</string>
+			<string>Bypass Settings</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string></string>
-			<key>isController</key>
-			<true/>
+			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>Applications</string>
+			<string>Select Applications...</string>
+			<key>action</key>
+			<string>selectApplications</string>
 		</dict>
 		<dict>
 			<key>cell</key>
