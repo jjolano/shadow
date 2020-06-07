@@ -5,6 +5,7 @@ BUNDLE_NAME = ShadowSettings
 
 ShadowSettings_FILES = SHDWRootListController.m
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
+ShadowSettings_LIBRARIES = sparkapplist
 ShadowSettings_FRAMEWORKS = UIKit
 ShadowSettings_EXTRA_FRAMEWORKS = Cephei CepheiPrefs
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
