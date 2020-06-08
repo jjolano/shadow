@@ -31,8 +31,14 @@
 
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
     if([name isEqualToString:@"isPathRestricted"]) {
+        BOOL restricted = [self isPathRestricted:userInfo[@"path"]];
+
+        if(restricted) {
+            NSLog(@"restricted path detected: %@", userInfo[@"path"]);
+        }
+
         return @{
-            @"restricted" : @([self isPathRestricted:userInfo[@"path"]])
+            @"restricted" : @(restricted)
         };
     }
 
