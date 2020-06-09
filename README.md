@@ -4,6 +4,9 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 ### `shadowd`?
 With upcoming versions of Shadow, a system daemon will be installed and will be active when required by Shadow. The purpose of this daemon is to offload the main bulk of Shadow's codebase into a central location as well as increase the potential of what Shadow can bring in future releases.
 
+## Development Status
+The upcoming version of Shadow is currently in active development. Unless you are a developer, do not use the `master` branch. The old (working) codebase can be found in the `old` branch.
+
 ## Dependencies
 * Code injection platform (Substrate, Substitute, libhooker)
 * PreferenceLoader
