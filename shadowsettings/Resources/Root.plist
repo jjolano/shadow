@@ -12,11 +12,13 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSButtonCell</string>
+			<string>PSLinkCell</string>
 			<key>label</key>
 			<string>Select Applications...</string>
-			<key>action</key>
-			<string>selectApplications</string>
+			<key>detail</key>
+			<string>SHDWAppsViewController</string>
+			<key>isController</key>
+			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -72,6 +74,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Links</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -79,7 +83,7 @@
 			<key>cellClass</key>
 			<string>HBLinkTableCell</string>
 			<key>label</key>
-			<string>View Source Code</string>
+			<string>Source Code</string>
 			<key>url</key>
 			<string>https://github.com/jjolano/shadow</string>
 		</dict>
