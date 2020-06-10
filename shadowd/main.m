@@ -12,7 +12,7 @@ int main(int argc, char *argv[], char *envp[]) {
 		Shadow* shadow = [Shadow sharedInstance];
 
 		if(!shadow) {
-			NSLog(@"error: failed to initialize Shadow instance.");
+			HBLogError(@"error: failed to initialize Shadow instance.");
 			return 1;
 		}
 
@@ -24,7 +24,7 @@ int main(int argc, char *argv[], char *envp[]) {
 		// Register messages.
 		[messagingCenter registerForMessageName:@"isRestrictedPath" target:shadow selector:@selector(handleMessageNamed:withUserInfo:)];
 
-		NSLog(@"shadowd ready.");
+		HBLogInfo(@"shadowd ready.");
 
 		// Keep daemon running.
 		[[NSRunLoop currentRunLoop] run];

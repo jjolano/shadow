@@ -16,26 +16,18 @@
     return sharedInstance;
 }
 
-- (instancetype)init {
-    if((self = [super init])) {
-
-    }
-
-    return self;
-}
-
 - (BOOL)isPathRestricted:(NSString *)path {
 
     return NO;
 }
 
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
+    HBLogInfo(@"handleMessageNamed:%@ from %@", name, userInfo[@"bundleIdentifier"]);
+
     if([name isEqualToString:@"isPathRestricted"]) {
         BOOL restricted = [self isPathRestricted:userInfo[@"path"]];
 
-        if(restricted) {
-            NSLog(@"restricted path detected: %@", userInfo[@"path"]);
-        }
+        HBLogInfo(@"isPathRestricted:%@: %s", userInfo[@"path"], restricted ? "restricted" : "permitted");
 
         return @{
             @"restricted" : @(restricted)
@@ -43,5 +35,14 @@
     }
 
     return nil;
+}
+
+- (instancetype)init {
+    if((self = [super init])) {
+        HBLogInfo(@"[shadow] initializing Shadow instance");
+        
+    }
+
+    return self;
 }
 @end

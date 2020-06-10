@@ -12,7 +12,8 @@ The upcoming version of Shadow is currently in active development. Unless you ar
 * PreferenceLoader
 * RocketBootstrap
 * Cephei
-* libSparkAppList
+* AppList
+* iOS 11 or above
 
 ## Installation
 Add [my repo](https://ios.jjolano.me) to your package manager and install the Shadow (`me.jjolano.shadow`) package. Alternatively, download the [latest release](https://github.com/jjolano/shadow/releases) directly from GitHub.

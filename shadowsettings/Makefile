@@ -1,11 +1,13 @@
 ARCHS = arm64 arm64e
+TARGET = iphone:clang:latest:11.0
 include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = ShadowSettings
 
-ShadowSettings_FILES = SHDWRootListController.m
+# ShadowSettings_FILES = SHDWRootListController.m
+ShadowSettings_FILES = $(wildcard *.m)
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
-ShadowSettings_LIBRARIES = sparkapplist
+ShadowSettings_LIBRARIES = applist
 ShadowSettings_FRAMEWORKS = UIKit
 ShadowSettings_EXTRA_FRAMEWORKS = Cephei CepheiPrefs
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
