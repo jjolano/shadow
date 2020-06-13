@@ -12,7 +12,7 @@ BOOL isPathRestricted(NSString* path) {
 		return NO;
 	}
 
-	HBLogDebug(@"[shadow] querying isPathRestricted from shadowd...");
+	HBLogDebug(@"[shadow] isPathRestricted:%@", path);
 
 	// Query shadowd with path.
 	NSDictionary* result = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
@@ -35,8 +35,7 @@ BOOL isPathRestricted(NSString* path) {
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 		// Unlock shadowd service for IPC.
 		rocketbootstrap_unlock("me.jjolano.shadow");
-
-		HBLogDebug(@"[shadow] enabled shadowd.");
+		HBLogInfo(@"[shadow] enabled shadowd.");
 		return;
 	}
 
@@ -53,12 +52,6 @@ BOOL isPathRestricted(NSString* path) {
 	// Initialize connection to shadowd.
 	c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
 	rocketbootstrap_distributedmessagingcenter_apply(c);
-
-	if(c) {
-		HBLogDebug(@"[shadow] connected to shadowd.");
-	} else {
-		HBLogError(@"[shadow] error: could not connect to shadowd.");
-	}
 
 	// Activate base hooks.
 	
