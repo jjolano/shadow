@@ -1,3 +1,4 @@
+#import <HBLog.h>
 #import <Cephei/HBPreferences.h>
 #import <rocketbootstrap/rocketbootstrap.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>

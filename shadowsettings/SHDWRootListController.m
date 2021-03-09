@@ -1,5 +1,4 @@
 #import "SHDWRootListController.h"
-#import "SHDWAppsViewController.h"
 
 #import <Cephei/HBPreferences.h>
 #import <Cephei/HBRespringController.h>

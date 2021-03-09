@@ -22,12 +22,8 @@
 }
 
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
-    HBLogDebug(@"[shadow] handleMessageNamed:%@ from %@", name, userInfo[@"bundleIdentifier"]);
-
     if([name isEqualToString:@"isPathRestricted"]) {
         BOOL restricted = [self isPathRestricted:userInfo[@"path"]];
-
-        HBLogDebug(@"[shadow] isPathRestricted:%@: %s", userInfo[@"path"], restricted ? "restricted" : "permitted");
 
         return @{
             @"restricted" : @(restricted)
@@ -39,8 +35,7 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        
-        HBLogInfo(@"[shadow] initialized Shadow instance");
+
     }
 
     return self;
