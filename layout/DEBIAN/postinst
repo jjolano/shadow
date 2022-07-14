@@ -1,2 +1,3 @@
 #!/bin/sh
-launchctl load /Library/LaunchDaemons/me.jjolano.shadow.daemon.plist
+launchctl load -w /Library/LaunchDaemons/me.jjolano.shadow.daemon.plist
+exit 0

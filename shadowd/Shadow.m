@@ -1,19 +1,9 @@
 #import "Shadow.h"
 
 @implementation Shadow
-+ (void)load {
-    [self sharedInstance];
-}
++ (NSArray *)getURLHandlers {
 
-+ (instancetype)sharedInstance {
-    static dispatch_once_t once = 0;
-    __strong static id sharedInstance = nil;
-
-    dispatch_once(&once, ^{
-        sharedInstance = [self new];
-    });
-
-    return sharedInstance;
+    return nil;
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
@@ -21,9 +11,15 @@
     return NO;
 }
 
+- (BOOL)isURLRestricted:(NSURL *)url {
+
+    return NO;
+}
+
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
-    if([name isEqualToString:@"isPathRestricted"]) {
-        BOOL restricted = [self isPathRestricted:userInfo[@"path"]];
+    if([name isEqualToString:@"shadowd_isRestricted"]) {
+        NSURL* url = userInfo[@"url"];
+        BOOL restricted = [self isURLRestricted:url];
 
         return @{
             @"restricted" : @(restricted)
@@ -39,5 +35,20 @@
     }
 
     return self;
+}
+
++ (instancetype)sharedInstance {
+    static dispatch_once_t once = 0;
+    __strong static id sharedInstance = nil;
+
+    dispatch_once(&once, ^{
+        sharedInstance = [self new];
+    });
+
+    return sharedInstance;
+}
+
++ (void)load {
+    [self sharedInstance];
 }
 @end
