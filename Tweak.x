@@ -8,24 +8,22 @@
 static CPDistributedMessagingCenter* c = nil;
 NSString* bundleIdentifier = nil;
 
-BOOL isPathRestricted(NSString* path) {
+BOOL shadowd_isRestricted(NSURL* url) {
 	if(!c) {
 		return NO;
 	}
 
-	HBLogDebug(@"[shadow] isPathRestricted:%@", path);
-
 	// Query shadowd with path.
-	NSDictionary* result = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+	NSDictionary* result = [c sendMessageAndReceiveReplyName:@"shadowd_isRestricted" userInfo:@{
 		@"bundleIdentifier" : bundleIdentifier,
-		@"path" : path
+		@"url" : url
 	}];
 
-	if(!result || ![result[@"restricted"] boolValue]) {
-		return NO;
+	if(result && [result[@"restricted"] boolValue]) {
+		return YES;
 	}
 
-	return YES;
+	return NO;
 }
 
 %ctor {
@@ -34,9 +32,36 @@ BOOL isPathRestricted(NSString* path) {
 
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+		// Load tweak preferences.
+		HBPreferences* shadowPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+
+		[shadowPrefs registerDefaults:@{
+			@"tweak": @{
+				@"prefs_revision": @(1)
+			}
+		}];
+
+		// Initialize tweak preferences.
+		NSDictionary* tweakPrefs = [shadowPrefs objectForKey:@"tweak"];
+		NSMutableDictionary* tweakPrefsNew = [tweakPrefs mutableCopy];
+
+		/*
+		if([tweakPrefs[@"prefs_revision"] intValue] < 2) {
+			// Code for upgrading preferences from rev 1...
+
+			tweakPrefsNew[@"prefs_revision"] = @(2);
+		}
+		*/
+
+		// Update prefs if necessary.
+		if([tweakPrefsNew[@"prefs_revision"] intValue] != [tweakPrefs[@"prefs_revision"] intValue]) {
+			// tweakPrefs = [NSDictionary dictionaryWithDictionary:tweakPrefsNew];
+			[shadowPrefs setObject:tweakPrefsNew forKey:@"tweak"];
+		}
+
 		// Unlock shadowd service for IPC.
 		rocketbootstrap_unlock("me.jjolano.shadow");
-		HBLogInfo(@"[shadow] enabled shadowd.");
+
 		return;
 	}
 
@@ -44,7 +69,8 @@ BOOL isPathRestricted(NSString* path) {
 	HBPreferences* shadowPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
 
 	// Check if Shadow is enabled in this application.
-	NSDictionary* bundlePrefs = [shadowPrefs objectForKey:bundleIdentifier];
+	NSDictionary* appPrefs = [shadowPrefs objectForKey:@"app"];
+	NSDictionary* bundlePrefs = appPrefs[bundleIdentifier];
 
 	if(!bundlePrefs || !bundlePrefs[@"enabled"]) {
 		return;
