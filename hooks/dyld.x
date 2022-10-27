@@ -1,1 +1,24 @@
 #import "hooks.h"
+
+#import <mach-o/dyld.h>
+
+%group shadowhook_dyld
+%hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
+    const char *result = %orig(image_index);
+
+    if(result) {
+        NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
+
+        if([[Shadow sharedInstance] isPathRestricted:image_name]) {
+            return %orig(0);
+        }
+    }
+
+    return result;
+}
+%end
+%end
+
+void shadowhook_dyld(void) {
+    %init(shadowhook_dyld);
+}
