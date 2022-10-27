@@ -15,7 +15,7 @@
 		// Unlock shadowd service.
 		rocketbootstrap_unlock("me.jjolano.shadowd");
 
-		HBLogInfo(@"[shadow] unlocked xpc service from SpringBoard");
+		HBLogInfo(@"%@", @"[shadow] unlocked xpc service from SpringBoard");
 		return;
 	}
 
@@ -38,5 +38,5 @@
 	shadowhook_dyld();
 	shadowhook_NSFileManager();
 
-	HBLogInfo(@"[shadow] hooks initialized");
+	HBLogInfo(@"%@", @"[shadow] hooks initialized");
 }
