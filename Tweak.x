@@ -6,7 +6,7 @@
 #import "api/Shadow.h"
 #import "hooks/hooks.h"
 
-static Shadow* shadow = nil;
+Shadow* shadow = nil;
 
 %ctor {
 	// Determine the application we're injected into.
