@@ -42,8 +42,8 @@
     if([name isEqualToString:@"isPathRestricted"]) {
         NSString* path = userInfo[@"path"];
 
-        if(responseCache[path]) {
-            return responseCache[path];
+        if([responseCache objectForKey:path]) {
+            return [responseCache objectForKey:path];
         }
 
         NSString* standardizedPath = [path stringByStandardizingPath];
@@ -55,7 +55,7 @@
             @"restricted" : @(restricted)
         };
 
-        responseCache[path] = response;
+        [responseCache setObject:response forKey:path];
     }
 
     return response;
