@@ -49,12 +49,10 @@
             return [responseCache objectForKey:path];
         }
 
-        NSString* standardizedPath = [path stringByStandardizingPath];
-        BOOL restricted = [self isPathRestricted:path] || [self isPathRestricted:standardizedPath];
+        BOOL restricted = [self isPathRestricted:path];
 
         NSDictionary* response = @{
             @"path" : path,
-            @"standardizedPath" : standardizedPath,
             @"restricted" : @(restricted)
         };
 
