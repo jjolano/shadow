@@ -10,8 +10,8 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
-    if(responseCache[path]) {
-        return [responseCache[path][@"restricted"] boolValue];
+    if([responseCache objectForKey:path]) {
+        return [[[responseCache objectForKey:path] objectForKey:@"restricted"] boolValue];
     }
     
     if(c) {
@@ -20,8 +20,8 @@
         }];
 
         if(response) {
-            responseCache[path] = response;
-            return [response[@"restricted"] boolValue];
+            [responseCache setObject:response forKey:path];
+            return [[response objectForKey:@"restricted"] boolValue];
         }
     }
 
