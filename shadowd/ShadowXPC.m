@@ -3,22 +3,25 @@
 #import "ShadowXPC.h"
 #import "NSTask.h"
 
-@implementation ShadowXPC
+@implementation ShadowXPC {
+    NSCache* responseCache;
+}
+
 - (BOOL)isPathRestricted:(NSString *)path {
     // Call dpkg to see if file is part of any installed packages on the system.
     NSTask* task = [NSTask new];
     NSPipe* stdoutPipe = [NSPipe new];
 
     [task setLaunchPath:@"/usr/bin/dpkg"];
-    [task setArguments:@["-S", path]];
+    [task setArguments:@[@"-S", path]];
     [task setStandardOutput:stdoutPipe];
 
-    HBLogDebug(@"%@", @"querying dpkg for: %@", path);
+    HBLogDebug(@"%@%@", @"querying dpkg for: ", path);
 
     [task launch];
     [task waitUntilExit];
 
-    HBLogDebug(@"%@", @"dpkg returned: %d", [task terminationStatus]);
+    HBLogDebug(@"%@%d", @"dpkg returned: ", [task terminationStatus]);
 
     if([task terminationStatus] == 0) {
         // Path found in dpkg database - exclude if base package is part of the package list.
@@ -59,5 +62,13 @@
     }
 
     return response;
+}
+
+- (instancetype)init {
+    if((self = [super init])) {
+        responseCache = [NSCache new];
+    }
+
+    return self;
 }
 @end
