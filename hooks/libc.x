@@ -1,8 +1,5 @@
 #import "hooks.h"
 
-#import <stdio.h>
-#import <sys/stat.h>
-
 %group shadowhook_libc
 %hookf(int, access, const char *pathname, int mode) {
     if(pathname) {

@@ -1,7 +1,5 @@
 #import "hooks.h"
 
-#import <mach-o/dyld.h>
-
 %group shadowhook_dyld
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
     const char *result = %orig(image_index);
