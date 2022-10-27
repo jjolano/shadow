@@ -1,5 +1,6 @@
 #import <HBLog.h>
 #import <rocketbootstrap/rocketbootstrap.h>
+#import <Foundation/Foundation.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 #import "api/Shadow.h"
