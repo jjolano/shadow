@@ -1,7 +1,5 @@
 #import "hooks.h"
 
-#import <Foundation/NSFileManager.h>
-
 %group shadowhook_NSFileManager
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
