@@ -5,10 +5,10 @@ include $(THEOS)/makefiles/common.mk
 TOOL_NAME = shadowd
 
 shadowd_FILES = ../api/Shadow.m ShadowXPC.m main.m
-# shadowd_LIBRARIES = rocketbootstrap
+shadowd_LIBRARIES = rocketbootstrap
 shadowd_PRIVATE_FRAMEWORKS = AppSupport
 shadowd_INSTALL_PATH = /usr/libexec
-shadowd_CFLAGS = -fobjc-arc -DROCKETBOOTSTRAP_LOAD_DYNAMIC
+shadowd_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tool.mk
 

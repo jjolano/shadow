@@ -19,10 +19,12 @@
 		return;
 	}
 
-	// Only load Shadow for User applications.
-	if(![[[NSBundle mainBundle] executablePath] hasPrefix:@"/var"]) {
+	// Only load Shadow for App Store applications.
+	if(![[NSBundle mainBundle] appStoreReceiptURL]) {
 		return;
 	}
+
+	HBLogInfo(@"%@", @"[shadow] tweak loaded");
 
 	// Initialize Shadow class.
 	Shadow* shadow = [Shadow sharedInstance];

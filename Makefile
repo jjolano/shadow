@@ -9,10 +9,10 @@ TWEAK_NAME = Shadow
 ShadowHooks = $(wildcard hooks/*.x)
 
 Shadow_FILES = $(ShadowHooks) api/Shadow.m Tweak.x
-# Shadow_LIBRARIES = rocketbootstrap
+Shadow_LIBRARIES = rocketbootstrap
 # Shadow_EXTRA_FRAMEWORKS = Cephei
 Shadow_PRIVATE_FRAMEWORKS = AppSupport
-Shadow_CFLAGS = -fobjc-arc -DROCKETBOOTSTRAP_LOAD_DYNAMIC
+Shadow_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += shadowd
