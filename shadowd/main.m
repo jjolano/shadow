@@ -6,9 +6,9 @@
 
 int main(int argc, char *argv[], char *envp[]) {
 	// Create Shadow instance (with XPC methods).
-	ShadowXPC* shadow = [ShadowXPC sharedInstance];
+	ShadowXPC* _shadow = [ShadowXPC sharedInstance];
 
-	if(!shadow) {
+	if(!_shadow) {
 		return 1;
 	}
 
@@ -18,7 +18,7 @@ int main(int argc, char *argv[], char *envp[]) {
 	[messagingCenter runServerOnCurrentThread];
 
 	// Register messages.
-	[messagingCenter registerForMessageName:@"isPathRestricted" target:shadow selector:@selector(handleMessageNamed:withUserInfo:)];
+	[messagingCenter registerForMessageName:@"isPathRestricted" target:_shadow selector:@selector(handleMessageNamed:withUserInfo:)];
 
 	HBLogInfo(@"%@", @"xpc service started: me.jjolano.shadowd");
 
