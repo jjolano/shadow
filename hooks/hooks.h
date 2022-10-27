@@ -1,4 +1,5 @@
-#import <Foundation/Foundation.h>
+#import "../api/Shadow.h"
 
-extern NSString* bundleIdentifier;
-extern BOOL shadowd_isRestricted(NSURL* url);
+extern void shadowhook_dyld(void);
+extern void shadowhook_NSFileManager(void);
+extern void shadowhook_libc(void);
