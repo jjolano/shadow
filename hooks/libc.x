@@ -59,7 +59,6 @@
     return %orig;
 }
 %end
-%end
 
 void shadowhook_libc(void) {
     %init(shadowhook_libc);

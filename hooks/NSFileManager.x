@@ -20,7 +20,6 @@
     return %orig;
 }
 %end
-%end
 
 void shadowhook_NSFileManager(void) {
     %init(shadowhook_NSFileManager);

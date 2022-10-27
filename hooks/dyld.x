@@ -17,7 +17,6 @@
     return result;
 }
 %end
-%end
 
 void shadowhook_dyld(void) {
     %init(shadowhook_dyld);
