@@ -7,7 +7,7 @@
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
-        if([[Shadow sharedInstance] isPathRestricted:image_name]) {
+        if([_shadow isPathRestricted:image_name]) {
             return %orig(0);
         }
     }

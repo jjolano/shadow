@@ -6,7 +6,7 @@
 
 int main(int argc, char *argv[], char *envp[]) {
 	// Create Shadow instance (with XPC methods).
-	ShadowXPC* _shadow = [ShadowXPC sharedInstance];
+	ShadowXPC* _shadow = [ShadowXPC new];
 
 	if(!_shadow) {
 		return 1;

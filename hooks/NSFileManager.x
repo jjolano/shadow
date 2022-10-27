@@ -3,7 +3,7 @@
 %group shadowhook_NSFileManager
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    if([[Shadow sharedInstance] isPathRestricted:path]) {
+    if([_shadow isPathRestricted:path]) {
         return NO;
     }
 
@@ -11,7 +11,7 @@
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    if([[Shadow sharedInstance] isPathRestricted:path]) {
+    if([_shadow isPathRestricted:path]) {
         return NO;
     }
 

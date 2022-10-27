@@ -29,7 +29,7 @@ Shadow* _shadow = nil;
 	HBLogInfo(@"%@", @"[shadow] tweak loaded");
 
 	// Initialize Shadow class.
-	_shadow = [Shadow sharedInstance];
+	_shadow = [Shadow new];
 
 	if(!_shadow) {
 		HBLogInfo(@"%@", @"[shadow] failed to load class");

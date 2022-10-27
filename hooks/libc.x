@@ -5,7 +5,7 @@
     if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([[Shadow sharedInstance] isPathRestricted:path]) {
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
@@ -18,7 +18,7 @@
     if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([[Shadow sharedInstance] isPathRestricted:path]) {
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
@@ -31,7 +31,7 @@
     if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([[Shadow sharedInstance] isPathRestricted:path]) {
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
@@ -44,7 +44,7 @@
     if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([[Shadow sharedInstance] isPathRestricted:path]) {
+        if([_shadow isPathRestricted:path]) {
             errno = ENOENT;
             return NULL;
         }
