@@ -20,7 +20,7 @@
 	}
 
 	// Only load Shadow for User applications.
-	if(![[[NSBundle mainBundle] bundlePath] hasPrefix:@"/var"]) {
+	if(![[[NSBundle mainBundle] executablePath] hasPrefix:@"/var"]) {
 		return;
 	}
 
