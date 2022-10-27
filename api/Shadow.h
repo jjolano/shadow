@@ -1,4 +1,4 @@
-#import <Foundation/NSObject.h>
+#import <Foundation/Foundation.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @class NSString, NSArray;
