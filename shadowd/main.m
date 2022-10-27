@@ -18,6 +18,7 @@ int main(int argc, char *argv[], char *envp[]) {
 	[messagingCenter runServerOnCurrentThread];
 
 	// Register messages.
+	[messagingCenter registerForMessageName:@"ping" target:_shadow selector:@selector(handleMessageNamed:withUserInfo:)];
 	[messagingCenter registerForMessageName:@"isPathRestricted" target:_shadow selector:@selector(handleMessageNamed:withUserInfo:)];
 
 	HBLogInfo(@"%@", @"xpc service started: me.jjolano.shadowd");

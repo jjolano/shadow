@@ -42,7 +42,11 @@
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
     NSDictionary* response = nil;
 
-    if([name isEqualToString:@"isPathRestricted"]) {
+    if([name isEqualToString:@"ping"]) {
+        response = @{
+            @"ping" : @"pong"
+        };
+    } else if([name isEqualToString:@"isPathRestricted"]) {
         NSString* path = userInfo[@"path"];
 
         if([responseCache objectForKey:path]) {
@@ -51,7 +55,7 @@
 
         BOOL restricted = [self isPathRestricted:path];
 
-        NSDictionary* response = @{
+        response = @{
             @"path" : path,
             @"restricted" : @(restricted)
         };
