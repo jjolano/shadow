@@ -6,6 +6,8 @@
 #import "api/Shadow.h"
 #import "hooks/hooks.h"
 
+static Shadow* shadow = nil;
+
 %ctor {
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
@@ -27,7 +29,12 @@
 	HBLogInfo(@"%@", @"[shadow] tweak loaded");
 
 	// Initialize Shadow class.
-	Shadow* shadow = [Shadow sharedInstance];
+	shadow = [Shadow sharedInstance];
+
+	if(!shadow) {
+		HBLogInfo(@"%@", @"[shadow] failed to load class");
+		return;
+	}
 
 	// Initialize connection to shadowd.
 	CPDistributedMessagingCenter* c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadowd"];
