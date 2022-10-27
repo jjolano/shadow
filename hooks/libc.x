@@ -16,7 +16,6 @@
 
     return %orig;
 }
-%end
 
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
@@ -30,7 +29,6 @@
 
     return %orig;
 }
-%end
 
 %hookf(int, lstat, const char *pathname, struct stat *statbuf) {
     if(pathname) {
@@ -44,7 +42,6 @@
 
     return %orig;
 }
-%end
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
     if(pathname) {
