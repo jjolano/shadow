@@ -21,7 +21,7 @@ int main(int argc, char *argv[], char *envp[]) {
 		// Register messages.
 		[messagingCenter registerForMessageName:@"isPathRestricted" target:shadow selector:@selector(handleMessageNamed:withUserInfo:)];
 
-		HBLogInfo(@"xpc service started: me.jjolano.shadowd");
+		HBLogInfo(@"%@", @"xpc service started: me.jjolano.shadowd");
 
 		// Keep daemon running.
 		[[NSRunLoop currentRunLoop] run];

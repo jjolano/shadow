@@ -13,12 +13,12 @@
     [task setArguments:@["-S", path]];
     [task setStandardOutput:stdoutPipe];
 
-    HBLogDebug(@"querying dpkg for: %@", path);
+    HBLogDebug(@"%@", @"querying dpkg for: %@", path);
 
     [task launch];
     [task waitUntilExit];
 
-    HBLogDebug(@"dpkg returned: %d", [task terminationStatus]);
+    HBLogDebug(@"%@", @"dpkg returned: %d", [task terminationStatus]);
 
     if([task terminationStatus] == 0) {
         // Path found in dpkg database - exclude if base package is part of the package list.
