@@ -6,7 +6,7 @@
 #import "api/Shadow.h"
 #import "hooks/hooks.h"
 
-Shadow* shadow = nil;
+Shadow* _shadow = nil;
 
 %ctor {
 	// Determine the application we're injected into.
@@ -29,9 +29,9 @@ Shadow* shadow = nil;
 	HBLogInfo(@"%@", @"[shadow] tweak loaded");
 
 	// Initialize Shadow class.
-	shadow = [Shadow sharedInstance];
+	_shadow = [Shadow sharedInstance];
 
-	if(!shadow) {
+	if(!_shadow) {
 		HBLogInfo(@"%@", @"[shadow] failed to load class");
 		return;
 	}
@@ -40,7 +40,7 @@ Shadow* shadow = nil;
 	CPDistributedMessagingCenter* c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadowd"];
 	rocketbootstrap_distributedmessagingcenter_apply(c);
 
-	[shadow setMessagingCenter:c];
+	[_shadow setMessagingCenter:c];
 
 	// Initialize hooks.
 	shadowhook_libc();
