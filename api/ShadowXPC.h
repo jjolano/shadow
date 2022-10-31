@@ -1,4 +1,4 @@
-#import "../api/Shadow.h"
+#import "Shadow.h"
 #import <Foundation/Foundation.h>
 
 @interface ShadowXPC : Shadow

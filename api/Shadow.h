@@ -5,6 +5,9 @@
 
 @interface Shadow : NSObject
 - (void)setMessagingCenter:(CPDistributedMessagingCenter *)center;
+- (void)setDylibs:(NSArray<NSString *>*)d;
+- (void)setURLSchemes:(NSArray<NSString *>*)u;
+- (BOOL)isCallerTweak:(NSArray<NSString *>*)backtrace;
 - (BOOL)isPathRestricted:(NSString *)path;
-+ (instancetype)sharedInstance;
+- (BOOL)isURLRestricted:(NSURL *)url;
 @end
