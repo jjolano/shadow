@@ -8,10 +8,8 @@
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
         if([_shadow isPathRestricted:image_name]) {
-            return %orig(0);
+            return "";
         }
-
-        NSLog(@"%@: %@", @"_dyld_get_image_name", image_name);
     }
 
     return result;
