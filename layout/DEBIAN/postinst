@@ -1,3 +1,0 @@
-#!/bin/sh
-launchctl load -w /Library/LaunchDaemons/me.jjolano.shadowd.plist
-exit 0

@@ -4,6 +4,7 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 #import "api/Shadow.h"
+#import "api/ShadowXPC.h"
 #import "hooks/hooks.h"
 
 Shadow* _shadow = nil;
@@ -14,38 +15,82 @@ Shadow* _shadow = nil;
 
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-		// Unlock shadowd service.
-		rocketbootstrap_unlock("me.jjolano.shadowd");
+		// Create Shadow instance (with XPC methods).
+		ShadowXPC* _xpc = [ShadowXPC new];
 
-		HBLogInfo(@"%@", @"[shadow] unlocked xpc service from SpringBoard");
+		if(!_xpc) {
+			return;
+		}
+
+		// Start RocketBootstrap server.
+		CPDistributedMessagingCenter* messagingCenter = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
+		rocketbootstrap_distributedmessagingcenter_apply(messagingCenter);
+		[messagingCenter runServerOnCurrentThread];
+
+		// Register messages.
+		[messagingCenter registerForMessageName:@"ping" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
+		[messagingCenter registerForMessageName:@"isPathRestricted" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
+		[messagingCenter registerForMessageName:@"getDylibs" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
+
+		// Unlock shadowd service.
+		rocketbootstrap_unlock("me.jjolano.shadow");
+
+		HBLogDebug(@"%@", @"[shadow] xpc service started: me.jjolano.shadow");
 		return;
 	}
 
 	// Only load Shadow for App Store applications.
-	if(![[NSBundle mainBundle] appStoreReceiptURL]) {
+	if(![[NSBundle mainBundle] appStoreReceiptURL] || [[[NSBundle mainBundle] bundlePath] hasPrefix:@"/Applications"]) {
 		return;
 	}
 
-	HBLogInfo(@"%@", @"[shadow] tweak loaded");
+	HBLogDebug(@"%@", @"[shadow] tweak loaded");
 
 	// Initialize Shadow class.
 	_shadow = [Shadow new];
 
 	if(!_shadow) {
-		HBLogInfo(@"%@", @"[shadow] failed to load class");
+		HBLogDebug(@"%@", @"[shadow] failed to load class");
 		return;
 	}
 
 	// Initialize connection to shadowd.
-	CPDistributedMessagingCenter* c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadowd"];
+	CPDistributedMessagingCenter* c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
 	rocketbootstrap_distributedmessagingcenter_apply(c);
 
 	[_shadow setMessagingCenter:c];
 
-	// Initialize hooks.
-	shadowhook_libc();
-	shadowhook_dyld();
-	shadowhook_NSFileManager();
+	// Preload data from shadowd.
+	NSDictionary* response = [c sendMessageAndReceiveReplyName:@"getDylibs" userInfo:nil];
 
-	HBLogInfo(@"%@", @"[shadow] hooks initialized");
+	if(response) {
+		NSArray<NSString *>* dylibs = [response objectForKey:@"dylibs"];
+		NSMutableArray<NSString *>* mdylibs = [NSMutableArray new];
+
+		for(NSString* dylib in dylibs) {
+			[mdylibs addObject:[dylib lastPathComponent]];
+		}
+
+		[_shadow setDylibs:[mdylibs copy]];
+	}
+
+	response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
+
+	if(response) {
+		NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
+
+		[_shadow setURLSchemes:schemes];
+	}
+
+	// Initialize hooks.
+	shadowhook_dyld();
+	shadowhook_libc();
+	shadowhook_NSArray();
+	shadowhook_NSDictionary();
+	shadowhook_NSFileManager();
+	shadowhook_NSString();
+	shadowhook_UIApplication();
+	shadowhook_UIImage();
+
+	HBLogDebug(@"%@", @"[shadow] hooks initialized");
 }
