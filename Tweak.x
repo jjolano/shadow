@@ -31,6 +31,7 @@ Shadow* _shadow = nil;
 		[messagingCenter registerForMessageName:@"ping" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"isPathRestricted" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"getDylibs" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
+		[messagingCenter registerForMessageName:@"getURLSchemes" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 
 		// Unlock shadowd service.
 		rocketbootstrap_unlock("me.jjolano.shadow");
@@ -86,9 +87,14 @@ Shadow* _shadow = nil;
 	shadowhook_dyld();
 	shadowhook_libc();
 	shadowhook_NSArray();
+	shadowhook_NSBundle();
 	shadowhook_NSDictionary();
+	shadowhook_NSFileHandle();
 	shadowhook_NSFileManager();
+	shadowhook_NSFileVersion();
+	shadowhook_NSFileWrapper();
 	shadowhook_NSString();
+	shadowhook_NSURL();
 	shadowhook_UIApplication();
 	shadowhook_UIImage();
 

@@ -31,12 +31,12 @@
         }
 
         // Exclusions
-        if([filename isEqualToString:@"Shadow.dylib"] || ![filename hasSuffix:@".dylib"]) {
+        if(![filename hasSuffix:@".dylib"] || [filename isEqualToString:@"Shadow.dylib"]) {
             continue;
         }
 
         if([dylibs containsObject:filename]) {
-            HBLogDebug(@"%@: %@ (backtrace entry %@)", @"allowed dylib", filename, [line objectAtIndex:0]);
+            // HBLogDebug(@"%@: %@ (backtrace entry %@)", @"allowed dylib", filename, [line objectAtIndex:0]);
             return YES;
         }
     }
@@ -69,9 +69,11 @@
         bundlePath = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/System/Library/PrivateFrameworks"] || [path hasPrefix:@"/var/containers"]) {
+    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/System/Library/PrivateFrameworks"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
+    
+    BOOL restricted = NO;
 
     // Check cache first
     NSDictionary* response = [responseCache objectForKey:path];
@@ -89,16 +91,12 @@
         }
     }
 
-    BOOL restricted = NO;
-
     if(response) {
         restricted = [[response objectForKey:@"restricted"] boolValue];
+    }
 
-        if(restricted && [self isCallerTweak:[NSThread callStackSymbols]]) {
-            // Exclude if method call originates from a dpkg registered dylib
-            // For tweak compatibility.
-            restricted = NO;
-        }
+    if(restricted && [self isCallerTweak:[NSThread callStackSymbols]]) {
+        restricted = NO;
     }
 
     return restricted;
@@ -115,6 +113,8 @@
         return NO;
     }
 
+    BOOL restricted = NO;
+
     if([url isFileURL]) {
         NSString *path = [url path];
 
@@ -126,18 +126,18 @@
             }
         }
 
-        return [self isPathRestricted:path];
+        restricted = [self isPathRestricted:path];
     }
 
-    if([self isCallerTweak:[NSThread callStackSymbols]]) {
-        return NO;
+    if(!restricted && [schemes containsObject:[url scheme]]) {
+        restricted = YES;
     }
 
-    if([schemes containsObject:[url scheme]]) {
-        return YES;
+    if(restricted && [self isCallerTweak:[NSThread callStackSymbols]]) {
+        restricted = NO;
     }
 
-    return NO;
+    return restricted;
 }
 
 - (instancetype)init {

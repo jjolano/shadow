@@ -18,6 +18,8 @@
 
     HBLogDebug(@"%@: %@", @"dpkg", path);
 
+    BOOL restricted = NO;
+
     // Call dpkg to see if file is part of any installed packages on the system.
     NSTask* task = [NSTask new];
     NSPipe* stdoutPipe = [NSPipe new];
@@ -37,18 +39,35 @@
 
         if([result count] == 2) {
             NSArray<NSString *>* packages = [[result objectAtIndex:0] componentsSeparatedByString:@", "];
+            
+            restricted = YES;
 
-            if(![packages containsObject:@"base"]) {
-                return YES;
+            BOOL exception = [packages containsObject:@"base"] || [packages containsObject:@"firmware-sbin"];
+
+            if(!exception) {
+                NSArray<NSString *>* base_extra = @[
+                    @"/Library/Application Support",
+                    @"/usr/lib",
+                    @"/.ba",
+                    @"/.mb",
+                    @"/.file"
+                ];
+
+                if([base_extra containsObject:[result objectAtIndex:1]]) {
+                    exception = YES;
+                }
             }
 
-            if(b) {
-                *b = YES;
+            if(exception) {
+                if(b) {
+                    // Package found, but path is also a part of base system.
+                    *b = YES;
+                }
             }
         }
     }
 
-    return NO;
+    return restricted;
 }
 
 - (NSArray<NSString *>*)getDylibs {
@@ -58,7 +77,7 @@
     NSPipe* stdoutPipe = [NSPipe new];
 
     [task setLaunchPath:@"/usr/bin/dpkg-query"];
-    [task setArguments:@[@"-S", @".dylib"]];
+    [task setArguments:@[@"-S", @"dylib"]];
     [task setStandardOutput:stdoutPipe];
     [task launch];
     [task waitUntilExit];
@@ -74,7 +93,11 @@
             NSArray<NSString *>* line = [entry componentsSeparatedByString:@": "];
 
             if([line count] == 2) {
-                [dylibs addObject:[line objectAtIndex:1]];
+                NSString* dylib = [line objectAtIndex:1];
+
+                if([dylib hasSuffix:@".dylib"]) {
+                    [dylibs addObject:dylib];
+                }
             }
         }
     }
@@ -106,12 +129,15 @@
 
             if([line count] == 2) {
                 NSString* plistpath = [line objectAtIndex:1];
-                NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:plistpath];
 
-                if(plist) {
-                    for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
-                        for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
-                            [schemes addObject:scheme];
+                if([plistpath hasSuffix:@"Info.plist"]) {
+                    NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:plistpath];
+
+                    if(plist) {
+                        for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
+                            for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
+                                [schemes addObject:scheme];
+                            }
                         }
                     }
                 }
@@ -150,54 +176,28 @@
             return responseCachePath;
         }
         
-        // Check all parent directories.
-        NSDictionary* responseCacheParent = nil;
+        // Recurse call into parent directories.
+        if(![path isEqualToString:@"/"]) {
+            NSDictionary* responseParent = [self handleMessageNamed:name withUserInfo:@{@"path":pathParent}];
 
-        do {
-            responseCacheParent = [responseCache objectForKey:pathParent];
-
-            if(responseCacheParent) {
-                break;
+            if(responseParent && [responseParent[@"restricted"] boolValue]) {
+                return responseParent;
             }
-
-            pathParent = [pathParent stringByDeletingLastPathComponent];
-        } while(![pathParent isEqualToString:@"/"] && ![pathParent isEqualToString:@""]);
-
-        if(responseCacheParent) {
-            return responseCacheParent;
         }
 
-        // Check parent directory first.
-        pathParent = [path stringByDeletingLastPathComponent];
-
+        // Check if path is restricted.
         BOOL b = NO;
-        BOOL restrictedParent = [self isPathRestricted:pathParent isBase:&b];
+        BOOL restricted = [self isPathRestricted:path isBase:&b];
+
+        if(restricted && b) {
+            restricted = NO;
+        }
 
         response = @{
-            @"restricted" : @(restrictedParent)
+            @"restricted" : @(restricted)
         };
 
-        if(!b) {
-            // Cache response if it's a completely clean/dirty path.
-            [responseCache setObject:response forKey:pathParent];
-        }
-
-        if(!restrictedParent) {
-            // Check full path.
-            BOOL b = NO;
-            BOOL restricted = [self isPathRestricted:path isBase:&b];
-
-            if([[path pathComponents] count] == 2) {
-                // Root
-                restricted = !b;
-            }
-
-            response = @{
-                @"restricted" : @(restricted)
-            };
-
-            [responseCache setObject:response forKey:path];
-        }
+        [responseCache setObject:response forKey:path];
     } else if([name isEqualToString:@"getDylibs"]) {
         HBLogDebug(@"%@: %@", name, @"list requested");
 

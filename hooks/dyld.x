@@ -10,6 +10,8 @@
         if([_shadow isPathRestricted:image_name]) {
             return "";
         }
+
+        NSLog(@"%@: %@", @"_dyld_get_image_name", image_name);
     }
 
     return result;
