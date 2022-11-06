@@ -12,56 +12,110 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path isBase:(BOOL *)b {
+    // Preprocess path string
+    if(![path isAbsolutePath]) {
+        HBLogDebug(@"%@: %@", @"relative path", path);
+        return NO;
+    }
+
+    path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+    
+    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+        [pathComponents removeObjectAtIndex:1];
+
+        path = [NSString pathWithComponents:pathComponents];
+    }
+
     if(b) {
         *b = NO;
     }
 
-    HBLogDebug(@"%@: %@", @"dpkg", path);
-
     BOOL restricted = NO;
 
-    // Call dpkg to see if file is part of any installed packages on the system.
-    NSTask* task = [NSTask new];
-    NSPipe* stdoutPipe = [NSPipe new];
+    // Hardcoded restricted paths
+    NSArray<NSString *>* restrictedpaths = @[
+        @"/Library/MobileSubstrate",
+        @"/usr/lib/TweakInject",
+        @"/usr/lib/tweaks",
+        @"/var/jb",
+        @"/dev/ptmx",
+        @"/dev/kmem",
+        @"/dev/mem",
+        @"/dev/vn0",
+        @"/dev/vn1",
+        @"/lib",
+        @"/etc/rc.d",
+        @"/etc/shells",
+        @"/var/stash",
+        @"/var/binpack",
+        @"/private/preboot/jb",
+        @"/var/lib/cydia",
+        @"/var/lib/filza",
+        @"/var/log/apt",
+        @"/var/log/dpkg"
+    ];
 
-    [task setLaunchPath:@"/usr/bin/dpkg-query"];
-    [task setArguments:@[@"-S", path]];
-    [task setStandardOutput:stdoutPipe];
-    [task launch];
-    [task waitUntilExit];
-
-    if([task terminationStatus] == 0) {
-        // Path found in dpkg database - exclude if base package is part of the package list.
-        NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
-        NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
-
-        NSArray<NSString *>* result = [output componentsSeparatedByString:@": "];
-
-        if([result count] == 2) {
-            NSArray<NSString *>* packages = [[result objectAtIndex:0] componentsSeparatedByString:@", "];
-            
+    for(NSString* restrictedpath in restrictedpaths) {
+        if([path hasPrefix:restrictedpath]) {
             restricted = YES;
+            break;
+        }
+    }
 
-            BOOL exception = [packages containsObject:@"base"] || [packages containsObject:@"firmware-sbin"];
+    if(!restricted) {
+        // Call dpkg to see if file is part of any installed packages on the system.
+        NSTask* task = [NSTask new];
+        NSPipe* stdoutPipe = [NSPipe new];
 
-            if(!exception) {
-                NSArray<NSString *>* base_extra = @[
-                    @"/Library/Application Support",
-                    @"/usr/lib",
-                    @"/.ba",
-                    @"/.mb",
-                    @"/.file"
-                ];
+        [task setLaunchPath:@"/usr/bin/env"];
+        [task setArguments:@[@"dpkg-query", @"-S", path]];
+        [task setStandardOutput:stdoutPipe];
+        [task launch];
+        [task waitUntilExit];
 
-                if([base_extra containsObject:[result objectAtIndex:1]]) {
-                    exception = YES;
-                }
-            }
+        HBLogDebug(@"%@: %@", @"dpkg", path);
 
-            if(exception) {
-                if(b) {
-                    // Package found, but path is also a part of base system.
-                    *b = YES;
+        if([task terminationStatus] == 0) {
+            // Path found in dpkg database - exclude if base package is part of the package list.
+            NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
+            NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
+
+            NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
+            NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
+
+            for(NSString* line in lines) {
+                NSArray<NSString *>* result = [line componentsSeparatedByString:@": "];
+
+                if([result count] == 2) {
+                    NSArray<NSString *>* packages = [[result objectAtIndex:0] componentsSeparatedByString:@", "];
+                    
+                    restricted = YES;
+
+                    BOOL exception = [packages containsObject:@"base"] || [packages containsObject:@"firmware-sbin"];
+
+                    if(!exception) {
+                        NSArray<NSString *>* base_extra = @[
+                            @"/Library/Application Support",
+                            @"/usr/lib",
+                            @"/.ba",
+                            @"/.mb",
+                            @"/.file",
+                            @"/bin/ps",
+                            @"/bin/df"
+                        ];
+
+                        if([base_extra containsObject:[result objectAtIndex:1]]) {
+                            exception = YES;
+                        }
+                    }
+
+                    if(exception) {
+                        if(b) {
+                            // Package found, but path is also a part of base system.
+                            *b = YES;
+                        }
+                    }
                 }
             }
         }
@@ -70,49 +124,14 @@
     return restricted;
 }
 
-- (NSArray<NSString *>*)getDylibs {
-    NSMutableArray<NSString *>* dylibs = [NSMutableArray new];
-
-    NSTask* task = [NSTask new];
-    NSPipe* stdoutPipe = [NSPipe new];
-
-    [task setLaunchPath:@"/usr/bin/dpkg-query"];
-    [task setArguments:@[@"-S", @"dylib"]];
-    [task setStandardOutput:stdoutPipe];
-    [task launch];
-    [task waitUntilExit];
-
-    if([task terminationStatus] == 0) {
-        NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
-        NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
-
-        NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
-        NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
-
-        for(NSString* entry in lines) {
-            NSArray<NSString *>* line = [entry componentsSeparatedByString:@": "];
-
-            if([line count] == 2) {
-                NSString* dylib = [line objectAtIndex:1];
-
-                if([dylib hasSuffix:@".dylib"]) {
-                    [dylibs addObject:dylib];
-                }
-            }
-        }
-    }
-
-    return [dylibs copy];
-}
-
 - (NSArray<NSString *>*)getURLSchemes {
     NSMutableArray<NSString *>* schemes = [NSMutableArray new];
 
     NSTask* task = [NSTask new];
     NSPipe* stdoutPipe = [NSPipe new];
 
-    [task setLaunchPath:@"/usr/bin/dpkg-query"];
-    [task setArguments:@[@"-S", @"app/Info.plist"]];
+    [task setLaunchPath:@"/usr/bin/env"];
+    [task setArguments:@[@"dpkg-query", @"-S", @"app/Info.plist"]];
     [task setStandardOutput:stdoutPipe];
     [task launch];
     [task waitUntilExit];
@@ -164,10 +183,10 @@
             return nil;
         }
 
-        HBLogDebug(@"%@: %@: %@", name, @"received path", rawPath);
-
         NSString* path = [rawPath stringByStandardizingPath];
         NSString* pathParent = [path stringByDeletingLastPathComponent];
+
+        HBLogDebug(@"%@: %@", name, path);
 
         // Check response cache for given path.
         NSDictionary* responseCachePath = [responseCache objectForKey:path];
@@ -198,19 +217,6 @@
         };
 
         [responseCache setObject:response forKey:path];
-    } else if([name isEqualToString:@"getDylibs"]) {
-        HBLogDebug(@"%@: %@", name, @"list requested");
-
-        NSArray<NSString *>* dylibs = [responseCache objectForKey:@"dylibs"];
-
-        if(!dylibs) {
-            dylibs = [self getDylibs];
-            [responseCache setObject:dylibs forKey:@"dylibs"];
-        }
-
-        response = @{
-            @"dylibs" : dylibs
-        };
     } else if([name isEqualToString:@"getURLSchemes"]) {
         HBLogDebug(@"%@: %@", name, @"list requested");
 

@@ -3,7 +3,9 @@
 %group shadowhook_NSString
 %hook NSString
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 
@@ -11,7 +13,9 @@
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 
@@ -19,7 +23,9 @@
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 
@@ -27,7 +33,9 @@
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 
@@ -35,7 +43,9 @@
 }
 
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
-    if([_shadow isPathRestricted:self]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:self] && ![_shadow isCallerTweak:backtrace]) {
         return 0;
     }
 
