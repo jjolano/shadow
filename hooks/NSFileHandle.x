@@ -1,10 +1,10 @@
 #import "hooks.h"
 
-%group shadowhook_NSArray
-%hook NSArray
-- (id)initWithContentsOfFile:(NSString *)path {
+%group shadowhook_NSFileHandle
+%hook NSFileHandle
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
     NSArray* backtrace = [NSThread callStackSymbols];
-    
+
     if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
@@ -12,41 +12,9 @@
     return %orig;
 }
 
-+ (id)arrayWithContentsOfFile:(NSString *)path {
++ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
     NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-        return nil;
-    }
 
-    return %orig;
-}
-
-+ (id)arrayWithContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
-        return nil;
-    }
-
-    return %orig;
-}
-%end
-
-%hook NSMutableArray
-- (id)initWithContentsOfFile:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (id)initWithContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
     if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
@@ -54,9 +22,9 @@
     return %orig;
 }
 
-+ (id)arrayWithContentsOfFile:(NSString *)path {
++ (instancetype)fileHandleForWritingAtPath:(NSString *)path {
     NSArray* backtrace = [NSThread callStackSymbols];
-    
+
     if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
@@ -64,7 +32,27 @@
     return %orig;
 }
 
-+ (id)arrayWithContentsOfURL:(NSURL *)url {
++ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    NSArray* backtrace = [NSThread callStackSymbols];
+
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
+    NSArray* backtrace = [NSThread callStackSymbols];
+
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
     NSArray* backtrace = [NSThread callStackSymbols];
     
     if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
@@ -76,6 +64,6 @@
 %end
 %end
 
-void shadowhook_NSArray(void) {
-    %init(shadowhook_NSArray);
+void shadowhook_NSFileHandle(void) {
+    %init(shadowhook_NSFileHandle);
 }

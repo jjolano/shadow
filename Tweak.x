@@ -30,7 +30,6 @@ Shadow* _shadow = nil;
 		// Register messages.
 		[messagingCenter registerForMessageName:@"ping" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"isPathRestricted" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
-		[messagingCenter registerForMessageName:@"getDylibs" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"getURLSchemes" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 
 		// Unlock shadowd service.
@@ -62,30 +61,17 @@ Shadow* _shadow = nil;
 	[_shadow setMessagingCenter:c];
 
 	// Preload data from shadowd.
-	NSDictionary* response = [c sendMessageAndReceiveReplyName:@"getDylibs" userInfo:nil];
-
-	if(response) {
-		NSArray<NSString *>* dylibs = [response objectForKey:@"dylibs"];
-		NSMutableArray<NSString *>* mdylibs = [NSMutableArray new];
-
-		for(NSString* dylib in dylibs) {
-			[mdylibs addObject:[dylib lastPathComponent]];
-		}
-
-		[_shadow setDylibs:[mdylibs copy]];
-	}
-
-	response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
+	NSDictionary* response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
 
 	if(response) {
 		NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
-
 		[_shadow setURLSchemes:schemes];
 	}
 
 	// Initialize hooks.
 	shadowhook_dyld();
 	shadowhook_libc();
+	// shadowhook_mach();
 	shadowhook_NSArray();
 	shadowhook_NSBundle();
 	shadowhook_NSDictionary();
@@ -93,6 +79,7 @@ Shadow* _shadow = nil;
 	shadowhook_NSFileManager();
 	shadowhook_NSFileVersion();
 	shadowhook_NSFileWrapper();
+	shadowhook_NSProcessInfo();
 	shadowhook_NSString();
 	shadowhook_NSURL();
 	shadowhook_UIApplication();

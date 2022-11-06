@@ -3,7 +3,9 @@
 %group shadowhook_UIImage
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 
@@ -11,7 +13,9 @@
 }
 
 + (UIImage *)imageWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
         return nil;
     }
 

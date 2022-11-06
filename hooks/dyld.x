@@ -1,95 +1,145 @@
 #import "hooks.h"
 
+BOOL _dlerror = NO;
+
 %group shadowhook_dyld
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-    const char *result = %orig(image_index);
+    NSArray* backtrace = [NSThread callStackSymbols];
+    const char* result = %orig(image_index);
 
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
-        if([_shadow isPathRestricted:image_name]) {
-            return "";
+        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+            return "/.file";
         }
+    }
 
-        NSLog(@"%@: %@", @"_dyld_get_image_name", image_name);
+    return result;
+}
+
+%hookf(char *, dlerror) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    char* result = %orig;
+
+    if(result && _dlerror && ![_shadow isCallerTweak:backtrace]) {
+        _dlerror = NO;
+        return "error";
     }
 
     return result;
 }
 
 %hookf(void *, dlopen, const char *path, int mode) {
-    if(path && ![_shadow isCallerTweak:[NSThread callStackSymbols]]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    void* handle = %orig;
+
+    if(handle && path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
-        if([_shadow isPathRestricted:image_name]) {
+        if(![image_name containsString:@"/"]) {
+            // todo
+        }
+
+        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+            _dlerror = YES;
+            dlclose(handle);
             return NULL;
         }
     }
 
-    return %orig;
+    return handle;
 }
 
 %hookf(bool, dlopen_preflight, const char *path) {
-    if(path && ![_shadow isCallerTweak:[NSThread callStackSymbols]]) {
+    NSArray* backtrace = [NSThread callStackSymbols];
+    bool result = %orig;
+    
+    if(result && path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
-        if([_shadow isPathRestricted:image_name]) {
-            return false;
+        if([image_name containsString:@"/"]) {
+            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+                return false;
+            }
+        } else {
+            // todo
         }
     }
 
-    return %orig;
+    return result;
 }
 
 // %hookf(int, dladdr, const void *addr, Dl_info *info) {
-//     int result = %orig(addr, info);
+//     Dl_info sinfo;
+//     int result = %orig(addr, &sinfo);
 
-//     if(result && info) {
-//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
-
-//         if([_shadow isPathRestricted:path]) {
-//             return 0;
-//         }
+//     if(result) {
+//         // NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:sinfo.dli_fname length:strlen(sinfo.dli_fname)];        
 //     }
 
-//     return result;
+//     return %orig;
 // }
 
 %hookf(void *, dlsym, void *handle, const char *symbol) {
-    if(symbol && ![_shadow isCallerTweak:[NSThread callStackSymbols]]) {
-        NSString *sym = [NSString stringWithUTF8String:symbol];
+    NSArray* backtrace = [NSThread callStackSymbols];
+    void* addr = %orig;
 
-        if([sym hasPrefix:@"MS"]
-        || [sym hasPrefix:@"Sub"]
-        || [sym hasPrefix:@"PS"]
-        || [sym hasPrefix:@"rocketbootstrap"]
-        || [sym hasPrefix:@"LH"]
-        || [sym hasPrefix:@"LM"]
-        || [sym hasPrefix:@"substitute_"]) {
-            return NULL;
+    if(addr) {
+        // Check origin of resolved symbol
+        Dl_info info;
+
+        if(dladdr(addr, &info)) {
+            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
+            
+            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+                HBLogDebug(@"%@: %@: %@", @"dlsym", @"restricted symbol lookup", @(symbol));
+                return NULL;
+            }
         }
     }
 
-    return %orig;
+    return addr;
 }
 %end
 
+// #define PT_DENY_ATTACH  31
+// typedef int (*ptrace_ptr_t)(int _request, pid_t _pid, caddr_t _addr, int _data);
+// ptrace_ptr_t ptrace = NULL;
+
+// static int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
+// static int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
+//     if(_request == PT_DENY_ATTACH) {
+//         return 0;
+//     }
+
+//     return original_ptrace(_request, _pid, _addr, _data);
+// }
+
 // static int (*original_dladdr)(const void *addr, Dl_info *info);
 // static int replaced_dladdr(const void *addr, Dl_info *info) {
-//     int result = original_dladdr(addr, info);
+//     Dl_info sinfo;
+//     int result = original_dladdr(addr, &sinfo);
 
-//     if(result && info) {
-//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
+//     if(result) {
+//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:sinfo.dli_fname length:strlen(sinfo.dli_fname)];
 
 //         if([_shadow isPathRestricted:path]) {
 //             return 0;
 //         }
 //     }
 
-//     return result;
+//     return original_dladdr(addr, info);
+// }
+
+// int _dladdr(const void *addr, Dl_info *info) {
+//     return original_dladdr(addr, info);
 // }
 
 void shadowhook_dyld(void) {
+    // ptrace = (ptrace_ptr_t) dlsym(RTLD_SELF, "ptrace");
+    // MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
+
     %init(shadowhook_dyld);
 
     // Manual hooks
