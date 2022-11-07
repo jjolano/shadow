@@ -3,10 +3,9 @@
 %group shadowhook_NSFileManager
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -14,10 +13,9 @@
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -25,10 +23,9 @@
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -36,10 +33,9 @@
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
 
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -47,10 +43,9 @@
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -58,10 +53,9 @@
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -69,10 +63,9 @@
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
     NSData* result = %orig;
     
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -80,9 +73,7 @@
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if(([_shadow isPathRestricted:path1] || [_shadow isPathRestricted:path2]) && ![_shadow isCallerTweak:backtrace]) {
+    if(([_shadow isPathRestricted:path1] || [_shadow isPathRestricted:path2]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 

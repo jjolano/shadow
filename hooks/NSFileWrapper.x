@@ -3,9 +3,7 @@
 %group shadowhook_NSFileWrapper
 %hook NSFileWrapper
 - (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return 0;
     }
 
@@ -13,9 +11,7 @@
 }
 
 - (instancetype)initSymbolicLinkWithDestinationURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return 0;
     }
 
@@ -23,9 +19,7 @@
 }
 
 - (BOOL)matchesContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -33,9 +27,7 @@
 }
 
 - (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
@@ -43,9 +35,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 

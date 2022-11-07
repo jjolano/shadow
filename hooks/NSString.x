@@ -3,9 +3,7 @@
 %group shadowhook_NSString
 %hook NSString
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -13,9 +11,7 @@
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -23,9 +19,7 @@
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -33,9 +27,7 @@
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -43,9 +35,7 @@
 }
 
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:self] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return 0;
     }
 

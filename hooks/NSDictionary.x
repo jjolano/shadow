@@ -3,9 +3,7 @@
 %group shadowhook_NSDictionary
 %hook NSDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -13,9 +11,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -23,9 +19,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -33,9 +27,7 @@
 }
 
 + (id)dictionaryWithContentsOfFile:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -43,9 +35,7 @@
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -53,9 +43,7 @@
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -65,9 +53,7 @@
 
 %hook NSMutableDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -75,9 +61,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
