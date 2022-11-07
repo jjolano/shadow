@@ -11,35 +11,43 @@
 }
 
 + (instancetype)bundleWithURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSBundle* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
-    return %orig;
+    return result;
 }
 
 + (instancetype)bundleWithPath:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return nil;
-    }
+    NSBundle* result = %orig;
 
-    return %orig;
-}
-
-- (instancetype)initWithURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
-    return %orig;
+    return result;
+}
+
+- (instancetype)initWithURL:(NSURL *)url {
+    NSBundle* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+    
+    return result;
 }
 
 - (instancetype)initWithPath:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSBundle* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 %end
 %end

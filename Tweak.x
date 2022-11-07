@@ -71,9 +71,10 @@ Shadow* _shadow = nil;
 	// Initialize hooks.
 	shadowhook_dyld();
 	shadowhook_libc();
-	// shadowhook_mach();
+	shadowhook_mach();
 	shadowhook_NSArray();
 	shadowhook_NSBundle();
+	shadowhook_NSData();
 	shadowhook_NSDictionary();
 	shadowhook_NSFileHandle();
 	shadowhook_NSFileManager();

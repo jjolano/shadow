@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Global Settings</string>
+			<key>footerText</key>
+			<string>Attempts to bypass jailbreak detection in all apps by default. General app performance will be affected.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Global_Enabled</string>
+			<key>label</key>
+			<string>Always-On</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>id</key>
+			<string>Link_Global_Hooks</string>
+			<key>label</key>
+			<string>Hooks (Advanced)</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Application Settings</string>
+			<key>footerText</key>
+			<string>App settings will override global settings.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>ATLApplicationListSubcontrollerController</string>
+			<key>subcontrollerClass</key>
+			<string></string>
+			<key>label</key>
+			<string>Applications</string>
+			<key>sections</key>
+			<array>
+				<dict>
+					<key>sectionType</key>
+					<string>Visible</string>
+				</dict>
+			</array>
+			<key>useSearchBar</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>Btn_Respring</string>
+			<key>label</key>
+			<string>Restart SpringBoard</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>Btn_ResetSettings</string>
+			<key>label</key>
+			<string>Reset Settings</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>id</key>
+			<string>Link_About</string>
+			<key>label</key>
+			<string>About</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>Shadow</string>
+</dict>
+</plist>

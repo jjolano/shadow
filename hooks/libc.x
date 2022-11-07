@@ -92,7 +92,8 @@
         // Modify flags
         if(buf) {
             if([path hasPrefix:@"/var"]
-            || [path hasPrefix:@"/private/var"]) {
+            || [path hasPrefix:@"/private/var"]
+            || [path hasPrefix:@"/private/preboot"]) {
                 buf->f_flags |= MNT_NOSUID | MNT_NODEV;
             } else {
                 buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
