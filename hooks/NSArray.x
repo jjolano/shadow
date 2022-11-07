@@ -3,61 +3,95 @@
 %group shadowhook_NSArray
 %hook NSArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSArray* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSArray* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSArray* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
+}
+
+- (NSArray *)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    NSArray* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+
+    return result;
+}
+
++ (NSArray *)arrayWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    NSArray* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+
+    return result;
 }
 %end
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableArray* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableArray* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableArray* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableArray* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 %end
 %end

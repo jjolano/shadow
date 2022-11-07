@@ -12,19 +12,8 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path isBase:(BOOL *)b {
-    // Preprocess path string
-    if(![path isAbsolutePath]) {
-        HBLogDebug(@"%@: %@", @"relative path", path);
+    if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         return NO;
-    }
-
-    path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-    
-    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-
-        path = [NSString pathWithComponents:pathComponents];
     }
 
     if(b) {
@@ -53,7 +42,9 @@
         @"/var/lib/cydia",
         @"/var/lib/filza",
         @"/var/log/apt",
-        @"/var/log/dpkg"
+        @"/var/log/dpkg",
+        @"/var/checkra1n.dmg",
+        @"/binpack"
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
@@ -179,14 +170,24 @@
     } else if([name isEqualToString:@"isPathRestricted"]) {
         NSString* rawPath = userInfo[@"path"];
 
-        if(!rawPath || [rawPath hasPrefix:@"-"] || [rawPath isEqualToString:@""]) {
+        if(!rawPath) {
             return nil;
         }
 
+        // Preprocess path string
         NSString* path = [rawPath stringByStandardizingPath];
-        NSString* pathParent = [path stringByDeletingLastPathComponent];
 
-        HBLogDebug(@"%@: %@", name, path);
+        if(![path isAbsolutePath]) {
+            HBLogDebug(@"%@: %@", @"relative path", path);
+            return nil;
+        }
+        
+        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
+
+            path = [NSString pathWithComponents:pathComponents];
+        }
 
         // Check response cache for given path.
         NSDictionary* responseCachePath = [responseCache objectForKey:path];
@@ -196,6 +197,8 @@
         }
         
         // Recurse call into parent directories.
+        NSString* pathParent = [path stringByDeletingLastPathComponent];
+
         if(![path isEqualToString:@"/"]) {
             NSDictionary* responseParent = [self handleMessageNamed:name withUserInfo:@{@"path":pathParent}];
 

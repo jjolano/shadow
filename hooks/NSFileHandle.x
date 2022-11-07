@@ -3,51 +3,63 @@
 %group shadowhook_NSFileHandle
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 
 + (instancetype)fileHandleForWritingAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 
 + (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSFileHandle* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
-
-    return %orig;
+    
+    return result;
 }
 %end
 %end

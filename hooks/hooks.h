@@ -26,6 +26,7 @@ extern void shadowhook_libc(void);
 extern void shadowhook_mach(void);
 extern void shadowhook_NSArray(void);
 extern void shadowhook_NSBundle(void);
+extern void shadowhook_NSData(void);
 extern void shadowhook_NSDictionary(void);
 extern void shadowhook_NSFileHandle(void);
 extern void shadowhook_NSFileManager(void);

@@ -43,6 +43,8 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
+    path = [path stringByStandardizingPath];
+    
     if(!c || !path || [path isEqualToString:@""]) {
         return NO;
     }
@@ -52,8 +54,6 @@
         HBLogDebug(@"%@: %@", @"relative path", path);
         return NO;
     }
-
-    path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
@@ -72,38 +72,42 @@
         bundlePath = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System/Library/PrivateFrameworks"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
+
+    // Check response cache for given path.
+    NSDictionary* responseCachePath = [responseCache objectForKey:path];
+
+    if(responseCachePath) {
+        return [responseCachePath[@"restricted"] boolValue];
+    }
     
+    // Recurse call into parent directories.
+    NSString* pathParent = [path stringByDeletingLastPathComponent];
+    BOOL responseParent = [self isPathRestricted:pathParent];
+
+    if(responseParent) {
+        return YES;
+    }
+
+    // Check if path is restricted using XPC.
     BOOL restricted = NO;
+    NSDictionary* response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+        @"path" : path
+    }];
 
-    if(!restricted) {
-        // Check cache first
-        NSDictionary* response = [responseCache objectForKey:path];
-
-        // Check if path is restricted
-        if(!response) {
-            HBLogDebug(@"%@: %@", @"checking path", path);
-
-            response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
-                @"path" : path
-            }];
-
-            if(response) {
-                [responseCache setObject:response forKey:path];
-            }
-        }
-
-        if(response) {
-            restricted = [[response objectForKey:@"restricted"] boolValue];
-        }
+    if(response) {
+        restricted = [response[@"restricted"] boolValue];
+        [responseCache setObject:response forKey:path];
     }
 
     return restricted;
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
+    url = [url standardizedURL];
+
     if(!url) {
         return NO;
     }

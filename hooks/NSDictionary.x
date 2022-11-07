@@ -3,69 +3,105 @@
 %group shadowhook_NSDictionary
 %hook NSDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)dictionaryWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 %end
 
 %hook NSMutableDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableDictionary* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    NSMutableDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return %orig;
+    return result;
+}
+
++ (NSMutableDictionary *)dictionaryWithContentsOfFile:(NSString *)path {
+    NSMutableDictionary* result = %orig;
+
+    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+
+    return result;
+}
+
++ (NSMutableDictionary *)dictionaryWithContentsOfURL:(NSURL *)url {
+    NSMutableDictionary* result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+
+    return result;
 }
 %end
 %end
