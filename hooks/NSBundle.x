@@ -3,9 +3,7 @@
 %group shadowhook_NSBundle
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([key isEqualToString:@"SignerIdentity"] && ![_shadow isCallerTweak:backtrace]) {
+    if([key isEqualToString:@"SignerIdentity"] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -13,9 +11,7 @@
 }
 
 + (instancetype)bundleWithURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
@@ -23,9 +19,7 @@
 }
 
 + (instancetype)bundleWithPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -33,9 +27,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
@@ -43,9 +35,7 @@
 }
 
 - (instancetype)initWithPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 

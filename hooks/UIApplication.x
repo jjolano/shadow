@@ -3,12 +3,11 @@
 %group shadowhook_UIApplication
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
-    NSArray* backtrace = [NSThread callStackSymbols];
     BOOL result = %orig;
 
     HBLogDebug(@"%@: %@", @"canOpenURL", url);
     
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 

@@ -3,9 +3,7 @@
 %group shadowhook_NSFileHandle
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -13,9 +11,7 @@
 }
 
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -23,9 +19,7 @@
 }
 
 + (instancetype)fileHandleForWritingAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -33,9 +27,7 @@
 }
 
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -43,9 +35,7 @@
 }
 
 + (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackSymbols];
-
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
@@ -53,9 +43,7 @@
 }
 
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackSymbols];
-    
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 

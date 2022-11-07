@@ -19,32 +19,9 @@
     HBLogDebug(@"%@: %@", @"url schemes", schemes);
 }
 
-- (BOOL)isCallerTweak:(NSArray<NSString *>*)backtrace {
-    for(NSString* line in backtrace) {
-        NSArray* line_split = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-
-        // Clean up output of callStackSymbols
-        NSMutableArray* line_filtered = [NSMutableArray new];
-        for(NSString* col in line_split) {
-            if(![col isEqualToString:@""]) {
-                [line_filtered addObject:col];
-            }
-        }
-
-        NSString* dylib = line_filtered[1];
-
-        if([dylib isEqualToString:@"???"] || ![dylib hasSuffix:@".dylib"]) {
-            continue;
-        }
-        
-        NSString* sym_addr = line_filtered[2];
-        NSScanner* scanner = [NSScanner scannerWithString:sym_addr];
-
-        unsigned long long num_addr = 0;
-        void* ptr_addr = NULL;
-
-        [scanner scanHexLongLong:&num_addr];
-        ptr_addr = (void *)num_addr;
+- (BOOL)isCallerTweak:(NSArray<NSNumber *>*)backtrace {
+    for(NSNumber* sym_addr in backtrace) {
+        void* ptr_addr = (void *)[sym_addr longLongValue];
 
         // Lookup symbol
         Dl_info info;
@@ -95,7 +72,7 @@
         bundlePath = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System/Library/PrivateFrameworks"] || [path hasPrefix:@"/private/var/mobile/Containers"] || [path hasPrefix:@"/private/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
     

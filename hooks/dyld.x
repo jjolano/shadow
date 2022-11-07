@@ -4,13 +4,12 @@ BOOL _dlerror = NO;
 
 %group shadowhook_dyld
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-    NSArray* backtrace = [NSThread callStackSymbols];
     const char* result = %orig(image_index);
 
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
-        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             return "/.file";
         }
     }
@@ -19,10 +18,9 @@ BOOL _dlerror = NO;
 }
 
 %hookf(char *, dlerror) {
-    NSArray* backtrace = [NSThread callStackSymbols];
     char* result = %orig;
 
-    if(result && _dlerror && ![_shadow isCallerTweak:backtrace]) {
+    if(result && _dlerror && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         _dlerror = NO;
         return "error";
     }
@@ -31,7 +29,6 @@ BOOL _dlerror = NO;
 }
 
 %hookf(void *, dlopen, const char *path, int mode) {
-    NSArray* backtrace = [NSThread callStackSymbols];
     void* handle = %orig;
 
     if(handle && path) {
@@ -41,7 +38,7 @@ BOOL _dlerror = NO;
             // todo
         }
 
-        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             _dlerror = YES;
             dlclose(handle);
             return NULL;
@@ -52,14 +49,13 @@ BOOL _dlerror = NO;
 }
 
 %hookf(bool, dlopen_preflight, const char *path) {
-    NSArray* backtrace = [NSThread callStackSymbols];
     bool result = %orig;
     
     if(result && path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if([image_name containsString:@"/"]) {
-            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                 return false;
             }
         } else {
@@ -82,7 +78,6 @@ BOOL _dlerror = NO;
 // }
 
 %hookf(void *, dlsym, void *handle, const char *symbol) {
-    NSArray* backtrace = [NSThread callStackSymbols];
     void* addr = %orig;
 
     if(addr) {
@@ -92,7 +87,7 @@ BOOL _dlerror = NO;
         if(dladdr(addr, &info)) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
             
-            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:backtrace]) {
+            if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                 HBLogDebug(@"%@: %@: %@", @"dlsym", @"restricted symbol lookup", @(symbol));
                 return NULL;
             }
