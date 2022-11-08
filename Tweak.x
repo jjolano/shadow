@@ -39,8 +39,12 @@ Shadow* _shadow = nil;
 		return;
 	}
 
+	// todo: load preferences
+
 	// Only load Shadow for App Store applications.
-	if(![[NSBundle mainBundle] appStoreReceiptURL] || [[[NSBundle mainBundle] bundlePath] hasPrefix:@"/Applications"]) {
+	// Don't load for App Extensions (.. unless developers are adding detection in those too :/)
+	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+	if(![[NSBundle mainBundle] appStoreReceiptURL] || [bundlePath hasPrefix:@"/Applications"] || [bundlePath hasSuffix:@".appex"]) {
 		return;
 	}
 

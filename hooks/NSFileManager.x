@@ -1,6 +1,76 @@
 #import "hooks.h"
 
 %group shadowhook_NSFileManager
+
+%hook NSDirectoryEnumerator
+%property (nonatomic, strong) NSString* shdwDir;
+
+- (NSArray *)allObjects {
+    NSArray* result = %orig;
+
+    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        NSString* base = [self valueForKey:@"shdwDir"];
+        NSMutableArray* result_filtered = [NSMutableArray new];
+        
+        for(id entry in result) {
+            if([entry isKindOfClass:[NSURL class]]) {
+                if(![_shadow isURLRestricted:entry]) {
+                    [result_filtered addObject:entry];
+                }
+            } else if([entry isKindOfClass:[NSString class]] && base) {
+                NSMutableArray* pathComponents = [[base pathComponents] mutableCopy];
+                [pathComponents addObject:entry];
+                NSString* path = [NSString pathWithComponents:pathComponents];
+
+                if(![_shadow isPathRestricted:path]) {
+                    [result_filtered addObject:path];
+                }
+            } else {
+                [result_filtered addObject:entry];
+            }
+        }
+
+        result = [result_filtered copy];
+    }
+
+    return result;
+}
+
+- (id)nextObject {
+    id result = %orig;
+
+    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([result isKindOfClass:[NSURL class]]) {
+            do {
+                if([_shadow isURLRestricted:result]) {
+                    result = %orig;
+                } else {
+                    break;
+                }
+            } while(result);
+        } else if([result isKindOfClass:[NSString class]]) {
+            NSString* base = [self valueForKey:@"shdwDir"];
+
+            if(base) {
+                do {
+                    NSMutableArray* pathComponents = [[base pathComponents] mutableCopy];
+                    [pathComponents addObject:result];
+                    NSString* path = [NSString pathWithComponents:pathComponents];
+
+                    if([_shadow isPathRestricted:path]) {
+                        result = %orig;
+                    } else {
+                        break;
+                    }
+                } while(result);
+            }
+        }
+    }
+
+    return result;
+}
+%end
+
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
     BOOL result = %orig;
@@ -125,13 +195,27 @@
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
-    // todo
-    return %orig;
+    NSDirectoryEnumerator<NSURL *> * result = %orig;
+    
+    if(result) {
+        // todo
+        [%c(result) setValue:[url path] forKey:@"shdwDir"];
+        HBLogDebug(@"%@: %@", @"enumeratorAtURL", url);
+    }
+
+    return result;
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-    // todo
-    return %orig;
+    NSDirectoryEnumerator<NSString *> * result = %orig;
+
+    if(result) {
+        // todo
+        [%c(result) setValue:path forKey:@"shdwDir"];
+        HBLogDebug(@"%@: %@", @"enumeratorAtPath", path);
+    }
+    
+    return result;
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
@@ -279,6 +363,8 @@
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
+    HBLogDebug(@"%@: %@", @"changeCurrentDirectoryPath", path);
+
     NSString* cwd = [self currentDirectoryPath];
 
     if(![path isAbsolutePath]) {

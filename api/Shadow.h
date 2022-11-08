@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
+#define BYPASS_VERSION  "1.0"
+
 @class NSString, NSArray;
 
 @interface Shadow : NSObject

@@ -58,6 +58,8 @@
             errno = ENOENT;
             return -1;
         }
+
+        HBLogDebug(@"%@: %@", @"chdir", path);
     }
 
     return result;
@@ -73,6 +75,8 @@
             errno = ENOENT;
             return -1;
         }
+
+        HBLogDebug(@"%@: %@", @"chroot", path);
     }
 
     return result;
@@ -158,6 +162,38 @@
 //     return %orig;
 // }
 
+%hookf(int, readdir_r, DIR *restrict dirp, struct dirent *restrict entry, struct dirent **restrict oresult) {
+    int result = %orig;
+    
+    if(result == 0 && *oresult) {
+        int fd = dirfd(dirp);
+
+        do {
+            // Get file descriptor path.
+            char pathname[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(fcntl(fd, F_GETPATH, pathname) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(entry->d_name)];
+
+                NSString* path = [NSString pathWithComponents:pathComponents];
+
+                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                    // call readdir again to skip ahead
+                    result = %orig;
+                } else {
+                    break;
+                }
+            }
+        } while(result == 0 && *oresult);
+    }
+
+    return result;
+}
+
 %hookf(struct dirent *, readdir, DIR* dirp) {
     struct dirent* result = %orig;
     
@@ -167,10 +203,15 @@
         do {
             // Get file descriptor path.
             char pathname[PATH_MAX];
-            NSString* path = nil;
+            NSString* pathParent = nil;
 
             if(fcntl(fd, F_GETPATH, pathname) != -1) {
-                path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(result->d_name)];
+
+                NSString* path = [NSString pathWithComponents:pathComponents];
 
                 if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                     // call readdir again to skip ahead

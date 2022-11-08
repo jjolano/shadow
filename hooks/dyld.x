@@ -11,7 +11,7 @@ BOOL _dlerror = NO;
         HBLogDebug(@"%@: %@: %@", @"dyld", @"_dyld_register_func_for_add_image", image_name);
     }
 
-    // return %orig;
+    return %orig;
 }
 
 %hookf(int32_t, NSVersionOfLinkTimeLibrary, const char* libraryName) {
