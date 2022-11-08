@@ -136,6 +136,55 @@
     return %orig;
 }
 
+// %hookf(int, fstat, int fd, struct stat *buf) {
+//     struct stat st;
+//     int result = %orig(fd, &st);
+
+//     if(result == 0) {
+//         // Get file descriptor path.
+//         char pathname[PATH_MAX];
+//         NSString* path = nil;
+
+//         if(fcntl(fd, F_GETPATH, pathname) != -1) {
+//            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+//             if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//                 errno = EBADF;
+//                 return -1;
+//             }
+//         }
+//     }
+
+//     return %orig;
+// }
+
+%hookf(struct dirent *, readdir, DIR* dirp) {
+    struct dirent* result = %orig;
+    
+    if(result) {
+        int fd = dirfd(dirp);
+
+        do {
+            // Get file descriptor path.
+            char pathname[PATH_MAX];
+            NSString* path = nil;
+
+            if(fcntl(fd, F_GETPATH, pathname) != -1) {
+                path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                    // call readdir again to skip ahead
+                    result = %orig;
+                } else {
+                    break;
+                }
+            }
+        } while(result);
+    }
+
+    return result;
+}
+
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
     FILE* result = %orig;
 
@@ -205,44 +254,6 @@
 
     return result;
 }
-
-// %hookf(int, fstat, int fd, struct stat *buf) {
-//     char fdpath[PATH_MAX];
-
-//     if(fcntl(fd, F_GETPATH, fdpath) != -1) {
-//         NSString *fd_path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:fdpath length:strlen(fdpath)];
-
-//         if([_shadow isPathRestricted:fd_path]) {
-//             errno = EBADF;
-//             return -1;
-//         }
-//     }
-
-//     return %orig;
-// }
-
-// %hookf(int, open, const char *pathname, int oflag, ...) {
-//     if(pathname) {
-//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-//         if([_shadow isPathRestricted:path]) {
-//             errno = ENOENT;
-//             return -1;
-//         }
-//     }
-
-//     if(oflag & O_CREAT) {
-//         mode_t mode;
-//         va_list args;
-//         va_start(args, oflag);
-//         mode = (mode_t) va_arg(args, int);
-//         va_end(args);
-
-//         return %orig(pathname, oflag, mode);
-//     }
-
-//     return %orig(pathname, oflag);
-// }
 
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;

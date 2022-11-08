@@ -44,7 +44,7 @@
 
 - (BOOL)isPathRestricted:(NSString *)path {
     path = [path stringByStandardizingPath];
-    
+
     if(!c || !path || [path isEqualToString:@""]) {
         return NO;
     }
@@ -52,7 +52,12 @@
     // Preprocess path string
     if(![path isAbsolutePath]) {
         HBLogDebug(@"%@: %@", @"relative path", path);
-        return NO;
+
+        // reconstruct path
+        NSString* cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+        NSMutableArray* pathComponents = [[cwd pathComponents] mutableCopy];
+        [pathComponents addObjectsFromArray:[path pathComponents]];
+        path = [NSString pathWithComponents:pathComponents];
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
