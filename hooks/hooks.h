@@ -6,6 +6,7 @@
 #import <sys/mount.h>
 #import <sys/syscall.h>
 #import <sys/utsname.h>
+#import <sys/syslimits.h>
 #import <errno.h>
 #import <fcntl.h>
 #import <mach-o/dyld.h>
@@ -21,6 +22,7 @@
 
 extern Shadow* _shadow;
 
+extern void shadowhook_DeviceCheck(void);
 extern void shadowhook_dyld(void);
 extern void shadowhook_libc(void);
 extern void shadowhook_mach(void);

@@ -3,6 +3,45 @@
 BOOL _dlerror = NO;
 
 %group shadowhook_dyld
+%hookf(void, _dyld_register_func_for_add_image, void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
+    // Check who's interested in this...
+    Dl_info info;
+    if(dladdr(func, &info)) {
+        NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
+        HBLogDebug(@"%@: %@: %@", @"dyld", @"_dyld_register_func_for_add_image", image_name);
+    }
+
+    // return %orig;
+}
+
+%hookf(int32_t, NSVersionOfLinkTimeLibrary, const char* libraryName) {
+    HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
+    return %orig;
+}
+
+%hookf(int32_t, NSVersionOfRunTimeLibrary, const char* libraryName) {
+    HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
+    return %orig;
+}
+
+// %hookf(uint32_t, _dyld_image_count) {
+//     uint32_t result = %orig;
+
+//     HBLogDebug(@"%@: %@: %d", @"dyld", @"_dyld_image_count", result);
+
+//     return result;
+// }
+
+// %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
+//     HBLogDebug(@"%@: %@: %d", @"dyld", @"_dyld_get_image_header", image_index);
+//     return %orig;
+// }
+
+// %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
+//     HBLogDebug(@"%@: %@: %d", @"dyld", @"_dyld_get_image_vmaddr_slide", image_index);
+//     return %orig;
+// }
+
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
     const char* result = %orig(image_index);
 

@@ -69,6 +69,7 @@ Shadow* _shadow = nil;
 	}
 
 	// Initialize hooks.
+	shadowhook_DeviceCheck();
 	shadowhook_dyld();
 	shadowhook_libc();
 	shadowhook_mach();

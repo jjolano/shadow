@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>Global Settings</string>
 			<key>footerText</key>
-			<string>Attempts to bypass jailbreak detection in all apps by default. General app performance will be affected.</string>
+			<string>Always attempts to bypass jailbreak detection in all apps by default. Has no effect if overrided by per-app settings.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
