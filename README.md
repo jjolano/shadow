@@ -15,6 +15,7 @@ Shadow exposes an API over `CPDistributedMessagingCenter`. This requires RocketB
 * `ping`: Responds with `pong` and version numbers.
 * `isPathRestricted`: Takes one parameter `path` that performs a lookup whether or not the path is related to jailbreak.
 * `getURLSchemes`: Responds with an array of URL schemes related to jailbreak.
+
 If you are a jailbreak detection developer and I find you using this **private Apple API** in your production app, I will... hook this class.
 
 ## Contributing
