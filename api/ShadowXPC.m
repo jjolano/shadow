@@ -1,5 +1,6 @@
 #import <HBLog.h>
 
+#import "Shadow.h"
 #import "ShadowXPC.h"
 #import "NSTask.h"
 
@@ -165,7 +166,9 @@
         HBLogDebug(@"%@: %@", name, @"received ping");
 
         response = @{
-            @"ping" : @"pong"
+            @"ping" : @"pong",
+            @"bypass_version" : @BYPASS_VERSION,
+            @"api_version" : @API_VERSION
         };
     } else if([name isEqualToString:@"isPathRestricted"]) {
         NSString* rawPath = userInfo[@"path"];

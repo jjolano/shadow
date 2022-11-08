@@ -29,6 +29,10 @@
 			<string>PSLinkCell</string>
 			<key>id</key>
 			<string>Link_Global_Hooks</string>
+			<key>detail</key>
+			<string>SHDWHooksListController</string>
+			<key>isController</key>
+			<true/>
 			<key>label</key>
 			<string>Hooks (Advanced)</string>
 		</dict>
@@ -38,7 +42,7 @@
 			<key>label</key>
 			<string>Application Settings</string>
 			<key>footerText</key>
-			<string>App settings will override global settings.</string>
+			<string>Per-app settings will override global settings, if enabled.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -46,7 +50,7 @@
 			<key>detail</key>
 			<string>ATLApplicationListSubcontrollerController</string>
 			<key>subcontrollerClass</key>
-			<string></string>
+			<string>SHDWAppListController</string>
 			<key>label</key>
 			<string>Applications</string>
 			<key>sections</key>
@@ -68,6 +72,8 @@
 			<string>PSButtonCell</string>
 			<key>id</key>
 			<string>Btn_Respring</string>
+			<key>action</key>
+			<string>respring:</string>
 			<key>label</key>
 			<string>Restart SpringBoard</string>
 		</dict>
@@ -76,8 +82,21 @@
 			<string>PSButtonCell</string>
 			<key>id</key>
 			<string>Btn_ResetSettings</string>
+			<key>action</key>
+			<string>reset:</string>
 			<key>label</key>
 			<string>Reset Settings</string>
+			<key>confirmation</key>
+			<dict>
+				<key>prompt</key>
+				<string>This will reset all settings for Shadow and restart SpringBoard.</string>
+				<key>title</key>
+				<string>Reset Settings</string>
+				<key>okTitle</key>
+				<string>Reset Settings</string>
+				<key>cancelTitle</key>
+				<string>Cancel</string>
+			</dict>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -88,6 +107,10 @@
 			<string>PSLinkCell</string>
 			<key>id</key>
 			<string>Link_About</string>
+			<key>detail</key>
+			<string>SHDWAboutListController</string>
+			<key>isController</key>
+			<true/>
 			<key>label</key>
 			<string>About</string>
 		</dict>

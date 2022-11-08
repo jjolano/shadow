@@ -58,13 +58,14 @@
         NSMutableArray* pathComponents = [[cwd pathComponents] mutableCopy];
         [pathComponents addObjectsFromArray:[path pathComponents]];
         path = [NSString pathWithComponents:pathComponents];
+        path = [path stringByStandardizingPath];
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
-
         path = [NSString pathWithComponents:pathComponents];
+        path = [path stringByStandardizingPath];
     }
 
     // Excluded from checks

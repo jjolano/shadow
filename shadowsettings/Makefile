@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = ShadowSettings
 
-ShadowSettings_FILES = SHDWRootListController.m
+ShadowSettings_FILES = $(wildcard *.m)
 ShadowSettings_FRAMEWORKS = UIKit
 ShadowSettings_EXTRA_FRAMEWORKS = Cephei CepheiPrefs AltList
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
