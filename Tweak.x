@@ -2,6 +2,7 @@
 #import <rocketbootstrap/rocketbootstrap.h>
 #import <Foundation/Foundation.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>
+#import <Cephei/HBPreferences.h>
 
 #import "api/Shadow.h"
 #import "api/ShadowXPC.h"
@@ -10,6 +11,30 @@
 Shadow* _shadow = nil;
 
 %ctor {
+	// Load preferences.
+	HBPreferences* prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+
+	// Register default preferences.
+	[prefs registerDefaults:@{
+		@"Global_Enabled" : @(NO),
+		@"Hook_Filesystem" : @(YES),
+		@"Hook_DynamicLibraries" : @(YES),
+		@"Hook_URLScheme" : @(YES),
+		@"Hook_EnvVars" : @(YES),
+		@"Hook_FilesystemExtra" : @(YES),
+		@"Hook_CollectionClasses" : @(YES),
+		@"Hook_BundleClass" : @(YES),
+		@"Hook_StringClass" : @(YES),
+		@"Hook_URLClass" : @(YES),
+		@"Hook_DataClass" : @(YES),
+		@"Hook_ImageClass" : @(YES),
+		@"Hook_DeviceCheck" : @(NO),
+		@"Hook_MachBootstrap" : @(NO),
+		@"Hook_SymLookup" : @(NO),
+		@"Hook_LowLevelC" : @(NO),
+		@"Hook_AntiDebugging" : @(NO)
+	}];
+
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 
@@ -39,12 +64,41 @@ Shadow* _shadow = nil;
 		return;
 	}
 
-	// todo: load preferences
-
 	// Only load Shadow for App Store applications.
 	// Don't load for App Extensions (.. unless developers are adding detection in those too :/)
 	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
 	if(![[NSBundle mainBundle] appStoreReceiptURL] || [bundlePath hasPrefix:@"/Applications"] || [bundlePath hasSuffix:@".appex"]) {
+		return;
+	}
+
+	NSDictionary* prefs_load = @{
+		@"App_Enabled" : prefs[@"Global_Enabled"],
+		@"Hook_Filesystem" : prefs[@"Hook_Filesystem"],
+		@"Hook_DynamicLibraries" : prefs[@"Hook_DynamicLibraries"],
+		@"Hook_URLScheme" : prefs[@"Hook_URLScheme"],
+		@"Hook_EnvVars" : prefs[@"Hook_EnvVars"],
+		@"Hook_FilesystemExtra" : prefs[@"Hook_FilesystemExtra"],
+		@"Hook_CollectionClasses" : prefs[@"Hook_CollectionClasses"],
+		@"Hook_BundleClass" : prefs[@"Hook_BundleClass"],
+		@"Hook_StringClass" : prefs[@"Hook_StringClass"],
+		@"Hook_URLClass" : prefs[@"Hook_URLClass"],
+		@"Hook_DataClass" : prefs[@"Hook_DataClass"],
+		@"Hook_ImageClass" : prefs[@"Hook_ImageClass"],
+		@"Hook_DeviceCheck" : prefs[@"Hook_DeviceCheck"],
+		@"Hook_MachBootstrap" : prefs[@"Hook_MachBootstrap"],
+		@"Hook_SymLookup" : prefs[@"Hook_SymLookup"],
+		@"Hook_LowLevelC" : prefs[@"Hook_LowLevelC"],
+		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"]
+	};
+
+	// Determine whether to load the rest of the tweak.
+	// Load app-specific settings, if enabled.
+	NSDictionary* prefs_app = prefs[bundleIdentifier];
+	if(prefs_app && [prefs_app[@"App_Override"] boolValue]) {
+		prefs_load = prefs_app;
+	}
+
+	if(![prefs_load[@"App_Enabled"] boolValue]) {
 		return;
 	}
 
@@ -85,23 +139,74 @@ Shadow* _shadow = nil;
 	}
 
 	// Initialize hooks.
-	shadowhook_DeviceCheck();
-	shadowhook_dyld();
-	shadowhook_libc();
-	shadowhook_mach();
-	shadowhook_NSArray();
-	shadowhook_NSBundle();
-	shadowhook_NSData();
-	shadowhook_NSDictionary();
-	shadowhook_NSFileHandle();
-	shadowhook_NSFileManager();
-	shadowhook_NSFileVersion();
-	shadowhook_NSFileWrapper();
-	shadowhook_NSProcessInfo();
-	shadowhook_NSString();
-	shadowhook_NSURL();
-	shadowhook_UIApplication();
-	shadowhook_UIImage();
+	if([prefs_load[@"Hook_Filesystem"] boolValue]) {
+		shadowhook_libc();
+		shadowhook_NSFileManager();
+	}
+
+	if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
+		shadowhook_dyld();
+	}
+
+	if([prefs_load[@"Hook_URLScheme"] boolValue]) {
+		shadowhook_UIApplication();
+	}
+
+	if([prefs_load[@"Hook_EnvVars"] boolValue]) {
+		shadowhook_libc_envvar();
+		shadowhook_NSProcessInfo();
+	}
+
+	if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
+		shadowhook_NSFileHandle();
+		shadowhook_NSFileVersion();
+		shadowhook_NSFileWrapper();
+	}
+
+	if([prefs_load[@"Hook_CollectionClasses"] boolValue]) {
+		shadowhook_NSArray();
+		shadowhook_NSDictionary();
+	}
+
+	if([prefs_load[@"Hook_BundleClass"] boolValue]) {
+		shadowhook_NSBundle();
+	}
+
+	if([prefs_load[@"Hook_StringClass"] boolValue]) {
+		shadowhook_NSString();
+	}
+
+	if([prefs_load[@"Hook_URLClass"] boolValue]) {
+		shadowhook_NSURL();
+	}
+
+	if([prefs_load[@"Hook_DataClass"] boolValue]) {
+		shadowhook_NSData();
+	}
+
+	if([prefs_load[@"Hook_ImageClass"] boolValue]) {
+		shadowhook_UIImage();
+	}
+
+	if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
+		shadowhook_DeviceCheck();
+	}
+
+	if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
+		shadowhook_mach();
+	}
+
+	if([prefs_load[@"Hook_SymLookup"] boolValue]) {
+		shadowhook_dyld_symlookup();
+	}
+
+	if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
+		shadowhook_libc_lowlevel();
+	}
+
+	if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
+		shadowhook_libc_antidebugging();
+	}
 
 	HBLogDebug(@"%@", @"hooks initialized");
 }

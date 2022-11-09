@@ -115,7 +115,9 @@ BOOL _dlerror = NO;
 
 //     return %orig;
 // }
+%end
 
+%group shadowhook_dyld_dlsym
 %hookf(void *, dlsym, void *handle, const char *symbol) {
     void* addr = %orig;
 
@@ -178,4 +180,8 @@ void shadowhook_dyld(void) {
 
     // Manual hooks
     // MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
+}
+
+void shadowhook_dyld_symlookup(void) {
+    %init(shadowhook_dyld_dlsym);
 }
