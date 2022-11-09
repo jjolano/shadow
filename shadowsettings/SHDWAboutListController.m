@@ -17,6 +17,11 @@
 	return @API_VERSION;
 }
 
+- (NSString *)aboutBuildDate:(id)sender {
+	NSString* build = [NSString stringWithFormat:@"%@ %@", @__DATE__, @__TIME__];
+	return build;
+}
+
 - (NSString *)aboutSoftwareLicense:(id)sender {
 	return @"BSD 3-Clause";
 }

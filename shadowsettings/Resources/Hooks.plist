@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Essential Hooks</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_Filesystem</string>
+			<key>label</key>
+			<string>File System</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_DynamicLibraries</string>
+			<key>label</key>
+			<string>Loaded Modules</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_URLScheme</string>
+			<key>label</key>
+			<string>URL Handlers</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_EnvVars</string>
+			<key>label</key>
+			<string>Environment Variables</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Recommended Hooks</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_FilesystemExtra</string>
+			<key>label</key>
+			<string>File System (Extra)</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_CollectionClasses</string>
+			<key>label</key>
+			<string>Collection Classes</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_BundleClass</string>
+			<key>label</key>
+			<string>NSBundle Class</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_StringClass</string>
+			<key>label</key>
+			<string>NSString Class</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_URLClass</string>
+			<key>label</key>
+			<string>NSURL Class</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_DataClass</string>
+			<key>label</key>
+			<string>NSData Class</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_ImageClass</string>
+			<key>label</key>
+			<string>UIImage Class</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Extra Hooks</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_DeviceCheck</string>
+			<key>label</key>
+			<string>DeviceCheck Framework</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_MachBootstrap</string>
+			<key>label</key>
+			<string>Mach Messaging</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_SymLookup</string>
+			<key>label</key>
+			<string>Symbol Lookup</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_LowLevelC</string>
+			<key>label</key>
+			<string>Low-Level C Handles</string>
+		</dict>
+        <dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Switch_Hook_AntiDebugging</string>
+			<key>label</key>
+			<string>Anti-Debugging</string>
+		</dict>
+	</array>
+</dict>
+</plist>

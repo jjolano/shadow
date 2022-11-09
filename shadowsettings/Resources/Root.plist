@@ -23,6 +23,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Shadow allows fine-tuning of jailbreak detection bypass functions. Not needed in most cases, unless a specific hook is causing apps to crash.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -34,7 +36,7 @@
 			<key>isController</key>
 			<true/>
 			<key>label</key>
-			<string>Hooks (Advanced)</string>
+			<string>Customize Hooks (Advanced)</string>
 		</dict>
 		<dict>
 			<key>cell</key>
