@@ -30,6 +30,14 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
+			<string>Build Date</string>
+			<key>get</key>
+			<string>aboutBuildDate:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
 			<string>Software License</string>
 			<key>get</key>
 			<string>aboutSoftwareLicense:</string>

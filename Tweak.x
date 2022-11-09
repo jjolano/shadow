@@ -35,7 +35,7 @@ Shadow* _shadow = nil;
 		// Unlock shadowd service.
 		rocketbootstrap_unlock("me.jjolano.shadow");
 
-		HBLogDebug(@"%@", @"[shadow] xpc service started: me.jjolano.shadow");
+		HBLogDebug(@"%@", @"xpc service started: me.jjolano.shadow");
 		return;
 	}
 
@@ -48,13 +48,13 @@ Shadow* _shadow = nil;
 		return;
 	}
 
-	HBLogDebug(@"%@", @"[shadow] tweak loaded");
+	HBLogDebug(@"%@", @"tweak loaded in app");
 
 	// Initialize Shadow class.
 	_shadow = [Shadow new];
 
 	if(!_shadow) {
-		HBLogDebug(@"%@", @"[shadow] failed to load class");
+		HBLogDebug(@"%@", @"failed to load class");
 		return;
 	}
 
@@ -64,8 +64,20 @@ Shadow* _shadow = nil;
 
 	[_shadow setMessagingCenter:c];
 
+	// Test communication to shadowd.
+	NSDictionary* response;
+	response = [c sendMessageAndReceiveReplyName:@"ping" userInfo:nil];
+
+	if(response) {
+		HBLogDebug(@"%@: %@", @"bypass version", [response objectForKey:@"bypass_version"]);
+		HBLogDebug(@"%@: %@", @"api version", [response objectForKey:@"api_version"]);
+	} else {
+		HBLogDebug(@"%@", @"failed to communicate with xpc");
+		return;
+	}
+
 	// Preload data from shadowd.
-	NSDictionary* response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
+	response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
 
 	if(response) {
 		NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
@@ -91,5 +103,5 @@ Shadow* _shadow = nil;
 	shadowhook_UIApplication();
 	shadowhook_UIImage();
 
-	HBLogDebug(@"%@", @"[shadow] hooks initialized");
+	HBLogDebug(@"%@", @"hooks initialized");
 }
