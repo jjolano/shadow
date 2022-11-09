@@ -258,29 +258,6 @@
     return result;
 }
 
-%hookf(char *, getenv, const char *name) {
-    if(name) {
-        NSString *env = [NSString stringWithUTF8String:name];
-
-        if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
-        || [env isEqualToString:@"_MSSafeMode"]
-        || [env isEqualToString:@"_SafeMode"]
-        || [env isEqualToString:@"SHELL"]) {
-            return NULL;
-        }
-        /*
-        if([env isEqualToString:@"SIMULATOR_MODEL_IDENTIFIER"]) {
-            struct utsname systemInfo;
-            uname(&systemInfo);
-
-            return (char *)[@(systemInfo.machine) UTF8String];
-        }
-        */
-    }
-
-    return %orig;
-}
-
 %hookf(char *, realpath, const char *pathname, char *resolved_path) {
     char* result = %orig;
     
@@ -294,52 +271,6 @@
     }
 
     return result;
-}
-
-%hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
-    int ret = %orig;
-
-    if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) == CS_PLATFORM_BINARY && pid == getpid()) {
-        // Ensure that the platform binary flag is not set.
-        ret &= ~CS_PLATFORM_BINARY;
-    }
-
-    return ret;
-}
-
-%hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    if(namelen == 4
-    && name[0] == CTL_KERN
-    && name[1] == KERN_PROC
-    && name[2] == KERN_PROC_ALL
-    && name[3] == 0) {
-        // Running process check.
-        *oldlenp = 0;
-        return 0;
-    }
-
-    int ret = %orig;
-
-    if(ret == 0
-    && name[0] == CTL_KERN
-    && name[1] == KERN_PROC
-    && name[2] == KERN_PROC_PID
-    && name[3] == getpid()) {
-        // Remove trace flag.
-        if(oldp) {
-            struct kinfo_proc *p = ((struct kinfo_proc *) oldp);
-
-            if((p->kp_proc.p_flag & P_TRACED) == P_TRACED) {
-                p->kp_proc.p_flag &= ~P_TRACED;
-            }
-        }
-    }
-
-    return ret;
-}
-
-%hookf(pid_t, getppid) {
-    return 1;
 }
 
 %hookf(int, execve, const char *pathname, char *const argv[], char *const envp[]) {
@@ -392,6 +323,79 @@
     }
 
     return %orig;
+}
+%end
+
+%group shadowhook_libc_env
+%hookf(char *, getenv, const char *name) {
+    if(name) {
+        NSString *env = [NSString stringWithUTF8String:name];
+
+        if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
+        || [env isEqualToString:@"_MSSafeMode"]
+        || [env isEqualToString:@"_SafeMode"]
+        || [env isEqualToString:@"SHELL"]) {
+            return NULL;
+        }
+        /*
+        if([env isEqualToString:@"SIMULATOR_MODEL_IDENTIFIER"]) {
+            struct utsname systemInfo;
+            uname(&systemInfo);
+
+            return (char *)[@(systemInfo.machine) UTF8String];
+        }
+        */
+    }
+
+    return %orig;
+}
+%end
+
+%group shadowhook_libc_debug
+%hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
+    int ret = %orig;
+
+    if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) == CS_PLATFORM_BINARY && pid == getpid()) {
+        // Ensure that the platform binary flag is not set.
+        ret &= ~CS_PLATFORM_BINARY;
+    }
+
+    return ret;
+}
+
+%hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    if(namelen == 4
+    && name[0] == CTL_KERN
+    && name[1] == KERN_PROC
+    && name[2] == KERN_PROC_ALL
+    && name[3] == 0) {
+        // Running process check.
+        *oldlenp = 0;
+        return 0;
+    }
+
+    int ret = %orig;
+
+    if(ret == 0
+    && name[0] == CTL_KERN
+    && name[1] == KERN_PROC
+    && name[2] == KERN_PROC_PID
+    && name[3] == getpid()) {
+        // Remove trace flag.
+        if(oldp) {
+            struct kinfo_proc *p = ((struct kinfo_proc *) oldp);
+
+            if((p->kp_proc.p_flag & P_TRACED) == P_TRACED) {
+                p->kp_proc.p_flag &= ~P_TRACED;
+            }
+        }
+    }
+
+    return ret;
+}
+
+%hookf(pid_t, getppid) {
+    return 1;
 }
 %end
 
@@ -505,10 +509,20 @@ static int replaced_syscall(int number, ...) {
 
 void shadowhook_libc(void) {
     %init(shadowhook_libc);
-    %init(shadowhook_libc_opendir);
 
-    // Manual hooks
-    MSHookFunction(open, replaced_open, (void **) &original_open);
     // MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
     // MSHookFunction(__opendir2, replaced_opendir2, (void **) &original_opendir2);
+}
+
+void shadowhook_libc_envvar(void) {
+    %init(shadowhook_libc_env);
+}
+
+void shadowhook_libc_lowlevel(void) {
+    %init(shadowhook_libc_opendir);
+    MSHookFunction(open, replaced_open, (void **) &original_open);
+}
+
+void shadowhook_libc_antidebugging(void) {
+    %init(shadowhook_libc_debug);
 }

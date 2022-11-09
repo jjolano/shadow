@@ -39,3 +39,9 @@ extern void shadowhook_NSString(void);
 extern void shadowhook_NSURL(void);
 extern void shadowhook_UIApplication(void);
 extern void shadowhook_UIImage(void);
+
+extern void shadowhook_libc_envvar(void);
+extern void shadowhook_libc_lowlevel(void);
+extern void shadowhook_libc_antidebugging(void);
+
+extern void shadowhook_dyld_symlookup(void);
