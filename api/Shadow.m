@@ -78,7 +78,13 @@
         bundlePath = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System/Library/PrivateFrameworks"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    // Tweaks shouldn't be installing new files to /System
+    // Conditional of shame
+    if([path hasPrefix:@"/System/Library/PreferenceBundles/AppList.bundle"]) {
+        return YES;
+    }
+
+    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
 

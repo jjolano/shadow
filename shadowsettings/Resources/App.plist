@@ -9,6 +9,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Application Settings</string>
+			<key>footerText</key>
+			<string>App settings will have no effect unless this is enabled.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -21,6 +23,8 @@
 			<string>Enable App Settings</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -42,6 +46,8 @@
 			<string>Enable Bypass</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

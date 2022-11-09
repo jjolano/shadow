@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
-#define BYPASS_VERSION  "1.0"
+#define BYPASS_VERSION  "1.1"
 
 @class NSString, NSArray;
 
