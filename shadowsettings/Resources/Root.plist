@@ -23,6 +23,8 @@
 			<string>Always-On</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

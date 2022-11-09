@@ -21,6 +21,8 @@
 			<string>File System</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -37,6 +39,8 @@
 			<string>Loaded Modules</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -53,6 +57,8 @@
 			<string>URL Handlers</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -69,6 +75,8 @@
 			<string>Environment Variables</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -91,6 +99,8 @@
 			<string>File System (Extra)</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -107,6 +117,8 @@
 			<string>Collection Classes</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -123,6 +135,8 @@
 			<string>NSBundle Class</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -139,6 +153,8 @@
 			<string>NSString Class</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -155,6 +171,8 @@
 			<string>NSURL Class</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -171,6 +189,8 @@
 			<string>NSData Class</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -187,6 +207,8 @@
 			<string>UIImage Class</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -209,6 +231,8 @@
 			<string>DeviceCheck Framework</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -225,6 +249,8 @@
 			<string>Mach Lookups</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -241,6 +267,8 @@
 			<string>Symbol Lookups</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -257,6 +285,8 @@
 			<string>Low-Level C Handles</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -273,6 +303,8 @@
 			<string>Anti-Debugging</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

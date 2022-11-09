@@ -9,6 +9,15 @@
 #import "hooks/hooks.h"
 
 Shadow* _shadow = nil;
+ShadowXPC* _xpc = nil;
+
+%group hook_springboard
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+}
+%end
+%end
 
 %ctor {
 	// Load preferences.
@@ -41,7 +50,7 @@ Shadow* _shadow = nil;
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 		// Create Shadow instance (with XPC methods).
-		ShadowXPC* _xpc = [ShadowXPC new];
+		_xpc = [ShadowXPC new];
 
 		if(!_xpc) {
 			return;
@@ -61,6 +70,8 @@ Shadow* _shadow = nil;
 		rocketbootstrap_unlock("me.jjolano.shadow");
 
 		HBLogDebug(@"%@", @"xpc service started: me.jjolano.shadow");
+
+		%init(hook_springboard);
 		return;
 	}
 
@@ -98,7 +109,7 @@ Shadow* _shadow = nil;
 		prefs_load = prefs_app;
 	}
 
-	if(![prefs_load[@"App_Enabled"] boolValue]) {
+	if(prefs_load[@"App_Enabled"] && ![prefs_load[@"App_Enabled"] boolValue]) {
 		return;
 	}
 
@@ -139,72 +150,72 @@ Shadow* _shadow = nil;
 	}
 
 	// Initialize hooks.
-	if([prefs_load[@"Hook_Filesystem"] boolValue]) {
+	if(prefs_load[@"Hook_Filesystem"] && [prefs_load[@"Hook_Filesystem"] boolValue]) {
 		shadowhook_libc();
 		shadowhook_NSFileManager();
 	}
 
-	if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
+	if(prefs_load[@"Hook_DynamicLibraries"] && [prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
 		shadowhook_dyld();
 	}
 
-	if([prefs_load[@"Hook_URLScheme"] boolValue]) {
+	if(prefs_load[@"Hook_URLScheme"] && [prefs_load[@"Hook_URLScheme"] boolValue]) {
 		shadowhook_UIApplication();
 	}
 
-	if([prefs_load[@"Hook_EnvVars"] boolValue]) {
+	if(prefs_load[@"Hook_EnvVars"] && [prefs_load[@"Hook_EnvVars"] boolValue]) {
 		shadowhook_libc_envvar();
 		shadowhook_NSProcessInfo();
 	}
 
-	if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
+	if(prefs_load[@"Hook_FilesystemExtra"] && [prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
 		shadowhook_NSFileHandle();
 		shadowhook_NSFileVersion();
 		shadowhook_NSFileWrapper();
 	}
 
-	if([prefs_load[@"Hook_CollectionClasses"] boolValue]) {
+	if(prefs_load[@"Hook_CollectionClasses"] && [prefs_load[@"Hook_CollectionClasses"] boolValue]) {
 		shadowhook_NSArray();
 		shadowhook_NSDictionary();
 	}
 
-	if([prefs_load[@"Hook_BundleClass"] boolValue]) {
+	if(prefs_load[@"Hook_BundleClass"] && [prefs_load[@"Hook_BundleClass"] boolValue]) {
 		shadowhook_NSBundle();
 	}
 
-	if([prefs_load[@"Hook_StringClass"] boolValue]) {
+	if(prefs_load[@"Hook_StringClass"] && [prefs_load[@"Hook_StringClass"] boolValue]) {
 		shadowhook_NSString();
 	}
 
-	if([prefs_load[@"Hook_URLClass"] boolValue]) {
+	if(prefs_load[@"Hook_URLClass"] && [prefs_load[@"Hook_URLClass"] boolValue]) {
 		shadowhook_NSURL();
 	}
 
-	if([prefs_load[@"Hook_DataClass"] boolValue]) {
+	if(prefs_load[@"Hook_DataClass"] && [prefs_load[@"Hook_DataClass"] boolValue]) {
 		shadowhook_NSData();
 	}
 
-	if([prefs_load[@"Hook_ImageClass"] boolValue]) {
+	if(prefs_load[@"Hook_ImageClass"] && [prefs_load[@"Hook_ImageClass"] boolValue]) {
 		shadowhook_UIImage();
 	}
 
-	if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
+	if(prefs_load[@"Hook_DeviceCheck"] && [prefs_load[@"Hook_DeviceCheck"] boolValue]) {
 		shadowhook_DeviceCheck();
 	}
 
-	if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
+	if(prefs_load[@"Hook_MachBootstrap"] && [prefs_load[@"Hook_MachBootstrap"] boolValue]) {
 		shadowhook_mach();
 	}
 
-	if([prefs_load[@"Hook_SymLookup"] boolValue]) {
+	if(prefs_load[@"Hook_SymLookup"] && [prefs_load[@"Hook_SymLookup"] boolValue]) {
 		shadowhook_dyld_symlookup();
 	}
 
-	if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
+	if(prefs_load[@"Hook_LowLevelC"] && [prefs_load[@"Hook_LowLevelC"] boolValue]) {
 		shadowhook_libc_lowlevel();
 	}
 
-	if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
+	if(prefs_load[@"Hook_AntiDebugging"] && [prefs_load[@"Hook_AntiDebugging"] boolValue]) {
 		shadowhook_libc_antidebugging();
 	}
 

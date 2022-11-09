@@ -42,6 +42,8 @@
         @"/private/preboot/jb",
         @"/var/lib/cydia",
         @"/var/lib/filza",
+        @"/var/lib/dpkg", // not sure why this is listed in Elucubratus' base package.
+        @"/var/lib/apt",
         @"/var/log/apt",
         @"/var/log/dpkg",
         @"/var/checkra1n.dmg",
@@ -60,8 +62,8 @@
         NSTask* task = [NSTask new];
         NSPipe* stdoutPipe = [NSPipe new];
 
-        [task setLaunchPath:@"/usr/bin/env"];
-        [task setArguments:@[@"dpkg-query", @"-S", path]];
+        [task setLaunchPath:@"/usr/bin/dpkg-query"];
+        [task setArguments:@[@"-S", path]];
         [task setStandardOutput:stdoutPipe];
         [task launch];
         [task waitUntilExit];
@@ -122,8 +124,8 @@
     NSTask* task = [NSTask new];
     NSPipe* stdoutPipe = [NSPipe new];
 
-    [task setLaunchPath:@"/usr/bin/env"];
-    [task setArguments:@[@"dpkg-query", @"-S", @"app/Info.plist"]];
+    [task setLaunchPath:@"/usr/bin/dpkg-query"];
+    [task setArguments:@[@"-S", @"app/Info.plist"]];
     [task setStandardOutput:stdoutPipe];
     [task launch];
     [task waitUntilExit];
