@@ -33,10 +33,27 @@
 }
 
 %hookf(ssize_t, readlinkat, int dirfd, const char* pathname, char* buf, size_t bufsize) {
-    ssize_t result = %orig;
-    
-    if(result != -1) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:buf length:result];
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get file descriptor path.
+            char pathnameParent[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(dirfd == AT_FDCWD) {
+                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
+            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+            }
+
+            if(pathParent) {
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(pathname)];
+
+                path = [NSString pathWithComponents:pathComponents];
+            }
+        }
 
         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             buf[0] = '\0';
@@ -45,7 +62,7 @@
         }
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, chdir, const char *pathname) {
@@ -60,6 +77,29 @@
         }
 
         HBLogDebug(@"%@: %@", @"chdir", path);
+    }
+
+    return result;
+}
+
+%hookf(int, fchdir, int fd) {
+    int result = %orig;
+
+    if(result == 0) {
+        // Get file descriptor path.
+        char pathname[PATH_MAX];
+        NSString* path = nil;
+
+        if(fcntl(fd, F_GETPATH, pathname) != -1) {
+            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+            if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                errno = ENOENT;
+                return -1;
+            }
+
+            HBLogDebug(@"%@: %@", @"fchdir", path);
+        }
     }
 
     return result;
@@ -108,6 +148,38 @@
     return ret;
 }
 
+%hookf(int, fstatfs, int fd, struct statfs *buf) {
+    int ret = %orig;
+
+    if(ret == 0) {
+        // Get file descriptor path.
+        char pathname[PATH_MAX];
+        NSString* path = nil;
+
+        if(fcntl(fd, F_GETPATH, pathname) != -1) {
+            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+            if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                errno = ENOENT;
+                return -1;
+            }
+
+            // Modify flags
+            if(buf) {
+                if([path hasPrefix:@"/var"]
+                || [path hasPrefix:@"/private/var"]
+                || [path hasPrefix:@"/private/preboot"]) {
+                    buf->f_flags |= MNT_NOSUID | MNT_NODEV;
+                } else {
+                    buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
+                }
+            }
+        }
+    }
+
+    return ret;
+}
+
 %hookf(int, stat, const char *pathname, struct stat *statbuf) {
     struct stat st;
     int result = %orig(pathname, &st);
@@ -141,8 +213,7 @@
 }
 
 // %hookf(int, fstat, int fd, struct stat *buf) {
-//     struct stat st;
-//     int result = %orig(fd, &st);
+//     int result = %orig(fd, buf);
 
 //     if(result == 0) {
 //         // Get file descriptor path.
@@ -159,8 +230,77 @@
 //         }
 //     }
 
-//     return %orig;
+//     return result;
 // }
+
+%hookf(int, fstatat, int dirfd, const char *pathname, struct stat *buf, int flags) {
+    struct stat st;
+    int result = %orig(dirfd, pathname, &st, flags);
+
+    if(result == 0 && pathname) {
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get file descriptor path.
+            char pathnameParent[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(dirfd == AT_FDCWD) {
+                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
+            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+            }
+
+            if(pathParent) {
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(pathname)];
+
+                path = [NSString pathWithComponents:pathComponents];
+            }
+        }
+
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, faccessat, int dirfd, const char *pathname, int mode, int flags) {
+    int result = %orig(dirfd, pathname, mode, flags);
+
+    if(result == 0 && pathname) {
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get file descriptor path.
+            char pathnameParent[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(dirfd == AT_FDCWD) {
+                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
+            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+            }
+
+            if(pathParent) {
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(pathname)];
+
+                path = [NSString pathWithComponents:pathComponents];
+            }
+        }
+
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return result;
+}
 
 %hookf(int, readdir_r, DIR *restrict dirp, struct dirent *restrict entry, struct dirent **restrict oresult) {
     int result = %orig;
@@ -444,6 +584,54 @@ static int replaced_open(const char *pathname, int oflag, ...) {
     return result;
 }
 
+static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
+static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
+    int result = -1;
+
+    if(oflag & O_CREAT) {
+        mode_t mode;
+        va_list args;
+        va_start(args, oflag);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+
+        result = original_openat(dirfd, pathname, oflag, mode);
+    } else {
+        result = original_openat(dirfd, pathname, oflag);
+    }
+
+    if(result != -1 && pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get file descriptor path.
+            char pathnameParent[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(dirfd == AT_FDCWD) {
+                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
+            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+            }
+
+            if(pathParent) {
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(pathname)];
+
+                path = [NSString pathWithComponents:pathComponents];
+            }
+        }
+
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            close(result);
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return result;
+}
+
 /*
 static int (*original_syscall)(int number, ...);
 static int replaced_syscall(int number, ...) {
@@ -476,20 +664,20 @@ static int replaced_syscall(int number, ...) {
 */
 
 %group shadowhook_libc_opendir
-%hookf(DIR *, opendir, const char *pathname) {
-    DIR* result = %orig;
+// %hookf(DIR *, opendir, const char *pathname) {
+//     DIR* result = %orig;
     
-    if(result && pathname) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+//     if(result && pathname) {
+//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return NULL;
-        }
-    }
+//         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//             errno = ENOENT;
+//             return NULL;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
 %hookf(DIR *, __opendir2, const char *pathname, size_t bufsize) {
     DIR* result = %orig;
@@ -521,6 +709,7 @@ void shadowhook_libc_envvar(void) {
 void shadowhook_libc_lowlevel(void) {
     %init(shadowhook_libc_opendir);
     MSHookFunction(open, replaced_open, (void **) &original_open);
+    MSHookFunction(openat, replaced_openat, (void **) &original_openat);
 }
 
 void shadowhook_libc_antidebugging(void) {
