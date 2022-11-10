@@ -165,7 +165,7 @@ ShadowXPC* _xpc = nil;
 		_dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 		_dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
 		_dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
-		
+
 		shadowhook_dyld_extra();
 	}
 
