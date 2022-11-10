@@ -110,16 +110,21 @@ NSArray* _shdw_dyld_remove_image = nil;
     return result;
 }
 
-// %hookf(int, dladdr, const void *addr, Dl_info *info) {
-//     Dl_info sinfo;
-//     int result = %orig(addr, &sinfo);
+%hookf(int, dladdr, const void *addr, Dl_info *info) {
+    Dl_info sinfo;
+    int result = %orig(addr, &sinfo);
 
-//     if(result) {
-//         // NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:sinfo.dli_fname length:strlen(sinfo.dli_fname)];        
-//     }
+    if(result) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:sinfo.dli_fname length:strlen(sinfo.dli_fname)];
 
-//     return %orig;
-// }
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            HBLogDebug(@"%@: %@: %@", @"dyld", @"dladdr", path);
+            return 0;
+        }
+    }
+
+    return %orig;
+}
 %end
 
 %group shadowhook_dyld_dlsym
@@ -199,13 +204,13 @@ NSArray* _shdw_dyld_remove_image = nil;
     }
 }
 
-%hookf(bool, dyld_process_is_restricted) {
-    return true;
-}
+// %hookf(bool, dyld_process_is_restricted) {
+//     return true;
+// }
 
-%hookf(bool, dyld_shared_cache_some_image_overridden) {
-    return false;
-}
+// %hookf(bool, dyld_shared_cache_some_image_overridden) {
+//     return false;
+// }
 %end
 
 // #define PT_DENY_ATTACH  31
@@ -221,35 +226,11 @@ NSArray* _shdw_dyld_remove_image = nil;
 //     return original_ptrace(_request, _pid, _addr, _data);
 // }
 
-// static int (*original_dladdr)(const void *addr, Dl_info *info);
-// static int replaced_dladdr(const void *addr, Dl_info *info) {
-//     Dl_info sinfo;
-//     int result = original_dladdr(addr, &sinfo);
-
-//     if(result) {
-//         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:sinfo.dli_fname length:strlen(sinfo.dli_fname)];
-
-//         if([_shadow isPathRestricted:path]) {
-//             return 0;
-//         }
-//     }
-
-//     return original_dladdr(addr, info);
-// }
-
-// int _dladdr(const void *addr, Dl_info *info) {
-//     return original_dladdr(addr, info);
-// }
-
 void shadowhook_dyld(void) {
     // ptrace = (ptrace_ptr_t) dlsym(RTLD_SELF, "ptrace");
     // MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
 
     %init(shadowhook_dyld);
-    
-
-    // Manual hooks
-    // MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
 }
 
 void shadowhook_dyld_extra(void) {

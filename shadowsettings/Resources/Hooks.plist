@@ -228,7 +228,7 @@
 			<key>id</key>
 			<string>Hook_DeviceCheck</string>
 			<key>label</key>
-			<string>DeviceCheck Framework</string>
+			<string>Detection Libraries</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

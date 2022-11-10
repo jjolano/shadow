@@ -59,9 +59,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
-    path = [path stringByStandardizingPath];
-
-    if(!c || !path || [path isEqualToString:@""]) {
+    if(!path || [path isEqualToString:@""]) {
         return NO;
     }
 
@@ -74,14 +72,12 @@
         NSMutableArray* pathComponents = [[cwd pathComponents] mutableCopy];
         [pathComponents addObjectsFromArray:[path pathComponents]];
         path = [NSString pathWithComponents:pathComponents];
-        path = [path stringByStandardizingPath];
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
         path = [NSString pathWithComponents:pathComponents];
-        path = [path stringByStandardizingPath];
     }
 
     // Excluded from checks
@@ -121,21 +117,22 @@
 
     // Check if path is restricted using XPC.
     BOOL restricted = NO;
-    NSDictionary* response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
-        @"path" : path
-    }];
 
-    if(response) {
-        restricted = [response[@"restricted"] boolValue];
-        [responseCache setObject:response forKey:path];
+    if(c) {
+        NSDictionary* response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+            @"path" : path
+        }];
+
+        if(response) {
+            restricted = [response[@"restricted"] boolValue];
+            [responseCache setObject:response forKey:path];
+        }
     }
 
     return restricted;
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
-    url = [url standardizedURL];
-
     if(!url) {
         return NO;
     }
