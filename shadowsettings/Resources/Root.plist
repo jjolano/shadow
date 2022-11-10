@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Shadow allows fine-tuning of jailbreak detection bypass functions. Not needed in most cases, unless a specific hook is causing apps to crash.</string>
+			<string>Shadow allows fine-tuning of jailbreak detection bypass functions. Please note that the amount of hooks enabled will generally impact performance as extra processing time will be required.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

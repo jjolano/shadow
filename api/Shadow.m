@@ -1,6 +1,7 @@
 #import <HBLog.h>
 #import <dlfcn.h>
 
+#import "dyld_priv.h"
 #import "Shadow.h"
 
 @implementation Shadow {
@@ -24,9 +25,10 @@
         void* ptr_addr = (void *)[sym_addr longLongValue];
 
         // Lookup symbol
-        Dl_info info;
-        if(dladdr(ptr_addr, &info)) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
+        const char* image_path = dyld_image_path_containing_address(ptr_addr);
+
+        if(image_path) {
+            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
             if([image_name hasSuffix:@"Shadow.dylib"]) {
                 // skip Shadow calls
@@ -37,6 +39,20 @@
                 return YES;
             }
         }
+
+        // Dl_info info;
+        // if(dladdr(ptr_addr, &info)) {
+        //     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
+
+        //     if([image_name hasSuffix:@"Shadow.dylib"]) {
+        //         // skip Shadow calls
+        //         continue;
+        //     }
+            
+        //     if([self isPathRestricted:image_name]) {
+        //         return YES;
+        //     }
+        // }
     }
 
     return NO;
@@ -84,7 +100,7 @@
         return YES;
     }
 
-    if([path hasPrefix:bundlePath] || [path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if([path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
 

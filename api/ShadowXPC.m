@@ -24,11 +24,16 @@
     BOOL restricted = NO;
 
     // Hardcoded restricted paths
+    // Probably going to be mostly /var stuff.
     NSArray<NSString *>* restrictedpaths = @[
         @"/Library/MobileSubstrate",
         @"/usr/lib/TweakInject",
         @"/usr/lib/tweaks",
         @"/var/jb",
+        @"/Library/dpkg",
+        @"/Library/LaunchDaemons",
+        @"/Library/Themes",
+        @"/dev/dlci.",
         @"/dev/ptmx",
         @"/dev/kmem",
         @"/dev/mem",
@@ -46,12 +51,22 @@
         @"/var/lib/apt",
         @"/var/log/apt",
         @"/var/log/dpkg",
+        @"/var/cache/apt",
         @"/var/checkra1n.dmg",
-        @"/binpack"
+        @"/binpack",
+        @"/Library/Caches/cy-",
+        @"/tmp",
+        @"/var/run",
+        @"/var/mobile/Library/Caches",
+        @"/var/mobile/Library/Cydia",
+        @"/var/mobile/Library/Filza",
+        @"/var/mobile/Library/Preferences",
+        @"/var/mobile/Library/Sileo",
+        @"/var/mobile/."
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
-        if([path hasPrefix:restrictedpath]) {
+        if([path isEqualToString:restrictedpath] || [path hasPrefix:restrictedpath]) {
             restricted = YES;
             break;
         }
@@ -96,7 +111,8 @@
                             @"/.mb",
                             @"/.file",
                             @"/bin/ps",
-                            @"/bin/df"
+                            @"/bin/df",
+                            @"/var/.overprovisioning_file"
                         ];
 
                         if([base_extra containsObject:[result objectAtIndex:1]]) {
@@ -180,7 +196,7 @@
         }
 
         // Preprocess path string
-        NSString* path = [rawPath stringByStandardizingPath];
+        NSString* path = [rawPath stringByResolvingSymlinksInPath];
 
         if(![path isAbsolutePath]) {
             HBLogDebug(@"%@: %@", @"relative path", path);

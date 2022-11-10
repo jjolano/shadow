@@ -15,6 +15,8 @@ ShadowXPC* _xpc = nil;
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
+	
+	// todo: Maybe preload some items into cache? Probably do in the background on a separate thread.
 }
 %end
 %end
@@ -41,7 +43,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_MachBootstrap" : @(NO),
 		@"Hook_SymLookup" : @(NO),
 		@"Hook_LowLevelC" : @(NO),
-		@"Hook_AntiDebugging" : @(NO)
+		@"Hook_AntiDebugging" : @(NO),
+		@"Hook_DynamicLibrariesExtra" : @(NO)
 	}];
 
 	// Determine the application we're injected into.
@@ -99,7 +102,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_MachBootstrap" : prefs[@"Hook_MachBootstrap"],
 		@"Hook_SymLookup" : prefs[@"Hook_SymLookup"],
 		@"Hook_LowLevelC" : prefs[@"Hook_LowLevelC"],
-		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"]
+		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"],
+		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"]
 	};
 
 	// Determine whether to load the rest of the tweak.
@@ -153,6 +157,16 @@ ShadowXPC* _xpc = nil;
 	if(prefs_load[@"Hook_Filesystem"] && [prefs_load[@"Hook_Filesystem"] boolValue]) {
 		shadowhook_libc();
 		shadowhook_NSFileManager();
+	}
+
+	if(prefs_load[@"Hook_DynamicLibrariesExtra"] && [prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+		// Register before hooking
+		_dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
+		_dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
+		_dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
+		_dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
+		
+		shadowhook_dyld_extra();
 	}
 
 	if(prefs_load[@"Hook_DynamicLibraries"] && [prefs_load[@"Hook_DynamicLibraries"] boolValue]) {

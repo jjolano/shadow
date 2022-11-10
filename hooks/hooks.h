@@ -10,6 +10,7 @@
 #import <errno.h>
 #import <fcntl.h>
 #import <mach-o/dyld.h>
+#import <mach-o/dyld_images.h>
 #import <mach-o/nlist.h>
 #import <dlfcn.h>
 #import <dirent.h>
@@ -19,6 +20,9 @@
 #import <bootstrap.h>
 #import <spawn.h>
 #import <Foundation/Foundation.h>
+
+// private symbols
+#import "../api/dyld_priv.h"
 
 extern Shadow* _shadow;
 
@@ -44,4 +48,9 @@ extern void shadowhook_libc_envvar(void);
 extern void shadowhook_libc_lowlevel(void);
 extern void shadowhook_libc_antidebugging(void);
 
+extern void shadowhook_dyld_extra(void);
 extern void shadowhook_dyld_symlookup(void);
+extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide);
+extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
+extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide);
+extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide);
