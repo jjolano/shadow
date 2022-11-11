@@ -16,6 +16,10 @@
     NSData* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -36,6 +40,10 @@
     NSData* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -56,6 +64,10 @@
     NSData* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -76,6 +88,10 @@
     NSData* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 

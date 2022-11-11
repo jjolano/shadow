@@ -27,11 +27,17 @@
     // Probably going to be mostly /var stuff.
     NSArray<NSString *>* restrictedpaths = @[
         @"/Library/MobileSubstrate",
+        @"/Library/Frameworks/",
         @"/usr/lib/TweakInject",
         @"/usr/lib/tweaks",
         @"/var/jb",
         @"/Library/dpkg",
-        @"/Library/LaunchDaemons",
+        @"/Library/Activator",
+        @"/Library/PreferenceLoader",
+        @"/Library/SnowBoard",
+        @"/Library/ControlCenter/",
+        @"/Library/Flipswitch",
+        @"/Library/LaunchDaemons/",
         @"/Library/Themes",
         @"/dev/dlci.",
         @"/dev/ptmx",
@@ -40,8 +46,13 @@
         @"/dev/vn0",
         @"/dev/vn1",
         @"/lib",
+        @"/boot",
         @"/etc/rc.d",
         @"/etc/shells",
+        @"/etc/fstab",
+        @"/etc/afp.conf",
+        @"/etc/launchd.conf",
+        @"/etc/profile",
         @"/var/stash",
         @"/var/binpack",
         @"/private/preboot/jb",
@@ -49,20 +60,31 @@
         @"/var/lib/filza",
         @"/var/lib/dpkg", // not sure why this is listed in Elucubratus' base package.
         @"/var/lib/apt",
-        @"/var/log/apt",
-        @"/var/log/dpkg",
-        @"/var/cache/apt",
+        @"/var/log/",
+        @"/var/cache/",
         @"/var/checkra1n.dmg",
         @"/binpack",
         @"/Library/Caches/cy-",
-        @"/tmp",
-        @"/var/run",
-        @"/var/mobile/Library/Caches",
-        @"/var/mobile/Library/Cydia",
+        @"/tmp/",
+        @"/var/run/",
+        @"/var/mobile/Library/Application Support/Containers/",
+        @"/var/mobile/Library/Application Support/xyz.willy",
+        @"/var/mobile/Library/Caches/",
+        @"/var/mobile/Library/Cachespayment",
         @"/var/mobile/Library/Filza",
-        @"/var/mobile/Library/Preferences",
+        @"/var/mobile/Library/Preferences/",
+        @"/var/mobile/Library/ControlCenter/ModuleConfiguration_CCSupport.plist",
+        @"/var/mobile/Library/SBSettings",
+        @"/var/mobile/Library/Cydia",
+        @"/var/mobile/Library/Logs/Cydia",
         @"/var/mobile/Library/Sileo",
-        @"/var/mobile/."
+        @"/var/mobile/.bash_history",
+        @"/var/mobile/.ssh",
+        @"/var/mobile/.cycript",
+        @"/var/mobile/.zshrc",
+        @"/var/mobile/.profile",
+        @"/var/mobile/.bashrc",
+        @"/System/Library/PreferenceBundles/AppList.bundle"
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
@@ -110,6 +132,7 @@
                             @"/.ba",
                             @"/.mb",
                             @"/.file",
+                            @"/.Trashes",
                             @"/bin/ps",
                             @"/bin/df",
                             @"/var/.overprovisioning_file"
@@ -128,6 +151,37 @@
                     }
                 }
             }
+        }
+    }
+
+    // Hardcoded whitelisted paths
+    NSArray<NSString *>* safepaths = @[
+        @"/var/mobile/Library/Preferences/.GlobalPreferences.plist",
+        @"/var/mobile/Library/Preferences/com.apple",
+        @"/var/mobile/Library/Preferences/Wallpaper.png",
+        @"/var/mobile/Library/Caches/com.apple",
+        @"/var/mobile/Library/Caches/.com.apple",
+        @"/var/mobile/Library/Caches/Checkpoint.plist",
+        @"/var/mobile/Library/Caches/CloudKit",
+        @"/var/mobile/Library/Caches/Configuration",
+        @"/var/mobile/Library/Caches/FamilyCircle",
+        @"/var/mobile/Library/Caches/GameKit",
+        @"/var/mobile/Library/Caches/GeoServices",
+        @"/var/mobile/Library/Caches/MappedImageCache",
+        @"/var/mobile/Library/Caches/mediaanalysisd-service",
+        @"/var/mobile/Library/Caches/PassKit",
+        @"/var/mobile/Library/Caches/rtcreportingd",
+        @"/var/mobile/Library/Caches/sharedCaches",
+        @"/var/mobile/Library/Caches/TelephonyUI-8",
+        @"/var/mobile/Library/Caches/VoiceServices",
+        @"/var/mobile/Library/Caches/VoiceTrigger",
+        @"/tmp/com.apple"
+    ];
+
+    for(NSString* safepath in safepaths) {
+        if([path isEqualToString:safepath] || [path hasPrefix:safepath]) {
+            restricted = NO;
+            break;
         }
     }
 
@@ -180,15 +234,28 @@
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
     NSDictionary* response = nil;
 
-    if([name isEqualToString:@"ping"]) {
-        HBLogDebug(@"%@: %@", name, @"received ping");
+    if([name isEqualToString:@"resolvePath"]) {
+        if(!userInfo) {
+            return nil;
+        }
+
+        NSString* rawPath = userInfo[@"path"];
+
+        if(!rawPath) {
+            return nil;
+        }
+
+        NSString* path = [rawPath stringByStandardizingPath];
+        path = [path stringByResolvingSymlinksInPath];
 
         response = @{
-            @"ping" : @"pong",
-            @"bypass_version" : @BYPASS_VERSION,
-            @"api_version" : @API_VERSION
+            @"path" : path
         };
     } else if([name isEqualToString:@"isPathRestricted"]) {
+        if(!userInfo) {
+            return nil;
+        }
+        
         NSString* rawPath = userInfo[@"path"];
 
         if(!rawPath) {
@@ -196,17 +263,22 @@
         }
 
         // Preprocess path string
-        NSString* path = [rawPath stringByResolvingSymlinksInPath];
+        NSString* path = [rawPath stringByStandardizingPath];
 
         if(![path isAbsolutePath]) {
-            HBLogDebug(@"%@: %@", @"relative path", path);
+            HBLogDebug(@"%@: %@", @"ignoring relative path", path);
             return nil;
         }
         
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
 
+        if([path hasPrefix:@"/var/tmp"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
             path = [NSString pathWithComponents:pathComponents];
         }
 
@@ -253,6 +325,14 @@
 
         response = @{
             @"schemes" : schemes
+        };
+    } else if([name isEqualToString:@"ping"]) {
+        HBLogDebug(@"%@: %@", name, @"received ping");
+
+        response = @{
+            @"ping" : @"pong",
+            @"bypass_version" : @BYPASS_VERSION,
+            @"api_version" : @API_VERSION
         };
     }
 

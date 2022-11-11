@@ -6,6 +6,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -16,6 +20,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -26,6 +34,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -36,6 +48,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -46,6 +62,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -56,6 +76,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -66,6 +90,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -76,6 +104,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -86,6 +118,14 @@
     NSUInteger result = %orig;
 
     if(result > 0 && [_shadow isPathRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(outputName) {
+            *outputName = nil;
+        }
+
+        if(outputArray) {
+            *outputArray = nil;
+        }
+        
         return 0;
     }
 
@@ -98,6 +138,10 @@
     NSAttributedString* result = %orig;
     
     if(result && [_shadow isURLRestricted:base] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(dict) {
+            *dict = nil;
+        }
+
         return nil;
     }
 
@@ -108,6 +152,14 @@
     NSAttributedString* result = %orig;
     
     if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(dict) {
+            *dict = nil;
+        }
+
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+        
         return nil;
     }
 
