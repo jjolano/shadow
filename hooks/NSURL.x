@@ -6,6 +6,10 @@
     BOOL result = %orig;
     
     if(result && [_shadow isURLRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return NO;
     }
 
@@ -16,6 +20,10 @@
     BOOL result = %orig;
     
     if(result && [_shadow isURLRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
         return NO;
     }
 
@@ -36,6 +44,10 @@
     NSData* result = %orig;
     
     if(result && [_shadow isURLRestricted:bookmarkFileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+        
         return nil;
     }
 

@@ -68,6 +68,7 @@ ShadowXPC* _xpc = nil;
 		[messagingCenter registerForMessageName:@"ping" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"isPathRestricted" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 		[messagingCenter registerForMessageName:@"getURLSchemes" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
+		[messagingCenter registerForMessageName:@"resolvePath" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
 
 		// Unlock shadowd service.
 		rocketbootstrap_unlock("me.jjolano.shadow");

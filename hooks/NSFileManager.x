@@ -155,6 +155,10 @@
     
     if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if([_shadow isURLRestricted:url]) {
+            if(error) {
+                *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            }
+
             return nil;
         }
 
@@ -177,6 +181,10 @@
     
     if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if([_shadow isPathRestricted:path]) {
+            if(error) {
+                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            }
+
             return nil;
         }
 
@@ -198,8 +206,7 @@
     NSDirectoryEnumerator<NSURL *> * result = %orig;
     
     if(result) {
-        // todo
-        [%c(result) setValue:[url path] forKey:@"shdwDir"];
+        [result setValue:[url path] forKey:@"shdwDir"];
         HBLogDebug(@"%@: %@", @"enumeratorAtURL", url);
     }
 
@@ -210,8 +217,7 @@
     NSDirectoryEnumerator<NSString *> * result = %orig;
 
     if(result) {
-        // todo
-        [%c(result) setValue:path forKey:@"shdwDir"];
+        [result setValue:path forKey:@"shdwDir"];
         HBLogDebug(@"%@: %@", @"enumeratorAtPath", path);
     }
     
@@ -223,6 +229,10 @@
     
     if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if([_shadow isPathRestricted:path]) {
+            if(error) {
+                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            }
+
             return nil;
         }
 
@@ -296,6 +306,10 @@
     NSString* result = %orig;
     
     if(result && [_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+        
         return nil;
     }
 
@@ -326,6 +340,10 @@
     NSDictionary<NSFileAttributeKey, id> * result = %orig;
 
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
         return nil;
     }
 
@@ -338,6 +356,10 @@
     NSDictionary<NSFileAttributeKey, id> * result = %orig;
 
     if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+        
         return nil;
     }
 
@@ -348,6 +370,10 @@
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if(([_shadow isURLRestricted:directoryURL] || [_shadow isURLRestricted:otherURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+        
         return NO;
     }
 
@@ -356,6 +382,10 @@
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+        
         return NO;
     }
 

@@ -58,20 +58,46 @@
     return NO;
 }
 
+- (NSString *)resolvePath:(NSString *)path {
+    if(!c || !path) {
+        return path;
+    }
+
+    NSDictionary* response = [c sendMessageAndReceiveReplyName:@"resolvePath" userInfo:@{
+        @"path" : path
+    }];
+
+    if(response) {
+        return response[@"path"];
+    }
+
+    return path;
+}
+
+- (BOOL)isCPathRestricted:(const char *)path {
+    if(path) {
+        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)]];
+    }
+
+    return NO;
+}
+
 - (BOOL)isPathRestricted:(NSString *)path {
-    if(!path || [path isEqualToString:@""]) {
+    return [self isPathRestricted:path resolve:YES];
+}
+
+- (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve {
+    if(!c || !path || [path isEqualToString:@""]) {
         return NO;
     }
 
-    // Preprocess path string
-    if(![path isAbsolutePath]) {
-        HBLogDebug(@"%@: %@", @"relative path", path);
+    NSDictionary* response;
 
-        // reconstruct path
-        NSString* cwd = [[NSFileManager defaultManager] currentDirectoryPath];
-        NSMutableArray* pathComponents = [[cwd pathComponents] mutableCopy];
-        [pathComponents addObjectsFromArray:[path pathComponents]];
-        path = [NSString pathWithComponents:pathComponents];
+    if(resolve) {
+        // Process path string from XPC (since we have hooked methods)
+        if(![path isAbsolutePath] || [path containsString:[[NSBundle mainBundle] bundlePath]]) {
+            path = [self resolvePath:path];
+        }
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -80,14 +106,10 @@
         path = [NSString pathWithComponents:pathComponents];
     }
 
-    // Excluded from checks
-    NSString* bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
-
-    if([bundlePath hasPrefix:@"/private/var"]) {
-        NSMutableArray* pathComponents = [[bundlePath pathComponents] mutableCopy];
+    if([path hasPrefix:@"/var/tmp"]) {
+        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
-
-        bundlePath = [NSString pathWithComponents:pathComponents];
+        path = [NSString pathWithComponents:pathComponents];
     }
 
     // Tweaks shouldn't be installing new files to /System
@@ -96,7 +118,7 @@
         return YES;
     }
 
-    if([path hasPrefix:@"/System"] || [path hasPrefix:@"/var/mobile/Containers"] || [path hasPrefix:@"/var/containers"] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if([path hasPrefix:@"/System"] || [path hasPrefix:@"/var/containers"] || [path hasPrefix:@"/var/mobile/Containers"] || [path isEqualToString:@"/"]) {
         return NO;
     }
 
@@ -118,15 +140,13 @@
     // Check if path is restricted using XPC.
     BOOL restricted = NO;
 
-    if(c) {
-        NSDictionary* response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
-            @"path" : path
-        }];
+    response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+        @"path" : path
+    }];
 
-        if(response) {
-            restricted = [response[@"restricted"] boolValue];
-            [responseCache setObject:response forKey:path];
-        }
+    if(response) {
+        restricted = [response[@"restricted"] boolValue];
+        [responseCache setObject:response forKey:path];
     }
 
     return restricted;
