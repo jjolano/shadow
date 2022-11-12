@@ -21,6 +21,20 @@
 }
 
 - (BOOL)isCallerTweak:(NSArray<NSNumber *>*)backtrace {
+    void* ret_addr = __builtin_return_address(1);
+
+    if(ret_addr) {
+        const char* image_path = dyld_image_path_containing_address(ret_addr);
+
+        if(image_path) {
+            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+
+            if([image_name hasSuffix:@".dylib"] && [self isPathRestricted:image_name] && [image_name hasSuffix:@"Shadow.dylib"]) {
+                return YES;
+            }
+        }
+    }
+
     for(NSNumber* sym_addr in backtrace) {
         void* ptr_addr = (void *)[sym_addr longLongValue];
 
@@ -29,30 +43,16 @@
 
         if(image_path) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-            if([image_name hasSuffix:@"Shadow.dylib"]) {
-                // skip Shadow calls
-                continue;
-            }
             
             if([self isPathRestricted:image_name]) {
+                if([image_name hasSuffix:@"Shadow.dylib"]) {
+                    // skip Shadow calls
+                    continue;
+                }
+
                 return YES;
             }
         }
-
-        // Dl_info info;
-        // if(dladdr(ptr_addr, &info)) {
-        //     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info.dli_fname length:strlen(info.dli_fname)];
-
-        //     if([image_name hasSuffix:@"Shadow.dylib"]) {
-        //         // skip Shadow calls
-        //         continue;
-        //     }
-            
-        //     if([self isPathRestricted:image_name]) {
-        //         return YES;
-        //     }
-        // }
     }
 
     return NO;
@@ -87,17 +87,30 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve {
-    if(!c || !path || [path isEqualToString:@""]) {
+    if(!c || !path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
 
     NSDictionary* response;
 
+    // Process path string from XPC (since we have hooked methods)
     if(resolve) {
-        // Process path string from XPC (since we have hooked methods)
-        if(![path isAbsolutePath] || [path containsString:[[NSBundle mainBundle] bundlePath]]) {
-            path = [self resolvePath:path];
-        }
+        path = [self resolvePath:path];
+    }
+
+    if(![path isAbsolutePath]) {
+        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+    }
+
+    // Tweaks shouldn't be installing new files to /System
+    // Conditional of shame
+    if([path hasPrefix:@"/System/Library/PreferenceBundles/AppList.bundle"]
+    || ([path hasPrefix:@"/System/Library/LaunchDaemons/"] && ![path hasPrefix:@"/System/Library/LaunchDaemons/com.apple"])) {
+        return YES;
+    }
+
+    if([path hasPrefix:[[NSBundle mainBundle] bundlePath]] || [path hasPrefix:@"/System"]) {
+        return NO;
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -112,13 +125,7 @@
         path = [NSString pathWithComponents:pathComponents];
     }
 
-    // Tweaks shouldn't be installing new files to /System
-    // Conditional of shame
-    if([path hasPrefix:@"/System/Library/PreferenceBundles/AppList.bundle"]) {
-        return YES;
-    }
-
-    if([path hasPrefix:@"/System"] || [path hasPrefix:@"/var/containers"] || [path hasPrefix:@"/var/mobile/Containers"] || [path isEqualToString:@"/"]) {
+    if([path hasPrefix:@"/var/containers"] || [path hasPrefix:@"/var/mobile/Containers"]) {
         return NO;
     }
 
@@ -131,7 +138,7 @@
     
     // Recurse call into parent directories.
     NSString* pathParent = [path stringByDeletingLastPathComponent];
-    BOOL responseParent = [self isPathRestricted:pathParent];
+    BOOL responseParent = [self isPathRestricted:pathParent resolve:NO];
 
     if(responseParent) {
         return YES;

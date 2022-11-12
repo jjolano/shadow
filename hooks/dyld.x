@@ -238,7 +238,7 @@ void shadowhook_dyld_symlookup(void) {
 }
 
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
-    if(_shdw_dyld_collection) {
+    if(_shdw_dyld_image_count > 0) {
         // Check if we already have this lib.
         // If not, add it
         for(NSDictionary* dylib in _shdw_dyld_collection) {
@@ -299,19 +299,25 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 }
 
 void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide) {
-    if(_shdw_dyld_collection) {
+    if(_shdw_dyld_image_count > 0) {
         // Check if we already have this lib.
         // If not, do nothing
+        NSDictionary* dylibToRemove = nil;
+
         for(NSDictionary* dylib in _shdw_dyld_collection) {
             if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
                 // Remove this from our collection
                 HBLogDebug(@"%@: %@: %@", @"dyld", @"removing lib", dylib[@"name"]);
 
-                [_shdw_dyld_collection removeObject:dylib];
-                _shdw_dyld_image_count = [_shdw_dyld_collection count];
-
-                return;
+                // Don't remove while in enumeration, store for later
+                dylibToRemove = dylib;
+                break;
             }
+        }
+
+        if(dylibToRemove) {
+            [_shdw_dyld_collection removeObject:dylibToRemove];
+            _shdw_dyld_image_count = [_shdw_dyld_collection count];
         }
     }
 }
@@ -336,7 +342,7 @@ void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmadd
 
         for(NSNumber* func_ptr in _shdw_dyld_add_image) {
             void (*func)(const struct mach_header*, intptr_t) = (void *)[func_ptr unsignedLongValue];
-            
+
             // Make sure this function still exists...
             const char* image_path = dyld_image_path_containing_address(func);
 

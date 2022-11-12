@@ -13,12 +13,12 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path isBase:(BOOL *)b {
-    if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        return NO;
-    }
-
     if(b) {
         *b = NO;
+    }
+
+    if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        return NO;
     }
 
     BOOL restricted = NO;
@@ -56,14 +56,13 @@
         @"/var/stash",
         @"/var/binpack",
         @"/private/preboot/jb",
-        @"/var/lib/cydia",
-        @"/var/lib/filza",
-        @"/var/lib/dpkg", // not sure why this is listed in Elucubratus' base package.
-        @"/var/lib/apt",
+        @"/var/lib/",
         @"/var/log/",
         @"/var/cache/",
         @"/var/checkra1n.dmg",
         @"/binpack",
+        @"/taurine",
+        @"/auxfiles",
         @"/Library/Caches/cy-",
         @"/tmp/",
         @"/var/run/",
@@ -78,13 +77,9 @@
         @"/var/mobile/Library/Cydia",
         @"/var/mobile/Library/Logs/Cydia",
         @"/var/mobile/Library/Sileo",
-        @"/var/mobile/.bash_history",
-        @"/var/mobile/.ssh",
-        @"/var/mobile/.cycript",
-        @"/var/mobile/.zshrc",
-        @"/var/mobile/.profile",
-        @"/var/mobile/.bashrc",
-        @"/System/Library/PreferenceBundles/AppList.bundle"
+        @"/var/mobile/.",
+        @"/System/Library/PreferenceBundles/AppList.bundle",
+        @"/."
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
@@ -125,21 +120,17 @@
 
                     BOOL exception = [packages containsObject:@"base"] || [packages containsObject:@"firmware-sbin"];
 
-                    if(!exception) {
+                    if(!exception && [[path pathComponents] count] > 2) {
                         NSArray<NSString *>* base_extra = @[
                             @"/Library/Application Support",
                             @"/usr/lib",
-                            @"/.ba",
-                            @"/.mb",
-                            @"/.file",
-                            @"/.Trashes",
-                            @"/bin/ps",
-                            @"/bin/df",
                             @"/var/.overprovisioning_file"
                         ];
 
-                        if([base_extra containsObject:[result objectAtIndex:1]]) {
-                            exception = YES;
+                        for(NSString* base_extra_path in base_extra) {
+                            if([base_extra_path isEqualToString:[result objectAtIndex:1]]) {
+                                exception = YES;
+                            }
                         }
                     }
 
@@ -172,10 +163,15 @@
         @"/var/mobile/Library/Caches/PassKit",
         @"/var/mobile/Library/Caches/rtcreportingd",
         @"/var/mobile/Library/Caches/sharedCaches",
-        @"/var/mobile/Library/Caches/TelephonyUI-8",
+        @"/var/mobile/Library/Caches/TelephonyUI",
         @"/var/mobile/Library/Caches/VoiceServices",
         @"/var/mobile/Library/Caches/VoiceTrigger",
-        @"/tmp/com.apple"
+        @"/tmp/com.apple",
+        @"/var/mobile/.forward",
+        @"/.ba",
+        @"/.mb",
+        @"/.file",
+        @"/.Trashes"
     ];
 
     for(NSString* safepath in safepaths) {
@@ -216,10 +212,12 @@
                 if([plistpath hasSuffix:@"Info.plist"]) {
                     NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:plistpath];
 
-                    if(plist) {
+                    if(plist && plist[@"CFBundleURLTypes"]) {
                         for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
-                            for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
-                                [schemes addObject:scheme];
+                            if(type[@"CFBundleURLSchemes"]) {
+                                for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
+                                    [schemes addObject:scheme];
+                                }
                             }
                         }
                     }
@@ -258,7 +256,7 @@
         
         NSString* rawPath = userInfo[@"path"];
 
-        if(!rawPath) {
+        if(!rawPath || [rawPath isEqualToString:@"/"] || [rawPath isEqualToString:@""]) {
             return nil;
         }
 
@@ -282,22 +280,23 @@
             path = [NSString pathWithComponents:pathComponents];
         }
 
+        HBLogDebug(@"%@: %@", @"received path", path);
+
         // Check response cache for given path.
-        NSDictionary* responseCachePath = [responseCache objectForKey:path];
+        NSNumber* responseCachePath = [responseCache objectForKey:path];
 
         if(responseCachePath) {
-            return responseCachePath;
+            return @{
+                @"restricted" : responseCachePath
+            };
         }
         
         // Recurse call into parent directories.
         NSString* pathParent = [path stringByDeletingLastPathComponent];
+        NSDictionary* responseParent = [self handleMessageNamed:name withUserInfo:@{@"path" : pathParent}];
 
-        if(![path isEqualToString:@"/"]) {
-            NSDictionary* responseParent = [self handleMessageNamed:name withUserInfo:@{@"path":pathParent}];
-
-            if(responseParent && [responseParent[@"restricted"] boolValue]) {
-                return responseParent;
-            }
+        if(responseParent && [responseParent[@"restricted"] boolValue]) {
+            return responseParent;
         }
 
         // Check if path is restricted.
@@ -312,7 +311,7 @@
             @"restricted" : @(restricted)
         };
 
-        [responseCache setObject:response forKey:path];
+        [responseCache setObject:@(restricted) forKey:path];
     } else if([name isEqualToString:@"getURLSchemes"]) {
         HBLogDebug(@"%@: %@", name, @"list requested");
 
