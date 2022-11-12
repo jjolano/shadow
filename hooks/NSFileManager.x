@@ -385,7 +385,7 @@
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
-        
+
         return NO;
     }
 
@@ -472,6 +472,280 @@
     }
 
     return result;
+}
+
+- (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
+    if(([_shadow isURLRestricted:originalItemURL] || [_shadow isURLRestricted:newItemURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+    if(([_shadow isURLRestricted:srcURL] || [_shadow isURLRestricted:dstURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    if(([_shadow isPathRestricted:srcPath] || [_shadow isPathRestricted:dstPath]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+    if(([_shadow isURLRestricted:srcURL] || [_shadow isURLRestricted:dstURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    if(([_shadow isPathRestricted:srcPath] || [_shadow isPathRestricted:dstPath]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)isUbiquitousItemAtURL:(NSURL *)url {
+    BOOL result = %orig;
+
+    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return result;
+}
+
+- (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
+    if(([_shadow isURLRestricted:url] || [_shadow isURLRestricted:destinationURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
+    if(([_shadow isURLRestricted:srcURL] || [_shadow isURLRestricted:dstURL]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    if(([_shadow isPathRestricted:srcPath] || [_shadow isPathRestricted:dstPath]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(([_shadow isPathRestricted:src] || [_shadow isPathRestricted:dest]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(([_shadow isPathRestricted:src] || [_shadow isPathRestricted:dest]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(([_shadow isPathRestricted:src] || [_shadow isPathRestricted:dest]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:URL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
 }
 %end
 %end

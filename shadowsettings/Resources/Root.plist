@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>Global Settings</string>
 			<key>footerText</key>
-			<string>Always attempts to bypass jailbreak detection in all apps by default. Has no effect if overrided by per-app settings.</string>
+			<string>Attempts to bypass jailbreak detection in all apps by default. Has no effect if overrode by per-app settings.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Shadow allows fine-tuning of jailbreak detection bypass functions. Please note that the amount of hooks enabled will generally impact performance as extra processing time will be required.</string>
+			<string>Adjust the strength of the jailbreak detection bypass. App performance may be affected.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -47,10 +47,6 @@
 			<string>SHDWHooksListController</string>
 			<key>isController</key>
 			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
 			<key>label</key>
 			<string>Customize Hooks (Advanced)</string>
 		</dict>
@@ -96,10 +92,6 @@
 			<string>respring:</string>
 			<key>label</key>
 			<string>Restart SpringBoard</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -112,10 +104,6 @@
 			<string>reset:</string>
 			<key>label</key>
 			<string>Reset Settings</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>
@@ -143,10 +131,6 @@
 			<string>SHDWAboutListController</string>
 			<key>isController</key>
 			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
 			<key>label</key>
 			<string>About</string>
 		</dict>

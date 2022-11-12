@@ -42,6 +42,30 @@
 			<key>get</key>
 			<string>aboutSoftwareLicense:</string>
 		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Updates</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>Package Version</string>
+			<key>get</key>
+			<string>aboutPackageVersion:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>Latest Version</string>
+			<key>get</key>
+			<string>aboutLatestVersion:</string>
+		</dict>
+
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -62,7 +86,7 @@
 			<key>cellClass</key>
 			<string>HBLinkTableCell</string>
 			<key>label</key>
-			<string>Source Code (GitHub)</string>
+			<string>Shadow (GitHub)</string>
 			<key>url</key>
 			<string>https://github.com/jjolano/shadow</string>
 		</dict>

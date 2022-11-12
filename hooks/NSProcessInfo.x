@@ -2,6 +2,11 @@
 
 %group shadowhook_NSProcessInfo
 %hook NSProcessInfo
+- (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+    // Override version checks that use this method.
+    return YES;
+}
+
 - (NSDictionary *)environment {
 	NSDictionary* result = %orig;
 

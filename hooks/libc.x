@@ -488,6 +488,105 @@
 
     return %orig;
 }
+
+%hookf(int, getattrlist, const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    int result = %orig;
+    
+    if(result == 0) {
+        if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return result;
+}
+
+%hookf(int, symlink, const char* path1, const char* path2) {
+    if([_shadow isCPathRestricted:path2] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = EACCES;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, link, const char* path1, const char* path2) {
+    if(([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, rename, const char* old, const char* new) {
+    if(([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, remove, const char* pathname) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, unlink, const char* pathname) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, unlinkat, int dirfd, const char* pathname, int flags) {
+    if(pathname) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+        if(![path isAbsolutePath]) {
+            // Get file descriptor path.
+            char pathnameParent[PATH_MAX];
+            NSString* pathParent = nil;
+
+            if(dirfd == AT_FDCWD) {
+                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
+            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+            }
+
+            if(pathParent) {
+                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
+                [pathComponents addObject:@(pathname)];
+
+                path = [NSString pathWithComponents:pathComponents];
+            }
+        }
+
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, rmdir, const char* pathname) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
 %end
 
 %group shadowhook_libc_env
