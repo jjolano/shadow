@@ -290,17 +290,17 @@
     return result;
 }
 
-// - (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary<NSFileProviderServiceName,NSFileProviderService *> *services, NSError *error))completionHandler {
-//     if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-//         if(completionHandler) {
-//             completionHandler(nil, nil);
-//         }
+- (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary *services, NSError *error))completionHandler {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(completionHandler) {
+            completionHandler(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil]);
+        }
 
-//         return;
-//     }
+        return;
+    }
 
-//     %orig;
-// }
+    %orig;
+}
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     NSString* result = %orig;

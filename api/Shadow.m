@@ -21,7 +21,7 @@
 }
 
 - (BOOL)isCallerTweak:(NSArray<NSNumber *>*)backtrace {
-    void* ret_addr = __builtin_return_address(1);
+    void* ret_addr = __builtin_frame_address(1);
 
     if(ret_addr) {
         const char* image_path = dyld_image_path_containing_address(ret_addr);
@@ -29,7 +29,7 @@
         if(image_path) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
-            if([image_name hasSuffix:@".dylib"] && [self isPathRestricted:image_name] && [image_name hasSuffix:@"Shadow.dylib"]) {
+            if([image_name hasSuffix:@".dylib"] && [self isPathRestricted:image_name]) {
                 return YES;
             }
         }
@@ -87,7 +87,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve {
-    if(!c || !path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
 
@@ -100,17 +100,6 @@
 
     if(![path isAbsolutePath]) {
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
-    }
-
-    // Tweaks shouldn't be installing new files to /System
-    // Conditional of shame
-    if([path hasPrefix:@"/System/Library/PreferenceBundles/AppList.bundle"]
-    || ([path hasPrefix:@"/System/Library/LaunchDaemons/"] && ![path hasPrefix:@"/System/Library/LaunchDaemons/com.apple"])) {
-        return YES;
-    }
-
-    if([path hasPrefix:[[NSBundle mainBundle] bundlePath]] || [path hasPrefix:@"/System"]) {
-        return NO;
     }
     
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -125,35 +114,47 @@
         path = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:@"/var/containers"] || [path hasPrefix:@"/var/mobile/Containers"]) {
-        return NO;
-    }
-
-    // Check response cache for given path.
-    NSDictionary* responseCachePath = [responseCache objectForKey:path];
-
-    if(responseCachePath) {
-        return [responseCachePath[@"restricted"] boolValue];
-    }
-    
-    // Recurse call into parent directories.
-    NSString* pathParent = [path stringByDeletingLastPathComponent];
-    BOOL responseParent = [self isPathRestricted:pathParent resolve:NO];
-
-    if(responseParent) {
+    if([path hasPrefix:@"/System/Library/PreferenceBundles/AppList.bundle"]
+    || ([path hasPrefix:@"/System/Library/LaunchDaemons/"] && ![path hasPrefix:@"/System/Library/LaunchDaemons/com.apple"])
+    || [path hasPrefix:@"/var/jb"]
+    || [path hasPrefix:@"/private/preboot/jb"]) {
         return YES;
     }
 
-    // Check if path is restricted using XPC.
+    if([path hasPrefix:[[NSBundle mainBundle] bundlePath]]
+    || [path hasPrefix:@"/System"]
+    || [path hasPrefix:@"/var/containers"]
+    || [path hasPrefix:@"/var/mobile/Containers"]) {
+        return NO;
+    }
+
     BOOL restricted = NO;
 
-    response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
-        @"path" : path
-    }];
+    if(c) {
+        // Check response cache for given path.
+        NSDictionary* responseCachePath = [responseCache objectForKey:path];
 
-    if(response) {
-        restricted = [response[@"restricted"] boolValue];
-        [responseCache setObject:response forKey:path];
+        if(responseCachePath) {
+            return [responseCachePath[@"restricted"] boolValue];
+        }
+        
+        // Recurse call into parent directories.
+        NSString* pathParent = [path stringByDeletingLastPathComponent];
+        BOOL responseParent = [self isPathRestricted:pathParent resolve:NO];
+
+        if(responseParent) {
+            return YES;
+        }
+
+        // Check if path is restricted using XPC.
+        response = [c sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
+            @"path" : path
+        }];
+
+        if(response) {
+            restricted = [response[@"restricted"] boolValue];
+            [responseCache setObject:response forKey:path];
+        }
     }
 
     return restricted;

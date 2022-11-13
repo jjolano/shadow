@@ -44,7 +44,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_SymLookup" : @(NO),
 		@"Hook_LowLevelC" : @(NO),
 		@"Hook_AntiDebugging" : @(NO),
-		@"Hook_DynamicLibrariesExtra" : @(NO)
+		@"Hook_DynamicLibrariesExtra" : @(NO),
+		@"Hook_ObjCRuntime" : @(NO)
 	}];
 
 	// Determine the application we're injected into.
@@ -104,7 +105,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_SymLookup" : prefs[@"Hook_SymLookup"],
 		@"Hook_LowLevelC" : prefs[@"Hook_LowLevelC"],
 		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"],
-		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"]
+		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
+		@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"]
 	};
 
 	// Determine whether to load the rest of the tweak.
@@ -141,17 +143,16 @@ ShadowXPC* _xpc = nil;
 	if(response) {
 		HBLogDebug(@"%@: %@", @"bypass version", [response objectForKey:@"bypass_version"]);
 		HBLogDebug(@"%@: %@", @"api version", [response objectForKey:@"api_version"]);
+
+		// Preload data from shadowd.
+		response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
+
+		if(response) {
+			NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
+			[_shadow setURLSchemes:schemes];
+		}
 	} else {
 		HBLogDebug(@"%@", @"failed to communicate with xpc");
-		return;
-	}
-
-	// Preload data from shadowd.
-	response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
-
-	if(response) {
-		NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
-		[_shadow setURLSchemes:schemes];
 	}
 
 	// Initialize hooks.
@@ -232,6 +233,10 @@ ShadowXPC* _xpc = nil;
 
 	if(prefs_load[@"Hook_AntiDebugging"] && [prefs_load[@"Hook_AntiDebugging"] boolValue]) {
 		shadowhook_libc_antidebugging();
+	}
+
+	if(prefs_load[@"Hook_ObjCRuntime"] && [prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
+		shadowhook_objc();
 	}
 
 	HBLogDebug(@"%@", @"hooks initialized");
