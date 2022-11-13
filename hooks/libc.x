@@ -591,6 +591,14 @@
 %end
 
 %group shadowhook_libc_debug
+%hookf(int, ptrace, int _request, pid_t _pid, caddr_t _addr, int _data) {
+    if(_request == PT_DENY_ATTACH) {
+        return 0;
+    }
+
+    return %orig;
+}
+
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
 
