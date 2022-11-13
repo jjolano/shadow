@@ -1,5 +1,4 @@
 #import "../api/Shadow.h"
-#import "codesign.h"
 
 #import <stdio.h>
 #import <sys/stat.h>
@@ -23,6 +22,8 @@
 
 // private symbols
 #import "../api/dyld_priv.h"
+#import "codesign.h"
+#import "ptrace.h"
 
 extern Shadow* _shadow;
 

@@ -225,23 +225,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 }
 %end
 
-// #define PT_DENY_ATTACH  31
-// typedef int (*ptrace_ptr_t)(int _request, pid_t _pid, caddr_t _addr, int _data);
-// ptrace_ptr_t ptrace = NULL;
-
-// static int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
-// static int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
-//     if(_request == PT_DENY_ATTACH) {
-//         return 0;
-//     }
-
-//     return original_ptrace(_request, _pid, _addr, _data);
-// }
-
 void shadowhook_dyld(void) {
-    // ptrace = (ptrace_ptr_t) dlsym(RTLD_SELF, "ptrace");
-    // MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
-
     %init(shadowhook_dyld);
 }
 
