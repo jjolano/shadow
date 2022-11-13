@@ -228,7 +228,7 @@
 			<key>id</key>
 			<string>Hook_DeviceCheck</string>
 			<key>label</key>
-			<string>Detection Libraries</string>
+			<string>Device App Attest</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -246,7 +246,7 @@
 			<key>id</key>
 			<string>Hook_MachBootstrap</string>
 			<key>label</key>
-			<string>Mach Lookups</string>
+			<string>Mach Service Lookups</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -264,7 +264,7 @@
 			<key>id</key>
 			<string>Hook_SymLookup</string>
 			<key>label</key>
-			<string>Symbol Lookups</string>
+			<string>Runtime Symbol Lookups</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -282,7 +282,7 @@
 			<key>id</key>
 			<string>Hook_LowLevelC</string>
 			<key>label</key>
-			<string>Low-Level C Handles</string>
+			<string>Low-Level File Handles</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -300,7 +300,7 @@
 			<key>id</key>
 			<string>Hook_AntiDebugging</string>
 			<key>label</key>
-			<string>Anti-Debugging</string>
+			<string>Anti-Debugging Methods</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -336,7 +336,7 @@
 			<key>id</key>
 			<string>Hook_ObjCRuntime</string>
 			<key>label</key>
-			<string>Runtime (Hide Shadow)</string>
+			<string>Runtime Class Lookups</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

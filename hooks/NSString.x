@@ -131,6 +131,26 @@
 
     return result;
 }
+
+- (NSString *)stringByResolvingSymlinksInPath {
+    NSString* result = %orig;
+
+    if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return self;
+    }
+
+    return result;
+}
+
+- (NSString *)stringByExpandingTildeInPath {
+    NSString* result = %orig;
+
+    if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return self;
+    }
+
+    return result;
+}
 %end
 
 %hook NSAttributedString
@@ -159,7 +179,7 @@
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
-        
+
         return nil;
     }
 
