@@ -216,6 +216,24 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Hook_FakeMac</string>
+			<key>id</key>
+			<string>Hook_FakeMac</string>
+			<key>label</key>
+			<string>Device Masquerade (iOS 14+)</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Extra Hooks</string>

@@ -45,7 +45,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_LowLevelC" : @(NO),
 		@"Hook_AntiDebugging" : @(NO),
 		@"Hook_DynamicLibrariesExtra" : @(NO),
-		@"Hook_ObjCRuntime" : @(NO)
+		@"Hook_ObjCRuntime" : @(NO),
+		@"Hook_FakeMac" : @(NO)
 	}];
 
 	// Determine the application we're injected into.
@@ -106,7 +107,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_LowLevelC" : prefs[@"Hook_LowLevelC"],
 		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"],
 		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
-		@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"]
+		@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"],
+		@"Hook_FakeMac" : prefs[@"Hook_FakeMac"]
 	};
 
 	// Determine whether to load the rest of the tweak.
@@ -237,6 +239,10 @@ ShadowXPC* _xpc = nil;
 
 	if(prefs_load[@"Hook_ObjCRuntime"] && [prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
 		shadowhook_objc();
+	}
+
+	if(prefs_load[@"Hook_FakeMac"] && [prefs_load[@"Hook_FakeMac"] boolValue]) {
+		shadowhook_NSProcessInfo_fakemac();
 	}
 
 	HBLogDebug(@"%@", @"hooks initialized");

@@ -9,12 +9,12 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 %group shadowhook_dyld
 %hookf(int32_t, NSVersionOfLinkTimeLibrary, const char* libraryName) {
     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
-    return -1;
+    return %orig;
 }
 
 %hookf(int32_t, NSVersionOfRunTimeLibrary, const char* libraryName) {
     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
-    return -1;
+    return %orig;
 }
 
 %hookf(uint32_t, _dyld_image_count) {

@@ -19,11 +19,16 @@
 
     BOOL restricted = NO;
 
+    // Handle /var/run
+    if([path hasPrefix:@"/var/run"] && ![path hasSuffix:@".pid"]) {
+        return NO;
+    }
+
     // Hardcoded restricted paths
     // Probably going to be mostly /var stuff.
     NSArray<NSString *>* restrictedpaths = @[
         @"/Library/MobileSubstrate",
-        @"/Library/Frameworks/",
+        @"/Library/Frameworks",
         @"/usr/lib/TweakInject",
         @"/usr/lib/tweaks",
         @"/var/jb",
@@ -31,7 +36,7 @@
         @"/Library/Activator",
         @"/Library/PreferenceLoader",
         @"/Library/SnowBoard",
-        @"/Library/ControlCenter/",
+        @"/Library/ControlCenter",
         @"/Library/Flipswitch",
         @"/Library/LaunchDaemons/",
         @"/Library/Themes",
@@ -43,12 +48,8 @@
         @"/dev/vn1",
         @"/lib",
         @"/boot",
-        @"/etc/rc.d",
-        @"/etc/shells",
-        @"/etc/fstab",
-        @"/etc/afp.conf",
-        @"/etc/launchd.conf",
-        @"/etc/profile",
+        @"/mnt",
+        @"/etc/",
         @"/var/stash",
         @"/var/db/stash",
         @"/var/binpack",
@@ -60,9 +61,9 @@
         @"/binpack",
         @"/taurine",
         @"/auxfiles",
+        @"/jb",
         @"/Library/Caches/cy-",
         @"/tmp/",
-        @"/var/run/",
         @"/var/mobile/Library/Application Support/Containers/",
         @"/var/mobile/Library/Application Support/xyz.willy",
         @"/var/mobile/Library/Caches/",
@@ -78,16 +79,27 @@
         @"/System/Library/PreferenceBundles/AppList.bundle",
         @"/.",
         @"/usr/libexec/cydia",
-        @"/usr/bin/Filza",
         @"/var/mobile/Library/Saved Application State/",
         @"/var/mobile/Library/SplashBoard/Snapshots/",
         @"/var/mobile/Library/Cookies/",
         @"/usr/lib/log/",
+        @"/usr/include/",
         @"/usr/local/lib/log",
         @"/Applications/Cydia.app",
         @"/usr/lib/libhooker.dylib",
         @"/usr/lib/libsubstitute.dylib",
-        @"/usr/lib/libsubstrate.dylib"
+        @"/usr/lib/libsubstrate.dylib",
+        @"/var/mnt",
+        @"/var/select",
+        @"/Library/Switches",
+        @"/Library/CustomFonts",
+        @"/Library/Application Support/",
+        @"/usr/share/terminfo",
+        @"/usr/share/zsh",
+        @"/usr/share/man",
+        @"/usr/lib/pspawn_payload",
+        @"/usr/bin/",
+        @"/var/root/."
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
@@ -183,10 +195,37 @@
         @"/.ba",
         @"/.mb",
         @"/.file",
+        @"/.HFS",
         @"/.Trashes",
+        @"/Developer",
         @"/var/mobile/Library/Saved Application State/com.apple",
         @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
-        @"/var/mobile/Library/Cookies/com.apple"
+        @"/var/mobile/Library/Cookies/com.apple",
+        @"/etc/asl",
+        @"/etc/fstab",
+        @"/etc/group",
+        @"/etc/hosts",
+        @"/etc/master.passwd",
+        @"/etc/networks",
+        @"/etc/notify.conf",
+        @"/etc/passwd",
+        @"/etc/ppp",
+        @"/etc/protocols",
+        @"/etc/racoon",
+        @"/etc/services",
+        @"/etc/ttys",
+        @"/Library/Application Support/AggregateDictionary",
+        @"/Library/Application Support/BTServer",
+        @"/var/log/asl",
+        @"/var/log/com.apple",
+        @"/var/log/ppp",
+        @"/usr/bin/nawk",
+        @"/usr/bin/awk",
+        @"/usr/bin/pico",
+        @"/usr/bin/unrar",
+        @"/usr/bin/[",
+        @"/usr/bin/editor",
+        @"/User"
     ];
 
     for(NSString* safepath in safepaths) {

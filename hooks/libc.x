@@ -29,7 +29,9 @@
 }
 
 %hookf(ssize_t, readlinkat, int dirfd, const char* pathname, char* buf, size_t bufsize) {
-    if(pathname) {
+    ssize_t result = %orig;
+
+    if(result != -1 && pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if(![path isAbsolutePath]) {
@@ -55,7 +57,7 @@
         }
     }
 
-    return %orig;
+    return result;
 }
 
 %hookf(int, chdir, const char *pathname) {
@@ -181,7 +183,12 @@
         if(buf) {
             path = [_shadow resolvePath:path];
 
-            if([path isEqualToString:@"/Applications"]) {
+            if([path isEqualToString:@"/Applications"]
+            || [path isEqualToString:@"/Library/Ringtones"]
+            || [path isEqualToString:@"/Library/Wallpaper"]
+            || [path isEqualToString:@"/usr/include"]
+            || [path isEqualToString:@"/usr/libexec"]
+            || [path isEqualToString:@"/usr/share"]) {
                 buf->st_mode &= ~S_IFLNK;
                 buf->st_mode |= S_IFDIR;
             }
@@ -212,7 +219,12 @@
         if(buf) {
             path = [_shadow resolvePath:path];
 
-            if([path isEqualToString:@"/Applications"]) {
+            if([path isEqualToString:@"/Applications"]
+            || [path isEqualToString:@"/Library/Ringtones"]
+            || [path isEqualToString:@"/Library/Wallpaper"]
+            || [path isEqualToString:@"/usr/include"]
+            || [path isEqualToString:@"/usr/libexec"]
+            || [path isEqualToString:@"/usr/share"]) {
                 buf->st_mode &= ~S_IFLNK;
                 buf->st_mode |= S_IFDIR;
             }
@@ -288,7 +300,12 @@
         if(buf) {
             path = [_shadow resolvePath:path];
 
-            if([path isEqualToString:@"/Applications"]) {
+            if([path isEqualToString:@"/Applications"]
+            || [path isEqualToString:@"/Library/Ringtones"]
+            || [path isEqualToString:@"/Library/Wallpaper"]
+            || [path isEqualToString:@"/usr/include"]
+            || [path isEqualToString:@"/usr/libexec"]
+            || [path isEqualToString:@"/usr/share"]) {
                 buf->st_mode &= ~S_IFLNK;
                 buf->st_mode |= S_IFDIR;
             }
@@ -423,7 +440,7 @@
     char* result = %orig;
     
     if(result) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             errno = ENOENT;
             return NULL;
         }
@@ -576,14 +593,13 @@
         || [env isEqualToString:@"SHELL"]) {
             return NULL;
         }
-        /*
-        if([env isEqualToString:@"SIMULATOR_MODEL_IDENTIFIER"]) {
-            struct utsname systemInfo;
-            uname(&systemInfo);
+        
+        // if([env isEqualToString:@"SIMULATOR_DEVICE_NAME"]) {
+        //     struct utsname systemInfo;
+        //     uname(&systemInfo);
 
-            return (char *)[@(systemInfo.machine) UTF8String];
-        }
-        */
+        //     return (char *)[@(systemInfo.machine) UTF8String];
+        // }
     }
 
     return %orig;

@@ -18,9 +18,7 @@
                     [result_filtered addObject:entry];
                 }
             } else if([entry isKindOfClass:[NSString class]] && base) {
-                NSMutableArray* pathComponents = [[base pathComponents] mutableCopy];
-                [pathComponents addObject:entry];
-                NSString* path = [NSString pathWithComponents:pathComponents];
+                NSString* path = [base stringByAppendingPathComponent:entry];
 
                 if(![_shadow isPathRestricted:path]) {
                     [result_filtered addObject:path];
@@ -49,13 +47,11 @@
                 }
             } while(result);
         } else if([result isKindOfClass:[NSString class]]) {
-            NSString* base = [self valueForKey:@"shdwDir"];
+            NSString* base = [self valueForUndefinedKey:@"shdwDir"];
 
             if(base) {
                 do {
-                    NSMutableArray* pathComponents = [[base pathComponents] mutableCopy];
-                    [pathComponents addObject:result];
-                    NSString* path = [NSString pathWithComponents:pathComponents];
+                    NSString* path = [base stringByAppendingPathComponent:result];
 
                     if([_shadow isPathRestricted:path]) {
                         result = %orig;
@@ -243,9 +239,7 @@
 
             if(![abspath isAbsolutePath]) {
                 // reconstruct path
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents addObjectsFromArray:[abspath pathComponents]];
-                abspath = [NSString pathWithComponents:pathComponents];
+                abspath = [path stringByAppendingPathComponent:abspath];
             }
 
             if(![_shadow isPathRestricted:abspath]) {
@@ -274,9 +268,7 @@
 
             if(![abspath isAbsolutePath]) {
                 // reconstruct path
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents addObjectsFromArray:[abspath pathComponents]];
-                abspath = [NSString pathWithComponents:pathComponents];
+                abspath = [path stringByAppendingPathComponent:abspath];
             }
 
             if(![_shadow isPathRestricted:abspath]) {
@@ -399,9 +391,7 @@
 
     if(![path isAbsolutePath]) {
         // reconstruct path
-        NSMutableArray* pathComponents = [[cwd pathComponents] mutableCopy];
-        [pathComponents addObjectsFromArray:[path pathComponents]];
-        path = [NSString pathWithComponents:pathComponents];
+        path = [cwd stringByAppendingPathComponent:path];
     }
 
     if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
@@ -448,9 +438,7 @@
 
             if(![abspath isAbsolutePath]) {
                 // reconstruct path
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents addObjectsFromArray:[abspath pathComponents]];
-                abspath = [NSString pathWithComponents:pathComponents];
+                abspath = [path stringByAppendingPathComponent:abspath];
             }
 
             if(![_shadow isPathRestricted:abspath]) {
