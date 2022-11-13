@@ -44,10 +44,7 @@
             }
 
             if(pathParent) {
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(pathname)];
-
-                path = [NSString pathWithComponents:pathComponents];
+                path = [pathParent stringByAppendingPathComponent:path];
             }
         }
 
@@ -206,7 +203,7 @@
     if(result == 0) {
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([_shadow isPathRestricted:path resolve:NO] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path resolve:(buf && buf->st_mode & S_IFLNK) ? NO : YES] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
@@ -278,10 +275,7 @@
             }
 
             if(pathParent) {
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(pathname)];
-
-                path = [NSString pathWithComponents:pathComponents];
+                path = [pathParent stringByAppendingPathComponent:path];
             }
         }
 
@@ -328,10 +322,7 @@
             }
 
             if(pathParent) {
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(pathname)];
-
-                path = [NSString pathWithComponents:pathComponents];
+                path = [pathParent stringByAppendingPathComponent:path];
             }
         }
 
@@ -357,15 +348,11 @@
 
             if(fcntl(fd, F_GETPATH, pathname) != -1) {
                 pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(entry->d_name)];
-
-                NSString* path = [NSString pathWithComponents:pathComponents];
+                NSString* path = [pathParent stringByAppendingPathComponent:@((*oresult)->d_name)];
 
                 if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                     // call readdir again to skip ahead
-                    result = %orig;
+                    result = %orig(dirp, entry, oresult);
                 } else {
                     break;
                 }
@@ -389,15 +376,11 @@
 
             if(fcntl(fd, F_GETPATH, pathname) != -1) {
                 pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(result->d_name)];
-
-                NSString* path = [NSString pathWithComponents:pathComponents];
+                NSString* path = [pathParent stringByAppendingPathComponent:@(result->d_name)];
 
                 if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                     // call readdir again to skip ahead
-                    result = %orig;
+                    result = %orig(dirp);
                 } else {
                     break;
                 }
@@ -412,9 +395,7 @@
     FILE* result = %orig;
 
     if(result) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             fclose(result);
             errno = ENOENT;
             return NULL;
@@ -427,10 +408,8 @@
 %hookf(FILE *, freopen, const char *pathname, const char *mode, FILE *stream) {
     FILE* result = %orig;
     
-    if(result && pathname) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result) {
+        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             fclose(result);
             errno = ENOENT;
             return NULL;
@@ -563,10 +542,7 @@
             }
 
             if(pathParent) {
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(pathname)];
-
-                path = [NSString pathWithComponents:pathComponents];
+                path = [pathParent stringByAppendingPathComponent:path];
             }
         }
 

@@ -9,12 +9,12 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 %group shadowhook_dyld
 %hookf(int32_t, NSVersionOfLinkTimeLibrary, const char* libraryName) {
     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
-    return %orig;
+    return -1;
 }
 
 %hookf(int32_t, NSVersionOfRunTimeLibrary, const char* libraryName) {
     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
-    return %orig;
+    return -1;
 }
 
 %hookf(uint32_t, _dyld_image_count) {
@@ -27,7 +27,8 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
     if(_shdw_dyld_image_count > 0) {
-        return image_index < _shdw_dyld_image_count ? (struct mach_header *)[_shdw_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        return image_index < _shdw_dyld_image_count ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
     }
 
     return %orig;
@@ -35,7 +36,8 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
 %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
     if(_shdw_dyld_image_count > 0) {
-        return image_index < _shdw_dyld_image_count ? (intptr_t)[_shdw_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        return image_index < _shdw_dyld_image_count ? (intptr_t)[_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
     }
     
     return %orig;
@@ -43,7 +45,8 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
     if(_shdw_dyld_image_count > 0) {
-        return image_index < _shdw_dyld_image_count ? [_shdw_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        return image_index < _shdw_dyld_image_count ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
     }
 
     const char* result = %orig(image_index);
@@ -175,6 +178,15 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         }
 
         [_shdw_dyld_add_image addObject:@((unsigned long)func)];
+
+        // do initial call
+        if(_shdw_dyld_image_count > 0) {
+            NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+            for(NSDictionary* dylib in _dyld_collection) {
+                func((struct mach_header *)[dylib[@"mach_header"] unsignedLongValue], (intptr_t)[dylib[@"slide"] unsignedLongValue]);
+            }
+        }
     }
 }
 
@@ -200,13 +212,17 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
     }
 }
 
-// %hookf(bool, dyld_process_is_restricted) {
-//     return true;
-// }
+%hookf(bool, dyld_process_is_restricted) {
+    return true;
+}
 
-// %hookf(bool, dyld_shared_cache_some_image_overridden) {
-//     return false;
-// }
+%hookf(bool, dyld_shared_cache_some_image_overridden) {
+    return false;
+}
+
+%hookf(bool, dyld_has_inserted_or_interposing_libraries) {
+    return false;
+}
 %end
 
 // #define PT_DENY_ATTACH  31
@@ -238,64 +254,63 @@ void shadowhook_dyld_symlookup(void) {
 }
 
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
-    if(_shdw_dyld_image_count > 0) {
-        // Check if we already have this lib.
-        // If not, add it
-        for(NSDictionary* dylib in _shdw_dyld_collection) {
-            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
-                // Already exists - skip function.
-                return;
-            }
-        }
+    if(!_shdw_dyld_collection) {
+        _shdw_dyld_collection = [NSMutableArray new];
 
-        const char* image_path = dyld_image_path_containing_address(mh);
-        NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+        // uint32_t count = _dyld_image_count();
 
-        // Add if safe dylib.
-        if(![_shadow isPathRestricted:image_name]) {
-            NSDictionary* dylib = @{
-                @"name" : image_name,
-                @"mach_header" : @((unsigned long) mh),
-                @"slide" : @((unsigned long) vmaddr_slide)
-            };
+        // for(uint32_t i = 0; i < count; i++) {
+        //     const char* _name = _dyld_get_image_name(i);
+        //     const struct mach_header* _mh = _dyld_get_image_header(i);
+        //     intptr_t _slide = _dyld_get_image_vmaddr_slide(i);
 
-            HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
+        //     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:_name length:strlen(_name)];
 
-            [_shdw_dyld_collection addObject:dylib];
-            _shdw_dyld_image_count = [_shdw_dyld_collection count];
-        }
+        //     if([_shadow isPathRestricted:image_name]) {
+        //         // Got a filtered dylib.
+        //         continue;
+        //     }
 
-        return;
+        //     // Safe dylib. Add to our collection
+        //     NSDictionary* dylib = @{
+        //         @"name" : image_name,
+        //         @"mach_header" : @((unsigned long) _mh),
+        //         @"slide" : @((unsigned long) _slide)
+        //     };
+
+        //     HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib (init)", image_name);
+
+        //     [_shdw_dyld_collection addObject:dylib];
+        // }
+
+        // _shdw_dyld_image_count = [_shdw_dyld_collection count];
     }
-    
-    _shdw_dyld_collection = [NSMutableArray new];
 
-    uint32_t count = _dyld_image_count();
-    for(uint32_t i = 0; i < count; i++) {
-        const char* _name = _dyld_get_image_name(i);
-        const struct mach_header* _mh = _dyld_get_image_header(i);
-        intptr_t _slide = _dyld_get_image_vmaddr_slide(i);
-
-        NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:_name length:strlen(_name)];
-
-        if([image_name isEqualToString:@""] || [_shadow isPathRestricted:image_name]) {
-            // Got a filtered dylib.
-            continue;
+    // Check if we already have this lib.
+    // If not, add it
+    for(NSDictionary* dylib in _shdw_dyld_collection) {
+        if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+            // Already exists - skip function.
+            return;
         }
+    }
 
-        // Safe dylib. Add to our collection
+    const char* image_path = dyld_image_path_containing_address(mh);
+    NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+
+    // Add if safe dylib.
+    if(![_shadow isPathRestricted:image_name]) {
         NSDictionary* dylib = @{
             @"name" : image_name,
-            @"mach_header" : @((unsigned long) _mh),
-            @"slide" : @((unsigned long) _slide)
+            @"mach_header" : @((unsigned long) mh),
+            @"slide" : @((unsigned long) vmaddr_slide)
         };
 
-        HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib (init)", image_name);
+        HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
 
         [_shdw_dyld_collection addObject:dylib];
+        _shdw_dyld_image_count = [_shdw_dyld_collection count];
     }
-
-    _shdw_dyld_image_count = [_shdw_dyld_collection count];
 }
 
 void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide) {
@@ -324,23 +339,25 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
 void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(_shdw_dyld_add_image) {
-        // Get the added image path.
-        const char* image_path = dyld_image_path_containing_address(mh);
+        NSDictionary* dylibFound = nil;
 
-        if(image_path) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-            if([_shadow isPathRestricted:image_name]) {
-                // Don't call any event handlers.
-                HBLogDebug(@"%@: %@: %@", @"dyld", @"add_image stopped", image_name);
-                return;
+        for(NSDictionary* dylib in _shdw_dyld_collection) {
+            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+                dylibFound = dylib;
+                break;
             }
+        }
+
+        if(!dylibFound) {
+            return;
         }
 
         // Call event handlers.
         HBLogDebug(@"%@: %@", @"dyld", @"add_image calling handlers");
 
-        for(NSNumber* func_ptr in _shdw_dyld_add_image) {
+        NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
+
+        for(NSNumber* func_ptr in _dyld_add_image) {
             void (*func)(const struct mach_header*, intptr_t) = (void *)[func_ptr unsignedLongValue];
 
             // Make sure this function still exists...
@@ -355,23 +372,25 @@ void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmadd
 
 void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(_shdw_dyld_remove_image) {
-        // Get the added image path.
-        const char* image_path = dyld_image_path_containing_address(mh);
+        NSDictionary* dylibFound = nil;
 
-        if(image_path) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-            if([_shadow isPathRestricted:image_name]) {
-                // Don't call any event handlers.
-                HBLogDebug(@"%@: %@: %@", @"dyld", @"remove_image stopped", image_name);
-                return;
+        for(NSDictionary* dylib in _shdw_dyld_collection) {
+            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+                dylibFound = dylib;
+                break;
             }
+        }
+
+        if(!dylibFound) {
+            return;
         }
 
         // Call event handlers.
         HBLogDebug(@"%@: %@", @"dyld", @"remove_image calling handlers");
+
+        NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
         
-        for(NSNumber* func_ptr in _shdw_dyld_remove_image) {
+        for(NSNumber* func_ptr in _dyld_remove_image) {
             void (*func)(const struct mach_header*, intptr_t) = (void *)[func_ptr unsignedLongValue];
 
             // Make sure this function still exists...

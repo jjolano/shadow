@@ -17,10 +17,6 @@
         *b = NO;
     }
 
-    if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        return NO;
-    }
-
     BOOL restricted = NO;
 
     // Hardcoded restricted paths
@@ -54,6 +50,7 @@
         @"/etc/launchd.conf",
         @"/etc/profile",
         @"/var/stash",
+        @"/var/db/stash",
         @"/var/binpack",
         @"/private/preboot/jb",
         @"/var/lib/",
@@ -79,7 +76,18 @@
         @"/var/mobile/Library/Sileo",
         @"/var/mobile/.",
         @"/System/Library/PreferenceBundles/AppList.bundle",
-        @"/."
+        @"/.",
+        @"/usr/libexec/cydia",
+        @"/usr/bin/Filza",
+        @"/var/mobile/Library/Saved Application State/",
+        @"/var/mobile/Library/SplashBoard/Snapshots/",
+        @"/var/mobile/Library/Cookies/",
+        @"/usr/lib/log/",
+        @"/usr/local/lib/log",
+        @"/Applications/Cydia.app",
+        @"/usr/lib/libhooker.dylib",
+        @"/usr/lib/libsubstitute.dylib",
+        @"/usr/lib/libsubstrate.dylib"
     ];
 
     for(NSString* restrictedpath in restrictedpaths) {
@@ -90,6 +98,10 @@
     }
 
     if(!restricted) {
+        if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            return NO;
+        }
+        
         // Call dpkg to see if file is part of any installed packages on the system.
         NSTask* task = [NSTask new];
         NSPipe* stdoutPipe = [NSPipe new];
@@ -171,7 +183,10 @@
         @"/.ba",
         @"/.mb",
         @"/.file",
-        @"/.Trashes"
+        @"/.Trashes",
+        @"/var/mobile/Library/Saved Application State/com.apple",
+        @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
+        @"/var/mobile/Library/Cookies/com.apple"
     ];
 
     for(NSString* safepath in safepaths) {

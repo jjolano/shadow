@@ -328,6 +328,24 @@
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Hook_ObjCRuntime</string>
+			<key>id</key>
+			<string>Hook_ObjCRuntime</string>
+			<key>label</key>
+			<string>Runtime (Hide Shadow)</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
 	</array>
 </dict>
 </plist>
