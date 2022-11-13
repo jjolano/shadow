@@ -18,12 +18,9 @@
         [filtered_result removeObjectForKey:@"_SafeMode"];
         [filtered_result removeObjectForKey:@"SHELL"];
 
-        /*
-        struct utsname systemInfo;
-        uname(&systemInfo);
-
-        [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_MODEL_IDENTIFIER"];
-        */
+        // struct utsname systemInfo;
+        // uname(&systemInfo);
+        // [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_DEVICE_NAME"];
 
         result = [filtered_result copy];
     }
@@ -33,6 +30,19 @@
 %end
 %end
 
+%group shadowhook_NSProcessInfo_fakemac
+%hook NSProcessInfo
+- (BOOL)isiOSAppOnMac {
+    // actually would be funny if this bypasses a lot of checks
+    return YES;
+}
+%end
+%end
+
 void shadowhook_NSProcessInfo(void) {
     %init(shadowhook_NSProcessInfo);
+}
+
+void shadowhook_NSProcessInfo_fakemac(void) {
+    %init(shadowhook_NSProcessInfo_fakemac);
 }

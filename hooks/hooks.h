@@ -56,3 +56,5 @@ extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vm
 extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide);
+
+extern void shadowhook_NSProcessInfo_fakemac(void);
