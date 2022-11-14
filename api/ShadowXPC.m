@@ -155,7 +155,7 @@
         }
 
         // Resolve and standardize path.
-        NSString* path = [[rawPath stringByResolvingSymlinksInPath] stringByStandardizingPath];
+        NSString* path = [rawPath stringByStandardizingPath];
 
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
@@ -167,14 +167,6 @@
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
             path = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([path hasPrefix:@"/User"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            [pathComponents removeObjectAtIndex:0];
-
-            path = [@"/var/mobile" stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
         }
 
         response = @{
@@ -206,14 +198,6 @@
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
             path = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([path hasPrefix:@"/User"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            [pathComponents removeObjectAtIndex:0];
-
-            path = [@"/var/mobile" stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
         }
 
         HBLogDebug(@"%@: %@", name, path);
