@@ -1,7 +1,5 @@
 #import <HBLog.h>
-#import <rocketbootstrap/rocketbootstrap.h>
 #import <Foundation/Foundation.h>
-#import <AppSupport/CPDistributedMessagingCenter.h>
 #import <Cephei/HBPreferences.h>
 
 #import "api/Shadow.h"
@@ -10,16 +8,6 @@
 
 Shadow* _shadow = nil;
 ShadowXPC* _xpc = nil;
-
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-	
-	// todo: Maybe preload some items into cache? Probably do in the background on a separate thread.
-}
-%end
-%end
 
 %ctor {
 	// Load preferences.
@@ -46,7 +34,9 @@ ShadowXPC* _xpc = nil;
 		@"Hook_AntiDebugging" : @(NO),
 		@"Hook_DynamicLibrariesExtra" : @(NO),
 		@"Hook_ObjCRuntime" : @(NO),
-		@"Hook_FakeMac" : @(NO)
+		@"Hook_FakeMac" : @(NO),
+		@"Tweak_Compat" : @(YES),
+		@"Tweak_CompatEx" : @(NO)
 	}];
 
 	// Determine the application we're injected into.
@@ -58,26 +48,11 @@ ShadowXPC* _xpc = nil;
 		_xpc = [ShadowXPC new];
 
 		if(!_xpc) {
+			HBLogDebug(@"%@", @"failed to init Shadow");
 			return;
 		}
 
-		// Start RocketBootstrap server.
-		CPDistributedMessagingCenter* messagingCenter = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
-		rocketbootstrap_distributedmessagingcenter_apply(messagingCenter);
-		[messagingCenter runServerOnCurrentThread];
-
-		// Register messages.
-		[messagingCenter registerForMessageName:@"ping" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
-		[messagingCenter registerForMessageName:@"isPathRestricted" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
-		[messagingCenter registerForMessageName:@"getURLSchemes" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
-		[messagingCenter registerForMessageName:@"resolvePath" target:_xpc selector:@selector(handleMessageNamed:withUserInfo:)];
-
-		// Unlock shadowd service.
-		rocketbootstrap_unlock("me.jjolano.shadow");
-
-		HBLogDebug(@"%@", @"xpc service started: me.jjolano.shadow");
-
-		%init(hook_springboard);
+		HBLogDebug(@"%@", @"loaded into SpringBoard");
 		return;
 	}
 
@@ -108,7 +83,9 @@ ShadowXPC* _xpc = nil;
 		@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"],
 		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
 		@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"],
-		@"Hook_FakeMac" : prefs[@"Hook_FakeMac"]
+		@"Hook_FakeMac" : prefs[@"Hook_FakeMac"],
+		@"Tweak_Compat" : prefs[@"Tweak_Compat"],
+		@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"]
 	};
 
 	// Determine whether to load the rest of the tweak.
@@ -128,33 +105,16 @@ ShadowXPC* _xpc = nil;
 	_shadow = [Shadow new];
 
 	if(!_shadow) {
-		HBLogDebug(@"%@", @"failed to load class");
+		HBLogDebug(@"%@", @"failed to load Shadow");
 		return;
 	}
 
-	// Initialize connection to shadowd.
-	CPDistributedMessagingCenter* c = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
-	rocketbootstrap_distributedmessagingcenter_apply(c);
+	if(prefs_load[@"Tweak_Compat"]) {
+		[_shadow setTweakCompat:[prefs_load[@"Tweak_Compat"] boolValue]];
 
-	[_shadow setMessagingCenter:c];
-
-	// Test communication to shadowd.
-	NSDictionary* response;
-	response = [c sendMessageAndReceiveReplyName:@"ping" userInfo:nil];
-
-	if(response) {
-		HBLogDebug(@"%@: %@", @"bypass version", [response objectForKey:@"bypass_version"]);
-		HBLogDebug(@"%@: %@", @"api version", [response objectForKey:@"api_version"]);
-
-		// Preload data from shadowd.
-		response = [c sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
-
-		if(response) {
-			NSArray<NSString *>* schemes = [response objectForKey:@"schemes"];
-			[_shadow setURLSchemes:schemes];
+		if(prefs_load[@"Tweak_CompatEx"]) {
+			[_shadow setTweakCompatExtra:[prefs_load[@"Tweak_CompatEx"] boolValue]];
 		}
-	} else {
-		HBLogDebug(@"%@", @"failed to communicate with xpc");
 	}
 
 	// Initialize hooks.

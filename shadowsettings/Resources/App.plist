@@ -34,6 +34,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string> </string>
 		</dict>
 		<dict>
 			<key>cell</key>
