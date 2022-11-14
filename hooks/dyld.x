@@ -76,12 +76,13 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 }
 
 %hookf(void *, dlopen, const char *path, int mode) {
-    void* handle = %orig;
+    void* handle = nil;
 
-    if(handle && path) {
+    if(path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if(![image_name containsString:@"/"]) {
+            handle = %orig;
             const char* image_path = dyld_image_path_containing_address(handle);
 
             if(image_path) {
@@ -91,18 +92,20 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             _shdw_dlerror = YES;
-            dlclose(handle);
+
+            if(handle) {
+                dlclose(handle);
+            }
+
             return NULL;
         }
     }
 
-    return handle;
+    return handle ? handle : %orig;
 }
 
 %hookf(bool, dlopen_preflight, const char *path) {
-    bool result = %orig;
-    
-    if(result && path) {
+    if(path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
         if([image_name containsString:@"/"]) {
@@ -116,7 +119,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         }
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, dladdr, const void *addr, Dl_info *info) {

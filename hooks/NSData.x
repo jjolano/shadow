@@ -3,19 +3,15 @@
 %group shadowhook_NSData
 %hook NSData
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -23,23 +19,19 @@
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -47,23 +39,19 @@
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -71,23 +59,19 @@
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -95,27 +79,23 @@
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (id)initWithContentsOfMappedFile:(NSString *)path {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 + (id)dataWithContentsOfMappedFile:(NSString *)path {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 %end
 %end

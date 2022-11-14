@@ -69,73 +69,59 @@
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    BOOL result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    BOOL result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-    NSData* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
@@ -187,7 +173,14 @@
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* result_path in result) {
-            if(![_shadow isPathRestricted:result_path]) {
+            NSString* abspath = result_path;
+
+            if(![abspath isAbsolutePath]) {
+                // reconstruct path
+                abspath = [path stringByAppendingPathComponent:abspath];
+            }
+
+            if(![_shadow isPathRestricted:abspath]) {
                 [result_filtered addObject:result_path];
             }
         }
@@ -309,29 +302,23 @@
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-    NSArray<NSString *> * result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
-    NSString* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return path;
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    NSDictionary<NSFileAttributeKey, id> * result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -340,22 +327,22 @@
     }
 
     // Make sure rootfs is marked read-only
+    NSDictionary<NSFileAttributeKey, id> * result = %orig;
 
     return result;
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
-    NSDictionary<NSFileAttributeKey, id> * result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
-        
+
         return nil;
     }
 
     // Make sure rootfs is marked read-only
+    NSDictionary<NSFileAttributeKey, id> * result = %orig;
 
     return result;
 }
@@ -402,23 +389,20 @@
 }
 
 - (NSDictionary *)fileAttributesAtPath:(NSString *)path traverseLink:(BOOL)yorn {
-    NSDictionary* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSDictionary *)fileSystemAttributesAtPath:(NSString *)path {
-    NSDictionary* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
     // Make sure rootfs is marked read-only
+    NSDictionary* result = %orig;
 
     return result;
 }
