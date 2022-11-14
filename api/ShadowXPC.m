@@ -264,7 +264,20 @@
 
         // Find dpkg if not at the usual place.
         if(!dpkgPath) {
+            NSArray* dpkgPaths = @[
+                @"/bin/dpkg-query",
+                @"/usr/local/bin/dpkg-query",
+                @"/var/jb/usr/bin/dpkg-query",
+                @"/var/jb/usr/local/bin/dpkg-query",
+                @"/var/jb/bin/dpkg-query"
+            ];
 
+            for(NSString* path in dpkgPaths) {
+                if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                    dpkgPath = path;
+                    break;
+                }
+            }
         }
     }
 
