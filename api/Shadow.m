@@ -187,6 +187,7 @@
         @"/var/db/stash",
         @"/var/binpack",
         @"/var/checkra1n.dmg",
+        @"/var/mobile/Library/Application Support/Containers/",
         @"/var/mobile/Library/Application Support/xyz.willy",
         @"/var/mobile/Library/Cachespayment",
         @"/var/mobile/Library/Filza",
@@ -231,8 +232,7 @@
         @"/Library/Application Support/",
         @"/var/log/",
         @"/System/Library/LaunchDaemons/",
-        @"/var/lib/cydia",
-        @"/var/lib/apt",
+        @"/var/lib/",
         @"/var/cache/"
     ];
 
@@ -326,10 +326,11 @@
     // Process path string from XPC (since we have hooked methods)
     if(resolve) {
         path = [self resolvePath:path];
+    }
 
-        if(![path isAbsolutePath]) {
-            path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
-        }
+    if(![path isAbsolutePath]) {
+        // path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+        return NO;
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -362,17 +363,17 @@
         return NO;
     }
 
-    // Check if path is hard restricted
-    if([Shadow isPathHardRestricted:path]) {
-        return YES;
-    }
-
     if([path hasPrefix:bundlePath]
     || ([path hasPrefix:homePath] && ![homePath isEqualToString:realHomePath])
     || [path hasPrefix:@"/System"]
     || [path hasPrefix:@"/var/containers"]
     || [path hasPrefix:@"/var/mobile/Containers"]) {
         return NO;
+    }
+
+    // Check if path is hard restricted
+    if([Shadow isPathHardRestricted:path]) {
+        return YES;
     }
 
     if(!center) {
