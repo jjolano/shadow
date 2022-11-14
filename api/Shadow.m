@@ -171,13 +171,13 @@
         path = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:@"/User"]) {
-        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-        [pathComponents removeObjectAtIndex:0];
+    // if([path hasPrefix:@"/User"]) {
+    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+    //     [pathComponents removeObjectAtIndex:1];
+    //     [pathComponents removeObjectAtIndex:0];
 
-        path = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
-    }
+    //     path = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
+    // }
 
     // Extra tweak compatibility
     if(tweakCompatExtra && [path hasPrefix:@"/Library/Application Support"]) {
@@ -482,7 +482,8 @@
             @"/var/log/",
             @"/System/Library/LaunchDaemons/",
             @"/var/lib/",
-            @"/var/cache/"
+            @"/var/cache/",
+            @"/User/"
         ];
 
         HBLogDebug(@"%@: %@", @"schemes", schemes);
