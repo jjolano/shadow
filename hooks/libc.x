@@ -2,36 +2,25 @@
 
 %group shadowhook_libc
 %hookf(int, access, const char *pathname, int mode) {
-    int result = %orig;
-
-    if(result == 0) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return -1;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(ssize_t, readlink, const char* pathname, char* buf, size_t bufsize) {
-    ssize_t result = %orig;
-    
-    if(result != -1) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            *buf = '\0';
-            errno = ENOENT;
-            return -1;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(ssize_t, readlinkat, int dirfd, const char* pathname, char* buf, size_t bufsize) {
-    ssize_t result = %orig;
-
-    if(result != -1 && pathname) {
+    if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if(![path isAbsolutePath]) {
@@ -51,57 +40,44 @@
         }
 
         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            *buf = '\0';
             errno = ENOENT;
             return -1;
         }
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, chdir, const char *pathname) {
-    int result = %orig;
-
-    if(result == 0) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return -1;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, fchdir, int fd) {
-    int result = %orig;
+    // Get file descriptor path.
+    char pathname[PATH_MAX];
 
-    if(result == 0) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-                errno = ENOENT;
-                return -1;
-            }
-        }
-    }
-
-    return result;
-}
-
-%hookf(int, chroot, const char *pathname) {
-    int result = %orig;
-
-    if(result == 0) {
+    if(fcntl(fd, F_GETPATH, pathname) != -1) {
         if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             errno = ENOENT;
             return -1;
         }
     }
 
-    return result;
+    return %orig;
+}
+
+%hookf(int, chroot, const char *pathname) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+    
+    return %orig;
 }
 
 %hookf(int, statfs, const char *pathname, struct statfs *buf) {
@@ -409,44 +385,30 @@
 }
 
 %hookf(FILE *, fopen, const char *pathname, const char *mode) {
-    FILE* result = %orig;
-
-    if(result) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            fclose(result);
-            errno = ENOENT;
-            return NULL;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return NULL;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(FILE *, freopen, const char *pathname, const char *mode, FILE *stream) {
-    FILE* result = %orig;
-    
-    if(result) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            fclose(result);
-            errno = ENOENT;
-            return NULL;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return NULL;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(char *, realpath, const char *pathname, char *resolved_path) {
-    char* result = %orig;
-    
-    if(result) {
-        if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return NULL;
-        }
+    if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return NULL;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, execve, const char *pathname, char *const argv[], char *const envp[]) {
@@ -486,16 +448,12 @@
 }
 
 %hookf(int, getattrlist, const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
-    int result = %orig;
-    
-    if(result == 0) {
-        if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return -1;
-        }
+    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    return result;
+    return %orig;
 }
 
 %hookf(int, symlink, const char* path1, const char* path2) {
@@ -669,6 +627,11 @@
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
     int result = -1;
 
     if(oflag & O_CREAT) {
@@ -683,36 +646,12 @@ static int replaced_open(const char *pathname, int oflag, ...) {
         result = original_open(pathname, oflag);
     }
 
-    if(result != -1 && pathname) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            close(result);
-            errno = ENOENT;
-            return -1;
-        }
-    }
-
     return result;
 }
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
-    int result = -1;
-
-    if(oflag & O_CREAT) {
-        mode_t mode;
-        va_list args;
-        va_start(args, oflag);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-
-        result = original_openat(dirfd, pathname, oflag, mode);
-    } else {
-        result = original_openat(dirfd, pathname, oflag);
-    }
-
-    if(result != -1 && pathname) {
+    if(pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         if(![path isAbsolutePath]) {
@@ -735,10 +674,23 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         }
 
         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            close(result);
             errno = ENOENT;
             return -1;
         }
+    }
+
+    int result = -1;
+
+    if(oflag & O_CREAT) {
+        mode_t mode;
+        va_list args;
+        va_start(args, oflag);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+
+        result = original_openat(dirfd, pathname, oflag, mode);
+    } else {
+        result = original_openat(dirfd, pathname, oflag);
     }
 
     return result;
@@ -792,17 +744,12 @@ static int replaced_syscall(int number, ...) {
 // }
 
 %hookf(DIR *, __opendir2, const char *pathname, size_t bufsize) {
-    DIR* result = %orig;
-    
-    if(result) {
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            closedir(result);
-            errno = ENOENT;
-            return NULL;
-        }
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return NULL;
     }
 
-    return result;
+    return %orig;
 }
 %end
 
@@ -810,7 +757,6 @@ void shadowhook_libc(void) {
     %init(shadowhook_libc);
 
     // MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
-    // MSHookFunction(__opendir2, replaced_opendir2, (void **) &original_opendir2);
 }
 
 void shadowhook_libc_envvar(void) {

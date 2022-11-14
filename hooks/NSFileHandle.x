@@ -3,19 +3,15 @@
 %group shadowhook_NSFileHandle
 %hook NSFileHandle
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -23,23 +19,19 @@
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 
 + (instancetype)fileHandleForWritingAtPath:(NSString *)path {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -47,23 +39,19 @@
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 
 + (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    NSFileHandle* result = %orig;
-
-    if(result && [_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -71,7 +59,7 @@
         return nil;
     }
     
-    return result;
+    return %orig;
 }
 %end
 %end

@@ -16,91 +16,23 @@
     BOOL tweakCompat;
     BOOL tweakCompatExtra;
 
+    NSArray* whitelist_root;
+    NSArray* whitelist_safe;
+    NSArray* blacklist_jb;
+
     // App-specific
     NSString* bundlePath;
     NSString* homePath;
     NSString* realHomePath;
 }
 
-+ (BOOL)isPathSafe:(NSString *)path {
+- (BOOL)isPathSafe:(NSString *)path {
     // Handle /
-    NSArray* whitelist_root = @[
-        @"/.ba",
-        @"/.file",
-        @"/.fseventsd",
-        @"/.mb",
-        @"/Applications",
-        @"/Developer",
-        @"/Library",
-        @"/System",
-        @"/User",
-        @"/bin",
-        @"/cores",
-        @"/dev",
-        @"/etc",
-        @"/private",
-        @"/sbin",
-        @"/tmp",
-        @"/usr",
-        @"/var"
-    ];
-
     for(NSString* path_root in whitelist_root) {
         if([path isEqualToString:path_root]) {
             return YES;
         }
     }
-
-    NSArray* whitelist_safe = @[
-        @"/var/mobile/Library/Preferences/.GlobalPreferences.plist",
-        @"/var/mobile/Library/Preferences/com.apple",
-        @"/var/mobile/Library/Preferences/Wallpaper.png",
-        @"/var/mobile/Library/Caches/com.apple",
-        @"/var/mobile/Library/Caches/.com.apple",
-        @"/var/mobile/Library/Caches/Checkpoint.plist",
-        @"/var/mobile/Library/Caches/CloudKit",
-        @"/var/mobile/Library/Caches/Configuration",
-        @"/var/mobile/Library/Caches/FamilyCircle",
-        @"/var/mobile/Library/Caches/GameKit",
-        @"/var/mobile/Library/Caches/GeoServices",
-        @"/var/mobile/Library/Caches/MappedImageCache",
-        @"/var/mobile/Library/Caches/mediaanalysisd-service",
-        @"/var/mobile/Library/Caches/PassKit",
-        @"/var/mobile/Library/Caches/rtcreportingd",
-        @"/var/mobile/Library/Caches/sharedCaches",
-        @"/var/mobile/Library/Caches/TelephonyUI",
-        @"/var/mobile/Library/Caches/VoiceServices",
-        @"/var/mobile/Library/Caches/VoiceTrigger",
-        @"/var/mobile/Library/Caches/Snapshots/com.apple",
-        @"/tmp/com.apple",
-        @"/var/mobile/.forward",
-        @"/var/.overprovisioning_file",
-        @"/var/mobile/Library/Saved Application State/com.apple",
-        @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
-        @"/var/mobile/Library/Cookies/com.apple",
-        @"/etc/asl",
-        @"/etc/fstab",
-        @"/etc/group",
-        @"/etc/hosts",
-        @"/etc/master.passwd",
-        @"/etc/networks",
-        @"/etc/notify.conf",
-        @"/etc/passwd",
-        @"/etc/ppp",
-        @"/etc/protocols",
-        @"/etc/racoon",
-        @"/etc/services",
-        @"/etc/ttys",
-        @"/Library/Application Support/AggregateDictionary",
-        @"/Library/Application Support/BTServer",
-        @"/var/log/asl",
-        @"/var/log/com.apple",
-        @"/var/log/ppp",
-        @"/System/Library/LaunchDaemons/com.apple",
-        @"/var/MobileAsset",
-        @"/var/db/timezone",
-        @"/usr/share/tokenizer"
-    ];
 
     for(NSString* path_safe in whitelist_safe) {
         if([path hasPrefix:path_safe]) {
@@ -111,7 +43,7 @@
     return NO;
 }
 
-+ (BOOL)isPathHardRestricted:(NSString *)path {
+- (BOOL)isPathHardRestricted:(NSString *)path {
     if(!path || ![path isAbsolutePath] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
@@ -119,27 +51,6 @@
     BOOL restricted = YES;
 
     // Handle /
-    NSArray* whitelist_root = @[
-        @"/.ba",
-        @"/.file",
-        @"/.fseventsd",
-        @"/.mb",
-        @"/Applications",
-        @"/Developer",
-        @"/Library",
-        @"/System",
-        @"/User",
-        @"/bin",
-        @"/cores",
-        @"/dev",
-        @"/etc",
-        @"/private",
-        @"/sbin",
-        @"/tmp",
-        @"/usr",
-        @"/var"
-    ];
-
     for(NSString* path_root in whitelist_root) {
         if([path hasPrefix:path_root]) {
             restricted = NO;
@@ -152,90 +63,6 @@
     }
 
     // Handle common jailbreak paths, including rootless
-    NSArray* blacklist_jb = @[
-        @"/Library/MobileSubstrate",
-        @"/usr/lib/TweakInject",
-        @"/usr/lib/tweaks",
-        @"/var/jb",
-        @"/private/preboot/jb",
-        @"/usr/lib/pspawn_payload",
-        @"/var/containers/Bundle/iosbinpack64",
-        @"/var/containers/Bundle/tweaksupport",
-        @"/var/LIB",
-        @"/var/ulb",
-        @"/var/bin",
-        @"/var/sbin",
-        @"/var/Apps",
-        @"/Library/Frameworks",
-        @"/Library/Themes",
-        @"/Library/ControlCenter",
-        @"/Library/Activator",
-        @"/Library/dpkg",
-        @"/Library/PreferenceLoader",
-        @"/Library/SnowBoard",
-        @"/Library/LaunchDaemons/",
-        @"/Library/Flipswitch",
-        @"/Library/Switches",
-        @"/Library/Caches/cy-",
-        @"/dev/dlci.",
-        @"/dev/ptmx",
-        @"/dev/kmem",
-        @"/dev/mem",
-        @"/dev/vn0",
-        @"/dev/vn1",
-        @"/var/stash",
-        @"/var/db/stash",
-        @"/var/binpack",
-        @"/var/checkra1n.dmg",
-        @"/var/mobile/Library/Application Support/Containers/",
-        @"/var/mobile/Library/Application Support/xyz.willy",
-        @"/var/mobile/Library/Cachespayment",
-        @"/var/mobile/Library/Filza",
-        @"/var/mobile/Library/ControlCenter/ModuleConfiguration_CCSupport.plist",
-        @"/var/mobile/Library/SBSettings",
-        @"/var/mobile/Library/Cydia",
-        @"/var/mobile/Library/Logs/Cydia",
-        @"/var/mobile/Library/Sileo",
-        @"/var/root/.",
-        @"/Applications/Cydia.app",
-        @"/Applications/Sileo.app",
-        @"/Applications/Zebra.app",
-        @"/usr/lib/libhooker.dylib",
-        @"/usr/lib/libsubstitute.dylib",
-        @"/usr/lib/libsubstrate.dylib",
-        @"/usr/libexec/cydia",
-        @"/usr/share/terminfo",
-        @"/usr/share/zsh",
-        @"/usr/share/man",
-        @"/usr/bin/sh",
-        @"/usr/bin/nawk",
-        @"/usr/bin/awk",
-        @"/usr/bin/pico",
-        @"/usr/bin/unrar",
-        @"/usr/bin/[",
-        @"/usr/bin/editor",
-        @"/usr/local/lib/log",
-        @"/usr/include/",
-        @"/usr/lib/log/",
-        @"/bin/sh",
-        @"/System/Library/PreferenceBundles/AppList.bundle",
-        @"/var/mobile/Library/Preferences/",
-        @"/var/mobile/Library/Caches/",
-        @"/var/mobile/Library/Caches/Snapshots/",
-        @"/tmp/",
-        @"/var/mobile/.",
-        @"/var/.",
-        @"/var/mobile/Library/Saved Application State/",
-        @"/var/mobile/SplashBoard/Snapshots/",
-        @"/var/mobile/Library/Cookies/",
-        @"/etc/",
-        @"/Library/Application Support/",
-        @"/var/log/",
-        @"/System/Library/LaunchDaemons/",
-        @"/var/lib/",
-        @"/var/cache/"
-    ];
-
     for(NSString* path_jb in blacklist_jb) {
         if([path hasPrefix:path_jb]) {
             return YES;
@@ -329,8 +156,7 @@
     }
 
     if(![path isAbsolutePath]) {
-        // path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
-        return NO;
+        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -359,7 +185,7 @@
     }
 
     // Some quick whitelisting
-    if([Shadow isPathSafe:path]) {
+    if([self isPathSafe:path]) {
         return NO;
     }
 
@@ -372,7 +198,7 @@
     }
 
     // Check if path is hard restricted
-    if([Shadow isPathHardRestricted:path]) {
+    if([self isPathHardRestricted:path]) {
         return YES;
     }
 
@@ -502,6 +328,162 @@
         } else {
             HBLogDebug(@"%@", @"failed to init shadowd");
         }
+
+        whitelist_root = @[
+            @"/.ba",
+            @"/.file",
+            @"/.fseventsd",
+            @"/.mb",
+            @"/Applications",
+            @"/Developer",
+            @"/Library",
+            @"/System",
+            @"/User",
+            @"/bin",
+            @"/cores",
+            @"/dev",
+            @"/etc",
+            @"/private",
+            @"/sbin",
+            @"/tmp",
+            @"/usr",
+            @"/var"
+        ];
+
+        whitelist_safe = @[
+            @"/var/mobile/Library/Preferences/.GlobalPreferences.plist",
+            @"/var/mobile/Library/Preferences/com.apple",
+            @"/var/mobile/Library/Preferences/Wallpaper.png",
+            @"/var/mobile/Library/Caches/com.apple",
+            @"/var/mobile/Library/Caches/.com.apple",
+            @"/var/mobile/Library/Caches/Checkpoint.plist",
+            @"/var/mobile/Library/Caches/CloudKit",
+            @"/var/mobile/Library/Caches/Configuration",
+            @"/var/mobile/Library/Caches/FamilyCircle",
+            @"/var/mobile/Library/Caches/GameKit",
+            @"/var/mobile/Library/Caches/GeoServices",
+            @"/var/mobile/Library/Caches/MappedImageCache",
+            @"/var/mobile/Library/Caches/mediaanalysisd-service",
+            @"/var/mobile/Library/Caches/PassKit",
+            @"/var/mobile/Library/Caches/rtcreportingd",
+            @"/var/mobile/Library/Caches/sharedCaches",
+            @"/var/mobile/Library/Caches/TelephonyUI",
+            @"/var/mobile/Library/Caches/VoiceServices",
+            @"/var/mobile/Library/Caches/VoiceTrigger",
+            @"/var/mobile/Library/Caches/Snapshots/com.apple",
+            @"/tmp/com.apple",
+            @"/var/mobile/.forward",
+            @"/var/.overprovisioning_file",
+            @"/var/mobile/Library/Saved Application State/com.apple",
+            @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
+            @"/var/mobile/Library/Cookies/com.apple",
+            @"/etc/asl",
+            @"/etc/fstab",
+            @"/etc/group",
+            @"/etc/hosts",
+            @"/etc/master.passwd",
+            @"/etc/networks",
+            @"/etc/notify.conf",
+            @"/etc/passwd",
+            @"/etc/ppp",
+            @"/etc/protocols",
+            @"/etc/racoon",
+            @"/etc/services",
+            @"/etc/ttys",
+            @"/Library/Application Support/AggregateDictionary",
+            @"/Library/Application Support/BTServer",
+            @"/var/log/asl",
+            @"/var/log/com.apple",
+            @"/var/log/ppp",
+            @"/System/Library/LaunchDaemons/com.apple",
+            @"/var/MobileAsset",
+            @"/var/db/timezone",
+            @"/usr/share/tokenizer"
+        ];
+
+        blacklist_jb = @[
+            @"/Library/MobileSubstrate",
+            @"/usr/lib/TweakInject",
+            @"/usr/lib/tweaks",
+            @"/var/jb",
+            @"/private/preboot/jb",
+            @"/usr/lib/pspawn_payload",
+            @"/var/containers/Bundle/iosbinpack64",
+            @"/var/containers/Bundle/tweaksupport",
+            @"/var/LIB",
+            @"/var/ulb",
+            @"/var/bin",
+            @"/var/sbin",
+            @"/var/Apps",
+            @"/Library/Frameworks",
+            @"/Library/Themes",
+            @"/Library/ControlCenter",
+            @"/Library/Activator",
+            @"/Library/dpkg",
+            @"/Library/PreferenceLoader",
+            @"/Library/SnowBoard",
+            @"/Library/LaunchDaemons/",
+            @"/Library/Flipswitch",
+            @"/Library/Switches",
+            @"/Library/Caches/cy-",
+            @"/dev/dlci.",
+            @"/dev/ptmx",
+            @"/dev/kmem",
+            @"/dev/mem",
+            @"/dev/vn0",
+            @"/dev/vn1",
+            @"/var/stash",
+            @"/var/db/stash",
+            @"/var/binpack",
+            @"/var/checkra1n.dmg",
+            @"/var/mobile/Library/Application Support/Containers/",
+            @"/var/mobile/Library/Application Support/xyz.willy",
+            @"/var/mobile/Library/Cachespayment",
+            @"/var/mobile/Library/Filza",
+            @"/var/mobile/Library/ControlCenter/ModuleConfiguration_CCSupport.plist",
+            @"/var/mobile/Library/SBSettings",
+            @"/var/mobile/Library/Cydia",
+            @"/var/mobile/Library/Logs/Cydia",
+            @"/var/mobile/Library/Sileo",
+            @"/var/root/.",
+            @"/Applications/Cydia.app",
+            @"/Applications/Sileo.app",
+            @"/Applications/Zebra.app",
+            @"/usr/lib/libhooker.dylib",
+            @"/usr/lib/libsubstitute.dylib",
+            @"/usr/lib/libsubstrate.dylib",
+            @"/usr/libexec/cydia",
+            @"/usr/share/terminfo",
+            @"/usr/share/zsh",
+            @"/usr/share/man",
+            @"/usr/bin/sh",
+            @"/usr/bin/nawk",
+            @"/usr/bin/awk",
+            @"/usr/bin/pico",
+            @"/usr/bin/unrar",
+            @"/usr/bin/[",
+            @"/usr/bin/editor",
+            @"/usr/local/lib/log",
+            @"/usr/include/",
+            @"/usr/lib/log/",
+            @"/bin/sh",
+            @"/System/Library/PreferenceBundles/AppList.bundle",
+            @"/var/mobile/Library/Preferences/",
+            @"/var/mobile/Library/Caches/",
+            @"/var/mobile/Library/Caches/Snapshots/",
+            @"/tmp/",
+            @"/var/mobile/.",
+            @"/var/.",
+            @"/var/mobile/Library/Saved Application State/",
+            @"/var/mobile/SplashBoard/Snapshots/",
+            @"/var/mobile/Library/Cookies/",
+            @"/etc/",
+            @"/Library/Application Support/",
+            @"/var/log/",
+            @"/System/Library/LaunchDaemons/",
+            @"/var/lib/",
+            @"/var/cache/"
+        ];
 
         HBLogDebug(@"%@: %@", @"schemes", schemes);
         HBLogDebug(@"%@: %@", @"bundlePath", bundlePath);

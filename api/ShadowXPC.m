@@ -220,14 +220,9 @@
 
         BOOL restricted = NO;
         
-        // Perform some hardcoded checks.
-        if(![Shadow isPathSafe:path]) {
-            restricted = [Shadow isPathHardRestricted:path];
-
-            // Check if path is restricted.
-            if(!restricted) {
-                restricted = [self isPathRestricted:path];
-            }
+        // Check if path is restricted.
+        if(!restricted) {
+            restricted = [self isPathRestricted:path];
         }
 
         response = @{
