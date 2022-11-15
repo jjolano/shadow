@@ -156,9 +156,9 @@
     }
 
     if(![path isAbsolutePath]) {
-        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
-        // HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"ignoring relative path", path);
-        // return NO;
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
+        // path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+        return YES;
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
