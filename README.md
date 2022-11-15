@@ -1,6 +1,9 @@
 # Shadow
 A jailbreak detection bypass for modern iOS jailbreaks.
 
+## Note to Users: Bypass Requests
+I understand that your app still doesn't work. However, I do not take any bypass or app requests. What I will take though, is if a tangible detection method is provided. Shadow is not designed to be app-specific. Please respect this.
+
 ## Supported Systems
 Shadow is compiled for all devices on at least iOS 7. The best bypass performance is experienced on at least iOS 11, due to modern jailbreak design keeping the application sandbox intact. It is also iOS 15+ rootless-ready for Procursus-based bootstraps (untested).
 
