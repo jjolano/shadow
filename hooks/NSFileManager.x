@@ -288,9 +288,7 @@
 }
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    NSString* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -298,7 +296,7 @@
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
@@ -437,13 +435,11 @@
 }
 
 - (NSString *)pathContentOfSymbolicLinkAtPath:(NSString *)path {
-    NSString* result = %orig;
-    
-    if(result && [_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {

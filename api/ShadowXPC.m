@@ -33,10 +33,6 @@
         return YES;
     }
 
-    if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        return NO;
-    }
-
     BOOL restricted = NO;
     
     // Call dpkg to see if file is part of any installed packages on the system.
@@ -201,6 +197,10 @@
         }
 
         HBLogDebug(@"%@: %@", name, path);
+
+        if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            return nil;
+        }
 
         BOOL restricted = NO;
         

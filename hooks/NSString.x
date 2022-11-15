@@ -116,35 +116,35 @@
     return result;
 }
 
-- (NSString *)stringByResolvingSymlinksInPath {
-    NSString* result = %orig;
+// - (NSString *)stringByResolvingSymlinksInPath {
+//     NSString* result = %orig;
 
-    if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return self;
-    }
+//     if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         return self;
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-- (NSString *)stringByExpandingTildeInPath {
-    NSString* result = %orig;
+// - (NSString *)stringByExpandingTildeInPath {
+//     NSString* result = %orig;
 
-    if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return self;
-    }
+//     if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         return self;
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-- (NSString *)stringByStandardizingPath {
-    NSString* result = %orig;
+// - (NSString *)stringByStandardizingPath {
+//     NSString* result = %orig;
 
-    if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return self;
-    }
+//     if([_shadow isPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         return self;
+//     }
 
-    return result;
-}
+//     return result;
+// }
 %end
 
 %hook NSAttributedString
