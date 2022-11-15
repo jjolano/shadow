@@ -156,7 +156,9 @@
     }
 
     if(![path isAbsolutePath]) {
-        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+        // path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"ignoring relative path", path);
+        return NO;
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
@@ -186,6 +188,7 @@
 
     // Some quick whitelisting
     if([self isPathSafe:path]) {
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"allowing path", path);
         return NO;
     }
 
@@ -199,6 +202,7 @@
 
     // Check if path is hard restricted
     if([self isPathHardRestricted:path]) {
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"hard restricted", path);
         return YES;
     }
 
@@ -221,15 +225,19 @@
         return YES;
     }
 
-    BOOL restricted = NO;
-
     // Check if path is restricted using XPC.
     NSDictionary* response = [center sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
         @"path" : path
     }];
 
-    if(response) {
-        restricted = [response[@"restricted"] boolValue];
+    if(!response) {
+        return NO;
+    }
+
+    BOOL restricted = [response[@"restricted"] boolValue];
+
+    if(restricted) {
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
     }
 
     [responseCache setObject:@(restricted) forKey:path];
