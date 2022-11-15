@@ -15,7 +15,7 @@
         errno = ENOENT;
         return -1;
     }
-    
+
     return %orig;
 }
 
@@ -696,37 +696,6 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
     return result;
 }
 
-/*
-static int (*original_syscall)(int number, ...);
-static int replaced_syscall(int number, ...) {
-    HBLogDebug(@"%@: %d", @"syscall", number);
-
-    char* stack[8];
-	va_list args;
-	va_start(args, number);
-
-    #if defined __arm64__ || defined __arm64e__
-	memcpy(stack, args, 64);
-    #endif
-
-    #if defined __armv7__ || defined __armv7s__
-	memcpy(stack, args, 32);
-    #endif
-
-    // Get pathname from arguments for later
-
-    va_end(args);
-
-    int result = original_syscall(number, stack[0], stack[1], stack[2], stack[3], stack[4], stack[5], stack[6], stack[7]);
-
-    if(result == 0) {
-        // Handle if syscall is successful
-    }
-
-    return result;
-}
-*/
-
 %group shadowhook_libc_opendir
 // %hookf(DIR *, opendir, const char *pathname) {
 //     DIR* result = %orig;
@@ -755,8 +724,6 @@ static int replaced_syscall(int number, ...) {
 
 void shadowhook_libc(void) {
     %init(shadowhook_libc);
-
-    // MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
 }
 
 void shadowhook_libc_envvar(void) {
