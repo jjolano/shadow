@@ -2,7 +2,7 @@ Package: me.jjolano.shadow
 Name: Shadow
 Depends: firmware (>= 7.0), mobilesubstrate, dpkg, com.opa334.altlist, ws.hbang.common
 Recommends: com.rpetrich.rocketbootstrap
-Version: 3.0-4
+Version: 3.0-5
 Architecture: iphoneos-arm
 Description: A modern jailbreak detection bypass for jailbroken iOS.
 Maintainer: jjolano
