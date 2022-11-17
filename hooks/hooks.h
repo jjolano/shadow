@@ -16,6 +16,7 @@
 #import <sys/sysctl.h>
 #import <HBLog.h>
 #import <mach/mach.h>
+#import <mach/task_info.h>
 #import <bootstrap.h>
 #import <spawn.h>
 #import <Foundation/Foundation.h>

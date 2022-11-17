@@ -9,7 +9,9 @@
 
         if([name hasPrefix:@"cy:"]
         || [name hasPrefix:@"lh:"]
-        || [name hasPrefix:@"rbs:"]){
+        || [name hasPrefix:@"rbs:"]
+        || [name hasPrefix:@"org.coolstar"]
+        || [name hasPrefix:@"com.saurik"]){
             return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }
@@ -25,7 +27,9 @@
         
         if([name hasPrefix:@"cy:"]
         || [name hasPrefix:@"lh:"]
-        || [name hasPrefix:@"rbs:"]){
+        || [name hasPrefix:@"rbs:"]
+        || [name hasPrefix:@"org.coolstar"]
+        || [name hasPrefix:@"com.saurik"]){
             return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }

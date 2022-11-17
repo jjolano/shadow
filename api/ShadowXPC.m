@@ -40,7 +40,7 @@
     NSPipe* stdoutPipe = [NSPipe new];
 
     [task setLaunchPath:dpkgPath];
-    [task setArguments:@[@"-S", path]];
+    [task setArguments:@[@"--no-pager", @"-S", path]];
     [task setStandardOutput:stdoutPipe];
     [task launch];
     [task waitUntilExit];
@@ -59,6 +59,10 @@
             NSArray<NSString *>* result = [line componentsSeparatedByString:@": "];
 
             if([result count] == 2) {
+                if([[result objectAtIndex:0] hasPrefix:@"local diversion"]) {
+                    continue;
+                }
+
                 NSArray<NSString *>* packages = [[result objectAtIndex:0] componentsSeparatedByString:@", "];
                 
                 restricted = YES;
@@ -98,7 +102,7 @@
     NSPipe* stdoutPipe = [NSPipe new];
 
     [task setLaunchPath:dpkgPath];
-    [task setArguments:@[@"-S", @"app/Info.plist"]];
+    [task setArguments:@[@"--no-pager", @"-S", @"app/Info.plist"]];
     [task setStandardOutput:stdoutPipe];
     [task launch];
     [task waitUntilExit];

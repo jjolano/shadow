@@ -58,7 +58,15 @@ static int replaced_syscall(int number, ...) {
 }
 
 // todo: research on "supervised syscalls"
-
 void shadowhook_syscall(void) {
     MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
+
+    // d4001001
+    // const uint8_t bytes_svc80[] = {
+    //     0x01, 0x10, 0x00, 0xd4
+    // };
+
+    // const uint8_t bytes_ret[] = {
+    //     0xc0, 0x03, 0x5f, 0xd6
+    // };
 }

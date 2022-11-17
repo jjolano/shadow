@@ -71,6 +71,24 @@
 //     return result;
 // }
 
+// %hookf(Method, class_getInstanceMethod, Class cls, SEL name) {
+//     Method result = %orig;
+
+//     if(result) {
+//         IMP impl = method_getImplementation(result);
+
+//         if(impl) {
+//             const char* image_name = dyld_image_path_containing_address(impl);
+
+//             if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//                 return nil;
+//             }
+//         }
+//     }
+
+//     return result;
+// }
+
 %hookf(const char * _Nonnull *, objc_copyImageNames, unsigned int *outCount) {
     const char * _Nonnull * result = %orig;
 
