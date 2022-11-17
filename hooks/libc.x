@@ -576,9 +576,11 @@
 %hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
     int ret = %orig;
 
-    if(ops == CS_OPS_STATUS && (ret & CS_PLATFORM_BINARY) == CS_PLATFORM_BINARY && pid == getpid()) {
-        // Ensure that the platform binary flag is not set.
+    if(ops == CS_OPS_STATUS && pid == getpid()) {
+        // (Un)set some flags
         ret &= ~CS_PLATFORM_BINARY;
+        ret &= ~CS_GET_TASK_ALLOW;
+        ret &= ~CS_INSTALLER;
     }
 
     return ret;

@@ -47,7 +47,7 @@
                 }
             } while(result);
         } else if([result isKindOfClass:[NSString class]]) {
-            NSString* base = [self valueForUndefinedKey:@"shdwDir"];
+            NSString* base = [self valueForKey:@"shdwDir"];
 
             if(base) {
                 do {
@@ -192,7 +192,7 @@
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
-    NSDirectoryEnumerator<NSURL *> * result = %orig;
+    NSDirectoryEnumerator* result = %orig;
     
     if(result) {
         [result setValue:[url path] forKey:@"shdwDir"];
@@ -203,7 +203,7 @@
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-    NSDirectoryEnumerator<NSString *> * result = %orig;
+    NSDirectoryEnumerator* result = %orig;
 
     if(result) {
         [result setValue:path forKey:@"shdwDir"];

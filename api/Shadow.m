@@ -19,6 +19,7 @@
     NSArray* whitelist_root;
     NSArray* whitelist_safe;
     NSArray* blacklist_jb;
+    NSArray* blacklist_name;
 
     // App-specific
     NSString* bundlePath;
@@ -118,19 +119,44 @@
 }
 
 - (NSString *)resolvePath:(NSString *)path {
-    if(!center || !path) {
+    if(!path) {
         return path;
     }
 
-    NSDictionary* response = [center sendMessageAndReceiveReplyName:@"resolvePath" userInfo:@{
-        @"path" : path
-    }];
+    if(center) {
+        NSDictionary* response = [center sendMessageAndReceiveReplyName:@"resolvePath" userInfo:@{
+            @"path" : path
+        }];
 
-    if(response) {
-        return response[@"path"];
+        if(response) {
+            return response[@"path"];
+        }
+    } else {
+        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
+
+        if([path hasPrefix:@"/var/tmp"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
     }
 
     return path;
+}
+
+- (BOOL)isPathSandbox:(NSString *)path {
+    if([path hasPrefix:bundlePath]
+    || ([path hasPrefix:homePath] && ![homePath isEqualToString:realHomePath])
+    || [path hasPrefix:@"/var/containers"]
+    || [path hasPrefix:@"/var/mobile/Containers"]) {
+        return YES;
+    }
+
+    return NO;
 }
 
 - (BOOL)isCPathRestricted:(const char *)path {
@@ -161,17 +187,17 @@
         // return YES;
     }
 
-    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
-    }
+    // if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+    //     [pathComponents removeObjectAtIndex:1];
+    //     path = [NSString pathWithComponents:pathComponents];
+    // }
 
-    if([path hasPrefix:@"/var/tmp"]) {
-        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
-    }
+    // if([path hasPrefix:@"/var/tmp"]) {
+    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+    //     [pathComponents removeObjectAtIndex:1];
+    //     path = [NSString pathWithComponents:pathComponents];
+    // }
 
     // if([path hasPrefix:@"/User"]) {
     //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
@@ -192,11 +218,14 @@
         return NO;
     }
 
-    if([path hasPrefix:bundlePath]
-    || ([path hasPrefix:homePath] && ![homePath isEqualToString:realHomePath])
-    || [path hasPrefix:@"/System"]
-    || [path hasPrefix:@"/var/containers"]
-    || [path hasPrefix:@"/var/mobile/Containers"]) {
+    // Handle banned filenames
+    for(NSString* name in blacklist_name) {
+        if([path containsString:name]) {
+            return YES;
+        }
+    }
+
+    if([self isPathSandbox:path]) {
         return NO;
     }
 
@@ -204,6 +233,10 @@
     if([self isPathHardRestricted:path]) {
         HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"hard restricted", path);
         return YES;
+    }
+
+    if([path hasPrefix:@"/System"]) {
+        return NO;
     }
 
     if(!center) {
@@ -386,7 +419,7 @@
             @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
             @"/var/mobile/Library/Cookies/com.apple",
             @"/etc/asl",
-            @"/etc/fstab",
+            // @"/etc/fstab",
             @"/etc/group",
             @"/etc/hosts",
             @"/etc/master.passwd",
@@ -406,7 +439,9 @@
             @"/System/Library/LaunchDaemons/com.apple",
             @"/var/MobileAsset",
             @"/var/db/timezone",
-            @"/usr/share/tokenizer"
+            @"/usr/share/tokenizer",
+            @"/bin/ps",
+            @"/bin/df"
         ];
 
         blacklist_jb = @[
@@ -458,8 +493,14 @@
             @"/Applications/Sileo.app",
             @"/Applications/Zebra.app",
             @"/usr/lib/libhooker.dylib",
+            @"/usr/lib/libsubstitute.0.dylib",
             @"/usr/lib/libsubstitute.dylib",
             @"/usr/lib/libsubstrate.dylib",
+            @"/usr/lib/substitute",
+            @"/usr/lib/substrate",
+            @"/usr/lib/Substrate",
+            @"/usr/lib/tweakloader.dylib",
+            @"/usr/lib/apt",
             @"/usr/libexec/cydia",
             @"/usr/share/terminfo",
             @"/usr/share/zsh",
@@ -472,9 +513,9 @@
             @"/usr/bin/[",
             @"/usr/bin/editor",
             @"/usr/local/lib/log",
-            @"/usr/include/",
+            @"/usr/include",
             @"/usr/lib/log/",
-            @"/bin/sh",
+            @"/bin/",
             @"/System/Library/PreferenceBundles/AppList.bundle",
             @"/var/mobile/Library/Preferences/",
             @"/var/mobile/Library/Caches/",
@@ -492,6 +533,10 @@
             @"/var/lib/",
             @"/var/cache/",
             @"/User/"
+        ];
+
+        blacklist_name = @[
+            @"LIAPP"
         ];
 
         HBLogDebug(@"%@: %@", @"schemes", schemes);
