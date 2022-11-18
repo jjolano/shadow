@@ -44,6 +44,7 @@ extern void shadowhook_NSProcessInfo(void);
 extern void shadowhook_NSString(void);
 extern void shadowhook_NSURL(void);
 extern void shadowhook_objc(void);
+extern void shadowhook_sandbox(void);
 extern void shadowhook_syscall(void);
 extern void shadowhook_UIApplication(void);
 extern void shadowhook_UIImage(void);
