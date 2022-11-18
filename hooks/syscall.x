@@ -5,17 +5,11 @@ static int (*original_syscall)(int number, ...);
 static int replaced_syscall(int number, ...) {
     HBLogDebug(@"%@: %d", @"syscall", number);
 
-    char* stack[8];
 	va_list args;
 	va_start(args, number);
 
-    #if defined __arm64__ || defined __arm64e__
-	memcpy(stack, args, 64);
-    #endif
-
-    #if defined __armv7__ || defined __armv7s__
-	memcpy(stack, args, 32);
-    #endif
+    void* stack[8];
+    memcpy(stack, args, sizeof(stack));
 
     // Handle single pathname syscalls
     if(number == SYS_open
@@ -54,6 +48,7 @@ static int replaced_syscall(int number, ...) {
     }
 
     va_end(args);
+
     return original_syscall(number, stack[0], stack[1], stack[2], stack[3], stack[4], stack[5], stack[6], stack[7]);
 }
 

@@ -17,6 +17,7 @@
     BOOL tweakCompatExtra;
 
     NSArray* whitelist_root;
+    NSArray* whitelist_var;
     NSArray* whitelist_safe;
     NSArray* blacklist_jb;
     NSArray* blacklist_name;
@@ -31,6 +32,12 @@
     // Handle /
     for(NSString* path_root in whitelist_root) {
         if([path isEqualToString:path_root]) {
+            return YES;
+        }
+    }
+
+    for(NSString* path_var in whitelist_var) {
+        if([path isEqualToString:path_var]) {
             return YES;
         }
     }
@@ -56,6 +63,16 @@
         if([path hasPrefix:path_root]) {
             restricted = NO;
             break;
+        }
+    }
+
+    // Handle /var
+    if([path hasPrefix:@"/var/"]) {
+        for(NSString* path_var in whitelist_var) {
+            if([path hasPrefix:path_var]) {
+                restricted = NO;
+                break;
+            }
         }
     }
 
@@ -94,7 +111,15 @@
     }
 
     if(tweakCompat) {
+        bool skipped = false;
+
         for(NSNumber* sym_addr in backtrace) {
+            if(!skipped) {
+                // Skip the first entry
+                skipped = true;
+                continue;
+            }
+
             void* ptr_addr = (void *)[sym_addr longLongValue];
 
             // Lookup symbol
@@ -132,6 +157,9 @@
             return response[@"path"];
         }
     } else {
+        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
@@ -375,6 +403,7 @@
             @"/.file",
             @"/.fseventsd",
             @"/.mb",
+            @"/.HFS",
             @"/Applications",
             @"/Developer",
             @"/Library",
@@ -389,6 +418,47 @@
             @"/tmp",
             @"/usr",
             @"/var"
+        ];
+
+        whitelist_var = @[
+            @"/var/audit",
+            @"/var/backups",
+            @"/var/buddy",
+            @"/var/cache",
+            @"/var/containers",
+            @"/var/db",
+            @"/var/ea",
+            @"/var/empty",
+            @"/var/folders",
+            @"/var/keybags",
+            @"/var/Keychains",
+            @"/var/lib",
+            @"/var/local",
+            @"/var/lock",
+            @"/var/log",
+            @"/var/logs",
+            @"/var/Managed Preferences",
+            @"/var/mobile",
+            @"/var/MobileAsset",
+            @"/var/MobileDevice",
+            @"/var/MobileSoftwareUpdate",
+            @"/var/msgs",
+            @"/var/networkd",
+            @"/var/personalized_factory",
+            @"/var/preferences",
+            @"/var/root",
+            @"/var/run",
+            @"/var/select",
+            @"/var/spool",
+            @"/var/staged_system_apps",
+            @"/var/tmp",
+            @"/var/vm",
+            @"/var/wireless",
+            @"/var/.overprovisioning_file",
+            @"/var/.DocumentRevisions-V100",
+            @"/var/.fseventsd",
+            @"/var/installd",
+            @"/var/hardware"
         ];
 
         whitelist_safe = @[
@@ -414,7 +484,6 @@
             @"/var/mobile/Library/Caches/Snapshots/com.apple",
             @"/tmp/com.apple",
             @"/var/mobile/.forward",
-            @"/var/.overprovisioning_file",
             @"/var/mobile/Library/Saved Application State/com.apple",
             @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
             @"/var/mobile/Library/Cookies/com.apple",
@@ -514,7 +583,6 @@
             @"/usr/bin/editor",
             @"/usr/local/lib/log",
             @"/usr/include",
-            @"/usr/lib/log/",
             @"/bin/",
             @"/System/Library/PreferenceBundles/AppList.bundle",
             @"/var/mobile/Library/Preferences/",
@@ -536,7 +604,8 @@
         ];
 
         blacklist_name = @[
-            @"LIAPP"
+            @"LIAPP",
+            @"embedded.mobileprovision"
         ];
 
         HBLogDebug(@"%@: %@", @"schemes", schemes);

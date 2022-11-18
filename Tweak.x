@@ -37,7 +37,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_FakeMac" : @(NO),
 		@"Tweak_Compat" : @(YES),
 		@"Tweak_CompatEx" : @(NO),
-		@"Hook_Syscall" : @(NO)
+		@"Hook_Syscall" : @(NO),
+		@"Hook_Sandbox" : @(NO)
 	}];
 
 	// Determine the application we're injected into.
@@ -87,7 +88,8 @@ ShadowXPC* _xpc = nil;
 		@"Hook_FakeMac" : prefs[@"Hook_FakeMac"],
 		@"Tweak_Compat" : prefs[@"Tweak_Compat"],
 		@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"],
-		@"Hook_Syscall" : prefs[@"Hook_Syscall"]
+		@"Hook_Syscall" : prefs[@"Hook_Syscall"],
+		@"Hook_Sandbox" : prefs[@"Hook_Sandbox"]
 	};
 
 	// Determine whether to load the rest of the tweak.
@@ -209,6 +211,10 @@ ShadowXPC* _xpc = nil;
 
 	if(prefs_load[@"Hook_Syscall"] && [prefs_load[@"Hook_Syscall"] boolValue]) {
 		shadowhook_syscall();
+	}
+
+	if(prefs_load[@"Hook_Sandbox"] && [prefs_load[@"Hook_Sandbox"] boolValue]) {
+		shadowhook_sandbox();
 	}
 
 	HBLogDebug(@"%@", @"hooks initialized");
