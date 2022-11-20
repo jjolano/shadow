@@ -1,20 +1,21 @@
 #import <Foundation/Foundation.h>
-#import <AppSupport/CPDistributedMessagingCenter.h>
 
-#define BYPASS_VERSION  "4.1"
+#import <dlfcn.h>
+#import <pwd.h>
 
-@class NSString, NSArray;
+#import <HBLog.h>
+#import "ShadowService.h"
 
 @interface Shadow : NSObject
-- (BOOL)isPathSafe:(NSString *)path;
-- (BOOL)isPathHardRestricted:(NSString *)path;
-- (BOOL)isCallerTweak:(NSArray<NSNumber *>*)backtrace;
-- (NSString *)resolvePath:(NSString *)path;
-- (BOOL)isPathSandbox:(NSString *)path;
+- (BOOL)isCallerTweak:(NSArray*)backtrace;
 - (BOOL)isCPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve;
 - (BOOL)isURLRestricted:(NSURL *)url;
+
 - (void)setTweakCompat:(BOOL)enabled;
 - (void)setTweakCompatExtra:(BOOL)enabled;
+- (void)setService:(ShadowService *)_service;
+
++ (instancetype)shadowWithService:(ShadowService *)_service;
 @end

@@ -136,6 +136,24 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
+			<string>Hook_DeviceCheck</string>
+			<key>id</key>
+			<string>Hook_DeviceCheck</string>
+			<key>label</key>
+			<string>Detection Frameworks</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<true/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
 			<string>Hook_FilesystemExtra</string>
 			<key>id</key>
 			<string>Hook_FilesystemExtra</string>
@@ -144,7 +162,7 @@
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
-			<true/>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -154,15 +172,15 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>Hook_CollectionClasses</string>
+			<string>Hook_DynamicLibrariesExtra</string>
 			<key>id</key>
-			<string>Hook_CollectionClasses</string>
+			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
-			<string>Collection Classes</string>
+			<string>Loaded Modules (Extra)</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
-			<true/>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -172,87 +190,15 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>Hook_BundleClass</string>
+			<string>Hook_Foundation</string>
 			<key>id</key>
-			<string>Hook_BundleClass</string>
+			<string>Hook_Foundation</string>
 			<key>label</key>
-			<string>NSBundle Class</string>
+			<string>Foundation Framework</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
-			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_StringClass</string>
-			<key>id</key>
-			<string>Hook_StringClass</string>
-			<key>label</key>
-			<string>NSString Class</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_URLClass</string>
-			<key>id</key>
-			<string>Hook_URLClass</string>
-			<key>label</key>
-			<string>NSURL Class</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DataClass</string>
-			<key>id</key>
-			<string>Hook_DataClass</string>
-			<key>label</key>
-			<string>NSData Class</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_ImageClass</string>
-			<key>id</key>
-			<string>Hook_ImageClass</string>
-			<key>label</key>
-			<string>UIImage Class</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
+			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -281,24 +227,6 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Extra Hooks</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DeviceCheck</string>
-			<key>id</key>
-			<string>Hook_DeviceCheck</string>
-			<key>label</key>
-			<string>Device App Attest</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -363,24 +291,6 @@
 			<string>Hook_AntiDebugging</string>
 			<key>label</key>
 			<string>Anti-Debugging Methods</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DynamicLibrariesExtra</string>
-			<key>id</key>
-			<string>Hook_DynamicLibrariesExtra</string>
-			<key>label</key>
-			<string>Loaded Modules (Extra)</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

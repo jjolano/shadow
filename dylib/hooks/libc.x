@@ -94,8 +94,6 @@
 
         // Modify flags
         if(buf) {
-            path = [_shadow resolvePath:path];
-
             if([path hasPrefix:@"/var"]
             || [path hasPrefix:@"/private/var"]
             || [path hasPrefix:@"/private/preboot"]) {
@@ -128,8 +126,6 @@
 
             // Modify flags
             if(buf) {
-                path = [_shadow resolvePath:path];
-
                 if([path hasPrefix:@"/var"]
                 || [path hasPrefix:@"/private/var"]
                 || [path hasPrefix:@"/private/preboot"]) {
@@ -157,8 +153,6 @@
         }
 
         if(buf) {
-            path = [_shadow resolvePath:path];
-
             if([path isEqualToString:@"/Applications"]
             || [path isEqualToString:@"/Library/Ringtones"]
             || [path isEqualToString:@"/Library/Wallpaper"]
@@ -193,8 +187,6 @@
         }
 
         if(buf) {
-            path = [_shadow resolvePath:path];
-
             if([path isEqualToString:@"/Applications"]
             || [path isEqualToString:@"/Library/Ringtones"]
             || [path isEqualToString:@"/Library/Wallpaper"]
@@ -274,8 +266,6 @@
         }
 
         if(buf) {
-            path = [_shadow resolvePath:path];
-
             if([path isEqualToString:@"/Applications"]
             || [path isEqualToString:@"/Library/Ringtones"]
             || [path isEqualToString:@"/Library/Wallpaper"]

@@ -1,9 +1,9 @@
 #import "SHDWAboutListController.h"
-#import "../api/NSTask.h"
 
 @implementation SHDWAboutListController {
 	NSString* packageVersion;
 	NSString* latestVersion;
+	NSDictionary* versions;
 }
 
 - (NSArray *)specifiers {
@@ -15,16 +15,15 @@
 }
 
 - (NSString *)aboutBypassVersion:(id)sender {
-	return @BYPASS_VERSION;
+	return versions[@"bypass_version"];
 }
 
 - (NSString *)aboutAPIVersion:(id)sender {
-	return @API_VERSION;
+	return versions[@"api_version"];
 }
 
 - (NSString *)aboutBuildDate:(id)sender {
-	NSString* build = [NSString stringWithFormat:@"%@ %@", @__DATE__, @__TIME__];
-	return build;
+	return versions[@"build_date"];
 }
 
 - (NSString *)aboutSoftwareLicense:(id)sender {
@@ -39,11 +38,30 @@
 	if(packageVersion) {
 		return packageVersion;
 	}
+
+	NSString* dpkgPath = nil;
+	NSArray* dpkgPaths = @[
+        @"/usr/bin/dpkg-query",
+        @"/var/jb/usr/bin/dpkg-query",
+        @"/usr/local/bin/dpkg-query",
+        @"/var/jb/usr/local/bin/dpkg-query"
+    ];
+
+    for(NSString* path in dpkgPaths) {
+        if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            dpkgPath = path;
+            break;
+        }
+    }
 	
+	if(!dpkgPath) {
+		return @"unknown";
+	}
+
 	NSTask* task = [NSTask new];
 	NSPipe* stdoutPipe = [NSPipe new];
 
-	[task setLaunchPath:@"/usr/bin/dpkg-query"];
+	[task setLaunchPath:dpkgPath];
 	[task setArguments:@[@"-W", @"me.jjolano.shadow"]];
 	[task setStandardOutput:stdoutPipe];
 	[task launch];
@@ -92,8 +110,12 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
+		ShadowService* service = [ShadowService new];
+
 		packageVersion = nil;
 		latestVersion = nil;
+
+		versions = [service getVersions];
 	}
 
 	return self;
