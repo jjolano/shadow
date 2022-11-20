@@ -517,8 +517,8 @@
             @"/System/Library/LaunchDaemons/",
             @"/var/lib/",
             @"/var/cache/",
-            @"/User/",
-            @"/Library/"
+            @"/User/"
+            // @"/Library/"
         ];
 
         blacklist_name = @[
