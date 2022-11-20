@@ -243,8 +243,9 @@
 }
 
 - (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args {
-    NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args];
-    return result;
+    NSError* error = nil;
+    NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args error:&error];
+    return error ? nil : result;
 }
 
 - (NSString *)resolvePath:(NSString *)path {
