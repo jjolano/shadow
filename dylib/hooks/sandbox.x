@@ -4,6 +4,31 @@ void* (SecTaskCopyValueForEntitlement)(void* task, CFStringRef entitlement, CFEr
 void* (SecTaskCreateFromSelf)(CFAllocatorRef allocator);
 
 %group shadowhook_sandbox
+%hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
+    int ret = %orig;
+
+    if(pid == getpid()) {
+        if(ops == CS_OPS_STATUS) {
+            // (Un)set some flags
+            ret &= ~CS_PLATFORM_BINARY;
+            ret &= ~CS_GET_TASK_ALLOW;
+        }
+
+        if(ops == CS_OPS_CDHASH) {
+            // Hide CDHASH for trustcache checks
+            errno = EBADEXEC;
+            return -1;
+        }
+
+        if(ops == CS_OPS_MARKKILL) {
+            errno = EBADEXEC;
+            return -1;
+        }
+    }
+
+    return ret;
+}
+
 %hookf(kern_return_t, task_for_pid, task_port_t task, pid_t pid, task_port_t *target) {
     // Check if the app has this entitlement (likely not).
     CFErrorRef err = nil;
@@ -84,8 +109,26 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     return original_sandbox_check(pid, operation, type, data);
 }
 
+static int (*original_fcntl)(int fd, int cmd, ...);
+static int replaced_fcntl(int fd, int cmd, ...) {
+    void* arg;
+    va_list args;
+    va_start(args, cmd);
+    arg = va_arg(args, void*);
+    va_end(args);
+
+    if(cmd == F_ADDSIGS) {
+        // Prevent adding invalid code signatures.
+        errno = EINVAL;
+        return -1;
+    }
+
+    return arg ? original_fcntl(fd, cmd, arg) : original_fcntl(fd, cmd);
+}
+
 void shadowhook_sandbox(void) {
     %init(shadowhook_sandbox);
 
     MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
+    MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
 }

@@ -80,6 +80,27 @@
     return %orig;
 }
 
+%hookf(int, getfsstat, struct statfs *buf, int bufsize, int flags) {
+    int result = %orig;
+
+    if(result != -1 && buf) {
+        struct statfs* buf_ptr = buf;
+        struct statfs* buf_end = buf + sizeof(struct statfs) * result;
+
+        while(buf_ptr < buf_end) {
+            if([@(buf_ptr->f_mntonname) isEqualToString:@"/"]) {
+                // Mark rootfs read-only
+                buf_ptr->f_flags |= MNT_RDONLY;
+                break;
+            }
+
+            buf_ptr++;
+        }
+    }
+
+    return result;
+}
+
 %hookf(int, statfs, const char *pathname, struct statfs *buf) {
     int result = %orig;
 
@@ -528,6 +549,52 @@
 
     return %orig;
 }
+
+%hookf(long, pathconf, const char* pathname, int name) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(long, fpathconf, int fd, int name) {
+    // Get file descriptor path.
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) != -1) {
+        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
+
+%hookf(int, utimes, const char* pathname, const struct timeval times[2]) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return %orig;
+}
+
+%hookf(int, futimes, int fd, const struct timeval times[2]) {
+    // Get file descriptor path.
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) != -1) {
+        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return %orig;
+}
 %end
 
 %group shadowhook_libc_env
@@ -561,19 +628,6 @@
     }
 
     return %orig;
-}
-
-%hookf(int, csops, pid_t pid, unsigned int ops, void *useraddr, size_t usersize) {
-    int ret = %orig;
-
-    if(ops == CS_OPS_STATUS && pid == getpid()) {
-        // (Un)set some flags
-        ret &= ~CS_PLATFORM_BINARY;
-        ret &= ~CS_GET_TASK_ALLOW;
-        ret &= ~CS_INSTALLER;
-    }
-
-    return ret;
 }
 
 %hookf(int, sysctl, int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {

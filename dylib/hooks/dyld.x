@@ -230,18 +230,19 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
             // todo: rebuild/filter this array
             // NSMutableData* data = [NSMutableData data];
-            // const struct dyld_image_info* infoArray = dyld_info->infoArray;
+            // struct dyld_image_info* infoArray = [[NSMutableData dataWithBytes:dyld_info->infoArray length:(sizeof(struct dyld_image_info) * dyld_info->infoArrayCount)] mutableBytes];
+            // struct dyld_image_info* infoArrayEnd = infoArray + (sizeof(struct dyld_image_info) * dyld_info->infoArrayCount);
 
-            // for(uint32_t i = 0; i < dyld_info->infoArrayCount; i++) {
-            //     const struct dyld_image_info info = infoArray[i];
-
-            //     if(![_shadow isCPathRestricted:info.imageFilePath]) {
+            // while(infoArray < infoArrayEnd) {
+            //     if(![_shadow isCPathRestricted:infoArray->imageFilePath]) {
             //         // add to our filtered array
-            //         HBLogDebug(@"%@: %@: %s", @"task_info", @"adding", info.imageFilePath);
+            //         HBLogDebug(@"%@: %@: %s", @"task_info", @"adding", infoArray->imageFilePath);
 
-            //         NSMutableData* info_safe = [NSMutableData dataWithBytes:&info length:sizeof(struct dyld_image_info)];
+            //         NSMutableData* info_safe = [NSMutableData dataWithBytes:infoArray length:sizeof(struct dyld_image_info)];
             //         [data appendData:info_safe];
             //     }
+
+            //     infoArray++;
             // }
 
             // dyld_info->infoArray = [data bytes];
