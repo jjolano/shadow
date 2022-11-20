@@ -91,7 +91,7 @@
     return NO;
 }
 
-- (BOOL)isCallerTweak:(NSArray<NSNumber *>*)backtrace {
+- (BOOL)isCallerTweak:(NSArray *)backtrace {
     void* ret_addr = __builtin_return_address(1);
 
     if(ret_addr) {
@@ -158,7 +158,7 @@
         return NO;
     }
 
-    if(resolve) {
+    if(resolve && service) {
         path = [service resolvePath:path];
     } else {
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
@@ -221,7 +221,7 @@
     }
 
     // Check if path is restricted from ShadowService.
-    if([service isPathRestricted:path]) {
+    if(service && [service isPathRestricted:path]) {
         HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
@@ -263,10 +263,6 @@
     return NO;
 }
 
-- (void)setTweakCompat:(BOOL)enabled {
-    tweakCompat = enabled;
-}
-
 - (void)setTweakCompatExtra:(BOOL)enabled {
     tweakCompatExtra = enabled;
 }
@@ -291,7 +287,6 @@
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
-        tweakCompat = YES;
         tweakCompatExtra = NO;
         service = nil;
 

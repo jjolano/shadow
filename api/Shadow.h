@@ -13,7 +13,6 @@
 - (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve;
 - (BOOL)isURLRestricted:(NSURL *)url;
 
-- (void)setTweakCompat:(BOOL)enabled;
 - (void)setTweakCompatExtra:(BOOL)enabled;
 - (void)setService:(ShadowService *)_service;
 
