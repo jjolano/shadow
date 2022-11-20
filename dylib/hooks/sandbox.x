@@ -99,7 +99,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     if(operation) {
         NSString* op = @(operation);
 
-        if(data) {
+        if(op && data) {
             HBLogDebug(@"%@: %@: %s", @"sandbox_check", op, (const char *)data);
         } else {
             HBLogDebug(@"%@: %@", @"sandbox_check", op);
