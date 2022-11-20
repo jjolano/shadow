@@ -231,18 +231,24 @@
         }
     }
 
-    [center runServerOnCurrentThread];
+    if(center) {
+        [center runServerOnCurrentThread];
 
-    // Register messages.
-    [center registerForMessageName:@"getVersions" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-    [center registerForMessageName:@"isPathRestricted" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-    [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-    [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+        // Register messages.
+        [center registerForMessageName:@"getVersions" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+        [center registerForMessageName:@"isPathRestricted" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+        [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+        [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
 
-    rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
+        rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
+    }
 }
 
 - (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args {
+    if(!center) {
+        return nil;
+    }
+
     NSError* error = nil;
     NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args error:&error];
     return error ? nil : result;
