@@ -88,7 +88,6 @@ ShadowService* _srv = nil;
 		@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
 		@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"],
 		@"Hook_FakeMac" : prefs[@"Hook_FakeMac"],
-		@"Tweak_Compat" : prefs[@"Tweak_Compat"],
 		@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"],
 		@"Hook_Syscall" : prefs[@"Hook_Syscall"],
 		@"Hook_Sandbox" : prefs[@"Hook_Sandbox"]
@@ -111,12 +110,8 @@ ShadowService* _srv = nil;
 	_srv = [ShadowService new];
 	_shadow = [Shadow shadowWithService:_srv];
 
-	if(prefs_load[@"Tweak_Compat"]) {
-		[_shadow setTweakCompat:[prefs_load[@"Tweak_Compat"] boolValue]];
-
-		if(prefs_load[@"Tweak_CompatEx"]) {
-			[_shadow setTweakCompatExtra:[prefs_load[@"Tweak_CompatEx"] boolValue]];
-		}
+	if(prefs_load[@"Tweak_CompatEx"]) {
+		[_shadow setTweakCompatExtra:[prefs_load[@"Tweak_CompatEx"] boolValue]];
 	}
 
 	// Initialize hooks.

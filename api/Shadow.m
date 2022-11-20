@@ -5,7 +5,6 @@
     ShadowService* service;
     NSArray* schemes;
 
-    BOOL tweakCompat;
     BOOL tweakCompatExtra;
 
     NSArray* whitelist_root;
@@ -111,32 +110,30 @@
         }
     }
 
-    if(tweakCompat) {
-        bool skipped = false;
+    bool skipped = false;
 
-        for(NSNumber* sym_addr in backtrace) {
-            if(!skipped) {
-                // Skip the first entry
-                skipped = true;
-                continue;
-            }
+    for(NSNumber* sym_addr in backtrace) {
+        if(!skipped) {
+            // Skip the first entry
+            skipped = true;
+            continue;
+        }
 
-            void* ptr_addr = (void *)[sym_addr longLongValue];
+        void* ptr_addr = (void *)[sym_addr longLongValue];
 
-            // Lookup symbol
-            const char* image_path = dyld_image_path_containing_address(ptr_addr);
+        // Lookup symbol
+        const char* image_path = dyld_image_path_containing_address(ptr_addr);
 
-            if(image_path) {
-                NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-                
-                if([self isPathRestricted:image_name]) {
-                    if([image_name hasSuffix:@"Shadow.dylib"]) {
-                        // skip Shadow calls
-                        continue;
-                    }
-
-                    return YES;
+        if(image_path) {
+            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+            
+            if([self isPathRestricted:image_name]) {
+                if([image_name hasSuffix:@"Shadow.dylib"]) {
+                    // skip Shadow calls
+                    continue;
                 }
+
+                return YES;
             }
         }
     }
@@ -166,7 +163,7 @@
     } else {
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-        
+
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
