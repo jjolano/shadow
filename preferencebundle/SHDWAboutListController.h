@@ -4,8 +4,11 @@
 #import <Cephei/HBPreferences.h>
 #import <HBLog.h>
 
+#import "../apple_priv/NSTask.h"
+
 #import "../api/Shadow.h"
-#import "../api/ShadowXPC.h"
+#import "../api/ShadowService.h"
+
 
 @interface SHDWAboutListController : HBListController
 - (NSString *)aboutBypassVersion:(id)sender;

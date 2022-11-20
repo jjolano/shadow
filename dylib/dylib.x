@@ -1,13 +1,24 @@
 #import <HBLog.h>
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <Cephei/HBPreferences.h>
 
-#import "api/Shadow.h"
-#import "api/ShadowXPC.h"
+#import "../api/Shadow.h"
+#import "../api/ShadowService.h"
 #import "hooks/hooks.h"
 
 Shadow* _shadow = nil;
-ShadowXPC* _xpc = nil;
+ShadowService* _srv = nil;
+
+%group hook_springboard
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+
+	[_srv startService];
+}
+%end
+%end
 
 %ctor {
 	// Load preferences.
@@ -20,14 +31,9 @@ ShadowXPC* _xpc = nil;
 		@"Hook_DynamicLibraries" : @(YES),
 		@"Hook_URLScheme" : @(YES),
 		@"Hook_EnvVars" : @(YES),
-		@"Hook_FilesystemExtra" : @(YES),
-		@"Hook_CollectionClasses" : @(YES),
-		@"Hook_BundleClass" : @(YES),
-		@"Hook_StringClass" : @(YES),
-		@"Hook_URLClass" : @(YES),
-		@"Hook_DataClass" : @(YES),
-		@"Hook_ImageClass" : @(YES),
-		@"Hook_DeviceCheck" : @(NO),
+		@"Hook_FilesystemExtra" : @(NO),
+		@"Hook_Foundation" : @(NO),
+		@"Hook_DeviceCheck" : @(YES),
 		@"Hook_MachBootstrap" : @(NO),
 		@"Hook_SymLookup" : @(NO),
 		@"Hook_LowLevelC" : @(NO),
@@ -43,17 +49,18 @@ ShadowXPC* _xpc = nil;
 
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+	NSArray* args = [[NSProcessInfo processInfo] arguments];
+	NSString* _executablePath = nil;
+
+	if(args.count > 0) {
+		_executablePath = args[0];
+	}
 
 	// Injected into SpringBoard.
-	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-		// Create Shadow instance (with XPC methods).
-		_xpc = [ShadowXPC new];
+	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || (_executablePath && [[_executablePath lastPathComponent] isEqualToString:@"SpringBoard"])) {
+		_srv = [ShadowService new];
 
-		if(!_xpc) {
-			HBLogDebug(@"%@", @"failed to init Shadow");
-			return;
-		}
-
+		%init(hook_springboard);
 		HBLogDebug(@"%@", @"loaded into SpringBoard");
 		return;
 	}
@@ -72,12 +79,7 @@ ShadowXPC* _xpc = nil;
 		@"Hook_URLScheme" : prefs[@"Hook_URLScheme"],
 		@"Hook_EnvVars" : prefs[@"Hook_EnvVars"],
 		@"Hook_FilesystemExtra" : prefs[@"Hook_FilesystemExtra"],
-		@"Hook_CollectionClasses" : prefs[@"Hook_CollectionClasses"],
-		@"Hook_BundleClass" : prefs[@"Hook_BundleClass"],
-		@"Hook_StringClass" : prefs[@"Hook_StringClass"],
-		@"Hook_URLClass" : prefs[@"Hook_URLClass"],
-		@"Hook_DataClass" : prefs[@"Hook_DataClass"],
-		@"Hook_ImageClass" : prefs[@"Hook_ImageClass"],
+		@"Hook_Foundation" : prefs[@"Hook_Foundation"],
 		@"Hook_DeviceCheck" : prefs[@"Hook_DeviceCheck"],
 		@"Hook_MachBootstrap" : prefs[@"Hook_MachBootstrap"],
 		@"Hook_SymLookup" : prefs[@"Hook_SymLookup"],
@@ -106,12 +108,7 @@ ShadowXPC* _xpc = nil;
 	HBLogDebug(@"%@", @"tweak loaded in app");
 
 	// Initialize Shadow class.
-	_shadow = [Shadow new];
-
-	if(!_shadow) {
-		HBLogDebug(@"%@", @"failed to load Shadow");
-		return;
-	}
+	_shadow = [Shadow shadowWithService:[ShadowService new]];
 
 	if(prefs_load[@"Tweak_Compat"]) {
 		[_shadow setTweakCompat:[prefs_load[@"Tweak_Compat"] boolValue]];
@@ -122,6 +119,8 @@ ShadowXPC* _xpc = nil;
 	}
 
 	// Initialize hooks.
+	HBLogDebug(@"%@", @"starting hooks");
+
 	if(prefs_load[@"Hook_Filesystem"] && [prefs_load[@"Hook_Filesystem"] boolValue]) {
 		shadowhook_libc();
 		shadowhook_NSFileManager();
@@ -156,28 +155,13 @@ ShadowXPC* _xpc = nil;
 		shadowhook_NSFileWrapper();
 	}
 
-	if(prefs_load[@"Hook_CollectionClasses"] && [prefs_load[@"Hook_CollectionClasses"] boolValue]) {
+	if(prefs_load[@"Hook_Foundation"] && [prefs_load[@"Hook_Foundation"] boolValue]) {
 		shadowhook_NSArray();
 		shadowhook_NSDictionary();
-	}
-
-	if(prefs_load[@"Hook_BundleClass"] && [prefs_load[@"Hook_BundleClass"] boolValue]) {
 		shadowhook_NSBundle();
-	}
-
-	if(prefs_load[@"Hook_StringClass"] && [prefs_load[@"Hook_StringClass"] boolValue]) {
 		shadowhook_NSString();
-	}
-
-	if(prefs_load[@"Hook_URLClass"] && [prefs_load[@"Hook_URLClass"] boolValue]) {
 		shadowhook_NSURL();
-	}
-
-	if(prefs_load[@"Hook_DataClass"] && [prefs_load[@"Hook_DataClass"] boolValue]) {
 		shadowhook_NSData();
-	}
-
-	if(prefs_load[@"Hook_ImageClass"] && [prefs_load[@"Hook_ImageClass"] boolValue]) {
 		shadowhook_UIImage();
 	}
 
@@ -217,5 +201,5 @@ ShadowXPC* _xpc = nil;
 		shadowhook_sandbox();
 	}
 
-	HBLogDebug(@"%@", @"hooks initialized");
+	HBLogDebug(@"%@", @"completed hooks");
 }

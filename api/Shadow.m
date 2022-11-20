@@ -1,17 +1,9 @@
-#import <HBLog.h>
-#import <dlfcn.h>
-#import <pwd.h>
-
-#import <AppSupport/CPDistributedMessagingCenter.h>
-#import <rocketbootstrap/rocketbootstrap.h>
-
-#import "dyld_priv.h"
 #import "Shadow.h"
+#import "../apple_priv/dyld_priv.h"
 
 @implementation Shadow {
-    NSCache* responseCache;
+    ShadowService* service;
     NSArray* schemes;
-    CPDistributedMessagingCenter* center;
 
     BOOL tweakCompat;
     BOOL tweakCompatExtra;
@@ -26,9 +18,14 @@
     NSString* bundlePath;
     NSString* homePath;
     NSString* realHomePath;
+	NSString* executablePath;
 }
 
 - (BOOL)isPathSafe:(NSString *)path {
+    if(!path || ![path isAbsolutePath] || [path isEqualToString:@""]) {
+        return NO;
+    }
+
     // Handle /
     for(NSString* path_root in whitelist_root) {
         if([path isEqualToString:path_root]) {
@@ -104,6 +101,10 @@
         if(image_path) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
+            if([image_name isEqualToString:executablePath] || [image_name hasPrefix:bundlePath]) {
+                return NO;
+            }
+
             if([self isPathRestricted:image_name]) {
                 return YES;
             }
@@ -143,50 +144,6 @@
     return NO;
 }
 
-- (NSString *)resolvePath:(NSString *)path {
-    if(!path) {
-        return path;
-    }
-
-    if(center) {
-        NSDictionary* response = [center sendMessageAndReceiveReplyName:@"resolvePath" userInfo:@{
-            @"path" : path
-        }];
-
-        if(response) {
-            return response[@"path"];
-        }
-    } else {
-        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-
-        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([path hasPrefix:@"/var/tmp"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
-    }
-
-    return path;
-}
-
-- (BOOL)isPathSandbox:(NSString *)path {
-    if([path hasPrefix:bundlePath]
-    || ([path hasPrefix:homePath] && ![homePath isEqualToString:realHomePath])
-    || [path hasPrefix:@"/var/containers"]
-    || [path hasPrefix:@"/var/mobile/Containers"]) {
-        return YES;
-    }
-
-    return NO;
-}
-
 - (BOOL)isCPathRestricted:(const char *)path {
     if(path) {
         return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)]];
@@ -204,36 +161,29 @@
         return NO;
     }
 
-    // Process path string from XPC (since we have hooked methods)
     if(resolve) {
-        path = [self resolvePath:path];
+        path = [service resolvePath:path];
+    } else {
+        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+        
+        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
+
+        if([path hasPrefix:@"/var/tmp"]) {
+            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
     }
 
     if(![path isAbsolutePath]) {
         HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
-        // return YES;
     }
-
-    // if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-    //     [pathComponents removeObjectAtIndex:1];
-    //     path = [NSString pathWithComponents:pathComponents];
-    // }
-
-    // if([path hasPrefix:@"/var/tmp"]) {
-    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-    //     [pathComponents removeObjectAtIndex:1];
-    //     path = [NSString pathWithComponents:pathComponents];
-    // }
-
-    // if([path hasPrefix:@"/User"]) {
-    //     NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-    //     [pathComponents removeObjectAtIndex:1];
-    //     [pathComponents removeObjectAtIndex:0];
-
-    //     path = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
-    // }
 
     // Extra tweak compatibility
     if(tweakCompatExtra && [path hasPrefix:@"/Library/Application Support"]) {
@@ -242,67 +192,44 @@
 
     // Some quick whitelisting
     if([self isPathSafe:path]) {
-        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"allowing path", path);
         return NO;
     }
 
-    // Handle banned filenames
+    // Check if path is hard restricted
+    if([self isPathHardRestricted:path]) {
+        return YES;
+    }
+
     for(NSString* name in blacklist_name) {
         if([path containsString:name]) {
             return YES;
         }
     }
 
-    if([self isPathSandbox:path]) {
+    if([path hasPrefix:@"/var/containers"]
+    || [path hasPrefix:@"/var/mobile/Containers"]
+    || [path hasPrefix:@"/System"]) {
         return NO;
     }
 
-    // Check if path is hard restricted
-    if([self isPathHardRestricted:path]) {
-        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"hard restricted", path);
-        return YES;
-    }
-
-    if([path hasPrefix:@"/System"]) {
-        return NO;
-    }
-
-    if(!center) {
-        return NO;
-    }
-
-    // Check response cache for given path.
-    NSNumber* responseCachePath = [responseCache objectForKey:path];
-
-    if(responseCachePath) {
-        return [responseCachePath boolValue];
-    }
-    
     // Recurse call into parent directories.
     NSString* pathParent = [path stringByDeletingLastPathComponent];
-    BOOL isParentPathRestricted = [self isPathRestricted:pathParent resolve:NO];
+    
+    if(![pathParent isEqualToString:@"/"]) {
+        BOOL isParentPathRestricted = [self isPathRestricted:pathParent resolve:NO];
 
-    if(isParentPathRestricted) {
+        if(isParentPathRestricted) {
+            return YES;
+        }
+    }
+
+    // Check if path is restricted from ShadowService.
+    if([service isPathRestricted:path]) {
+        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
 
-    // Check if path is restricted using XPC.
-    NSDictionary* response = [center sendMessageAndReceiveReplyName:@"isPathRestricted" userInfo:@{
-        @"path" : path
-    }];
-
-    if(!response) {
-        return NO;
-    }
-
-    BOOL restricted = [response[@"restricted"] boolValue];
-
-    if(restricted) {
-        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
-    }
-
-    [responseCache setObject:@(restricted) forKey:path];
-    return restricted;
+    return NO;
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
@@ -316,8 +243,6 @@
         return NO;
     }
 
-    BOOL restricted = NO;
-
     if([url isFileURL]) {
         NSString *path = [url path];
 
@@ -329,14 +254,16 @@
             }
         }
 
-        restricted = [self isPathRestricted:path];
+        if([self isPathRestricted:path]) {
+            return YES;
+        }
     }
 
-    if(!restricted && [schemes containsObject:[url scheme]]) {
-        restricted = YES;
+    if([schemes containsObject:[url scheme]]) {
+        return YES;
     }
 
-    return restricted;
+    return NO;
 }
 
 - (void)setTweakCompat:(BOOL)enabled {
@@ -347,15 +274,35 @@
     tweakCompatExtra = enabled;
 }
 
+- (void)setService:(ShadowService *)_service {
+    service = _service;
+
+    NSDictionary* versions = [service getVersions];
+
+    if(versions) {
+        HBLogDebug(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
+        HBLogDebug(@"%@: %@", @"api version", versions[@"api_version"]);
+
+        schemes = [service getURLSchemes];
+        HBLogDebug(@"%@: %@", @"url schemes", schemes);
+    }
+}
+
 - (instancetype)init {
     if((self = [super init])) {
-        responseCache = [NSCache new];
         schemes = @[@"cydia", @"sileo", @"zbra", @"filza"];
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
         tweakCompat = YES;
         tweakCompatExtra = NO;
+        service = nil;
+
+        NSArray* args = [[NSProcessInfo processInfo] arguments];
+
+        if(args.count > 0) {
+            executablePath = args[0];
+        }
 
         if([bundlePath hasPrefix:@"/private/var"]) {
             NSMutableArray* pathComponents = [[bundlePath pathComponents] mutableCopy];
@@ -371,32 +318,9 @@
             homePath = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
         }
 
-        // Initialize connection to shadowd.
-        center = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
-
-        // Test communication to shadowd.
-        if(center) {
-            rocketbootstrap_distributedmessagingcenter_apply(center);
-
-            NSDictionary* response;
-            response = [center sendMessageAndReceiveReplyName:@"ping" userInfo:nil];
-
-            if(response) {
-                HBLogDebug(@"%@: %@", @"bypass version", [response objectForKey:@"bypass_version"]);
-                HBLogDebug(@"%@: %@", @"api version", [response objectForKey:@"api_version"]);
-
-                // Preload data from shadowd.
-                response = [center sendMessageAndReceiveReplyName:@"getURLSchemes" userInfo:nil];
-
-                if(response) {
-                    schemes = [response objectForKey:@"schemes"];
-                }
-            } else {
-                HBLogDebug(@"%@", @"failed to communicate with shadowd");
-            }
-        } else {
-            HBLogDebug(@"%@", @"failed to init shadowd");
-        }
+        HBLogDebug(@"%@: %@", @"bundlePath", bundlePath);
+        HBLogDebug(@"%@: %@", @"homePath", homePath);
+        HBLogDebug(@"%@: %@", @"realHomePath", realHomePath);
 
         whitelist_root = @[
             @"/.ba",
@@ -510,7 +434,8 @@
             @"/var/db/timezone",
             @"/usr/share/tokenizer",
             @"/bin/ps",
-            @"/bin/df"
+            @"/bin/df",
+            @"/usr/lib/system"
         ];
 
         blacklist_jb = @[
@@ -600,20 +525,22 @@
             @"/System/Library/LaunchDaemons/",
             @"/var/lib/",
             @"/var/cache/",
-            @"/User/"
+            @"/User/",
+            @"/Library/"
         ];
 
         blacklist_name = @[
-            @"LIAPP",
-            @"embedded.mobileprovision"
+            @"LIAPP"
+            // @"embedded.mobileprovision"
         ];
-
-        HBLogDebug(@"%@: %@", @"schemes", schemes);
-        HBLogDebug(@"%@: %@", @"bundlePath", bundlePath);
-        HBLogDebug(@"%@: %@", @"homePath", homePath);
-        HBLogDebug(@"%@: %@", @"realHomePath", realHomePath);
     }
 
     return self;
+}
+
++ (instancetype)shadowWithService:(ShadowService *)_service {
+    Shadow* shadow = [Shadow new];
+    [shadow setService:_service];
+    return shadow;
 }
 @end

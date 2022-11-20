@@ -3,18 +3,18 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 #import <rocketbootstrap/rocketbootstrap.h>
 
-#import "Shadow.h"
-#import "ShadowXPC.h"
-#import "NSTask.h"
+#import "ShadowService.h"
+#import "../apple_priv/NSTask.h"
 
-@implementation ShadowXPC {
+@implementation ShadowService {
     NSCache* responseCache;
     NSString* dpkgPath;
+    NSOperationQueue* opQueue;
     CPDistributedMessagingCenter* center;
 }
 
-- (BOOL)isPathRestricted:(NSString *)path {
-    if(!path || ![path isAbsolutePath] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+- (BOOL)isPathRestricted_internal:(NSString *)path {
+    if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
         return NO;
     }
 
@@ -24,13 +24,16 @@
     if(responseCachePath) {
         return [responseCachePath boolValue];
     }
-    
+
     // Recurse call into parent directories.
     NSString* pathParent = [path stringByDeletingLastPathComponent];
-    BOOL isParentPathRestricted = [self isPathRestricted:pathParent];
 
-    if(isParentPathRestricted) {
-        return YES;
+    if(![pathParent isEqualToString:@"/"]) {
+        BOOL isParentPathRestricted = [self isPathRestricted_internal:pathParent];
+
+        if(isParentPathRestricted) {
+            return YES;
+        }
     }
 
     BOOL restricted = NO;
@@ -51,42 +54,36 @@
         // Path found in dpkg database - exclude if base package is part of the package list.
         NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
         NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
-
-        NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
-        NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
+        NSArray* lines = [output componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 
         for(NSString* line in lines) {
-            NSArray<NSString *>* result = [line componentsSeparatedByString:@": "];
+            NSArray* line_split = [line componentsSeparatedByString:@": "];
 
-            if([result count] == 2) {
-                if([[result objectAtIndex:0] hasPrefix:@"local diversion"]) {
+            if([line_split count] == 2) {
+                NSString* line_packages = line_split[0];
+
+                if([line_packages hasPrefix:@"local diversion"]) {
                     continue;
                 }
 
-                NSArray<NSString *>* packages = [[result objectAtIndex:0] componentsSeparatedByString:@", "];
-                
-                restricted = YES;
+                NSString* line_path = line_split[1];
+                NSArray* line_packages_split = [line_packages componentsSeparatedByString:@", "];
 
-                BOOL exception = [packages containsObject:@"base"] || [packages containsObject:@"firmware-sbin"];
+                BOOL exception = [line_packages_split containsObject:@"base"] || [line_packages_split containsObject:@"firmware-sbin"];
 
-                if(!exception && [[path pathComponents] count] > 2) {
-                    NSArray<NSString *>* base_extra = @[
+                if(!exception) {
+                    NSArray* base_extra = @[
                         @"/Library/Application Support",
                         @"/usr/lib"
                     ];
 
-                    for(NSString* base_extra_path in base_extra) {
-                        if([base_extra_path isEqualToString:[result objectAtIndex:1]]) {
-                            exception = YES;
-                        }
+                    if([base_extra containsObject:line_path]) {
+                        exception = YES;
                     }
                 }
 
-                if(exception) {
-                    restricted = NO;
-                }
-
-                break;
+                restricted = !exception;
+                [responseCache setObject:@(restricted) forKey:line_path];
             }
         }
     }
@@ -95,8 +92,12 @@
     return restricted;
 }
 
-- (NSArray<NSString *>*)getURLSchemes {
-    NSMutableArray<NSString *>* schemes = [NSMutableArray new];
+- (NSArray*)getURLSchemes_internal {
+    if([responseCache objectForKey:@"schemes"]) {
+        return [responseCache objectForKey:@"schemes"];
+    }
+
+    NSMutableArray* schemes = [NSMutableArray new];
 
     NSTask* task = [NSTask new];
     NSPipe* stdoutPipe = [NSPipe new];
@@ -137,10 +138,16 @@
         }
     }
 
-    return [schemes copy];
+    NSArray* schemes_ret = [schemes copy];
+    [responseCache setObject:schemes_ret forKey:@"schemes"];
+    return schemes_ret;
 }
 
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
+    if(!name) {
+        return nil;
+    }
+
     NSDictionary* response = nil;
 
     if([name isEqualToString:@"resolvePath"]) {
@@ -155,7 +162,7 @@
         }
 
         // Resolve and standardize path.
-        NSString* path = [rawPath stringByStandardizingPath];
+        NSString* path = [[rawPath stringByExpandingTildeInPath] stringByStandardizingPath];
 
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
@@ -188,6 +195,73 @@
             return nil;
         }
 
+        if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            return nil;
+        }
+
+        HBLogDebug(@"%@: %@", name, path);
+        
+        // Check if path is restricted.
+        BOOL restricted = [self isPathRestricted_internal:path];
+
+        response = @{
+            @"restricted" : @(restricted)
+        };
+    } else if([name isEqualToString:@"getURLSchemes"]) {
+        response = @{
+            @"schemes" : [self getURLSchemes_internal]
+        };
+    }
+
+    return response;
+}
+
+- (void)startService {
+    NSArray* dpkgPaths = @[
+        @"/usr/bin/dpkg-query",
+        @"/var/jb/usr/bin/dpkg-query",
+        @"/usr/local/bin/dpkg-query",
+        @"/var/jb/usr/local/bin/dpkg-query"
+    ];
+
+    for(NSString* path in dpkgPaths) {
+        if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            dpkgPath = path;
+            break;
+        }
+    }
+
+    [center runServerOnCurrentThread];
+
+    // Register messages.
+    [center registerForMessageName:@"getVersions" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+    [center registerForMessageName:@"isPathRestricted" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+    [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+    [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
+
+    rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
+}
+
+- (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args {
+    NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args];
+    return result;
+}
+
+- (NSString *)resolvePath:(NSString *)path {
+    if(!path) {
+        return nil;
+    }
+
+    NSDictionary* response = [self sendIPC:@"resolvePath" withArgs:@{
+        @"path" : path
+    }];
+
+    if(response) {
+        path = response[@"path"];
+    } else {
+        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
             [pathComponents removeObjectAtIndex:1];
@@ -199,90 +273,59 @@
             [pathComponents removeObjectAtIndex:1];
             path = [NSString pathWithComponents:pathComponents];
         }
-
-        HBLogDebug(@"%@: %@", name, path);
-
-        if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            return nil;
-        }
-
-        BOOL restricted = NO;
-        
-        // Check if path is restricted.
-        if(!restricted) {
-            restricted = [self isPathRestricted:path];
-        }
-
-        response = @{
-            @"restricted" : @(restricted)
-        };
-    } else if([name isEqualToString:@"getURLSchemes"]) {
-        HBLogDebug(@"%@: %@", name, @"list requested");
-
-        NSArray<NSString *>* schemes = [responseCache objectForKey:@"schemes"];
-
-        if(!schemes) {
-            schemes = [self getURLSchemes];
-            [responseCache setObject:schemes forKey:@"schemes"];
-        }
-
-        response = @{
-            @"schemes" : schemes
-        };
-    } else if([name isEqualToString:@"ping"]) {
-        HBLogDebug(@"%@: %@", name, @"received ping");
-
-        response = @{
-            @"ping" : @"pong",
-            @"bypass_version" : @BYPASS_VERSION,
-            @"api_version" : @API_VERSION
-        };
     }
 
-    return response;
+    return path;
+}
+
+- (BOOL)isPathRestricted:(NSString *)path {
+    if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+        return NO;
+    }
+
+    NSNumber* response_cached = [responseCache objectForKey:path];
+
+    if(response_cached) {
+        return [response_cached boolValue];
+    }
+
+    NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{
+        @"path" : path
+    }];
+
+    if(response) {
+        [responseCache setObject:response[@"restricted"] forKey:path];
+        return [response[@"restricted"] boolValue];
+    }
+
+    return NO;
+}
+
+- (NSArray*)getURLSchemes {
+    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil];
+
+    if(response) {
+        return response[@"schemes"];
+    }
+
+    return @[@"cydia", @"sileo", @"zbra", @"filza"];
+}
+
+- (NSDictionary *)getVersions {
+    return @{
+        @"build_date" : [NSString stringWithFormat:@"%@ %@", @__DATE__, @__TIME__],
+        @"bypass_version" : @BYPASS_VERSION,
+        @"api_version" : @API_VERSION
+    };
 }
 
 - (instancetype)init {
     if((self = [super init])) {
         responseCache = [NSCache new];
-        dpkgPath = [[NSFileManager defaultManager] fileExistsAtPath:@"/usr/bin/dpkg-query"] ? @"/usr/bin/dpkg-query" : nil;
+        opQueue = [NSOperationQueue new];
 
-        // Start shadowd.
-		center = [CPDistributedMessagingCenter centerNamed:@"me.jjolano.shadow"];
-
-        if(center) {
-            rocketbootstrap_distributedmessagingcenter_apply(center);
-            [center runServerOnCurrentThread];
-
-            // Register messages.
-            [center registerForMessageName:@"ping" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-            [center registerForMessageName:@"isPathRestricted" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-            [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-            [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-
-            // Unlock shadowd service.
-            rocketbootstrap_unlock("me.jjolano.shadow");
-        } else {
-            return nil;
-        }
-
-        // Find dpkg if not at the usual place.
-        if(!dpkgPath) {
-            NSArray* dpkgPaths = @[
-                @"/bin/dpkg-query",
-                @"/usr/local/bin/dpkg-query",
-                @"/var/jb/usr/bin/dpkg-query",
-                @"/var/jb/usr/local/bin/dpkg-query",
-                @"/var/jb/bin/dpkg-query"
-            ];
-
-            for(NSString* path in dpkgPaths) {
-                if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-                    dpkgPath = path;
-                    break;
-                }
-            }
-        }
+        center = [CPDistributedMessagingCenter centerNamed:@CPDMC_SERVICE_NAME];
+        rocketbootstrap_distributedmessagingcenter_apply(center);
     }
 
     return self;

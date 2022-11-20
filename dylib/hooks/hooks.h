@@ -1,4 +1,5 @@
-#import "../api/Shadow.h"
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 #import <stdio.h>
 #import <sys/stat.h>
@@ -14,17 +15,21 @@
 #import <dlfcn.h>
 #import <dirent.h>
 #import <sys/sysctl.h>
-#import <HBLog.h>
 #import <mach/mach.h>
 #import <mach/task_info.h>
+#import <mach/mach_traps.h>
+#import <mach/host_special_ports.h>
+#import <sandbox.h>
 #import <bootstrap.h>
 #import <spawn.h>
-#import <Foundation/Foundation.h>
+
+#import "../../api/Shadow.h"
+#import <HBLog.h>
 
 // private symbols
-#import "../api/dyld_priv.h"
-#import "codesign.h"
-#import "ptrace.h"
+#import "../../apple_priv/dyld_priv.h"
+#import "../../apple_priv/codesign.h"
+#import "../../apple_priv/ptrace.h"
 
 extern Shadow* _shadow;
 

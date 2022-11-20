@@ -1,10 +1,5 @@
 #import "hooks.h"
 
-#import <mach/mach_traps.h>
-#import <mach/host_special_ports.h>
-
-#import <sandbox.h>
-
 void* (SecTaskCopyValueForEntitlement)(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
 void* (SecTaskCreateFromSelf)(CFAllocatorRef allocator);
 

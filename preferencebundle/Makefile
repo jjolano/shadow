@@ -5,11 +5,13 @@ include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = ShadowSettings
 
-ShadowSettings_FILES = $(wildcard *.m)
+ShadowAPI = $(wildcard ../api/*.m)
+
+ShadowSettings_FILES = $(wildcard *.m) $(ShadowAPI)
 ShadowSettings_FRAMEWORKS = UIKit
 ShadowSettings_EXTRA_FRAMEWORKS = Cephei CepheiPrefs AltList
-ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
+ShadowSettings_PRIVATE_FRAMEWORKS = Preferences AppSupport
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
-ShadowSettings_CFLAGS = -fobjc-arc
+ShadowSettings_CFLAGS = -fobjc-arc -DTHEOS_LEAN_AND_MEAN
 
 include $(THEOS_MAKE_PATH)/bundle.mk
