@@ -108,7 +108,8 @@ ShadowService* _srv = nil;
 	HBLogDebug(@"%@", @"tweak loaded in app");
 
 	// Initialize Shadow class.
-	_shadow = [Shadow shadowWithService:[ShadowService new]];
+	_srv = [ShadowService new];
+	_shadow = [Shadow shadowWithService:_srv];
 
 	if(prefs_load[@"Tweak_Compat"]) {
 		[_shadow setTweakCompat:[prefs_load[@"Tweak_Compat"] boolValue]];
