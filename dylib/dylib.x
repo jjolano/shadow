@@ -10,7 +10,17 @@
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
 
-HBPreferences* getPreferences(void) {
+%group hook_springboard
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+
+	[_srv startService];
+}
+%end
+%end
+
+%ctor {
 	// Load preferences.
 	HBPreferences* prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
 
@@ -36,22 +46,6 @@ HBPreferences* getPreferences(void) {
 		@"Hook_Syscall" : @(NO),
 		@"Hook_Sandbox" : @(NO)
 	}];
-
-	return prefs;
-}
-
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-
-	[_srv startService];
-}
-%end
-%end
-
-%ctor {
-	HBPreferences* prefs = getPreferences();
 
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
