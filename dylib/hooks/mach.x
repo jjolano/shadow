@@ -29,6 +29,7 @@
         || [name hasPrefix:@"lh:"]
         || [name hasPrefix:@"rbs:"]
         || [name hasPrefix:@"org.coolstar"]
+        || [name hasPrefix:@"com.ex"]
         || [name hasPrefix:@"com.saurik"]){
             return BOOTSTRAP_UNKNOWN_SERVICE;
         }

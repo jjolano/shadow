@@ -605,6 +605,7 @@
         if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
         || [env isEqualToString:@"_MSSafeMode"]
         || [env isEqualToString:@"_SafeMode"]
+        || [env isEqualToString:@"_SubstituteSafeMode"]
         || [env isEqualToString:@"SHELL"]) {
             return NULL;
         }
