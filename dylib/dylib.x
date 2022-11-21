@@ -10,17 +10,7 @@
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
 
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-
-	[_srv startService];
-}
-%end
-%end
-
-%ctor {
+HBPreferences* getPreferences(void) {
 	// Load preferences.
 	HBPreferences* prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
 
@@ -47,11 +37,29 @@ ShadowService* _srv = nil;
 		@"Hook_Sandbox" : @(NO)
 	}];
 
+	return prefs;
+}
+
+%group hook_springboard
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(UIApplication *)application {
+    %orig;
+
+	[_srv startService];
+}
+%end
+%end
+
+%ctor {
+	HBPreferences* prefs = getPreferences();
+
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+	NSString* executablePath = [[NSBundle mainBundle] executablePath];
+	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
 
 	// Injected into SpringBoard.
-	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
 		_srv = [ShadowService new];
 
 		%init(hook_springboard);
@@ -61,8 +69,10 @@ ShadowService* _srv = nil;
 
 	// Only load Shadow for sandboxed applications.
 	// Don't load for App Extensions (.. unless developers are adding detection in those too :/)
-	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
-	if([bundlePath hasPrefix:@"/Applications"] || [bundlePath hasSuffix:@".appex"]) {
+	if(![[NSBundle mainBundle] appStoreReceiptURL]
+	|| [executablePath hasPrefix:@"/Applications"]
+	|| [executablePath hasPrefix:@"/System"]
+	|| [bundlePath hasSuffix:@".appex"]) {
 		return;
 	}
 

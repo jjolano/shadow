@@ -16,6 +16,7 @@
         [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
         [filtered_result removeObjectForKey:@"_MSSafeMode"];
         [filtered_result removeObjectForKey:@"_SafeMode"];
+        [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
         [filtered_result removeObjectForKey:@"SHELL"];
 
         // struct utsname systemInfo;

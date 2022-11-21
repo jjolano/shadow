@@ -208,6 +208,10 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 // }
 
 %hookf(kern_return_t, task_info, task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt) {
+    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return %orig;
+    }
+    
     if(flavor == TASK_DYLD_INFO) {
         kern_return_t result = %orig;
 

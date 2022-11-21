@@ -373,6 +373,7 @@
         whitelist_safe = @[
             @"/var/mobile/Library/Preferences/.GlobalPreferences.plist",
             @"/var/mobile/Library/Preferences/com.apple",
+            @"/var/mobile/Library/Preferences/UITextInputContextIdentifiers.plist",
             @"/var/mobile/Library/Preferences/Wallpaper.png",
             @"/var/mobile/Library/Caches/com.apple",
             @"/var/mobile/Library/Caches/.com.apple",
@@ -467,6 +468,7 @@
             @"/var/mobile/Library/Cydia",
             @"/var/mobile/Library/Logs/Cydia",
             @"/var/mobile/Library/Sileo",
+            @"/var/mobile/Library/.safeMode",
             @"/var/root/.",
             @"/Applications/Cydia.app",
             @"/Applications/Sileo.app",
