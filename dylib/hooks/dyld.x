@@ -49,7 +49,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         return image_index < _shdw_dyld_image_count ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
     }
 
-    const char* result = %orig(image_index);
+    const char* result = %orig;
 
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
@@ -57,7 +57,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         HBLogDebug(@"%@: %@: %@", @"dyld", @"_dyld_get_image_name", image_name);
 
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return "";
+            return "/usr/lib/system/libsystem_c.dylib";
         }
     }
 
@@ -138,6 +138,10 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
                     // return the lookup for the original method
                     return %orig(dlsym(RTLD_DEFAULT, [[sym stringByReplacingOccurrencesOfString:@"_logos_method" withString:@"_logos_orig"] UTF8String]), info);
                 }
+
+                if([sym isEqualToString:@"__dso_handle"]) {
+                    return %orig(dlsym(RTLD_DEFAULT, "__dso_handle"), info);
+                }
             }
 
             memset(info, 0, sizeof(Dl_info));
@@ -205,17 +209,17 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
     [_shdw_dyld_remove_image addObject:@((unsigned long)func)];
 }
 
-%hookf(bool, dyld_process_is_restricted) {
-    return true;
-}
+// %hookf(bool, dyld_process_is_restricted) {
+//     return true;
+// }
 
-%hookf(bool, dyld_shared_cache_some_image_overridden) {
-    return false;
-}
+// %hookf(bool, dyld_shared_cache_some_image_overridden) {
+//     return false;
+// }
 
-%hookf(bool, dyld_has_inserted_or_interposing_libraries) {
-    return false;
-}
+// %hookf(bool, dyld_has_inserted_or_interposing_libraries) {
+//     return false;
+// }
 
 %hookf(kern_return_t, task_info, task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt) {
     if(flavor == TASK_DYLD_INFO) {

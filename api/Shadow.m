@@ -160,26 +160,26 @@
 
     if(resolve && service) {
         path = [service resolvePath:path];
-    } else {
-        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-
-        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([path hasPrefix:@"/var/tmp"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
     }
 
     if(![path isAbsolutePath]) {
         HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+    }
+
+    path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+    path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+
+    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+        [pathComponents removeObjectAtIndex:1];
+        path = [NSString pathWithComponents:pathComponents];
+    }
+
+    if([path hasPrefix:@"/var/tmp"]) {
+        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+        [pathComponents removeObjectAtIndex:1];
+        path = [NSString pathWithComponents:pathComponents];
     }
 
     // Extra tweak compatibility
