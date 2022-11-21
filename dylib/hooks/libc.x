@@ -664,11 +664,6 @@
 %hookf(pid_t, getppid) {
     return 1;
 }
-
-%hookf(int, isatty, int fd) {
-    errno = ENOTTY;
-    return 0;
-}
 %end
 
 static int (*original_open)(const char *pathname, int oflag, ...);

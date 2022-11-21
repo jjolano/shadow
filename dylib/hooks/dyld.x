@@ -1,7 +1,5 @@
 #import "hooks.h"
 
-BOOL _shdw_dlerror = NO;
-uint32_t _shdw_dyld_image_count = 0;
 NSMutableArray* _shdw_dyld_collection = nil;
 NSMutableArray* _shdw_dyld_add_image = nil;
 NSMutableArray* _shdw_dyld_remove_image = nil;
@@ -18,35 +16,36 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 // }
 
 %hookf(uint32_t, _dyld_image_count) {
-    if(_shdw_dyld_image_count > 0) {
-        return _shdw_dyld_image_count;
+    if(_shdw_dyld_collection) {
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        return [_dyld_collection count];
     }
 
     return %orig;
 }
 
 %hookf(const struct mach_header *, _dyld_get_image_header, uint32_t image_index) {
-    if(_shdw_dyld_image_count > 0) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < _shdw_dyld_image_count ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
+        return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
     }
 
     return %orig;
 }
 
 %hookf(intptr_t, _dyld_get_image_vmaddr_slide, uint32_t image_index) {
-    if(_shdw_dyld_image_count > 0) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < _shdw_dyld_image_count ? (intptr_t)[_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
+        return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
     }
     
     return %orig;
 }
 
 %hookf(const char *, _dyld_get_image_name, uint32_t image_index) {
-    if(_shdw_dyld_image_count > 0) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < _shdw_dyld_image_count ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+        return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
     }
 
     const char* result = %orig;
@@ -59,17 +58,6 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             return "/usr/lib/system/libsystem_c.dylib";
         }
-    }
-
-    return result;
-}
-
-%hookf(char *, dlerror) {
-    char* result = %orig;
-
-    if(result && _shdw_dlerror && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        _shdw_dlerror = NO;
-        return "error";
     }
 
     return result;
@@ -91,8 +79,6 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         }
 
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            _shdw_dlerror = YES;
-
             if(handle) {
                 dlclose(handle);
             }
@@ -186,7 +172,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
     [_shdw_dyld_add_image addObject:@((unsigned long)func)];
 
     // do initial call
-    if(_shdw_dyld_image_count > 0) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
 
         for(NSDictionary* dylib in _dyld_collection) {
@@ -316,12 +302,11 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
 
         [_shdw_dyld_collection addObject:dylib];
-        _shdw_dyld_image_count = [_shdw_dyld_collection count];
     }
 }
 
 void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide) {
-    if(_shdw_dyld_image_count > 0) {
+    if(_shdw_dyld_collection) {
         // Check if we already have this lib.
         // If not, do nothing
         NSDictionary* dylibToRemove = nil;
@@ -339,7 +324,6 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
         if(dylibToRemove) {
             [_shdw_dyld_collection removeObject:dylibToRemove];
-            _shdw_dyld_image_count = [_shdw_dyld_collection count];
         }
     }
 }
