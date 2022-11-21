@@ -17,7 +17,6 @@
     NSString* bundlePath;
     NSString* homePath;
     NSString* realHomePath;
-	NSString* executablePath;
 }
 
 - (BOOL)isPathSafe:(NSString *)path {
@@ -100,7 +99,7 @@
         if(image_path) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
-            if([image_name isEqualToString:executablePath] || [image_name hasPrefix:bundlePath]) {
+            if([image_name hasPrefix:bundlePath]) {
                 return NO;
             }
 
@@ -289,12 +288,6 @@
         realHomePath = @(getpwuid(getuid())->pw_dir);
         tweakCompatExtra = NO;
         service = nil;
-
-        NSArray* args = [[NSProcessInfo processInfo] arguments];
-
-        if(args.count > 0) {
-            executablePath = args[0];
-        }
 
         if([bundlePath hasPrefix:@"/private/var"]) {
             NSMutableArray* pathComponents = [[bundlePath pathComponents] mutableCopy];
