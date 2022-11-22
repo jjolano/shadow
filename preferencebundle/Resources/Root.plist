@@ -34,6 +34,30 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
+			<string>Enables Shadow's unsandboxed service. Highly recommended, but may cause issues if RocketBootstrap functionality is unavailable. Respring is required to apply changes to this setting.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Global_Service</string>
+			<key>id</key>
+			<string>Global_Service</string>
+			<key>label</key>
+			<string>Enable Shadow Service</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
 			<string>Adjust the strength of the jailbreak detection bypass. App performance may be affected.</string>
 		</dict>
 		<dict>
