@@ -16,6 +16,18 @@ ShadowService* _srv = nil;
     %orig;
 
 	[_srv startService];
+	HBLogDebug(@"%@", @"started ShadowService");
+
+	[[NSOperationQueue new] addOperationWithBlock:^(){
+		NSDictionary* db = [_srv generateDatabase];
+
+		// Save this database to filesystem
+		if([db writeToFile:@LOCAL_SERVICE_DB atomically:NO]) {
+			HBLogDebug(@"%@", @"successfully saved generated db");
+		} else {
+			HBLogDebug(@"%@", @"failed to save generate db");
+		}
+	}];
 }
 %end
 %end
@@ -27,6 +39,8 @@ ShadowService* _srv = nil;
 	// Register default preferences.
 	[prefs registerDefaults:@{
 		@"Global_Enabled" : @(NO),
+		@"Use_LocalService" : @(NO),
+		@"Tweak_CompatEx" : @(NO),
 		@"Hook_Filesystem" : @(YES),
 		@"Hook_DynamicLibraries" : @(YES),
 		@"Hook_URLScheme" : @(YES),
@@ -41,8 +55,6 @@ ShadowService* _srv = nil;
 		@"Hook_DynamicLibrariesExtra" : @(NO),
 		@"Hook_ObjCRuntime" : @(NO),
 		@"Hook_FakeMac" : @(NO),
-		@"Tweak_Compat" : @(YES),
-		@"Tweak_CompatEx" : @(NO),
 		@"Hook_Syscall" : @(NO),
 		@"Hook_Sandbox" : @(NO)
 	}];
@@ -85,6 +97,8 @@ ShadowService* _srv = nil;
 	if(!prefs_load) {
 		enabled = [prefs[@"Global_Enabled"] boolValue];
 		prefs_load = @{
+			@"Use_LocalService" : prefs[@"Use_LocalService"],
+			@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"],
 			@"Hook_Filesystem" : prefs[@"Hook_Filesystem"],
 			@"Hook_DynamicLibraries" : prefs[@"Hook_DynamicLibraries"],
 			@"Hook_URLScheme" : prefs[@"Hook_URLScheme"],
@@ -99,7 +113,6 @@ ShadowService* _srv = nil;
 			@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
 			@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"],
 			@"Hook_FakeMac" : prefs[@"Hook_FakeMac"],
-			@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"],
 			@"Hook_Syscall" : prefs[@"Hook_Syscall"],
 			@"Hook_Sandbox" : prefs[@"Hook_Sandbox"]
 		};
@@ -113,6 +126,15 @@ ShadowService* _srv = nil;
 
 	// Initialize Shadow class.
 	_srv = [ShadowService new];
+
+	BOOL LocalShadowService = prefs_load[@"Use_LocalService"] && [prefs_load[@"Use_LocalService"] boolValue];
+
+	if(LocalShadowService) {
+		[_srv startLocalService];
+	} else {
+		[_srv connectService];
+	}
+
 	_shadow = [Shadow shadowWithService:_srv];
 
 	if(prefs_load[@"Tweak_CompatEx"]) {

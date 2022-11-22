@@ -128,6 +128,12 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
                 if([sym isEqualToString:@"__dso_handle"]) {
                     return %orig(dlsym(RTLD_DEFAULT, "__dso_handle"), info);
                 }
+
+                void* orig_addr = dlsym(RTLD_DEFAULT, [[@"original_" stringByAppendingString:sym] UTF8String]);
+
+                if(orig_addr) {
+                    return %orig(orig_addr, info);
+                }
             }
 
             memset(info, 0, sizeof(Dl_info));
@@ -211,7 +217,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
     if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         return %orig;
     }
-    
+
     if(flavor == TASK_DYLD_INFO) {
         kern_return_t result = %orig;
 

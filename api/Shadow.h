@@ -14,7 +14,6 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 
 - (void)setTweakCompatExtra:(BOOL)enabled;
-- (void)setService:(ShadowService *)_service;
 
 + (instancetype)shadowWithService:(ShadowService *)_service;
 @end

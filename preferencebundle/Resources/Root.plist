@@ -48,7 +48,7 @@
 			<key>isController</key>
 			<true/>
 			<key>label</key>
-			<string>Customize Hooks (Advanced)</string>
+			<string>Bypass Settings</string>
 		</dict>
 		<dict>
 			<key>cell</key>
