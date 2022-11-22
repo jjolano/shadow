@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Performs all processing within sandboxed apps rather than delegating to Shadow Service. Improves performance at the risk of specific detection methods. Setting has no effect if Shadow Service is disabled.</string>
+			<string>Performs all processing within sandboxed apps rather than delegating to Shadow Service. Improves performance at the risk of specific detection methods. Setting is forced on if Shadow Service is disabled.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
