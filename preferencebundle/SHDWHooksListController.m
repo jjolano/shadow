@@ -7,7 +7,7 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
-		[self setTitle:@"Hooks"];
+		[self setTitle:@"Bypass Settings"];
 	}
 
 	return _specifiers;

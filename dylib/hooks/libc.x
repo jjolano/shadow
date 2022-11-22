@@ -414,7 +414,7 @@
 }
 
 %hookf(char *, realpath, const char *pathname, char *resolved_path) {
-    if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]] && ([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path])) {
         errno = ENOENT;
         return NULL;
     }

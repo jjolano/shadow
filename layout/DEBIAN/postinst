@@ -1,0 +1,3 @@
+#!/bin/sh
+chown mobile:mobile /Library/Shadow/db.plist
+chmod 0644 /Library/Shadow/db.plist
