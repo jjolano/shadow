@@ -15,9 +15,6 @@ ShadowService* _srv = nil;
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-	[_srv startService];
-	HBLogDebug(@"%@", @"started ShadowService");
-
 	[[NSOperationQueue new] addOperationWithBlock:^(){
 		NSDictionary* db = [_srv generateDatabase];
 
@@ -39,6 +36,7 @@ ShadowService* _srv = nil;
 	// Register default preferences.
 	[prefs registerDefaults:@{
 		@"Global_Enabled" : @(NO),
+		@"Global_Service" : @(NO),
 		@"Use_LocalService" : @(NO),
 		@"Tweak_CompatEx" : @(NO),
 		@"Hook_Filesystem" : @(YES),
@@ -67,6 +65,11 @@ ShadowService* _srv = nil;
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
 		_srv = [ShadowService new];
+
+		if(prefs[@"Global_Service"] && [prefs[@"Global_Service"] boolValue]) {
+			[_srv startService];
+			HBLogDebug(@"%@", @"started ShadowService");
+		}
 
 		%init(hook_springboard);
 		HBLogDebug(@"%@", @"loaded into SpringBoard");
@@ -129,7 +132,7 @@ ShadowService* _srv = nil;
 
 	BOOL LocalShadowService = prefs_load[@"Use_LocalService"] && [prefs_load[@"Use_LocalService"] boolValue];
 
-	if(LocalShadowService) {
+	if(LocalShadowService || !prefs[@"Global_Service"] || ![prefs[@"Global_Service"] boolValue]) {
 		[_srv startLocalService];
 	} else {
 		[_srv connectService];
