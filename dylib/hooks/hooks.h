@@ -23,9 +23,11 @@
 #import <sandbox.h>
 #import <bootstrap.h>
 #import <spawn.h>
+#import <objc/runtime.h>
 
 #import "../../api/Shadow.h"
 #import <HBLog.h>
+#import <substrate.h>
 
 // private symbols
 #import "../../apple_priv/dyld_priv.h"

@@ -1,7 +1,7 @@
 #import "SHDWHooksListController.h"
 
 @implementation SHDWHooksListController {
-	HBPreferences* prefs;
+	NSUserDefaults* prefs;
 }
 
 - (NSArray *)specifiers {
@@ -19,11 +19,12 @@
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
 	[prefs setObject:value forKey:[specifier identifier]];
+	[prefs synchronize];
 }
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+		prefs = [ShadowService getPreferences];
 	}
 
 	return self;

@@ -1,7 +1,7 @@
 #import "SHDWAppListController.h"
 
 @implementation SHDWAppListController {
-	HBPreferences* prefs;
+	NSUserDefaults* prefs;
 }
 
 - (NSArray *)specifiers {
@@ -14,27 +14,32 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	if(prefs[[self applicationID]]) {
-		return @([prefs[[self applicationID]][[specifier identifier]] boolValue]);
+	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
+
+	if(prefs_app) {
+		NSNumber* value = prefs_app[[specifier identifier]];
+		return @(value && [value boolValue]);
 	}
 
 	return @(NO);
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	if(!prefs[[self applicationID]]) {
-		prefs[[self applicationID]] = [NSMutableDictionary new];
+	NSMutableDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]] ? [[prefs dictionaryForKey:[self applicationID]] mutableCopy] : nil;
+
+	if(!prefs_app) {
+		prefs_app = [NSMutableDictionary new];
 	}
 
-	NSMutableDictionary* prefs_app = [NSMutableDictionary dictionaryWithDictionary:prefs[[self applicationID]]];
 	prefs_app[[specifier identifier]] = value;
 
 	[prefs setObject:[prefs_app copy] forKey:[self applicationID]];
+	[prefs synchronize];
 }
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+		prefs = [ShadowService getPreferences];
 	}
 
 	return self;

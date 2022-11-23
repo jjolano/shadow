@@ -1,12 +1,12 @@
 #import <Foundation/Foundation.h>
 #import <Preferences/PSSpecifier.h>
 #import <Preferences/PSListController.h>
-#import <CepheiPrefs/HBRootListController.h>
-#import <Cephei/HBPreferences.h>
-#import <Cephei/HBRespringController.h>
-#import <HBLog.h>
+#import <spawn.h>
 
-@interface SHDWRootListController : HBRootListController
+#import <HBLog.h>
+#import "../api/ShadowService.h"
+
+@interface SHDWRootListController : PSListController
 - (id)readPreferenceValue:(PSSpecifier *)specifier;
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier;
 - (void)respring:(id)sender;

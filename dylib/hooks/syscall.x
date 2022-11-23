@@ -1,4 +1,3 @@
-#import <substrate.h>
 #import "hooks.h"
 
 static int (*original_syscall)(int number, ...);

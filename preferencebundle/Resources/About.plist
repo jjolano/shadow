@@ -82,23 +82,27 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>cellClass</key>
-			<string>HBLinkTableCell</string>
+			<string>PSButtonCell</string>
+			<key>key</key>
+			<string>Btn_GitHub</string>
+			<key>id</key>
+			<string>Btn_GitHub</string>
+			<key>action</key>
+			<string>openGitHub:</string>
 			<key>label</key>
-			<string>Shadow (GitHub)</string>
-			<key>url</key>
-			<string>https://github.com/jjolano/shadow</string>
+			<string>Visit Shadow on GitHub</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>cellClass</key>
-			<string>HBLinkTableCell</string>
+			<string>PSButtonCell</string>
+			<key>key</key>
+			<string>Btn_Kofi</string>
+			<key>id</key>
+			<string>Btn_Kofi</string>
+			<key>action</key>
+			<string>openKofi:</string>
 			<key>label</key>
-			<string>Buy me a Coffee (Ko-fi)</string>
-			<key>url</key>
-			<string>https://ko-fi.com/jjolano</string>
+			<string>Send a Tip with Ko-fi</string>
 		</dict>
 	</array>
 	<key>title</key>

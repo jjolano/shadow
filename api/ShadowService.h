@@ -1,8 +1,9 @@
 #import <Foundation/Foundation.h>
 
-#define BYPASS_VERSION  "4.1"
-#define API_VERSION "3.1"
+#define BYPASS_VERSION  "4.2"
+#define API_VERSION "3.2"
 
+#define SHADOW_PREFS_PLIST "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 #define CPDMC_SERVICE_NAME "me.jjolano.shadow.service"
 #define LOCAL_SERVICE_DB "/Library/Shadow/db.plist"
 
@@ -18,4 +19,6 @@
 - (BOOL)isPathRestricted:(NSString *)path;
 - (NSArray*)getURLSchemes;
 - (NSDictionary *)getVersions;
+
++ (NSUserDefaults *)getPreferences;
 @end
