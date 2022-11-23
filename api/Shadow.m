@@ -204,19 +204,10 @@
 
     if([path hasPrefix:@"/var/containers"]
     || [path hasPrefix:@"/var/mobile/Containers"]
-    || [path hasPrefix:@"/System"]) {
+    || [path hasPrefix:@"/System"]
+    || [path hasPrefix:bundlePath]
+    || [path hasPrefix:homePath]) {
         return NO;
-    }
-
-    // Recurse call into parent directories.
-    NSString* pathParent = [path stringByDeletingLastPathComponent];
-    
-    if(![pathParent isEqualToString:@"/"]) {
-        BOOL isParentPathRestricted = [self isPathRestricted:pathParent resolve:NO];
-
-        if(isParentPathRestricted) {
-            return YES;
-        }
     }
 
     // Check if path is restricted from ShadowService.

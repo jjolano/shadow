@@ -1,5 +1,3 @@
-ARCHS ?= armv7 arm64 arm64e
-TARGET ?= iphone:clang:13.0:7.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
@@ -12,7 +10,7 @@ ShadowAPI = $(wildcard ../api/*.m)
 Shadow_FILES = $(ShadowHooks) $(ShadowAPI) dylib.x
 Shadow_LIBRARIES = rocketbootstrap
 Shadow_FRAMEWORKS = Foundation UIKit CoreFoundation
-Shadow_EXTRA_FRAMEWORKS = Cephei
+Shadow_EXTRA_FRAMEWORKS = 
 Shadow_PRIVATE_FRAMEWORKS = AppSupport
 Shadow_CFLAGS = -fobjc-arc -DROCKETBOOTSTRAP_LOAD_DYNAMIC -DTHEOS_LEAN_AND_MEAN
 

@@ -27,17 +27,6 @@
         return [responseCachePath boolValue];
     }
 
-    // Recurse call into parent directories.
-    NSString* pathParent = [path stringByDeletingLastPathComponent];
-
-    if(![pathParent isEqualToString:@"/"]) {
-        BOOL isParentPathRestricted = [self isPathRestricted_internal:pathParent];
-
-        if(isParentPathRestricted) {
-            return YES;
-        }
-    }
-
     BOOL restricted = NO;
 
     NSArray* base_extra = @[
@@ -103,6 +92,19 @@
                 if([base_extra containsObject:path]) {
                     restricted = NO;
                 }
+            }
+        }
+    }
+
+    if(!restricted) {
+        // Recurse call into parent directories.
+        NSString* pathParent = [path stringByDeletingLastPathComponent];
+
+        if(![pathParent isEqualToString:@"/"]) {
+            BOOL isParentPathRestricted = [self isPathRestricted_internal:pathParent];
+
+            if(isParentPathRestricted) {
+                return YES;
             }
         }
     }
@@ -440,6 +442,14 @@
     }];
 
     if(response) {
+        if(![response[@"restricted"] boolValue]) {
+            BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
+
+            if(responseParent) {
+                return YES;
+            }
+        }
+
         [responseCache setObject:response[@"restricted"] forKey:path];
         return [response[@"restricted"] boolValue];
     }
@@ -463,6 +473,40 @@
         @"bypass_version" : @BYPASS_VERSION,
         @"api_version" : @API_VERSION
     };
+}
+
++ (NSDictionary *)getDefaultPreferences {
+    return @{
+		@"Global_Enabled" : @(NO),
+		@"Global_Service" : @(NO),
+		@"Use_LocalService" : @(NO),
+		@"Tweak_CompatEx" : @(NO),
+		@"Hook_Filesystem" : @(YES),
+		@"Hook_DynamicLibraries" : @(YES),
+		@"Hook_URLScheme" : @(YES),
+		@"Hook_EnvVars" : @(YES),
+		@"Hook_FilesystemExtra" : @(NO),
+		@"Hook_Foundation" : @(NO),
+		@"Hook_DeviceCheck" : @(YES),
+		@"Hook_MachBootstrap" : @(NO),
+		@"Hook_SymLookup" : @(NO),
+		@"Hook_LowLevelC" : @(NO),
+		@"Hook_AntiDebugging" : @(NO),
+		@"Hook_DynamicLibrariesExtra" : @(NO),
+		@"Hook_ObjCRuntime" : @(NO),
+		@"Hook_FakeMac" : @(NO),
+		@"Hook_Syscall" : @(NO),
+		@"Hook_Sandbox" : @(NO)
+	};
+}
+
++ (NSUserDefaults *)getPreferences {
+    NSUserDefaults* result = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+
+	// Register default preferences.
+	[result registerDefaults:[self getDefaultPreferences]];
+
+    return result;
 }
 
 - (instancetype)init {

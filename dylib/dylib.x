@@ -1,7 +1,6 @@
 #import <HBLog.h>
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <Cephei/HBPreferences.h>
 
 #import "../api/Shadow.h"
 #import "../api/ShadowService.h"
@@ -9,6 +8,7 @@
 
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
+NSUserDefaults* prefs;
 
 %group hook_springboard
 %hook SpringBoard
@@ -31,31 +31,7 @@ ShadowService* _srv = nil;
 
 %ctor {
 	// Load preferences.
-	HBPreferences* prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
-
-	// Register default preferences.
-	[prefs registerDefaults:@{
-		@"Global_Enabled" : @(NO),
-		@"Global_Service" : @(NO),
-		@"Use_LocalService" : @(NO),
-		@"Tweak_CompatEx" : @(NO),
-		@"Hook_Filesystem" : @(YES),
-		@"Hook_DynamicLibraries" : @(YES),
-		@"Hook_URLScheme" : @(YES),
-		@"Hook_EnvVars" : @(YES),
-		@"Hook_FilesystemExtra" : @(NO),
-		@"Hook_Foundation" : @(NO),
-		@"Hook_DeviceCheck" : @(YES),
-		@"Hook_MachBootstrap" : @(NO),
-		@"Hook_SymLookup" : @(NO),
-		@"Hook_LowLevelC" : @(NO),
-		@"Hook_AntiDebugging" : @(NO),
-		@"Hook_DynamicLibrariesExtra" : @(NO),
-		@"Hook_ObjCRuntime" : @(NO),
-		@"Hook_FakeMac" : @(NO),
-		@"Hook_Syscall" : @(NO),
-		@"Hook_Sandbox" : @(NO)
-	}];
+	prefs = [ShadowService getPreferences];
 
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
@@ -66,7 +42,7 @@ ShadowService* _srv = nil;
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
 		_srv = [ShadowService new];
 
-		if(prefs[@"Global_Service"] && [prefs[@"Global_Service"] boolValue]) {
+		if([prefs boolForKey:@"Global_Service"]) {
 			[_srv startService];
 			HBLogDebug(@"%@", @"started ShadowService");
 		}
@@ -90,34 +66,34 @@ ShadowService* _srv = nil;
 	// Determine whether to load the rest of the tweak.
 	// Load app-specific settings, if enabled.
 	NSDictionary* prefs_load = nil;
-	NSDictionary* prefs_app = prefs[bundleIdentifier];
+	NSDictionary* prefs_app = [prefs objectForKey:bundleIdentifier];
 
 	if(prefs_app && prefs_app[@"App_Override"] && [prefs_app[@"App_Override"] boolValue]) {
-		enabled = prefs_app[@"App_Enabled"] ? [prefs_app[@"App_Enabled"] boolValue] : NO;
+		enabled = prefs_app[@"App_Enabled"] && [prefs_app[@"App_Enabled"] boolValue];
 		prefs_load = prefs_app;
 	}
 
 	if(!prefs_load) {
-		enabled = [prefs[@"Global_Enabled"] boolValue];
+		enabled = [prefs boolForKey:@"Global_Enabled"];
 		prefs_load = @{
-			@"Use_LocalService" : prefs[@"Use_LocalService"],
-			@"Tweak_CompatEx" : prefs[@"Tweak_CompatEx"],
-			@"Hook_Filesystem" : prefs[@"Hook_Filesystem"],
-			@"Hook_DynamicLibraries" : prefs[@"Hook_DynamicLibraries"],
-			@"Hook_URLScheme" : prefs[@"Hook_URLScheme"],
-			@"Hook_EnvVars" : prefs[@"Hook_EnvVars"],
-			@"Hook_FilesystemExtra" : prefs[@"Hook_FilesystemExtra"],
-			@"Hook_Foundation" : prefs[@"Hook_Foundation"],
-			@"Hook_DeviceCheck" : prefs[@"Hook_DeviceCheck"],
-			@"Hook_MachBootstrap" : prefs[@"Hook_MachBootstrap"],
-			@"Hook_SymLookup" : prefs[@"Hook_SymLookup"],
-			@"Hook_LowLevelC" : prefs[@"Hook_LowLevelC"],
-			@"Hook_AntiDebugging" : prefs[@"Hook_AntiDebugging"],
-			@"Hook_DynamicLibrariesExtra" : prefs[@"Hook_DynamicLibrariesExtra"],
-			@"Hook_ObjCRuntime" : prefs[@"Hook_ObjCRuntime"],
-			@"Hook_FakeMac" : prefs[@"Hook_FakeMac"],
-			@"Hook_Syscall" : prefs[@"Hook_Syscall"],
-			@"Hook_Sandbox" : prefs[@"Hook_Sandbox"]
+			@"Use_LocalService" : @([prefs boolForKey:@"Use_LocalService"]),
+			@"Tweak_CompatEx" : @([prefs boolForKey:@"Tweak_CompatEx"]),
+			@"Hook_Filesystem" : @([prefs boolForKey:@"Hook_Filesystem"]),
+			@"Hook_DynamicLibraries" : @([prefs boolForKey:@"Hook_DynamicLibraries"]),
+			@"Hook_URLScheme" : @([prefs boolForKey:@"Hook_URLScheme"]),
+			@"Hook_EnvVars" : @([prefs boolForKey:@"Hook_EnvVars"]),
+			@"Hook_FilesystemExtra" : @([prefs boolForKey:@"Hook_FilesystemExtra"]),
+			@"Hook_Foundation" : @([prefs boolForKey:@"Hook_Foundation"]),
+			@"Hook_DeviceCheck" : @([prefs boolForKey:@"Hook_DeviceCheck"]),
+			@"Hook_MachBootstrap" : @([prefs boolForKey:@"Hook_MachBootstrap"]),
+			@"Hook_SymLookup" : @([prefs boolForKey:@"Hook_SymLookup"]),
+			@"Hook_LowLevelC" : @([prefs boolForKey:@"Hook_LowLevelC"]),
+			@"Hook_AntiDebugging" : @([prefs boolForKey:@"Hook_AntiDebugging"]),
+			@"Hook_DynamicLibrariesExtra" : @([prefs boolForKey:@"Hook_DynamicLibrariesExtra"]),
+			@"Hook_ObjCRuntime" : @([prefs boolForKey:@"Hook_ObjCRuntime"]),
+			@"Hook_FakeMac" : @([prefs boolForKey:@"Hook_FakeMac"]),
+			@"Hook_Syscall" : @([prefs boolForKey:@"Hook_Syscall"]),
+			@"Hook_Sandbox" : @([prefs boolForKey:@"Hook_Sandbox"])
 		};
 	}
 
@@ -132,7 +108,7 @@ ShadowService* _srv = nil;
 
 	BOOL LocalShadowService = prefs_load[@"Use_LocalService"] && [prefs_load[@"Use_LocalService"] boolValue];
 
-	if(LocalShadowService || !prefs[@"Global_Service"] || ![prefs[@"Global_Service"] boolValue]) {
+	if(LocalShadowService || ![prefs boolForKey:@"Global_Service"]) {
 		[_srv startLocalService];
 	} else {
 		[_srv connectService];

@@ -108,6 +108,14 @@
 	return latestVersion;
 }
 
+- (void)openGitHub:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"]];
+}
+
+- (void)openKofi:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"]];
+}
+
 - (instancetype)init {
 	if((self = [super init])) {
 		ShadowService* service = [ShadowService new];

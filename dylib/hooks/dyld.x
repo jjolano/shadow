@@ -107,60 +107,6 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
     return %orig;
 }
-
-%hookf(int, dladdr, const void *addr, Dl_info *info) {
-    int result = %orig;
-
-    if(result && info) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
-
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            if(info->dli_sname) {
-                NSString* sym = @(info->dli_sname);
-
-                HBLogDebug(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
-
-                if([sym hasPrefix:@"_logos_method"]) {
-                    // return the lookup for the original method
-                    return %orig(dlsym(RTLD_DEFAULT, [[sym stringByReplacingOccurrencesOfString:@"_logos_method" withString:@"_logos_orig"] UTF8String]), info);
-                }
-
-                if([sym isEqualToString:@"__dso_handle"]) {
-                    return %orig(dlsym(RTLD_DEFAULT, "__dso_handle"), info);
-                }
-
-                void* orig_addr = dlsym(RTLD_DEFAULT, [[@"original_" stringByAppendingString:sym] UTF8String]);
-
-                if(orig_addr) {
-                    return %orig(orig_addr, info);
-                }
-            }
-
-            memset(info, 0, sizeof(Dl_info));
-            return 0;
-        }
-    }
-
-    return result;
-}
-%end
-
-%group shadowhook_dyld_dlsym
-%hookf(void *, dlsym, void *handle, const char *symbol) {
-    void* addr = %orig;
-
-    if(addr) {
-        // Check origin of resolved symbol
-        const char* image_path = dyld_image_path_containing_address(addr);
-
-        if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            HBLogDebug(@"%@: %@: %@ -> %s", @"dlsym", @"restricted symbol lookup", @(symbol), image_path);
-            return NULL;
-        }
-    }
-
-    return addr;
-}
 %end
 
 %group shadowhook_dyld_extra
@@ -404,6 +350,60 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
     }
 }
 
+static void* (*original_dlsym)(void* handle, const char* symbol);
+static void* replaced_dlsym(void* handle, const char* symbol) {
+    void* addr = original_dlsym(handle, symbol);
+
+    if(addr) {
+        // Check origin of resolved symbol
+        const char* image_path = dyld_image_path_containing_address(addr);
+
+        if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            HBLogDebug(@"%@: %@: %@ -> %s", @"dlsym", @"restricted symbol lookup", @(symbol), image_path);
+            return NULL;
+        }
+    }
+
+    return addr;
+}
+
+static int (*original_dladdr)(const void* addr, Dl_info* info);
+static int replaced_dladdr(const void* addr, Dl_info* info) {
+    int result = original_dladdr(addr, info);
+
+    if(result && info) {
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
+
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if(info->dli_sname) {
+                NSString* sym = @(info->dli_sname);
+
+                HBLogDebug(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
+
+                if([sym hasPrefix:@"_logos_method"]) {
+                    // return the lookup for the original method
+                    return original_dladdr(original_dlsym(RTLD_DEFAULT, [[sym stringByReplacingOccurrencesOfString:@"_logos_method" withString:@"_logos_orig"] UTF8String]), info);
+                }
+
+                if([sym isEqualToString:@"__dso_handle"]) {
+                    return original_dladdr(original_dlsym(RTLD_DEFAULT, "__dso_handle"), info);
+                }
+
+                void* orig_addr = original_dlsym(RTLD_DEFAULT, [[@"original_" stringByAppendingString:sym] UTF8String]);
+
+                if(orig_addr) {
+                    return original_dladdr(orig_addr, info);
+                }
+            }
+
+            memset(info, 0, sizeof(Dl_info));
+            return 0;
+        }
+    }
+
+    return result;
+}
+
 void shadowhook_dyld(void) {
     %init(shadowhook_dyld);
 }
@@ -413,5 +413,6 @@ void shadowhook_dyld_extra(void) {
 }
 
 void shadowhook_dyld_symlookup(void) {
-    %init(shadowhook_dyld_dlsym);
+    MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
+    MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
 }

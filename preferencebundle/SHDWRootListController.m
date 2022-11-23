@@ -1,7 +1,7 @@
 #import "SHDWRootListController.h"
 
 @implementation SHDWRootListController {
-	HBPreferences* prefs;
+	NSUserDefaults* prefs;
 }
 
 - (NSArray *)specifiers {
@@ -18,21 +18,35 @@
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
 	[prefs setObject:value forKey:[specifier identifier]];
+	[prefs synchronize];
 }
 
 - (void)respring:(id)sender {
-	[HBRespringController respring];
+	if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/bin/sbreload"]) {
+        pid_t pid;
+        const char *args[] = {"sbreload", NULL, NULL, NULL};
+        posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+    } else {
+		pid_t pid;
+        const char *args[] = {"killall", "-9", "SpringBoard", NULL};
+        posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
+	}
 }
 
 - (void)reset:(id)sender {
-	[prefs removeAllObjects];
-	[self reloadSpecifiers];
-	// [self respring:sender];
+	NSDictionary* prefs_dict = [prefs dictionaryRepresentation];
+    for(id key in prefs_dict) {
+		[prefs removeObjectForKey:key];
+    }
+
+    [prefs synchronize];
+	
+	[self respring:sender];
 }
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+		prefs = [ShadowService getPreferences];
 	}
 
 	return self;
