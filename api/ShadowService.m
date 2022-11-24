@@ -1,7 +1,6 @@
 #import "ShadowService.h"
 
 #import <AppSupport/CPDistributedMessagingCenter.h>
-#import <rocketbootstrap/rocketbootstrap.h>
 
 #import "../apple_priv/NSTask.h"
 
@@ -32,8 +31,17 @@
         @"/Library/Application Support",
         @"/usr/lib"
     ];
-    
-    if(dpkgPath) {
+
+    if(!restricted && dpkgInstalledDb) {
+        // Local service - filter using dpkgInstalledDb and dpkgExceptionDb
+        restricted = [dpkgInstalledDb containsObject:path];
+
+        if(restricted && dpkgExceptionDb) {
+            restricted = !([dpkgExceptionDb containsObject:path] || [base_extra containsObject:path]);
+        }
+    }
+
+    if(!restricted && dpkgPath) {
         // Call dpkg to see if file is part of any installed packages on the system.
         NSTask* task = [NSTask new];
         NSPipe* stdoutPipe = [NSPipe new];
@@ -78,21 +86,6 @@
                 }
             }
         }
-    } else {
-        // Local service - filter using dpkgInstalledDb and dpkgExceptionDb
-        if(dpkgInstalledDb) {
-            restricted = [dpkgInstalledDb containsObject:path];
-        }
-
-        if(restricted && dpkgExceptionDb) {
-            restricted = ![dpkgExceptionDb containsObject:path];
-
-            if(restricted) {
-                if([base_extra containsObject:path]) {
-                    restricted = NO;
-                }
-            }
-        }
     }
 
     if(!restricted) {
@@ -117,7 +110,26 @@
         return [responseCache objectForKey:@"schemes"];
     }
 
-    NSMutableArray* schemes = [NSMutableArray new];
+    NSMutableSet* schemes = [NSMutableSet new];
+
+    // Local service - load using dpkgInstalledDb
+    if(dpkgInstalledDb) {
+        for(NSString* path_installed in dpkgInstalledDb) {
+            if([path_installed hasSuffix:@"app/Info.plist"]) {
+                NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:path_installed];
+
+                if(plist && plist[@"CFBundleURLTypes"]) {
+                    for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
+                        if(type[@"CFBundleURLSchemes"]) {
+                            for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
+                                [schemes addObject:scheme];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if(dpkgPath) {
         NSTask* task = [NSTask new];
@@ -158,28 +170,9 @@
                 }
             }
         }
-    } else {
-        // Local service - load using dpkgInstalledDb
-        if(dpkgInstalledDb) {
-            for(NSString* path_installed in dpkgInstalledDb) {
-                if([path_installed hasSuffix:@"app/Info.plist"]) {
-                    NSDictionary* plist = [NSDictionary dictionaryWithContentsOfFile:path_installed];
-
-                    if(plist && plist[@"CFBundleURLTypes"]) {
-                        for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
-                            if(type[@"CFBundleURLSchemes"]) {
-                                for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
-                                    [schemes addObject:scheme];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
-    NSArray* schemes_ret = [schemes copy];
+    NSArray* schemes_ret = [schemes allObjects];
     [responseCache setObject:schemes_ret forKey:@"schemes"];
     return schemes_ret;
 }
@@ -203,31 +196,29 @@
         }
 
         // Resolve and standardize path.
-        NSString* path;
-
-        if(center) {
+        if(dpkgPath) {
             // Unsandboxed and unhooked - safe to resolve
-            path = [[rawPath stringByExpandingTildeInPath] stringByStandardizingPath];
+            NSString* path = [[rawPath stringByExpandingTildeInPath] stringByStandardizingPath];
+
+            if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+                [pathComponents removeObjectAtIndex:1];
+                path = [NSString pathWithComponents:pathComponents];
+            }
+
+            if([path hasPrefix:@"/var/tmp"]) {
+                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+                [pathComponents removeObjectAtIndex:1];
+                path = [NSString pathWithComponents:pathComponents];
+            }
+
+            response = @{
+                @"path" : path
+            };
         } else {
             // Sandboxed and hooked
             return nil;
         }
-
-        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([path hasPrefix:@"/var/tmp"]) {
-            NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
-
-        response = @{
-            @"path" : path
-        };
     } else if([name isEqualToString:@"isPathRestricted"]) {
         if(!userInfo) {
             return nil;
@@ -235,16 +226,11 @@
         
         NSString* path = userInfo[@"path"];
 
-        if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+        if(!path || ![path isAbsolutePath] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
             return nil;
         }
 
-        if(![path isAbsolutePath]) {
-            NSLog(@"%@: %@: %@", name, @"ignoring relative path", path);
-            return nil;
-        }
-
-        if(center && ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        if(dpkgPath && ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
             return nil;
         }
 
@@ -351,7 +337,7 @@
         [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
         [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
 
-        rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
+        // rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
     }
 }
 
@@ -361,11 +347,6 @@
 
     if(!db_plist) {
         NSLog(@"%@", @"could not load db");
-
-        db_plist = @{
-            @"installed" : @[],
-            @"exception" : @[]
-        };
     } else {
         NSLog(@"%@", @"successfully loaded db");
     }
@@ -381,17 +362,25 @@
 
 - (void)connectService {
     center = [CPDistributedMessagingCenter centerNamed:@CPDMC_SERVICE_NAME];
-    rocketbootstrap_distributedmessagingcenter_apply(center);
+    // rocketbootstrap_distributedmessagingcenter_apply(center);
+}
+
+- (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args useService:(BOOL)service {
+    if(service) {
+        if(center) {
+            NSError* error = nil;
+            NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args error:&error];
+            return error ? nil : result;
+        }
+
+        return nil;
+    }
+
+    return [self handleMessageNamed:messageName withUserInfo:args];
 }
 
 - (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args {
-    if(!center) {
-        return [self handleMessageNamed:messageName withUserInfo:args];
-    }
-
-    NSError* error = nil;
-    NSDictionary* result = [center sendMessageAndReceiveReplyName:messageName userInfo:args error:&error];
-    return error ? nil : result;
+    return [self sendIPC:messageName withArgs:args useService:NO];
 }
 
 - (NSString *)resolvePath:(NSString *)path {
@@ -401,7 +390,7 @@
 
     NSDictionary* response = [self sendIPC:@"resolvePath" withArgs:@{
         @"path" : path
-    }];
+    } useService:(center != nil)];
 
     if(response) {
         path = response[@"path"];
@@ -438,7 +427,7 @@
 
     NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{
         @"path" : path
-    }];
+    } useService:(dpkgInstalledDb == nil)];
 
     if(response) {
         BOOL restricted = [response[@"restricted"] boolValue];
@@ -459,7 +448,7 @@
 }
 
 - (NSArray*)getURLSchemes {
-    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil];
+    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil useService:(dpkgInstalledDb == nil)];
 
     if(response) {
         return response[@"schemes"];
@@ -480,7 +469,6 @@
     return @{
 		@"Global_Enabled" : @(NO),
 		@"Global_Service" : @(NO),
-		@"Use_LocalService" : @(NO),
 		@"Tweak_CompatEx" : @(NO),
 		@"Hook_Filesystem" : @(YES),
 		@"Hook_DynamicLibraries" : @(YES),
