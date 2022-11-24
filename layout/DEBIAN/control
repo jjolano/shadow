@@ -1,6 +1,6 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: firmware (>= 5.0), mobilesubstrate, preferenceloader, dpkg, com.opa334.altlist
+Depends: firmware (>= 8.0), mobilesubstrate, preferenceloader, dpkg, com.opa334.altlist, com.opa334.libsandy, firmware (>= 11.0) | ws.hbang.common
 Suggests: com.rpetrich.rocketbootstrap
 Version: 3.3
 Architecture: iphoneos-arm

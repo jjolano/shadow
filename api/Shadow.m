@@ -162,7 +162,7 @@
     }
 
     if(![path isAbsolutePath]) {
-        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
+        NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
     }
 
@@ -212,7 +212,7 @@
 
     // Check if path is restricted from ShadowService.
     if(service && [service isPathRestricted:path]) {
-        HBLogDebug(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+        NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
 
@@ -263,11 +263,11 @@
     NSDictionary* versions = [service getVersions];
 
     if(versions) {
-        HBLogDebug(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
-        HBLogDebug(@"%@: %@", @"api version", versions[@"api_version"]);
+        NSLog(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
+        NSLog(@"%@: %@", @"api version", versions[@"api_version"]);
 
         schemes = [service getURLSchemes];
-        HBLogDebug(@"%@: %@", @"url schemes", schemes);
+        NSLog(@"%@: %@", @"url schemes", schemes);
     }
 }
 
@@ -294,9 +294,9 @@
             homePath = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
         }
 
-        HBLogDebug(@"%@: %@", @"bundlePath", bundlePath);
-        HBLogDebug(@"%@: %@", @"homePath", homePath);
-        HBLogDebug(@"%@: %@", @"realHomePath", realHomePath);
+        NSLog(@"%@: %@", @"bundlePath", bundlePath);
+        NSLog(@"%@: %@", @"homePath", homePath);
+        NSLog(@"%@: %@", @"realHomePath", realHomePath);
 
         whitelist_root = @[
             @"/.ba",

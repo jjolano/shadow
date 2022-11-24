@@ -1,10 +1,16 @@
-#import <HBLog.h>
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
 #import "../api/Shadow.h"
 #import "../api/ShadowService.h"
 #import "hooks/hooks.h"
+
+#import <libSandy.h>
+#import <Cephei/HBPreferences.h>
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_11_0
+#define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
+#endif
 
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
@@ -20,9 +26,9 @@ NSUserDefaults* prefs;
 
 		// Save this database to filesystem
 		if([db writeToFile:@LOCAL_SERVICE_DB atomically:NO]) {
-			HBLogDebug(@"%@", @"successfully saved generated db");
+			NSLog(@"%@", @"successfully saved generated db");
 		} else {
-			HBLogDebug(@"%@", @"failed to save generate db");
+			NSLog(@"%@", @"failed to save generate db");
 		}
 	}];
 }
@@ -30,9 +36,6 @@ NSUserDefaults* prefs;
 %end
 
 %ctor {
-	// Load preferences.
-	prefs = [ShadowService getPreferences];
-
 	// Determine the application we're injected into.
 	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 	NSString* executablePath = [[NSBundle mainBundle] executablePath];
@@ -42,13 +45,16 @@ NSUserDefaults* prefs;
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
 		_srv = [ShadowService new];
 
+		// Load preferences.
+		prefs = [ShadowService getPreferences];
+
 		if([prefs boolForKey:@"Global_Service"]) {
 			[_srv startService];
-			HBLogDebug(@"%@", @"started ShadowService");
+			NSLog(@"%@", @"started ShadowService");
 		}
 
 		%init(hook_springboard);
-		HBLogDebug(@"%@", @"loaded into SpringBoard");
+		NSLog(@"%@", @"loaded into SpringBoard");
 		return;
 	}
 
@@ -59,6 +65,24 @@ NSUserDefaults* prefs;
 	|| [executablePath hasPrefix:@"/System"]
 	|| [bundlePath hasSuffix:@".appex"]) {
 		return;
+	}
+
+
+	// Load preferences.
+	if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
+		libSandy_applyProfile("ShadowSettings");
+		prefs = [ShadowService getPreferences];
+
+		NSLog(@"%@", @"loaded preferences with libsandy");
+	} else {
+		// Use Cephei to load preferences.
+		// Code reference: SafariPlus
+		NSBundle* cepheiBundle = [NSBundle bundleWithPath:@"/Library/Frameworks/Cephei.framework"];
+		[cepheiBundle load];
+
+		prefs = (NSUserDefaults *)[[NSClassFromString(@"HBPreferences") alloc] initWithIdentifier:@"me.jjolano.shadow"];
+
+		NSLog(@"%@", @"loaded preferences with cephei");
 	}
 
 	BOOL enabled = NO;
@@ -101,7 +125,7 @@ NSUserDefaults* prefs;
 		return;
 	}
 
-	HBLogDebug(@"%@", @"tweak loaded in app");
+	NSLog(@"%@", @"tweak loaded in app");
 
 	// Initialize Shadow class.
 	_srv = [ShadowService new];
@@ -121,17 +145,17 @@ NSUserDefaults* prefs;
 	}
 
 	// Initialize hooks.
-	HBLogDebug(@"%@", @"starting hooks");
+	NSLog(@"%@", @"starting hooks");
 
 	if(prefs_load[@"Hook_Filesystem"] && [prefs_load[@"Hook_Filesystem"] boolValue]) {
-		HBLogDebug(@"%@", @"+ filesystem");
+		NSLog(@"%@", @"+ filesystem");
 
 		shadowhook_libc();
 		shadowhook_NSFileManager();
 	}
 
 	if(prefs_load[@"Hook_DynamicLibrariesExtra"] && [prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
-		HBLogDebug(@"%@", @"+ dylibex");
+		NSLog(@"%@", @"+ dylibex");
 
 		// Register before hooking
 		_dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
@@ -143,26 +167,26 @@ NSUserDefaults* prefs;
 	}
 
 	if(prefs_load[@"Hook_DynamicLibraries"] && [prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
-		HBLogDebug(@"%@", @"+ dylib");
+		NSLog(@"%@", @"+ dylib");
 
 		shadowhook_dyld();
 	}
 
 	if(prefs_load[@"Hook_URLScheme"] && [prefs_load[@"Hook_URLScheme"] boolValue]) {
-		HBLogDebug(@"%@", @"+ urlscheme");
+		NSLog(@"%@", @"+ urlscheme");
 
 		shadowhook_UIApplication();
 	}
 
 	if(prefs_load[@"Hook_EnvVars"] && [prefs_load[@"Hook_EnvVars"] boolValue]) {
-		HBLogDebug(@"%@", @"+ envvars");
+		NSLog(@"%@", @"+ envvars");
 
 		shadowhook_libc_envvar();
 		shadowhook_NSProcessInfo();
 	}
 
 	if(prefs_load[@"Hook_FilesystemExtra"] && [prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
-		HBLogDebug(@"%@", @"+ filesystemex");
+		NSLog(@"%@", @"+ filesystemex");
 
 		shadowhook_NSFileHandle();
 		shadowhook_NSFileVersion();
@@ -170,7 +194,7 @@ NSUserDefaults* prefs;
 	}
 
 	if(prefs_load[@"Hook_Foundation"] && [prefs_load[@"Hook_Foundation"] boolValue]) {
-		HBLogDebug(@"%@", @"+ foundation");
+		NSLog(@"%@", @"+ foundation");
 
 		shadowhook_NSArray();
 		shadowhook_NSDictionary();
@@ -182,58 +206,58 @@ NSUserDefaults* prefs;
 	}
 
 	if(prefs_load[@"Hook_DeviceCheck"] && [prefs_load[@"Hook_DeviceCheck"] boolValue]) {
-		HBLogDebug(@"%@", @"+ devicecheck");
+		NSLog(@"%@", @"+ devicecheck");
 
 		shadowhook_DeviceCheck();
 	}
 
 	if(prefs_load[@"Hook_MachBootstrap"] && [prefs_load[@"Hook_MachBootstrap"] boolValue]) {
-		HBLogDebug(@"%@", @"+ mach");
+		NSLog(@"%@", @"+ mach");
 
 		shadowhook_mach();
 	}
 
 	if(prefs_load[@"Hook_SymLookup"] && [prefs_load[@"Hook_SymLookup"] boolValue]) {
-		HBLogDebug(@"%@", @"+ dlsym");
+		NSLog(@"%@", @"+ dlsym");
 
 		shadowhook_dyld_symlookup();
 	}
 
 	if(prefs_load[@"Hook_LowLevelC"] && [prefs_load[@"Hook_LowLevelC"] boolValue]) {
-		HBLogDebug(@"%@", @"+ llc");
+		NSLog(@"%@", @"+ llc");
 
 		shadowhook_libc_lowlevel();
 	}
 
 	if(prefs_load[@"Hook_AntiDebugging"] && [prefs_load[@"Hook_AntiDebugging"] boolValue]) {
-		HBLogDebug(@"%@", @"+ debug");
+		NSLog(@"%@", @"+ debug");
 
 		shadowhook_libc_antidebugging();
 	}
 
 	if(prefs_load[@"Hook_ObjCRuntime"] && [prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
-		HBLogDebug(@"%@", @"+ objc");
+		NSLog(@"%@", @"+ objc");
 
 		shadowhook_objc();
 	}
 
 	if(prefs_load[@"Hook_FakeMac"] && [prefs_load[@"Hook_FakeMac"] boolValue]) {
-		HBLogDebug(@"%@", @"+ m1");
+		NSLog(@"%@", @"+ m1");
 
 		shadowhook_NSProcessInfo_fakemac();
 	}
 
 	if(prefs_load[@"Hook_Syscall"] && [prefs_load[@"Hook_Syscall"] boolValue]) {
-		HBLogDebug(@"%@", @"+ syscall");
+		NSLog(@"%@", @"+ syscall");
 
 		shadowhook_syscall();
 	}
 
 	if(prefs_load[@"Hook_Sandbox"] && [prefs_load[@"Hook_Sandbox"] boolValue]) {
-		HBLogDebug(@"%@", @"+ sandbox");
+		NSLog(@"%@", @"+ sandbox");
 
 		shadowhook_sandbox();
 	}
 
-	HBLogDebug(@"%@", @"completed hooks");
+	NSLog(@"%@", @"completed hooks");
 }

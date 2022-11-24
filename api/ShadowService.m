@@ -1,9 +1,8 @@
-#import <HBLog.h>
+#import "ShadowService.h"
 
 #import <AppSupport/CPDistributedMessagingCenter.h>
 #import <rocketbootstrap/rocketbootstrap.h>
 
-#import "ShadowService.h"
 #import "../apple_priv/NSTask.h"
 
 @implementation ShadowService {
@@ -45,7 +44,7 @@
         [task launch];
         [task waitUntilExit];
 
-        HBLogDebug(@"%@: %@", @"dpkg", path);
+        NSLog(@"%@: %@", @"dpkg", path);
 
         if([task terminationStatus] == 0) {
             // Path found in dpkg database - exclude if base package is part of the package list.
@@ -104,7 +103,7 @@
             BOOL isParentPathRestricted = [self isPathRestricted_internal:pathParent];
 
             if(isParentPathRestricted) {
-                return YES;
+                restricted = YES;
             }
         }
     }
@@ -241,7 +240,7 @@
         }
 
         if(![path isAbsolutePath]) {
-            HBLogDebug(@"%@: %@: %@", name, @"ignoring relative path", path);
+            NSLog(@"%@: %@: %@", name, @"ignoring relative path", path);
             return nil;
         }
 
@@ -249,7 +248,7 @@
             return nil;
         }
 
-        HBLogDebug(@"%@: %@", name, path);
+        NSLog(@"%@: %@", name, path);
         
         // Check if path is restricted.
         BOOL restricted = [self isPathRestricted_internal:path];
@@ -361,14 +360,14 @@
     NSDictionary* db_plist = [NSDictionary dictionaryWithContentsOfFile:@LOCAL_SERVICE_DB];
 
     if(!db_plist) {
-        HBLogDebug(@"%@", @"could not load db");
+        NSLog(@"%@", @"could not load db");
 
         db_plist = @{
             @"installed" : @[],
             @"exception" : @[]
         };
     } else {
-        HBLogDebug(@"%@", @"successfully loaded db");
+        NSLog(@"%@", @"successfully loaded db");
     }
 
     if(db_plist[@"installed"]) {
@@ -442,16 +441,18 @@
     }];
 
     if(response) {
-        if(![response[@"restricted"] boolValue]) {
+        BOOL restricted = [response[@"restricted"] boolValue];
+
+        if(!restricted) {
             BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
 
             if(responseParent) {
-                return YES;
+                restricted = YES;
             }
         }
 
-        [responseCache setObject:response[@"restricted"] forKey:path];
-        return [response[@"restricted"] boolValue];
+        [responseCache setObject:@(restricted) forKey:path];
+        return restricted;
     }
 
     return NO;

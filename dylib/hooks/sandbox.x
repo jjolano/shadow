@@ -11,7 +11,7 @@ static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_por
     // NSArray* ent = (__bridge NSArray *)SecTaskCopyValueForEntitlement(SecTaskCreateFromSelf(NULL), CFSTR("get-task-allow"), &err);
 
     // if(!ent || true) {
-    //     HBLogDebug(@"%@: %@", @"deny task_for_pid", @(pid));
+    //     NSLog(@"%@: %@", @"deny task_for_pid", @(pid));
     //     return KERN_FAILURE;
     // }
 
@@ -21,7 +21,7 @@ static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_por
 static kern_return_t (*original_host_get_special_port)(host_priv_t host_priv, int node, int which, mach_port_t* port);
 static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int node, int which, mach_port_t* port) {
     // interesting ports: 4, HOST_SEATBELT_PORT, HOST_PRIV_PORT
-    HBLogDebug(@"%@: %d", @"host_get_special_port", which);
+    NSLog(@"%@: %d", @"host_get_special_port", which);
 
     if(node == HOST_LOCAL_NODE && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         if(which == HOST_PRIV_PORT) {
@@ -86,9 +86,9 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
         NSString* op = @(operation);
 
         if(data[0]) {
-            HBLogDebug(@"%@: %@: %s", @"sandbox_check", op, (const char *)data[0]);
+            NSLog(@"%@: %@: %s", @"sandbox_check", op, (const char *)data[0]);
         } else {
-            HBLogDebug(@"%@: %@", @"sandbox_check", op);
+            NSLog(@"%@: %@", @"sandbox_check", op);
         }
 
         if([op isEqualToString:@"mach-lookup"]) {

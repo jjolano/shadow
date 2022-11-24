@@ -3,7 +3,6 @@
 #import <dlfcn.h>
 #import <pwd.h>
 
-#import <HBLog.h>
 #import "ShadowService.h"
 
 @interface Shadow : NSObject

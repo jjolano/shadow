@@ -196,7 +196,7 @@
     
     if(result) {
         [result setValue:[url path] forKey:@"shdwDir"];
-        HBLogDebug(@"%@: %@", @"enumeratorAtURL", url);
+        NSLog(@"%@: %@", @"enumeratorAtURL", url);
     }
 
     return result;
@@ -207,7 +207,7 @@
 
     if(result) {
         [result setValue:path forKey:@"shdwDir"];
-        HBLogDebug(@"%@: %@", @"enumeratorAtPath", path);
+        NSLog(@"%@: %@", @"enumeratorAtPath", path);
     }
     
     return result;
@@ -370,7 +370,7 @@
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
-    HBLogDebug(@"%@: %@", @"changeCurrentDirectoryPath", path);
+    NSLog(@"%@: %@", @"changeCurrentDirectoryPath", path);
 
     NSString* cwd = [self currentDirectoryPath];
 
