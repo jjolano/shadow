@@ -6,12 +6,12 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
 
 %group shadowhook_dyld
 // %hookf(int32_t, NSVersionOfLinkTimeLibrary, const char* libraryName) {
-//     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
+//     NSLog(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
 //     return %orig;
 // }
 
 // %hookf(int32_t, NSVersionOfRunTimeLibrary, const char* libraryName) {
-//     HBLogDebug(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
+//     NSLog(@"%@: %@: %s", @"dyld", @"NSVersionOfRunTimeLibrary", libraryName);
 //     return %orig;
 // }
 
@@ -53,7 +53,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
-        HBLogDebug(@"%@: %@: %@", @"dyld", @"_dyld_get_image_name", image_name);
+        NSLog(@"%@: %@: %@", @"dyld", @"_dyld_get_image_name", image_name);
 
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             return "/usr/lib/system/libsystem_c.dylib";
@@ -168,7 +168,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
         kern_return_t result = %orig;
 
         if(result == KERN_SUCCESS) {
-            HBLogDebug(@"%@: %@", @"task_info", @"TASK_DYLD_INFO");
+            NSLog(@"%@: %@", @"task_info", @"TASK_DYLD_INFO");
 
             struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
             struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
@@ -182,7 +182,7 @@ NSMutableArray* _shdw_dyld_remove_image = nil;
             // while(infoArray < infoArrayEnd) {
             //     if(![_shadow isCPathRestricted:infoArray->imageFilePath]) {
             //         // add to our filtered array
-            //         HBLogDebug(@"%@: %@: %s", @"task_info", @"adding", infoArray->imageFilePath);
+            //         NSLog(@"%@: %@: %s", @"task_info", @"adding", infoArray->imageFilePath);
 
             //         NSMutableData* info_safe = [NSMutableData dataWithBytes:infoArray length:sizeof(struct dyld_image_info)];
             //         [data appendData:info_safe];
@@ -227,7 +227,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         //         @"slide" : @((unsigned long) _slide)
         //     };
 
-        //     HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib (init)", image_name);
+        //     NSLog(@"%@: %@: %@", @"dyld", @"adding lib (init)", image_name);
 
         //     [_shdw_dyld_collection addObject:dylib];
         // }
@@ -255,7 +255,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
             @"slide" : @((unsigned long) vmaddr_slide)
         };
 
-        HBLogDebug(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
+        NSLog(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
 
         [_shdw_dyld_collection addObject:dylib];
     }
@@ -270,7 +270,7 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         for(NSDictionary* dylib in _shdw_dyld_collection) {
             if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
                 // Remove this from our collection
-                HBLogDebug(@"%@: %@: %@", @"dyld", @"removing lib", dylib[@"name"]);
+                NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylib[@"name"]);
 
                 // Don't remove while in enumeration, store for later
                 dylibToRemove = dylib;
@@ -300,7 +300,7 @@ void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmadd
         }
 
         // Call event handlers.
-        HBLogDebug(@"%@: %@", @"dyld", @"add_image calling handlers");
+        NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
 
         NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
 
@@ -333,7 +333,7 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
         }
 
         // Call event handlers.
-        HBLogDebug(@"%@: %@", @"dyld", @"remove_image calling handlers");
+        NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
 
         NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
         
@@ -359,7 +359,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         const char* image_path = dyld_image_path_containing_address(addr);
 
         if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            HBLogDebug(@"%@: %@: %@ -> %s", @"dlsym", @"restricted symbol lookup", @(symbol), image_path);
+            NSLog(@"%@: %@: %@ -> %s", @"dlsym", @"restricted symbol lookup", @(symbol), image_path);
             return NULL;
         }
     }
@@ -378,7 +378,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
             if(info->dli_sname) {
                 NSString* sym = @(info->dli_sname);
 
-                HBLogDebug(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
+                NSLog(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
 
                 if([sym hasPrefix:@"_logos_method"]) {
                     // return the lookup for the original method

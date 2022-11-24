@@ -2,7 +2,7 @@
 
 static int (*original_syscall)(int number, ...);
 static int replaced_syscall(int number, ...) {
-    HBLogDebug(@"%@: %d", @"syscall", number);
+    NSLog(@"%@: %d", @"syscall", number);
 
 	va_list args;
 	va_start(args, number);

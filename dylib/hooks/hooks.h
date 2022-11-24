@@ -26,7 +26,6 @@
 #import <objc/runtime.h>
 
 #import "../../api/Shadow.h"
-#import <HBLog.h>
 #import <substrate.h>
 
 // private symbols
