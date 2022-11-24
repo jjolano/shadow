@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Enables Shadow's unsandboxed service. Highly recommended, but may cause issues if RocketBootstrap functionality is unavailable. Respring is required to apply changes to this setting.</string>
+			<string>Enhances bypass capabilities by operating outside of the app sandbox. Respring is required to apply changes to this setting.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

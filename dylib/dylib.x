@@ -49,6 +49,10 @@ NSUserDefaults* prefs;
 		prefs = [ShadowService getPreferences];
 
 		if([prefs boolForKey:@"Global_Service"]) {
+			if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
+				NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
+			}
+
 			[_srv startService];
 			NSLog(@"%@", @"started ShadowService");
 		}
@@ -70,7 +74,10 @@ NSUserDefaults* prefs;
 
 	// Load preferences.
 	if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
-		libSandy_applyProfile("ShadowSettings");
+		if(libSandy_applyProfile("ShadowSettings") != kLibSandySuccess) {
+			NSLog(@"%@", @"failed to apply libsandy ShadowSettings profile");
+		}
+
 		prefs = [ShadowService getPreferences];
 
 		NSLog(@"%@", @"loaded preferences with libsandy");
@@ -81,6 +88,7 @@ NSUserDefaults* prefs;
 		[cepheiBundle load];
 
 		prefs = (NSUserDefaults *)[[NSClassFromString(@"HBPreferences") alloc] initWithIdentifier:@"me.jjolano.shadow"];
+		[prefs registerDefaults:[ShadowService getDefaultPreferences]];
 
 		NSLog(@"%@", @"loaded preferences with cephei");
 	}
@@ -100,7 +108,6 @@ NSUserDefaults* prefs;
 	if(!prefs_load) {
 		enabled = [prefs boolForKey:@"Global_Enabled"];
 		prefs_load = @{
-			@"Use_LocalService" : @([prefs boolForKey:@"Use_LocalService"]),
 			@"Tweak_CompatEx" : @([prefs boolForKey:@"Tweak_CompatEx"]),
 			@"Hook_Filesystem" : @([prefs boolForKey:@"Hook_Filesystem"]),
 			@"Hook_DynamicLibraries" : @([prefs boolForKey:@"Hook_DynamicLibraries"]),
@@ -129,12 +136,13 @@ NSUserDefaults* prefs;
 
 	// Initialize Shadow class.
 	_srv = [ShadowService new];
+	[_srv startLocalService];
 
-	BOOL LocalShadowService = prefs_load[@"Use_LocalService"] && [prefs_load[@"Use_LocalService"] boolValue];
+	if([prefs boolForKey:@"Global_Service"]) {
+		if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
+			NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
+		}
 
-	if(LocalShadowService || ![prefs boolForKey:@"Global_Service"]) {
-		[_srv startLocalService];
-	} else {
 		[_srv connectService];
 	}
 

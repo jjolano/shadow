@@ -95,10 +95,16 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
             if(data[0]) {
                 NSString* name = @((const char *)data[0]);
 
-                if([name hasPrefix:@"org.coolstar"]
-                || [name hasPrefix:@"com.ex"]
-                || [name hasPrefix:@"org.saurik"]) {
-                    return -1;
+                if(![name hasPrefix:@"com.apple"]) {
+                    if([name hasPrefix:@"org.coolstar"]
+                    || [name hasPrefix:@"com.ex"]
+                    || [name hasPrefix:@"org.saurik"]
+                    || [name hasPrefix:@"me.jjolano"]
+                    || [name hasPrefix:@"lh:"]
+                    || [name hasPrefix:@"cy:"]
+                    || [name hasPrefix:@"rbs:"]) {
+                        return -1;
+                    }
                 }
             }
         }

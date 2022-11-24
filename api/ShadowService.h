@@ -20,5 +20,6 @@
 - (NSArray*)getURLSchemes;
 - (NSDictionary *)getVersions;
 
++ (NSDictionary *)getDefaultPreferences;
 + (NSUserDefaults *)getPreferences;
 @end
