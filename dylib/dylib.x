@@ -71,7 +71,6 @@ NSUserDefaults* prefs;
 		return;
 	}
 
-
 	// Load preferences.
 	if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
 		if(libSandy_applyProfile("ShadowSettings") != kLibSandySuccess) {
