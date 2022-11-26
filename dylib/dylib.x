@@ -14,7 +14,7 @@
 
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
-NSUserDefaults* prefs;
+NSUserDefaults* prefs = nil;
 
 %group hook_springboard
 %hook SpringBoard
@@ -84,12 +84,17 @@ NSUserDefaults* prefs;
 		// Use Cephei to load preferences.
 		// Code reference: SafariPlus
 		NSBundle* cepheiBundle = [NSBundle bundleWithPath:@"/Library/Frameworks/Cephei.framework"];
-		[cepheiBundle load];
 
-		prefs = (NSUserDefaults *)[[NSClassFromString(@"HBPreferences") alloc] initWithIdentifier:@"me.jjolano.shadow"];
-		[prefs registerDefaults:[ShadowService getDefaultPreferences]];
+		if([cepheiBundle load]) {
+			prefs = (NSUserDefaults *)[[NSClassFromString(@"HBPreferences") alloc] initWithIdentifier:@"me.jjolano.shadow"];
+			[prefs registerDefaults:[ShadowService getDefaultPreferences]];
 
-		NSLog(@"%@", @"loaded preferences with cephei");
+			NSLog(@"%@", @"loaded preferences with cephei");
+		}
+	}
+
+	if(!prefs) {
+		NSLog(@"%@", @"failed to load preferences");
 	}
 
 	BOOL enabled = NO;
