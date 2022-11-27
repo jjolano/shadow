@@ -11,21 +11,19 @@
 
     if(result) {
         NSString* base = [self valueForKey:@"shdwDir"];
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
         
         for(id entry in result) {
             if([entry isKindOfClass:[NSURL class]]) {
-                if(![_shadow isURLRestricted:entry] || [_shadow isCallerTweak:backtrace]) {
-                    [result_filtered addObject:entry];
+                if([_shadow isURLRestricted:entry] && ![_shadow isCallerTweak:backtrace]) {
+                    [result_filtered removeObject:entry];
                 }
             } else if([entry isKindOfClass:[NSString class]] && base) {
                 NSString* path = [base stringByAppendingPathComponent:entry];
 
-                if(![_shadow isPathRestricted:path] || [_shadow isCallerTweak:backtrace]) {
-                    [result_filtered addObject:path];
+                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
+                    [result_filtered removeObject:path];
                 }
-            } else {
-                [result_filtered addObject:entry];
             }
         }
 
@@ -147,11 +145,11 @@
             return nil;
         }
 
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* result_url in result) {
-            if(![_shadow isURLRestricted:result_url] || [_shadow isCallerTweak:backtrace]) {
-                [result_filtered addObject:result_url];
+            if([_shadow isURLRestricted:result_url] && ![_shadow isCallerTweak:backtrace]) {
+                [result_filtered removeObject:result_url];
             }
         }
 
@@ -174,7 +172,7 @@
             return nil;
         }
 
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
@@ -184,8 +182,8 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -230,7 +228,7 @@
             return nil;
         }
 
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
@@ -240,8 +238,8 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -260,7 +258,7 @@
             return nil;
         }
 
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
@@ -270,8 +268,8 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -420,9 +418,9 @@
             return nil;
         }
 
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
-        for(NSString* result_path in result) {
+        for(NSString* result_path in result_filtered) {
             NSString* abspath = result_path;
 
             if(![abspath isAbsolutePath]) {
@@ -430,8 +428,8 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
+                [result_filtered removeObject:result_path];
             }
         }
 

@@ -157,8 +157,10 @@
         return NO;
     }
 
-    if(resolve && service) {
-        path = [service resolvePath:path];
+    if(resolve) {
+        if(service) {
+            path = [service resolvePath:path];
+        }
     }
 
     if(![path isAbsolutePath]) {
@@ -221,12 +223,6 @@
 
 - (BOOL)isURLRestricted:(NSURL *)url {
     if(!url) {
-        return NO;
-    }
-
-    NSArray* exceptions = @[@"http", @"https"];
-
-    if([exceptions containsObject:[url scheme]]) {
         return NO;
     }
 
