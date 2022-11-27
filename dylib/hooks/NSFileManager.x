@@ -6,21 +6,22 @@
 %property (nonatomic, strong) NSString* shdwDir;
 
 - (NSArray *)allObjects {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result) {
         NSString* base = [self valueForKey:@"shdwDir"];
         NSMutableArray* result_filtered = [NSMutableArray new];
         
         for(id entry in result) {
             if([entry isKindOfClass:[NSURL class]]) {
-                if(![_shadow isURLRestricted:entry]) {
+                if(![_shadow isURLRestricted:entry] || [_shadow isCallerTweak:backtrace]) {
                     [result_filtered addObject:entry];
                 }
             } else if([entry isKindOfClass:[NSString class]] && base) {
                 NSString* path = [base stringByAppendingPathComponent:entry];
 
-                if(![_shadow isPathRestricted:path]) {
+                if(![_shadow isPathRestricted:path] || [_shadow isCallerTweak:backtrace]) {
                     [result_filtered addObject:path];
                 }
             } else {
@@ -35,12 +36,13 @@
 }
 
 - (id)nextObject {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     id result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result) {
         if([result isKindOfClass:[NSURL class]]) {
             do {
-                if([_shadow isURLRestricted:result]) {
+                if([_shadow isURLRestricted:result] && ![_shadow isCallerTweak:backtrace]) {
                     result = %orig;
                 } else {
                     break;
@@ -53,7 +55,7 @@
                 do {
                     NSString* path = [base stringByAppendingPathComponent:result];
 
-                    if([_shadow isPathRestricted:path]) {
+                    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
                         result = %orig;
                     } else {
                         break;
@@ -133,10 +135,11 @@
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray<NSURL *> * result = %orig;
     
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        if([_shadow isURLRestricted:url]) {
+    if(result) {
+        if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
             if(error) {
                 *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
             }
@@ -147,7 +150,7 @@
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSURL* result_url in result) {
-            if(![_shadow isURLRestricted:result_url]) {
+            if(![_shadow isURLRestricted:result_url] || [_shadow isCallerTweak:backtrace]) {
                 [result_filtered addObject:result_url];
             }
         }
@@ -159,10 +162,11 @@
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray<NSString *> * result = %orig;
     
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        if([_shadow isPathRestricted:path]) {
+    if(result) {
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
             if(error) {
                 *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
             }
@@ -180,7 +184,7 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath]) {
+            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
                 [result_filtered addObject:result_path];
             }
         }
@@ -214,10 +218,11 @@
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray<NSString *> * result = %orig;
     
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        if([_shadow isPathRestricted:path]) {
+    if(result) {
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
             if(error) {
                 *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
             }
@@ -235,7 +240,7 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath]) {
+            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
                 [result_filtered addObject:result_path];
             }
         }
@@ -247,10 +252,11 @@
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray<NSString *> * result = %orig;
     
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        if([_shadow isPathRestricted:path]) {
+    if(result) {
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
             return nil;
         }
 
@@ -264,7 +270,7 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath]) {
+            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
                 [result_filtered addObject:result_path];
             }
         }
@@ -406,10 +412,11 @@
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
+    NSArray* backtrace = [NSThread callStackReturnAddresses];
     NSArray* result = %orig;
     
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        if([_shadow isPathRestricted:path]) {
+    if(result) {
+        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
             return nil;
         }
 
@@ -423,7 +430,7 @@
                 abspath = [path stringByAppendingPathComponent:abspath];
             }
 
-            if(![_shadow isPathRestricted:abspath]) {
+            if(![_shadow isPathRestricted:abspath] || [_shadow isCallerTweak:backtrace]) {
                 [result_filtered addObject:result_path];
             }
         }

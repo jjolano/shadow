@@ -462,7 +462,7 @@ static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stre
 
 static char* (*original_realpath)(const char* pathname, char* resolved_path);
 static char* replaced_realpath(const char* pathname, char* resolved_path) {
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]] && ([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path])) {
+    if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         errno = ENOENT;
         return NULL;
     }
