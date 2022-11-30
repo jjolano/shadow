@@ -33,6 +33,30 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Enhances bypass capabilities by operating outside of the app sandbox.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Use_Service</string>
+			<key>id</key>
+			<string>User_Service</string>
+			<key>label</key>
+			<string>Use Shadow Service</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Essential Hooks</string>
 		</dict>

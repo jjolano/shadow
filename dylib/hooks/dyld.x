@@ -1,5 +1,6 @@
 #import "hooks.h"
 
+uint32_t _shdw_dyld_image_count = 0;
 NSArray* _shdw_dyld_collection = nil;
 NSArray* _shdw_dyld_add_image = nil;
 NSArray* _shdw_dyld_remove_image = nil;
@@ -8,7 +9,7 @@ NSArray* _shdw_dyld_remove_image = nil;
 static uint32_t (*original_dyld_image_count)(void);
 static uint32_t replaced_dyld_image_count(void) {
     if(_shdw_dyld_collection) {
-        return [_shdw_dyld_collection count];
+        return _shdw_dyld_image_count;
     }
 
     return original_dyld_image_count();
@@ -17,7 +18,7 @@ static uint32_t replaced_dyld_image_count(void) {
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < [_shdw_dyld_collection count] ? (struct mach_header *)[_shdw_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
+        return image_index < _shdw_dyld_image_count ? (struct mach_header *)[_shdw_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
     }
 
     return original_dyld_get_image_header(image_index);
@@ -26,7 +27,7 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < [_shdw_dyld_collection count] ? (intptr_t)[_shdw_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
+        return image_index < _shdw_dyld_image_count ? (intptr_t)[_shdw_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
     }
     
     return original_dyld_get_image_vmaddr_slide(image_index);
@@ -35,7 +36,7 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < [_shdw_dyld_collection count] ? [_shdw_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+        return image_index < _shdw_dyld_image_count ? [_shdw_dyld_collection[image_index][@"name"] UTF8String] : NULL;
     }
 
     const char* result = original_dyld_get_image_name(image_index);
@@ -43,10 +44,8 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
     if(result) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
 
-        NSLog(@"%@: %@: %@", @"dyld", @"_dyld_get_image_name", image_name);
-
         if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return "/usr/lib/system/libsystem_c.dylib";
+            return "";
         }
     }
 
@@ -219,6 +218,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 
         [_dyld_collection addObject:dylib];
         _shdw_dyld_collection = [_dyld_collection copy];
+        _shdw_dyld_image_count = [_dyld_collection count];
     }
 }
 
@@ -243,6 +243,7 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
             NSMutableArray* _dyld_collection = [_shdw_dyld_collection mutableCopy];
             [_dyld_collection removeObject:dylibToRemove];
             _shdw_dyld_collection = [_dyld_collection copy];
+            _shdw_dyld_image_count = [_dyld_collection count];
         }
     }
 }
@@ -299,7 +300,7 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
 
 static void* (*original_dlsym)(void* handle, const char* symbol);
 static void* replaced_dlsym(void* handle, const char* symbol) {
-    void* addr = original_dlsym(handle, symbol);
+    void* addr = original_dlsym(handle == RTLD_NEXT ? RTLD_DEFAULT : handle, symbol);
 
     if(addr) {
         // Check origin of resolved symbol
@@ -327,19 +328,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
                 NSLog(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
 
-                if([sym hasPrefix:@"_logos_method"]) {
-                    void* orig_addr = original_dlsym(RTLD_DEFAULT, [[sym stringByReplacingOccurrencesOfString:@"_logos_method" withString:@"_logos_orig"] UTF8String]);
-
-                    if(orig_addr) {
-                        return original_dladdr(orig_addr, info);
-                    }
-                }
-
-                if([sym isEqualToString:@"__dso_handle"]) {
-                    return original_dladdr(original_dlsym(RTLD_DEFAULT, "__dso_handle"), info);
-                }
-
-                void* orig_addr = original_dlsym(RTLD_SELF, [[@"original_" stringByAppendingString:sym] UTF8String]);
+                void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
 
                 if(orig_addr) {
                     return original_dladdr(orig_addr, info);
