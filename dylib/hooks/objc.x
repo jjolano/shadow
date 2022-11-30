@@ -34,50 +34,50 @@
 // // }
 // %end
 
-static Class (*original_objc_lookUpClass)(const char* name);
-static Class replaced_objc_lookUpClass(const char* name) {
-    Class result = original_objc_lookUpClass(name);
+// static Class (*original_objc_lookUpClass)(const char* name);
+// static Class replaced_objc_lookUpClass(const char* name) {
+//     Class result = original_objc_lookUpClass(name);
 
-    if(result) {
-        const char* image_name = class_getImageName(result);
+//     if(result) {
+//         const char* image_name = class_getImageName(result);
 
-        if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return nil;
-        }
-    }
+//         if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-static Class (*original_objc_getClass)(const char* name);
-static Class replaced_objc_getClass(const char* name) {
-    Class result = original_objc_getClass(name);
+// static Class (*original_objc_getClass)(const char* name);
+// static Class replaced_objc_getClass(const char* name) {
+//     Class result = original_objc_getClass(name);
 
-    if(result) {
-        const char* image_name = class_getImageName(result);
+//     if(result) {
+//         const char* image_name = class_getImageName(result);
 
-        if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return nil;
-        }
-    }
+//         if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-static Class (*original_objc_getMetaClass)(const char* name);
-static Class replaced_objc_getMetaClass(const char* name) {
-    Class result = original_objc_getMetaClass(name);
+// static Class (*original_objc_getMetaClass)(const char* name);
+// static Class replaced_objc_getMetaClass(const char* name) {
+//     Class result = original_objc_getMetaClass(name);
 
-    if(result) {
-        const char* image_name = class_getImageName(result);
+//     if(result) {
+//         const char* image_name = class_getImageName(result);
 
-        if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return nil;
-        }
-    }
+//         if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
 static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
@@ -136,7 +136,7 @@ void shadowhook_objc(void) {
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
     MSHookFunction(objc_copyClassNamesForImage, replaced_objc_copyClassNamesForImage, (void **) &original_objc_copyClassNamesForImage);
     MSHookFunction(objc_copyImageNames, replaced_objc_copyImageNames, (void **) &original_objc_copyImageNames);
-    MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
-    MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
-    MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
+    // MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
+    // MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
+    // MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
 }
