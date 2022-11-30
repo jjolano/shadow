@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>Application Settings</string>
 			<key>footerText</key>
-			<string>App settings will have no effect unless this is enabled.</string>
+			<string>Enables bypass settings for this application.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -45,7 +45,7 @@
 			<key>id</key>
 			<string>App_Enabled</string>
 			<key>label</key>
-			<string>Enable Bypass</string>
+			<string>Enable Shadow</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

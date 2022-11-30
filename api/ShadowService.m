@@ -468,8 +468,8 @@
 + (NSDictionary *)getDefaultPreferences {
     return @{
 		@"Global_Enabled" : @(NO),
-		@"Global_Service" : @(NO),
 		@"Tweak_CompatEx" : @(NO),
+        @"Use_Service" : @(NO),
 		@"Hook_Filesystem" : @(YES),
 		@"Hook_DynamicLibraries" : @(YES),
 		@"Hook_URLScheme" : @(YES),

@@ -22,6 +22,15 @@ NSUserDefaults* prefs = nil;
     %orig;
 
 	[[NSOperationQueue new] addOperationWithBlock:^(){
+		_srv = [ShadowService new];
+
+		// if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
+		// 	NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
+		// }
+
+		[_srv startService];
+		NSLog(@"%@", @"started ShadowService");
+
 		NSDictionary* db = [_srv generateDatabase];
 
 		// Save this database to filesystem
@@ -43,20 +52,6 @@ NSUserDefaults* prefs = nil;
 
 	// Injected into SpringBoard.
 	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
-		_srv = [ShadowService new];
-
-		// Load preferences.
-		prefs = [ShadowService getPreferences];
-
-		if([prefs boolForKey:@"Global_Service"]) {
-			if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
-				NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
-			}
-
-			[_srv startService];
-			NSLog(@"%@", @"started ShadowService");
-		}
-
 		%init(hook_springboard);
 		NSLog(@"%@", @"loaded into SpringBoard");
 		return;
@@ -86,7 +81,9 @@ NSUserDefaults* prefs = nil;
 		NSBundle* cepheiBundle = [NSBundle bundleWithPath:@"/Library/Frameworks/Cephei.framework"];
 
 		if([cepheiBundle load]) {
-			prefs = (NSUserDefaults *)[[NSClassFromString(@"HBPreferences") alloc] initWithIdentifier:@"me.jjolano.shadow"];
+			HBPreferences* cepheiPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+
+			prefs = (NSUserDefaults *) cepheiPrefs;
 			[prefs registerDefaults:[ShadowService getDefaultPreferences]];
 
 			NSLog(@"%@", @"loaded preferences with cephei");
@@ -113,6 +110,7 @@ NSUserDefaults* prefs = nil;
 		enabled = [prefs boolForKey:@"Global_Enabled"];
 		prefs_load = @{
 			@"Tweak_CompatEx" : @([prefs boolForKey:@"Tweak_CompatEx"]),
+			@"Use_Service" : @([prefs boolForKey:@"Use_Service"]),
 			@"Hook_Filesystem" : @([prefs boolForKey:@"Hook_Filesystem"]),
 			@"Hook_DynamicLibraries" : @([prefs boolForKey:@"Hook_DynamicLibraries"]),
 			@"Hook_URLScheme" : @([prefs boolForKey:@"Hook_URLScheme"]),
@@ -142,7 +140,7 @@ NSUserDefaults* prefs = nil;
 	_srv = [ShadowService new];
 	[_srv startLocalService];
 
-	if([prefs boolForKey:@"Global_Service"]) {
+	if([prefs boolForKey:@"Use_Service"]) {
 		if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
 			NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
 		}
