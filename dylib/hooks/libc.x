@@ -222,6 +222,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     if(result == 0) {
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
+        // Only use resolve flag if target is not a symlink.
         if([_shadow isPathRestricted:path resolve:(buf && buf->st_mode & S_IFLNK) ? NO : YES] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
@@ -864,6 +865,8 @@ void shadowhook_libc(void) {
     MSHookFunction(fpathconf, replaced_fpathconf, (void **) &original_fpathconf);
     MSHookFunction(utimes, replaced_utimes, (void **) &original_utimes);
     MSHookFunction(futimes, replaced_futimes, (void **) &original_futimes);
+
+    [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
 }
 
 void shadowhook_libc_envvar(void) {
