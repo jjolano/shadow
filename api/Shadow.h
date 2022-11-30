@@ -1,8 +1,5 @@
 #import <Foundation/Foundation.h>
 
-#import <dlfcn.h>
-#import <pwd.h>
-
 #import "ShadowService.h"
 
 @interface Shadow : NSObject
@@ -13,6 +10,8 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 
 - (void)setTweakCompatExtra:(BOOL)enabled;
+- (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr;
+- (void *)getOrigFunc:(NSString *)fname;
 
 + (instancetype)shadowWithService:(ShadowService *)_service;
 @end

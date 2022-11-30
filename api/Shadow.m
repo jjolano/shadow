@@ -1,3 +1,7 @@
+#import <sys/stat.h>
+#import <dlfcn.h>
+#import <pwd.h>
+
 #import "Shadow.h"
 #import "../apple_priv/dyld_priv.h"
 
@@ -6,6 +10,7 @@
     NSArray* schemes;
 
     BOOL tweakCompatExtra;
+    NSMutableDictionary* orig_funcs;
 
     NSArray* whitelist_root;
     NSArray* whitelist_var;
@@ -17,6 +22,46 @@
     NSString* bundlePath;
     NSString* homePath;
     NSString* realHomePath;
+}
+
+- (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr {
+    [orig_funcs setValue:@((unsigned long)addr) forKey:fname];
+}
+
+- (void *)getOrigFunc:(NSString *)fname {
+    NSNumber* result = [orig_funcs objectForKey:fname];
+
+    if(result) {
+        return (void *)[result unsignedLongValue];
+    }
+
+    return NULL;
+}
+
+- (BOOL)shouldResolvePath:(NSString *)path {
+    if([path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+        return NO;
+    }
+
+    if([path characterAtIndex:0] == '~' || [[path lastPathComponent] isEqualToString:@".."] || [[path lastPathComponent] isEqualToString:@"."]) {
+        // resolving relative path component
+        return YES;
+    }
+
+    // check if path is symlink
+    struct stat buf;
+    int (*original_lstat)(const char* pathname, struct stat* buf) = [self getOrigFunc:@"lstat"];
+
+    if(original_lstat && original_lstat([[NSFileManager defaultManager] fileSystemRepresentationWithPath:path], &buf) != -1 && buf.st_mode & S_IFLNK) {
+        return YES;
+    }
+
+    // check path components recursively
+    if([self shouldResolvePath:[path stringByDeletingLastPathComponent]]) {
+        return YES;
+    }
+
+    return NO;
 }
 
 - (BOOL)isPathSafe:(NSString *)path {
@@ -158,7 +203,7 @@
     }
 
     if(resolve) {
-        if(service) {
+        if(service && [self shouldResolvePath:path]) {
             path = [service resolvePath:path];
         }
     }
@@ -269,6 +314,7 @@
 
 - (instancetype)init {
     if((self = [super init])) {
+        orig_funcs = [NSMutableDictionary new];
         schemes = @[@"cydia", @"sileo", @"zbra", @"filza"];
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
