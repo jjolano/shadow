@@ -11,4 +11,4 @@ Add my repo (`https://ios.jjolano.me`) to your package manager and install the S
 After installation, settings are available in the Settings app. You may configure global defaults, or add an app-specific configuration.
 
 ## Legal
-*Copyright Act*, RSC 1985, c 41, s 12.
+*Copyright Act*, RSC 1985, c C-42, s 41.12.
