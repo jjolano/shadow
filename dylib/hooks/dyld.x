@@ -280,7 +280,7 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
 
 static void* (*original_dlsym)(void* handle, const char* symbol);
 static void* replaced_dlsym(void* handle, const char* symbol) {
-    void* addr = original_dlsym(handle == RTLD_NEXT ? RTLD_DEFAULT : handle, symbol);
+    void* addr = original_dlsym(handle, symbol);
 
     if(addr) {
         // Check origin of resolved symbol
@@ -302,24 +302,25 @@ static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
     int result = original_dladdr(addr, info);
     
-    if(result && info) {
+    if(result) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
 
         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             if(info->dli_sname) {
                 NSLog(@"%@: %@: %@ -> %s", @"dyld", @"dladdr", path, info->dli_sname);
 
-                void* curr_addr = original_dlsym(RTLD_DEFAULT, info->dli_sname);
                 void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
 
-                dlerror();
-
-                if(orig_addr && curr_addr != orig_addr) {
+                if(orig_addr) {
                     // Return the original lookup if possible
-                    result = original_dladdr(orig_addr, info);
+                    result = replaced_dladdr(orig_addr, info);
+                } else {
+                    dlerror();
                 }
             }
         }
+    } else {
+        memset(info, 0, sizeof(Dl_info));
     }
 
     return result;
