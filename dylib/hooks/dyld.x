@@ -68,8 +68,16 @@ static bool replaced_dlopen_preflight(const char* path) {
     bool result = original_dlopen_preflight(path);
 
     if(result) {
-        if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return false;
+        void* handle = original_dlopen(path, RTLD_LAZY);
+        
+        if(handle) {
+            const char* image_path = dyld_image_path_containing_address(handle);
+
+            dlclose(handle);
+
+            if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                return false;
+            }
         }
     }
 
