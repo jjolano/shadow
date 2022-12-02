@@ -57,6 +57,16 @@
 + (BOOL)isJailBreakon {
     return NO;
 }
+
++ (bool)isJailbrokenWithSkipAdvancedJailbreakValidation:(bool)a {
+    return false;
+}
+%end
+
+%hook jailBreak
++ (bool)isJailBreak {
+    return false;
+}
 %end
 
 %hook GBDeviceInfo
@@ -138,6 +148,10 @@
 %end
 
 %hook v_VDMap
+- (bool)isJailbrokenDetected {
+    return false;
+}
+
 - (bool)isJailBrokenDetectedByVOS {
     return false;
 }
@@ -159,6 +173,10 @@
 }
 
 - (bool)v_checkAModified {
+    return false;
+}
+
+- (bool)isRuntimeTamperingDetected {
     return false;
 }
 %end
@@ -184,6 +202,56 @@
 %hook AWMyDeviceGeneralInfo
 - (bool)isCompliant {
     return true;
+}
+%end
+
+%hook DTXSessionInfo
+- (bool)isJailbroken {
+    return false;
+}
+%end
+
+%hook DTXDeviceInfo
+- (bool)isJailbroken {
+    return false;
+}
+%end
+
+%hook JailbreakDetection
+- (bool)jailbroken {
+    return false;
+}
+%end
+
+%hook jailBrokenJudge
+- (bool)isJailBreak {
+    return false;
+}
+
+- (bool)isCydiaJailBreak {
+    return false;
+}
+
+- (bool)isApplicationsJailBreak {
+    return false;
+}
+
+- (bool)ischeckCydiaJailBreak {
+    return false;
+}
+
+- (bool)isPathJailBreak {
+    return false;
+}
+
+- (bool)boolIsjailbreak {
+    return false;
+}
+%end
+
+%hook FBAdBotDetector
+- (bool)isJailBrokenDevice {
+    return false;
 }
 %end
 %end
