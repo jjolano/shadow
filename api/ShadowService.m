@@ -392,8 +392,13 @@
     if(response) {
         path = response[@"path"];
     } else {
-        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+        if([path containsString:@"/./"]) {
+            path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        }
+
+        if([path containsString:@"//"]) {
+            path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+        }
 
         if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
             NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];

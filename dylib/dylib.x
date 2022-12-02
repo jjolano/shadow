@@ -198,6 +198,7 @@ NSUserDefaults* prefs = nil;
 	if(prefs_load[@"Hook_FilesystemExtra"] && [prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
 		NSLog(@"%@", @"+ filesystemex");
 
+		shadowhook_libc_extra();
 		shadowhook_NSFileHandle();
 		shadowhook_NSFileVersion();
 		shadowhook_NSFileWrapper();

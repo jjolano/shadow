@@ -56,7 +56,11 @@
     struct stat buf;
     int (*original_lstat)(const char* pathname, struct stat* buf) = [self getOrigFunc:@"lstat"];
 
-    if(original_lstat && original_lstat([[NSFileManager defaultManager] fileSystemRepresentationWithPath:path], &buf) != -1 && buf.st_mode & S_IFLNK) {
+    if(!original_lstat) {
+        original_lstat = lstat;
+    }
+
+    if(original_lstat([path UTF8String], &buf) != -1 && buf.st_mode & S_IFLNK) {
         return YES;
     }
 
@@ -94,6 +98,11 @@
     BOOL restricted = YES;
 
     if([path hasPrefix:@"/var/"]) {
+        // Handle /var/run
+        if([path hasPrefix:@"/var/run/"] && [path hasSuffix:@".pid"]) {
+            return YES;
+        }
+
         for(NSString* path_var in whitelist_var) {
             if([path hasPrefix:path_var]) {
                 restricted = NO;
@@ -139,11 +148,6 @@
         if([path hasPrefix:path_jb]) {
             return YES;
         }
-    }
-
-    // Handle /var/run
-    if([path hasPrefix:@"/var/run"] && [path hasSuffix:@".pid"]) {
-        return YES;
     }
 
     return NO;
@@ -233,8 +237,13 @@
         path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
     }
 
-    path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-    path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+    if([path containsString:@"/./"]) {
+        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+    }
+
+    if([path containsString:@"//"]) {
+        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+    }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
