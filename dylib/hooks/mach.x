@@ -6,7 +6,7 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_check_in", name);
 
-        if(![name hasPrefix:@"com.apple"] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(![name hasPrefix:@"com.apple"]) {
             if([name hasPrefix:@"cy:"]
             || [name hasPrefix:@"lh:"]
             || [name hasPrefix:@"rbs:"]
@@ -28,7 +28,7 @@ static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* serv
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_look_up", name);
 
-        if(![name hasPrefix:@"com.apple"] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(![name hasPrefix:@"com.apple"]) {
             if([name hasPrefix:@"cy:"]
             || [name hasPrefix:@"lh:"]
             || [name hasPrefix:@"rbs:"]

@@ -59,6 +59,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Essential Hooks</string>
+			<key>footerText</key>
+			<string>Essential hooks cover the most common jailbreak detection methods.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -137,6 +139,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Recommended Hooks</string>
+			<key>footerText</key>
+			<string>Recommended hooks cover additional methods which may be used by jailbreak detection.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -233,6 +237,8 @@
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Extra Hooks</string>
+			<key>footerText</key>
+			<string>Extra hooks cover even more methods that may be used by jailbreak detection, including private APIs.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
