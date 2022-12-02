@@ -56,6 +56,7 @@ extern void shadowhook_syscall(void);
 extern void shadowhook_UIApplication(void);
 extern void shadowhook_UIImage(void);
 
+extern void shadowhook_libc_extra(void);
 extern void shadowhook_libc_envvar(void);
 extern void shadowhook_libc_lowlevel(void);
 extern void shadowhook_libc_antidebugging(void);

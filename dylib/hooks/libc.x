@@ -390,13 +390,14 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
     if(result == 0 && *oresult) {
         int fd = dirfd(dirp);
 
-        do {
-            // Get file descriptor path.
-            char pathname[PATH_MAX];
-            NSString* pathParent = nil;
+        // Get file descriptor path.
+        char pathname[PATH_MAX];
+        NSString* pathParent = nil;
 
-            if(fcntl(fd, F_GETPATH, pathname) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        if(fcntl(fd, F_GETPATH, pathname) != -1) {
+            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+            do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@((*oresult)->d_name)];
 
                 if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
@@ -405,8 +406,8 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
                 } else {
                     break;
                 }
-            }
-        } while(result == 0 && *oresult);
+            } while(result == 0 && *oresult);
+        }
     }
 
     return result;
@@ -419,13 +420,14 @@ static struct dirent* replaced_readdir(DIR* dirp) {
     if(result) {
         int fd = dirfd(dirp);
 
-        do {
-            // Get file descriptor path.
-            char pathname[PATH_MAX];
-            NSString* pathParent = nil;
+        // Get file descriptor path.
+        char pathname[PATH_MAX];
+        NSString* pathParent = nil;
 
-            if(fcntl(fd, F_GETPATH, pathname) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        if(fcntl(fd, F_GETPATH, pathname) != -1) {
+            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+
+            do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@(result->d_name)];
 
                 if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
@@ -434,8 +436,8 @@ static struct dirent* replaced_readdir(DIR* dirp) {
                 } else {
                     break;
                 }
-            }
-        } while(result);
+            } while(result);
+        }
     }
 
     return result;
@@ -831,31 +833,34 @@ static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
 
 void shadowhook_libc(void) {
     MSHookFunction(access, replaced_access, (void **) &original_access);
-    MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
-    MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
     MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
-    MSHookFunction(fchdir, replaced_fchdir, (void **) &original_fchdir);
     MSHookFunction(chroot, replaced_chroot, (void **) &original_chroot);
-    MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
     MSHookFunction(statfs, replaced_statfs, (void **) &original_statfs);
     MSHookFunction(fstatfs, replaced_fstatfs, (void **) &original_fstatfs);
     MSHookFunction(stat, replaced_stat, (void **) &original_stat);
     MSHookFunction(lstat, replaced_lstat, (void **) &original_lstat);
-    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
-    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
     MSHookFunction(faccessat, replaced_faccessat, (void **) &original_faccessat);
     MSHookFunction(readdir_r, replaced_readdir_r, (void **) &original_readdir_r);
     MSHookFunction(readdir, replaced_readdir, (void **) &original_readdir);
     MSHookFunction(fopen, replaced_fopen, (void **) &original_fopen);
     MSHookFunction(freopen, replaced_freopen, (void **) &original_freopen);
     MSHookFunction(realpath, replaced_realpath, (void **) &original_realpath);
+    MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
+    MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
+    MSHookFunction(link, replaced_link, (void **) &original_link);
+
+    [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
+}
+
+void shadowhook_libc_extra(void) {
+    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
+    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
     MSHookFunction(execve, replaced_execve, (void **) &original_execve);
     MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
     MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
     MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
     MSHookFunction(getattrlist, replaced_getattrlist, (void **) &original_getattrlist);
     MSHookFunction(symlink, replaced_symlink, (void **) &original_symlink);
-    MSHookFunction(link, replaced_link, (void **) &original_link);
     MSHookFunction(rename, replaced_rename, (void **) &original_rename);
     MSHookFunction(remove, replaced_remove, (void **) &original_remove);
     MSHookFunction(unlink, replaced_unlink, (void **) &original_unlink);
@@ -865,8 +870,8 @@ void shadowhook_libc(void) {
     MSHookFunction(fpathconf, replaced_fpathconf, (void **) &original_fpathconf);
     MSHookFunction(utimes, replaced_utimes, (void **) &original_utimes);
     MSHookFunction(futimes, replaced_futimes, (void **) &original_futimes);
-
-    [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
+    MSHookFunction(fchdir, replaced_fchdir, (void **) &original_fchdir);
+    MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
 }
 
 void shadowhook_libc_envvar(void) {
