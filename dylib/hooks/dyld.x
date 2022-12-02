@@ -41,12 +41,8 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
     const char* result = original_dyld_get_image_name(image_index);
 
-    if(result) {
-        NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:result length:strlen(result)];
-
-        if([_shadow isPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return "";
-        }
+    if([_shadow isCPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return "";
     }
 
     return result;
@@ -59,8 +55,8 @@ static void* replaced_dlopen(const char* path, int mode) {
     if(path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
-        if(![image_name containsString:@"/"]) {
-            handle = original_dlopen(path, RTLD_NOLOAD);
+        if([image_name characterAtIndex:0] != '/') {
+            handle = original_dlopen(path, RTLD_LAZY);
 
             if(handle) {
                 const char* image_path = dyld_image_path_containing_address(handle);
@@ -68,6 +64,8 @@ static void* replaced_dlopen(const char* path, int mode) {
                 if(image_path) {
                     image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
                 }
+
+                dlclose(handle);
             }
         }
 
@@ -84,8 +82,8 @@ static bool replaced_dlopen_preflight(const char* path) {
     if(path) {
         NSString *image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)];
 
-        if(![image_name containsString:@"/"]) {
-            void* handle = original_dlopen(path, RTLD_NOLOAD);
+        if([image_name characterAtIndex:0] != '/') {
+            void* handle = original_dlopen(path, RTLD_LAZY);
 
             if(handle) {
                 const char* image_path = dyld_image_path_containing_address(handle);
@@ -93,6 +91,8 @@ static bool replaced_dlopen_preflight(const char* path) {
                 if(image_path) {
                     image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
                 }
+
+                dlclose(handle);
             }
         }
 
@@ -307,7 +307,10 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         const char* image_path = dyld_image_path_containing_address(addr);
 
         if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            NSLog(@"%@: %@: %@ -> %s", @"dlsym", @"restricted symbol lookup", @(symbol), image_path);
+            if(symbol) {
+                NSLog(@"%@: %@: %s -> %s", @"dlsym", @"restricted symbol lookup", symbol, image_path);
+            }
+
             return NULL;
         }
     }
@@ -318,25 +321,24 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
     int result = original_dladdr(addr, info);
-
+    
     if(result && info) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
 
         if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             if(info->dli_sname) {
-                NSString* sym = @(info->dli_sname);
+                NSLog(@"%@: %@: %@ -> %s", @"dyld", @"dladdr", path, info->dli_sname);
 
-                NSLog(@"%@: %@: %@ -> %@", @"dyld", @"dladdr", path, sym);
-
+                void* curr_addr = original_dlsym(RTLD_DEFAULT, info->dli_sname);
                 void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
 
-                if(orig_addr) {
-                    return original_dladdr(orig_addr, info);
+                dlerror();
+
+                if(orig_addr && curr_addr != orig_addr) {
+                    // Return the original lookup if possible
+                    result = original_dladdr(orig_addr, info);
                 }
             }
-
-            memset(info, 0, sizeof(Dl_info));
-            return 0;
         }
     }
 
@@ -344,15 +346,15 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 }
 
 void shadowhook_dyld(void) {
-    MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
-    MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
-    MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
     MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_extra(void) {
+    MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
+    MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
+    MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
     MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);

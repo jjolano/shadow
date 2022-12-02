@@ -14,6 +14,10 @@
 
     NSArray* whitelist_root;
     NSArray* whitelist_var;
+    NSArray* whitelist_Library;
+    NSArray* whitelist_usr;
+    NSArray* whitelist_etc;
+
     NSArray* whitelist_safe;
     NSArray* blacklist_jb;
     NSArray* blacklist_name;
@@ -57,11 +61,7 @@
     }
 
     // check path components recursively
-    if([self shouldResolvePath:[path stringByDeletingLastPathComponent]]) {
-        return YES;
-    }
-
-    return NO;
+    return [self shouldResolvePath:[path stringByDeletingLastPathComponent]];
 }
 
 - (BOOL)isPathSafe:(NSString *)path {
@@ -69,17 +69,12 @@
         return NO;
     }
 
-    // Handle /
-    for(NSString* path_root in whitelist_root) {
-        if([path isEqualToString:path_root]) {
-            return YES;
-        }
-    }
-
-    for(NSString* path_var in whitelist_var) {
-        if([path isEqualToString:path_var]) {
-            return YES;
-        }
+    if([whitelist_root containsObject:path]
+    || [whitelist_var containsObject:path]
+    || [whitelist_Library containsObject:path]
+    || [whitelist_usr containsObject:path]
+    || [whitelist_etc containsObject:path]) {
+        return YES;
     }
 
     for(NSString* path_safe in whitelist_safe) {
@@ -98,18 +93,37 @@
 
     BOOL restricted = YES;
 
-    // Handle /
-    for(NSString* path_root in whitelist_root) {
-        if([path hasPrefix:path_root]) {
-            restricted = NO;
-            break;
-        }
-    }
-
-    // Handle /var
     if([path hasPrefix:@"/var/"]) {
         for(NSString* path_var in whitelist_var) {
             if([path hasPrefix:path_var]) {
+                restricted = NO;
+                break;
+            }
+        }
+    } else if([path hasPrefix:@"/Library/"]) {
+        for(NSString* path_Library in whitelist_Library) {
+            if([path hasPrefix:path_Library]) {
+                restricted = NO;
+                break;
+            }
+        }
+    } else if([path hasPrefix:@"/usr/"]) {
+        for(NSString* path_usr in whitelist_usr) {
+            if([path hasPrefix:path_usr]) {
+                restricted = NO;
+                break;
+            }
+        }
+    } else if([path hasPrefix:@"/etc/"]) {
+        for(NSString* path_etc in whitelist_etc) {
+            if([path hasPrefix:path_etc]) {
+                restricted = NO;
+                break;
+            }
+        }
+    } else {
+        for(NSString* path_root in whitelist_root) {
+            if([path hasPrefix:path_root]) {
                 restricted = NO;
                 break;
             }
@@ -202,15 +216,21 @@
         return NO;
     }
 
+    if(![path isAbsolutePath] && [path characterAtIndex:0] != '~') {
+        NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
+        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+    }
+
     if(resolve) {
         if(service && [self shouldResolvePath:path]) {
             path = [service resolvePath:path];
         }
     }
 
-    if(![path isAbsolutePath]) {
-        NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
-        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+    if([path characterAtIndex:0] == '~') {
+        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
+        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
+        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
     }
 
     path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
@@ -299,11 +319,11 @@
 }
 
 - (void)setService:(ShadowService *)_service {
-    service = _service;
+    if(_service) {
+        service = _service;
 
-    NSDictionary* versions = [service getVersions];
+        NSDictionary* versions = [service getVersions];
 
-    if(versions) {
         NSLog(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
         NSLog(@"%@: %@", @"api version", versions[@"api_version"]);
 
@@ -345,7 +365,6 @@
             @"/.file",
             @"/.fseventsd",
             @"/.mb",
-            @"/.HFS",
             @"/Applications",
             @"/Developer",
             @"/Library",
@@ -400,7 +419,57 @@
             @"/var/.DocumentRevisions-V100",
             @"/var/.fseventsd",
             @"/var/installd",
-            @"/var/hardware"
+            @"/var/hardware",
+            @"/var/datamigrator",
+            @"/var/protected"
+        ];
+
+        whitelist_Library = @[
+            @"/Library/Application Support",
+            @"/Library/Audio",
+            @"/Library/Caches",
+            @"/Library/Filesystems",
+            @"/Library/Frameworks",
+            @"/Library/Internet Plug-Ins",
+            @"/Library/Keychains",
+            @"/Library/LaunchAgents",
+            @"/Library/LaunchDaemons",
+            @"/Library/Logs",
+            @"/Library/Managed Preferences",
+            @"/Library/MobileDevice",
+            @"/Library/MusicUISupport",
+            @"/Library/Preferences",
+            @"/Library/Printers",
+            @"/Library/RegionFeatures",
+            @"/Library/Ringtones",
+            @"/Library/Updates",
+            @"/Library/Wallpaper"
+        ];
+
+        whitelist_usr = @[
+            @"/usr/bin",
+            @"/usr/lib",
+            @"/usr/libexec",
+            @"/usr/sbin",
+            @"/usr/share",
+            @"/usr/standalone"
+        ];
+
+        whitelist_etc = @[
+            @"/etc/asl",
+            @"/etc/asl.conf",
+            @"/etc/group",
+            @"/etc/hosts",
+            @"/etc/hosts.equiv",
+            @"/etc/master.passwd",
+            @"/etc/networks",
+            @"/etc/notify.conf",
+            @"/etc/passwd",
+            @"/etc/ppp",
+            @"/etc/protocols",
+            @"/etc/racoon",
+            @"/etc/services",
+            @"/etc/ttys"
         ];
 
         whitelist_safe = @[
@@ -430,23 +499,12 @@
             @"/var/mobile/Library/Saved Application State/com.apple",
             @"/var/mobile/Library/SplashBoard/Snapshots/com.apple",
             @"/var/mobile/Library/Cookies/com.apple",
-            @"/etc/asl",
-            // @"/etc/fstab",
-            @"/etc/group",
-            @"/etc/hosts",
-            @"/etc/master.passwd",
-            @"/etc/networks",
-            @"/etc/notify.conf",
-            @"/etc/passwd",
-            @"/etc/ppp",
-            @"/etc/protocols",
-            @"/etc/racoon",
-            @"/etc/services",
-            @"/etc/ttys",
             @"/Library/Application Support/AggregateDictionary",
             @"/Library/Application Support/BTServer",
+            @"/Library/LaunchDaemons/com.apple",
             @"/var/log/asl",
             @"/var/log/com.apple",
+            @"/var/log/mDNSResponder",
             @"/var/log/ppp",
             @"/System/Library/LaunchDaemons/com.apple",
             @"/var/MobileAsset",
@@ -471,7 +529,7 @@
             @"/var/bin",
             @"/var/sbin",
             @"/var/Apps",
-            @"/Library/Frameworks",
+            @"/Library/Frameworks/",
             @"/Library/Themes",
             @"/Library/ControlCenter",
             @"/Library/Activator",
@@ -506,14 +564,14 @@
             @"/Applications/Cydia.app",
             @"/Applications/Sileo.app",
             @"/Applications/Zebra.app",
-            @"/usr/lib/libhooker.dylib",
-            @"/usr/lib/libsubstitute.0.dylib",
-            @"/usr/lib/libsubstitute.dylib",
-            @"/usr/lib/libsubstrate.dylib",
+            @"/usr/lib/libhooker",
+            @"/usr/lib/libsubstitute",
+            @"/usr/lib/libsubstrate",
             @"/usr/lib/substitute",
+            @"/usr/lib/Substitute",
             @"/usr/lib/substrate",
             @"/usr/lib/Substrate",
-            @"/usr/lib/tweakloader.dylib",
+            @"/usr/lib/tweakloader",
             @"/usr/lib/apt",
             @"/usr/libexec/cydia",
             @"/usr/share/terminfo",
@@ -546,7 +604,6 @@
             @"/var/lib/",
             @"/var/cache/",
             @"/User/"
-            // @"/Library/"
         ];
 
         blacklist_name = @[

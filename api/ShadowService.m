@@ -336,8 +336,6 @@
         [center registerForMessageName:@"isPathRestricted" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
         [center registerForMessageName:@"getURLSchemes" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
         [center registerForMessageName:@"resolvePath" target:self selector:@selector(handleMessageNamed:withUserInfo:)];
-
-        // rocketbootstrap_unlock(CPDMC_SERVICE_NAME);
     }
 }
 
@@ -349,20 +347,19 @@
         NSLog(@"%@", @"could not load db");
     } else {
         NSLog(@"%@", @"successfully loaded db");
-    }
 
-    if(db_plist[@"installed"]) {
-        dpkgInstalledDb = [NSSet setWithArray:db_plist[@"installed"]];
-    }
+        if(db_plist[@"installed"]) {
+            dpkgInstalledDb = [NSSet setWithArray:db_plist[@"installed"]];
+        }
 
-    if(db_plist[@"exception"]) {
-        dpkgExceptionDb = [NSSet setWithArray:db_plist[@"exception"]];
+        if(db_plist[@"exception"]) {
+            dpkgExceptionDb = [NSSet setWithArray:db_plist[@"exception"]];
+        }
     }
 }
 
 - (void)connectService {
     center = [CPDistributedMessagingCenter centerNamed:@CPDMC_SERVICE_NAME];
-    // rocketbootstrap_distributedmessagingcenter_apply(center);
 }
 
 - (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args useService:(BOOL)service {
@@ -448,7 +445,7 @@
 }
 
 - (NSArray*)getURLSchemes {
-    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil useService:(dpkgInstalledDb == nil)];
+    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil useService:(center != nil)];
 
     if(response) {
         return response[@"schemes"];
