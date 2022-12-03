@@ -254,6 +254,46 @@
     return false;
 }
 %end
+
+%hook TNGDeviceTool
++ (bool)isJailBreak {
+    return false;
+}
+
++ (bool)isJailBreak_file {
+    return false;
+}
+
++ (bool)isJailBreak_cydia {
+    return false;
+}
+
++ (bool)isJailBreak_appList {
+    return false;
+}
+
++ (bool)isJailBreak_env {
+    return false;
+}
+%end
+
+%hook DTDeviceInfo
++ (bool)isJailbreak {
+    return false;
+}
+%end
+
+%hook SecVIDeviceUtil
++ (bool)isJailbreak {
+    return false;
+}   
+%end
+
+%hook RVPBridgeExtension4Jailbroken
+- (bool)isJailbroken {
+    return false;
+}
+%end
 %end
 
 void shadowhook_DeviceCheck(void) {
