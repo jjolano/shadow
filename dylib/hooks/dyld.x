@@ -42,7 +42,7 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
     const char* result = original_dyld_get_image_name(image_index);
 
     if([_shadow isCPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return "";
+        return "/usr/lib/dyld";
     }
 
     return result;
@@ -68,16 +68,8 @@ static bool replaced_dlopen_preflight(const char* path) {
     bool result = original_dlopen_preflight(path);
 
     if(result) {
-        void* handle = original_dlopen(path, RTLD_LAZY);
-        
-        if(handle) {
-            const char* image_path = dyld_image_path_containing_address(handle);
-
-            dlclose(handle);
-
-            if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-                return false;
-            }
+        if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            return false;
         }
     }
 
@@ -328,8 +320,6 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
 void shadowhook_dyld(void) {
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
-    MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
-    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_extra(void) {
@@ -339,6 +329,8 @@ void shadowhook_dyld_extra(void) {
     MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
+    MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_symlookup(void) {

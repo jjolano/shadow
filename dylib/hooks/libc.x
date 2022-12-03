@@ -679,26 +679,19 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
 
 static char* (*original_getenv)(const char* name);
 static char* replaced_getenv(const char* name) {
-    if(name) {
-        NSString *env = [NSString stringWithUTF8String:name];
+    char* result = original_getenv(name);
 
-        if([env isEqualToString:@"DYLD_INSERT_LIBRARIES"]
-        || [env isEqualToString:@"_MSSafeMode"]
-        || [env isEqualToString:@"_SafeMode"]
-        || [env isEqualToString:@"_SubstituteSafeMode"]
-        || [env isEqualToString:@"SHELL"]) {
+    if(result && name) {
+        if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
+        || strcmp(name, "_MSSafeMode") == 0
+        || strcmp(name, "_SafeMode") == 0
+        || strcmp(name, "_SubstituteSafeMode") == 0
+        || strcmp(name, "SHELL") == 0) {
             return NULL;
         }
-        
-        // if([env isEqualToString:@"SIMULATOR_DEVICE_NAME"]) {
-        //     struct utsname systemInfo;
-        //     uname(&systemInfo);
-
-        //     return (char *)[@(systemInfo.machine) UTF8String];
-        // }
     }
 
-    return original_getenv(name);
+    return result;
 }
 
 static int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
