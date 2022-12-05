@@ -164,8 +164,8 @@ NSUserDefaults* prefs = nil;
 		shadowhook_NSFileManager();
 	}
 
-	if(prefs_load[@"Hook_DynamicLibrariesExtra"] && [prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
-		NSLog(@"%@", @"+ dylibex");
+	if(prefs_load[@"Hook_DynamicLibraries"] && [prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
+		NSLog(@"%@", @"+ dylib");
 
 		// Register before hooking
 		_dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
@@ -173,13 +173,13 @@ NSUserDefaults* prefs = nil;
 		_dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
 		_dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
 
-		shadowhook_dyld_extra();
+		shadowhook_dyld();
 	}
 
-	if(prefs_load[@"Hook_DynamicLibraries"] && [prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
-		NSLog(@"%@", @"+ dylib");
+	if(prefs_load[@"Hook_DynamicLibrariesExtra"] && [prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+		NSLog(@"%@", @"+ dylibex");
 
-		shadowhook_dyld();
+		shadowhook_dyld_extra();
 	}
 
 	if(prefs_load[@"Hook_URLScheme"] && [prefs_load[@"Hook_URLScheme"] boolValue]) {

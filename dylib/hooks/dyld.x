@@ -320,14 +320,14 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
 void shadowhook_dyld(void) {
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
-}
-
-void shadowhook_dyld_extra(void) {
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
     MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
     MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
     MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
+}
+
+void shadowhook_dyld_extra(void) {
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
     MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
