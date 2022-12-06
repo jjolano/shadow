@@ -192,24 +192,6 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
             errno = ENOENT;
             return -1;
         }
-
-        if(buf) {
-            if([path isEqualToString:@"/Applications"]
-            || [path isEqualToString:@"/Library/Ringtones"]
-            || [path isEqualToString:@"/Library/Wallpaper"]
-            || [path isEqualToString:@"/usr/include"]
-            || [path isEqualToString:@"/usr/libexec"]
-            || [path isEqualToString:@"/usr/share"]) {
-                buf->st_mode &= ~S_IFLNK;
-                buf->st_mode |= S_IFDIR;
-            }
-
-            if([path isEqualToString:@"/bin"]) {
-                if(buf->st_size > 128) {
-                    buf->st_size = 128;
-                }
-            }
-        }
     }
 
     return result;
@@ -227,24 +209,6 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
-        }
-
-        if(buf) {
-            if([path isEqualToString:@"/Applications"]
-            || [path isEqualToString:@"/Library/Ringtones"]
-            || [path isEqualToString:@"/Library/Wallpaper"]
-            || [path isEqualToString:@"/usr/include"]
-            || [path isEqualToString:@"/usr/libexec"]
-            || [path isEqualToString:@"/usr/share"]) {
-                buf->st_mode &= ~S_IFLNK;
-                buf->st_mode |= S_IFDIR;
-            }
-
-            if([path isEqualToString:@"/bin"]) {
-                if(buf->st_size > 128) {
-                    buf->st_size = 128;
-                }
-            }
         }
     }
 
@@ -269,24 +233,6 @@ static int replaced_fstat(int fd, struct stat* buf) {
             if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
                 errno = EBADF;
                 return -1;
-            }
-
-            if(buf) {
-                if([path isEqualToString:@"/Applications"]
-                || [path isEqualToString:@"/Library/Ringtones"]
-                || [path isEqualToString:@"/Library/Wallpaper"]
-                || [path isEqualToString:@"/usr/include"]
-                || [path isEqualToString:@"/usr/libexec"]
-                || [path isEqualToString:@"/usr/share"]) {
-                    buf->st_mode &= ~S_IFLNK;
-                    buf->st_mode |= S_IFDIR;
-                }
-
-                if([path isEqualToString:@"/bin"]) {
-                    if(buf->st_size > 128) {
-                        buf->st_size = 128;
-                    }
-                }
             }
         }
     }
@@ -325,24 +271,6 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
             errno = ENOENT;
             return -1;
         }
-
-        if(buf) {
-            if([path isEqualToString:@"/Applications"]
-            || [path isEqualToString:@"/Library/Ringtones"]
-            || [path isEqualToString:@"/Library/Wallpaper"]
-            || [path isEqualToString:@"/usr/include"]
-            || [path isEqualToString:@"/usr/libexec"]
-            || [path isEqualToString:@"/usr/share"]) {
-                buf->st_mode &= ~S_IFLNK;
-                buf->st_mode |= S_IFDIR;
-            }
-
-            if([path isEqualToString:@"/bin"]) {
-                if(buf->st_size > 128) {
-                    buf->st_size = 128;
-                }
-            }
-        }
     }
 
     return result;
@@ -379,6 +307,13 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
             return -1;
         }
     }
+
+    return result;
+}
+
+static int (*original_scandir)(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *));
+static int replaced_scandir(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *)) {
+    int result = original_scandir(dirname, namelist, select, compar);
 
     return result;
 }
@@ -742,11 +677,7 @@ static pid_t replaced_getppid(void) {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        errno = ENOENT;
-        return -1;
-    }
-
+    bool exists;
     int result = -1;
 
     if(oflag & O_CREAT) {
@@ -756,9 +687,29 @@ static int replaced_open(const char *pathname, int oflag, ...) {
         mode = (mode_t) va_arg(args, int);
         va_end(args);
 
+        int (*o_access)(const char* pathname, int mode) = [_shadow getOrigFunc:@"access"];
+        if(!o_access) o_access = access;
+        exists = (o_access(pathname, F_OK) == 0);
+
         result = original_open(pathname, oflag, mode);
     } else {
         result = original_open(pathname, oflag);
+    }
+
+    if(result != -1) {
+        char fd_pathname[PATH_MAX];
+        fcntl(result, F_GETPATH, fd_pathname);
+
+        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            close(result);
+            errno = ENOENT;
+
+            if(oflag & O_CREAT && !exists) {
+                remove(pathname);
+            }
+
+            return -1;
+        }
     }
 
     return result;
@@ -766,37 +717,7 @@ static int replaced_open(const char *pathname, int oflag, ...) {
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
-
-        if(![path isAbsolutePath]) {
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
-
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
-            }
-
-            if(pathParent) {
-                NSMutableArray* pathComponents = [[pathParent pathComponents] mutableCopy];
-                [pathComponents addObject:@(pathname)];
-
-                path = [NSString pathWithComponents:pathComponents];
-            }
-        }
-
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            errno = ENOENT;
-            return -1;
-        }
-    }
-
+    bool exists;
     int result = -1;
 
     if(oflag & O_CREAT) {
@@ -806,9 +727,29 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         mode = (mode_t) va_arg(args, int);
         va_end(args);
 
+        int (*o_access)(const char* pathname, int mode) = [_shadow getOrigFunc:@"access"];
+        if(!o_access) o_access = access;
+        exists = (o_access(pathname, F_OK) == 0);
+
         result = original_openat(dirfd, pathname, oflag, mode);
     } else {
         result = original_openat(dirfd, pathname, oflag);
+    }
+
+    if(result != -1) {
+        char fd_pathname[PATH_MAX];
+        fcntl(result, F_GETPATH, fd_pathname);
+
+        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            close(result);
+            errno = ENOENT;
+
+            if(oflag & O_CREAT && !exists) {
+                remove(pathname);
+            }
+
+            return -1;
+        }
     }
 
     return result;
@@ -816,12 +757,22 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
 static DIR* (*original___opendir2)(const char* pathname, size_t bufsize);
 static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        errno = ENOENT;
-        return NULL;
+    DIR* result = original___opendir2(pathname, bufsize);
+
+    if(result) {
+        int fd = dirfd(result);
+
+        char fd_pathname[PATH_MAX];
+        fcntl(fd, F_GETPATH, fd_pathname);
+
+        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            closedir(result);
+            errno = ENOENT;
+            return NULL;
+        }
     }
 
-    return original___opendir2(pathname, bufsize);
+    return result;
 }
 
 void shadowhook_libc(void) {
@@ -841,7 +792,9 @@ void shadowhook_libc(void) {
     MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
     MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
     MSHookFunction(link, replaced_link, (void **) &original_link);
+    MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
 
+    [_shadow setOrigFunc:@"access" withAddr:original_access];
     [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
 }
 
@@ -872,9 +825,9 @@ void shadowhook_libc_envvar(void) {
 }
 
 void shadowhook_libc_lowlevel(void) {
-    MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
     MSHookFunction(open, replaced_open, (void **) &original_open);
     MSHookFunction(openat, replaced_openat, (void **) &original_openat);
+    MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
 }
 
 void shadowhook_libc_antidebugging(void) {
