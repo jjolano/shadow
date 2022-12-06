@@ -42,7 +42,7 @@
 			<key>key</key>
 			<string>Use_Service</string>
 			<key>id</key>
-			<string>User_Service</string>
+			<string>Use_Service</string>
 			<key>label</key>
 			<string>Use Shadow Service</string>
 			<key>defaults</key>
