@@ -348,11 +348,11 @@
     } else {
         NSLog(@"%@", @"successfully loaded db");
 
-        if(db_plist[@"installed"]) {
+        if(db_plist[@"installed"] && [db_plist[@"installed"] count] > 0) {
             dpkgInstalledDb = [NSSet setWithArray:db_plist[@"installed"]];
         }
 
-        if(db_plist[@"exception"]) {
+        if(db_plist[@"exception"] && [db_plist[@"exception"] count] > 0) {
             dpkgExceptionDb = [NSSet setWithArray:db_plist[@"exception"]];
         }
     }
