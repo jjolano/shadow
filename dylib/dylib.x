@@ -21,25 +21,34 @@ NSUserDefaults* prefs = nil;
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-	[[NSOperationQueue new] addOperationWithBlock:^(){
-		_srv = [ShadowService new];
+	// Check if we are in a rootless environment.
+	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
+	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
 
-		// if(libSandy_applyProfile("ShadowService") != kLibSandySuccess) {
-		// 	NSLog(@"%@", @"failed to apply libsandy ShadowService profile");
-		// }
+	_srv = [ShadowService new];
+	[_srv setRootless:rootless];
 
-		[_srv startService];
-		NSLog(@"%@", @"started ShadowService");
+	[_srv startService];
+	NSLog(@"%@", @"started ShadowService");
 
-		NSDictionary* db = [_srv generateDatabase];
+	NSDictionary* db = [_srv generateDatabase];
 
-		// Save this database to filesystem
-		if([db writeToFile:@LOCAL_SERVICE_DB atomically:NO]) {
+	// Save this database to filesystem
+	if(db) {
+		BOOL success;
+
+		if(rootless) {
+			success = [db writeToFile:@("/var/jb" LOCAL_SERVICE_DB) atomically:NO];
+		} else {
+			success = [db writeToFile:@LOCAL_SERVICE_DB atomically:NO];
+		}
+
+		if(success) {
 			NSLog(@"%@", @"successfully saved generated db");
 		} else {
 			NSLog(@"%@", @"failed to save generate db");
 		}
-	}];
+	}
 }
 %end
 %end
@@ -62,7 +71,7 @@ NSUserDefaults* prefs = nil;
 	if(![[NSBundle mainBundle] appStoreReceiptURL]
 	|| [executablePath hasPrefix:@"/Applications"]
 	|| [executablePath hasPrefix:@"/System"]
-	|| [bundlePath hasSuffix:@".appex"]) {
+	|| ![bundlePath hasSuffix:@".app"]) {
 		return;
 	}
 
@@ -77,17 +86,12 @@ NSUserDefaults* prefs = nil;
 		NSLog(@"%@", @"loaded preferences with libsandy");
 	} else {
 		// Use Cephei to load preferences.
-		// Code reference: SafariPlus
-		NSBundle* cepheiBundle = [NSBundle bundleWithPath:@"/Library/Frameworks/Cephei.framework"];
+		HBPreferences* cepheiPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
 
-		if([cepheiBundle load]) {
-			HBPreferences* cepheiPrefs = [HBPreferences preferencesForIdentifier:@"me.jjolano.shadow"];
+		prefs = (NSUserDefaults *) cepheiPrefs;
+		[prefs registerDefaults:[ShadowService getDefaultPreferences]];
 
-			prefs = (NSUserDefaults *) cepheiPrefs;
-			[prefs registerDefaults:[ShadowService getDefaultPreferences]];
-
-			NSLog(@"%@", @"loaded preferences with cephei");
-		}
+		NSLog(@"%@", @"loaded preferences with cephei");
 	}
 
 	if(!prefs) {
@@ -136,8 +140,14 @@ NSUserDefaults* prefs = nil;
 
 	NSLog(@"%@", @"tweak loaded in app");
 
+	// Check if we are in a rootless environment.
+	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
+	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
+
 	// Initialize Shadow class.
 	_srv = [ShadowService new];
+	[_srv setRootless:rootless];
+
 	[_srv startLocalService];
 
 	if([prefs boolForKey:@"Use_Service"]) {
@@ -151,7 +161,7 @@ NSUserDefaults* prefs = nil;
 	_shadow = [Shadow shadowWithService:_srv];
 
 	if(prefs_load[@"Tweak_CompatEx"]) {
-		[_shadow setTweakCompatExtra:[prefs_load[@"Tweak_CompatEx"] boolValue]];
+		[_shadow setTweakCompatibility:[prefs_load[@"Tweak_CompatEx"] boolValue]];
 	}
 
 	// Initialize hooks.

@@ -9,7 +9,6 @@
     ShadowService* service;
     NSArray* schemes;
 
-    BOOL tweakCompatExtra;
     NSMutableDictionary* orig_funcs;
 
     NSArray* whitelist_root;
@@ -156,20 +155,8 @@
 - (BOOL)isCallerTweak:(NSArray *)backtrace {
     void* ret_addr = __builtin_return_address(1);
 
-    if(ret_addr) {
-        const char* image_path = dyld_image_path_containing_address(ret_addr);
-
-        if(image_path) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-            if([image_name hasPrefix:bundlePath]) {
-                return NO;
-            }
-
-            if([self isPathRestricted:image_name]) {
-                return YES;
-            }
-        }
+    if([self isAddrRestricted:ret_addr]) {
+        return YES;
     }
 
     bool skipped = false;
@@ -195,6 +182,27 @@
                     continue;
                 }
 
+                return YES;
+            }
+        }
+    }
+
+    return NO;
+}
+
+- (BOOL)isAddrRestricted:(const void *)addr {
+    if(addr) {
+        // See if this address belongs to a restricted file.
+        const char* image_path = dyld_image_path_containing_address(addr);
+
+        if(image_path) {
+            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+
+            if([image_name hasPrefix:bundlePath]) {
+                return NO;
+            }
+
+            if([self isPathRestricted:image_name]) {
                 return YES;
             }
         }
@@ -258,7 +266,8 @@
     }
 
     // Extra tweak compatibility
-    if(tweakCompatExtra && [path hasPrefix:@"/Library/Application Support"]) {
+    if(_tweakCompatibility
+    && [path hasPrefix:@"/Library/Application Support"]) {
         return NO;
     }
 
@@ -323,10 +332,6 @@
     return NO;
 }
 
-- (void)setTweakCompatExtra:(BOOL)enabled {
-    tweakCompatExtra = enabled;
-}
-
 - (void)setService:(ShadowService *)_service {
     if(_service) {
         service = _service;
@@ -348,7 +353,7 @@
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
-        tweakCompatExtra = NO;
+        _tweakCompatibility = NO;
         service = nil;
 
         if([bundlePath hasPrefix:@"/private/var"]) {

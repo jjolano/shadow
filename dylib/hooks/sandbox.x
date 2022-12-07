@@ -44,6 +44,40 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
     return original_host_get_special_port(host_priv, node, which, port);
 }
 
+static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int which_port, mach_port_t *special_port);
+static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
+    NSLog(@"%@: %d", @"task_get_special_port", which_port);
+
+    if(which_port == TASK_HOST_PORT
+    || which_port == TASK_SEATBELT_PORT
+    || which_port == TASK_ACCESS_PORT) {
+        if(special_port) {
+            *special_port = MACH_PORT_NULL;
+        }
+
+        return KERN_FAILURE;
+    }
+
+    return original_task_get_special_port(task, which_port, special_port);
+}
+
+static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
+static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
+    return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
+}
+
+static int (*original_sigaction)(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact);
+static int replaced_sigaction(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact) {
+    int result = original_sigaction(sig, act, oact);
+    NSLog(@"%@: %d", @"sigaction", sig);
+    
+    if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
+        memset(oact, 0, sizeof(struct sigaction));
+    }
+
+    return result;
+}
+
 static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
     int ret = original_csops(pid, ops, useraddr, usersize);
@@ -151,6 +185,13 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
 }
 
+static NSArray<NSString *> * (*original_NSSearchPathForDirectoriesInDomains)(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, BOOL expandTilde);
+static NSArray<NSString *> * replaced_NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, BOOL expandTilde) {
+    NSArray* result = original_NSSearchPathForDirectoriesInDomains(directory, domainMask, expandTilde);
+    NSLog(@"%@: %@", @"NSSearchPathForDirectoriesInDomains", result);
+    return result;
+}
+
 void shadowhook_sandbox(void) {
     // %init(shadowhook_sandbox);
 
@@ -158,5 +199,9 @@ void shadowhook_sandbox(void) {
     MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
     MSHookFunction(csops, replaced_csops, (void **) &original_csops);
     MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
+    MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
+    MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
     MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
+    MSHookFunction(NSSearchPathForDirectoriesInDomains, replaced_NSSearchPathForDirectoriesInDomains, (void **) &original_NSSearchPathForDirectoriesInDomains);
+    MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
 }

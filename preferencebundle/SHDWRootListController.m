@@ -22,14 +22,30 @@
 }
 
 - (void)respring:(id)sender {
-	if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/bin/sbreload"]) {
-        pid_t pid;
-        const char *args[] = {"sbreload", NULL, NULL, NULL};
-        posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
-    } else {
-		pid_t pid;
-        const char *args[] = {"killall", "-9", "SpringBoard", NULL};
-        posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
+	// Check if we are in a rootless environment.
+	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
+	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
+
+	if(rootless) {
+		if([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/sbreload"]) {
+			pid_t pid;
+			const char *args[] = {"sbreload", NULL, NULL, NULL};
+			posix_spawn(&pid, "/var/jb/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+		} else {
+			pid_t pid;
+			const char *args[] = {"killall", "-9", "SpringBoard", NULL};
+			posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
+		}
+	} else {
+		if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/bin/sbreload"]) {
+			pid_t pid;
+			const char *args[] = {"sbreload", NULL, NULL, NULL};
+			posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+		} else {
+			pid_t pid;
+			const char *args[] = {"killall", "-9", "SpringBoard", NULL};
+			posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
+		}
 	}
 }
 

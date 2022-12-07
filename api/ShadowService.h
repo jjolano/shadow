@@ -1,13 +1,15 @@
 #import <Foundation/Foundation.h>
 
-#define BYPASS_VERSION  "4.5"
-#define API_VERSION "4.1"
+#define BYPASS_VERSION  "4.6"
+#define API_VERSION "5.0"
 
 #define SHADOW_PREFS_PLIST "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 #define CPDMC_SERVICE_NAME "me.jjolano.shadow.service"
 #define LOCAL_SERVICE_DB "/Library/Shadow/db.plist"
 
 @interface ShadowService : NSObject
+@property BOOL rootless;
+
 - (void)startService;
 - (void)connectService;
 - (void)startLocalService;
