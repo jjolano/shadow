@@ -253,12 +253,10 @@
 
 - (NSDictionary *)generateDatabase {
     // Determine dpkg info database path.
-    NSString* dpkgInfoPath;
+    NSString* dpkgInfoPath = @"/var/lib/dpkg/info";
 
-    if(_rootless) {
-        dpkgInfoPath = @"/var/jb/Library/dpkg/info";
-    } else {
-        dpkgInfoPath = @"/var/lib/dpkg/info";
+    if(_rootless && ![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
+        dpkgInfoPath = @"/var/jb/var/lib/dpkg/info";
     }
 
     if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
@@ -310,10 +308,10 @@
 }
 
 - (void)startService {
-    if(_rootless) {
+    dpkgPath = @"/usr/bin/dpkg-query";
+
+    if(_rootless && ![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
         dpkgPath = @"/var/jb/usr/bin/dpkg-query";
-    } else {
-        dpkgPath = @"/usr/bin/dpkg-query";
     }
 
     if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
@@ -334,12 +332,10 @@
 
 - (void)startLocalService {
     // Load precompiled data from filesystem.
-    NSDictionary* db_plist = nil;
+    NSDictionary* db_plist = [NSDictionary dictionaryWithContentsOfFile:@LOCAL_SERVICE_DB];
 
-    if(_rootless) {
+    if(_rootless && !db_plist) {
         db_plist = [NSDictionary dictionaryWithContentsOfFile:@("/var/jb" LOCAL_SERVICE_DB)];
-    } else {
-        db_plist = [NSDictionary dictionaryWithContentsOfFile:@LOCAL_SERVICE_DB];
     }
 
     if(!db_plist) {
