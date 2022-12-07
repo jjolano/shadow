@@ -35,12 +35,10 @@ NSUserDefaults* prefs = nil;
 
 	// Save this database to filesystem
 	if(db) {
-		BOOL success;
+		BOOL success = [db writeToFile:@LOCAL_SERVICE_DB atomically:NO];
 
-		if(rootless) {
+		if(rootless && !success) {
 			success = [db writeToFile:@("/var/jb" LOCAL_SERVICE_DB) atomically:NO];
-		} else {
-			success = [db writeToFile:@LOCAL_SERVICE_DB atomically:NO];
 		}
 
 		if(success) {
