@@ -20,6 +20,7 @@
 #import <mach/task_info.h>
 #import <mach/mach_traps.h>
 #import <mach/host_special_ports.h>
+#import <mach/task_special_ports.h>
 #import <sandbox.h>
 #import <bootstrap.h>
 #import <spawn.h>

@@ -52,12 +52,8 @@ static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     void* handle = original_dlopen(path, mode);
 
-    if(handle) {
-        const char* image_path = dyld_image_path_containing_address(handle);
-        
-        if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return NULL;
-        }
+    if([_shadow isAddrRestricted:handle] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return NULL;
     }
 
     return handle;
@@ -276,11 +272,9 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
     if(addr) {
         // Check origin of resolved symbol
-        const char* image_path = dyld_image_path_containing_address(addr);
-
-        if([_shadow isCPathRestricted:image_path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isAddrRestricted:addr] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             if(symbol) {
-                NSLog(@"%@: %@: %s -> %s", @"dlsym", @"restricted symbol lookup", symbol, image_path);
+                NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
             }
 
             return NULL;

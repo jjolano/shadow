@@ -677,24 +677,13 @@ static pid_t replaced_getppid(void) {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
-    bool exists;
-    int result = -1;
+    void* arg;
+    va_list args;
+    va_start(args, oflag);
+    arg = va_arg(args, void *);
+    va_end(args);
 
-    if(oflag & O_CREAT) {
-        mode_t mode;
-        va_list args;
-        va_start(args, oflag);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-
-        int (*o_access)(const char* pathname, int mode) = [_shadow getOrigFunc:@"access"];
-        if(!o_access) o_access = access;
-        exists = (o_access(pathname, F_OK) == 0);
-
-        result = original_open(pathname, oflag, mode);
-    } else {
-        result = original_open(pathname, oflag);
-    }
+    int result = original_open(pathname, oflag, arg);
 
     if(result != -1) {
         char fd_pathname[PATH_MAX];
@@ -703,11 +692,6 @@ static int replaced_open(const char *pathname, int oflag, ...) {
         if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             close(result);
             errno = ENOENT;
-
-            if(oflag & O_CREAT && !exists) {
-                remove(pathname);
-            }
-
             return -1;
         }
     }
@@ -717,24 +701,13 @@ static int replaced_open(const char *pathname, int oflag, ...) {
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
-    bool exists;
-    int result = -1;
+    void* arg;
+    va_list args;
+    va_start(args, oflag);
+    arg = va_arg(args, void *);
+    va_end(args);
 
-    if(oflag & O_CREAT) {
-        mode_t mode;
-        va_list args;
-        va_start(args, oflag);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-
-        int (*o_access)(const char* pathname, int mode) = [_shadow getOrigFunc:@"access"];
-        if(!o_access) o_access = access;
-        exists = (o_access(pathname, F_OK) == 0);
-
-        result = original_openat(dirfd, pathname, oflag, mode);
-    } else {
-        result = original_openat(dirfd, pathname, oflag);
-    }
+    int result = original_openat(dirfd, pathname, oflag, arg);
 
     if(result != -1) {
         char fd_pathname[PATH_MAX];
@@ -743,11 +716,6 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             close(result);
             errno = ENOENT;
-
-            if(oflag & O_CREAT && !exists) {
-                remove(pathname);
-            }
-
             return -1;
         }
     }

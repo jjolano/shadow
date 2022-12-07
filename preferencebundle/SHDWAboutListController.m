@@ -39,22 +39,17 @@
 		return packageVersion;
 	}
 
-	NSString* dpkgPath = nil;
-	NSArray* dpkgPaths = @[
-        @"/usr/bin/dpkg-query",
-        @"/var/jb/usr/bin/dpkg-query",
-        @"/usr/local/bin/dpkg-query",
-        @"/var/jb/usr/local/bin/dpkg-query"
-    ];
+	// Check if we are in a rootless environment.
+	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
+	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
 
-    for(NSString* path in dpkgPaths) {
-        if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            dpkgPath = path;
-            break;
-        }
-    }
+	NSString* dpkgPath = @"/usr/bin/dpkg-query";
+
+	if(rootless) {
+		dpkgPath = @"/var/jb/usr/bin/dpkg-query";
+	}
 	
-	if(!dpkgPath) {
+	if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
 		return @"unknown";
 	}
 

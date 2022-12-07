@@ -252,25 +252,22 @@
 }
 
 - (NSDictionary *)generateDatabase {
+    // Determine dpkg info database path.
+    NSString* dpkgInfoPath;
+
+    if(_rootless) {
+        dpkgInfoPath = @"/var/jb/Library/dpkg/info";
+    } else {
+        dpkgInfoPath = @"/var/lib/dpkg/info";
+    }
+
+    if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
+        return nil;
+    }
+
     NSMutableDictionary* db = [NSMutableDictionary new];
     NSMutableSet* db_installed = [NSMutableSet new];
     NSMutableSet* db_exception = [NSMutableSet new];
-
-    // Determine dpkg info database path.
-    NSString* dpkgInfoPath;
-    NSArray* dpkgInfoPaths = @[
-        @"/Library/dpkg/info",
-        @"/var/lib/dpkg/info",
-        @"/var/jb/Library/dpkg/info",
-        @"/var/jb/var/lib/dpkg/info"
-    ];
-
-    for(NSString* path in dpkgInfoPaths) {
-        if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            dpkgInfoPath = path;
-            break;
-        }
-    }
 
     // Iterate all list files in database.
     NSArray* db_files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dpkgInfoPath] includingPropertiesForKeys:@[] options:0 error:nil];
@@ -313,18 +310,14 @@
 }
 
 - (void)startService {
-    NSArray* dpkgPaths = @[
-        @"/usr/bin/dpkg-query",
-        @"/var/jb/usr/bin/dpkg-query",
-        @"/usr/local/bin/dpkg-query",
-        @"/var/jb/usr/local/bin/dpkg-query"
-    ];
+    if(_rootless) {
+        dpkgPath = @"/var/jb/usr/bin/dpkg-query";
+    } else {
+        dpkgPath = @"/usr/bin/dpkg-query";
+    }
 
-    for(NSString* path in dpkgPaths) {
-        if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            dpkgPath = path;
-            break;
-        }
+    if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
+        dpkgPath = nil;
     }
 
     [self connectService];
@@ -341,7 +334,13 @@
 
 - (void)startLocalService {
     // Load precompiled data from filesystem.
-    NSDictionary* db_plist = [NSDictionary dictionaryWithContentsOfFile:@LOCAL_SERVICE_DB];
+    NSDictionary* db_plist = nil;
+
+    if(_rootless) {
+        db_plist = [NSDictionary dictionaryWithContentsOfFile:@("/var/jb" LOCAL_SERVICE_DB)];
+    } else {
+        db_plist = [NSDictionary dictionaryWithContentsOfFile:@LOCAL_SERVICE_DB];
+    }
 
     if(!db_plist) {
         NSLog(@"%@", @"could not load db");
@@ -452,7 +451,7 @@
 - (NSArray*)getURLSchemes {
     NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil useService:(center != nil)];
 
-    if(response) {
+    if(response && response[@"schemes"] && [response[@"schemes"] count] > 0) {
         return response[@"schemes"];
     }
 
@@ -506,6 +505,7 @@
         center = nil;
         dpkgInstalledDb = nil;
         dpkgExceptionDb = nil;
+        _rootless = NO;
     }
 
     return self;
