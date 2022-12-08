@@ -261,10 +261,10 @@
 
 - (NSDictionary *)generateDatabase {
     // Determine dpkg info database path.
-    NSString* dpkgInfoPath = @"/var/lib/dpkg/info";
+    NSString* dpkgInfoPath = @"/Library/dpkg/info";
 
     if(_rootless && ![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
-        dpkgInfoPath = @"/var/jb/var/lib/dpkg/info";
+        dpkgInfoPath = @"/var/jb/Library/dpkg/info";
     }
 
     if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {

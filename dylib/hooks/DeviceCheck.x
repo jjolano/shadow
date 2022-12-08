@@ -294,6 +294,17 @@
     return false;
 }
 %end
+
+%hook NSNotificationCenter
+- (id<NSObject>)addObserverForName:(NSNotificationName)name object:(id)obj queue:(NSOperationQueue *)queue usingBlock:(void (^)(NSNotification *note))block {
+    if([name isEqualToString:@"JailbrokenDevice"]
+    || [name isEqualToString:@"JailbreakBypassDetected"]) {
+        return %orig(name, obj, queue, ^(NSNotification *note) {});
+    }
+
+    return %orig;
+}
+%end
 %end
 
 void shadowhook_DeviceCheck(void) {
