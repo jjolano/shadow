@@ -172,6 +172,14 @@
         }
     }
 
+    // Manual entry
+    [schemes addObject:@"undecimus"];
+    [schemes addObject:@"cydia"];
+    [schemes addObject:@"sileo"];
+    [schemes addObject:@"zbra"];
+    [schemes addObject:@"filza"];
+    [schemes addObject:@"activator"];
+
     NSArray* schemes_ret = [schemes allObjects];
     [responseCache setObject:schemes_ret forKey:@"schemes"];
     return schemes_ret;
@@ -451,7 +459,7 @@
         return response[@"schemes"];
     }
 
-    return @[@"cydia", @"sileo", @"zbra", @"filza"];
+    return @[@"cydia", @"sileo", @"zbra", @"filza", @"undecimus"];
 }
 
 - (NSDictionary *)getVersions {

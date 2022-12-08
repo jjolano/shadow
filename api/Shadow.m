@@ -349,7 +349,7 @@
 - (instancetype)init {
     if((self = [super init])) {
         orig_funcs = [NSMutableDictionary new];
-        schemes = @[@"cydia", @"sileo", @"zbra", @"filza"];
+        schemes = @[@"cydia", @"sileo", @"zbra", @"filza", @"undecimus"];
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
