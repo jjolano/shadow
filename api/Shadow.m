@@ -598,6 +598,7 @@
             @"/usr/lib/libz-ng",
             @"/usr/lib/liblz4",
             @"/usr/lib/libzstd",
+            @"/var/run/FilzaHelper",
             @"/usr/libexec/cydia",
             @"/usr/share/terminfo",
             @"/usr/share/zsh",
