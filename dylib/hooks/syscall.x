@@ -51,9 +51,37 @@ static int replaced_syscall(int number, ...) {
     return original_syscall(number, stack[0], stack[1], stack[2], stack[3], stack[4], stack[5], stack[6], stack[7]);
 }
 
+static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
+static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
+    int ret = original_csops(pid, ops, useraddr, usersize);
+
+    if(pid == getpid()) {
+        if(ops == CS_OPS_STATUS) {
+            // (Un)set some flags
+            ret &= ~CS_PLATFORM_BINARY;
+            ret &= ~CS_GET_TASK_ALLOW;
+            ret |= CS_REQUIRE_LV;
+        }
+
+        if(ops == CS_OPS_CDHASH) {
+            // Hide CDHASH for trustcache checks
+            errno = EBADEXEC;
+            return -1;
+        }
+
+        if(ops == CS_OPS_MARKKILL) {
+            errno = EBADEXEC;
+            return -1;
+        }
+    }
+
+    return ret;
+}
+
 // todo: research on "supervised syscalls"
 void shadowhook_syscall(void) {
     MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
+    MSHookFunction(csops, replaced_csops, (void **) &original_csops);
 
     // d4001001
     // const uint8_t bytes_svc80[] = {

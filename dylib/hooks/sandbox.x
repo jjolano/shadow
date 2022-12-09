@@ -102,32 +102,6 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
     return result;
 }
 
-static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
-static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
-    int ret = original_csops(pid, ops, useraddr, usersize);
-
-    if(pid == getpid()) {
-        if(ops == CS_OPS_STATUS) {
-            // (Un)set some flags
-            ret &= ~CS_PLATFORM_BINARY;
-            ret &= ~CS_GET_TASK_ALLOW;
-        }
-
-        if(ops == CS_OPS_CDHASH) {
-            // Hide CDHASH for trustcache checks
-            errno = EBADEXEC;
-            return -1;
-        }
-
-        if(ops == CS_OPS_MARKKILL) {
-            errno = EBADEXEC;
-            return -1;
-        }
-    }
-
-    return ret;
-}
-
 // static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
 // static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
 //     void* data;
@@ -228,7 +202,6 @@ void shadowhook_sandbox(void) {
 
     // MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
     MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
-    MSHookFunction(csops, replaced_csops, (void **) &original_csops);
     MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
     MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
     MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
