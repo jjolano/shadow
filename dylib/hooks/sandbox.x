@@ -1,7 +1,31 @@
 #import "hooks.h"
 
-void* (SecTaskCopyValueForEntitlement)(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
-void* (SecTaskCreateFromSelf)(CFAllocatorRef allocator);
+extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
+extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
+
+extern int MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info);
+extern NSString* kMISValidationOptionAllowAdHocSigning;
+extern NSString* kMISValidationOptionRespectUppTrustAndAuthorization;
+
+static int (*original_MISValidateSignatureAndCopyInfo)(NSString* file, NSDictionary* options, NSDictionary** info);
+static int replaced_MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info) {
+    int result =  original_MISValidateSignatureAndCopyInfo(file, options, info);
+
+    if(result == 0) {
+        // Don't allow checking trust cache for self
+        if([file hasPrefix:[[NSBundle mainBundle] bundlePath]]
+        && options[kMISValidationOptionAllowAdHocSigning]
+        && options[kMISValidationOptionRespectUppTrustAndAuthorization]) {
+            return -1;
+        }
+
+        if([_shadow isPathRestricted:file]) {
+            return -1;
+        }
+    }
+
+    return result;
+}
 
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
@@ -173,10 +197,17 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         return -1;
     }
 
-    // if(cmd == F_CHECK_LV) {
-    //     // Library Validation
-    //     return 0;
-    // }
+    if(cmd == F_CHECK_LV) {
+        // Library Validation
+        if(arg[0]) {
+            original_fcntl(fd, cmd, arg[0]);
+
+            fchecklv_t* checkInfo = (fchecklv_t*) arg[0];
+            ((char *) checkInfo->lv_error_message)[0] = '\0';
+            
+            return 0;
+        }
+    }
 
     if(cmd == F_ADDFILESIGS_RETURN) {
         return -1;
@@ -204,4 +235,5 @@ void shadowhook_sandbox(void) {
     MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
     MSHookFunction(NSSearchPathForDirectoriesInDomains, replaced_NSSearchPathForDirectoriesInDomains, (void **) &original_NSSearchPathForDirectoriesInDomains);
     MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
+    MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
 }

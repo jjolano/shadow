@@ -295,6 +295,12 @@
 }
 %end
 
+%hook ZDetection
++ (bool)isRootedOrJailbroken {
+    return false;
+}
+%end
+
 %hook NSNotificationCenter
 - (id<NSObject>)addObserverForName:(NSNotificationName)name object:(id)obj queue:(NSOperationQueue *)queue usingBlock:(void (^)(NSNotification *note))block {
     if([name isEqualToString:@"JailbrokenDevice"]
