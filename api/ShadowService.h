@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 
-#define BYPASS_VERSION  "4.6"
+#define BYPASS_VERSION  "5.0"
 #define API_VERSION "5.0"
 
 #define SHADOW_PREFS_PLIST "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"

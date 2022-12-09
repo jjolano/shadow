@@ -62,9 +62,9 @@ static const char* replaced_class_getImageName(Class cls) {
 //     return result;
 // }
 
-// static Class (*original_objc_getClass)(const char* name);
-// static Class replaced_objc_getClass(const char* name) {
-//     Class result = original_objc_getClass(name);
+// static id (*original_objc_getClass)(const char* name);
+// static id replaced_objc_getClass(const char* name) {
+//     id result = original_objc_getClass(name);
 
 //     if(result) {
 //         const char* image_name = original_class_getImageName(result);
