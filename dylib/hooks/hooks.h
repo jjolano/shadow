@@ -29,6 +29,12 @@
 #import "../../api/Shadow.h"
 #import <substrate.h>
 
+#ifdef DEBUG
+#define NSLog(...) NSLog(__VA_ARGS__)
+#else
+#define NSLog(...) (void)0
+#endif
+
 // private symbols
 #import "../../apple_priv/dyld_priv.h"
 #import "../../apple_priv/codesign.h"
@@ -70,3 +76,5 @@ extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_
 extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide);
 
 extern void shadowhook_NSProcessInfo_fakemac(void);
+
+extern void shadowhook_mem(void);
