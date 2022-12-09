@@ -128,7 +128,8 @@ NSUserDefaults* prefs = nil;
 			@"Hook_ObjCRuntime" : @([prefs boolForKey:@"Hook_ObjCRuntime"]),
 			@"Hook_FakeMac" : @([prefs boolForKey:@"Hook_FakeMac"]),
 			@"Hook_Syscall" : @([prefs boolForKey:@"Hook_Syscall"]),
-			@"Hook_Sandbox" : @([prefs boolForKey:@"Hook_Sandbox"])
+			@"Hook_Sandbox" : @([prefs boolForKey:@"Hook_Sandbox"]),
+			@"Hook_Memory" : @([prefs boolForKey:@"Hook_Memory"])
 		};
 	}
 
@@ -276,6 +277,12 @@ NSUserDefaults* prefs = nil;
 		NSLog(@"%@", @"+ sandbox");
 
 		shadowhook_sandbox();
+	}
+
+	if(prefs_load[@"Hook_Memory"] && [prefs_load[@"Hook_Memory"] boolValue]) {
+		NSLog(@"%@", @"+ memory");
+
+		shadowhook_mem();
 	}
 
 	NSLog(@"%@", @"completed hooks");
