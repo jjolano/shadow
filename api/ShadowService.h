@@ -7,6 +7,12 @@
 #define CPDMC_SERVICE_NAME "me.jjolano.shadow.service"
 #define LOCAL_SERVICE_DB "/Library/Shadow/db.plist"
 
+#ifdef DEBUG
+#define NSLog(...) NSLog(__VA_ARGS__)
+#else
+#define NSLog(...) (void)0
+#endif
+
 @interface ShadowService : NSObject
 @property BOOL rootless;
 

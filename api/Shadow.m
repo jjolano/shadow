@@ -338,8 +338,10 @@
 
         NSDictionary* versions = [service getVersions];
 
-        NSLog(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
-        NSLog(@"%@: %@", @"api version", versions[@"api_version"]);
+        if(versions) {
+            NSLog(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
+            NSLog(@"%@: %@", @"api version", versions[@"api_version"]);
+        }
 
         schemes = [service getURLSchemes];
         NSLog(@"%@: %@", @"url schemes", schemes);
@@ -377,13 +379,13 @@
         whitelist_root = @[
             @"/.ba",
             @"/.file",
-            @"/.fseventsd",
+            // @"/.fseventsd",
             @"/.mb",
             @"/Applications",
             @"/Developer",
             @"/Library",
             @"/System",
-            @"/User",
+            // @"/User",
             @"/bin",
             @"/cores",
             @"/dev",
@@ -538,6 +540,7 @@
             @"/usr/lib/pspawn_payload",
             @"/var/containers/Bundle/iosbinpack64",
             @"/var/containers/Bundle/tweaksupport",
+            @"/var/containers/Bundle/.",
             @"/var/LIB",
             @"/var/ulb",
             @"/var/bin",
@@ -598,6 +601,8 @@
             @"/usr/lib/libz-ng",
             @"/usr/lib/liblz4",
             @"/usr/lib/libzstd",
+            @"/usr/lib/_ncurses",
+            @"/usr/lib/libjailbreak.dylib",
             @"/var/run/FilzaHelper",
             @"/usr/libexec/cydia",
             @"/usr/share/terminfo",
@@ -626,6 +631,7 @@
             @"/usr/standalone/firmware/apticket.der",
             @"/usr/standalone/firmware/sep-firmware.img4",
             @"/usr/standalone/firmware/devicetree.img4",
+            @"/usr/standalone/firmware/Savage",
             @"/usr/local/lib/log",
             @"/usr/include",
             @"/bin/",
