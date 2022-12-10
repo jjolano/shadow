@@ -21,7 +21,6 @@ static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address
         // Hide executable flag
         vm_region_basic_info_data_64_t* rinfo = (vm_region_basic_info_data_64_t *)info;
         rinfo->protection &= ~VM_PROT_EXECUTE;
-        rinfo->protection &= ~VM_PROT_WRITE;
     }
 
     return result;
@@ -48,7 +47,6 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
         // Hide executable flag
         vm_region_basic_info_data_64_t* rinfo = (vm_region_basic_info_data_64_t *)info;
         rinfo->protection &= ~VM_PROT_EXECUTE;
-        rinfo->protection &= ~VM_PROT_WRITE;
     }
 
     return result;
