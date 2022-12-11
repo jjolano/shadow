@@ -624,6 +624,7 @@
             @"/usr/bin/uiduid",
             @"/usr/bin/gssc",
             @"/usr/bin/ecidecid",
+            @"/usr/bin/Filza",
             @"/usr/sbin/chroot",
             @"/usr/sbin/chown",
             @"/usr/standalone/firmware/FUD",

@@ -491,7 +491,8 @@
 		@"Hook_FakeMac" : @(NO),
 		@"Hook_Syscall" : @(NO),
 		@"Hook_Sandbox" : @(NO),
-        @"Hook_Memory" : @(NO)
+        @"Hook_Memory" : @(NO),
+        @"Hook_TweakClasses" : @(NO)
 	};
 }
 

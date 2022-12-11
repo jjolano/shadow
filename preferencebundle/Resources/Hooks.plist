@@ -182,24 +182,6 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>Hook_DynamicLibrariesExtra</string>
-			<key>id</key>
-			<string>Hook_DynamicLibrariesExtra</string>
-			<key>label</key>
-			<string>Loaded Modules (Extra)</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
 			<string>Hook_Foundation</string>
 			<key>id</key>
 			<string>Hook_Foundation</string>
@@ -222,7 +204,7 @@
 			<key>id</key>
 			<string>Hook_FakeMac</string>
 			<key>label</key>
-			<string>Device Masquerade (iOS 14+)</string>
+			<string>M1 Mac (iOS 14+)</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -267,24 +249,6 @@
 			<string>Hook_SymLookup</string>
 			<key>label</key>
 			<string>Runtime Symbol Lookups</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_LowLevelC</string>
-			<key>id</key>
-			<string>Hook_LowLevelC</string>
-			<key>label</key>
-			<string>Low-Level File Handles</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -350,6 +314,14 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Dangerous Hooks</string>
+			<key>footerText</key>
+			<string>Low-level bypass methods. These hooks may cause some apps to crash.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
 			<string>Hook_Sandbox</string>
@@ -370,11 +342,65 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
+			<string>Hook_LowLevelC</string>
+			<key>id</key>
+			<string>Hook_LowLevelC</string>
+			<key>label</key>
+			<string>Low-Level File Handles</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
 			<string>Hook_Memory</string>
 			<key>id</key>
 			<string>Hook_Memory</string>
 			<key>label</key>
 			<string>Hide Executable Memory</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Hook_TweakClasses</string>
+			<key>id</key>
+			<string>Hook_TweakClasses</string>
+			<key>label</key>
+			<string>Hide Tweak Classes</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Hook_DynamicLibrariesExtra</string>
+			<key>id</key>
+			<string>Hook_DynamicLibrariesExtra</string>
+			<key>label</key>
+			<string>Dynamic Library Loader</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
