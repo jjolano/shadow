@@ -78,3 +78,5 @@ extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intp
 extern void shadowhook_NSProcessInfo_fakemac(void);
 
 extern void shadowhook_mem(void);
+
+extern void shadowhook_objc_hidetweakclasses(void);

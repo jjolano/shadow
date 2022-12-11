@@ -129,7 +129,8 @@ NSUserDefaults* prefs = nil;
 			@"Hook_FakeMac" : @([prefs boolForKey:@"Hook_FakeMac"]),
 			@"Hook_Syscall" : @([prefs boolForKey:@"Hook_Syscall"]),
 			@"Hook_Sandbox" : @([prefs boolForKey:@"Hook_Sandbox"]),
-			@"Hook_Memory" : @([prefs boolForKey:@"Hook_Memory"])
+			@"Hook_Memory" : @([prefs boolForKey:@"Hook_Memory"]),
+			@"Hook_TweakClasses" : @([prefs boolForKey:@"Hook_TweakClasses"])
 		};
 	}
 
@@ -283,6 +284,12 @@ NSUserDefaults* prefs = nil;
 		NSLog(@"%@", @"+ memory");
 
 		shadowhook_mem();
+	}
+
+	if(prefs_load[@"Hook_TweakClasses"] && [prefs_load[@"Hook_TweakClasses"] boolValue]) {
+		NSLog(@"%@", @"+ classes");
+		
+		shadowhook_objc_hidetweakclasses();
 	}
 
 	NSLog(@"%@", @"completed hooks");
