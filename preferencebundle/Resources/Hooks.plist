@@ -88,7 +88,7 @@
 			<key>id</key>
 			<string>Hook_DynamicLibraries</string>
 			<key>label</key>
-			<string>Loaded Modules</string>
+			<string>Dynamic Libraries</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
