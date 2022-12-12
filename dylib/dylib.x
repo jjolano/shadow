@@ -31,22 +31,24 @@ NSUserDefaults* prefs = nil;
 	[_srv startService];
 	NSLog(@"%@", @"started ShadowService");
 
-	NSDictionary* db = [_srv generateDatabase];
+	[[NSOperationQueue new] addOperationWithBlock:^(){
+		NSDictionary* db = [_srv generateDatabase];
 
-	// Save this database to filesystem
-	if(db) {
-		BOOL success = [db writeToFile:@LOCAL_SERVICE_DB atomically:NO];
+		// Save this database to filesystem
+		if(db) {
+			BOOL success = [db writeToFile:@LOCAL_SERVICE_DB atomically:NO];
 
-		if(rootless && !success) {
-			success = [db writeToFile:@("/var/jb" LOCAL_SERVICE_DB) atomically:NO];
+			if(rootless && !success) {
+				success = [db writeToFile:@("/var/jb" LOCAL_SERVICE_DB) atomically:NO];
+			}
+
+			if(success) {
+				NSLog(@"%@", @"successfully saved generated db");
+			} else {
+				NSLog(@"%@", @"failed to save generate db");
+			}
 		}
-
-		if(success) {
-			NSLog(@"%@", @"successfully saved generated db");
-		} else {
-			NSLog(@"%@", @"failed to save generate db");
-		}
-	}
+	}];
 }
 %end
 %end
