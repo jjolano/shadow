@@ -60,7 +60,7 @@ NSUserDefaults* prefs = nil;
 	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
 
 	// Injected into SpringBoard.
-	if([bundleIdentifier isEqualToString:@"com.apple.springboard"] || [[executablePath lastPathComponent] isEqualToString:@"SpringBoard"]) {
+	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
 		%init(hook_springboard);
 		NSLog(@"%@", @"loaded into SpringBoard");
 		return;
