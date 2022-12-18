@@ -179,6 +179,7 @@
 	[schemes addObject:@"zbra"];
 	[schemes addObject:@"filza"];
 	[schemes addObject:@"activator"];
+	[schemes addObject:@"xina"];
 
 	NSArray* schemes_ret = [schemes allObjects];
 	[responseCache setObject:schemes_ret forKey:@"schemes"];
