@@ -102,9 +102,9 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
         struct statfs* buf_end = buf + sizeof(struct statfs) * result;
 
         while(buf_ptr < buf_end) {
-            if([@(buf_ptr->f_mntonname) isEqualToString:@"/"]) {
+            if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
-                buf_ptr->f_flags |= MNT_RDONLY;
+                buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
                 break;
             }
 
@@ -130,12 +130,9 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
 
         // Modify flags
         if(buf) {
-            if([path hasPrefix:@"/var"]
-            || [path hasPrefix:@"/private/var"]
-            || [path hasPrefix:@"/private/preboot"]) {
-                buf->f_flags |= MNT_NOSUID | MNT_NODEV;
-            } else {
-                buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
+            if(strcmp(buf->f_mntonname, "/") == 0) {
+                // Mark rootfs read-only
+                buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
             }
         }
     }
@@ -166,12 +163,9 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
 
             // Modify flags
             if(buf) {
-                if([path hasPrefix:@"/var"]
-                || [path hasPrefix:@"/private/var"]
-                || [path hasPrefix:@"/private/preboot"]) {
-                    buf->f_flags |= MNT_NOSUID | MNT_NODEV;
-                } else {
-                    buf->f_flags |= MNT_RDONLY | MNT_ROOTFS;
+                if(strcmp(buf->f_mntonname, "/") == 0) {
+                    // Mark rootfs read-only
+                    buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
                 }
             }
         }
