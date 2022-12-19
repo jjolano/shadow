@@ -3,9 +3,6 @@
 #import <Preferences/PSListController.h>
 #import <spawn.h>
 
-#import <HBLog.h>
-#import "../api/ShadowService.h"
-
 @interface SHDWRootListController : PSListController
 - (id)readPreferenceValue:(PSSpecifier *)specifier;
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier;

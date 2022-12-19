@@ -1,5 +1,8 @@
 #import "SHDWAboutListController.h"
 
+#import "../apple_priv/NSTask.h"
+#import "../api/ShadowService.h"
+
 @implementation SHDWAboutListController {
 	NSString* packageVersion;
 	NSString* latestVersion;

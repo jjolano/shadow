@@ -3,8 +3,6 @@
 #import <Preferences/PSListController.h>
 
 #import <AltList/ATLApplicationListSubcontroller.h>
-#import <HBLog.h>
-#import "../api/ShadowService.h"
 
 @interface SHDWAppListController : ATLApplicationListSubcontroller
 - (id)readPreferenceValue:(PSSpecifier *)specifier;

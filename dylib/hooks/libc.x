@@ -305,12 +305,12 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     return result;
 }
 
-static int (*original_scandir)(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *));
-static int replaced_scandir(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *)) {
-    int result = original_scandir(dirname, namelist, select, compar);
+// static int (*original_scandir)(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *));
+// static int replaced_scandir(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *)) {
+//     int result = original_scandir(dirname, namelist, select, compar);
 
-    return result;
-}
+//     return result;
+// }
 
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
 static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** oresult) {
@@ -754,7 +754,7 @@ void shadowhook_libc(void) {
     MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
     MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
     MSHookFunction(link, replaced_link, (void **) &original_link);
-    MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
+    // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
 
     [_shadow setOrigFunc:@"access" withAddr:original_access];
     [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
