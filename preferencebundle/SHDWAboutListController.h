@@ -1,12 +1,5 @@
 #import <Foundation/Foundation.h>
 #import <Preferences/PSListController.h>
-#import <HBLog.h>
-
-#import "../apple_priv/NSTask.h"
-
-#import "../api/Shadow.h"
-#import "../api/ShadowService.h"
-
 
 @interface SHDWAboutListController : PSListController
 - (NSString *)aboutBypassVersion:(id)sender;

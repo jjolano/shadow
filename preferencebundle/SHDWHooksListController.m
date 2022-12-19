@@ -1,4 +1,5 @@
 #import "SHDWHooksListController.h"
+#import "../api/ShadowSettings.h"
 
 @implementation SHDWHooksListController {
 	NSUserDefaults* prefs;
@@ -24,7 +25,7 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [ShadowService getPreferences];
+		prefs = [ShadowSettings getUserDefaults];
 	}
 
 	return self;

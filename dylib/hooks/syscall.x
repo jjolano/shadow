@@ -28,7 +28,8 @@ static int replaced_syscall(int number, ...) {
     || number == SYS_lstat64
     || number == SYS_stat64_extended
     || number == SYS_lstat64_extended
-    || number == SYS_readlink) {
+    || number == SYS_readlink
+    || number == SYS_pathconf) {
         const char* pathname = va_arg(args, const char *);
 
         if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {

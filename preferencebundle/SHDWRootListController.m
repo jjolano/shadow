@@ -1,4 +1,5 @@
 #import "SHDWRootListController.h"
+#import "../api/ShadowSettings.h"
 
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;
@@ -62,7 +63,7 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [ShadowService getPreferences];
+		prefs = [ShadowSettings getUserDefaults];
 	}
 
 	return self;

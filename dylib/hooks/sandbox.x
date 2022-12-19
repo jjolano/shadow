@@ -72,13 +72,11 @@ static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int 
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
     NSLog(@"%@: %d", @"task_get_special_port", which_port);
 
-    if(which_port == TASK_HOST_PORT
-    || which_port == TASK_SEATBELT_PORT
-    || which_port == TASK_ACCESS_PORT) {
-        if(special_port) {
-            *special_port = MACH_PORT_NULL;
+    if(task == mach_task_self()) {
+        if(which_port == TASK_SEATBELT_PORT) {
+            return KERN_FAILURE;
         }
-
+    } else {
         return KERN_FAILURE;
     }
 
@@ -190,13 +188,6 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
 }
 
-static NSArray<NSString *> * (*original_NSSearchPathForDirectoriesInDomains)(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, BOOL expandTilde);
-static NSArray<NSString *> * replaced_NSSearchPathForDirectoriesInDomains(NSSearchPathDirectory directory, NSSearchPathDomainMask domainMask, BOOL expandTilde) {
-    NSArray* result = original_NSSearchPathForDirectoriesInDomains(directory, domainMask, expandTilde);
-    NSLog(@"%@: %@", @"NSSearchPathForDirectoriesInDomains", result);
-    return result;
-}
-
 void shadowhook_sandbox(void) {
     // %init(shadowhook_sandbox);
 
@@ -206,7 +197,6 @@ void shadowhook_sandbox(void) {
     MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
     MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
     MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
-    MSHookFunction(NSSearchPathForDirectoriesInDomains, replaced_NSSearchPathForDirectoriesInDomains, (void **) &original_NSSearchPathForDirectoriesInDomains);
     MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
     // MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
 }
