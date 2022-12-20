@@ -78,6 +78,11 @@
     for(NSString* path in db) {
         if([path hasSuffix:@".app"]) {
             NSBundle* appBundle = [NSBundle bundleWithPath:path];
+
+            if(!appBundle) {
+                continue;
+            }
+
             NSDictionary* plist = [appBundle infoDictionary];
 
             if(plist && plist[@"CFBundleURLTypes"]) {
@@ -128,6 +133,11 @@
 
 					if([path hasSuffix:@".app"]) {
                         NSBundle* appBundle = [NSBundle bundleWithPath:path];
+
+                        if(!appBundle) {
+                            continue;
+                        }
+
                         NSDictionary* plist = [appBundle infoDictionary];
 
                         if(plist && plist[@"CFBundleURLTypes"]) {
