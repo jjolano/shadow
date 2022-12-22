@@ -1,30 +1,29 @@
-#import "ShadowSettings.h"
-#import "common.h"
+#import "ShadowService+Settings.h"
 
-@implementation ShadowSettings
+@implementation ShadowService (Settings)
 + (NSDictionary *)getDefaultPreferences {
     return @{
-		@"Global_Enabled" : @(NO),
-		@"Tweak_CompatEx" : @(NO),
-		@"Hook_Filesystem" : @(YES),
-		@"Hook_DynamicLibraries" : @(YES),
-		@"Hook_URLScheme" : @(YES),
-		@"Hook_EnvVars" : @(YES),
-		@"Hook_FilesystemExtra" : @(NO),
-		@"Hook_Foundation" : @(NO),
-		@"Hook_DeviceCheck" : @(YES),
-		@"Hook_MachBootstrap" : @(NO),
-		@"Hook_SymLookup" : @(NO),
-		@"Hook_LowLevelC" : @(NO),
-		@"Hook_AntiDebugging" : @(NO),
-		@"Hook_DynamicLibrariesExtra" : @(NO),
-		@"Hook_ObjCRuntime" : @(NO),
-		@"Hook_FakeMac" : @(NO),
-		@"Hook_Syscall" : @(NO),
-		@"Hook_Sandbox" : @(NO),
-		@"Hook_Memory" : @(NO),
-		@"Hook_TweakClasses" : @(NO)
-	};
+        @"Global_Enabled" : @(NO),
+        @"Tweak_CompatEx" : @(NO),
+        @"Hook_Filesystem" : @(YES),
+        @"Hook_DynamicLibraries" : @(YES),
+        @"Hook_URLScheme" : @(YES),
+        @"Hook_EnvVars" : @(YES),
+        @"Hook_FilesystemExtra" : @(NO),
+        @"Hook_Foundation" : @(NO),
+        @"Hook_DeviceCheck" : @(YES),
+        @"Hook_MachBootstrap" : @(NO),
+        @"Hook_SymLookup" : @(NO),
+        @"Hook_LowLevelC" : @(NO),
+        @"Hook_AntiDebugging" : @(NO),
+        @"Hook_DynamicLibrariesExtra" : @(NO),
+        @"Hook_ObjCRuntime" : @(NO),
+        @"Hook_FakeMac" : @(NO),
+        @"Hook_Syscall" : @(NO),
+        @"Hook_Sandbox" : @(NO),
+        @"Hook_Memory" : @(NO),
+        @"Hook_TweakClasses" : @(NO)
+    };
 }
 
 + (NSUserDefaults *)getUserDefaults {
@@ -41,9 +40,7 @@
 
     if(app_settings && app_settings[@"App_Override"] && [app_settings[@"App_Override"] boolValue]) {
         // Use app overrides.
-        if(app_settings[@"App_Enabled"] && [app_settings[@"App_Enabled"] boolValue]) {
-            [result setObject:@(YES) forKey:@"App_Enabled"];
-        }
+        [result setObject:@(YES) forKey:@"App_Enabled"];
 
         for(NSString* key in default_prefs) {
             [result setObject:(app_settings[key] ? @([app_settings[key] boolValue]) : @(NO)) forKey:key];

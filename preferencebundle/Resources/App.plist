@@ -20,31 +20,6 @@
 			<key>id</key>
 			<string>App_Override</string>
 			<key>label</key>
-			<string>Enable App Settings</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string> </string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>App_Enabled</string>
-			<key>id</key>
-			<string>App_Enabled</string>
-			<key>label</key>
 			<string>Enable Shadow</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>

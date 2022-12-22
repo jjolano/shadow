@@ -22,7 +22,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>API Version</string>
+			<string>Service Version</string>
 			<key>get</key>
 			<string>aboutAPIVersion:</string>
 		</dict>

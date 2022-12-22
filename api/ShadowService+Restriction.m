@@ -2,11 +2,117 @@
 #import "../apple_priv/NSTask.h"
 
 @implementation ShadowService (Restriction)
++ (BOOL)isPathCompliant:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(![path isAbsolutePath]) {
+        // Don't handle relative paths
+        return YES;
+    }
+
+    // Verify structure
+    NSDictionary* ruleset_fss = ruleset[@"FileSystemStructure"];
+    NSString* path_tmp = path;
+
+    while(!ruleset_fss[path_tmp] && ![path_tmp isEqualToString:@"/"]) {
+        path_tmp = [path_tmp stringByDeletingLastPathComponent];
+    }
+
+    if([path isEqualToString:path_tmp]) {
+        // no need to check further
+        return YES;
+    }
+
+    NSArray* ruleset_fss_base = ruleset_fss[path_tmp];
+
+    if(ruleset_fss_base) {
+        BOOL compliant = NO;
+
+        for(NSString* name in ruleset_fss_base) {
+            NSString* ruleset_path = [path_tmp stringByAppendingPathComponent:name];
+
+            if([path isEqualToString:ruleset_path] || [path hasPrefix:[NSString stringWithFormat:@"%@/", ruleset_path]]) {
+                compliant = YES;
+                break;
+            }
+        }
+
+        if(!compliant) {
+            NSLog(@"isPathCompliant: path '%@' not compliant (key: %@)", path, path_tmp);
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
++ (BOOL)isPathWhitelisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(![path isAbsolutePath] || [path isEqualToString:@"/"]) {
+        return NO;
+    }
+
+    // Check whitelisted paths
+    NSArray* ruleset_wpath = ruleset[@"WhitelistPaths"];
+
+    if(ruleset_wpath) {
+        for(NSString* wpath in ruleset_wpath) {
+            if([path isEqualToString:wpath] || [path hasPrefix:[NSString stringWithFormat:@"%@/", wpath]]) {
+                return YES;
+            }
+        }
+    }
+
+    // Check whitelisted predicates
+    NSArray* ruleset_wpred = ruleset[@"WhitelistPredicates"];
+
+    if(ruleset_wpred) {
+        for(NSString* wpred in ruleset_wpred) {
+            NSPredicate* pred = [NSPredicate predicateWithFormat:wpred];
+            
+            if([pred evaluateWithObject:path]) {
+                return YES;
+            }
+        }
+    }
+
+    return NO;
+}
+
++ (BOOL)isPathBlacklisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(![path isAbsolutePath] || [path isEqualToString:@"/"]) {
+        return NO;
+    }
+
+    // Check blacklisted paths
+    NSArray* ruleset_bpath = ruleset[@"BlacklistPaths"];
+
+    if(ruleset_bpath) {
+        for(NSString* bpath in ruleset_bpath) {
+            if([path isEqualToString:bpath] || [path hasPrefix:[NSString stringWithFormat:@"%@/", bpath]]) {
+                return YES;
+            }
+        }
+    }
+
+    // Check blacklisted predicates
+    NSArray* ruleset_bpred = ruleset[@"BlacklistPredicates"];
+
+    if(ruleset_bpred) {
+        for(NSString* bpred in ruleset_bpred) {
+            NSPredicate* pred = [NSPredicate predicateWithFormat:bpred];
+            
+            if([pred evaluateWithObject:path]) {
+                return YES;
+            }
+        }
+    }
+
+    return NO;
+}
+
 + (BOOL)isPathRestricted_db:(NSArray *)db withPath:(NSString *)path {
-	NSArray* base_extra = @[
-		@"/Library/Application Support",
-		@"/usr/lib"
-	];
+    NSArray* base_extra = @[
+        @"/Library/Application Support",
+        @"/usr/lib"
+    ];
 
     BOOL restricted = [db containsObject:path];
 
@@ -18,10 +124,10 @@
 }
 
 + (BOOL)isPathRestricted_dpkg:(NSString *)dpkgPath withPath:(NSString *)path {
-	NSArray* base_extra = @[
-		@"/Library/Application Support",
-		@"/usr/lib"
-	];
+    NSArray* base_extra = @[
+        @"/Library/Application Support",
+        @"/usr/lib"
+    ];
 
     BOOL restricted = NO;
 
@@ -69,7 +175,7 @@
         }
     }
 
-	return restricted;
+    return restricted;
 }
 
 + (NSArray *)getURLSchemes_db:(NSSet *)db {
@@ -98,40 +204,40 @@
     }
 
     // Manual entry
-	[schemes addObject:@"undecimus"];
-	[schemes addObject:@"filza"];
-	[schemes addObject:@"xina"];
+    [schemes addObject:@"undecimus"];
+    [schemes addObject:@"filza"];
+    [schemes addObject:@"xina"];
 
     return [schemes allObjects];
 }
 
 + (NSArray*)getURLSchemes_dpkg:(NSString *)dpkgPath {
-	NSMutableSet* schemes = [NSMutableSet new];
+    NSMutableSet* schemes = [NSMutableSet new];
 
-	if(dpkgPath) {
-		NSTask* task = [NSTask new];
-		NSPipe* stdoutPipe = [NSPipe new];
+    if(dpkgPath) {
+        NSTask* task = [NSTask new];
+        NSPipe* stdoutPipe = [NSPipe new];
 
-		[task setLaunchPath:dpkgPath];
-		[task setArguments:@[@"--no-pager", @"-S", @"*.app"]];
-		[task setStandardOutput:stdoutPipe];
-		[task launch];
-		[task waitUntilExit];
+        [task setLaunchPath:dpkgPath];
+        [task setArguments:@[@"--no-pager", @"-S", @"*.app"]];
+        [task setStandardOutput:stdoutPipe];
+        [task launch];
+        [task waitUntilExit];
 
-		if([task terminationStatus] == 0) {
-			NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
-			NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
+        if([task terminationStatus] == 0) {
+            NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
+            NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
 
-			NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
-			NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
+            NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
+            NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
 
-			for(NSString* entry in lines) {
-				NSArray<NSString *>* line = [entry componentsSeparatedByString:@": "];
+            for(NSString* entry in lines) {
+                NSArray<NSString *>* line = [entry componentsSeparatedByString:@": "];
 
-				if([line count] == 2) {
-					NSString* path = [line objectAtIndex:1];
+                if([line count] == 2) {
+                    NSString* path = [line objectAtIndex:1];
 
-					if([path hasSuffix:@".app"]) {
+                    if([path hasSuffix:@".app"]) {
                         NSBundle* appBundle = [NSBundle bundleWithPath:path];
 
                         if(!appBundle) {
@@ -150,16 +256,16 @@
                             }
                         }
                     }
-				}
-			}
-		}
-	}
+                }
+            }
+        }
+    }
 
-	// Manual entry
-	[schemes addObject:@"undecimus"];
-	[schemes addObject:@"filza"];
-	[schemes addObject:@"xina"];
+    // Manual entry
+    [schemes addObject:@"undecimus"];
+    [schemes addObject:@"filza"];
+    [schemes addObject:@"xina"];
 
-	return [schemes allObjects];
+    return [schemes allObjects];
 }
 @end
