@@ -356,12 +356,97 @@
 			<string>WirelessRadioManager</string>
 			<string>mobileactivationd</string>
 		</array>
+		<key>/usr/bin</key>
+		<array>
+			<string>DumpBasebandCrash</string>
+			<string>IOMFB_FDR_Loader</string>
+			<string>PerfPowerServicesExtended</string>
+			<string>abmlite</string>
+			<string>afktool</string>
+			<string>brctl</string>
+			<string>codecctl</string>
+			<string>fileproviderctl</string>
+			<string>footprint</string>
+			<string>hidutil</string>
+			<string>hpmdiagnose</string>
+			<string>kbdebug</string>
+			<string>lsdiagnose</string>
+			<string>ltop</string>
+			<string>nfsstat</string>
+			<string>orionmicroupdate</string>
+			<string>powerlogHelperd</string>
+			<string>swift-inspect</string>
+			<string>sysdiagnose</string>
+			<string>tailspin</string>
+			<string>taskinfo</string>
+			<string>umtool</string>
+			<string>vm_stat</string>
+			<string>zprint</string>
+		</array>
+		<key>/usr/sbin</key>
+		<array>
+			<string>BTAvrCP</string>
+			<string>BTLEServer</string>
+			<string>BTMagic</string>
+			<string>BTMap</string>
+			<string>BTPbap</string>
+			<string>BlueTool</string>
+			<string>WRM_CoreDataStore.momd</string>
+			<string>WirelessRadioManagerd</string>
+			<string>absd</string>
+			<string>addNetworkInterface</string>
+			<string>aslmanager</string>
+			<string>audioclocksyncd</string>
+			<string>bluetoothd</string>
+			<string>cfprefsd</string>
+			<string>ckksctl</string>
+			<string>distnoted</string>
+			<string>fairplayd.A2</string>
+			<string>filecoordinationd</string>
+			<string>hdik</string>
+			<string>ioreg</string>
+			<string>mDNSResponder</string>
+			<string>mDNSResponderHelper</string>
+			<string>mediaserverd</string>
+			<string>notifyd</string>
+			<string>nvram</string>
+			<string>otctl</string>
+			<string>pppd</string>
+			<string>racoon</string>
+			<string>rtadvd</string>
+			<string>spindump</string>
+			<string>syslogd</string>
+			<string>wifid</string>
+		</array>
+		<key>/sbin</key>
+		<array>
+			<string>fsck</string>
+			<string>fsck_apfs</string>
+			<string>fsck_exfat</string>
+			<string>fsck_hfs</string>
+			<string>fsck_msdos</string>
+			<string>launchd</string>
+			<string>mount</string>
+			<string>mount_apfs</string>
+			<string>mount_hfs</string>
+			<string>mount_lifs</string>
+			<string>mount_nfs</string>
+			<string>mount_tmpfs</string>
+			<string>newfs_apfs</string>
+			<string>newfs_exfat</string>
+			<string>newfs_hfs</string>
+			<string>newfs_msdos</string>
+			<string>umount</string>
+		</array>
 	</dict>
 	<key>WhitelistPaths</key>
 	<array>
 		<string>/System</string>
 		<string>/var/containers</string>
 		<string>/var/mobile/Containers</string>
+		<string>/var/MobileAsset</string>
+		<string>/var/db/timezone</string>
+		<string>/usr/share/tokenizer</string>
 	</array>
 	<key>WhitelistPredicates</key>
 	<array>
@@ -384,6 +469,8 @@
 		<string>/usr/lib/tweaks</string>
 		<string>/usr/lib/libkrw</string>
 		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
+		<string>/usr/lib/tweakloader.dylib</string>
+		<string>/usr/lib/libjailbreak.dylib</string>
 		<string>/var/containers/Bundle/iosbinpack64</string>
 		<string>/var/containers/Bundle/tweaksupport</string>
 		<string>/dev/ptmx</string>
@@ -392,6 +479,7 @@
 		<string>/dev/vn0</string>
 		<string>/dev/vn1</string>
 		<string>/var/db/stash</string>
+		<string>/var/db/sudo</string>
 		<string>/var/run/FilzaHelper</string>
 		<string>/var/run/sudo</string>
 		<string>/usr/libexec/cydia</string>
@@ -417,6 +505,9 @@
 		<string>SELF LIKE '/var/log/*'</string>
 		<string>SELF LIKE '/var/mobile/Library/Application Support/*'</string>
 		<string>SELF LIKE '/var/mobile/Library/*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*curses*'</string>
 	</array>
 </dict>
 </plist>
