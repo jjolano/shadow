@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RulesetInfo</key>
+	<dict>
+		<key>Name</key>
+		<string>Standard Rules</string>
+		<key>Author</key>
+		<string>jjolano</string>
+	</dict>
+	<key>FileSystemStructure</key>
+	<dict>
+		<key>/</key>
+		<array>
+			<string>.ba</string>
+			<string>.file</string>
+			<string>.mb</string>
+			<string>Applications</string>
+			<string>Developer</string>
+			<string>Library</string>
+			<string>System</string>
+			<string>bin</string>
+			<string>cores</string>
+			<string>dev</string>
+			<string>etc</string>
+			<string>private</string>
+			<string>sbin</string>
+			<string>tmp</string>
+			<string>usr</string>
+			<string>var</string>
+		</array>
+		<key>/var</key>
+		<array>
+			<string>.DocumentRevisions-V100</string>
+            <string>.overprovisioning_file</string>
+            <string>Keychains</string>
+            <string>Managed Preferences</string>
+            <string>MobileAsset</string>
+            <string>MobileDevice</string>
+            <string>MobileSoftwareUpdate</string>
+            <string>audit</string>
+            <string>buddy</string>
+            <string>containers</string>
+            <string>datamigrator</string>
+            <string>db</string>
+            <string>dextcores</string>
+            <string>empty</string>
+            <string>folders</string>
+            <string>hardware</string>
+            <string>installd</string>
+            <string>keybags</string>
+            <string>log</string>
+            <string>logs</string>
+            <string>mobile</string>
+            <string>msgs</string>
+            <string>networkd</string>
+            <string>preferences</string>
+            <string>protected</string>
+            <string>root</string>
+            <string>run</string>
+            <string>select</string>
+            <string>staged_system_apps</string>
+            <string>tmp</string>
+            <string>vm</string>
+            <string>wireless</string>
+		</array>
+		<key>/Library</key>
+		<array>
+			<string>Application Support</string>
+			<string>Audio</string>
+            <string>Caches</string>
+            <string>Filesystems</string>
+            <string>Frameworks</string>
+            <string>Internet Plug-Ins</string>
+            <string>Keychains</string>
+            <string>LaunchAgents</string>
+            <string>LaunchDaemons</string>
+            <string>Logs</string>
+            <string>Managed Preferences</string>
+            <string>MobileDevice</string>
+            <string>MusicUISupport</string>
+            <string>Preferences</string>
+            <string>Printers</string>
+            <string>RegionFeatures</string>
+            <string>Ringtones</string>
+            <string>Updates</string>
+            <string>Wallpaper</string>
+        </array>
+		<key>/usr</key>
+		<array>
+			<string>bin</string>
+            <string>lib</string>
+            <string>libexec</string>
+            <string>sbin</string>
+            <string>share</string>
+            <string>standalone</string>
+		</array>
+		<key>/etc</key>
+		<array>
+			<string>asl</string>
+            <string>asl.conf</string>
+            <string>group</string>
+            <string>hosts</string>
+            <string>hosts.equiv</string>
+            <string>master.passwd</string>
+            <string>networks</string>
+            <string>notify.conf</string>
+            <string>passwd</string>
+            <string>ppp</string>
+            <string>protocols</string>
+            <string>racoon</string>
+            <string>services</string>
+            <string>ttys</string>
+		</array>
+		<key>/var/mobile</key>
+		<array>
+			<string>Applications</string>
+			<string>Containers</string>
+			<string>Documents</string>
+			<string>Downloads</string>
+			<string>Library</string>
+			<string>Media</string>
+			<string>MobileSoftwareUpdate</string>
+		</array>
+		<key>/bin</key>
+		<array>
+			<string>ps</string>
+			<string>df</string>
+		</array>
+		<key>/var/mobile/Library/Preferences</key>
+		<array>
+			<string>.GlobalPreferences.plist</string>
+			<string>.GlobalPreferences_m.plist</string>
+			<string>UITextInputContextIdentifiers.plist</string>
+			<string>dprivacyd.plist</string>
+			<string>nfcd.plist</string>
+			<string>silhouette.plist</string>
+			<string>siriknowledged.plist</string>
+			<string>systemgroup.com.apple.icloud.searchpartyd.sharedsettings.plist</string>
+			<string>Wallpaper.png</string>
+		</array>
+		<key>/var/mobile/Library/Caches</key>
+		<array>
+			<string>Checkpoint.plist</string>
+			<string>CloudKit</string>
+			<string>DateFormats.plist</string>
+			<string>FamilyCircle</string>
+			<string>GameKit</string>
+			<string>GeoServices</string>
+			<string>MappedImageCache</string>
+			<string>PassKit</string>
+			<string>VoiceServices</string>
+			<string>VoiceTrigger</string>
+			<string>mediaanalysisd-service</string>
+			<string>sharedCaches</string>
+			<string>videosubscriptionsd</string>
+			<string>TelephonyUI-8</string>
+			<string>rtcreportingd</string>
+		</array>
+		<key>/var/mobile/Library/Cookies</key>
+		<array>
+			<string>Cookies.binarycookies</string>
+		</array>
+		<key>/var/log</key>
+		<array>
+			<string>asl</string>
+			<string>mDNSResponder</string>
+			<string>ppp</string>
+		</array>
+		<key>/Library/Application Support</key>
+		<array>
+			<string>AggregateDictionary</string>
+			<string>BTServer</string>
+		</array>
+		<key>/var/mobile/Library/Application Support</key>
+		<array>
+			<string>CloudDocs</string>
+			<string>CloudKitMailConversationsFlags</string>
+			<string>FileProvider</string>
+			<string>UsageTrackingAgent</string>
+			<string>icloudsubscriptionoptimizerd</string>
+			<string>lacle.tmp</string>
+			<string>videosubscriptionsd</string>
+		</array>
+		<key>/var/mobile/Library</key>
+		<array>
+			<string>Accessibility</string>
+			<string>Accounts</string>
+			<string>AddressBook</string>
+			<string>AggregateDictionary</string>
+			<string>AirPlayRoutePrediction</string>
+			<string>AppleMediaServices</string>
+			<string>ApplePushService</string>
+			<string>Application Support</string>
+			<string>Assistant</string>
+			<string>Avatar</string>
+			<string>BackBoard</string>
+			<string>Biome</string>
+			<string>BulletinBoard</string>
+			<string>Caches</string>
+			<string>Calendar</string>
+			<string>CallDirectory</string>
+			<string>CallHistoryDB</string>
+			<string>CallHistoryTransactions</string>
+			<string>CallServices</string>
+			<string>Carrier Bundles</string>
+			<string>ClassKit</string>
+			<string>Contacts</string>
+			<string>ControlCenter</string>
+			<string>Cookies</string>
+			<string>CoreAS</string>
+			<string>CoreAccessories</string>
+			<string>CoreBehavior</string>
+			<string>CoreDuet</string>
+			<string>CoreFollowUp</string>
+			<string>CrashReporter</string>
+			<string>DES</string>
+			<string>DataAccess</string>
+			<string>DataDeliveryServices</string>
+			<string>DiagnosticPipeline</string>
+			<string>DifferentialPrivacy</string>
+			<string>DoNotDisturb</string>
+			<string>DuetActivityScheduler</string>
+			<string>DuetExpertCenter</string>
+			<string>ExternalAccessory</string>
+			<string>FaceTime</string>
+			<string>FairPlay</string>
+			<string>Finance</string>
+			<string>FrontBoard</string>
+			<string>GameKit</string>
+			<string>HTTPStorages</string>
+			<string>Handwriting</string>
+			<string>Health</string>
+			<string>IdentityServices</string>
+			<string>Inboxes</string>
+			<string>IntelligencePlatform</string>
+			<string>Intents</string>
+			<string>Keyboard</string>
+			<string>KeyboardServices</string>
+			<string>LanguageModeling</string>
+			<string>Logs</string>
+			<string>Mail</string>
+			<string>Maps</string>
+			<string>MediaRemote</string>
+			<string>MediaStream</string>
+			<string>MemoryMaintenance</string>
+			<string>MessagesMetaData</string>
+			<string>Mobile Documents</string>
+			<string>MobileContainerManager</string>
+			<string>MobileInstallation</string>
+			<string>NFStorage</string>
+			<string>NanoMusicSync</string>
+			<string>News</string>
+			<string>Notes</string>
+			<string>OSAnalytics</string>
+			<string>OTALogging</string>
+			<string>OnDemandResources</string>
+			<string>POMMES</string>
+			<string>Passes</string>
+			<string>PeopleSuggester</string>
+			<string>PersonalizationPortrait</string>
+			<string>Photos</string>
+			<string>Preferences</string>
+			<string>PrivacyAccounting</string>
+			<string>ProactiveInsights</string>
+			<string>Recents</string>
+			<string>Reminders</string>
+			<string>ReplayKit</string>
+			<string>ResponseKit</string>
+			<string>SMS</string>
+			<string>Safari</string>
+			<string>SafariSafeBrowsing</string>
+			<string>Saved Application State</string>
+			<string>SecureElementService</string>
+			<string>Sharing</string>
+			<string>Shortcuts</string>
+			<string>SoftwareUpdate</string>
+			<string>SoftwareUpdateCore</string>
+			<string>SplashBoard</string>
+			<string>Spotlight</string>
+			<string>SpringBoard</string>
+			<string>StatusKit</string>
+			<string>Suggestions</string>
+			<string>SyncedPreferences</string>
+			<string>TCC</string>
+			<string>Translation</string>
+			<string>Trial</string>
+			<string>UserConfigurationProfiles</string>
+			<string>UserFonts</string>
+			<string>UserNotifications</string>
+			<string>UserNotificationsUI</string>
+			<string>VoiceServices</string>
+			<string>VoiceTrigger</string>
+			<string>Voicemail</string>
+			<string>Weather</string>
+			<string>WebClips</string>
+			<string>WebKit</string>
+			<string>chronod</string>
+			<string>coreidvd</string>
+			<string>dmd</string>
+			<string>homed</string>
+			<string>idcredd</string>
+			<string>locationd</string>
+			<string>mad</string>
+			<string>sessionkitd</string>
+			<string>studentd</string>
+			<string>terminus</string>
+		</array>
+		<key>/var/mobile/Media</key>
+		<array>
+			<string>Books</string>
+			<string>DCIM</string>
+			<string>Downloads</string>
+			<string>MediaAnalysis</string>
+			<string>PhotoData</string>
+			<string>Photos</string>
+			<string>Purchases</string>
+			<string>iTunes_Control</string>
+		</array>
+		<key>/var/mobile/Library/ControlCenter</key>
+		<array>
+			<string>ModuleConfiguration.plist</string>
+		</array>
+		<key>/usr/share</key>
+		<array>
+			<string>CSI</string>
+			<string>com.apple.languageassetd</string>
+			<string>icu</string>
+			<string>langid</string>
+			<string>locale</string>
+			<string>misc</string>
+			<string>morphun</string>
+			<string>progressui</string>
+			<string>tokenizer</string>
+			<string>zoneinfo</string>
+			<string>zoneinfo.default</string>
+		</array>
+		<key>/usr/share/locale</key>
+		<array>
+			<string>UTF-8</string>
+		</array>
+		<key>/usr/share/locale/UTF-8</key>
+		<array>
+			<string>LC_CTYPE</string>
+		</array>
+		<key>/var/mobile/Library/Logs</key>
+		<array>
+			<string>AppleSupport</string>
+			<string>Bluetooth</string>
+			<string>CrashReporter</string>
+			<string>Dedisco</string>
+			<string>DiagnosticPipeline</string>
+			<string>ExposureNotification</string>
+			<string>RTCReporting</string>
+			<string>WirelessRadioManager</string>
+			<string>mobileactivationd</string>
+		</array>
+	</dict>
+	<key>WhitelistPaths</key>
+	<array>
+		<string>/System</string>
+		<string>/var/containers</string>
+		<string>/var/mobile/Containers</string>
+	</array>
+	<key>WhitelistPredicates</key>
+	<array>
+		<string>SELF LIKE '/var/mobile/Library/Preferences/com.apple*.plist'</string>
+		<string>SELF LIKE '/var/mobile/Library/Caches/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Caches/.com.apple*'</string>
+		<string>SELF LIKE '/tmp/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Saved Application State/com.apple*.savedState'</string>
+		<string>SELF LIKE '/var/mobile/Library/SplashBoard/Snapshots/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Cookies/com.apple*'</string>
+		<string>SELF LIKE '/Library/LaunchDaemons/com.apple*.plist'</string>
+		<string>SELF LIKE '/var/log/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Application Support/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/com.apple*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Logs/com.apple*'</string>
+	</array>
+	<key>BlacklistPaths</key>
+	<array>
+		<string>/usr/lib/TweakInject</string>
+		<string>/usr/lib/tweaks</string>
+		<string>/usr/lib/libkrw</string>
+		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
+		<string>/var/containers/Bundle/iosbinpack64</string>
+		<string>/var/containers/Bundle/tweaksupport</string>
+		<string>/dev/ptmx</string>
+		<string>/dev/kmem</string>
+		<string>/dev/mem</string>
+		<string>/dev/vn0</string>
+		<string>/dev/vn1</string>
+		<string>/var/db/stash</string>
+		<string>/var/run/FilzaHelper</string>
+		<string>/var/run/sudo</string>
+		<string>/usr/libexec/cydia</string>
+		<string>/System/Library/PreferenceBundles/AppList.bundle</string>
+	</array>
+	<key>BlacklistPredicates</key>
+	<array>
+		<string>SELF LIKE '/private/preboot/*/procursus*'</string>
+		<string>SELF LIKE '/Library/Frameworks/*'</string>
+		<string>SELF LIKE '/Library/LaunchDaemons/*'</string>
+		<string>SELF LIKE '/Library/Caches/cy-*'</string>
+		<string>SELF LIKE '/dev/dlci.*'</string>
+		<string>SELF LIKE '/var/run/*.pid'</string>
+		<string>SELF ENDSWITH '.distrib'</string>
+		<string>SELF LIKE '/*/LIAPP*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Logs/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Preferences/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Caches/*'</string>
+		<string>SELF LIKE '/tmp/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Saved Application State/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/SplashBoard/Snapshots/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Cookies/*'</string>
+		<string>SELF LIKE '/var/log/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/Application Support/*'</string>
+		<string>SELF LIKE '/var/mobile/Library/*'</string>
+	</array>
+</dict>
+</plist>

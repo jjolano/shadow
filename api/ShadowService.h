@@ -1,12 +1,9 @@
 #import <Foundation/Foundation.h>
-
-#ifdef DEBUG
-#define NSLog(...) NSLog(__VA_ARGS__)
-#else
-#define NSLog(...) (void)0
-#endif
+#import "common.h"
 
 @interface ShadowService : NSObject
+- (void)addRuleset:(NSDictionary *)ruleset;
+
 - (void)startService;
 - (void)connectService;
 - (void)startLocalService;

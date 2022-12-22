@@ -14,7 +14,7 @@
 - (BOOL)isAddrRestricted:(const void *)addr;
 
 - (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr;
-- (void *)getOrigFunc:(NSString *)fname;
+- (void *)getOrigFunc:(NSString *)fname elseAddr:(void *)addr;
 
 + (instancetype)shadowWithService:(ShadowService *)_service;
 @end

@@ -1,7 +1,7 @@
 #import <Foundation/Foundation.h>
 #import "ShadowService.h"
 
-@interface ShadowSettings : NSObject
+@interface ShadowService (Settings)
 + (NSDictionary *)getDefaultPreferences;
 + (NSUserDefaults *)getUserDefaults;
 + (NSDictionary *)getPreferences:(NSString *)bundleIdentifier;

@@ -4,8 +4,8 @@
 #import "../api/common.h"
 #import "../api/Shadow.h"
 #import "../api/ShadowService.h"
-#import "../api/ShadowSettings.h"
 
+#import "../api/ShadowService+Settings.h"
 #import "../api/ShadowService+Database.h"
 
 #import "hooks/hooks.h"
@@ -24,218 +24,218 @@ ShadowService* _srv = nil;
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
     %orig;
 
-	_srv = [ShadowService new];
-	[_srv startService];
+    _srv = [ShadowService new];
+    [_srv startService];
 
-	NSOperationQueue* queue = [NSOperationQueue new];
-	[queue setQualityOfService:NSOperationQualityOfServiceBackground];
+    NSOperationQueue* queue = [NSOperationQueue new];
+    [queue setQualityOfService:NSOperationQualityOfServiceBackground];
 
-	[queue addOperationWithBlock:^(){
-		NSDictionary* db = [ShadowService generateDatabase];
+    [queue addOperationWithBlock:^(){
+        NSDictionary* db = [ShadowService generateDatabase];
 
-		// Save this database to filesystem
-		if(db) {
-			BOOL success = [db writeToFile:@SHADOW_DB_PLIST atomically:NO];
+        // Save this database to filesystem
+        if(db) {
+            BOOL success = [db writeToFile:@SHADOW_DB_PLIST atomically:NO];
 
-			if(!success) {
-				success = [db writeToFile:@("/var/jb" SHADOW_DB_PLIST) atomically:NO];
-			}
+            if(!success) {
+                success = [db writeToFile:@("/var/jb" SHADOW_DB_PLIST) atomically:NO];
+            }
 
-			if(success) {
-				NSLog(@"%@", @"successfully saved generated db");
-				[_srv startLocalService];
-			} else {
-				NSLog(@"%@", @"failed to save generate db");
-			}
-		}
-	}];
+            if(success) {
+                NSLog(@"%@", @"successfully saved generated db");
+                [_srv startLocalService];
+            } else {
+                NSLog(@"%@", @"failed to save generate db");
+            }
+        }
+    }];
 }
 %end
 %end
 
 %ctor {
-	// Determine the application we're injected into.
-	NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
-	NSString* executablePath = [[NSBundle mainBundle] executablePath];
-	NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    // Determine the application we're injected into.
+    NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
+    NSString* executablePath = [[NSBundle mainBundle] executablePath];
+    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
 
-	// Injected into SpringBoard.
-	if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-		NSLog(@"%@", @"loaded in SpringBoard");
-		%init(hook_springboard);		
-		return;
-	}
+    // Injected into SpringBoard.
+    if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+        NSLog(@"%@", @"loaded in SpringBoard");
+        %init(hook_springboard);		
+        return;
+    }
 
-	// Only load Shadow for sandboxed applications.
-	// Don't load for App Extensions (.. unless developers are adding detection in those too :/)
-	if(![[NSBundle mainBundle] appStoreReceiptURL]
-	|| [executablePath hasPrefix:@"/Applications"]
-	|| [executablePath hasPrefix:@"/System"]
-	|| ![bundlePath hasSuffix:@".app"]) {
-		return;
-	}
+    // Only load Shadow for sandboxed applications.
+    // Don't load for App Extensions (.. unless developers are adding detection in those too :/)
+    if(![[NSBundle mainBundle] appStoreReceiptURL]
+    || [executablePath hasPrefix:@"/Applications"]
+    || [executablePath hasPrefix:@"/System"]
+    || ![bundlePath hasSuffix:@".app"]) {
+        return;
+    }
 
-	NSLog(@"%@", @"loaded in app");
+    NSLog(@"%@", @"loaded in app");
 
-	libSandy_applyProfile("ShadowService");
+    libSandy_applyProfile("ShadowService");
 
-	_srv = [ShadowService new];
-	[_srv connectService];
+    _srv = [ShadowService new];
+    [_srv connectService];
 
-	// Load preferences.
-	NSDictionary* prefs_load = nil;
+    // Load preferences.
+    NSDictionary* prefs_load = nil;
 
-	if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
-		libSandy_applyProfile("ShadowSettings");
-		prefs_load = [ShadowSettings getPreferences:bundleIdentifier];
-	}
+    if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
+        libSandy_applyProfile("ShadowSettings");
+        prefs_load = [ShadowService getPreferences:bundleIdentifier];
+    }
 
-	if(!prefs_load) {
-		// Use Shadow Service to load preferences.
-		prefs_load = [ShadowSettings getPreferences:bundleIdentifier usingService:_srv];
-	}
+    if(!prefs_load) {
+        // Use Shadow Service to load preferences.
+        prefs_load = [ShadowService getPreferences:bundleIdentifier usingService:_srv];
+    }
 
-	NSLog(@"%@", prefs_load);
+    NSLog(@"%@", prefs_load);
 
-	BOOL enabled = [prefs_load[@"App_Enabled"] boolValue];
+    BOOL enabled = [prefs_load[@"App_Enabled"] boolValue];
 
-	if(!enabled) {
-		return;
-	}
+    if(!enabled) {
+        return;
+    }
 
-	// Initialize Shadow class.
-	[_srv startLocalService];
+    // Initialize Shadow class.
+    [_srv startLocalService];
 
-	_shadow = [Shadow shadowWithService:_srv];
-	[_shadow setTweakCompatibility:[prefs_load[@"Tweak_CompatEx"] boolValue]];
+    _shadow = [Shadow shadowWithService:_srv];
+    [_shadow setTweakCompatibility:[prefs_load[@"Tweak_CompatEx"] boolValue]];
 
-	// Initialize hooks.
-	NSLog(@"%@", @"starting hooks");
+    // Initialize hooks.
+    NSLog(@"%@", @"starting hooks");
 
-	if([prefs_load[@"Hook_Filesystem"] boolValue]) {
-		NSLog(@"%@", @"+ filesystem");
+    if([prefs_load[@"Hook_Filesystem"] boolValue]) {
+        NSLog(@"%@", @"+ filesystem");
 
-		shadowhook_libc();
-		shadowhook_NSFileManager();
-	}
+        shadowhook_libc();
+        shadowhook_NSFileManager();
+    }
 
-	if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
-		NSLog(@"%@", @"+ dylib");
+    if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
+        NSLog(@"%@", @"+ dylib");
 
-		// Register before hooking
-		_dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
-		_dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
-		_dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
-		_dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
+        // Register before hooking
+        _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
+        _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
+        _dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
+        _dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
 
-		shadowhook_dyld();
-	}
+        shadowhook_dyld();
+    }
 
-	if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
-		NSLog(@"%@", @"+ dylibex");
+    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+        NSLog(@"%@", @"+ dylibex");
 
-		shadowhook_dyld_extra();
-	}
+        shadowhook_dyld_extra();
+    }
 
-	if([prefs_load[@"Hook_URLScheme"] boolValue]) {
-		NSLog(@"%@", @"+ urlscheme");
+    if([prefs_load[@"Hook_URLScheme"] boolValue]) {
+        NSLog(@"%@", @"+ urlscheme");
 
-		shadowhook_UIApplication();
-	}
+        shadowhook_UIApplication();
+    }
 
-	if([prefs_load[@"Hook_EnvVars"] boolValue]) {
-		NSLog(@"%@", @"+ envvars");
+    if([prefs_load[@"Hook_EnvVars"] boolValue]) {
+        NSLog(@"%@", @"+ envvars");
 
-		shadowhook_libc_envvar();
-		shadowhook_NSProcessInfo();
-	}
+        shadowhook_libc_envvar();
+        shadowhook_NSProcessInfo();
+    }
 
-	if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
-		NSLog(@"%@", @"+ filesystemex");
+    if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
+        NSLog(@"%@", @"+ filesystemex");
 
-		shadowhook_libc_extra();
-		shadowhook_NSFileHandle();
-		shadowhook_NSFileVersion();
-		shadowhook_NSFileWrapper();
-	}
+        shadowhook_libc_extra();
+        shadowhook_NSFileHandle();
+        shadowhook_NSFileVersion();
+        shadowhook_NSFileWrapper();
+    }
 
-	if([prefs_load[@"Hook_Foundation"] boolValue]) {
-		NSLog(@"%@", @"+ foundation");
+    if([prefs_load[@"Hook_Foundation"] boolValue]) {
+        NSLog(@"%@", @"+ foundation");
 
-		shadowhook_NSArray();
-		shadowhook_NSDictionary();
-		shadowhook_NSBundle();
-		shadowhook_NSString();
-		shadowhook_NSURL();
-		shadowhook_NSData();
-		shadowhook_UIImage();
-	}
+        shadowhook_NSArray();
+        shadowhook_NSDictionary();
+        shadowhook_NSBundle();
+        shadowhook_NSString();
+        shadowhook_NSURL();
+        shadowhook_NSData();
+        shadowhook_UIImage();
+    }
 
-	if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
-		NSLog(@"%@", @"+ devicecheck");
+    if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
+        NSLog(@"%@", @"+ devicecheck");
 
-		shadowhook_DeviceCheck();
-	}
+        shadowhook_DeviceCheck();
+    }
 
-	if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
-		NSLog(@"%@", @"+ mach");
+    if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
+        NSLog(@"%@", @"+ mach");
 
-		shadowhook_mach();
-	}
+        shadowhook_mach();
+    }
 
-	if([prefs_load[@"Hook_SymLookup"] boolValue]) {
-		NSLog(@"%@", @"+ dlsym");
+    if([prefs_load[@"Hook_SymLookup"] boolValue]) {
+        NSLog(@"%@", @"+ dlsym");
 
-		shadowhook_dyld_symlookup();
-	}
+        shadowhook_dyld_symlookup();
+    }
 
-	if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
-		NSLog(@"%@", @"+ llc");
+    if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
+        NSLog(@"%@", @"+ llc");
 
-		shadowhook_libc_lowlevel();
-	}
+        shadowhook_libc_lowlevel();
+    }
 
-	if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
-		NSLog(@"%@", @"+ debug");
+    if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
+        NSLog(@"%@", @"+ debug");
 
-		shadowhook_libc_antidebugging();
-	}
+        shadowhook_libc_antidebugging();
+    }
 
-	if([prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
-		NSLog(@"%@", @"+ objc");
+    if([prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
+        NSLog(@"%@", @"+ objc");
 
-		shadowhook_objc();
-	}
+        shadowhook_objc();
+    }
 
-	if([prefs_load[@"Hook_FakeMac"] boolValue]) {
-		NSLog(@"%@", @"+ m1");
+    if([prefs_load[@"Hook_FakeMac"] boolValue]) {
+        NSLog(@"%@", @"+ m1");
 
-		shadowhook_NSProcessInfo_fakemac();
-	}
+        shadowhook_NSProcessInfo_fakemac();
+    }
 
-	if([prefs_load[@"Hook_Syscall"] boolValue]) {
-		NSLog(@"%@", @"+ syscall");
+    if([prefs_load[@"Hook_Syscall"] boolValue]) {
+        NSLog(@"%@", @"+ syscall");
 
-		shadowhook_syscall();
-	}
+        shadowhook_syscall();
+    }
 
-	if([prefs_load[@"Hook_Sandbox"] boolValue]) {
-		NSLog(@"%@", @"+ sandbox");
+    if([prefs_load[@"Hook_Sandbox"] boolValue]) {
+        NSLog(@"%@", @"+ sandbox");
 
-		shadowhook_sandbox();
-	}
+        shadowhook_sandbox();
+    }
 
-	if([prefs_load[@"Hook_Memory"] boolValue]) {
-		NSLog(@"%@", @"+ memory");
+    if([prefs_load[@"Hook_Memory"] boolValue]) {
+        NSLog(@"%@", @"+ memory");
 
-		shadowhook_mem();
-	}
+        shadowhook_mem();
+    }
 
-	if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
-		NSLog(@"%@", @"+ classes");
-		
-		shadowhook_objc_hidetweakclasses();
-	}
+    if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
+        NSLog(@"%@", @"+ classes");
+        
+        shadowhook_objc_hidetweakclasses();
+    }
 
-	NSLog(@"%@", @"completed hooks");
+    NSLog(@"%@", @"completed hooks");
 }
