@@ -35,7 +35,7 @@ int main(int argc, char *argv[], char *envp[]) {
         if(useService) {
             [srv connectService];
         } else {
-            [srv startLocalService];
+            [srv loadRulesets];
         }
 
         Shadow* shadow = [Shadow shadowWithService:srv];

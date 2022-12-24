@@ -33,16 +33,16 @@
 }
 
 + (NSString *)getStandardizedPath:(NSString *)path {
-    if(![path isEqualToString:@""] && [path characterAtIndex:0] != '~' && ![path isEqualToString:@"/"] && [[path substringFromIndex:[path length] - 1] isEqualToString:@"/"]) {
-        path = [path substringToIndex:[path length] - 1];
-    }
-
     if([path containsString:@"/./"]) {
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
     }
 
     if([path containsString:@"//"]) {
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+    }
+
+    if(![path isEqualToString:@""] && [path characterAtIndex:0] != '~' && ![path isEqualToString:@"/"] && [[path substringFromIndex:[path length] - 1] isEqualToString:@"/"]) {
+        path = [path substringToIndex:[path length] - 1];
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {

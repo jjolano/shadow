@@ -173,7 +173,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
     // Add if safe dylib.
-    if(![_shadow isPathRestricted:image_name]) {
+    if(![image_name hasPrefix:@"/System"] && ![image_name hasPrefix:@"/var/containers"] && ![_shadow isPathRestricted:image_name]) {
         NSMutableArray* _dyld_collection = _shdw_dyld_collection ? [_shdw_dyld_collection mutableCopy] : [NSMutableArray new];
 
         NSDictionary* dylib = @{
