@@ -28,26 +28,26 @@ ShadowService* _srv = nil;
     [_srv startService];
 
     NSOperationQueue* queue = [NSOperationQueue new];
-    [queue setQualityOfService:NSOperationQualityOfServiceBackground];
+    [queue setQualityOfService:NSOperationQualityOfServiceUserInteractive];
 
     [queue addOperationWithBlock:^(){
-        NSDictionary* db = [ShadowService generateDatabase];
+        NSDictionary* ruleset_dpkg = [ShadowService generateDatabase];
 
-        // Save this database to filesystem
-        if(db) {
-            BOOL success = [db writeToFile:@SHADOW_DB_PLIST atomically:NO];
+        if(ruleset_dpkg) {
+            BOOL success = [ruleset_dpkg writeToFile:@SHADOW_DB_PLIST atomically:NO];
 
             if(!success) {
-                success = [db writeToFile:@("/var/jb" SHADOW_DB_PLIST) atomically:NO];
+                success = [ruleset_dpkg writeToFile:@("/var/jb" SHADOW_DB_PLIST) atomically:NO];
             }
 
             if(success) {
                 NSLog(@"%@", @"successfully saved generated db");
-                [_srv startLocalService];
             } else {
                 NSLog(@"%@", @"failed to save generate db");
             }
         }
+
+        [_srv loadRulesets];
     }];
 }
 %end
@@ -104,7 +104,7 @@ ShadowService* _srv = nil;
     }
 
     // Initialize Shadow class.
-    [_srv startLocalService];
+    [_srv loadRulesets];
 
     _shadow = [Shadow shadowWithService:_srv];
     [_shadow setTweakCompatibility:[prefs_load[@"Tweak_CompatEx"] boolValue]];

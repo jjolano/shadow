@@ -14,7 +14,6 @@
         return nil;
     }
 
-    NSMutableDictionary* db = [NSMutableDictionary new];
     NSMutableSet* db_installed = [NSMutableSet new];
     NSMutableSet* db_exception = [NSMutableSet new];
 
@@ -50,7 +49,9 @@
 
     // Filter some unneeded filenames.
     NSArray* filter_names = @[
-        @"/."
+        @"/.",
+        @"/Library/Application Support",
+        @"/usr/lib"
     ];
 
     for(NSString* name in filter_names) {
@@ -64,10 +65,37 @@
         [db_installed removeObject:name];
     }
 
-    NSSet* schemes = [NSSet setWithArray:[[self class] getURLSchemes_db:db_installed]];
+    NSPredicate* system_apps_pred = [NSPredicate predicateWithFormat:@"SELF ENDSWITH[c] '.app'"];
+    NSArray* system_apps = [[db_installed allObjects] filteredArrayUsingPredicate:system_apps_pred];
+    NSMutableSet* schemes = [NSMutableSet new];
 
-    [db setObject:[db_installed allObjects] forKey:@"installed"];
-    [db setObject:[schemes allObjects] forKey:@"schemes"];
-    return [db copy];
+    for(NSString* app in system_apps) {
+        NSBundle* appBundle = [NSBundle bundleWithPath:app];
+
+        if(!appBundle) {
+            continue;
+        }
+
+        NSDictionary* plist = [appBundle infoDictionary];
+
+        if(plist && plist[@"CFBundleURLTypes"]) {
+            for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
+                if(type[@"CFBundleURLSchemes"]) {
+                    for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
+                        [schemes addObject:scheme];
+                    }
+                }
+            }
+        }
+    }
+
+    return @{
+        @"RulesetInfo" : @{
+            @"Name" : @"dpkg installed files",
+            @"Author" : @"Shadow Service"
+        },
+        @"BlacklistExactPaths" : [db_installed allObjects],
+        @"BlacklistURLSchemes" : [schemes allObjects]
+    };
 }
 @end

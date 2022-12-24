@@ -10,15 +10,16 @@
 
     // Verify structure
     NSDictionary* ruleset_fss = ruleset[@"FileSystemStructure"];
+
+    if(!ruleset_fss || ruleset_fss[path]) {
+        // no need to check further
+        return YES;
+    }
+    
     NSString* path_tmp = path;
 
     while(!ruleset_fss[path_tmp] && ![path_tmp isEqualToString:@"/"]) {
         path_tmp = [path_tmp stringByDeletingLastPathComponent];
-    }
-
-    if([path isEqualToString:path_tmp]) {
-        // no need to check further
-        return YES;
     }
 
     NSArray* ruleset_fss_base = ruleset_fss[path_tmp];
@@ -29,7 +30,7 @@
         for(NSString* name in ruleset_fss_base) {
             NSString* ruleset_path = [path_tmp stringByAppendingPathComponent:name];
 
-            if([path isEqualToString:ruleset_path] || [path hasPrefix:[NSString stringWithFormat:@"%@/", ruleset_path]]) {
+            if([path hasPrefix:ruleset_path]) {
                 compliant = YES;
                 break;
             }
@@ -49,29 +50,42 @@
         return NO;
     }
 
+    // Check whitelisted exact paths
+    NSSet* ruleset_wepath = ruleset[@"WhitelistExactPaths"];
+
+    if(ruleset_wepath && [ruleset_wepath containsObject:path]) {
+        return YES;
+    }
+
     // Check whitelisted paths
     NSArray* ruleset_wpath = ruleset[@"WhitelistPaths"];
 
     if(ruleset_wpath) {
         for(NSString* wpath in ruleset_wpath) {
-            if([path isEqualToString:wpath] || [path hasPrefix:[NSString stringWithFormat:@"%@/", wpath]]) {
+            if([path hasPrefix:wpath]) {
                 return YES;
             }
         }
     }
 
     // Check whitelisted predicates
-    NSArray* ruleset_wpred = ruleset[@"WhitelistPredicates"];
+    NSPredicate* ruleset_wpred = ruleset[@"WhitelistPredicates"];
 
-    if(ruleset_wpred) {
-        for(NSString* wpred in ruleset_wpred) {
-            NSPredicate* pred = [NSPredicate predicateWithFormat:wpred];
-            
-            if([pred evaluateWithObject:path]) {
-                return YES;
-            }
-        }
+    if(ruleset_wpred && [ruleset_wpred evaluateWithObject:path]) {
+        return YES;
     }
+
+    // NSArray* ruleset_wpred = ruleset[@"WhitelistPredicates"];
+
+    // if(ruleset_wpred) {
+    //     for(NSString* wpred in ruleset_wpred) {
+    //         NSPredicate* pred = [NSPredicate predicateWithFormat:wpred];
+            
+    //         if([pred evaluateWithObject:path]) {
+    //             return YES;
+    //         }
+    //     }
+    // }
 
     return NO;
 }
@@ -81,29 +95,42 @@
         return NO;
     }
 
+    // Check blacklisted exact paths
+    NSSet* ruleset_bepath = ruleset[@"BlacklistExactPaths"];
+
+    if(ruleset_bepath && [ruleset_bepath containsObject:path]) {
+        return YES;
+    }
+
     // Check blacklisted paths
     NSArray* ruleset_bpath = ruleset[@"BlacklistPaths"];
 
     if(ruleset_bpath) {
         for(NSString* bpath in ruleset_bpath) {
-            if([path isEqualToString:bpath] || [path hasPrefix:[NSString stringWithFormat:@"%@/", bpath]]) {
+            if([path hasPrefix:bpath]) {
                 return YES;
             }
         }
     }
 
     // Check blacklisted predicates
-    NSArray* ruleset_bpred = ruleset[@"BlacklistPredicates"];
+    NSPredicate* ruleset_bpred = ruleset[@"BlacklistPredicates"];
 
-    if(ruleset_bpred) {
-        for(NSString* bpred in ruleset_bpred) {
-            NSPredicate* pred = [NSPredicate predicateWithFormat:bpred];
-            
-            if([pred evaluateWithObject:path]) {
-                return YES;
-            }
-        }
+    if(ruleset_bpred && [ruleset_bpred evaluateWithObject:path]) {
+        return YES;
     }
+
+    // NSArray* ruleset_bpred = ruleset[@"BlacklistPredicates"];
+
+    // if(ruleset_bpred) {
+    //     for(NSString* bpred in ruleset_bpred) {
+    //         NSPredicate* pred = [NSPredicate predicateWithFormat:bpred];
+            
+    //         if([pred evaluateWithObject:path]) {
+    //             return YES;
+    //         }
+    //     }
+    // }
 
     return NO;
 }

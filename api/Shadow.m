@@ -9,7 +9,6 @@
 
 @implementation Shadow {
     ShadowService* service;
-    NSArray* schemes;
 
     NSMutableDictionary* orig_funcs;
 
@@ -109,21 +108,24 @@
         return NO;
     }
 
-    if([path characterAtIndex:0] == '~') {
-        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
-        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
-        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
-    }
-
     if(![path isAbsolutePath]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
     }
 
     if(resolve) {
-        if(service && [[self class] shouldResolvePath:path lstat:[self getOrigFunc:@"lstat" elseAddr:lstat]]) {
+        static void* lstat_ptr = NULL;
+        if(!lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat" elseAddr:lstat];
+
+        if(service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
             path = [service resolvePath:path];
         }
+    }
+
+    if([path characterAtIndex:0] == '~') {
+        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
+        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
+        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
     }
 
     path = [[self class] getStandardizedPath:path];
@@ -165,7 +167,7 @@
         }
     }
 
-    if(schemes && [schemes containsObject:[url scheme]]) {
+    if(service && [service isURLSchemeRestricted:[url scheme]]) {
         return YES;
     }
 
@@ -175,23 +177,12 @@
 - (void)setService:(ShadowService *)_service {
     if(_service) {
         service = _service;
-
-        NSDictionary* versions = [service getVersions];
-
-        if(versions) {
-            NSLog(@"%@: %@", @"bypass version", versions[@"bypass_version"]);
-            NSLog(@"%@: %@", @"api version", versions[@"api_version"]);
-        }
-
-        schemes = [service getURLSchemes];
-        NSLog(@"%@: %@", @"url schemes", schemes);
     }
 }
 
 - (instancetype)init {
     if((self = [super init])) {
         orig_funcs = [NSMutableDictionary new];
-        schemes = nil;
         bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);

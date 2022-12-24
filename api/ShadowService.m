@@ -5,8 +5,7 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @implementation ShadowService {
-    NSCache* responseCache;
-    NSDictionary* db;
+    NSCache<NSString *, NSNumber *>* responseCache;
     NSString* dpkgPath;
     NSArray* rulesets;
     CPDistributedMessagingCenter* center;
@@ -21,7 +20,37 @@
         rulesets_arr = [rulesets mutableCopy];
     }
 
-    [rulesets_arr addObject:ruleset];
+    // Preprocess ruleset
+    NSMutableDictionary* ruleset_processed = [ruleset mutableCopy];
+
+    NSArray* wpred = ruleset[@"WhitelistPredicates"];
+    NSArray* bpred = ruleset[@"BlacklistPredicates"];
+
+    if(wpred) {
+        NSMutableArray* wpred_new = [NSMutableArray new];
+
+        for(NSString* pred_str in wpred) {
+            NSPredicate* pred = [NSPredicate predicateWithFormat:pred_str];
+            [wpred_new addObject:pred];
+        }
+
+        NSPredicate* wpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:wpred_new];
+        [ruleset_processed setObject:wpred_compound forKey:@"WhitelistPredicates"];
+    }
+
+    if(bpred) {
+        NSMutableArray* bpred_new = [NSMutableArray new];
+
+        for(NSString* pred_str in bpred) {
+            NSPredicate* pred = [NSPredicate predicateWithFormat:pred_str];
+            [bpred_new addObject:pred];
+        }
+
+        NSPredicate* bpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:bpred_new];
+        [ruleset_processed setObject:bpred_compound forKey:@"BlacklistPredicates"];
+    }
+
+    [rulesets_arr addObject:[ruleset_processed copy]];
     rulesets = [rulesets_arr copy];
 }
 
@@ -110,54 +139,66 @@
         
         // Check if path is restricted.
         BOOL restricted = NO;
-        BOOL skip_db = NO;
 
-        if(!restricted && rulesets) {
+        if(rulesets) {
             // Check rulesets
-            for(NSDictionary* ruleset in rulesets) {
-                if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
-                    restricted = YES;
-                    NSLog(@"ruleset restricted: %@", path);
-                    break;
-                }
-
-                if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
-                    restricted = YES;
-                    NSLog(@"ruleset blacklisted: %@", path);
-                }
-
-                if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
-                    restricted = NO;
-                    skip_db = YES;
-                    NSLog(@"ruleset whitelisted: %@", path);
-                    break;
+            if(!restricted) {
+                for(NSDictionary* ruleset in rulesets) {
+                    if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
+                        restricted = YES;
+                        break;
+                    }
                 }
             }
-        }
 
-        if(!restricted && !skip_db) {
-            // Check database
-            if(db && db[@"installed"]) {
-                restricted = [[self class] isPathRestricted_db:db[@"installed"] withPath:path];
-            } else if(dpkgPath) {
-                restricted = [[self class] isPathRestricted_dpkg:dpkgPath withPath:path];
+            if(!restricted) {
+                for(NSDictionary* ruleset in rulesets) {
+                    if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+                        restricted = YES;
+                        break;
+                    }
+                }
+            }
+
+            if(restricted) {
+                for(NSDictionary* ruleset in rulesets) {
+                    if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
+                        restricted = NO;
+                        break;
+                    }
+                }
             }
         }
 
         response = @{
             @"restricted" : @(restricted)
         };
-    } else if([name isEqualToString:@"getURLSchemes"]) {
-        NSArray* schemes = nil;
+    } else if([name isEqualToString:@"isURLSchemeRestricted"]) {
+        if(!userInfo) {
+            return nil;
+        }
+        
+        NSString* scheme = userInfo[@"scheme"];
 
-        if(db && db[@"schemes"]) {
-            schemes = db[@"schemes"];
-        } else if(dpkgPath) {
-            schemes = [[self class] getURLSchemes_dpkg:dpkgPath];
+        if(!scheme) {
+            return nil;
+        }
+
+        BOOL restricted = NO;
+
+        if(!restricted && rulesets) {
+            // Check rulesets
+            for(NSDictionary* ruleset in rulesets) {
+                NSArray* bschemes = ruleset[@"BlacklistURLSchemes"];
+                if(bschemes && [bschemes containsObject:scheme]) {
+                    restricted = YES;
+                    break;
+                }
+            }
         }
 
         response = @{
-            @"schemes" : schemes
+            @"restricted" : @(restricted)
         };
     } else if([name isEqualToString:@"getPreferences"]) {
         if(!userInfo) {
@@ -196,28 +237,13 @@
         SEL handler = @selector(handleMessageNamed:withUserInfo:);
 
         [center registerForMessageName:@"isPathRestricted" target:self selector:handler];
+        [center registerForMessageName:@"isURLSchemeRestricted" target:self selector:handler];
         [center registerForMessageName:@"resolvePath" target:self selector:handler];
-        [center registerForMessageName:@"getURLSchemes" target:self selector:handler];
         [center registerForMessageName:@"getPreferences" target:self selector:handler];
     }
 }
 
-- (void)startLocalService {
-    if(!db) {
-        // Load precompiled data from filesystem.
-        db = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_DB_PLIST];
-
-        if(!db) {
-            db = [NSDictionary dictionaryWithContentsOfFile:@("/var/jb" SHADOW_DB_PLIST)];
-        }
-
-        if(!db) {
-            NSLog(@"%@", @"could not load db");
-        } else {
-            NSLog(@"%@", @"successfully loaded db");
-        }
-    }
-
+- (void)loadRulesets {
     // load rulesets
     NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:@"/Library/Shadow/rulesets" isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
 
@@ -293,10 +319,11 @@
     NSNumber* response_cached = [responseCache objectForKey:path];
 
     if(response_cached) {
+        NSLog(@"cached: %@", path);
         return [response_cached boolValue];
     }
 
-    NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{@"path" : path} useService:(db == nil)];
+    NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{@"path" : path} useService:(rulesets == nil)];
 
     if(response) {
         BOOL restricted = [response[@"restricted"] boolValue];
@@ -316,14 +343,18 @@
     return NO;
 }
 
-- (NSArray *)getURLSchemes {
-    NSDictionary* response = [self sendIPC:@"getURLSchemes" withArgs:nil useService:(db == nil)];
-
-    if(response && response[@"schemes"] && [response[@"schemes"] count] > 0) {
-        return response[@"schemes"];
+- (BOOL)isURLSchemeRestricted:(NSString *)scheme {
+    if(!scheme) {
+        return NO;
     }
 
-    return @[@"cydia", @"sileo", @"zbra", @"filza", @"undecimus", @"xina"];
+    NSDictionary* response = [self sendIPC:@"isURLSchemeRestricted" withArgs:@{@"scheme" : scheme} useService:(rulesets == nil)];
+
+    if(response) {
+        return [response[@"restricted"] boolValue];
+    }
+
+    return NO;
 }
 
 - (NSDictionary *)getVersions {
@@ -338,7 +369,6 @@
     if((self = [super init])) {
         responseCache = [NSCache new];
         center = nil;
-        db = nil;
         dpkgPath = nil;
         rulesets = nil;
     }
