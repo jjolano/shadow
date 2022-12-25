@@ -28,12 +28,13 @@ ShadowService* _srv = nil;
     [_srv startService];
 
     NSOperationQueue* queue = [NSOperationQueue new];
-    [queue setQualityOfService:NSOperationQualityOfServiceUserInteractive];
 
     [queue addOperationWithBlock:^(){
         NSDictionary* ruleset_dpkg = [ShadowService generateDatabase];
 
         if(ruleset_dpkg) {
+            [_srv addRuleset:ruleset_dpkg];
+
             BOOL success = [ruleset_dpkg writeToFile:@SHADOW_DB_PLIST atomically:NO];
 
             if(!success) {
@@ -46,8 +47,6 @@ ShadowService* _srv = nil;
                 NSLog(@"%@", @"failed to save generate db");
             }
         }
-
-        [_srv loadRulesets];
     }];
 }
 %end
@@ -55,9 +54,8 @@ ShadowService* _srv = nil;
 
 %ctor {
     // Determine the application we're injected into.
-    NSString* bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
-    NSString* executablePath = [[NSBundle mainBundle] executablePath];
-    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    NSBundle* bundle = [NSBundle mainBundle];
+    NSString* bundleIdentifier = [bundle bundleIdentifier];
 
     // Injected into SpringBoard.
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
@@ -66,9 +64,12 @@ ShadowService* _srv = nil;
         return;
     }
 
+    NSString* executablePath = [bundle executablePath];
+    NSString* bundlePath = [bundle bundlePath];
+
     // Only load Shadow for sandboxed applications.
     // Don't load for App Extensions (.. unless developers are adding detection in those too :/)
-    if(![[NSBundle mainBundle] appStoreReceiptURL]
+    if(![bundle appStoreReceiptURL]
     || [executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
     || ![bundlePath hasSuffix:@".app"]) {

@@ -52,7 +52,8 @@
         @"/.",
         @"/Library/Application Support",
         @"/usr/lib",
-        @"/usr/libexec"
+        @"/usr/libexec",
+        @"/usr/lib/system"
     ];
 
     for(NSString* name in filter_names) {

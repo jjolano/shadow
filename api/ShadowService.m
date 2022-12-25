@@ -270,6 +270,8 @@
                 }
 
                 [self addRuleset:ruleset];
+            } else {
+                NSLog(@"failed to load ruleset at url %@", url);
             }
         }
     }

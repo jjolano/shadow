@@ -16,9 +16,9 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>App_Override</string>
+			<string>App_Enabled</string>
 			<key>id</key>
-			<string>App_Override</string>
+			<string>App_Enabled</string>
 			<key>label</key>
 			<string>Enable Shadow</string>
 			<key>defaults</key>

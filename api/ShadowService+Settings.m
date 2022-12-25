@@ -38,10 +38,10 @@
     NSUserDefaults* shdw_prefs = [self getUserDefaults];
     NSDictionary* app_settings = [shdw_prefs objectForKey:bundleIdentifier];
 
-    if(app_settings && app_settings[@"App_Override"] && [app_settings[@"App_Override"] boolValue]) {
+    if(app_settings && app_settings[@"App_Enabled"] && [app_settings[@"App_Enabled"] boolValue]) {
         // Use app overrides.
         [result setObject:@(YES) forKey:@"App_Enabled"];
-
+        
         for(NSString* key in default_prefs) {
             [result setObject:(app_settings[key] ? @([app_settings[key] boolValue]) : @(NO)) forKey:key];
         }
