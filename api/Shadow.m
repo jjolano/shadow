@@ -135,16 +135,13 @@
         }
     }
 
-    if([path hasPrefix:bundlePath]) {
-        return NO;
-    }
-
     // Check if path is restricted from Shadow Service.
     if(_service && [_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
 
+    NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
     return NO;
 }
 

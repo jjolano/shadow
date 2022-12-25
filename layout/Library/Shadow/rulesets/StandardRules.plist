@@ -29,6 +29,7 @@
 			<string>tmp</string>
 			<string>usr</string>
 			<string>var</string>
+			<!-- <string>User</string> -->
 		</array>
 		<key>/var</key>
 		<array>
@@ -497,6 +498,7 @@
 		<string>/var/mobile/Library/Cookies/</string>
 		<string>/var/log/</string>
 		<string>/var/mobile/Library/Application Support/</string>
+		<!-- <string>/User/</string> -->
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
