@@ -3,6 +3,7 @@
 #import "ShadowService.h"
 
 @interface Shadow : NSObject
+@property ShadowService* service;
 @property BOOL tweakCompatibility;
 
 - (BOOL)isCallerTweak:(NSArray*)backtrace;

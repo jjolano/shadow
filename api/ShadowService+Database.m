@@ -51,7 +51,8 @@
     NSArray* filter_names = @[
         @"/.",
         @"/Library/Application Support",
-        @"/usr/lib"
+        @"/usr/lib",
+        @"/usr/libexec"
     ];
 
     for(NSString* name in filter_names) {

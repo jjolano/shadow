@@ -189,7 +189,7 @@
         if(!restricted && rulesets) {
             // Check rulesets
             for(NSDictionary* ruleset in rulesets) {
-                NSArray* bschemes = ruleset[@"BlacklistURLSchemes"];
+                NSSet* bschemes = ruleset[@"BlacklistURLSchemes"];
                 if(bschemes && [bschemes containsObject:scheme]) {
                     restricted = YES;
                     break;
@@ -212,6 +212,10 @@
         }
 
         response = [[self class] getPreferences:bundleIdentifier];
+    } else if([name isEqualToString:@"getRulesets"]) {
+        response = @{
+            @"rulesets" : rulesets
+        };
     }
 
     return response;
@@ -240,6 +244,7 @@
         [center registerForMessageName:@"isURLSchemeRestricted" target:self selector:handler];
         [center registerForMessageName:@"resolvePath" target:self selector:handler];
         [center registerForMessageName:@"getPreferences" target:self selector:handler];
+        [center registerForMessageName:@"getRulesets" target:self selector:handler];
     }
 }
 
