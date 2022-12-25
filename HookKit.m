@@ -124,9 +124,11 @@
         }
     }
     
+    #ifdef fishhook_h
     if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
         
     }
+    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -180,9 +182,16 @@
         }
     }
     
+    #ifdef fishhook_h
     if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
+        Dl_info info;
+        if(dladdr(function, &info)) {
+            if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, old_ptr}}, 1)) {
+                result = HK_OK;
+            }
+        }
     }
+    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -226,9 +235,11 @@
         }
     }
     
+    #ifdef fishhook_h
     if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
         
     }
+    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -355,9 +366,11 @@
         }
     }
     
+    #ifdef fishhook_h
     if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
         
     }
+    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -520,9 +533,18 @@
         }
     }
     
+    #ifdef fishhook_h
     if(!didFunctions && result == HK_ERR && ([substitutor types] & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
+        for(HKFunctionHook* hkhook in functionHooks) {
+            Dl_info info;
+            if(dladdr([hkhook function], &info)) {
+                rebind_symbols((struct rebinding[1]){{info.dli_sname, [hkhook replacement], [hkhook orig]}}, 1);
+            }
+        }
+
+        didFunctions = YES;
     }
+    #endif
 
     if(didFunctions && didMemory) {
         result = HK_OK;
