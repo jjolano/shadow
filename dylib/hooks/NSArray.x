@@ -86,6 +86,6 @@
 %end
 %end
 
-void shadowhook_NSArray(void) {
+void shadowhook_NSArray(HKBatchHook* hooks) {
     %init(shadowhook_NSArray);
 }

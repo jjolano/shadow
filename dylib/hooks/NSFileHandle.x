@@ -64,6 +64,6 @@
 %end
 %end
 
-void shadowhook_NSFileHandle(void) {
+void shadowhook_NSFileHandle(HKBatchHook* hooks) {
     %init(shadowhook_NSFileHandle);
 }

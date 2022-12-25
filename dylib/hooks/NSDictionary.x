@@ -94,6 +94,6 @@
 %end
 %end
 
-void shadowhook_NSDictionary(void) {
+void shadowhook_NSDictionary(HKBatchHook* hooks) {
     %init(shadowhook_NSDictionary);
 }

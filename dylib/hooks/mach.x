@@ -44,7 +44,7 @@ static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* serv
     return original_bootstrap_look_up(bp, service_name, sp);
 }
 
-void shadowhook_mach(void) {
-    MSHookFunction(bootstrap_check_in, replaced_bootstrap_check_in, (void **) &original_bootstrap_check_in);
-    MSHookFunction(bootstrap_look_up, replaced_bootstrap_look_up, (void **) &original_bootstrap_look_up);
+void shadowhook_mach(HKBatchHook* hooks) {
+    [hooks addFunctionHook:bootstrap_check_in withReplacement:replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
+    [hooks addFunctionHook:bootstrap_look_up withReplacement:replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 }

@@ -144,16 +144,16 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     return result;
 }
 
-void shadowhook_objc(void) {
+void shadowhook_objc(HKBatchHook* hooks) {
     // %init(shadowhook_objc);
-    MSHookFunction(class_getImageName, replaced_class_getImageName, (void **) &original_class_getImageName);
-    MSHookFunction(objc_copyClassNamesForImage, replaced_objc_copyClassNamesForImage, (void **) &original_objc_copyClassNamesForImage);
-    MSHookFunction(objc_copyImageNames, replaced_objc_copyImageNames, (void **) &original_objc_copyImageNames);
-    // MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
-    // MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
-    // MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
+    [hooks addFunctionHook:class_getImageName withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
+    [hooks addFunctionHook:objc_copyClassNamesForImage withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];
+    [hooks addFunctionHook:objc_copyImageNames withReplacement:replaced_objc_copyImageNames outOldPtr:(void **) &original_objc_copyImageNames];
+    // [hooks addFunctionHook:objc_getMetaClass withReplacement:replaced_objc_getMetaClass outOldPtr:(void **) &original_objc_getMetaClass];
+    // [hooks addFunctionHook:objc_getClass withReplacement:replaced_objc_getClass outOldPtr:(void **) &original_objc_getClass];
+    // [hooks addFunctionHook:objc_lookUpClass withReplacement:replaced_objc_lookUpClass outOldPtr:(void **) &original_objc_lookUpClass];
 }
 
-void shadowhook_objc_hidetweakclasses(void) {
-    MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
+void shadowhook_objc_hidetweakclasses(HKBatchHook* hooks) {
+    [hooks addFunctionHook:NSClassFromString withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
 }

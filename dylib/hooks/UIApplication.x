@@ -14,6 +14,6 @@
 %end
 %end
 
-void shadowhook_UIApplication(void) {
+void shadowhook_UIApplication(HKBatchHook* hooks) {
     %init(shadowhook_UIApplication);
 }
