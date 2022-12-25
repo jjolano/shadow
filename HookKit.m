@@ -167,7 +167,7 @@
         static int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options) = NULL;
         if(!_substitute_hook_functions) _substitute_hook_functions = dlsym(handle, "substitute_hook_functions");
         if(_substitute_hook_functions) {
-            if(_substitute_hook_functions(&hook, 1, NULL, 0) == 1) {
+            if(_substitute_hook_functions(&hook, 1, NULL, 0) == SUBSTITUTE_OK) {
                 result = HK_OK;
             }
         }
