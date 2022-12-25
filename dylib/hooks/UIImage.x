@@ -20,6 +20,6 @@
 %end
 %end
 
-void shadowhook_UIImage(void) {
+void shadowhook_UIImage(HKBatchHook* hooks) {
     %init(shadowhook_UIImage);
 }

@@ -723,6 +723,6 @@
 %end
 %end
 
-void shadowhook_NSFileManager(void) {
+void shadowhook_NSFileManager(HKBatchHook* hooks) {
     %init(shadowhook_NSFileManager);
 }

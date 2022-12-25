@@ -40,10 +40,10 @@
 %end
 %end
 
-void shadowhook_NSProcessInfo(void) {
+void shadowhook_NSProcessInfo(HKBatchHook* hooks) {
     %init(shadowhook_NSProcessInfo);
 }
 
-void shadowhook_NSProcessInfo_fakemac(void) {
+void shadowhook_NSProcessInfo_fakemac(HKBatchHook* hooks) {
     %init(shadowhook_NSProcessInfo_fakemac);
 }

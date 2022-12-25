@@ -182,6 +182,6 @@
 // %end
 %end
 
-void shadowhook_NSString(void) {
+void shadowhook_NSString(HKBatchHook* hooks) {
     %init(shadowhook_NSString);
 }

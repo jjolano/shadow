@@ -56,6 +56,6 @@
 %end
 %end
 
-void shadowhook_NSFileWrapper(void) {
+void shadowhook_NSFileWrapper(HKBatchHook* hooks) {
     %init(shadowhook_NSFileWrapper);
 }
