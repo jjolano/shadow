@@ -1,0 +1,3 @@
+[submodule "vendor/fishhook"]
+	path = vendor/fishhook
+	url = https://github.com/facebook/fishhook.git
