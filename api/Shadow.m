@@ -8,8 +8,6 @@
 #import "../apple_priv/dyld_priv.h"
 
 @implementation Shadow {
-    ShadowService* service;
-
     NSMutableDictionary* orig_funcs;
 
     // App-specific
@@ -117,8 +115,8 @@
         static void* lstat_ptr = NULL;
         if(!lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat" elseAddr:lstat];
 
-        if(service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
-            path = [service resolvePath:path];
+        if(_service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
+            path = [_service resolvePath:path];
         }
     }
 
@@ -137,8 +135,12 @@
         }
     }
 
+    if([path hasPrefix:bundlePath]) {
+        return NO;
+    }
+
     // Check if path is restricted from Shadow Service.
-    if(service && [service isPathRestricted:path]) {
+    if(_service && [_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
@@ -162,22 +164,14 @@
             }
         }
 
-        if([self isPathRestricted:path]) {
-            return YES;
-        }
+        return [self isPathRestricted:path];
     }
 
-    if(service && [service isURLSchemeRestricted:[url scheme]]) {
+    if(_service && [_service isURLSchemeRestricted:[url scheme]]) {
         return YES;
     }
 
     return NO;
-}
-
-- (void)setService:(ShadowService *)_service {
-    if(_service) {
-        service = _service;
-    }
 }
 
 - (instancetype)init {
@@ -187,7 +181,7 @@
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
         _tweakCompatibility = NO;
-        service = nil;
+        _service = nil;
 
         if([bundlePath hasPrefix:@"/private/var"]) {
             NSMutableArray* pathComponents = [[bundlePath pathComponents] mutableCopy];
@@ -207,9 +201,9 @@
     return self;
 }
 
-+ (instancetype)shadowWithService:(ShadowService *)_service {
++ (instancetype)shadowWithService:(ShadowService *)service {
     Shadow* shadow = [Shadow new];
-    [shadow setService:_service];
+    [shadow setService:service];
     return shadow;
 }
 @end
