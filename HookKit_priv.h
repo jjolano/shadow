@@ -22,3 +22,8 @@
 @property const void * data;
 @property size_t size;
 @end
+
+#define PATH_LIBHOOKER      "/usr/lib/libhooker.dylib"
+#define PATH_LIBBLACKJACK   "/usr/lib/libblackjack.dylib"
+#define PATH_SUBSTITUTE     "/usr/lib/libsubstitute.dylib"
+#define PATH_SUBSTRATE      "/usr/lib/libsubstrate.dylib"
