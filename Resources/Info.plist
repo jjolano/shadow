@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>HookKit</string>
 	<key>CFBundleIdentifier</key>
-	<string>me.jjolano.HookKit</string>
+	<string>me.jjolano.fmwk.hookkit</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>
