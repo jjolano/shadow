@@ -210,7 +210,6 @@
     }
     
     if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        // SubHookMemory is just a shim to MSHookMemory, so let's just use that.
         static void (*_SubHookMemory)(void* target, const void* data, size_t size) = NULL;
         if(!_SubHookMemory) _SubHookMemory = dlsym(handle, "SubHookMemory");
         if(_SubHookMemory) {
@@ -313,28 +312,32 @@
     }
 }
 
-- (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSNumber *> **)outSymbols {
+- (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols {
     hookkit_status_t result = HK_ERR;
     void* handle = NULL;
 
-    if(result == HK_ERR && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-        static bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount) = NULL;
-        if(!_LHFindSymbols) _LHFindSymbols = dlsym(handle, "LHFindSymbols");
-        if(_LHFindSymbols) {
+    if(image != NULL) {
+        // libhooker and substitute do not natively handle a NULL value (all images) for image. Keep that to substrate-only as a compatibility layer.
 
+        if(result == HK_ERR && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
+            static bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount) = NULL;
+            if(!_LHFindSymbols) _LHFindSymbols = dlsym(handle, "LHFindSymbols");
+            if(_LHFindSymbols) {
+                
+            }
+
+            dlclose(handle);
         }
+        
+        if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
+            static int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms) = NULL;
+            if(!_substitute_find_private_syms) _substitute_find_private_syms = dlsym(handle, "substitute_find_private_syms");
+            if(_substitute_find_private_syms) {
 
-        dlclose(handle);
-    }
-    
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        static int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms) = NULL;
-        if(!_substitute_find_private_syms) _substitute_find_private_syms = dlsym(handle, "substitute_find_private_syms");
-        if(_substitute_find_private_syms) {
+            }
 
+            dlclose(handle);
         }
-
-        dlclose(handle);
     }
     
     if(result == HK_ERR && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
@@ -346,7 +349,7 @@
 
             for(NSString* symbolName in symbolNames) {
                 void* sym = _MSFindSymbol((MSImageRef)image, [symbolName UTF8String]);
-                [syms addObject:@((unsigned long)sym)];
+                [syms addObject:[NSValue valueWithPointer:sym]];
             }
 
             *outSymbols = [syms copy];
@@ -363,9 +366,9 @@
 }
 
 - (hookkit_status_t)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName outSymbol:(void **)outSymbol {
-    NSArray<NSNumber *>* syms = nil;
+    NSArray<NSValue *>* syms = nil;
     hookkit_status_t result = [self findSymbolsInImage:image symbolNames:@[symbolName] outSymbols:&syms];
-    *outSymbol = (void *)[syms[0] unsignedLongValue];
+    *outSymbol = [syms[0] pointerValue];
     return result;
 }
 @end

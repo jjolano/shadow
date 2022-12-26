@@ -35,7 +35,7 @@ typedef const struct HKImage* HKImageRef;
 - (HKImageRef)openImage:(NSString *)path;
 - (void)closeImage:(HKImageRef)image;
 
-- (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSNumber *> **)outSymbols;
+- (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols;
 - (hookkit_status_t)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName outSymbol:(void **)outSymbol;
 @end
 
