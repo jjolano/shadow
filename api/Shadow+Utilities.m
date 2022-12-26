@@ -8,7 +8,7 @@
         return YES;
     }
 
-    NSPredicate* pred = [NSPredicate predicateWithFormat:@"SELF LIKE '*/.*' OR SELF LIKE '*/..*'"];
+    NSPredicate* pred = [NSPredicate predicateWithFormat:@"SELF LIKE '*/./*' OR SELF LIKE '*/../*' OR SELF ENDSWITH '/.' OR SELF ENDSWITH '/..'"];
 
     if([pred evaluateWithObject:path]) {
         // resolving relative path component
