@@ -231,12 +231,6 @@
 
         dlclose(handle);
     }
-    
-    #ifdef fishhook_h
-    if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
-    }
-    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -278,10 +272,6 @@
 
         dlclose(handle);
     }
-    
-    if(result == NULL && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
-    }
 
     return result;
 }
@@ -320,10 +310,6 @@
         }
 
         dlclose(handle);
-    }
-    
-    if(image != NULL && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
     }
 }
 
@@ -368,12 +354,6 @@
 
         dlclose(handle);
     }
-    
-    #ifdef fishhook_h
-    if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
-        
-    }
-    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -448,7 +428,7 @@
                         [hkhook function], [hkhook replacement], [hkhook orig], 0
                     };
 
-                    [hooks appendData:[NSData dataWithBytes:&hook length:sizeof(struct LHFunctionHook)]];
+                    [hooks appendBytes:&hook length:sizeof(struct LHFunctionHook)];
                 }
 
                 if(_LHHookFunctions([hooks bytes], [functionHooks count])) {
@@ -468,7 +448,7 @@
                         [hkhook target], [hkhook data], [hkhook size], 0
                     };
 
-                    [hooks appendData:[NSData dataWithBytes:&hook length:sizeof(struct LHMemoryPatch)]];
+                    [hooks appendBytes:&hook length:sizeof(struct LHMemoryPatch)];
                 }
 
                 if(_LHPatchMemory([hooks bytes], [memoryHooks count])) {
@@ -492,7 +472,7 @@
                         [hkhook function], [hkhook replacement], [hkhook orig], 0
                     };
 
-                    [hooks appendData:[NSData dataWithBytes:&hook length:sizeof(struct substitute_function_hook)]];
+                    [hooks appendBytes:&hook length:sizeof(struct substitute_function_hook)];
                 }
 
                 if(_substitute_hook_functions([hooks bytes], [functionHooks count], NULL, 0) == SUBSTITUTE_OK) {

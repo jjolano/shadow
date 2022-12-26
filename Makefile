@@ -9,6 +9,6 @@ HookKit_FILES = HookKit.m $(wildcard vendor/fishhook/fishhook.c)
 HookKit_PUBLIC_HEADERS = HookKit.h
 HookKit_FRAMEWORKS = Foundation
 HookKit_INSTALL_PATH = /Library/Frameworks
-HookKit_CFLAGS = -fobjc-arc
+HookKit_CFLAGS = -fobjc-arc -DTHEOS_LEAN_AND_MEAN
 
 include $(THEOS_MAKE_PATH)/framework.mk
