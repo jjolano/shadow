@@ -17,14 +17,14 @@
 }
 
 - (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr {
-    [orig_funcs setValue:@((unsigned long)addr) forKey:fname];
+    [orig_funcs setValue:[NSValue valueWithPointer:addr] forKey:fname];
 }
 
 - (void *)getOrigFunc:(NSString *)fname elseAddr:(void *)addr {
     NSNumber* result = [orig_funcs objectForKey:fname];
 
     if(result) {
-        return (void *)[result unsignedLongValue];
+        return [result pointerValue];
     }
 
     return addr;
@@ -37,25 +37,27 @@
         return YES;
     }
 
+    NSString* self_image_name = nil;
     bool skipped = false;
 
     for(NSNumber* sym_addr in backtrace) {
-        if(!skipped) {
-            // Skip the first entry
-            skipped = true;
-            continue;
-        }
-
-        void* ptr_addr = (void *)[sym_addr longLongValue];
+        void* ptr_addr = (void *)[sym_addr unsignedLongValue];
 
         // Lookup symbol
         const char* image_path = dyld_image_path_containing_address(ptr_addr);
 
         if(image_path) {
             NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+
+            if(!skipped) {
+                // Skip the first entry
+                skipped = true;
+                self_image_name = [image_name copy];
+                continue;
+            }
             
             if([self isPathRestricted:image_name]) {
-                if([image_name hasSuffix:@"Shadow.dylib"]) {
+                if([image_name isEqualToString:self_image_name]) {
                     // skip Shadow calls
                     continue;
                 }
