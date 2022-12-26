@@ -114,7 +114,7 @@ ShadowService* _srv = nil;
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
     
-    HookKit* substitutor = [HookKit new];
+    HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
     // [substitutor setTypes:HK_LIB_FISHHOOK];
     HKBatchHook* hooks = [HKBatchHook new];
 
