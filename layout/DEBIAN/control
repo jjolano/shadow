@@ -1,8 +1,8 @@
-Package: me.jjolano.shadow
-Name: Shadow
+Package: me.jjolano.shadow.beta
+Name: Shadow (beta)
 Depends: firmware (>= 8.0), mobilesubstrate, preferenceloader, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit
 Suggests: com.ps.injectionfoundation
-Conflicts: com.fpt.saw
+Conflicts: com.fpt.saw, me.jjolano.shadow
 Version: 3.5
 Architecture: iphoneos-arm
 Description: A modern jailbreak detection bypass for jailbroken iOS.
