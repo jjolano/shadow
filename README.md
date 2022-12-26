@@ -8,6 +8,15 @@ This framework allows tweak developers to hook functions with a standard and con
 
 Refer to `HookKit.h` for more information.
 
+## Advantages and Disadvantages
+Advantages:
+* Improved performance through use of batch hooking
+* Consistent API which handles the actual hooking behind the scenes
+
+Disadvantages:
+* Library-specific functionality will still require developers to use the specific library functions
+* Hook code such as `MSHookFunction` will need to be rewritten to use HookKit
+
 ## Library Support
 So far, support has been (mostly) implemented for the following code substitution APIs:
 * libhooker
