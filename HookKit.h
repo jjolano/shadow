@@ -21,7 +21,7 @@ typedef enum {
 
 typedef const struct HKImage* HKImageRef;
 
-@interface HookKit : NSObject
+@interface HKSubstitutor : NSObject
 @property hookkit_lib_t types;
 
 + (hookkit_lib_t)getAvailableSubstitutorTypes;
@@ -43,5 +43,5 @@ typedef const struct HKImage* HKImageRef;
 - (void)addFunctionHook:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (void)addMemoryHook:(void *)target withData:(const void *)data size:(size_t)size;
 
-- (hookkit_status_t)performHooksWithSubstitutor:(HookKit *)substitutor;
+- (hookkit_status_t)performHooksWithSubstitutor:(HKSubstitutor *)substitutor;
 @end

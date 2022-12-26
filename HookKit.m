@@ -3,7 +3,7 @@
 
 #import <dlfcn.h>
 
-@implementation HookKit {
+@implementation HKSubstitutor {
     NSString* libhooker_path;
     NSString* libblackjack_path;
     NSString* substitute_path;
@@ -75,14 +75,14 @@
 }
 
 + (instancetype)substitutorWithTypes:(hookkit_lib_t)types {
-    HookKit* substitutor = [self new];
+    HKSubstitutor* substitutor = [self new];
     [substitutor setTypes:types];
     return substitutor;
 }
 
 + (instancetype)defaultSubstitutor {
     static dispatch_once_t once;
-    static HookKit* defaultSubstitutor;
+    static HKSubstitutor* defaultSubstitutor;
 
     dispatch_once(&once, ^{
         defaultSubstitutor = [self new];
@@ -429,7 +429,7 @@
     [memoryHooks addObject:hook];
 }
 
-- (hookkit_status_t)performHooksWithSubstitutor:(HookKit *)substitutor {
+- (hookkit_status_t)performHooksWithSubstitutor:(HKSubstitutor *)substitutor {
     hookkit_status_t result = HK_ERR;
 
     BOOL didFunctions = ([functionHooks count] == 0);
