@@ -17,14 +17,14 @@
 }
 
 - (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr {
-    [orig_funcs setValue:@((unsigned long)addr) forKey:fname];
+    [orig_funcs setValue:[NSValue valueWithPointer:addr] forKey:fname];
 }
 
 - (void *)getOrigFunc:(NSString *)fname elseAddr:(void *)addr {
     NSNumber* result = [orig_funcs objectForKey:fname];
 
     if(result) {
-        return (void *)[result unsignedLongValue];
+        return [result pointerValue];
     }
 
     return addr;
@@ -46,7 +46,7 @@
             continue;
         }
 
-        void* ptr_addr = (void *)[sym_addr longLongValue];
+        void* ptr_addr = (void *)[sym_addr unsignedLongValue];
 
         // Lookup symbol
         const char* image_path = dyld_image_path_containing_address(ptr_addr);
