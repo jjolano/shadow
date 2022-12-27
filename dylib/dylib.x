@@ -114,8 +114,27 @@ ShadowService* _srv = nil;
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
     
-    HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
-    // [substitutor setTypes:HK_LIB_FISHHOOK];
+    hookkit_lib_t hooklibs_available = [HKSubstitutor getAvailableSubstitutorTypes];
+    hookkit_lib_t hooklibs = HK_LIB_NONE;
+
+    if([prefs_load[@"HK_substrate"] boolValue]) {
+        hooklibs |= (hooklibs_available & HK_LIB_SUBSTRATE);
+    }
+
+    if([prefs_load[@"HK_substitute"] boolValue]) {
+        hooklibs |= (hooklibs_available & HK_LIB_SUBSTITUTE);
+    }
+
+    if([prefs_load[@"HK_libhooker"] boolValue]) {
+        hooklibs |= (hooklibs_available & HK_LIB_LIBHOOKER);
+        hooklibs |= (hooklibs_available & HK_LIB_LIBBLACKJACK);
+    }
+
+    if([prefs_load[@"HK_fishhook"] boolValue]) {
+        hooklibs |= (hooklibs_available & HK_LIB_FISHHOOK);
+    }
+
+    HKSubstitutor* substitutor = [HKSubstitutor substitutorWithTypes:hooklibs];
     HKBatchHook* hooks = [HKBatchHook new];
 
     if([prefs_load[@"Hook_Filesystem"] boolValue]) {
