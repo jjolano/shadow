@@ -4,6 +4,10 @@
 + (NSDictionary *)getDefaultPreferences {
     return @{
         @"Global_Enabled" : @(NO),
+        @"HK_substrate" : @(YES),
+        @"HK_substitute" : @(NO),
+        @"HK_libhooker" : @(NO),
+        @"HK_fishhook" : @(NO),
         @"Tweak_CompatEx" : @(NO),
         @"Hook_Filesystem" : @(YES),
         @"Hook_DynamicLibraries" : @(YES),
@@ -41,7 +45,7 @@
     if(app_settings && app_settings[@"App_Enabled"] && [app_settings[@"App_Enabled"] boolValue]) {
         // Use app overrides.
         [result setObject:@(YES) forKey:@"App_Enabled"];
-        
+
         for(NSString* key in default_prefs) {
             [result setObject:(app_settings[key] ? @([app_settings[key] boolValue]) : @(NO)) forKey:key];
         }
