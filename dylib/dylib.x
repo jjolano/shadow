@@ -117,10 +117,6 @@ ShadowService* _srv = nil;
     hookkit_lib_t hooklibs_available = [HKSubstitutor getAvailableSubstitutorTypes];
     hookkit_lib_t hooklibs = HK_LIB_NONE;
 
-    if([prefs_load[@"HK_substrate"] boolValue]) {
-        hooklibs |= (hooklibs_available & HK_LIB_SUBSTRATE);
-    }
-
     if([prefs_load[@"HK_substitute"] boolValue]) {
         hooklibs |= (hooklibs_available & HK_LIB_SUBSTITUTE);
     }
@@ -132,6 +128,10 @@ ShadowService* _srv = nil;
 
     if([prefs_load[@"HK_fishhook"] boolValue]) {
         hooklibs |= (hooklibs_available & HK_LIB_FISHHOOK);
+    }
+
+    if([prefs_load[@"HK_substrate"] boolValue] || hooklibs == HK_LIB_NONE) {
+        hooklibs |= (hooklibs_available & HK_LIB_SUBSTRATE);
     }
 
     HKSubstitutor* substitutor = [HKSubstitutor substitutorWithTypes:hooklibs];
