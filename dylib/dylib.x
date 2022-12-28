@@ -122,7 +122,12 @@ ShadowService* _srv = nil;
 
         for(NSDictionary* hooklib_info in hooklibs_available_info) {
             if([prefs_load[@"HK_Library"] isEqualToString:hooklib_info[@"id"]]) {
-                hooklibs = (hookkit_lib_t)[hooklib_info[@"type"] unsignedIntValue];
+                hookkit_lib_t type = (hookkit_lib_t)[hooklib_info[@"type"] unsignedIntValue];
+
+                if(hooklibs_available_types & type) {
+                    hooklibs = type;
+                }
+
                 break;
             }
         }
