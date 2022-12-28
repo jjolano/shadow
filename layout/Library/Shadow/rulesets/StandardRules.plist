@@ -194,9 +194,11 @@
 			<string>AppleMediaServices</string>
 			<string>ApplePushService</string>
 			<string>Application Support</string>
+			<string>Assets</string>
 			<string>Assistant</string>
 			<string>Avatar</string>
 			<string>BackBoard</string>
+			<string>Backup</string>
 			<string>Biome</string>
 			<string>BulletinBoard</string>
 			<string>Caches</string>
@@ -206,13 +208,16 @@
 			<string>CallHistoryTransactions</string>
 			<string>CallServices</string>
 			<string>Carrier Bundles</string>
+			<string>CarrierDefault.bundle</string>
 			<string>ClassKit</string>
 			<string>Contacts</string>
+			<string>ContactsMetadata</string>
 			<string>ControlCenter</string>
 			<string>Cookies</string>
 			<string>CoreAS</string>
 			<string>CoreAccessories</string>
 			<string>CoreBehavior</string>
+			<string>CoreBrightness</string>
 			<string>CoreDuet</string>
 			<string>CoreFollowUp</string>
 			<string>CrashReporter</string>
@@ -240,11 +245,14 @@
 			<string>Keyboard</string>
 			<string>KeyboardServices</string>
 			<string>LanguageModeling</string>
+			<string>LASD</string>
+			<string>LiveFiles</string>
 			<string>Logs</string>
 			<string>Mail</string>
 			<string>Maps</string>
 			<string>MediaRemote</string>
 			<string>MediaStream</string>
+			<string>MedicalID</string>
 			<string>MemoryMaintenance</string>
 			<string>MessagesMetaData</string>
 			<string>Mobile Documents</string>
@@ -272,6 +280,7 @@
 			<string>SMS</string>
 			<string>Safari</string>
 			<string>SafariSafeBrowsing</string>
+			<string>SafeHarbor</string>
 			<string>Saved Application State</string>
 			<string>SecureElementService</string>
 			<string>Sharing</string>
@@ -294,6 +303,7 @@
 			<string>VoiceServices</string>
 			<string>VoiceTrigger</string>
 			<string>Voicemail</string>
+			<string>WatchConnectivity</string>
 			<string>Weather</string>
 			<string>WebClips</string>
 			<string>WebKit</string>
@@ -460,6 +470,8 @@
 	</array>
 	<key>WhitelistPredicates</key>
 	<array>
+		<string>SELF LIKE '/var/mobile/Library/Carrier?Bundle.bundle'</string>
+		<string>SELF LIKE '/var/mobile/Library/Operator?Bundle.bundle'</string>
 	</array>
 	<key>BlacklistExactPaths</key>
 	<array>
