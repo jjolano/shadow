@@ -16,19 +16,20 @@ To use this framework:
 
 ## Advantages and Disadvantages
 Advantages:
-* Improved performance through use of batch hooking, if available on the device's hooking library.
+* Potentially improved performance through use of batch hooking (if supported).
 * Consistent API which handles the actual hooking behind the scenes
 
 Disadvantages:
-* Library-specific functionality will still require developers to use the specific library functions
-* Hook code such as `MSHookFunction` will need to be rewritten to use HookKit
+* Library-specific functionality will still require developers to use the specific library functions (maybe these can just be reimplemented in HookKit?)
+* Existing tweaks' hooks will need to be rewritten to use HookKit
 
 ## Library Support
-So far, support has been (mostly) implemented for the following code substitution APIs:
+So far, support has been (mostly) implemented for the following code substitution libraries:
 * libhooker
 * Substitute
 * Cydia Substrate
 * Fishhook
+* Dobby
 
 ## Examples
 MobileSubstrate method:
@@ -58,3 +59,16 @@ HKBatchHook* batch = [HKBatchHook new];
 
 [batch performHooksWithSubstitutor:substitutor];
 ```
+
+## Credits
+### fishhook
+https://github.com/facebook/fishhook
+
+### Dobby
+https://github.com/jmpews/Dobby
+
+### libhooker
+https://gist.github.com/coolstar/902bb1a4664f3d987ae954aaf39415f9
+
+### Substitute
+https://github.com/sbingner/substitute

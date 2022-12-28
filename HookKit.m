@@ -490,7 +490,11 @@
 - (hookkit_status_t)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName outSymbol:(void **)outSymbol {
     NSArray<NSValue *>* syms = nil;
     hookkit_status_t result = [self findSymbolsInImage:image symbolNames:@[symbolName] outSymbols:&syms];
-    *outSymbol = [syms[0] pointerValue];
+
+    if(syms) {
+        *outSymbol = [syms[0] pointerValue];
+    }
+    
     return result;
 }
 @end

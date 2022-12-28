@@ -1,6 +1,7 @@
 #import "HookKit.h"
 #import <Foundation/Foundation.h>
 
+#import "vendor/pac.h"
 #import "vendor/rootless.h"
 
 #import "vendor/libhooker/libhooker.h"
