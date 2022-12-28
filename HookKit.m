@@ -5,17 +5,67 @@
 
 @implementation HKSubstitutor {
     NSString* libhooker_path;
+    void* libhooker_handle;
+    @public int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count);
+    @public int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count);
+    @public struct libhooker_image* (*_LHOpenImage)(const char* path);
+    @public void (*_LHCloseImage)(struct libhooker_image* libhookerImage);
+    @public bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount);
+
     NSString* libblackjack_path;
+    void* libblackjack_handle;
+    @public enum LIBHOOKER_ERR (*_LBHookMessage)(Class objcClass, SEL selector, void* replacement, void* old_ptr);
+
     NSString* substitute_path;
+    void* substitute_handle;
+    @public int (*_substitute_hook_objc_message)(Class klass, SEL selector, void* replacement, void* old_ptr, bool* created_imp_ptr);
+    @public int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options);
+    @public void (*_SubHookMemory)(void* target, const void* data, size_t size);
+    @public struct substitute_image* (*_substitute_open_image)(const char* filename);
+    @public void (*_substitute_close_image)(struct substitute_image* handle);
+    @public int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms);
+
     NSString* substrate_path;
+    void* substrate_handle;
+    @public void (*_MSHookMessageEx)(Class _class, SEL sel, IMP imp, IMP* result);
+    @public void (*_MSHookFunction)(void* symbol, void* replace, void** result);
+    @public void (*_MSHookMemory)(void* target, const void* data, size_t size);
+    @public MSImageRef (*_MSGetImageByName)(const char* file);
+    @public void (*_MSCloseImage)(MSImageRef);
+    @public void* (*_MSFindSymbol)(MSImageRef image, const char* name);
 }
 
 - (instancetype)init {
     if((self = [super init])) {
         libhooker_path = ROOT_PATH_NS(@PATH_LIBHOOKER);
+        libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
+        _LHHookFunctions = NULL;
+        _LHPatchMemory = NULL;
+        _LHOpenImage = NULL;
+        _LHCloseImage = NULL;
+        _LHFindSymbols = NULL;
+
         libblackjack_path = ROOT_PATH_NS(@PATH_LIBBLACKJACK);
+        libblackjack_handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
+        _LBHookMessage = NULL;
+
         substitute_path = ROOT_PATH_NS(@PATH_SUBSTITUTE);
+        substitute_handle = dlopen([substitute_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
+        _substitute_hook_objc_message = NULL;
+        _substitute_hook_functions = NULL;
+        _SubHookMemory = NULL;
+        _substitute_open_image = NULL;
+        _substitute_close_image = NULL;
+        _substitute_find_private_syms = NULL;
+
         substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
+        substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
+        _MSHookMessageEx = NULL;
+        _MSHookFunction = NULL;
+        _MSHookMemory = NULL;
+        _MSGetImageByName = NULL;
+        _MSCloseImage = NULL;
+        _MSFindSymbol = NULL;
 
         _types = HK_LIB_NONE;
     }
@@ -23,27 +73,66 @@
     return self;
 }
 
-+ (hookkit_lib_t)getAvailableSubstitutorTypes {
-    NSString* libhooker_path = ROOT_PATH_NS(@PATH_LIBHOOKER);
-    NSString* libblackjack_path = ROOT_PATH_NS(@PATH_LIBBLACKJACK);
-    NSString* substitute_path = ROOT_PATH_NS(@PATH_SUBSTITUTE);
-    NSString* substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
+- (void)initLibraries {
+    if(_types & HK_LIB_LIBHOOKER) {
+        if(!libhooker_handle) libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY);
+        if(!libblackjack_handle) libblackjack_handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_LAZY);
 
+        if(libhooker_handle) {
+            // resolve symbols
+            if(!_LHHookFunctions) _LHHookFunctions = dlsym(libhooker_handle, "LHHookFunctions");
+            if(!_LHPatchMemory) _LHPatchMemory = dlsym(libhooker_handle, "LHPatchMemory");
+            if(!_LHOpenImage) _LHOpenImage = dlsym(libhooker_handle, "LHOpenImage");
+            if(!_LHCloseImage) _LHCloseImage = dlsym(libhooker_handle, "LHCloseImage");
+            if(!_LHFindSymbols) _LHFindSymbols = dlsym(libhooker_handle, "LHFindSymbols");
+        }
+
+        if(libblackjack_handle) {
+            // resolve symbols
+            if(!_LBHookMessage) _LBHookMessage = dlsym(libblackjack_handle, "LBHookMessage");
+        }
+    }
+
+    if(_types & HK_LIB_SUBSTITUTE) {
+        if(!substitute_handle) substitute_handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY);
+
+        if(substitute_handle) {
+            // resolve symbols
+            if(!_substitute_hook_objc_message) _substitute_hook_objc_message = dlsym(substitute_handle, "substitute_hook_objc_message");
+            if(!_substitute_hook_functions) _substitute_hook_functions = dlsym(substitute_handle, "substitute_hook_functions");
+            if(!_SubHookMemory) _SubHookMemory = dlsym(substitute_handle, "SubHookMemory");
+            if(!_substitute_open_image) _substitute_open_image = dlsym(substitute_handle, "substitute_open_image");
+            if(!_substitute_close_image) _substitute_close_image = dlsym(substitute_handle, "substitute_close_image");
+            if(!_substitute_find_private_syms) _substitute_find_private_syms = dlsym(substitute_handle, "substitute_find_private_syms");
+        }
+    }
+
+    if(_types & HK_LIB_SUBSTRATE) {
+        if(!substrate_handle) substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY);
+
+        if(substrate_handle) {
+            if(!_MSHookMessageEx) _MSHookMessageEx = dlsym(substrate_handle, "MSHookMessageEx");
+            if(!_MSHookFunction) _MSHookFunction = dlsym(substrate_handle, "MSHookFunction");
+            if(!_MSHookMemory) _MSHookMemory = dlsym(substrate_handle, "MSHookMemory");
+            if(!_MSGetImageByName) _MSGetImageByName = dlsym(substrate_handle, "MSGetImageByName");
+            if(!_MSCloseImage) _MSCloseImage = dlsym(substrate_handle, "MSCloseImage");
+            if(!_MSFindSymbol) _MSFindSymbol = dlsym(substrate_handle, "MSFindSymbol");
+        }
+    }
+}
+
++ (hookkit_lib_t)getAvailableSubstitutorTypes {
     hookkit_lib_t result = HK_LIB_NONE;
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:libhooker_path]) {
+    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_LIBHOOKER)]) {
         result |= HK_LIB_LIBHOOKER;
     }
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:libblackjack_path]) {
-        result |= HK_LIB_LIBBLACKJACK;
-    }
-
-    if([[NSFileManager defaultManager] fileExistsAtPath:substitute_path]) {
+    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_SUBSTITUTE)]) {
         result |= HK_LIB_SUBSTITUTE;
     }
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:substrate_path]) {
+    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_SUBSTRATE)]) {
         result |= HK_LIB_SUBSTRATE;
     }
 
@@ -54,9 +143,56 @@
     return result;
 }
 
++ (NSArray<NSDictionary *> *)getSubstitutorTypeInfo:(hookkit_lib_t)types {
+    NSMutableArray* result = [NSMutableArray new];
+
+    if(types & HK_LIB_SUBSTRATE) {
+        [result addObject:@{
+            @"id" : @"substrate",
+            @"name" : @"Cydia Substrate",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_SUBSTRATE],
+            @"path" : ROOT_PATH_NS(@PATH_SUBSTRATE)
+        }];
+    }
+
+    if(types & HK_LIB_SUBSTITUTE) {
+        [result addObject:@{
+            @"id" : @"substitute",
+            @"name" : @"Substitute",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_SUBSTITUTE],
+            @"path" : ROOT_PATH_NS(@PATH_SUBSTITUTE)
+        }];
+    }
+
+    if(types & HK_LIB_LIBHOOKER) {
+        [result addObject:@{
+            @"id" : @"libhooker",
+            @"name" : @"libhooker",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_LIBHOOKER],
+            @"path" : ROOT_PATH_NS(@PATH_LIBHOOKER),
+            @"extra_path" : @{
+                @"libblackjack" : ROOT_PATH_NS(@PATH_LIBBLACKJACK)
+            }
+        }];
+    }
+
+    #ifdef fishhook_h
+    if(types & HK_LIB_FISHHOOK) {
+        [result addObject:@{
+            @"id" : @"fishhook",
+            @"name" : @"fishhook",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_FISHHOOK]
+        }];
+    }
+    #endif
+
+    return [result copy];
+}
+
 + (instancetype)substitutorWithTypes:(hookkit_lib_t)types {
     HKSubstitutor* substitutor = [self new];
     [substitutor setTypes:types];
+    [substitutor initLibraries];
     return substitutor;
 }
 
@@ -65,8 +201,7 @@
     static HKSubstitutor* defaultSubstitutor;
 
     dispatch_once(&once, ^{
-        defaultSubstitutor = [self new];
-        [defaultSubstitutor setTypes:[self getAvailableSubstitutorTypes]];
+        defaultSubstitutor = [self substitutorWithTypes:[self getAvailableSubstitutorTypes]];
     });
 
     return defaultSubstitutor;
@@ -74,45 +209,40 @@
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     hookkit_status_t result = HK_ERR;
-    void* handle = NULL;
 
-    if(result == HK_ERR && (_types & HK_LIB_LIBBLACKJACK) == HK_LIB_LIBBLACKJACK && (handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_LAZY))) {
-        static enum LIBHOOKER_ERR (*_LBHookMessage)(Class objcClass, SEL selector, void* replacement, void* old_ptr) = NULL;
-        if(!_LBHookMessage) _LBHookMessage = dlsym(handle, "LBHookMessage");
+    if(_types & HK_LIB_LIBHOOKER) {
         if(_LBHookMessage) {
             if(_LBHookMessage(objcClass, selector, replacement, old_ptr) == LIBHOOKER_OK) {
-                result = HK_OK;
+                return HK_OK;
+            } else {
+                // handle libhooker error codes
+
+                return result;
             }
         }
-
-        dlclose(handle);
     }
 
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        static int (*_substitute_hook_objc_message)(Class klass, SEL selector, void* replacement, void* old_ptr, bool* created_imp_ptr) = NULL;
-        if(!_substitute_hook_objc_message) _substitute_hook_objc_message = dlsym(handle, "substitute_hook_objc_message");
+    if(_types & HK_LIB_SUBSTITUTE) {
         if(_substitute_hook_objc_message) {
             if(_substitute_hook_objc_message(objcClass, selector, replacement, (void *)old_ptr, NULL) == SUBSTITUTE_OK) {
-                result = HK_OK;
+                return HK_OK;
+            } else {
+                // handle substitute error codes
+
+                return result;
             }
         }
-
-        dlclose(handle);
     }
 
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_MSHookMessageEx)(Class _class, SEL sel, IMP imp, IMP* result) = NULL;
-        if(!_MSHookMessageEx) _MSHookMessageEx = dlsym(handle, "MSHookMessageEx");
+    if(_types & HK_LIB_SUBSTRATE) {
         if(_MSHookMessageEx) {
             _MSHookMessageEx(objcClass, selector, replacement, (IMP *)old_ptr);
-            result = HK_OK;
+            return HK_OK;
         }
-
-        dlclose(handle);
     }
     
     #ifdef fishhook_h
-    if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
+    if(_types & HK_LIB_FISHHOOK) {
         
     }
     #endif
@@ -126,57 +256,52 @@
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     hookkit_status_t result = HK_ERR;
-    void* handle = NULL;
 
-    if(result == HK_ERR && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-        struct LHFunctionHook hook = {
-            function, replacement, (void *)old_ptr, NULL
-        };
-
-        static int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count) = NULL;
-        if(!_LHHookFunctions) _LHHookFunctions = dlsym(handle, "LHHookFunctions");
+    if(_types & HK_LIB_LIBHOOKER) {
         if(_LHHookFunctions) {
+            struct LHFunctionHook hook = {
+                function, replacement, (void *)old_ptr, NULL
+            };
+
             if(_LHHookFunctions(&hook, 1) == 1) {
-                result = HK_OK;
+                return HK_OK;
+            } else {
+                // handle libhooker error codes
+
+                return result;
             }
         }
-
-        dlclose(handle);
     }
     
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        struct substitute_function_hook hook = {
-            function, replacement, (void *)old_ptr, 0
-        };
-
-        static int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options) = NULL;
-        if(!_substitute_hook_functions) _substitute_hook_functions = dlsym(handle, "substitute_hook_functions");
+    if(_types & HK_LIB_SUBSTITUTE) {
         if(_substitute_hook_functions) {
+            struct substitute_function_hook hook = {
+                function, replacement, (void *)old_ptr, 0
+            };
+
             if(_substitute_hook_functions(&hook, 1, NULL, 0) == SUBSTITUTE_OK) {
-                result = HK_OK;
+                return HK_OK;
+            } else {
+                // handle substitute error codes
+
+                return result;
             }
         }
-
-        dlclose(handle);
     }
     
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_MSHookFunction)(void* symbol, void* replace, void** result) = NULL;
-        if(!_MSHookFunction) _MSHookFunction = dlsym(handle, "MSHookFunction");
+    if(_types & HK_LIB_SUBSTRATE) {
         if(_MSHookFunction) {
             _MSHookFunction(function, replacement, old_ptr);
-            result = HK_OK;
+            return HK_OK;
         }
-
-        dlclose(handle);
     }
     
     #ifdef fishhook_h
-    if(result == HK_ERR && (_types & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
+    if(_types & HK_LIB_FISHHOOK) {
         Dl_info info;
         if(dladdr(function, &info)) {
             if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, old_ptr}}, 1)) {
-                result = HK_OK;
+                return HK_OK;
             }
         }
     }
@@ -191,44 +316,35 @@
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
     hookkit_status_t result = HK_ERR;
-    void* handle = NULL;
 
-    if(result == HK_ERR && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-        struct LHMemoryPatch hook = {
-            target, data, size, 0
-        };
-
-        static int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count) = NULL;
-        if(!_LHPatchMemory) _LHPatchMemory = dlsym(handle, "LHPatchMemory");
+    if(_types & HK_LIB_LIBHOOKER) {
         if(_LHPatchMemory) {
+            struct LHMemoryPatch hook = {
+                target, data, size, 0
+            };
+
             if(_LHPatchMemory(&hook, 1) == 1) {
-                result = HK_OK;
+                return HK_OK;
+            } else {
+                // handle libhooker error codes
+
+                return result;
             }
         }
-
-        dlclose(handle);
     }
     
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_SubHookMemory)(void* target, const void* data, size_t size) = NULL;
-        if(!_SubHookMemory) _SubHookMemory = dlsym(handle, "SubHookMemory");
+    if(_types & HK_LIB_SUBSTITUTE) {
         if(_SubHookMemory) {
             _SubHookMemory(target, data, size);
-            result = HK_OK;
+            return HK_OK;
         }
-
-        dlclose(handle);
     }
     
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_MSHookMemory)(void* target, const void* data, size_t size) = NULL;
-        if(!_MSHookMemory) _MSHookMemory = dlsym(handle, "MSHookMemory");
+    if(_types & HK_LIB_SUBSTRATE) {
         if(_MSHookMemory) {
             _MSHookMemory(target, data, size);
-            result = HK_OK;
+            return HK_OK;
         }
-
-        dlclose(handle);
     }
 
     if(result == HK_ERR) {
@@ -239,111 +355,75 @@
 }
 
 - (HKImageRef)openImage:(NSString *)path {
-    HKImageRef result = NULL;
-    void* handle = NULL;
-
-    if(result == NULL && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-        static struct libhooker_image* (*_LHOpenImage)(const char* path) = NULL;
-        if(!_LHOpenImage) _LHOpenImage = dlsym(handle, "LHOpenImage");
+    if(_types & HK_LIB_LIBHOOKER) {
         if(_LHOpenImage) {
-            result = (HKImageRef)_LHOpenImage([path fileSystemRepresentation]);
+            return (HKImageRef)_LHOpenImage([path fileSystemRepresentation]);
         }
-
-        dlclose(handle);
     }
     
-    if(result == NULL && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        static struct substitute_image* (*_substitute_open_image)(const char* filename) = NULL;
-        if(!_substitute_open_image) _substitute_open_image = dlsym(handle, "substitute_open_image");
+    if(_types & HK_LIB_SUBSTITUTE) {
         if(_substitute_open_image) {
-            result = (HKImageRef)_substitute_open_image([path fileSystemRepresentation]);
+            return (HKImageRef)_substitute_open_image([path fileSystemRepresentation]);
         }
-
-        dlclose(handle);
     }
     
-    if(result == NULL && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
-        static MSImageRef (*_MSGetImageByName)(const char* file) = NULL;
-        if(!_MSGetImageByName) _MSGetImageByName = dlsym(handle, "MSGetImageByName");
+    if(_types & HK_LIB_SUBSTRATE) {
         if(_MSGetImageByName) {
-            result = (HKImageRef)_MSGetImageByName([path fileSystemRepresentation]);
+            return (HKImageRef)_MSGetImageByName([path fileSystemRepresentation]);
         }
-
-        dlclose(handle);
     }
 
-    return result;
+    return NULL;
 }
 
 - (void)closeImage:(HKImageRef)image {
-    void* handle = NULL;
+    if(!image) {
+        return;
+    }
 
-    if(image != NULL && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_LHCloseImage)(struct libhooker_image* libhookerImage) = NULL;
-        if(!_LHCloseImage) _LHCloseImage = dlsym(handle, "LHCloseImage");
+    if(_types & HK_LIB_LIBHOOKER) {
         if(_LHCloseImage) {
             _LHCloseImage((struct libhooker_image *)image);
-            image = NULL;
+            return;
         }
-
-        dlclose(handle);
     }
     
-    if(image != NULL && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_substitute_close_image)(struct substitute_image* handle) = NULL;
-        if(!_substitute_close_image) _substitute_close_image = dlsym(handle, "substitute_close_image");
+    if(_types & HK_LIB_SUBSTITUTE) {
         if(_substitute_close_image) {
             _substitute_close_image((struct substitute_image *)image);
-            image = NULL;
+            return;
         }
-
-        dlclose(handle);
     }
     
-    if(image != NULL && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
-        static void (*_MSCloseImage)(MSImageRef) = NULL;
-        if(!_MSCloseImage) _MSCloseImage = dlsym(handle, "MSCloseImage");
+    if(_types & HK_LIB_SUBSTRATE) {
         if(_MSCloseImage) {
             _MSCloseImage((MSImageRef)image);
-            image = NULL;
+            return;
         }
-
-        dlclose(handle);
     }
 }
 
 - (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols {
     hookkit_status_t result = HK_ERR;
-    void* handle = NULL;
 
     if(image != NULL) {
         // libhooker and substitute do not natively handle a NULL value (all images) for image. Keep that to substrate-only as a compatibility layer.
 
-        if(result == HK_ERR && (_types & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY))) {
-            static bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount) = NULL;
-            if(!_LHFindSymbols) _LHFindSymbols = dlsym(handle, "LHFindSymbols");
+        if(_types & HK_LIB_LIBHOOKER) {
             if(_LHFindSymbols) {
                 
             }
-
-            dlclose(handle);
         }
         
-        if(result == HK_ERR && (_types & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY))) {
-            static int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms) = NULL;
-            if(!_substitute_find_private_syms) _substitute_find_private_syms = dlsym(handle, "substitute_find_private_syms");
+        if(_types & HK_LIB_SUBSTITUTE) {
             if(_substitute_find_private_syms) {
 
             }
-
-            dlclose(handle);
         }
     }
     
-    if(result == HK_ERR && (_types & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY))) {
+    if(_types & HK_LIB_SUBSTRATE) {
         // Substrate does not handle multiple symbols, so just manually loop.
-        static void* (*_MSFindSymbol)(MSImageRef image, const char* name) = NULL;
-        if(!_MSFindSymbol) _MSFindSymbol = dlsym(handle, "MSFindSymbol");
         if(_MSFindSymbol) {
             NSMutableArray* syms = [NSMutableArray new];
 
@@ -353,9 +433,8 @@
             }
 
             *outSymbols = [syms copy];
+            return HK_OK;
         }
-
-        dlclose(handle);
     }
 
     if(result == HK_ERR) {
@@ -417,130 +496,120 @@
     BOOL didFunctions = ([functionHooks count] == 0);
     BOOL didMemory = ([memoryHooks count] == 0);
 
-    void* handle = NULL;
+    if(!didFunctions && [substitutor types] & HK_LIB_LIBHOOKER) {
+        int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count) = substitutor->_LHHookFunctions;
+        
+        if(_LHHookFunctions) {
+            NSMutableData* hooks = [NSMutableData new];
 
-    if((!didFunctions || !didMemory) && result == HK_ERR && ([substitutor types] & HK_LIB_LIBHOOKER) == HK_LIB_LIBHOOKER && (handle = dlopen(ROOT_PATH_C(PATH_LIBHOOKER), RTLD_LAZY))) {
-        if(!didFunctions) {
-            static int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count) = NULL;
-            if(!_LHHookFunctions) _LHHookFunctions = dlsym(handle, "LHHookFunctions");
-            if(_LHHookFunctions) {
-                NSMutableData* hooks = [NSMutableData new];
+            for(HKFunctionHook* hkhook in functionHooks) {
+                struct LHFunctionHook hook = {
+                    [hkhook function], [hkhook replacement], [hkhook orig], 0
+                };
 
-                for(HKFunctionHook* hkhook in functionHooks) {
-                    struct LHFunctionHook hook = {
-                        [hkhook function], [hkhook replacement], [hkhook orig], 0
-                    };
-
-                    [hooks appendBytes:&hook length:sizeof(struct LHFunctionHook)];
-                }
-
-                if(_LHHookFunctions([hooks bytes], [functionHooks count])) {
-                    didFunctions = YES;
-                }
+                [hooks appendBytes:&hook length:sizeof(struct LHFunctionHook)];
             }
-        }
 
-        if(!didMemory) {
-            static int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count) = NULL;
-            if(!_LHPatchMemory) _LHPatchMemory = dlsym(handle, "LHPatchMemory");
-            if(_LHPatchMemory) {
-                NSMutableData* hooks = [NSMutableData new];
-
-                for(HKMemoryHook* hkhook in memoryHooks) {
-                    struct LHMemoryPatch hook = {
-                        [hkhook target], [hkhook data], [hkhook size], 0
-                    };
-
-                    [hooks appendBytes:&hook length:sizeof(struct LHMemoryPatch)];
-                }
-
-                if(_LHPatchMemory([hooks bytes], [memoryHooks count])) {
-                    didMemory = YES;
-                }
-            }
-        }
-
-        dlclose(handle);
-    }
-    
-    if((!didFunctions || !didMemory) && result == HK_ERR && ([substitutor types] & HK_LIB_SUBSTITUTE) == HK_LIB_SUBSTITUTE && (handle = dlopen(ROOT_PATH_C(PATH_SUBSTITUTE), RTLD_LAZY))) {
-        if(!didFunctions) {
-            static int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options) = NULL;
-            if(!_substitute_hook_functions) _substitute_hook_functions = dlsym(handle, "substitute_hook_functions");
-            if(_substitute_hook_functions) {
-                NSMutableData* hooks = [NSMutableData new];
-
-                for(HKFunctionHook* hkhook in functionHooks) {
-                    struct substitute_function_hook hook = {
-                        [hkhook function], [hkhook replacement], [hkhook orig], 0
-                    };
-
-                    [hooks appendBytes:&hook length:sizeof(struct substitute_function_hook)];
-                }
-
-                if(_substitute_hook_functions([hooks bytes], [functionHooks count], NULL, 0) == SUBSTITUTE_OK) {
-                    didFunctions = YES;
-                }
-            }
-        }
-
-        if(!didMemory) {
-            static void (*_SubHookMemory)(void* target, const void* data, size_t size) = NULL;
-            if(!_SubHookMemory) _SubHookMemory = dlsym(handle, "SubHookMemory");
-            if(_SubHookMemory) {
-                for(HKMemoryHook* hkhook in memoryHooks) {
-                    _SubHookMemory([hkhook target], [hkhook data], [hkhook size]);
-                }
-
-                didMemory = YES;
-            }
-        }
-
-        dlclose(handle);
-    }
-    
-    if((!didFunctions || !didMemory) && result == HK_ERR && ([substitutor types] & HK_LIB_SUBSTRATE) == HK_LIB_SUBSTRATE && (handle = dlopen(ROOT_PATH_C(PATH_SUBSTRATE), RTLD_LAZY))) {
-        // Substrate doesn't support batching, so loop manually
-
-        if(!didFunctions) {
-            static void (*_MSHookFunction)(void* symbol, void* replace, void** result) = NULL;
-            if(!_MSHookFunction) _MSHookFunction = dlsym(handle, "MSHookFunction");
-            if(_MSHookFunction) {
-                for(HKFunctionHook* hkhook in functionHooks) {
-                    _MSHookFunction([hkhook function], [hkhook replacement], [hkhook orig]);
-                }
-
+            if(_LHHookFunctions([hooks bytes], [functionHooks count])) {
                 didFunctions = YES;
             }
         }
-
-        if(!didMemory) {
-            static void (*_MSHookMemory)(void* target, const void* data, size_t size) = NULL;
-            if(!_MSHookMemory) _MSHookMemory = dlsym(handle, "MSHookMemory");
-            if(_MSHookMemory) {
-                for(HKMemoryHook* hkhook in memoryHooks) {
-                    _MSHookMemory([hkhook target], [hkhook data], [hkhook size]);
-                }
-
-                didMemory = YES;
-            }
-        }
-
-        dlclose(handle);
     }
-    
+
+    if(!didFunctions && [substitutor types] & HK_LIB_SUBSTITUTE) {
+        int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options) = substitutor->_substitute_hook_functions;
+
+        if(_substitute_hook_functions) {
+            NSMutableData* hooks = [NSMutableData new];
+
+            for(HKFunctionHook* hkhook in functionHooks) {
+                struct substitute_function_hook hook = {
+                    [hkhook function], [hkhook replacement], [hkhook orig], 0
+                };
+
+                [hooks appendBytes:&hook length:sizeof(struct substitute_function_hook)];
+            }
+
+            _substitute_hook_functions([hooks bytes], [functionHooks count], NULL, 0);
+            didFunctions = YES;
+        }
+    }
+
+    if(!didFunctions && [substitutor types] & HK_LIB_SUBSTRATE) {
+        void (*_MSHookFunction)(void* symbol, void* replace, void** result) = substitutor->_MSHookFunction;
+        
+        if(_MSHookFunction) {
+            for(HKFunctionHook* hkhook in functionHooks) {
+                _MSHookFunction([hkhook function], [hkhook replacement], [hkhook orig]);
+            }
+
+            didFunctions = YES;
+        }
+    }
+
     #ifdef fishhook_h
-    if(!didFunctions && result == HK_ERR && ([substitutor types] & HK_LIB_FISHHOOK) == HK_LIB_FISHHOOK) {
+    if(!didFunctions && [substitutor types] & HK_LIB_FISHHOOK) {
+        NSMutableData* hooks = [NSMutableData new];
+
         for(HKFunctionHook* hkhook in functionHooks) {
             Dl_info info;
             if(dladdr([hkhook function], &info)) {
-                rebind_symbols((struct rebinding[1]){{info.dli_sname, [hkhook replacement], [hkhook orig]}}, 1);
+                struct rebinding hook = {
+                    info.dli_sname, [hkhook replacement], [hkhook orig]
+                };
+
+                [hooks appendBytes:&hook length:sizeof(struct rebinding)];
             }
         }
 
+        rebind_symbols((struct rebinding *)[hooks bytes], [functionHooks count]);
         didFunctions = YES;
     }
     #endif
+
+    if(!didMemory && [substitutor types] & HK_LIB_LIBHOOKER) {
+        int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count) = substitutor->_LHPatchMemory;
+        
+        if(_LHPatchMemory) {
+            NSMutableData* hooks = [NSMutableData new];
+
+            for(HKMemoryHook* hkhook in memoryHooks) {
+                struct LHMemoryPatch hook = {
+                    [hkhook target], [hkhook data], [hkhook size], 0
+                };
+
+                [hooks appendBytes:&hook length:sizeof(struct LHMemoryPatch)];
+            }
+
+            if(_LHPatchMemory([hooks bytes], [memoryHooks count])) {
+                didMemory = YES;
+            }
+        }
+    }
+
+    if(!didMemory && [substitutor types] & HK_LIB_SUBSTITUTE) {
+        void (*_SubHookMemory)(void* target, const void* data, size_t size) = substitutor->_SubHookMemory;
+        
+        if(_SubHookMemory) {
+            for(HKMemoryHook* hkhook in memoryHooks) {
+                _SubHookMemory([hkhook target], [hkhook data], [hkhook size]);
+            }
+
+            didMemory = YES;
+        }
+    }
+
+    if(!didMemory && [substitutor types] & HK_LIB_SUBSTRATE) {
+        void (*_MSHookMemory)(void* target, const void* data, size_t size) = substitutor->_MSHookMemory;
+        
+        if(_MSHookMemory) {
+            for(HKMemoryHook* hkhook in memoryHooks) {
+                _MSHookMemory([hkhook target], [hkhook data], [hkhook size]);
+            }
+
+            didMemory = YES;
+        }
+    }
 
     if(didFunctions && didMemory) {
         result = HK_OK;

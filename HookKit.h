@@ -15,8 +15,7 @@ typedef enum {
     HK_LIB_SUBSTRATE = (1 << 0),
     HK_LIB_SUBSTITUTE = (1 << 1),
     HK_LIB_LIBHOOKER = (1 << 2),
-    HK_LIB_LIBBLACKJACK = (1 << 3),
-    HK_LIB_FISHHOOK = (1 << 4)
+    HK_LIB_FISHHOOK = (1 << 3)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
@@ -24,8 +23,12 @@ typedef const struct HKImage* HKImageRef;
 @interface HKSubstitutor : NSObject
 @property hookkit_lib_t types;
 
+- (void)initLibraries;
+
 + (hookkit_lib_t)getAvailableSubstitutorTypes;
++ (NSArray<NSDictionary *> *)getSubstitutorTypeInfo:(hookkit_lib_t)types;
 + (instancetype)substitutorWithTypes:(hookkit_lib_t)types;
+
 + (instancetype)defaultSubstitutor;
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;

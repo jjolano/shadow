@@ -1,3 +1,4 @@
+#import "HookKit.h"
 #import <Foundation/Foundation.h>
 
 #import "vendor/rootless.h"
