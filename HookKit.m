@@ -119,6 +119,12 @@
             if(!_MSFindSymbol) _MSFindSymbol = dlsym(substrate_handle, "MSFindSymbol");
         }
     }
+
+    #ifdef dobby_h
+    if(_types & HK_LIB_DOBBY) {
+        dobby_enable_near_branch_trampoline();
+    }
+    #endif
 }
 
 + (hookkit_lib_t)getAvailableSubstitutorTypes {
@@ -138,6 +144,10 @@
 
     #ifdef fishhook_h
     result |= HK_LIB_FISHHOOK;
+    #endif
+
+    #ifdef dobby_h
+    result |= HK_LIB_DOBBY;
     #endif
 
     return result;
@@ -182,6 +192,16 @@
             @"id" : @"fishhook",
             @"name" : @"fishhook",
             @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_FISHHOOK]
+        }];
+    }
+    #endif
+
+    #ifdef dobby_h
+    if(types & HK_LIB_DOBBY) {
+        [result addObject:@{
+            @"id" : @"dobby",
+            @"name" : @"Dobby",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_DOBBY]
         }];
     }
     #endif
@@ -247,6 +267,12 @@
     }
     #endif
 
+    #ifdef dobby_h
+    if(_types & HK_LIB_DOBBY) {
+
+    }
+    #endif
+
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
     }
@@ -307,6 +333,13 @@
     }
     #endif
 
+    #ifdef dobby_h
+    if(_types & HK_LIB_DOBBY) {
+        DobbyHook(function, replacement, (dobby_dummy_func_t *)old_ptr);
+        return HK_OK;
+    }
+    #endif
+
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
     }
@@ -346,6 +379,14 @@
             return HK_OK;
         }
     }
+
+    #ifdef dobby_h
+    if(_types & HK_LIB_DOBBY) {
+        if(DobbyCodePatch(target, (uint8_t *)data, size) == kMemoryOperationSuccess) {
+            return HK_OK;
+        }
+    }
+    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -567,6 +608,16 @@
     }
     #endif
 
+    #ifdef dobby_h
+    if(!didFunctions && [substitutor types] & HK_LIB_DOBBY) {
+        for(HKFunctionHook* hkhook in functionHooks) {
+            DobbyHook([hkhook function], [hkhook replacement], (dobby_dummy_func_t *)[hkhook orig]);
+        }
+
+        didFunctions = YES;
+    }
+    #endif
+
     if(!didMemory && [substitutor types] & HK_LIB_LIBHOOKER) {
         int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count) = substitutor->_LHPatchMemory;
         
@@ -610,6 +661,16 @@
             didMemory = YES;
         }
     }
+
+    #ifdef dobby_h
+    if(!didMemory && [substitutor types] & HK_LIB_DOBBY) {
+        for(HKMemoryHook* hkhook in memoryHooks) {
+            DobbyCodePatch([hkhook target], (uint8_t *)[hkhook data], [hkhook size]);
+        }
+
+        didMemory = YES;
+    }
+    #endif
 
     if(didFunctions && didMemory) {
         result = HK_OK;

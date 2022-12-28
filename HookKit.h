@@ -15,7 +15,8 @@ typedef enum {
     HK_LIB_SUBSTRATE = (1 << 0),
     HK_LIB_SUBSTITUTE = (1 << 1),
     HK_LIB_LIBHOOKER = (1 << 2),
-    HK_LIB_FISHHOOK = (1 << 3)
+    HK_LIB_FISHHOOK = (1 << 3),
+    HK_LIB_DOBBY = (1 << 4)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;

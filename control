@@ -1,6 +1,6 @@
 Package: me.jjolano.fmwk.hookkit
 Name: HookKit Framework
-Version: 0.0.5
+Version: 0.0.6
 Architecture: iphoneos-arm
 Description: An iOS tweak developer framework to unify code substitution APIs in runtime.
 Maintainer: jjolano

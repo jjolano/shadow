@@ -12,6 +12,14 @@
 #import "vendor/fishhook/fishhook.h"
 #endif
 
+#ifndef __arm64e__
+#ifdef __arm64__
+#if __has_include("vendor/dobby/dobby.h")
+#import "vendor/dobby/dobby.h"
+#endif
+#endif
+#endif
+
 @interface HKFunctionHook : NSObject
 @property void * function;
 @property void * replacement;
