@@ -113,25 +113,24 @@ ShadowService* _srv = nil;
 
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
+
+    hookkit_lib_t hooklibs_available_types = [HKSubstitutor getAvailableSubstitutorTypes];
+    hookkit_lib_t hooklibs = HK_LIB_SUBSTRATE;
     
-    hookkit_lib_t hooklibs_available = [HKSubstitutor getAvailableSubstitutorTypes];
-    hookkit_lib_t hooklibs = HK_LIB_NONE;
+    if(prefs_load[@"HK_Library"]) {
+        NSArray<NSDictionary *>* hooklibs_available_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs_available_types];
 
-    if([prefs_load[@"HK_substitute"] boolValue]) {
-        hooklibs |= (hooklibs_available & HK_LIB_SUBSTITUTE);
-    }
+        for(NSDictionary* hooklib_info in hooklibs_available_info) {
+            if([prefs_load[@"HK_Library"] isEqualToString:hooklib_info[@"id"]]) {
+                hookkit_lib_t type = (hookkit_lib_t)[hooklib_info[@"type"] unsignedIntValue];
 
-    if([prefs_load[@"HK_libhooker"] boolValue]) {
-        hooklibs |= (hooklibs_available & HK_LIB_LIBHOOKER);
-        hooklibs |= (hooklibs_available & HK_LIB_LIBBLACKJACK);
-    }
+                if(hooklibs_available_types & type) {
+                    hooklibs = type;
+                }
 
-    if([prefs_load[@"HK_fishhook"] boolValue]) {
-        hooklibs |= (hooklibs_available & HK_LIB_FISHHOOK);
-    }
-
-    if([prefs_load[@"HK_substrate"] boolValue] || hooklibs == HK_LIB_NONE) {
-        hooklibs |= (hooklibs_available & HK_LIB_SUBSTRATE);
+                break;
+            }
+        }
     }
 
     HKSubstitutor* substitutor = [HKSubstitutor substitutorWithTypes:hooklibs];

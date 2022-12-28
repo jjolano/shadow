@@ -14,7 +14,7 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	return @([prefs boolForKey:[specifier identifier]]);
+	return [prefs objectForKey:[specifier identifier]];
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
