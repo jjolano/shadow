@@ -4,10 +4,7 @@
 + (NSDictionary *)getDefaultPreferences {
     return @{
         @"Global_Enabled" : @(NO),
-        @"HK_substrate" : @(YES),
-        @"HK_substitute" : @(NO),
-        @"HK_libhooker" : @(NO),
-        @"HK_fishhook" : @(NO),
+        @"HK_Library" : @"substrate",
         @"Tweak_CompatEx" : @(NO),
         @"Hook_Filesystem" : @(YES),
         @"Hook_DynamicLibraries" : @(YES),
@@ -31,9 +28,15 @@
 }
 
 + (NSUserDefaults *)getUserDefaults {
-    NSUserDefaults* result = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-    [result registerDefaults:[self getDefaultPreferences]];
-    return result;
+    static dispatch_once_t once;
+    static NSUserDefaults* userDefaults;
+
+    dispatch_once(&once, ^{
+        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        [userDefaults registerDefaults:[self getDefaultPreferences]];
+    });
+
+    return userDefaults;
 }
 
 + (NSDictionary *)getPreferences:(NSString *)bundleIdentifier {
@@ -47,16 +50,27 @@
         [result setObject:@(YES) forKey:@"App_Enabled"];
 
         for(NSString* key in default_prefs) {
-            [result setObject:(app_settings[key] ? @([app_settings[key] boolValue]) : @(NO)) forKey:key];
+            id value = [app_settings objectForKey:key];
+            id defaultValue = @(NO);
+
+            if([default_prefs[key] isKindOfClass:[NSString class]]) {
+                defaultValue = default_prefs[key];
+            }
+
+            if(!value) {
+                value = defaultValue;
+            }
+            
+            [result setObject:value forKey:key];
         }
     } else {
         // Use global defaults.
         if([shdw_prefs boolForKey:@"Global_Enabled"]) {
             [result setObject:@(YES) forKey:@"App_Enabled"];
-        }
 
-        for(NSString* key in default_prefs) {
-            [result setObject:@([shdw_prefs boolForKey:key]) forKey:key];
+            for(NSString* key in default_prefs) {
+                [result setObject:[shdw_prefs objectForKey:key] forKey:key];
+            }
         }
     }
 
