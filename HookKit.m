@@ -122,7 +122,7 @@
 
     #ifdef dobby_h
     if(_types & HK_LIB_DOBBY) {
-        dobby_enable_near_branch_trampoline();
+        
     }
     #endif
 }
@@ -335,7 +335,9 @@
 
     #ifdef dobby_h
     if(_types & HK_LIB_DOBBY) {
+        dobby_enable_near_branch_trampoline();
         DobbyHook(function, replacement, (dobby_dummy_func_t *)old_ptr);
+        dobby_disable_near_branch_trampoline();
         return HK_OK;
     }
     #endif
@@ -610,9 +612,13 @@
 
     #ifdef dobby_h
     if(!didFunctions && [substitutor types] & HK_LIB_DOBBY) {
+        dobby_enable_near_branch_trampoline();
+
         for(HKFunctionHook* hkhook in functionHooks) {
             DobbyHook([hkhook function], [hkhook replacement], (dobby_dummy_func_t *)[hkhook orig]);
         }
+
+        dobby_disable_near_branch_trampoline();
 
         didFunctions = YES;
     }
