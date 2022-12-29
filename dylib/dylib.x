@@ -114,10 +114,10 @@ ShadowService* _srv = nil;
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
 
-    hookkit_lib_t hooklibs_available_types = [HKSubstitutor getAvailableSubstitutorTypes];
-    hookkit_lib_t hooklibs = HK_LIB_SUBSTRATE;
+    hookkit_lib_t hooklibs = HK_LIB_NONE;
     
     if(prefs_load[@"HK_Library"]) {
+        hookkit_lib_t hooklibs_available_types = [HKSubstitutor getAvailableSubstitutorTypes];
         NSArray<NSDictionary *>* hooklibs_available_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs_available_types];
 
         for(NSDictionary* hooklib_info in hooklibs_available_info) {
