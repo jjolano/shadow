@@ -60,12 +60,12 @@
 
         substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
         substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
-        _MSHookMessageEx = NULL;
-        _MSHookFunction = NULL;
-        _MSHookMemory = NULL;
-        _MSGetImageByName = NULL;
-        _MSCloseImage = NULL;
-        _MSFindSymbol = NULL;
+        _MSHookMessageEx = MSHookMessageEx;
+        _MSHookFunction = MSHookFunction;
+        _MSHookMemory = MSHookMemory;
+        _MSGetImageByName = MSGetImageByName;
+        _MSCloseImage = MSCloseImage;
+        _MSFindSymbol = MSFindSymbol;
 
         _types = HK_LIB_NONE;
     }
