@@ -1,6 +1,6 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: firmware (>= 8.0), mobilesubstrate, preferenceloader, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 0.0.5)
+Depends: firmware (>= 8.0), mobilesubstrate, preferenceloader, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 0.0.8)
 Suggests: com.ps.injectionfoundation
 Version: 3.5
 Architecture: iphoneos-arm
