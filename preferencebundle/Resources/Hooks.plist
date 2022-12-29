@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>Internal Settings</string>
 			<key>footerText</key>
-			<string>This setting controls the methods used to intercept application code. Some hooking libraries may provide a bypass performance improvement.</string>
+			<string>Controls the methods used to intercept application code. Some hooking libraries may provide a bypass performance improvement.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -38,9 +38,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Tweak Compatibility</string>
+			<string>Compatibility Settings</string>
 			<key>footerText</key>
-			<string>Some tweaks require apps to have full access to some jailbreak resources. Not needed in most cases.</string>
+			<string>Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
