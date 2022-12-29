@@ -117,6 +117,7 @@
 		<key>/var/mobile</key>
 		<array>
 			<string>Applications</string>
+			<string>Backups</string>
 			<string>Containers</string>
 			<string>Documents</string>
 			<string>Downloads</string>
@@ -133,7 +134,10 @@
 		<array>
 			<string>.GlobalPreferences.plist</string>
 			<string>.GlobalPreferences_m.plist</string>
+			<string>TVRemoteConnectionService.plist</string>
 			<string>UITextInputContextIdentifiers.plist</string>
+			<string>bookassetd.plist</string>
+			<string>ckkeyrolld.plist</string>
 			<string>dprivacyd.plist</string>
 			<string>nfcd.plist</string>
 			<string>silhouette.plist</string>
@@ -182,6 +186,8 @@
 			<string>UsageTrackingAgent</string>
 			<string>icloudsubscriptionoptimizerd</string>
 			<string>lacle.tmp</string>
+			<string>livefsd</string>
+			<string>smbclientd</string>
 			<string>videosubscriptionsd</string>
 		</array>
 		<key>/var/mobile/Library</key>
@@ -194,9 +200,11 @@
 			<string>AppleMediaServices</string>
 			<string>ApplePushService</string>
 			<string>Application Support</string>
+			<string>Assets</string>
 			<string>Assistant</string>
 			<string>Avatar</string>
 			<string>BackBoard</string>
+			<string>Backup</string>
 			<string>Biome</string>
 			<string>BulletinBoard</string>
 			<string>Caches</string>
@@ -206,13 +214,16 @@
 			<string>CallHistoryTransactions</string>
 			<string>CallServices</string>
 			<string>Carrier Bundles</string>
+			<string>CarrierDefault.bundle</string>
 			<string>ClassKit</string>
 			<string>Contacts</string>
+			<string>ContactsMetadata</string>
 			<string>ControlCenter</string>
 			<string>Cookies</string>
 			<string>CoreAS</string>
 			<string>CoreAccessories</string>
 			<string>CoreBehavior</string>
+			<string>CoreBrightness</string>
 			<string>CoreDuet</string>
 			<string>CoreFollowUp</string>
 			<string>CrashReporter</string>
@@ -225,6 +236,7 @@
 			<string>DuetActivityScheduler</string>
 			<string>DuetExpertCenter</string>
 			<string>ExternalAccessory</string>
+			<string>ExposureNotification</string>
 			<string>FaceTime</string>
 			<string>FairPlay</string>
 			<string>Finance</string>
@@ -237,19 +249,25 @@
 			<string>Inboxes</string>
 			<string>IntelligencePlatform</string>
 			<string>Intents</string>
+			<string>ISP</string>
 			<string>Keyboard</string>
 			<string>KeyboardServices</string>
 			<string>LanguageModeling</string>
+			<string>LASD</string>
+			<string>LiveFiles</string>
+			<string>LiveFiles.ticotsord</string>
 			<string>Logs</string>
 			<string>Mail</string>
 			<string>Maps</string>
 			<string>MediaRemote</string>
 			<string>MediaStream</string>
+			<string>MedicalID</string>
 			<string>MemoryMaintenance</string>
 			<string>MessagesMetaData</string>
 			<string>Mobile Documents</string>
 			<string>MobileContainerManager</string>
 			<string>MobileInstallation</string>
+			<string>MusicLibrary</string>
 			<string>NFStorage</string>
 			<string>NanoMusicSync</string>
 			<string>News</string>
@@ -272,6 +290,7 @@
 			<string>SMS</string>
 			<string>Safari</string>
 			<string>SafariSafeBrowsing</string>
+			<string>SafeHarbor</string>
 			<string>Saved Application State</string>
 			<string>SecureElementService</string>
 			<string>Sharing</string>
@@ -294,6 +313,7 @@
 			<string>VoiceServices</string>
 			<string>VoiceTrigger</string>
 			<string>Voicemail</string>
+			<string>WatchConnectivity</string>
 			<string>Weather</string>
 			<string>WebClips</string>
 			<string>WebKit</string>
@@ -308,7 +328,7 @@
 			<string>studentd</string>
 			<string>terminus</string>
 		</array>
-		<key>/var/mobile/Media</key>
+		<!-- <key>/var/mobile/Media</key>
 		<array>
 			<string>Books</string>
 			<string>DCIM</string>
@@ -316,9 +336,10 @@
 			<string>MediaAnalysis</string>
 			<string>PhotoData</string>
 			<string>Photos</string>
+			<string>Radio</string>
 			<string>Purchases</string>
 			<string>iTunes_Control</string>
-		</array>
+		</array> -->
 		<key>/var/mobile/Library/ControlCenter</key>
 		<array>
 			<string>ModuleConfiguration.plist</string>
@@ -349,10 +370,13 @@
 		<array>
 			<string>AppleSupport</string>
 			<string>Bluetooth</string>
+			<string>CoreDuet</string>
 			<string>CrashReporter</string>
 			<string>Dedisco</string>
 			<string>DiagnosticPipeline</string>
 			<string>ExposureNotification</string>
+			<string>NotificationProxy</string>
+			<string>SMSMigrator</string>
 			<string>RTCReporting</string>
 			<string>WirelessRadioManager</string>
 			<string>mobileactivationd</string>
@@ -460,6 +484,8 @@
 	</array>
 	<key>WhitelistPredicates</key>
 	<array>
+		<string>SELF LIKE '/var/mobile/Library/Carrier?Bundle.bundle'</string>
+		<string>SELF LIKE '/var/mobile/Library/Operator?Bundle.bundle'</string>
 	</array>
 	<key>BlacklistExactPaths</key>
 	<array>
