@@ -8,9 +8,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>HookKit Framework Settings</string>
+			<string>Internal Settings</string>
 			<key>footerText</key>
-			<string>Some hooking libraries may provide a bypass performance improvement. Cydia Substrate provides the most compatibility. This setting does not directly affect bypass strength.</string>
+			<string>This setting controls the methods used to intercept application code. Some hooking libraries may provide a bypass performance improvement.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -24,7 +24,7 @@
 			<key>detail</key>
 			<string>PSListItemsController</string>
 			<key>staticTextMessage</key>
-			<string>This is a list of hooking libraries available to use on your device.</string>
+			<string>This is a list of hooking libraries available to use on your device. Select "Automatic" to allow HookKit to choose the best hooking library for your device.</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
