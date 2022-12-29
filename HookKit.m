@@ -74,6 +74,28 @@
 }
 
 - (void)initLibraries {
+    if(_types == HK_LIB_NONE) {
+        if(libhooker_handle || libblackjack_handle) {
+            _types |= HK_LIB_LIBHOOKER;
+        }
+
+        if(substitute_handle) {
+            _types |= HK_LIB_SUBSTITUTE;
+        }
+
+        if(substrate_handle) {
+            _types |= HK_LIB_SUBSTRATE;
+        }
+
+        #ifdef fishhook_h
+        _types |= HK_LIB_FISHHOOK;
+        #endif
+
+        #ifdef dobby_h
+        _types |= HK_LIB_DOBBY;
+        #endif
+    }
+
     if(_types & HK_LIB_LIBHOOKER) {
         if(!libhooker_handle) libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY);
         if(!libblackjack_handle) libblackjack_handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_LAZY);
@@ -221,7 +243,9 @@
     static HKSubstitutor* defaultSubstitutor;
 
     dispatch_once(&once, ^{
-        defaultSubstitutor = [self substitutorWithTypes:[self getAvailableSubstitutorTypes]];
+        defaultSubstitutor = [self new];
+        // intentionally don't set types so it will only init what's currently loaded into the process
+        [defaultSubstitutor initLibraries];
     });
 
     return defaultSubstitutor;
