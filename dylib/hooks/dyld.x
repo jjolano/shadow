@@ -1,15 +1,14 @@
 #import "hooks.h"
 
-uint32_t _shdw_dyld_image_count = 0;
-NSArray* _shdw_dyld_collection = nil;
-NSArray* _shdw_dyld_add_image = nil;
-NSArray* _shdw_dyld_remove_image = nil;
+NSArray<NSDictionary *>* _shdw_dyld_collection = nil;
+NSArray<NSValue *>* _shdw_dyld_add_image = nil;
+NSArray<NSValue *>* _shdw_dyld_remove_image = nil;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
 static uint32_t (*original_dyld_image_count)(void);
 static uint32_t replaced_dyld_image_count(void) {
     if(_shdw_dyld_collection) {
-        return _shdw_dyld_image_count;
+        return [_shdw_dyld_collection count];
     }
 
     return original_dyld_image_count();
@@ -18,7 +17,7 @@ static uint32_t replaced_dyld_image_count(void) {
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < _shdw_dyld_image_count ? (struct mach_header *)[_shdw_dyld_collection[image_index][@"mach_header"] unsignedLongValue] : NULL;
+        return image_index < [_shdw_dyld_collection count] ? (struct mach_header *)[_shdw_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
     }
 
     return original_dyld_get_image_header(image_index);
@@ -27,7 +26,7 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < _shdw_dyld_image_count ? (intptr_t)[_shdw_dyld_collection[image_index][@"slide"] unsignedLongValue] : 0;
+        return image_index < [_shdw_dyld_collection count] ? (intptr_t)[_shdw_dyld_collection[image_index][@"slide"] pointerValue] : 0;
     }
     
     return original_dyld_get_image_vmaddr_slide(image_index);
@@ -36,7 +35,7 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
     if(_shdw_dyld_collection) {
-        return image_index < _shdw_dyld_image_count ? [_shdw_dyld_collection[image_index][@"name"] UTF8String] : NULL;
+        return image_index < [_shdw_dyld_collection count] ? [_shdw_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
     }
 
     const char* result = original_dyld_get_image_name(image_index);
@@ -84,14 +83,16 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
     }
 
     // add to our collection
-    NSMutableArray* _dyld_add_image = _shdw_dyld_add_image ? [_shdw_dyld_add_image mutableCopy] : [NSMutableArray new];
-    [_dyld_add_image addObject:@((unsigned long)func)];
-    _shdw_dyld_add_image = [_dyld_add_image copy];
+    if(!_shdw_dyld_add_image) {
+        _shdw_dyld_add_image = [NSArray new];
+    }
+
+    _shdw_dyld_add_image = [_shdw_dyld_add_image arrayByAddingObject:[NSValue valueWithPointer:func]];
 
     // do initial call
     if(_shdw_dyld_collection) {
         for(NSDictionary* dylib in _shdw_dyld_collection) {
-            func((struct mach_header *)[dylib[@"mach_header"] unsignedLongValue], (intptr_t)[dylib[@"slide"] unsignedLongValue]);
+            func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
         }
     }
 }
@@ -108,9 +109,11 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
     }
 
     // add to our collection
-    NSMutableArray* _dyld_remove_image = _shdw_dyld_remove_image ? [_shdw_dyld_remove_image mutableCopy] : [NSMutableArray new];
-    [_dyld_remove_image addObject:@((unsigned long)func)];
-    _shdw_dyld_remove_image = [_dyld_remove_image copy];
+    if(!_shdw_dyld_remove_image) {
+        _shdw_dyld_remove_image = [NSArray new];
+    }
+
+    _shdw_dyld_remove_image = [_shdw_dyld_remove_image arrayByAddingObject:[NSValue valueWithPointer:func]];
 }
 
 static kern_return_t (*original_task_info)(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt);
@@ -162,7 +165,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     // If not, add it
     if(_shdw_dyld_collection) {
         for(NSDictionary* dylib in _shdw_dyld_collection) {
-            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+            if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
                 // Already exists - skip function.
                 return;
             }
@@ -173,20 +176,20 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
     // Add if safe dylib.
-    if(![image_name hasPrefix:@"/System"] && ![_shadow isPathRestricted:image_name]) {
-        NSMutableArray* _dyld_collection = _shdw_dyld_collection ? [_shdw_dyld_collection mutableCopy] : [NSMutableArray new];
+    if([image_name hasPrefix:@"/System"] || (![image_name hasPrefix:@"/preboot"] && ![image_name hasPrefix:@"/var/jb"] && ![_shadow isPathRestricted:image_name])) {
+        if(!_shdw_dyld_collection) {
+            _shdw_dyld_collection = [NSArray new];
+        }
 
         NSDictionary* dylib = @{
             @"name" : image_name,
-            @"mach_header" : @((unsigned long) mh),
-            @"slide" : @((unsigned long) vmaddr_slide)
+            @"mach_header" : [NSValue valueWithPointer:mh],
+            @"slide" : [NSValue valueWithPointer:(void *)vmaddr_slide]
         };
 
         NSLog(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
 
-        [_dyld_collection addObject:dylib];
-        _shdw_dyld_collection = [_dyld_collection copy];
-        _shdw_dyld_image_count = [_dyld_collection count];
+        _shdw_dyld_collection = [_shdw_dyld_collection arrayByAddingObject:dylib];
     }
 }
 
@@ -197,7 +200,7 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         NSDictionary* dylibToRemove = nil;
 
         for(NSDictionary* dylib in _shdw_dyld_collection) {
-            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+            if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
                 // Remove this from our collection
                 NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylib[@"name"]);
 
@@ -211,7 +214,6 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
             NSMutableArray* _dyld_collection = [_shdw_dyld_collection mutableCopy];
             [_dyld_collection removeObject:dylibToRemove];
             _shdw_dyld_collection = [_dyld_collection copy];
-            _shdw_dyld_image_count = [_dyld_collection count];
         }
     }
 }
@@ -221,7 +223,7 @@ void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmadd
         NSDictionary* dylibFound = nil;
 
         for(NSDictionary* dylib in _shdw_dyld_collection) {
-            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+            if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
                 dylibFound = dylib;
                 break;
             }
@@ -234,8 +236,8 @@ void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmadd
         // Call event handlers.
         NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
 
-        for(NSNumber* func_ptr in _shdw_dyld_add_image) {
-            void (*func)(const struct mach_header*, intptr_t) = (void *)[func_ptr unsignedLongValue];
+        for(NSValue* func_ptr in _shdw_dyld_add_image) {
+            void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
             func(mh, vmaddr_slide);
         }
     }
@@ -246,7 +248,7 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
         NSDictionary* dylibFound = nil;
 
         for(NSDictionary* dylib in _shdw_dyld_collection) {
-            if(dylib[@"mach_header"] && [dylib[@"mach_header"] unsignedLongValue] == (unsigned long) mh) {
+            if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
                 dylibFound = dylib;
                 break;
             }
@@ -259,8 +261,8 @@ void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vm
         // Call event handlers.
         NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
 
-        for(NSNumber* func_ptr in _shdw_dyld_remove_image) {
-            void (*func)(const struct mach_header*, intptr_t) = (void *)[func_ptr unsignedLongValue];
+        for(NSValue* func_ptr in _shdw_dyld_remove_image) {
+            void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
             func(mh, vmaddr_slide);
         }
     }
