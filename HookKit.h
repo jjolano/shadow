@@ -45,6 +45,8 @@ typedef const struct HKImage* HKImageRef;
 @end
 
 @interface HKBatchHook : NSObject
++ (instancetype)defaultBatch;
+
 - (void)addFunctionHook:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (void)addMemoryHook:(void *)target withData:(const void *)data size:(size_t)size;
 

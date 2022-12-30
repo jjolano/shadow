@@ -598,6 +598,17 @@
     return self;
 }
 
++ (instancetype)defaultBatch {
+    static dispatch_once_t once;
+    static HKBatchHook* defaultBatch;
+
+    dispatch_once(&once, ^{
+        defaultBatch = [self new];
+    });
+
+    return defaultBatch;
+}
+
 - (void)addFunctionHook:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     HKFunctionHook* hook = [HKFunctionHook new];
     [hook setFunction:function];
