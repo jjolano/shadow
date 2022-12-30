@@ -4,7 +4,7 @@
 + (NSDictionary *)getDefaultPreferences {
     return @{
         @"Global_Enabled" : @(NO),
-        @"HK_Library" : @"substrate",
+        @"HK_Library" : @"auto",
         @"Tweak_CompatEx" : @(NO),
         @"Hook_Filesystem" : @(YES),
         @"Hook_DynamicLibraries" : @(YES),

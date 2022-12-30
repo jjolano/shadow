@@ -46,6 +46,9 @@
 		hookkit_lib_t hooklibs = [HKSubstitutor getAvailableSubstitutorTypes];
 		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
 
+		[hk_lib_values addObject:@"auto"];
+		[hk_lib_titles addObject:@"Automatic"];
+
         for(NSDictionary* hooklib_info in hooklibs_info) {
 			[hk_lib_values addObject:hooklib_info[@"id"]];
 			[hk_lib_titles addObject:hooklib_info[@"name"]];
