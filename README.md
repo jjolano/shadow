@@ -21,13 +21,12 @@ To use this framework:
 
 Advantages:
 
-* Potentially improved performance through use of batch hooking (if supported).
-* Consistent API which handles the actual hooking behind the scenes
+* Improved performance through use of batch hooking (if supported).
 
 Disadvantages:
 
-* Library-specific functionality will still require developers to use the specific library functions (WIP reimplementations)
-* Existing tweaks' hooks will need to be rewritten to use HookKit (WIP hook overrider)
+* Some library-specific functionality is not implemented (yet)
+* Existing tweaks' will need to be rewritten or recompiled to use HookKit
 
 ## Library Support
 
@@ -36,6 +35,7 @@ So far, support has been (mostly) implemented for the following code substitutio
 * libhooker
 * Substitute
 * Cydia Substrate
+* ElleKit
 * Fishhook
 * Dobby
 

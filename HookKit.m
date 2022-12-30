@@ -60,12 +60,12 @@
 
         substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
         substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
-        _MSHookMessageEx = MSHookMessageEx;
-        _MSHookFunction = MSHookFunction;
-        _MSHookMemory = MSHookMemory;
-        _MSGetImageByName = MSGetImageByName;
-        _MSCloseImage = MSCloseImage;
-        _MSFindSymbol = MSFindSymbol;
+        _MSHookMessageEx = NULL;
+        _MSHookFunction = NULL;
+        _MSHookMemory = NULL;
+        _MSGetImageByName = NULL;
+        _MSCloseImage = NULL;
+        _MSFindSymbol = NULL;
 
         _types = HK_LIB_NONE;
     }
@@ -97,6 +97,9 @@
     }
 
     if(_types == HK_LIB_ELLEKIT) {
+        // ellekit implements both libhooker and substrate APIs
+        // should be able to just enable both types and point handles to ellekit for symbol resolving
+
         if(libhooker_handle) dlclose(libhooker_handle);
         if(libblackjack_handle) dlclose(libblackjack_handle);
         if(substrate_handle) dlclose(substrate_handle);
@@ -153,14 +156,16 @@
             if(!_MSGetImageByName) _MSGetImageByName = dlsym(substrate_handle, "MSGetImageByName");
             if(!_MSCloseImage) _MSCloseImage = dlsym(substrate_handle, "MSCloseImage");
             if(!_MSFindSymbol) _MSFindSymbol = dlsym(substrate_handle, "MSFindSymbol");
+
+            // use weak linked if dlsym returns null
+            if(!_MSHookMessageEx) _MSHookMessageEx = MSHookMessageEx;
+            if(!_MSHookFunction) _MSHookFunction = MSHookFunction;
+            if(!_MSHookMemory) _MSHookMemory = MSHookMemory;
+            if(!_MSGetImageByName) _MSGetImageByName = MSGetImageByName;
+            if(!_MSCloseImage) _MSCloseImage = MSCloseImage;
+            if(!_MSFindSymbol) _MSFindSymbol = MSFindSymbol;
         }
     }
-
-    #ifdef dobby_h
-    if(_types & HK_LIB_DOBBY) {
-        
-    }
-    #endif
 }
 
 + (hookkit_lib_t)getAvailableSubstitutorTypes {
