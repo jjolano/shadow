@@ -100,9 +100,32 @@
         // ellekit implements both libhooker and substrate APIs
         // should be able to just enable both types and point handles to ellekit for symbol resolving
 
-        if(libhooker_handle) dlclose(libhooker_handle);
-        if(libblackjack_handle) dlclose(libblackjack_handle);
-        if(substrate_handle) dlclose(substrate_handle);
+        if(libhooker_handle) {
+            dlclose(libhooker_handle);
+
+            _LHHookFunctions = NULL;
+            _LHPatchMemory = NULL;
+            _LHOpenImage = NULL;
+            _LHCloseImage = NULL;
+            _LHFindSymbols = NULL;
+        }
+
+        if(libblackjack_handle) {
+            dlclose(libblackjack_handle);
+
+            _LBHookMessage = NULL;
+        }
+
+        if(substrate_handle) {
+            dlclose(substrate_handle);
+
+            _MSHookMessageEx = NULL;
+            _MSHookFunction = NULL;
+            _MSHookMemory = NULL;
+            _MSGetImageByName = NULL;
+            _MSCloseImage = NULL;
+            _MSFindSymbol = NULL;
+        }
 
         void* ellekit_handle = dlopen(ROOT_PATH_C(PATH_ELLEKIT), RTLD_LAZY);
         libhooker_handle = ellekit_handle;
