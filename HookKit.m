@@ -96,6 +96,20 @@
         #endif
     }
 
+    if(_types == HK_LIB_ELLEKIT) {
+        if(libhooker_handle) dlclose(libhooker_handle);
+        if(libblackjack_handle) dlclose(libblackjack_handle);
+        if(substrate_handle) dlclose(substrate_handle);
+
+        void* ellekit_handle = dlopen(ROOT_PATH_C(PATH_ELLEKIT), RTLD_LAZY);
+        libhooker_handle = ellekit_handle;
+        libblackjack_handle = ellekit_handle;
+        substrate_handle = ellekit_handle;
+
+        _types |= HK_LIB_LIBHOOKER;
+        _types |= HK_LIB_SUBSTRATE;
+    }
+
     if(_types & HK_LIB_LIBHOOKER) {
         if(!libhooker_handle) libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY);
         if(!libblackjack_handle) libblackjack_handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_LAZY);
@@ -164,6 +178,10 @@
         result |= HK_LIB_SUBSTRATE;
     }
 
+    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_ELLEKIT)]) {
+        result |= HK_LIB_ELLEKIT;
+    }
+
     #ifdef fishhook_h
     result |= HK_LIB_FISHHOOK;
     #endif
@@ -205,6 +223,15 @@
             @"extra_path" : @{
                 @"libblackjack" : ROOT_PATH_NS(@PATH_LIBBLACKJACK)
             }
+        }];
+    }
+
+    if(types & HK_LIB_ELLEKIT) {
+        [result addObject:@{
+            @"id" : @"ellekit",
+            @"name" : @"ElleKit",
+            @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_ELLEKIT],
+            @"path" : ROOT_PATH_NS(@PATH_ELLEKIT)
         }];
     }
 

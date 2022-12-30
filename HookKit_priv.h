@@ -37,3 +37,4 @@
 #define PATH_LIBBLACKJACK   "/usr/lib/libblackjack.dylib"
 #define PATH_SUBSTITUTE     "/usr/lib/libsubstitute.dylib"
 #define PATH_SUBSTRATE      "/usr/lib/libsubstrate.dylib"
+#define PATH_ELLEKIT        "/usr/lib/libellekit.dylib"
