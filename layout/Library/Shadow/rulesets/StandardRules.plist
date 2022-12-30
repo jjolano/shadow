@@ -492,6 +492,11 @@
 		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
 		<string>/usr/lib/tweakloader.dylib</string>
 		<string>/usr/lib/libjailbreak.dylib</string>
+		<string>/usr/lib/libhooker.dylib</string>
+		<string>/usr/lib/libblackjack.dylib</string>
+		<string>/usr/lib/libellekit.dylib</string>
+		<string>/usr/lib/libsubstitute.dylib</string>
+		<string>/usr/lib/libsubstrate.dylib</string>
 		<string>/dev/ptmx</string>
 		<string>/dev/kmem</string>
 		<string>/dev/mem</string>
