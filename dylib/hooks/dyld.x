@@ -173,6 +173,11 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     }
 
     const char* image_path = dyld_image_path_containing_address(mh);
+
+    if(!image_path) {
+        return;
+    }
+
     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
     // Add if safe dylib.
