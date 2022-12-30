@@ -133,12 +133,11 @@ ShadowService* _srv = nil;
         }
     }
 
-    HKSubstitutor* substitutor = nil;
+    HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
 
-    if(hooklibs == HK_LIB_NONE) {
-        substitutor = [HKSubstitutor defaultSubstitutor];
-    } else {
-        substitutor = [HKSubstitutor substitutorWithTypes:hooklibs];
+    if(hooklibs != HK_LIB_NONE) {
+        [substitutor setTypes:hooklibs];
+        [substitutor initLibraries];
     }
 
     HKBatchHook* hooks = [HKBatchHook new];
