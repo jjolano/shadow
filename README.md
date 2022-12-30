@@ -89,3 +89,7 @@ HKBatchHook* batch = [HKBatchHook new];
 ### Substitute
 
 <https://github.com/sbingner/substitute>
+
+### ElleKit
+
+<https://github.com/evelyneee/ellekit>
