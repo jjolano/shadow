@@ -50,7 +50,7 @@
 			<key>id</key>
 			<string>Tweak_CompatEx</string>
 			<key>label</key>
-			<string>Allow Application Support</string>
+			<string>Fully Allow Tweak Resources</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -74,7 +74,7 @@
 			<key>id</key>
 			<string>Rootless</string>
 			<key>label</key>
-			<string>Rootless Mode</string>
+			<string>Enable Rootless Mode</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
