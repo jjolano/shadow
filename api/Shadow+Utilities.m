@@ -43,8 +43,19 @@
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
     }
 
-    if(![path isEqualToString:@""] && [path characterAtIndex:0] != '~' && ![path isEqualToString:@"/"] && [[path substringFromIndex:[path length] - 1] isEqualToString:@"/"]) {
-        path = [path substringToIndex:[path length] - 1];
+    if(![path isEqualToString:@""] && [path characterAtIndex:0] != '~' && ![path isEqualToString:@"/"]) {
+        if([[path substringFromIndex:[path length] - 1] isEqualToString:@"/"]) {
+            path = [path substringToIndex:[path length] - 1];
+        }
+
+        if([[path substringFromIndex:[path length] - 2] isEqualToString:@"/."]) {
+            path = [path substringToIndex:[path length] - 2];
+        }
+        
+        if([[path substringFromIndex:[path length] - 3] isEqualToString:@"/.."]) {
+            path = [path substringToIndex:[path length] - 3];
+            path = [path stringByDeletingLastPathComponent];
+        }
     }
 
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
