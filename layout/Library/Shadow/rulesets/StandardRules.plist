@@ -527,7 +527,6 @@
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
-		<string>SELF LIKE[c] '/usr/lib/*curses*'</string>
 	</array>
 	<key>BlacklistURLSchemes</key>
 	<array>
