@@ -43,17 +43,17 @@
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
     }
 
-    if(![path isEqualToString:@""] && [path characterAtIndex:0] != '~' && ![path isEqualToString:@"/"]) {
-        if([[path substringFromIndex:[path length] - 1] isEqualToString:@"/"]) {
+    if([path length] > 1) {
+        if([path hasSuffix:@"/"]) {
             path = [path substringToIndex:[path length] - 1];
         }
 
-        if([[path substringFromIndex:[path length] - 2] isEqualToString:@"/."]) {
-            path = [path substringToIndex:[path length] - 2];
+        while([path hasSuffix:@"/."]) {
+            path = [path stringByDeletingLastPathComponent];
         }
         
-        if([[path substringFromIndex:[path length] - 3] isEqualToString:@"/.."]) {
-            path = [path substringToIndex:[path length] - 3];
+        while([path hasSuffix:@"/.."]) {
+            path = [path stringByDeletingLastPathComponent];
             path = [path stringByDeletingLastPathComponent];
         }
     }
