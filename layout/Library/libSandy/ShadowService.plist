@@ -24,6 +24,14 @@
 				<key>path</key>
 				<string>/Library/Shadow</string>
 			</dict>
+			<dict>
+				<key>type</key>
+				<string>file</string>
+				<key>extension_class</key>
+				<string>com.apple.app-sandbox.read</string>
+				<key>path</key>
+				<string>/var/jb/Library/Shadow</string>
+			</dict>
 		</array>
 	</dict>
 </plist>

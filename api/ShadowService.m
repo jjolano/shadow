@@ -2,6 +2,8 @@
 #import "ShadowService+Restriction.h"
 #import "ShadowService+Settings.h"
 
+#import "rootless.h"
+
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @implementation ShadowService {
@@ -218,11 +220,7 @@
 }
 
 - (void)startService {
-    dpkgPath = @"/usr/bin/dpkg-query";
-
-    if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
-        dpkgPath = @"/var/jb/usr/bin/dpkg-query";
-    }
+    dpkgPath = ROOT_PATH_NS(@"/usr/bin/dpkg-query");
 
     if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
         dpkgPath = nil;
@@ -244,12 +242,10 @@
 }
 
 - (void)loadRulesets {
-    // load rulesets
-    NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:@"/Library/Shadow/rulesets" isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
+    NSString* ruleset_path = ROOT_PATH_NS(@SHADOW_RULESETS);
 
-    if(!ruleset_urls) {
-        [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:@"/var/jb/Library/Shadow/rulesets" isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
-    }
+    // load rulesets
+    NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:ruleset_path isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
 
     if(ruleset_urls) {
         for(NSURL* url in ruleset_urls) {
