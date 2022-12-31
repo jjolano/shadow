@@ -1,14 +1,12 @@
 #import "ShadowService+Database.h"
 #import "ShadowService+Restriction.h"
 
+#import "rootless.h"
+
 @implementation ShadowService (Database)
 + (NSDictionary *)generateDatabase {
     // Determine dpkg info database path.
-    NSString* dpkgInfoPath = @"/Library/dpkg/info";
-
-    if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
-        dpkgInfoPath = @"/var/jb/Library/dpkg/info";
-    }
+    NSString* dpkgInfoPath = ROOT_PATH_NS(@"/Library/dpkg/info");
 
     if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
         return nil;
