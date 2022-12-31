@@ -516,6 +516,7 @@
 		<string>/var/mobile/Library/Cookies/</string>
 		<string>/var/log/</string>
 		<string>/var/mobile/Library/Application Support/</string>
+		<string>/var/root/</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
