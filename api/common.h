@@ -3,7 +3,8 @@
 
 #define BUNDLE_ID           "me.jjolano.shadow"
 #define MACH_SERVICE_NAME   BUNDLE_ID ".service"
-#define SHADOW_DB_PLIST     "/Library/Shadow/rulesets/dpkgInstalled.plist"
+#define SHADOW_RULESETS     "/Library/Shadow/rulesets"
+#define SHADOW_DB_PLIST     SHADOW_RULESETS "/dpkgInstalled.plist"
 #define SHADOW_PREFS_PLIST  "/var/mobile/Library/Preferences/" BUNDLE_ID ".plist"
 
 #ifdef DEBUG
