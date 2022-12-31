@@ -288,6 +288,6 @@
 %end
 %end
 
-void shadowhook_NSBundle(void) {
+void shadowhook_NSBundle(HKBatchHook* hooks) {
     %init(shadowhook_NSBundle);
 }

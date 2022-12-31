@@ -188,15 +188,15 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
 }
 
-void shadowhook_sandbox(void) {
+void shadowhook_sandbox(HKBatchHook* hooks) {
     // %init(shadowhook_sandbox);
 
-    // MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
-    MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
-    MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
-    MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
-    MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
-    MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
-    MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
-    // MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
+    // [hooks addFunctionHook:sandbox_check withReplacement:replaced_sandbox_check outOldPtr:(void **) &original_sandbox_check];
+    [hooks addFunctionHook:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
+    [hooks addFunctionHook:host_get_special_port withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
+    [hooks addFunctionHook:task_get_special_port withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
+    [hooks addFunctionHook:task_get_exception_ports withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
+    [hooks addFunctionHook:task_for_pid withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
+    [hooks addFunctionHook:sigaction withReplacement:replaced_sigaction outOldPtr:(void **) &original_sigaction];
+    // [hooks addFunctionHook:MISValidateSignatureAndCopyInfo withReplacement:replaced_MISValidateSignatureAndCopyInfo outOldPtr:(void **) &original_MISValidateSignatureAndCopyInfo];
 }

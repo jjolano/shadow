@@ -664,8 +664,7 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
     return ret;
 }
 
-static pid_t (*original_getppid)(void);
-static pid_t replaced_getppid(void) {
+static pid_t replaced_getppid() {
     return 1;
 }
 
@@ -737,63 +736,63 @@ static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
     return result;
 }
 
-void shadowhook_libc(void) {
-    MSHookFunction(access, replaced_access, (void **) &original_access);
-    MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
-    MSHookFunction(chroot, replaced_chroot, (void **) &original_chroot);
-    MSHookFunction(statfs, replaced_statfs, (void **) &original_statfs);
-    MSHookFunction(fstatfs, replaced_fstatfs, (void **) &original_fstatfs);
-    MSHookFunction(stat, replaced_stat, (void **) &original_stat);
-    MSHookFunction(lstat, replaced_lstat, (void **) &original_lstat);
-    MSHookFunction(faccessat, replaced_faccessat, (void **) &original_faccessat);
-    MSHookFunction(readdir_r, replaced_readdir_r, (void **) &original_readdir_r);
-    MSHookFunction(readdir, replaced_readdir, (void **) &original_readdir);
-    MSHookFunction(fopen, replaced_fopen, (void **) &original_fopen);
-    MSHookFunction(freopen, replaced_freopen, (void **) &original_freopen);
-    MSHookFunction(realpath, replaced_realpath, (void **) &original_realpath);
-    MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
-    MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
-    MSHookFunction(link, replaced_link, (void **) &original_link);
-    // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
+void shadowhook_libc(HKBatchHook* hooks) {
+    [hooks addFunctionHook:access withReplacement:replaced_access outOldPtr:(void **) &original_access];
+    [hooks addFunctionHook:chdir withReplacement:replaced_chdir outOldPtr:(void **) &original_chdir];
+    [hooks addFunctionHook:chroot withReplacement:replaced_chroot outOldPtr:(void **) &original_chroot];
+    [hooks addFunctionHook:statfs withReplacement:replaced_statfs outOldPtr:(void **) &original_statfs];
+    [hooks addFunctionHook:fstatfs withReplacement:replaced_fstatfs outOldPtr:(void **) &original_fstatfs];
+    [hooks addFunctionHook:stat withReplacement:replaced_stat outOldPtr:(void **) &original_stat];
+    [hooks addFunctionHook:lstat withReplacement:replaced_lstat outOldPtr:(void **) &original_lstat];
+    [hooks addFunctionHook:faccessat withReplacement:replaced_faccessat outOldPtr:(void **) &original_faccessat];
+    [hooks addFunctionHook:readdir_r withReplacement:replaced_readdir_r outOldPtr:(void **) &original_readdir_r];
+    [hooks addFunctionHook:readdir withReplacement:replaced_readdir outOldPtr:(void **) &original_readdir];
+    [hooks addFunctionHook:fopen withReplacement:replaced_fopen outOldPtr:(void **) &original_fopen];
+    [hooks addFunctionHook:freopen withReplacement:replaced_freopen outOldPtr:(void **) &original_freopen];
+    [hooks addFunctionHook:realpath withReplacement:replaced_realpath outOldPtr:(void **) &original_realpath];
+    [hooks addFunctionHook:readlink withReplacement:replaced_readlink outOldPtr:(void **) &original_readlink];
+    [hooks addFunctionHook:readlinkat withReplacement:replaced_readlinkat outOldPtr:(void **) &original_readlinkat];
+    [hooks addFunctionHook:link withReplacement:replaced_link outOldPtr:(void **) &original_link];
+    // [hooks addFunctionHook:scandir withReplacement:replaced_scandir outOldPtr:(void **) &original_scandir];
 
     [_shadow setOrigFunc:@"access" withAddr:original_access];
     [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
 }
 
-void shadowhook_libc_extra(void) {
-    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
-    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
-    MSHookFunction(execve, replaced_execve, (void **) &original_execve);
-    MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
-    MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
-    MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
-    MSHookFunction(getattrlist, replaced_getattrlist, (void **) &original_getattrlist);
-    MSHookFunction(symlink, replaced_symlink, (void **) &original_symlink);
-    MSHookFunction(rename, replaced_rename, (void **) &original_rename);
-    MSHookFunction(remove, replaced_remove, (void **) &original_remove);
-    MSHookFunction(unlink, replaced_unlink, (void **) &original_unlink);
-    MSHookFunction(unlinkat, replaced_unlinkat, (void **) &original_unlinkat);
-    MSHookFunction(rmdir, replaced_rmdir, (void **) &original_rmdir);
-    MSHookFunction(pathconf, replaced_pathconf, (void **) &original_pathconf);
-    MSHookFunction(fpathconf, replaced_fpathconf, (void **) &original_fpathconf);
-    MSHookFunction(utimes, replaced_utimes, (void **) &original_utimes);
-    MSHookFunction(futimes, replaced_futimes, (void **) &original_futimes);
-    MSHookFunction(fchdir, replaced_fchdir, (void **) &original_fchdir);
-    MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
+void shadowhook_libc_extra(HKBatchHook* hooks) {
+    [hooks addFunctionHook:fstat withReplacement:replaced_fstat outOldPtr:(void **) &original_fstat];
+    [hooks addFunctionHook:fstatat withReplacement:replaced_fstatat outOldPtr:(void **) &original_fstatat];
+    [hooks addFunctionHook:execve withReplacement:replaced_execve outOldPtr:(void **) &original_execve];
+    [hooks addFunctionHook:execvp withReplacement:replaced_execvp outOldPtr:(void **) &original_execvp];
+    [hooks addFunctionHook:posix_spawn withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn];
+    [hooks addFunctionHook:posix_spawnp withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp];
+    [hooks addFunctionHook:getattrlist withReplacement:replaced_getattrlist outOldPtr:(void **) &original_getattrlist];
+    [hooks addFunctionHook:symlink withReplacement:replaced_symlink outOldPtr:(void **) &original_symlink];
+    [hooks addFunctionHook:rename withReplacement:replaced_rename outOldPtr:(void **) &original_rename];
+    [hooks addFunctionHook:remove withReplacement:replaced_remove outOldPtr:(void **) &original_remove];
+    [hooks addFunctionHook:unlink withReplacement:replaced_unlink outOldPtr:(void **) &original_unlink];
+    [hooks addFunctionHook:unlinkat withReplacement:replaced_unlinkat outOldPtr:(void **) &original_unlinkat];
+    [hooks addFunctionHook:rmdir withReplacement:replaced_rmdir outOldPtr:(void **) &original_rmdir];
+    [hooks addFunctionHook:pathconf withReplacement:replaced_pathconf outOldPtr:(void **) &original_pathconf];
+    [hooks addFunctionHook:fpathconf withReplacement:replaced_fpathconf outOldPtr:(void **) &original_fpathconf];
+    [hooks addFunctionHook:utimes withReplacement:replaced_utimes outOldPtr:(void **) &original_utimes];
+    [hooks addFunctionHook:futimes withReplacement:replaced_futimes outOldPtr:(void **) &original_futimes];
+    [hooks addFunctionHook:fchdir withReplacement:replaced_fchdir outOldPtr:(void **) &original_fchdir];
+    [hooks addFunctionHook:getfsstat withReplacement:replaced_getfsstat outOldPtr:(void **) &original_getfsstat];
 }
 
-void shadowhook_libc_envvar(void) {
-    MSHookFunction(getenv, replaced_getenv, (void **) &original_getenv);
+void shadowhook_libc_envvar(HKBatchHook* hooks) {
+    [hooks addFunctionHook:getenv withReplacement:replaced_getenv outOldPtr:(void **) &original_getenv];
 }
 
-void shadowhook_libc_lowlevel(void) {
-    MSHookFunction(open, replaced_open, (void **) &original_open);
-    MSHookFunction(openat, replaced_openat, (void **) &original_openat);
-    MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
+void shadowhook_libc_lowlevel(HKBatchHook* hooks) {
+    [hooks addFunctionHook:open withReplacement:replaced_open outOldPtr:(void **) &original_open];
+    [hooks addFunctionHook:openat withReplacement:replaced_openat outOldPtr:(void **) &original_openat];
+    [hooks addFunctionHook:__opendir2 withReplacement:replaced___opendir2 outOldPtr:(void **) &original___opendir2];
 }
 
-void shadowhook_libc_antidebugging(void) {
-    MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
-    MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
-    MSHookFunction(getppid, replaced_getppid, (void **) &original_getppid);
+void shadowhook_libc_antidebugging(HKBatchHook* hooks) {
+    [hooks addFunctionHook:ptrace withReplacement:replaced_ptrace outOldPtr:(void **) &original_ptrace];
+    [hooks addFunctionHook:sysctl withReplacement:replaced_sysctl outOldPtr:(void **) &original_sysctl];
+    [hooks addFunctionHook:getppid withReplacement:replaced_getppid outOldPtr:NULL];
 }

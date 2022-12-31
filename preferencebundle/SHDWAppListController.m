@@ -1,8 +1,13 @@
 #import "SHDWAppListController.h"
 #import "../api/ShadowService+Settings.h"
 
+#import <HookKit.h>
+
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
+
+	NSMutableArray* hk_lib_values;
+	NSMutableArray* hk_lib_titles;
 }
 
 - (NSArray *)specifiers {
@@ -18,29 +23,52 @@
 	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
 
 	if(prefs_app) {
-		NSNumber* value = prefs_app[[specifier identifier]];
-		return @(value && [value boolValue]);
+		id value = prefs_app[[specifier identifier]];
+		if(value) return value;
 	}
 
-	return @(NO);
+	if([[specifier identifier] isEqualToString:@"HK_Library"]) {
+		return [ShadowService getDefaultPreferences][@"HK_Library"];
+	}
+
+	return nil;
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	NSMutableDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]] ? [[prefs dictionaryForKey:[self applicationID]] mutableCopy] : nil;
+	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
+	NSMutableDictionary* prefs_app_m = prefs_app ? [prefs_app mutableCopy] : [NSMutableDictionary new];
 
-	if(!prefs_app) {
-		prefs_app = [NSMutableDictionary new];
-	}
+	prefs_app_m[[specifier identifier]] = value;
 
-	prefs_app[[specifier identifier]] = value;
-
-	[prefs setObject:[prefs_app copy] forKey:[self applicationID]];
+	[prefs setObject:[prefs_app_m copy] forKey:[self applicationID]];
 	[prefs synchronize];
+}
+
+- (NSArray *)getValues:(PSSpecifier *)specifier {
+	return [hk_lib_values copy];
+}
+
+- (NSArray *)getTitles:(PSSpecifier *)specifier {
+	return [hk_lib_titles copy];
 }
 
 - (instancetype)init {
 	if((self = [super init])) {
 		prefs = [ShadowService getUserDefaults];
+
+		hk_lib_values = [NSMutableArray new];
+		hk_lib_titles = [NSMutableArray new];
+
+		hookkit_lib_t hooklibs = [HKSubstitutor getAvailableSubstitutorTypes];
+		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
+
+		[hk_lib_values addObject:@"auto"];
+		[hk_lib_titles addObject:@"Automatic"];
+
+        for(NSDictionary* hooklib_info in hooklibs_info) {
+			[hk_lib_values addObject:hooklib_info[@"id"]];
+			[hk_lib_titles addObject:hooklib_info[@"name"]];
+        }
 	}
 
 	return self;

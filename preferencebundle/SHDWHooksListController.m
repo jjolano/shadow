@@ -1,8 +1,13 @@
 #import "SHDWHooksListController.h"
 #import "../api/ShadowService+Settings.h"
 
+#import <HookKit.h>
+
 @implementation SHDWHooksListController {
 	NSUserDefaults* prefs;
+
+	NSMutableArray* hk_lib_values;
+	NSMutableArray* hk_lib_titles;
 }
 
 - (NSArray *)specifiers {
@@ -15,7 +20,7 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	return @([prefs boolForKey:[specifier identifier]]);
+	return [prefs objectForKey:[specifier identifier]];
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
@@ -23,9 +28,31 @@
 	[prefs synchronize];
 }
 
+- (NSArray *)getValues:(PSSpecifier *)specifier {
+	return [hk_lib_values copy];
+}
+
+- (NSArray *)getTitles:(PSSpecifier *)specifier {
+	return [hk_lib_titles copy];
+}
+
 - (instancetype)init {
 	if((self = [super init])) {
 		prefs = [ShadowService getUserDefaults];
+
+		hk_lib_values = [NSMutableArray new];
+		hk_lib_titles = [NSMutableArray new];
+
+		hookkit_lib_t hooklibs = [HKSubstitutor getAvailableSubstitutorTypes];
+		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
+
+		[hk_lib_values addObject:@"auto"];
+		[hk_lib_titles addObject:@"Automatic"];
+
+        for(NSDictionary* hooklib_info in hooklibs_info) {
+			[hk_lib_values addObject:hooklib_info[@"id"]];
+			[hk_lib_titles addObject:hooklib_info[@"name"]];
+        }
 	}
 
 	return self;
