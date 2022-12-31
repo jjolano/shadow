@@ -120,6 +120,7 @@
         if(!lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat" elseAddr:lstat];
 
         if(_service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
+            NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
             path = [_service resolvePath:path];
         }
     }
