@@ -492,6 +492,11 @@
 		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
 		<string>/usr/lib/tweakloader.dylib</string>
 		<string>/usr/lib/libjailbreak.dylib</string>
+		<string>/usr/lib/libhooker.dylib</string>
+		<string>/usr/lib/libblackjack.dylib</string>
+		<string>/usr/lib/libellekit.dylib</string>
+		<string>/usr/lib/libsubstitute.dylib</string>
+		<string>/usr/lib/libsubstrate.dylib</string>
 		<string>/dev/ptmx</string>
 		<string>/dev/kmem</string>
 		<string>/dev/mem</string>
@@ -534,6 +539,7 @@
 		<string>SELF LIKE '/*/LIAPP*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*curses*'</string>
 	</array>
 	<key>BlacklistURLSchemes</key>
