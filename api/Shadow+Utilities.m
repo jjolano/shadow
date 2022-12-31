@@ -35,11 +35,11 @@
 }
 
 + (NSString *)getStandardizedPath:(NSString *)path {
-    if([path containsString:@"/./"]) {
+    while([path containsString:@"/./"]) {
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
     }
 
-    if([path containsString:@"//"]) {
+    while([path containsString:@"//"]) {
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
     }
 
