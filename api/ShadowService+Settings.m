@@ -6,6 +6,7 @@
         @"Global_Enabled" : @(NO),
         @"HK_Library" : @"auto",
         @"Tweak_CompatEx" : @(NO),
+        @"Rootless" : @(NO),
         @"Hook_Filesystem" : @(YES),
         @"Hook_DynamicLibraries" : @(YES),
         @"Hook_URLScheme" : @(YES),

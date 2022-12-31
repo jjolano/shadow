@@ -63,6 +63,30 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Use this setting if you are running Shadow on a rootless jailbreak.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>key</key>
+			<string>Rootless</string>
+			<key>id</key>
+			<string>Rootless</string>
+			<key>label</key>
+			<string>Rootless Mode</string>
+			<key>defaults</key>
+			<string>me.jjolano.shadow</string>
+			<key>default</key>
+			<false/>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>Essential Hooks</string>
 			<key>footerText</key>
