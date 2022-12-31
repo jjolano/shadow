@@ -37,32 +37,34 @@
         return YES;
     }
 
-    NSString* self_image_name = nil;
-    bool skipped = false;
+    if(backtrace) {
+        NSString* self_image_name = nil;
+        bool skipped = false;
 
-    for(NSNumber* sym_addr in backtrace) {
-        void* ptr_addr = (void *)[sym_addr unsignedLongValue];
+        for(NSNumber* sym_addr in backtrace) {
+            void* ptr_addr = (void *)[sym_addr unsignedLongValue];
 
-        // Lookup symbol
-        const char* image_path = dyld_image_path_containing_address(ptr_addr);
+            // Lookup symbol
+            const char* image_path = dyld_image_path_containing_address(ptr_addr);
 
-        if(image_path) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+            if(image_path) {
+                NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
-            if(!skipped) {
-                // Skip the first entry
-                skipped = true;
-                self_image_name = [image_name copy];
-                continue;
-            }
-            
-            if([self isPathRestricted:image_name]) {
-                if([image_name isEqualToString:self_image_name]) {
-                    // skip Shadow calls
+                if(!skipped) {
+                    // Skip the first entry
+                    skipped = true;
+                    self_image_name = [image_name copy];
                     continue;
                 }
+                
+                if([self isPathRestricted:image_name]) {
+                    if([image_name isEqualToString:self_image_name]) {
+                        // skip Shadow calls
+                        continue;
+                    }
 
-                return YES;
+                    return YES;
+                }
             }
         }
     }

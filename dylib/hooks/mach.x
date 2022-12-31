@@ -2,7 +2,7 @@
 
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    if(service_name) {
+    if(service_name && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_check_in", name);
 
@@ -24,7 +24,7 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    if(service_name) {
+    if(service_name && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_look_up", name);
 
