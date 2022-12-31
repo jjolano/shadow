@@ -5,6 +5,7 @@
     return @{
         @"Global_Enabled" : @(NO),
         @"Tweak_CompatEx" : @(NO),
+        @"Rootless" : @(NO),
         @"Hook_Filesystem" : @(YES),
         @"Hook_DynamicLibraries" : @(YES),
         @"Hook_URLScheme" : @(YES),
