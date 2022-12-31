@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 
 #import "../api/common.h"
+#import "../api/rootless.h"
 #import "../api/Shadow.h"
 #import "../api/ShadowService.h"
 
