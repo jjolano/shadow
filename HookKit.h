@@ -1,3 +1,6 @@
+#ifndef hookkit_h
+#define hookkit_h
+
 #import <Foundation/Foundation.h>
 
 typedef enum {
@@ -52,3 +55,4 @@ typedef const struct HKImage* HKImageRef;
 
 - (hookkit_status_t)performHooksWithSubstitutor:(HKSubstitutor *)substitutor;
 @end
+#endif

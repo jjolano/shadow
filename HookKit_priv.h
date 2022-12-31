@@ -13,11 +13,9 @@
 #import "vendor/fishhook/fishhook.h"
 #endif
 
-#ifndef __arm64e__
-#ifdef __arm64__
+#if __arm64__ || __arm64e__
 #if __has_include("vendor/dobby/dobby.h")
 #import "vendor/dobby/dobby.h"
-#endif
 #endif
 #endif
 
