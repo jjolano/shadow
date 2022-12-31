@@ -28,6 +28,7 @@
 
 #import "../../api/Shadow.h"
 #import <substrate.h>
+#import <HookKit.h>
 
 #ifdef DEBUG
 #define NSLog(...) NSLog(__VA_ARGS__)
@@ -42,41 +43,41 @@
 
 extern Shadow* _shadow;
 
-extern void shadowhook_DeviceCheck(void);
-extern void shadowhook_dyld(void);
-extern void shadowhook_libc(void);
-extern void shadowhook_mach(void);
-extern void shadowhook_NSArray(void);
-extern void shadowhook_NSBundle(void);
-extern void shadowhook_NSData(void);
-extern void shadowhook_NSDictionary(void);
-extern void shadowhook_NSFileHandle(void);
-extern void shadowhook_NSFileManager(void);
-extern void shadowhook_NSFileVersion(void);
-extern void shadowhook_NSFileWrapper(void);
-extern void shadowhook_NSProcessInfo(void);
-extern void shadowhook_NSString(void);
-extern void shadowhook_NSURL(void);
-extern void shadowhook_objc(void);
-extern void shadowhook_sandbox(void);
-extern void shadowhook_syscall(void);
-extern void shadowhook_UIApplication(void);
-extern void shadowhook_UIImage(void);
+extern void shadowhook_DeviceCheck(HKBatchHook* hooks);
+extern void shadowhook_dyld(HKBatchHook* hooks);
+extern void shadowhook_libc(HKBatchHook* hooks);
+extern void shadowhook_mach(HKBatchHook* hooks);
+extern void shadowhook_NSArray(HKBatchHook* hooks);
+extern void shadowhook_NSBundle(HKBatchHook* hooks);
+extern void shadowhook_NSData(HKBatchHook* hooks);
+extern void shadowhook_NSDictionary(HKBatchHook* hooks);
+extern void shadowhook_NSFileHandle(HKBatchHook* hooks);
+extern void shadowhook_NSFileManager(HKBatchHook* hooks);
+extern void shadowhook_NSFileVersion(HKBatchHook* hooks);
+extern void shadowhook_NSFileWrapper(HKBatchHook* hooks);
+extern void shadowhook_NSProcessInfo(HKBatchHook* hooks);
+extern void shadowhook_NSString(HKBatchHook* hooks);
+extern void shadowhook_NSURL(HKBatchHook* hooks);
+extern void shadowhook_objc(HKBatchHook* hooks);
+extern void shadowhook_sandbox(HKBatchHook* hooks);
+extern void shadowhook_syscall(HKBatchHook* hooks);
+extern void shadowhook_UIApplication(HKBatchHook* hooks);
+extern void shadowhook_UIImage(HKBatchHook* hooks);
 
-extern void shadowhook_libc_extra(void);
-extern void shadowhook_libc_envvar(void);
-extern void shadowhook_libc_lowlevel(void);
-extern void shadowhook_libc_antidebugging(void);
+extern void shadowhook_libc_extra(HKBatchHook* hooks);
+extern void shadowhook_libc_envvar(HKBatchHook* hooks);
+extern void shadowhook_libc_lowlevel(HKBatchHook* hooks);
+extern void shadowhook_libc_antidebugging(HKBatchHook* hooks);
 
-extern void shadowhook_dyld_extra(void);
-extern void shadowhook_dyld_symlookup(void);
+extern void shadowhook_dyld_extra(HKBatchHook* hooks);
+extern void shadowhook_dyld_symlookup(HKBatchHook* hooks);
 extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide);
 
-extern void shadowhook_NSProcessInfo_fakemac(void);
+extern void shadowhook_NSProcessInfo_fakemac(HKBatchHook* hooks);
 
-extern void shadowhook_mem(void);
+extern void shadowhook_mem(HKBatchHook* hooks);
 
-extern void shadowhook_objc_hidetweakclasses(void);
+extern void shadowhook_objc_hidetweakclasses(HKBatchHook* hooks);

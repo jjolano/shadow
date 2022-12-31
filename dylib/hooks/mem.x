@@ -32,7 +32,7 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
     return result;
 }
 
-void shadowhook_mem(void) {
-    MSHookFunction(vm_region_64, replaced_vm_region_64, (void **) &original_vm_region_64);
-    MSHookFunction(vm_region_recurse_64, replaced_vm_region_recurse_64, (void **) &original_vm_region_recurse_64);
+void shadowhook_mem(HKBatchHook* hooks) {
+    [hooks addFunctionHook:vm_region_64 withReplacement:replaced_vm_region_64 outOldPtr:(void **) &original_vm_region_64];
+    [hooks addFunctionHook:vm_region_recurse_64 withReplacement:replaced_vm_region_recurse_64 outOldPtr:(void **) &original_vm_region_recurse_64];
 }

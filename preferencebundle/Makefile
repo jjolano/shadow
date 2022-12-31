@@ -5,8 +5,8 @@ BUNDLE_NAME = ShadowSettings
 ShadowAPI = $(wildcard ../api/*.m)
 
 ShadowSettings_FILES = $(wildcard *.m) $(ShadowAPI)
-ShadowSettings_FRAMEWORKS = Foundation UIKit CoreFoundation
-ShadowSettings_EXTRA_FRAMEWORKS = AltList
+ShadowSettings_FRAMEWORKS = Foundation
+ShadowSettings_EXTRA_FRAMEWORKS = AltList HookKit
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences AppSupport
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
 ShadowSettings_CFLAGS = -fobjc-arc -DTHEOS_LEAN_AND_MEAN
