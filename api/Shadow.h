@@ -5,6 +5,7 @@
 @interface Shadow : NSObject
 @property ShadowService* service;
 @property BOOL tweakCompatibility;
+@property BOOL rootlessMode;
 
 - (BOOL)isCallerTweak:(NSArray*)backtrace;
 

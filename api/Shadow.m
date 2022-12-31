@@ -137,6 +137,16 @@
         }
     }
 
+    if(_rootlessMode) {
+        if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private"]) {
+            return NO;
+        }
+
+        if([path hasPrefix:@"/var/jb"]) {
+            return YES;
+        }
+    }
+
     // Check if path is restricted from Shadow Service.
     if(_service && [_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);

@@ -109,7 +109,9 @@ ShadowService* _srv = nil;
     [_srv loadRulesets];
 
     _shadow = [Shadow shadowWithService:_srv];
+
     [_shadow setTweakCompatibility:[prefs_load[@"Tweak_CompatEx"] boolValue]];
+    [_shadow setRootlessMode:[prefs_load[@"Rootless"] boolValue]];
 
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
