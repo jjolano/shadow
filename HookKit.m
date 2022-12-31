@@ -611,18 +611,18 @@
 
 - (void)addFunctionHook:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     HKFunctionHook* hook = [HKFunctionHook new];
-    [hook setFunction:function];
-    [hook setReplacement:replacement];
-    [hook setOrig:old_ptr];
+    [hook setFunction:[NSValue valueWithPointer:function]];
+    [hook setReplacement:[NSValue valueWithPointer:replacement]];
+    [hook setOrig:[NSValue valueWithPointer:old_ptr]];
 
     [functionHooks addObject:hook];
 }
 
 - (void)addMemoryHook:(void *)target withData:(const void *)data size:(size_t)size {
     HKMemoryHook* hook = [HKMemoryHook new];
-    [hook setTarget:target];
-    [hook setData:data];
-    [hook setSize:size];
+    [hook setTarget:[NSValue valueWithPointer:target]];
+    [hook setData:[NSValue valueWithPointer:data]];
+    [hook setSize:[NSNumber numberWithInt:size]];
 
     [memoryHooks addObject:hook];
 }
@@ -641,13 +641,13 @@
 
             for(HKFunctionHook* hkhook in functionHooks) {
                 struct LHFunctionHook hook = {
-                    [hkhook function], [hkhook replacement], [hkhook orig], 0
+                    [[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue], 0
                 };
 
                 [hooks appendBytes:&hook length:sizeof(struct LHFunctionHook)];
             }
 
-            if(_LHHookFunctions([hooks bytes], [functionHooks count])) {
+            if(_LHHookFunctions([hooks mutableBytes], [functionHooks count])) {
                 didFunctions = YES;
             }
         }
@@ -661,13 +661,13 @@
 
             for(HKFunctionHook* hkhook in functionHooks) {
                 struct substitute_function_hook hook = {
-                    [hkhook function], [hkhook replacement], [hkhook orig], 0
+                    [[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue], 0
                 };
 
                 [hooks appendBytes:&hook length:sizeof(struct substitute_function_hook)];
             }
 
-            _substitute_hook_functions([hooks bytes], [functionHooks count], NULL, 0);
+            _substitute_hook_functions([hooks mutableBytes], [functionHooks count], NULL, 0);
             didFunctions = YES;
         }
     }
@@ -677,7 +677,7 @@
         
         if(_MSHookFunction) {
             for(HKFunctionHook* hkhook in functionHooks) {
-                _MSHookFunction([hkhook function], [hkhook replacement], [hkhook orig]);
+                _MSHookFunction([[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue]);
             }
 
             didFunctions = YES;
@@ -690,9 +690,9 @@
 
         for(HKFunctionHook* hkhook in functionHooks) {
             Dl_info info;
-            if(dladdr([hkhook function], &info)) {
+            if(dladdr([[hkhook function] pointerValue], &info)) {
                 struct rebinding hook = {
-                    info.dli_sname, [hkhook replacement], [hkhook orig]
+                    info.dli_sname, [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue]
                 };
 
                 [hooks appendBytes:&hook length:sizeof(struct rebinding)];
@@ -709,7 +709,7 @@
         dobby_enable_near_branch_trampoline();
 
         for(HKFunctionHook* hkhook in functionHooks) {
-            DobbyHook([hkhook function], [hkhook replacement], (dobby_dummy_func_t *)[hkhook orig]);
+            DobbyHook([[hkhook function] pointerValue], [[hkhook replacement] pointerValue], (dobby_dummy_func_t *)[[hkhook orig] pointerValue]);
         }
 
         dobby_disable_near_branch_trampoline();
@@ -726,13 +726,13 @@
 
             for(HKMemoryHook* hkhook in memoryHooks) {
                 struct LHMemoryPatch hook = {
-                    [hkhook target], [hkhook data], [hkhook size], 0
+                    [[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue], 0
                 };
 
                 [hooks appendBytes:&hook length:sizeof(struct LHMemoryPatch)];
             }
 
-            if(_LHPatchMemory([hooks bytes], [memoryHooks count])) {
+            if(_LHPatchMemory([hooks mutableBytes], [memoryHooks count])) {
                 didMemory = YES;
             }
         }
@@ -743,7 +743,7 @@
         
         if(_SubHookMemory) {
             for(HKMemoryHook* hkhook in memoryHooks) {
-                _SubHookMemory([hkhook target], [hkhook data], [hkhook size]);
+                _SubHookMemory([[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue]);
             }
 
             didMemory = YES;
@@ -755,7 +755,7 @@
         
         if(_MSHookMemory) {
             for(HKMemoryHook* hkhook in memoryHooks) {
-                _MSHookMemory([hkhook target], [hkhook data], [hkhook size]);
+                _MSHookMemory([[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue]);
             }
 
             didMemory = YES;
@@ -765,7 +765,7 @@
     #ifdef dobby_h
     if(!didMemory && [substitutor types] & HK_LIB_DOBBY) {
         for(HKMemoryHook* hkhook in memoryHooks) {
-            DobbyCodePatch([hkhook target], (uint8_t *)[hkhook data], [hkhook size]);
+            DobbyCodePatch([[hkhook target] pointerValue], (uint8_t *)[[hkhook data] pointerValue], [[hkhook size] intValue]);
         }
 
         didMemory = YES;

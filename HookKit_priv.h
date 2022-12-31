@@ -20,15 +20,15 @@
 #endif
 
 @interface HKFunctionHook : NSObject
-@property void * function;
-@property void * replacement;
-@property void ** orig;
+@property NSValue* function;
+@property NSValue* replacement;
+@property NSValue* orig;
 @end
 
 @interface HKMemoryHook : NSObject
-@property void * target;
-@property const void * data;
-@property size_t size;
+@property NSValue* target;
+@property NSValue* data;
+@property NSNumber* size;
 @end
 
 #define PATH_LIBHOOKER      "/usr/lib/libhooker.dylib"
