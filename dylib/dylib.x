@@ -136,12 +136,13 @@ ShadowService* _srv = nil;
         }
     }
 
-    HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
+    HKSubstitutor* substitutor = [HKSubstitutor new];
 
     if(hooklibs != HK_LIB_NONE) {
         [substitutor setTypes:hooklibs];
-        [substitutor initLibraries];
     }
+
+    [substitutor initLibraries];
 
     HKBatchHook* hooks = [HKBatchHook new];
 
@@ -272,7 +273,7 @@ ShadowService* _srv = nil;
 
     if([prefs_load[@"Hook_HideApps"] boolValue]) {
         NSLog(@"%@", @"+ apps");
-        
+
         shadowhook_LSApplicationWorkspace(hooks);
     }
 

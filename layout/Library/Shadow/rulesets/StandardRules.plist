@@ -517,10 +517,12 @@
 		<string>/var/log/</string>
 		<string>/var/mobile/Library/Application Support/</string>
 		<string>/var/root/</string>
+		<string>/private/preboot/jb</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
 		<string>SELF LIKE '/private/preboot/*/procursus*'</string>
+		<string>SELF LIKE '/private/preboot/*/jb*'</string>
 		<string>SELF LIKE '/var/run/*.pid'</string>
 		<string>SELF ENDSWITH '.distrib'</string>
 		<string>SELF LIKE '/*/LIAPP*'</string>

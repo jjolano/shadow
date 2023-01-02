@@ -40,7 +40,7 @@
 			<key>label</key>
 			<string>Compatibility Settings</string>
 			<key>footerText</key>
-			<string>Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed.</string>
+			<string>Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed by a tweak.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -64,7 +64,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Use this setting if you are running Shadow on a rootless jailbreak.</string>
+			<string>Use this setting if you are running Shadow on a rootless jailbreak. Do not enable this if your jailbreak is not rootless.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -292,11 +292,11 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>Hook_AntiDebugging</string>
+			<string>Hook_ObjCRuntime</string>
 			<key>id</key>
-			<string>Hook_AntiDebugging</string>
+			<string>Hook_ObjCRuntime</string>
 			<key>label</key>
-			<string>Anti-Debugging Methods</string>
+			<string>Objective-C Class Methods</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -310,11 +310,11 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>key</key>
-			<string>Hook_ObjCRuntime</string>
+			<string>Hook_AntiDebugging</string>
 			<key>id</key>
-			<string>Hook_ObjCRuntime</string>
+			<string>Hook_AntiDebugging</string>
 			<key>label</key>
-			<string>Runtime Class Lookups</string>
+			<string>Anti-Debugging Methods</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -350,7 +350,7 @@
 			<key>id</key>
 			<string>Hook_HideApps</string>
 			<key>label</key>
-			<string>Prevent App Enumeration</string>
+			<string>App Enumeration</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -376,7 +376,7 @@
 			<key>id</key>
 			<string>Hook_Sandbox</string>
 			<key>label</key>
-			<string>Enforce Sandbox</string>
+			<string>Enforce App Sandbox</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

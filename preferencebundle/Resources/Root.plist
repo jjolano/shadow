@@ -62,7 +62,7 @@
 			<key>cell</key>
 			<string>PSLinkListCell</string>
 			<key>detail</key>
-			<string>ATLApplicationListSubcontrollerController</string>
+			<string>SHDWATLController</string>
 			<key>subcontrollerClass</key>
 			<string>SHDWAppListController</string>
 			<key>label</key>
@@ -75,6 +75,10 @@
 				</dict>
 			</array>
 			<key>useSearchBar</key>
+			<true/>
+			<key>alphabeticIndexingEnabled</key>
+			<true/>
+			<key>showIdentifiersAsSubtitle</key>
 			<true/>
 		</dict>
 		<dict>
