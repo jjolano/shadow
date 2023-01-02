@@ -24,10 +24,12 @@ This is expected behaviour, as extra processing is done on basically everything.
 
 If your jailbreak is still getting detected, here are some things to try:
 
-* Use Choicy to disable all tweaks for the app except Shadow. If this works but you require tweaks, please enable tweaks one at a time until detection and create a new GitHub Issue with the name of the suspected conflicting tweak.
+* Disable any compatibility settings.
+* Try a different hooking library.
+* Disable all tweaks except Shadow. You can use Choicy or libhooker Configurator to do this.
 * Use vnodebypass.
-* Reboot into unjailbroken state and try using the app. Yes, this can be inconvenient but it can work sometimes.
-* Use another bypass tweak, whether general or app-specific. Be wary of enabling multiple bypass tweaks in case of conflicts.
+* If semi-(un)tethered, reboot into normal jailed iOS and use the app. This is inconvenient but it can work.
+* Use another bypass tweak, ideally an app-specific bypass tweak. Be wary of enabling multiple bypass tweaks in case of conflicts.
 
 ## Installation
 
