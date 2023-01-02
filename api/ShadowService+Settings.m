@@ -24,7 +24,8 @@
         @"Hook_Syscall" : @(NO),
         @"Hook_Sandbox" : @(NO),
         @"Hook_Memory" : @(NO),
-        @"Hook_TweakClasses" : @(NO)
+        @"Hook_TweakClasses" : @(NO),
+        @"Hook_HideApps" : @(NO)
     };
 }
 

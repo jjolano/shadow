@@ -63,21 +63,17 @@ extern void shadowhook_sandbox(HKBatchHook* hooks);
 extern void shadowhook_syscall(HKBatchHook* hooks);
 extern void shadowhook_UIApplication(HKBatchHook* hooks);
 extern void shadowhook_UIImage(HKBatchHook* hooks);
-
 extern void shadowhook_libc_extra(HKBatchHook* hooks);
 extern void shadowhook_libc_envvar(HKBatchHook* hooks);
 extern void shadowhook_libc_lowlevel(HKBatchHook* hooks);
 extern void shadowhook_libc_antidebugging(HKBatchHook* hooks);
-
 extern void shadowhook_dyld_extra(HKBatchHook* hooks);
 extern void shadowhook_dyld_symlookup(HKBatchHook* hooks);
 extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_remove_image(const struct mach_header* mh, intptr_t vmaddr_slide);
-
 extern void shadowhook_NSProcessInfo_fakemac(HKBatchHook* hooks);
-
 extern void shadowhook_mem(HKBatchHook* hooks);
-
 extern void shadowhook_objc_hidetweakclasses(HKBatchHook* hooks);
+extern void shadowhook_LSApplicationWorkspace(HKBatchHook* hooks);

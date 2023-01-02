@@ -270,6 +270,12 @@ ShadowService* _srv = nil;
         shadowhook_objc_hidetweakclasses(hooks);
     }
 
+    if([prefs_load[@"Hook_HideApps"] boolValue]) {
+        NSLog(@"%@", @"+ apps");
+        
+        shadowhook_LSApplicationWorkspace(hooks);
+    }
+
     [hooks performHooksWithSubstitutor:substitutor];
 
     NSLog(@"%@", @"completed hooks");

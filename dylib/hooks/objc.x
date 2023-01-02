@@ -40,7 +40,7 @@ static const char* replaced_class_getImageName(Class cls) {
 
     if(result) {
         if([_shadow isCPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return _dyld_get_image_name(0);
+            return NULL;
         }
     }
 
