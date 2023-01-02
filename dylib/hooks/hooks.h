@@ -33,6 +33,7 @@
 #import <HookKit.h>
 
 // HookKit override
+#define MSHookFunction(a,b,c) [hooks addFunctionHook:a withReplacement:b outOldPtr:c]
 #define MSHookMessageEx(a,b,c,d) [[HKSubstitutor defaultSubstitutor] hookMessageInClass:a withSelector:b withReplacement:c outOldPtr:(void **)d]
 
 #ifdef DEBUG

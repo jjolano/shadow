@@ -10,7 +10,7 @@
 			<key>label</key>
 			<string>Internal Settings</string>
 			<key>footerText</key>
-			<string>Controls the methods used to intercept application code. Some hooking libraries may provide a bypass performance improvement.</string>
+			<string>Controls the methods used to intercept application code. Some hooking libraries may provide a bypass improvement, but may also affect app stability.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
