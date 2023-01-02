@@ -174,6 +174,50 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
     return result;
 }
 
+static int (*original_statvfs)(const char* pathname, struct statvfs* buf);
+static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
+    int result = original_statvfs(pathname, buf);
+
+    if(result == 0 && pathname) {
+        struct statfs st;
+        int statfs = replaced_statfs(pathname, &st);
+
+        if(statfs == -1) {
+            memset(buf, 0, sizeof(struct statvfs));
+            return -1;
+        }
+
+        if(strcmp(st.f_mntonname, "/") == 0) {
+            // Mark rootfs read-only
+            buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
+        }
+    }
+
+    return result;
+}
+
+static int (*original_fstatvfs)(int fd, struct statvfs* buf);
+static int replaced_fstatvfs(int fd, struct statvfs* buf) {
+    int result = original_fstatvfs(fd, buf);
+
+    if(result == 0) {
+        struct statfs st;
+        int statfs = replaced_fstatfs(fd, &st);
+
+        if(statfs == -1) {
+            memset(buf, 0, sizeof(struct statvfs));
+            return -1;
+        }
+
+        if(strcmp(st.f_mntonname, "/") == 0) {
+            // Mark rootfs read-only
+            buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
+        }
+    }
+
+    return result;
+}
+
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
     int result = original_stat(pathname, buf);
@@ -742,6 +786,8 @@ void shadowhook_libc(HKBatchHook* hooks) {
     [hooks addFunctionHook:chroot withReplacement:replaced_chroot outOldPtr:(void **) &original_chroot];
     [hooks addFunctionHook:statfs withReplacement:replaced_statfs outOldPtr:(void **) &original_statfs];
     [hooks addFunctionHook:fstatfs withReplacement:replaced_fstatfs outOldPtr:(void **) &original_fstatfs];
+    [hooks addFunctionHook:statvfs withReplacement:replaced_statvfs outOldPtr:(void **) &original_statvfs];
+    [hooks addFunctionHook:fstatvfs withReplacement:replaced_fstatvfs outOldPtr:(void **) &original_fstatvfs];
     [hooks addFunctionHook:stat withReplacement:replaced_stat outOldPtr:(void **) &original_stat];
     [hooks addFunctionHook:lstat withReplacement:replaced_lstat outOldPtr:(void **) &original_lstat];
     [hooks addFunctionHook:faccessat withReplacement:replaced_faccessat outOldPtr:(void **) &original_faccessat];

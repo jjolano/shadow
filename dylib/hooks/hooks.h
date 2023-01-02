@@ -3,6 +3,7 @@
 
 #import <stdio.h>
 #import <sys/stat.h>
+#import <sys/statvfs.h>
 #import <sys/mount.h>
 #import <sys/syscall.h>
 #import <sys/utsname.h>
@@ -28,7 +29,11 @@
 
 #import "../../api/Shadow.h"
 #import <substrate.h>
+
 #import <HookKit.h>
+
+// HookKit override
+#define MSHookMessageEx(a,b,c,d) [[HKSubstitutor defaultSubstitutor] hookMessageInClass:a withSelector:b withReplacement:c outOldPtr:(void **)d]
 
 #ifdef DEBUG
 #define NSLog(...) NSLog(__VA_ARGS__)
