@@ -320,21 +320,21 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 }
 
 void shadowhook_dyld(HKBatchHook* hooks) {
-    [hooks addFunctionHook:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
-    [hooks addFunctionHook:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
-    [hooks addFunctionHook:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
-    [hooks addFunctionHook:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
-    [hooks addFunctionHook:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
-    [hooks addFunctionHook:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
+    MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
+    MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
+    MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
+    MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
+    MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
+    MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
 }
 
 void shadowhook_dyld_extra(HKBatchHook* hooks) {
-    [hooks addFunctionHook:task_info withReplacement:replaced_task_info outOldPtr:(void **) &original_task_info];
-    [hooks addFunctionHook:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
-    [hooks addFunctionHook:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
+    MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
+    MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_symlookup(HKBatchHook* hooks) {
-    [hooks addFunctionHook:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
-    [hooks addFunctionHook:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
+    MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
+    MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
 }

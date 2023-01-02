@@ -124,6 +124,22 @@
 			<string>Media</string>
 			<string>MobileSoftwareUpdate</string>
 		</array>
+		<key>/var/mobile/Media</key>
+		<array>
+			<string>AirFair</string>
+			<string>Books</string>
+			<string>DCIM</string>
+			<string>Downloads</string>
+			<string>MediaAnalysis</string>
+			<string>PublicStaging</string>
+			<string>Recordings</string>
+			<string>PhotoData</string>
+			<string>Photos</string>
+			<string>Radio</string>
+			<string>Purchases</string>
+			<string>iTunesRestore</string>
+			<string>iTunes_Control</string>
+		</array>
 		<key>/bin</key>
 		<array>
 			<string>ps</string>
