@@ -45,13 +45,15 @@
         }
     }
 
-    // Filter some unneeded filenames.
+    // Filter some conflicting filenames.
     NSArray* filter_names = @[
         @"/.",
         @"/Library/Application Support",
         @"/usr/lib",
         @"/usr/libexec",
-        @"/usr/lib/system"
+        @"/usr/lib/system",
+        @"/var/mobile/Library/Caches",
+        @"/var/mobile/Media"
     ];
 
     for(NSString* name in filter_names) {
