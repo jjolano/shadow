@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RulesetInfo</key>
+	<dict>
+		<key>Name</key>
+		<string>Miscellaneous Jailbreak Files</string>
+		<key>Author</key>
+		<string>jjolano</string>
+	</dict>
+	<key>BlacklistExactPaths</key>
+	<array>
+		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
+		<string>/usr/lib/tweakloader.dylib</string>
+		<string>/usr/lib/libjailbreak.dylib</string>
+		<string>/usr/lib/libhooker.dylib</string>
+		<string>/usr/lib/libblackjack.dylib</string>
+		<string>/usr/lib/libellekit.dylib</string>
+		<string>/usr/lib/libsubstitute.dylib</string>
+		<string>/usr/lib/libsubstrate.dylib</string>
+		<string>/dev/ptmx</string>
+		<string>/dev/kmem</string>
+		<string>/dev/mem</string>
+		<string>/dev/vn0</string>
+		<string>/dev/vn1</string>
+	</array>
+	<key>BlacklistPaths</key>
+	<array>
+		<string>/usr/lib/TweakInject</string>
+		<string>/usr/lib/tweaks</string>
+		<string>/usr/lib/libkrw</string>
+		<string>/usr/libexec/ellekit</string>
+		<string>/var/containers/Bundle/iosbinpack64</string>
+		<string>/var/containers/Bundle/tweaksupport</string>
+		<string>/var/db/stash</string>
+		<string>/var/db/sudo</string>
+		<string>/var/run/FilzaHelper</string>
+		<string>/var/run/sudo</string>
+		<string>/usr/libexec/cydia</string>
+		<string>/System/Library/PreferenceBundles/AppList.bundle</string>
+		<string>/Library/Frameworks/</string>
+		<string>/Library/LaunchDaemons/</string>
+		<string>/Library/Caches/cy-</string>
+		<string>/dev/dlci.</string>
+		<string>/private/preboot/jb</string>
+	</array>
+	<key>BlacklistPredicates</key>
+	<array>
+		<string>SELF LIKE '/private/preboot/*/procursus*'</string>
+		<string>SELF LIKE '/private/preboot/*/jb*'</string>
+		<string>SELF LIKE '/var/run/*.pid'</string>
+		<string>SELF ENDSWITH '.distrib'</string>
+		<string>SELF LIKE '/*/LIAPP*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
+	</array>
+	<key>BlacklistURLSchemes</key>
+	<array>
+		<string>cydia</string>
+		<string>zbra</string>
+		<string>sileo</string>
+		<string>undecimus</string>
+		<string>xina</string>
+		<string>filza</string>
+	</array>
+</dict>
+</plist>

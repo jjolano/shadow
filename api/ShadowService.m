@@ -96,31 +96,7 @@
             };
         } else {
             // Sandboxed and hooked
-            NSString* path = rawPath;
-
-            if([path containsString:@"/./"]) {
-                path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-            }
-
-            if([path containsString:@"//"]) {
-                path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-            }
-
-            if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents removeObjectAtIndex:1];
-                path = [NSString pathWithComponents:pathComponents];
-            }
-
-            if([path hasPrefix:@"/var/tmp"]) {
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents removeObjectAtIndex:1];
-                path = [NSString pathWithComponents:pathComponents];
-            }
-            
-            response = @{
-                @"path" : path
-            };
+            return nil;
         }
     } else if([name isEqualToString:@"isPathRestricted"]) {
         if(!userInfo) {
@@ -129,20 +105,12 @@
         
         NSString* path = userInfo[@"path"];
 
-        if(!path || ![path isAbsolutePath] || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
-            return nil;
-        }
-
-        if(dpkgPath && ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            return nil;
-        }
-
         NSLog(@"%@: %@", name, path);
         
         // Check if path is restricted.
         BOOL restricted = NO;
 
-        if(rulesets) {
+        if(path && [path isAbsolutePath] && rulesets) {
             // Check rulesets
             if(!restricted) {
                 for(NSDictionary* ruleset in rulesets) {
@@ -317,7 +285,6 @@
     NSNumber* response_cached = [responseCache objectForKey:path];
 
     if(response_cached) {
-        NSLog(@"cached: %@", path);
         return [response_cached boolValue];
     }
 
