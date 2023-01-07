@@ -49,6 +49,8 @@ An easy way to migrate a Theos tweak to HookKit is to simply override the `MSHoo
 #define MSHookMessageEx     HKHookMessage
 ```
 
+Note that this does not use batching by default. See the below example for batching.
+
 ## Examples
 
 MobileSubstrate method:
