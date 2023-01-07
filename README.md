@@ -27,7 +27,7 @@ Advantages:
 Disadvantages:
 
 * Some library-specific functionality is not implemented (yet)
-* Existing tweaks' will need to be rewritten or recompiled to use HookKit
+* Existing tweaks will need to be rewritten/recompiled to use HookKit
 
 ## Library Support
 
