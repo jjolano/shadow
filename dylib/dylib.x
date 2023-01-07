@@ -117,6 +117,7 @@ ShadowService* _srv = nil;
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
 
+    #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
     
     if(prefs_load[@"HK_Library"]) {
@@ -143,14 +144,16 @@ ShadowService* _srv = nil;
     }
 
     [substitutor initLibraries];
-
-    HKBatchHook* hooks = [HKBatchHook new];
+    [substitutor setBatching:YES];
+    #else
+    HKSubstitutor* substitutor = NULL;
+    #endif
 
     if([prefs_load[@"Hook_Filesystem"] boolValue]) {
         NSLog(@"%@", @"+ filesystem");
 
-        shadowhook_libc(hooks);
-        shadowhook_NSFileManager(hooks);
+        shadowhook_libc(substitutor);
+        shadowhook_NSFileManager(substitutor);
     }
 
     if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
@@ -162,122 +165,124 @@ ShadowService* _srv = nil;
         _dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
         _dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
 
-        shadowhook_dyld(hooks);
+        shadowhook_dyld(substitutor);
     }
 
     if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
         NSLog(@"%@", @"+ dylibex");
 
-        shadowhook_dyld_extra(hooks);
+        shadowhook_dyld_extra(substitutor);
     }
 
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
         NSLog(@"%@", @"+ urlscheme");
 
-        shadowhook_UIApplication(hooks);
+        shadowhook_UIApplication(substitutor);
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
         NSLog(@"%@", @"+ envvars");
 
-        shadowhook_libc_envvar(hooks);
-        shadowhook_NSProcessInfo(hooks);
+        shadowhook_libc_envvar(substitutor);
+        shadowhook_NSProcessInfo(substitutor);
     }
 
     if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
         NSLog(@"%@", @"+ filesystemex");
 
-        shadowhook_libc_extra(hooks);
-        shadowhook_NSFileHandle(hooks);
-        shadowhook_NSFileVersion(hooks);
-        shadowhook_NSFileWrapper(hooks);
+        shadowhook_libc_extra(substitutor);
+        shadowhook_NSFileHandle(substitutor);
+        shadowhook_NSFileVersion(substitutor);
+        shadowhook_NSFileWrapper(substitutor);
     }
 
     if([prefs_load[@"Hook_Foundation"] boolValue]) {
         NSLog(@"%@", @"+ foundation");
 
-        shadowhook_NSArray(hooks);
-        shadowhook_NSDictionary(hooks);
-        shadowhook_NSBundle(hooks);
-        shadowhook_NSString(hooks);
-        shadowhook_NSURL(hooks);
-        shadowhook_NSData(hooks);
-        shadowhook_UIImage(hooks);
+        shadowhook_NSArray(substitutor);
+        shadowhook_NSDictionary(substitutor);
+        shadowhook_NSBundle(substitutor);
+        shadowhook_NSString(substitutor);
+        shadowhook_NSURL(substitutor);
+        shadowhook_NSData(substitutor);
+        shadowhook_UIImage(substitutor);
     }
 
     if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
         NSLog(@"%@", @"+ devicecheck");
 
-        shadowhook_DeviceCheck(hooks);
+        shadowhook_DeviceCheck(substitutor);
     }
 
     if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
         NSLog(@"%@", @"+ mach");
 
-        shadowhook_mach(hooks);
+        shadowhook_mach(substitutor);
     }
 
     if([prefs_load[@"Hook_SymLookup"] boolValue]) {
         NSLog(@"%@", @"+ dlsym");
 
-        shadowhook_dyld_symlookup(hooks);
+        shadowhook_dyld_symlookup(substitutor);
     }
 
     if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
         NSLog(@"%@", @"+ llc");
 
-        shadowhook_libc_lowlevel(hooks);
+        shadowhook_libc_lowlevel(substitutor);
     }
 
     if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
         NSLog(@"%@", @"+ debug");
 
-        shadowhook_libc_antidebugging(hooks);
+        shadowhook_libc_antidebugging(substitutor);
     }
 
     if([prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
         NSLog(@"%@", @"+ objc");
 
-        shadowhook_objc(hooks);
+        shadowhook_objc(substitutor);
     }
 
     if([prefs_load[@"Hook_FakeMac"] boolValue]) {
         NSLog(@"%@", @"+ m1");
 
-        shadowhook_NSProcessInfo_fakemac(hooks);
+        shadowhook_NSProcessInfo_fakemac(substitutor);
     }
 
     if([prefs_load[@"Hook_Syscall"] boolValue]) {
         NSLog(@"%@", @"+ syscall");
 
-        shadowhook_syscall(hooks);
+        shadowhook_syscall(substitutor);
     }
 
     if([prefs_load[@"Hook_Sandbox"] boolValue]) {
         NSLog(@"%@", @"+ sandbox");
 
-        shadowhook_sandbox(hooks);
+        shadowhook_sandbox(substitutor);
     }
 
     if([prefs_load[@"Hook_Memory"] boolValue]) {
         NSLog(@"%@", @"+ memory");
 
-        shadowhook_mem(hooks);
+        shadowhook_mem(substitutor);
     }
 
     if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
         NSLog(@"%@", @"+ classes");
         
-        shadowhook_objc_hidetweakclasses(hooks);
+        shadowhook_objc_hidetweakclasses(substitutor);
     }
 
     if([prefs_load[@"Hook_HideApps"] boolValue]) {
         NSLog(@"%@", @"+ apps");
 
-        shadowhook_LSApplicationWorkspace(hooks);
+        shadowhook_LSApplicationWorkspace(substitutor);
     }
 
-    [hooks performHooksWithSubstitutor:substitutor];
+    #ifdef hookkit_h
+    [substitutor executeHooks];
+    #endif
 
     NSLog(@"%@", @"completed hooks");
 }

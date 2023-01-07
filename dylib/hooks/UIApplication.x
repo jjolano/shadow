@@ -14,6 +14,6 @@
 %end
 %end
 
-void shadowhook_UIApplication(HKBatchHook* hooks) {
+void shadowhook_UIApplication(HKSubstitutor* hooks) {
     %init(shadowhook_UIApplication);
 }

@@ -302,6 +302,6 @@
 %end
 %end
 
-void shadowhook_DeviceCheck(HKBatchHook* hooks) {
+void shadowhook_DeviceCheck(HKSubstitutor* hooks) {
     %init(shadowhook_DeviceCheck);
 }

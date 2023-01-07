@@ -100,6 +100,6 @@
 %end
 %end
 
-void shadowhook_NSData(HKBatchHook* hooks) {
+void shadowhook_NSData(HKSubstitutor* hooks) {
     %init(shadowhook_NSData);
 }

@@ -136,7 +136,7 @@
 %end
 %end
 
-void shadowhook_NSURL(HKBatchHook* hooks) {
+void shadowhook_NSURL(HKSubstitutor* hooks) {
     %init(shadowhook_NSURL);
     %init(shadowhook_NSURLRequest);
     %init(shadowhook_NSURLSession);

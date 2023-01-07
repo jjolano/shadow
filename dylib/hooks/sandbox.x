@@ -188,7 +188,7 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
 }
 
-void shadowhook_sandbox(HKBatchHook* hooks) {
+void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
     // MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);

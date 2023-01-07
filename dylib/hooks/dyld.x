@@ -319,7 +319,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     return result;
 }
 
-void shadowhook_dyld(HKBatchHook* hooks) {
+void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
     MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
@@ -328,13 +328,13 @@ void shadowhook_dyld(HKBatchHook* hooks) {
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
 }
 
-void shadowhook_dyld_extra(HKBatchHook* hooks) {
+void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
     MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
-void shadowhook_dyld_symlookup(HKBatchHook* hooks) {
+void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
     MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
     MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
 }
