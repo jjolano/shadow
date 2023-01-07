@@ -40,6 +40,17 @@ So far, support has been (mostly) implemented for the following code substitutio
 * Fishhook
 * Dobby
 
+## Migration
+
+An easy way to migrate a Theos tweak to HookKit is to simply override the `MSHookFunction` and `MSHookMessageEx` functions. Place the following at the top of the file with hooking code:
+
+```objc
+#ifdef hookkit_h
+#define MSHookFunction      HKHookFunction
+#define MSHookMessageEx     HKHookMessage
+#endif
+```
+
 ## Examples
 
 MobileSubstrate method:
