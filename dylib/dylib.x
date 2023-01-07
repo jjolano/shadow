@@ -137,14 +137,15 @@ ShadowService* _srv = nil;
         }
     }
 
-    HKSubstitutor* substitutor = [HKSubstitutor new];
+    HKSubstitutor* substitutor = HK_SUBSTITUTOR;
 
     if(hooklibs != HK_LIB_NONE) {
         [substitutor setTypes:hooklibs];
     }
 
     [substitutor initLibraries];
-    [substitutor setBatching:YES];
+    
+    HKEnableBatching();
     #else
     HKSubstitutor* substitutor = NULL;
     #endif
@@ -281,7 +282,7 @@ ShadowService* _srv = nil;
     }
 
     #ifdef hookkit_h
-    [substitutor executeHooks];
+    HKExecuteBatch();
     #endif
 
     NSLog(@"%@", @"completed hooks");
