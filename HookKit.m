@@ -3,7 +3,19 @@
 
 #import <dlfcn.h>
 
+@implementation HKFunctionHook
+@end
+
+@implementation HKMemoryHook
+@end
+
 @implementation HKSubstitutor {
+    NSMutableArray<HKFunctionHook *>* functionHooks;
+    NSMutableArray<HKMemoryHook *>* memoryHooks;
+
+    int lib_errno;
+    hookkit_lib_t lib_errno_type;
+
     NSString* libhooker_path;
     void* libhooker_handle;
     @public int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count);
@@ -37,6 +49,12 @@
 
 - (instancetype)init {
     if((self = [super init])) {
+        functionHooks = nil;
+        memoryHooks = nil;
+
+        lib_errno = 0;
+        lib_errno_type = HK_LIB_NONE;
+
         libhooker_path = ROOT_PATH_NS(@PATH_LIBHOOKER);
         libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
         _LHHookFunctions = NULL;
@@ -68,6 +86,7 @@
         _MSFindSymbol = NULL;
 
         _types = HK_LIB_NONE;
+        _batching = NO;
     }
 
     return self;
@@ -98,7 +117,7 @@
 
     if(_types == HK_LIB_ELLEKIT) {
         // ellekit implements both libhooker and substrate APIs
-        // should be able to just enable both types and point handles to ellekit for symbol resolving
+        // should be able to just enable both types and point handles to ellekit for symbol resolving later
 
         if(libhooker_handle) {
             dlclose(libhooker_handle);
@@ -311,11 +330,14 @@
 
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LBHookMessage) {
-            if(_LBHookMessage(objcClass, selector, replacement, old_ptr) == LIBHOOKER_OK) {
+            int lh_result = _LBHookMessage(objcClass, selector, replacement, old_ptr);
+
+            if(lh_result == LIBHOOKER_OK) {
                 return HK_OK;
             } else {
                 // handle libhooker error codes
-
+                lib_errno = lh_result;
+                lib_errno_type = HK_LIB_LIBHOOKER;
                 return result;
             }
         }
@@ -323,11 +345,14 @@
 
     if(_types & HK_LIB_SUBSTITUTE) {
         if(_substitute_hook_objc_message) {
-            if(_substitute_hook_objc_message(objcClass, selector, replacement, (void *)old_ptr, NULL) == SUBSTITUTE_OK) {
+            int sub_result = _substitute_hook_objc_message(objcClass, selector, replacement, (void *)old_ptr, NULL);
+
+            if(sub_result == SUBSTITUTE_OK) {
                 return HK_OK;
             } else {
                 // handle substitute error codes
-
+                lib_errno = sub_result;
+                lib_errno_type = HK_LIB_SUBSTITUTE;
                 return result;
             }
         }
@@ -339,6 +364,8 @@
             return HK_OK;
         }
     }
+
+    // todo: maybe have native objc swizzling?
     
     #ifdef fishhook_h
     if(_types & HK_LIB_FISHHOOK) {
@@ -360,6 +387,18 @@
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(_batching) {
+        HKFunctionHook* hook = [HKFunctionHook new];
+        [hook setFunction:[NSValue valueWithPointer:function]];
+        [hook setReplacement:[NSValue valueWithPointer:replacement]];
+        [hook setOrig:[NSValue valueWithPointer:old_ptr]];
+
+        if(!functionHooks) functionHooks = [NSMutableArray new];
+
+        [functionHooks addObject:hook];
+        return HK_OK;
+    }
+
     hookkit_status_t result = HK_ERR;
 
     if(_types & HK_LIB_LIBHOOKER) {
@@ -368,11 +407,14 @@
                 function, replacement, (void *)old_ptr, NULL
             };
 
-            if(_LHHookFunctions(&hook, 1) == 1) {
+            int lh_result = _LHHookFunctions(&hook, 1);
+
+            if(lh_result == 1) {
                 return HK_OK;
             } else {
                 // handle libhooker error codes
-
+                lib_errno = lh_result;
+                lib_errno_type = HK_LIB_LIBHOOKER;
                 return result;
             }
         }
@@ -384,11 +426,14 @@
                 function, replacement, (void *)old_ptr, 0
             };
 
-            if(_substitute_hook_functions(&hook, 1, NULL, 0) == SUBSTITUTE_OK) {
+            int sub_result = _substitute_hook_functions(&hook, 1, NULL, 0);
+
+            if(sub_result == SUBSTITUTE_OK) {
                 return HK_OK;
             } else {
                 // handle substitute error codes
-
+                lib_errno = sub_result;
+                lib_errno_type = HK_LIB_SUBSTITUTE;
                 return result;
             }
         }
@@ -429,6 +474,18 @@
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(_batching) {
+        HKMemoryHook* hook = [HKMemoryHook new];
+        [hook setTarget:[NSValue valueWithPointer:target]];
+        [hook setData:[NSValue valueWithPointer:data]];
+        [hook setSize:[NSNumber numberWithInt:size]];
+
+        if(!memoryHooks) memoryHooks = [NSMutableArray new];
+
+        [memoryHooks addObject:hook];
+        return HK_OK;
+    }
+
     hookkit_status_t result = HK_ERR;
 
     if(_types & HK_LIB_LIBHOOKER) {
@@ -437,11 +494,14 @@
                 target, data, size, 0
             };
 
-            if(_LHPatchMemory(&hook, 1) == 1) {
+            int lh_result = _LHPatchMemory(&hook, 1);
+
+            if(lh_result == 1) {
                 return HK_OK;
             } else {
                 // handle libhooker error codes
-
+                lib_errno = lh_result;
+                lib_errno_type = HK_LIB_LIBHOOKER;
                 return result;
             }
         }
@@ -463,8 +523,14 @@
 
     #ifdef dobby_h
     if(_types & HK_LIB_DOBBY) {
-        if(DobbyCodePatch(target, (uint8_t *)data, size) == kMemoryOperationSuccess) {
+        MemoryOperationError dobby_result = DobbyCodePatch(target, (uint8_t *)data, size);
+
+        if(dobby_result == kMemoryOperationSuccess) {
             return HK_OK;
+        } else {
+            lib_errno = dobby_result;
+            lib_errno_type = HK_LIB_DOBBY;
+            return result;
         }
     }
     #endif
@@ -533,13 +599,13 @@
 
         if(_types & HK_LIB_LIBHOOKER) {
             if(_LHFindSymbols) {
-                
+                // todo
             }
         }
         
         if(_types & HK_LIB_SUBSTITUTE) {
             if(_substitute_find_private_syms) {
-
+                // todo
             }
         }
     }
@@ -566,76 +632,24 @@
     return result;
 }
 
-- (hookkit_status_t)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName outSymbol:(void **)outSymbol {
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
     NSArray<NSValue *>* syms = nil;
     hookkit_status_t result = [self findSymbolsInImage:image symbolNames:@[symbolName] outSymbols:&syms];
 
-    if(syms) {
-        *outSymbol = [syms[0] pointerValue];
+    if(result == HK_OK) {
+        return [syms[0] pointerValue];
     }
     
-    return result;
-}
-@end
-
-@implementation HKFunctionHook
-@end
-
-@implementation HKMemoryHook
-@end
-
-@implementation HKBatchHook {
-    NSMutableArray<HKFunctionHook *>* functionHooks;
-    NSMutableArray<HKMemoryHook *>* memoryHooks;
+    return NULL;
 }
 
-- (instancetype)init {
-    if((self = [super init])) {
-        functionHooks = [NSMutableArray new];
-        memoryHooks = [NSMutableArray new];
-    }
-
-    return self;
-}
-
-+ (instancetype)defaultBatch {
-    static dispatch_once_t once;
-    static HKBatchHook* defaultBatch;
-
-    dispatch_once(&once, ^{
-        defaultBatch = [self new];
-    });
-
-    return defaultBatch;
-}
-
-- (void)addFunctionHook:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
-    HKFunctionHook* hook = [HKFunctionHook new];
-    [hook setFunction:[NSValue valueWithPointer:function]];
-    [hook setReplacement:[NSValue valueWithPointer:replacement]];
-    [hook setOrig:[NSValue valueWithPointer:old_ptr]];
-
-    [functionHooks addObject:hook];
-}
-
-- (void)addMemoryHook:(void *)target withData:(const void *)data size:(size_t)size {
-    HKMemoryHook* hook = [HKMemoryHook new];
-    [hook setTarget:[NSValue valueWithPointer:target]];
-    [hook setData:[NSValue valueWithPointer:data]];
-    [hook setSize:[NSNumber numberWithInt:size]];
-
-    [memoryHooks addObject:hook];
-}
-
-- (hookkit_status_t)performHooksWithSubstitutor:(HKSubstitutor *)substitutor {
+- (hookkit_status_t)executeHooks {
     hookkit_status_t result = HK_ERR;
 
     BOOL didFunctions = ([functionHooks count] == 0);
     BOOL didMemory = ([memoryHooks count] == 0);
 
-    if(!didFunctions && [substitutor types] & HK_LIB_LIBHOOKER) {
-        int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count) = substitutor->_LHHookFunctions;
-        
+    if(!didFunctions && _types & HK_LIB_LIBHOOKER) {
         if(_LHHookFunctions) {
             NSMutableData* hooks = [NSMutableData new];
 
@@ -653,9 +667,7 @@
         }
     }
 
-    if(!didFunctions && [substitutor types] & HK_LIB_SUBSTITUTE) {
-        int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options) = substitutor->_substitute_hook_functions;
-
+    if(!didFunctions && _types & HK_LIB_SUBSTITUTE) {
         if(_substitute_hook_functions) {
             NSMutableData* hooks = [NSMutableData new];
 
@@ -672,9 +684,7 @@
         }
     }
 
-    if(!didFunctions && [substitutor types] & HK_LIB_SUBSTRATE) {
-        void (*_MSHookFunction)(void* symbol, void* replace, void** result) = substitutor->_MSHookFunction;
-        
+    if(!didFunctions && _types & HK_LIB_SUBSTRATE) {
         if(_MSHookFunction) {
             for(HKFunctionHook* hkhook in functionHooks) {
                 _MSHookFunction([[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue]);
@@ -685,7 +695,7 @@
     }
 
     #ifdef fishhook_h
-    if(!didFunctions && [substitutor types] & HK_LIB_FISHHOOK) {
+    if(!didFunctions && _types & HK_LIB_FISHHOOK) {
         NSMutableData* hooks = [NSMutableData new];
 
         for(HKFunctionHook* hkhook in functionHooks) {
@@ -705,7 +715,7 @@
     #endif
 
     #ifdef dobby_h
-    if(!didFunctions && [substitutor types] & HK_LIB_DOBBY) {
+    if(!didFunctions && _types & HK_LIB_DOBBY) {
         dobby_enable_near_branch_trampoline();
 
         for(HKFunctionHook* hkhook in functionHooks) {
@@ -718,9 +728,7 @@
     }
     #endif
 
-    if(!didMemory && [substitutor types] & HK_LIB_LIBHOOKER) {
-        int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count) = substitutor->_LHPatchMemory;
-        
+    if(!didMemory && _types & HK_LIB_LIBHOOKER) {
         if(_LHPatchMemory) {
             NSMutableData* hooks = [NSMutableData new];
 
@@ -738,9 +746,7 @@
         }
     }
 
-    if(!didMemory && [substitutor types] & HK_LIB_SUBSTITUTE) {
-        void (*_SubHookMemory)(void* target, const void* data, size_t size) = substitutor->_SubHookMemory;
-        
+    if(!didMemory && _types & HK_LIB_SUBSTITUTE) {
         if(_SubHookMemory) {
             for(HKMemoryHook* hkhook in memoryHooks) {
                 _SubHookMemory([[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue]);
@@ -750,9 +756,7 @@
         }
     }
 
-    if(!didMemory && [substitutor types] & HK_LIB_SUBSTRATE) {
-        void (*_MSHookMemory)(void* target, const void* data, size_t size) = substitutor->_MSHookMemory;
-        
+    if(!didMemory && _types & HK_LIB_SUBSTRATE) {
         if(_MSHookMemory) {
             for(HKMemoryHook* hkhook in memoryHooks) {
                 _MSHookMemory([[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue]);
@@ -763,7 +767,7 @@
     }
 
     #ifdef dobby_h
-    if(!didMemory && [substitutor types] & HK_LIB_DOBBY) {
+    if(!didMemory && _types & HK_LIB_DOBBY) {
         for(HKMemoryHook* hkhook in memoryHooks) {
             DobbyCodePatch([[hkhook target] pointerValue], (uint8_t *)[[hkhook data] pointerValue], [[hkhook size] intValue]);
         }
@@ -779,6 +783,20 @@
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
     }
+
+    return result;
+}
+
+- (int)getLibErrno:(hookkit_lib_t *)outType {
+    if(outType) {
+        *outType = lib_errno_type;
+    }
+
+    int result = lib_errno;
+
+    // clear errno
+    lib_errno = 0;
+    lib_errno_type = HK_LIB_NONE;
 
     return result;
 }

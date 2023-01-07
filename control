@@ -1,7 +1,7 @@
 Package: me.jjolano.fmwk.hookkit
 Name: HookKit Framework
 Depends: firmware (>= 5.0)
-Version: 0.0.12
+Version: 0.1
 Architecture: iphoneos-arm
 Description: An iOS tweak developer framework to unify code substitution APIs in runtime. Developer package - source is available on my GitHub.
 Maintainer: jjolano

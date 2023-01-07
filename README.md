@@ -4,7 +4,7 @@ An iOS tweak developer framework to unify code substitution APIs in runtime.
 
 ... I actually don't know how useful this is. (but it's quite fun to see it work)
 
-This framework allows tweak developers to hook functions with a standard and consistent API. Standard hooking functions are accessed through the `HKSubstitutor` class, and batch hooking is accessed through the `HKBatchHook` class.
+This framework allows tweak developers to hook functions with a standard and consistent API. Standard hooking functions are accessed through the `HKSubstitutor` class, or using convenience macros.
 
 ## Installation
 
@@ -53,24 +53,21 @@ MSHookFunction(func_3, replaced_func_3, (void **)&orig_func_3);
 HookKit method (standard):
 
 ```objc
-HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
-
-[substitutor hookFunction:func_1 withReplacement:replaced_func_1 outOldPtr:(void **)&orig_func_1];
-[substitutor hookFunction:func_2 withReplacement:replaced_func_2 outOldPtr:(void **)&orig_func_2];
-[substitutor hookFunction:func_3 withReplacement:replaced_func_3 outOldPtr:(void **)&orig_func_3];
+HKHookFunction(func_1, replaced_func_1, (void **)&orig_func_1);
+HKHookFunction(func_2, replaced_func_2, (void **)&orig_func_2);
+HKHookFunction(func_3, replaced_func_3, (void **)&orig_func_3);
 ```
 
 HookKit method (batching):
 
 ```objc
-HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
-HKBatchHook* batch = [HKBatchHook new];
+HKEnableBatching();
 
-[batch addFunctionHook:func_1 withReplacement:replaced_func_1 outOldPtr:(void **)&orig_func_1];
-[batch addFunctionHook:func_2 withReplacement:replaced_func_2 outOldPtr:(void **)&orig_func_2];
-[batch addFunctionHook:func_3 withReplacement:replaced_func_3 outOldPtr:(void **)&orig_func_3];
+HKHookFunction(func_1, replaced_func_1, (void **)&orig_func_1);
+HKHookFunction(func_2, replaced_func_2, (void **)&orig_func_2);
+HKHookFunction(func_3, replaced_func_3, (void **)&orig_func_3);
 
-[batch performHooksWithSubstitutor:substitutor];
+HKExecuteBatch();
 ```
 
 ## Credits
