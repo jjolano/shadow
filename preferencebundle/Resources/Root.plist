@@ -8,9 +8,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Global Settings</string>
+			<string>GLOBAL_SETTINGS</string>
 			<key>footerText</key>
-			<string>Attempts to bypass jailbreak detection in all apps by default. Has no effect if overrode by per-app settings.</string>
+			<string>ALWAYS_ON_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -20,7 +20,7 @@
 			<key>id</key>
 			<string>Global_Enabled</string>
 			<key>label</key>
-			<string>Always-On</string>
+			<string>ALWAYS_ON</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Adjust the strength of the jailbreak detection bypass. App performance may be affected.</string>
+			<string>BYPASS_SETTINGS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -48,15 +48,15 @@
 			<key>isController</key>
 			<true/>
 			<key>label</key>
-			<string>Bypass Settings</string>
+			<string>BYPASS_SETTINGS</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Application Settings</string>
+			<string>ROOT_APP_SETTINGS</string>
 			<key>footerText</key>
-			<string>Per-app settings will override global settings, if enabled.</string>
+			<string>ROOT_APP_SETTINGS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -66,7 +66,7 @@
 			<key>subcontrollerClass</key>
 			<string>SHDWAppListController</string>
 			<key>label</key>
-			<string>Applications</string>
+			<string>APPLICATIONS</string>
 			<key>sections</key>
 			<array>
 				<dict>
@@ -95,7 +95,7 @@
 			<key>action</key>
 			<string>respring:</string>
 			<key>label</key>
-			<string>Restart SpringBoard</string>
+			<string>RESPRING</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -107,17 +107,17 @@
 			<key>action</key>
 			<string>reset:</string>
 			<key>label</key>
-			<string>Reset Settings</string>
+			<string>RESET</string>
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>
-				<string>This will reset all settings for Shadow.</string>
+				<string>RESET_PROMPT</string>
 				<key>title</key>
-				<string>Reset Settings</string>
+				<string>RESET</string>
 				<key>okTitle</key>
-				<string>Reset Settings</string>
+				<string>RESET</string>
 				<key>cancelTitle</key>
-				<string>Cancel</string>
+				<string>RESET_CANCEL</string>
 			</dict>
 		</dict>
 		<dict>
@@ -136,7 +136,7 @@
 			<key>isController</key>
 			<true/>
 			<key>label</key>
-			<string>About</string>
+			<string>ROOT_ABOUT</string>
 		</dict>
 	</array>
 	<key>title</key>

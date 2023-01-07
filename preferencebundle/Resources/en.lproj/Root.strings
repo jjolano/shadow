@@ -1,0 +1,19 @@
+"GLOBAL_SETTINGS" = "Global Settings";
+
+"ALWAYS_ON" = "Always-On";
+"ALWAYS_ON_DESC" = "Attempts to bypass jailbreak detection in all apps by default. Has no effect if overrode by per-app settings.";
+
+"BYPASS_SETTINGS" = "Bypass Settings";
+"BYPASS_SETTINGS_DESC" = "Adjust the strength of the jailbreak detection bypass. App performance may be affected.";
+
+"ROOT_APP_SETTINGS" = "Application Settings";
+"ROOT_APP_SETTINGS_DESC" = "Per-app settings will override global settings, if enabled.";
+
+"APPLICATIONS" = "Applications";
+
+"RESPRING" = "Restart SpringBoard";
+"RESET" = "Reset Settings";
+"RESET_PROMPT" = "This will reset all settings for Shadow.";
+"RESET_CANCEL" = "Cancel";
+
+"ROOT_ABOUT" = "About";

@@ -37,6 +37,10 @@
 	return @"jjolano";
 }
 
+- (NSString *)aboutTranslator:(id)sender {
+	return [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"TRANSLATOR" value:@"Unknown" table:@"About"];
+}
+
 - (NSString *)aboutPackageVersion:(id)sender {
 	if(packageVersion) {
 		return packageVersion;

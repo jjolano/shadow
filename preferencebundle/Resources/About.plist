@@ -14,7 +14,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Bypass Version</string>
+			<string>BYPASS_VERSION</string>
 			<key>get</key>
 			<string>aboutBypassVersion:</string>
 		</dict>
@@ -22,7 +22,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Service Version</string>
+			<string>SERVICE_VERSION</string>
 			<key>get</key>
 			<string>aboutAPIVersion:</string>
 		</dict>
@@ -30,7 +30,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Build Date</string>
+			<string>BUILD_DATE</string>
 			<key>get</key>
 			<string>aboutBuildDate:</string>
 		</dict>
@@ -38,7 +38,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Software License</string>
+			<string>SOFTWARE_LICENSE</string>
 			<key>get</key>
 			<string>aboutSoftwareLicense:</string>
 		</dict>
@@ -47,13 +47,13 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Updates</string>
+			<string>UPDATES_HDR</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Package Version</string>
+			<string>PACKAGE_VERSION</string>
 			<key>get</key>
 			<string>aboutPackageVersion:</string>
 		</dict>
@@ -61,7 +61,7 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Latest Version</string>
+			<string>LATEST_VERSION</string>
 			<key>get</key>
 			<string>aboutLatestVersion:</string>
 		</dict>
@@ -70,15 +70,23 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Developer</string>
+			<string>DEVELOPER_HDR</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>Developer</string>
+			<string>DEVELOPER_HDR</string>
 			<key>get</key>
 			<string>aboutDeveloper:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
+			<string>LOCALIZATION_HDR</string>
+			<key>get</key>
+			<string>aboutTranslator:</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -90,7 +98,7 @@
 			<key>action</key>
 			<string>openGitHub:</string>
 			<key>label</key>
-			<string>Visit Shadow on GitHub</string>
+			<string>VISIT_GITHUB</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -102,10 +110,10 @@
 			<key>action</key>
 			<string>openKofi:</string>
 			<key>label</key>
-			<string>Send a Tip with Ko-fi</string>
+			<string>VISIT_KOFI</string>
 		</dict>
 	</array>
 	<key>title</key>
-	<string>About</string>
+	<string>ABOUT_TITLE</string>
 </dict>
 </plist>
