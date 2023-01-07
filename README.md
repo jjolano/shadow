@@ -22,6 +22,7 @@ To use this framework:
 Advantages:
 
 * Improved performance through use of batch hooking (if supported).
+* Ability to switch hooking libraries from your tweak. [Shadow](https://github.com/jjolano/shadow) provides this functionality.
 
 Disadvantages:
 
