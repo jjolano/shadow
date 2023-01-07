@@ -80,7 +80,7 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 }
 
 // todo: research on "supervised syscalls"
-void shadowhook_syscall(HKBatchHook* hooks) {
+void shadowhook_syscall(HKSubstitutor* hooks) {
     MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
     MSHookFunction(csops, replaced_csops, (void **) &original_csops);
 

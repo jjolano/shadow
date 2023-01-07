@@ -785,7 +785,7 @@ static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
     return result;
 }
 
-void shadowhook_libc(HKBatchHook* hooks) {
+void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(access, replaced_access, (void **) &original_access);
     MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
     MSHookFunction(chroot, replaced_chroot, (void **) &original_chroot);
@@ -810,7 +810,7 @@ void shadowhook_libc(HKBatchHook* hooks) {
     [_shadow setOrigFunc:@"lstat" withAddr:original_lstat];
 }
 
-void shadowhook_libc_extra(HKBatchHook* hooks) {
+void shadowhook_libc_extra(HKSubstitutor* hooks) {
     MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
     MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
     MSHookFunction(execve, replaced_execve, (void **) &original_execve);
@@ -832,17 +832,17 @@ void shadowhook_libc_extra(HKBatchHook* hooks) {
     MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
 }
 
-void shadowhook_libc_envvar(HKBatchHook* hooks) {
+void shadowhook_libc_envvar(HKSubstitutor* hooks) {
     MSHookFunction(getenv, replaced_getenv, (void **) &original_getenv);
 }
 
-void shadowhook_libc_lowlevel(HKBatchHook* hooks) {
+void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
     MSHookFunction(open, replaced_open, (void **) &original_open);
     MSHookFunction(openat, replaced_openat, (void **) &original_openat);
     MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
 }
 
-void shadowhook_libc_antidebugging(HKBatchHook* hooks) {
+void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
     MSHookFunction(getppid, replaced_getppid, NULL);

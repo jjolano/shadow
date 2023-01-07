@@ -88,6 +88,6 @@
 %end
 %end
 
-void shadowhook_NSFileVersion(HKBatchHook* hooks) {
+void shadowhook_NSFileVersion(HKSubstitutor* hooks) {
     %init(shadowhook_NSFileVersion);
 }

@@ -164,6 +164,6 @@
 %end
 %end
 
-void shadowhook_LSApplicationWorkspace(HKBatchHook* hooks) {
+void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks) {
     %init(shadowhook_LSApplicationWorkspace);
 }
