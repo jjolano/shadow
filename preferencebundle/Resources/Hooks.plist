@@ -8,9 +8,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Internal Settings</string>
+			<string>INTERNAL_SETTINGS</string>
 			<key>footerText</key>
-			<string>Controls the methods used to intercept application code. Some hooking libraries may provide a bypass improvement, but may also affect app stability.</string>
+			<string>HK_LIB_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -18,13 +18,13 @@
 			<key>id</key>
 			<string>HK_Library</string>
 			<key>label</key>
-			<string>Hooking Library</string>
+			<string>HOOKING_LIBRARY</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>detail</key>
 			<string>PSListItemsController</string>
 			<key>staticTextMessage</key>
-			<string>This is a list of hooking libraries available to use on your device. Select "Automatic" to allow HookKit to choose the best hooking library for your device.</string>
+			<string>HK_LIB_SELECT</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -38,9 +38,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Compatibility Settings</string>
+			<string>COMPAT_SETTINGS</string>
 			<key>footerText</key>
-			<string>Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed by a tweak.</string>
+			<string>ALLOW_RESOURCES_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -50,7 +50,7 @@
 			<key>id</key>
 			<string>Tweak_CompatEx</string>
 			<key>label</key>
-			<string>Fully Allow Tweak Resources</string>
+			<string>ALLOW_RESOURCES</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -64,7 +64,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>Use this setting if you are running Shadow on a rootless jailbreak. Do not enable this if your jailbreak is not rootless.</string>
+			<string>ROOTLESS_MODE_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -74,7 +74,7 @@
 			<key>id</key>
 			<string>Rootless</string>
 			<key>label</key>
-			<string>Enable Rootless Mode</string>
+			<string>ROOTLESS_MODE</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -88,9 +88,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Essential Hooks</string>
+			<string>ESSENTIAL_HOOKS</string>
 			<key>footerText</key>
-			<string>Essential hooks cover the most common jailbreak detection methods.</string>
+			<string>ESSENTIAL_HOOKS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -100,7 +100,7 @@
 			<key>id</key>
 			<string>Hook_Filesystem</string>
 			<key>label</key>
-			<string>File System</string>
+			<string>HOOK_FILE_SYSTEM</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -118,7 +118,7 @@
 			<key>id</key>
 			<string>Hook_DynamicLibraries</string>
 			<key>label</key>
-			<string>Dynamic Libraries</string>
+			<string>HOOK_DYLIB</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -136,7 +136,7 @@
 			<key>id</key>
 			<string>Hook_URLScheme</string>
 			<key>label</key>
-			<string>URL Handlers</string>
+			<string>HOOK_URLSCHEME</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -154,7 +154,7 @@
 			<key>id</key>
 			<string>Hook_EnvVars</string>
 			<key>label</key>
-			<string>Environment Variables</string>
+			<string>HOOK_ENVVARS</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -168,9 +168,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Recommended Hooks</string>
+			<string>REC_HOOKS</string>
 			<key>footerText</key>
-			<string>Recommended hooks cover additional methods which may be used by jailbreak detection.</string>
+			<string>REC_HOOKS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -180,7 +180,7 @@
 			<key>id</key>
 			<string>Hook_DeviceCheck</string>
 			<key>label</key>
-			<string>Detection Frameworks</string>
+			<string>HOOK_DETECTFMWK</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -198,7 +198,7 @@
 			<key>id</key>
 			<string>Hook_FilesystemExtra</string>
 			<key>label</key>
-			<string>File System (Extra)</string>
+			<string>HOOK_FILE_SYSTEM_EX</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -216,7 +216,7 @@
 			<key>id</key>
 			<string>Hook_Foundation</string>
 			<key>label</key>
-			<string>Foundation Framework</string>
+			<string>HOOK_FOUNDATION</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -234,7 +234,7 @@
 			<key>id</key>
 			<string>Hook_FakeMac</string>
 			<key>label</key>
-			<string>M1 Mac (iOS 14+)</string>
+			<string>HOOK_MAC</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -248,9 +248,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Extra Hooks</string>
+			<string>EXTRA_HOOKS</string>
 			<key>footerText</key>
-			<string>Extra hooks cover even more methods that may be used by jailbreak detection, including private APIs.</string>
+			<string>EXTRA_HOOKS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -260,7 +260,7 @@
 			<key>id</key>
 			<string>Hook_MachBootstrap</string>
 			<key>label</key>
-			<string>Mach Service Lookups</string>
+			<string>HOOK_MACH</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -278,7 +278,7 @@
 			<key>id</key>
 			<string>Hook_SymLookup</string>
 			<key>label</key>
-			<string>Runtime Symbol Lookups</string>
+			<string>HOOK_SYMLOOKUP</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -296,7 +296,7 @@
 			<key>id</key>
 			<string>Hook_ObjCRuntime</string>
 			<key>label</key>
-			<string>Objective-C Class Methods</string>
+			<string>HOOK_OBJC</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -314,7 +314,7 @@
 			<key>id</key>
 			<string>Hook_AntiDebugging</string>
 			<key>label</key>
-			<string>Anti-Debugging Methods</string>
+			<string>HOOK_ANTIDBG</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -332,7 +332,7 @@
 			<key>id</key>
 			<string>Hook_Syscall</string>
 			<key>label</key>
-			<string>Private Syscalls</string>
+			<string>HOOK_SYSCALL</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -350,7 +350,7 @@
 			<key>id</key>
 			<string>Hook_HideApps</string>
 			<key>label</key>
-			<string>App Enumeration</string>
+			<string>HOOK_APPENUM</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -364,9 +364,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Dangerous Hooks</string>
+			<string>DNGR_HOOKS</string>
 			<key>footerText</key>
-			<string>Low-level bypass methods. These hooks may cause some apps to crash.</string>
+			<string>DNGR_HOOKS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -376,7 +376,7 @@
 			<key>id</key>
 			<string>Hook_Sandbox</string>
 			<key>label</key>
-			<string>Enforce App Sandbox</string>
+			<string>HOOK_SANDBOX</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -394,7 +394,7 @@
 			<key>id</key>
 			<string>Hook_LowLevelC</string>
 			<key>label</key>
-			<string>Low-Level File Handles</string>
+			<string>HOOK_LLC</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -412,7 +412,7 @@
 			<key>id</key>
 			<string>Hook_Memory</string>
 			<key>label</key>
-			<string>Hide Executable Memory</string>
+			<string>HOOK_MEM</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -430,7 +430,7 @@
 			<key>id</key>
 			<string>Hook_TweakClasses</string>
 			<key>label</key>
-			<string>Hide Tweak Classes</string>
+			<string>HOOK_TWEAKCLASS</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>
@@ -448,7 +448,7 @@
 			<key>id</key>
 			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
-			<string>Dynamic Library Loader</string>
+			<string>HOOK_DYLD</string>
 			<key>defaults</key>
 			<string>me.jjolano.shadow</string>
 			<key>default</key>

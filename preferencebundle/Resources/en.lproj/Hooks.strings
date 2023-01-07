@@ -1,0 +1,49 @@
+"INTERNAL_SETTINGS" = "Internal Settings";
+"HK_LIB_DESC" = "Controls the methods used to intercept application code. Some hooking libraries may provide a bypass improvement, but may also affect app stability.";
+
+"HOOKING_LIBRARY" = "Hooking Library";
+"HK_LIB_SELECT" = "This is a list of hooking libraries available to use on your device. Select \"Automatic\" to allow HookKit to choose the best hooking library for your device.";
+"AUTOMATIC" = "Automatic";
+
+"COMPAT_SETTINGS" = "Compatibility Settings";
+
+"ALLOW_RESOURCES" = "Allow Tweak Resources";
+"ALLOW_RESOURCES_DESC" = "Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed by a tweak.";
+
+"ROOTLESS_MODE" = "Enable Rootless Mode";
+"ROOTLESS_MODE_DESC" = "Use this setting if you are running Shadow on a rootless jailbreak. Do not enable this if your jailbreak is not rootless.";
+
+"ESSENTIAL_HOOKS" = "Essential Hooks";
+"ESSENTIAL_HOOKS_DESC" = "Essential hooks cover the most common jailbreak detection methods.";
+
+"HOOK_FILE_SYSTEM" = "File System";
+"HOOK_DYLIB" = "Dynamic Libraries";
+"HOOK_URLSCHEME" = "URL Handlers";
+"HOOK_ENVVARS" = "Environment Variables";
+
+"REC_HOOKS" = "Recommended Hooks";
+"REC_HOOKS_DESC" = "Recommended hooks cover additional methods which may be used by jailbreak detection.";
+
+"HOOK_DETECTFMWK" = "Detection Frameworks";
+"HOOK_FILE_SYSTEM_EX" = "File System (Extra)";
+"HOOK_FOUNDATION" = "Foundation Framework"; /* Foundation is the name of Apple's framework. */
+"HOOK_MAC" = "M1 Mac (iOS 14+)";
+
+"EXTRA_HOOKS" = "Extra Hooks";
+"EXTRA_HOOKS_DESC" = "Extra hooks cover even more methods that may be used by jailbreak detection, including private APIs.";
+
+"HOOK_MACH" = "Mach Service Lookups";
+"HOOK_SYMLOOKUP" = "Runtime Symbol Lookups";
+"HOOK_OBJC" = "Objective-C Class Methods";
+"HOOK_ANTIDBG" = "Anti-Debugging Methods";
+"HOOK_SYSCALL" = "Private Syscalls";
+"HOOK_APPENUM" = "App Enumeration";
+
+"DNGR_HOOKS" = "Dangerous Hooks";
+"DNGR_HOOKS_DESC" = "Low-level bypass methods. These hooks may cause some apps to crash.";
+
+"HOOK_SANDBOX" = "Enforce App Sandbox";
+"HOOK_LLC" = "Low-Level File Handles";
+"HOOK_MEM" = "Hide Executable Memory";
+"HOOK_TWEAKCLASS" = "Hide Tweak Classes";
+"HOOK_DYLD" = "Dynamic Library Loader";

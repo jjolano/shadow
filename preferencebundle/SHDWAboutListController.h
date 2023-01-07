@@ -7,6 +7,7 @@
 - (NSString *)aboutBuildDate:(id)sender;
 - (NSString *)aboutSoftwareLicense:(id)sender;
 - (NSString *)aboutDeveloper:(id)sender;
+- (NSString *)aboutTranslator:(id)sender;
 - (NSString *)aboutPackageVersion:(id)sender;
 - (NSString *)aboutLatestVersion:(id)sender;
 
