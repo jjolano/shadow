@@ -1,5 +1,6 @@
 #import "SHDWRootListController.h"
 #import "../api/ShadowService+Settings.h"
+#import "../api/rootless.h"
 
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;
@@ -23,30 +24,14 @@
 }
 
 - (void)respring:(id)sender {
-	// Check if we are in a rootless environment.
-	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
-	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
-
-	if(rootless) {
-		if([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb/usr/bin/sbreload"]) {
-			pid_t pid;
-			const char *args[] = {"sbreload", NULL, NULL, NULL};
-			posix_spawn(&pid, "/var/jb/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
-		} else {
-			pid_t pid;
-			const char *args[] = {"killall", "-9", "SpringBoard", NULL};
-			posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
-		}
+	if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@"/usr/bin/sbreload")]) {
+		pid_t pid;
+		const char *args[] = {"sbreload", NULL, NULL, NULL};
+		posix_spawn(&pid, ROOT_PATH_C("/usr/bin/sbreload"), NULL, NULL, (char *const *)args, NULL);
 	} else {
-		if([[NSFileManager defaultManager] fileExistsAtPath:@"/usr/bin/sbreload"]) {
-			pid_t pid;
-			const char *args[] = {"sbreload", NULL, NULL, NULL};
-			posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
-		} else {
-			pid_t pid;
-			const char *args[] = {"killall", "-9", "SpringBoard", NULL};
-			posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, NULL);
-		}
+		pid_t pid;
+		const char *args[] = {"killall", "-9", "SpringBoard", NULL};
+		posix_spawn(&pid, ROOT_PATH_C("/usr/bin/killall"), NULL, NULL, (char *const *)args, NULL);
 	}
 }
 
