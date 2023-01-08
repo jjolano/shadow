@@ -70,13 +70,13 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>DEVELOPER_HDR</string>
+			<string>CREDITS_HDR</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>DEVELOPER_HDR</string>
+			<string>DEVELOPER</string>
 			<key>get</key>
 			<string>aboutDeveloper:</string>
 		</dict>

@@ -6,7 +6,8 @@
 "UPDATES_HDR" = "Updates";
 "PACKAGE_VERSION" = "Package Version";
 "LATEST_VERSION" = "Latest Version";
-"DEVELOPER_HDR" = "Developer";
+"CREDITS_HDR" = "Credits";
+"DEVELOPER" = "Developer";
 "VISIT_GITHUB" = "Visit Shadow on GitHub";
 "VISIT_KOFI" = "Send a Tip with Ko-fi";
 "LOCALIZATION_HDR" = "Translation";
