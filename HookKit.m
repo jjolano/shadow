@@ -130,6 +130,10 @@
     if(_types == HK_LIB_ELLEKIT) {
         // ellekit implements both libhooker and substrate APIs
         // should be able to just enable both types and point handles to ellekit for symbol resolving later
+
+        if(libhooker_handle) dlclose(libhooker_handle);
+        if(libblackjack_handle) dlclose(libblackjack_handle);
+        if(substrate_handle) dlclose(substrate_handle);
         
         if(!libellekit_handle) libellekit_handle = dlopen([libellekit_path fileSystemRepresentation], RTLD_LAZY);
 
