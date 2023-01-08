@@ -84,6 +84,7 @@
 
         substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
         substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
+
         _MSHookMessageEx = NULL;
         _MSHookFunction = NULL;
         _MSHookMemory = NULL;
@@ -183,6 +184,11 @@
 
     if(_types & HK_LIB_SUBSTRATE) {
         if(!substrate_handle) substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY);
+        
+        if(!substrate_handle) {
+            substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATEFW);
+            substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY);
+        }
 
         if(substrate_handle) {
             if(!_MSHookMessageEx) _MSHookMessageEx = dlsym(substrate_handle, "MSHookMessageEx");
@@ -206,7 +212,7 @@
         result |= HK_LIB_SUBSTITUTE;
     }
 
-    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE))) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE)) || dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATEFW))) {
         result |= HK_LIB_SUBSTRATE;
     }
 

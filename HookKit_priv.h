@@ -23,6 +23,7 @@
 #define PATH_LIBBLACKJACK   "/usr/lib/libblackjack.dylib"
 #define PATH_SUBSTITUTE     "/usr/lib/libsubstitute.dylib"
 #define PATH_SUBSTRATE      "/usr/lib/libsubstrate.dylib"
+#define PATH_SUBSTRATEFW    "/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"
 #define PATH_ELLEKIT        "/usr/lib/libellekit.dylib"
 
 @interface HKFunctionHook : NSObject
