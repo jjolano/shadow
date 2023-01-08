@@ -85,12 +85,12 @@
         substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE);
         substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
 
-        _MSHookMessageEx = NULL;
-        _MSHookFunction = NULL;
-        _MSHookMemory = NULL;
-        _MSGetImageByName = NULL;
-        _MSCloseImage = NULL;
-        _MSFindSymbol = NULL;
+        _MSHookMessageEx = MSHookMessageEx;
+        _MSHookFunction = MSHookFunction;
+        _MSHookMemory = MSHookMemory;
+        _MSGetImageByName = MSGetImageByName;
+        _MSCloseImage = MSCloseImage;
+        _MSFindSymbol = MSFindSymbol;
 
         _types = HK_LIB_NONE;
         _batching = NO;
@@ -239,7 +239,7 @@
             @"id" : @"substrate",
             @"name" : @"Cydia Substrate",
             @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_SUBSTRATE],
-            @"path" : ROOT_PATH_NS(@PATH_SUBSTRATE)
+            @"path" : ROOT_PATH_NS(@PATH_SUBSTRATEFW)
         }];
     }
 
@@ -346,26 +346,12 @@
         }
     }
 
-    if(_types & HK_LIB_SUBSTRATE) {
-        if(_MSHookMessageEx) {
-            _MSHookMessageEx(objcClass, selector, replacement, (IMP *)old_ptr);
-            return HK_OK;
-        }
+    if(_MSHookMessageEx) {
+        _MSHookMessageEx(objcClass, selector, replacement, (IMP *)old_ptr);
+        return HK_OK;
     }
 
     // todo: maybe have native objc swizzling?
-    
-    #ifdef fishhook_h
-    if(_types & HK_LIB_FISHHOOK) {
-        
-    }
-    #endif
-
-    #ifdef dobby_h
-    if(_types & HK_LIB_DOBBY) {
-
-    }
-    #endif
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -425,15 +411,8 @@
         }
     }
     
-    if(_types & HK_LIB_SUBSTRATE) {
-        if(_MSHookFunction) {
-            _MSHookFunction(function, replacement, old_ptr);
-            return HK_OK;
-        }
-    }
-    
     #ifdef fishhook_h
-    if(_types & HK_LIB_FISHHOOK) {
+    if(_types == HK_LIB_FISHHOOK) {
         Dl_info info;
         if(dladdr(function, &info)) {
             if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, old_ptr}}, 1)) {
@@ -444,13 +423,18 @@
     #endif
 
     #ifdef dobby_h
-    if(_types & HK_LIB_DOBBY) {
+    if(_types == HK_LIB_DOBBY) {
         dobby_enable_near_branch_trampoline();
         DobbyHook(function, replacement, (dobby_dummy_func_t *)old_ptr);
         dobby_disable_near_branch_trampoline();
         return HK_OK;
     }
     #endif
+
+    if(_MSHookFunction) {
+        _MSHookFunction(function, replacement, old_ptr);
+        return HK_OK;
+    }
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -497,16 +481,9 @@
             return HK_OK;
         }
     }
-    
-    if(_types & HK_LIB_SUBSTRATE) {
-        if(_MSHookMemory) {
-            _MSHookMemory(target, data, size);
-            return HK_OK;
-        }
-    }
 
     #ifdef dobby_h
-    if(_types & HK_LIB_DOBBY) {
+    if(_types == HK_LIB_DOBBY) {
         MemoryOperationError dobby_result = DobbyCodePatch(target, (uint8_t *)data, size);
 
         if(dobby_result == kMemoryOperationSuccess) {
@@ -518,6 +495,11 @@
         }
     }
     #endif
+
+    if(_MSHookMemory) {
+        _MSHookMemory(target, data, size);
+        return HK_OK;
+    }
 
     if(result == HK_ERR) {
         result |= HK_ERR_NOT_SUPPORTED;
@@ -538,11 +520,9 @@
             return (HKImageRef)_substitute_open_image([path fileSystemRepresentation]);
         }
     }
-    
-    if(_types & HK_LIB_SUBSTRATE) {
-        if(_MSGetImageByName) {
-            return (HKImageRef)_MSGetImageByName([path fileSystemRepresentation]);
-        }
+
+    if(_MSGetImageByName) {
+        return (HKImageRef)_MSGetImageByName([path fileSystemRepresentation]);
     }
 
     return NULL;
@@ -567,11 +547,9 @@
         }
     }
     
-    if(_types & HK_LIB_SUBSTRATE) {
-        if(_MSCloseImage) {
-            _MSCloseImage((MSImageRef)image);
-            return;
-        }
+    if(_MSCloseImage) {
+        _MSCloseImage((MSImageRef)image);
+        return;
     }
 }
 
@@ -594,19 +572,17 @@
         }
     }
     
-    if(_types & HK_LIB_SUBSTRATE) {
-        // Substrate does not handle multiple symbols, so just manually loop.
-        if(_MSFindSymbol) {
-            NSMutableArray* syms = [NSMutableArray new];
+    // Substrate does not handle multiple symbols, so just manually loop.
+    if(_MSFindSymbol) {
+        NSMutableArray* syms = [NSMutableArray new];
 
-            for(NSString* symbolName in symbolNames) {
-                void* sym = _MSFindSymbol((MSImageRef)image, [symbolName UTF8String]);
-                [syms addObject:[NSValue valueWithPointer:sym]];
-            }
-
-            *outSymbols = [syms copy];
-            return HK_OK;
+        for(NSString* symbolName in symbolNames) {
+            void* sym = _MSFindSymbol((MSImageRef)image, [symbolName UTF8String]);
+            [syms addObject:[NSValue valueWithPointer:sym]];
         }
+
+        *outSymbols = [syms copy];
+        return HK_OK;
     }
 
     if(result == HK_ERR) {
@@ -668,18 +644,8 @@
         }
     }
 
-    if(!didFunctions && _types & HK_LIB_SUBSTRATE) {
-        if(_MSHookFunction) {
-            for(HKFunctionHook* hkhook in functionHooks) {
-                _MSHookFunction([[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue]);
-            }
-
-            didFunctions = YES;
-        }
-    }
-
     #ifdef fishhook_h
-    if(!didFunctions && _types & HK_LIB_FISHHOOK) {
+    if(!didFunctions && _types == HK_LIB_FISHHOOK) {
         NSMutableData* hooks = [NSMutableData new];
 
         for(HKFunctionHook* hkhook in functionHooks) {
@@ -699,7 +665,7 @@
     #endif
 
     #ifdef dobby_h
-    if(!didFunctions && _types & HK_LIB_DOBBY) {
+    if(!didFunctions && _types == HK_LIB_DOBBY) {
         dobby_enable_near_branch_trampoline();
 
         for(HKFunctionHook* hkhook in functionHooks) {
@@ -711,6 +677,16 @@
         didFunctions = YES;
     }
     #endif
+
+    if(!didFunctions) {
+        if(_MSHookFunction) {
+            for(HKFunctionHook* hkhook in functionHooks) {
+                _MSHookFunction([[hkhook function] pointerValue], [[hkhook replacement] pointerValue], [[hkhook orig] pointerValue]);
+            }
+
+            didFunctions = YES;
+        }
+    }
 
     if(!didMemory && _types & HK_LIB_LIBHOOKER) {
         if(_LHPatchMemory) {
@@ -740,7 +716,17 @@
         }
     }
 
-    if(!didMemory && _types & HK_LIB_SUBSTRATE) {
+    #ifdef dobby_h
+    if(!didMemory && _types == HK_LIB_DOBBY) {
+        for(HKMemoryHook* hkhook in memoryHooks) {
+            DobbyCodePatch([[hkhook target] pointerValue], (uint8_t *)[[hkhook data] pointerValue], [[hkhook size] intValue]);
+        }
+
+        didMemory = YES;
+    }
+    #endif
+
+    if(!didMemory) {
         if(_MSHookMemory) {
             for(HKMemoryHook* hkhook in memoryHooks) {
                 _MSHookMemory([[hkhook target] pointerValue], [[hkhook data] pointerValue], [[hkhook size] intValue]);
@@ -749,16 +735,6 @@
             didMemory = YES;
         }
     }
-
-    #ifdef dobby_h
-    if(!didMemory && _types & HK_LIB_DOBBY) {
-        for(HKMemoryHook* hkhook in memoryHooks) {
-            DobbyCodePatch([[hkhook target] pointerValue], (uint8_t *)[[hkhook data] pointerValue], [[hkhook size] intValue]);
-        }
-
-        didMemory = YES;
-    }
-    #endif
 
     if(didFunctions && didMemory) {
         result = HK_OK;
