@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-make clean
-make FINALPACKAGE=1
-cp -Rv ".theos/obj/HookKit.framework" "$THEOS/lib"
-cp -v "HookKit.h" "$THEOS/include"
+rm -rf "$THEOS/lib/HookKit.framework"
+mkdir -p "$THEOS/lib/HookKit.framework"
+cp -v "Resources/HookKit.tbd" "$THEOS/lib/HookKit.framework/HookKit.tbd"
+cp -v "HookKit.h" "$THEOS/include/HookKit.h"

@@ -52,8 +52,8 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        functionHooks = nil;
-        memoryHooks = nil;
+        functionHooks = [NSMutableArray new];
+        memoryHooks = [NSMutableArray new];
 
         lib_errno = 0;
         lib_errno_type = HK_LIB_NONE;
@@ -184,7 +184,7 @@
 
     if(_types & HK_LIB_SUBSTRATE) {
         if(!substrate_handle) substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY);
-        
+
         if(!substrate_handle) {
             substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATEFW);
             substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_LAZY);
@@ -381,8 +381,6 @@
         [hook setReplacement:[NSValue valueWithPointer:replacement]];
         [hook setOrig:[NSValue valueWithPointer:old_ptr]];
 
-        if(!functionHooks) functionHooks = [NSMutableArray new];
-
         [functionHooks addObject:hook];
         return HK_OK;
     }
@@ -467,8 +465,6 @@
         [hook setTarget:[NSValue valueWithPointer:target]];
         [hook setData:[NSValue valueWithPointer:data]];
         [hook setSize:[NSNumber numberWithInt:size]];
-
-        if(!memoryHooks) memoryHooks = [NSMutableArray new];
 
         [memoryHooks addObject:hook];
         return HK_OK;
