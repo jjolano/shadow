@@ -19,6 +19,12 @@
 #endif
 #endif
 
+#define PATH_LIBHOOKER      "/usr/lib/libhooker.dylib"
+#define PATH_LIBBLACKJACK   "/usr/lib/libblackjack.dylib"
+#define PATH_SUBSTITUTE     "/usr/lib/libsubstitute.dylib"
+#define PATH_SUBSTRATE      "/usr/lib/libsubstrate.dylib"
+#define PATH_ELLEKIT        "/usr/lib/libellekit.dylib"
+
 @interface HKFunctionHook : NSObject
 @property NSValue* function;
 @property NSValue* replacement;
@@ -30,9 +36,3 @@
 @property NSValue* data;
 @property NSNumber* size;
 @end
-
-#define PATH_LIBHOOKER      "/usr/lib/libhooker.dylib"
-#define PATH_LIBBLACKJACK   "/usr/lib/libblackjack.dylib"
-#define PATH_SUBSTITUTE     "/usr/lib/libsubstitute.dylib"
-#define PATH_SUBSTRATE      "/usr/lib/libsubstrate.dylib"
-#define PATH_ELLEKIT        "/usr/lib/libellekit.dylib"

@@ -16,35 +16,38 @@
     int lib_errno;
     hookkit_lib_t lib_errno_type;
 
+    NSString* libellekit_path;
+    void* libellekit_handle;
+
     NSString* libhooker_path;
     void* libhooker_handle;
-    @public int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count);
-    @public int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count);
-    @public struct libhooker_image* (*_LHOpenImage)(const char* path);
-    @public void (*_LHCloseImage)(struct libhooker_image* libhookerImage);
-    @public bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount);
+    int (*_LHHookFunctions)(const struct LHFunctionHook* hooks, int count);
+    int (*_LHPatchMemory)(const struct LHMemoryPatch* patches, int count);
+    struct libhooker_image* (*_LHOpenImage)(const char* path);
+    void (*_LHCloseImage)(struct libhooker_image* libhookerImage);
+    bool (*_LHFindSymbols)(struct libhooker_image* libhookerImage, const char** symbolNames, void** searchSyms, size_t searchSymCount);
 
     NSString* libblackjack_path;
     void* libblackjack_handle;
-    @public enum LIBHOOKER_ERR (*_LBHookMessage)(Class objcClass, SEL selector, void* replacement, void* old_ptr);
+    enum LIBHOOKER_ERR (*_LBHookMessage)(Class objcClass, SEL selector, void* replacement, void* old_ptr);
 
     NSString* substitute_path;
     void* substitute_handle;
-    @public int (*_substitute_hook_objc_message)(Class klass, SEL selector, void* replacement, void* old_ptr, bool* created_imp_ptr);
-    @public int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options);
-    @public void (*_SubHookMemory)(void* target, const void* data, size_t size);
-    @public struct substitute_image* (*_substitute_open_image)(const char* filename);
-    @public void (*_substitute_close_image)(struct substitute_image* handle);
-    @public int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms);
+    int (*_substitute_hook_objc_message)(Class klass, SEL selector, void* replacement, void* old_ptr, bool* created_imp_ptr);
+    int (*_substitute_hook_functions)(const struct substitute_function_hook* hooks, size_t nhooks, struct substitute_function_hook_record** recordp, int options);
+    void (*_SubHookMemory)(void* target, const void* data, size_t size);
+    struct substitute_image* (*_substitute_open_image)(const char* filename);
+    void (*_substitute_close_image)(struct substitute_image* handle);
+    int (*_substitute_find_private_syms)(struct substitute_image* handle, const char** __restrict names, void** __restrict syms, size_t nsyms);
 
     NSString* substrate_path;
     void* substrate_handle;
-    @public void (*_MSHookMessageEx)(Class _class, SEL sel, IMP imp, IMP* result);
-    @public void (*_MSHookFunction)(void* symbol, void* replace, void** result);
-    @public void (*_MSHookMemory)(void* target, const void* data, size_t size);
-    @public MSImageRef (*_MSGetImageByName)(const char* file);
-    @public void (*_MSCloseImage)(MSImageRef);
-    @public void* (*_MSFindSymbol)(MSImageRef image, const char* name);
+    void (*_MSHookMessageEx)(Class _class, SEL sel, IMP imp, IMP* result);
+    void (*_MSHookFunction)(void* symbol, void* replace, void** result);
+    void (*_MSHookMemory)(void* target, const void* data, size_t size);
+    MSImageRef (*_MSGetImageByName)(const char* file);
+    void (*_MSCloseImage)(MSImageRef);
+    void* (*_MSFindSymbol)(MSImageRef image, const char* name);
 }
 
 - (instancetype)init {
@@ -54,6 +57,9 @@
 
         lib_errno = 0;
         lib_errno_type = HK_LIB_NONE;
+
+        libellekit_path = ROOT_PATH_NS(@PATH_ELLEKIT);
+        libellekit_handle = dlopen([libellekit_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
 
         libhooker_path = ROOT_PATH_NS(@PATH_LIBHOOKER);
         libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
@@ -94,6 +100,12 @@
 
 - (void)initLibraries {
     if(_types == HK_LIB_NONE) {
+        if(libellekit_handle) {
+            libhooker_handle = libellekit_handle;
+            libblackjack_handle = libellekit_handle;
+            substrate_handle = libellekit_handle;
+        }
+
         if(libhooker_handle || libblackjack_handle) {
             _types |= HK_LIB_LIBHOOKER;
         }
@@ -118,38 +130,12 @@
     if(_types == HK_LIB_ELLEKIT) {
         // ellekit implements both libhooker and substrate APIs
         // should be able to just enable both types and point handles to ellekit for symbol resolving later
+        
+        if(!libellekit_handle) libellekit_handle = dlopen([libellekit_path fileSystemRepresentation], RTLD_LAZY);
 
-        if(libhooker_handle) {
-            dlclose(libhooker_handle);
-
-            _LHHookFunctions = NULL;
-            _LHPatchMemory = NULL;
-            _LHOpenImage = NULL;
-            _LHCloseImage = NULL;
-            _LHFindSymbols = NULL;
-        }
-
-        if(libblackjack_handle) {
-            dlclose(libblackjack_handle);
-
-            _LBHookMessage = NULL;
-        }
-
-        if(substrate_handle) {
-            dlclose(substrate_handle);
-
-            _MSHookMessageEx = NULL;
-            _MSHookFunction = NULL;
-            _MSHookMemory = NULL;
-            _MSGetImageByName = NULL;
-            _MSCloseImage = NULL;
-            _MSFindSymbol = NULL;
-        }
-
-        void* ellekit_handle = dlopen(ROOT_PATH_C(PATH_ELLEKIT), RTLD_LAZY);
-        libhooker_handle = ellekit_handle;
-        libblackjack_handle = ellekit_handle;
-        substrate_handle = ellekit_handle;
+        libhooker_handle = libellekit_handle;
+        libblackjack_handle = libellekit_handle;
+        substrate_handle = libellekit_handle;
 
         _types |= HK_LIB_LIBHOOKER;
         _types |= HK_LIB_SUBSTRATE;
@@ -166,6 +152,9 @@
             if(!_LHOpenImage) _LHOpenImage = dlsym(libhooker_handle, "LHOpenImage");
             if(!_LHCloseImage) _LHCloseImage = dlsym(libhooker_handle, "LHCloseImage");
             if(!_LHFindSymbols) _LHFindSymbols = dlsym(libhooker_handle, "LHFindSymbols");
+
+            // resolve this in case it exists
+            if(!_LBHookMessage) _LBHookMessage = dlsym(libhooker_handle, "LBHookMessage");
         }
 
         if(libblackjack_handle) {
@@ -198,14 +187,6 @@
             if(!_MSGetImageByName) _MSGetImageByName = dlsym(substrate_handle, "MSGetImageByName");
             if(!_MSCloseImage) _MSCloseImage = dlsym(substrate_handle, "MSCloseImage");
             if(!_MSFindSymbol) _MSFindSymbol = dlsym(substrate_handle, "MSFindSymbol");
-
-            // use weak linked if dlsym returns null
-            if(!_MSHookMessageEx) _MSHookMessageEx = MSHookMessageEx;
-            if(!_MSHookFunction) _MSHookFunction = MSHookFunction;
-            if(!_MSHookMemory) _MSHookMemory = MSHookMemory;
-            if(!_MSGetImageByName) _MSGetImageByName = MSGetImageByName;
-            if(!_MSCloseImage) _MSCloseImage = MSCloseImage;
-            if(!_MSFindSymbol) _MSFindSymbol = MSFindSymbol;
         }
     }
 }
@@ -213,19 +194,19 @@
 + (hookkit_lib_t)getAvailableSubstitutorTypes {
     hookkit_lib_t result = HK_LIB_NONE;
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_LIBHOOKER)]) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_LIBHOOKER))) {
         result |= HK_LIB_LIBHOOKER;
     }
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_SUBSTITUTE)]) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTITUTE))) {
         result |= HK_LIB_SUBSTITUTE;
     }
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_SUBSTRATE)]) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE))) {
         result |= HK_LIB_SUBSTRATE;
     }
 
-    if([[NSFileManager defaultManager] fileExistsAtPath:ROOT_PATH_NS(@PATH_ELLEKIT)]) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_ELLEKIT))) {
         result |= HK_LIB_ELLEKIT;
     }
 
@@ -266,10 +247,7 @@
             @"id" : @"libhooker",
             @"name" : @"libhooker",
             @"type" : [NSNumber numberWithUnsignedInt:HK_LIB_LIBHOOKER],
-            @"path" : ROOT_PATH_NS(@PATH_LIBHOOKER),
-            @"extra_path" : @{
-                @"libblackjack" : ROOT_PATH_NS(@PATH_LIBBLACKJACK)
-            }
+            @"path" : ROOT_PATH_NS(@PATH_LIBHOOKER)
         }];
     }
 
