@@ -137,7 +137,7 @@ ShadowService* _srv = nil;
         }
     }
 
-    HKSubstitutor* substitutor = [HKSubstitutor new];
+    HKSubstitutor* substitutor = [HKSubstitutor defaultSubstitutor];
 
     if(hooklibs != HK_LIB_NONE) {
         [substitutor setTypes:hooklibs];
