@@ -9,9 +9,7 @@
 "DEVELOPER_HDR" = "Developer";
 "VISIT_GITHUB" = "Visit Shadow on GitHub";
 "VISIT_KOFI" = "Send a Tip with Ko-fi";
-
-/* your language here */
-"LOCALIZATION_HDR" = "English Localization";
+"LOCALIZATION_HDR" = "Translation";
 
 /* your name here! */
 "TRANSLATOR" = "jjolano";
