@@ -308,14 +308,15 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
                 if(orig_addr) {
                     // Return the original lookup if possible
-                    result = replaced_dladdr(orig_addr, info);
+                    result = original_dladdr(orig_addr, info);
                 } else {
-                    dlerror();
+                    // if original addr was not found most likly its not a hooked function from us
+                    // because we are injected lets not link anything to our selfs
+                    memset(info, 0, sizeof(Dl_info));
+                    result = 0;
                 }
             }
         }
-    } else {
-        memset(info, 0, sizeof(Dl_info));
     }
 
     return result;
