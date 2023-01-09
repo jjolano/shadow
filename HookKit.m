@@ -10,8 +10,8 @@
 @end
 
 @implementation HKSubstitutor {
-    NSMutableArray<HKFunctionHook *>* functionHooks;
-    NSMutableArray<HKMemoryHook *>* memoryHooks;
+    NSArray<HKFunctionHook *>* functionHooks;
+    NSArray<HKMemoryHook *>* memoryHooks;
 
     int lib_errno;
     hookkit_lib_t lib_errno_type;
@@ -52,8 +52,8 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        functionHooks = [NSMutableArray new];
-        memoryHooks = [NSMutableArray new];
+        functionHooks = [NSArray new];
+        memoryHooks = [NSArray new];
 
         lib_errno = 0;
         lib_errno_type = HK_LIB_NONE;
@@ -398,7 +398,7 @@
         [hook setReplacement:[NSValue valueWithPointer:replacement]];
         [hook setOrig:[NSValue valueWithPointer:old_ptr]];
 
-        [functionHooks addObject:hook];
+        functionHooks = [functionHooks arrayByAddingObject:hook];
         return HK_OK;
     }
 
@@ -481,7 +481,7 @@
         [hook setData:[NSValue valueWithPointer:data]];
         [hook setSize:[NSNumber numberWithInt:size]];
 
-        [memoryHooks addObject:hook];
+        memoryHooks = [memoryHooks arrayByAddingObject:hook];
         return HK_OK;
     }
 
