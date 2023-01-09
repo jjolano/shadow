@@ -183,7 +183,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
 
     // Add if safe dylib.
-    if([image_name hasPrefix:@"/System"] || ![_shadow isPathRestricted:image_name]) {
+    if([image_name hasPrefix:@"/System"] || [image_name hasPrefix:@"/Developer"] || ![_shadow isPathRestricted:image_name]) {
         if(!_shdw_dyld_collection) {
             _shdw_dyld_collection = [NSArray new];
         }

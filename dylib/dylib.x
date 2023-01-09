@@ -245,22 +245,10 @@ ShadowService* _srv = nil;
         shadowhook_syscall(substitutor);
     }
 
-    if([prefs_load[@"Hook_Sandbox"] boolValue]) {
-        NSLog(@"%@", @"+ sandbox");
-
-        shadowhook_sandbox(substitutor);
-    }
-
     if([prefs_load[@"Hook_Memory"] boolValue]) {
         NSLog(@"%@", @"+ memory");
 
         shadowhook_mem(substitutor);
-    }
-
-    if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
-        NSLog(@"%@", @"+ classes");
-        
-        shadowhook_objc_hidetweakclasses(substitutor);
     }
 
     if([prefs_load[@"Hook_HideApps"] boolValue]) {
@@ -269,10 +257,11 @@ ShadowService* _srv = nil;
         shadowhook_LSApplicationWorkspace(substitutor);
     }
 
-    #ifdef hookkit_h
-    HKExecuteBatch();
-    HKDisableBatching();
-    #endif
+    if([prefs_load[@"Hook_Sandbox"] boolValue]) {
+        NSLog(@"%@", @"+ sandbox");
+
+        shadowhook_sandbox(substitutor);
+    }
 
     if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
         NSLog(@"%@", @"+ dylibex");
@@ -280,11 +269,22 @@ ShadowService* _srv = nil;
         shadowhook_dyld_extra(substitutor);
     }
 
+    if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
+        NSLog(@"%@", @"+ classes");
+        
+        shadowhook_objc_hidetweakclasses(substitutor);
+    }
+
     if([prefs_load[@"Hook_SymLookup"] boolValue]) {
         NSLog(@"%@", @"+ dlsym");
 
         shadowhook_dyld_symlookup(substitutor);
     }
+
+    #ifdef hookkit_h
+    HKExecuteBatch();
+    HKDisableBatching();
+    #endif
 
     NSLog(@"%@", @"completed hooks");
 }

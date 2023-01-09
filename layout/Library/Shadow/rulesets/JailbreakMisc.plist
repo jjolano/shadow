@@ -51,6 +51,7 @@
 		<string>SELF LIKE '/private/preboot/*/jb*'</string>
 		<string>SELF LIKE '/var/run/*.pid'</string>
 		<string>SELF ENDSWITH '.distrib'</string>
+		<string>SELF ENDSWITH '_TrollStore'</string>
 		<string>SELF LIKE '/*/LIAPP*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
@@ -64,6 +65,8 @@
 		<string>undecimus</string>
 		<string>xina</string>
 		<string>filza</string>
+		<string>apt-repo</string>
+		<string>installer</string>
 	</array>
 </dict>
 </plist>

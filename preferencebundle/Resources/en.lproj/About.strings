@@ -11,6 +11,7 @@
 "VISIT_GITHUB" = "Visit Shadow on GitHub";
 "VISIT_KOFI" = "Send a Tip with Ko-fi";
 "LOCALIZATION_HDR" = "Translation";
+"VISIT_CHANGELOG" = "View Latest Changes";
 
 /* your name here! */
 "TRANSLATOR" = "jjolano";

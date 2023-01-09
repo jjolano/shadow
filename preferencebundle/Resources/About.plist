@@ -65,6 +65,18 @@
 			<key>get</key>
 			<string>aboutLatestVersion:</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>key</key>
+			<string>Btn_ChangeLog</string>
+			<key>id</key>
+			<string>Btn_ChangeLog</string>
+			<key>action</key>
+			<string>openChangeLog:</string>
+			<key>label</key>
+			<string>VISIT_CHANGELOG</string>
+		</dict>
 
 		<dict>
 			<key>cell</key>
