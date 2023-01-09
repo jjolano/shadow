@@ -141,7 +141,7 @@
     }
 
     if(_rootlessMode) {
-        if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private"]) {
+        if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
             return NO;
         }
 
