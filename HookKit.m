@@ -92,7 +92,7 @@
         substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
 
         if(!substrate_handle) {
-            substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATEFW);
+            substrate_path = ROOT_PATH_NS(@PATH_SUBSTRATE2);
             substrate_handle = dlopen([substrate_path fileSystemRepresentation], RTLD_NOLOAD|RTLD_LAZY);
         }
 
@@ -239,11 +239,11 @@
         result |= HK_LIB_LIBHOOKER;
     }
 
-    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTITUTE))) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTITUTE)) || dlopen_preflight(ROOT_PATH_C(PATH_SUBSTITUTE2))) {
         result |= HK_LIB_SUBSTITUTE;
     }
 
-    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE)) || dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATEFW))) {
+    if(dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE)) || dlopen_preflight(ROOT_PATH_C(PATH_SUBSTRATE2))) {
         result |= HK_LIB_SUBSTRATE;
     }
 
