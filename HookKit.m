@@ -170,6 +170,10 @@
 
     if(_types & HK_LIB_SUBSTITUTE) {
         if(!substitute_handle) substitute_handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY);
+        if(!substitute_handle) {
+            substitute_path = ROOT_PATH_NS(@PATH_SUBSTITUTE2);
+            substitute_handle = dlopen([substitute_path fileSystemRepresentation], RTLD_LAZY);
+        }
 
         if(substitute_handle) {
             // resolve symbols
