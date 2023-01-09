@@ -1,11 +1,11 @@
 #import "hooks.h"
 
-extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
-extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
+// extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
+// extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
 
-extern int MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info);
-extern NSString* kMISValidationOptionAllowAdHocSigning;
-extern NSString* kMISValidationOptionRespectUppTrustAndAuthorization;
+// extern int MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info);
+// extern NSString* kMISValidationOptionAllowAdHocSigning;
+// extern NSString* kMISValidationOptionRespectUppTrustAndAuthorization;
 
 // static int (*original_MISValidateSignatureAndCopyInfo)(NSString* file, NSDictionary* options, NSDictionary** info);
 // static int replaced_MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info) {

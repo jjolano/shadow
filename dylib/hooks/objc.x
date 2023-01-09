@@ -134,9 +134,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
     if(result && ![aClassName hasPrefix:@"NS"] && ![aClassName hasPrefix:@"UI"]) {
-        const char* image_name = original_class_getImageName(result);
-
-        if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             return nil;
         }
     }

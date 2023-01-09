@@ -118,6 +118,10 @@
 	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"]];
 }
 
+- (void)openChangeLog:(id)sender {
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"]];
+}
+
 - (instancetype)init {
 	if((self = [super init])) {
 		ShadowService* service = [ShadowService new];
