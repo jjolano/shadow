@@ -17,7 +17,6 @@
         [filtered_result removeObjectForKey:@"_MSSafeMode"];
         [filtered_result removeObjectForKey:@"_SafeMode"];
         [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
-        [filtered_result removeObjectForKey:@"SHELL"];
 
         // struct utsname systemInfo;
         // uname(&systemInfo);

@@ -169,12 +169,6 @@ ShadowService* _srv = nil;
         shadowhook_dyld(substitutor);
     }
 
-    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
-        NSLog(@"%@", @"+ dylibex");
-
-        shadowhook_dyld_extra(substitutor);
-    }
-
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
         NSLog(@"%@", @"+ urlscheme");
 
@@ -219,12 +213,6 @@ ShadowService* _srv = nil;
         NSLog(@"%@", @"+ mach");
 
         shadowhook_mach(substitutor);
-    }
-
-    if([prefs_load[@"Hook_SymLookup"] boolValue]) {
-        NSLog(@"%@", @"+ dlsym");
-
-        shadowhook_dyld_symlookup(substitutor);
     }
 
     if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
@@ -283,7 +271,20 @@ ShadowService* _srv = nil;
 
     #ifdef hookkit_h
     HKExecuteBatch();
+    HKDisableBatching();
     #endif
+
+    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+        NSLog(@"%@", @"+ dylibex");
+
+        shadowhook_dyld_extra(substitutor);
+    }
+
+    if([prefs_load[@"Hook_SymLookup"] boolValue]) {
+        NSLog(@"%@", @"+ dlsym");
+
+        shadowhook_dyld_symlookup(substitutor);
+    }
 
     NSLog(@"%@", @"completed hooks");
 }

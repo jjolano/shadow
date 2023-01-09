@@ -51,8 +51,10 @@ static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     void* handle = original_dlopen(path, mode);
 
-    if([_shadow isAddrRestricted:handle] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        return NULL;
+    if(handle) {
+        if(([_shadow isCPathRestricted:path] || [_shadow isAddrRestricted:handle]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            return NULL;
+        }
     }
 
     return handle;
@@ -326,12 +328,13 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
     MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
+
+    MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
+    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {
-    MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
     MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
-    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 }
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {

@@ -658,8 +658,7 @@ static char* replaced_getenv(const char* name) {
         if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
         || strcmp(name, "_MSSafeMode") == 0
         || strcmp(name, "_SafeMode") == 0
-        || strcmp(name, "_SubstituteSafeMode") == 0
-        || strcmp(name, "SHELL") == 0) {
+        || strcmp(name, "_SubstituteSafeMode") == 0) {
             return NULL;
         }
     }
