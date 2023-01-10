@@ -68,10 +68,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>key</key>
-			<string>Btn_ChangeLog</string>
-			<key>id</key>
-			<string>Btn_ChangeLog</string>
 			<key>action</key>
 			<string>openChangeLog:</string>
 			<key>label</key>
@@ -103,10 +99,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>key</key>
-			<string>Btn_GitHub</string>
-			<key>id</key>
-			<string>Btn_GitHub</string>
 			<key>action</key>
 			<string>openGitHub:</string>
 			<key>label</key>
@@ -115,10 +107,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>key</key>
-			<string>Btn_Kofi</string>
-			<key>id</key>
-			<string>Btn_Kofi</string>
 			<key>action</key>
 			<string>openKofi:</string>
 			<key>label</key>

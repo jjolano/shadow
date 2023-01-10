@@ -15,16 +15,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>App_Enabled</string>
 			<key>id</key>
 			<string>App_Enabled</string>
 			<key>label</key>
 			<string>ENABLE_SHADOW</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
