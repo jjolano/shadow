@@ -19,8 +19,6 @@
 			<string>HK_Library</string>
 			<key>label</key>
 			<string>HOOKING_LIBRARY</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
 			<key>detail</key>
 			<string>PSListItemsController</string>
 			<key>staticTextMessage</key>
@@ -45,16 +43,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Tweak_CompatEx</string>
 			<key>id</key>
 			<string>Tweak_CompatEx</string>
 			<key>label</key>
 			<string>ALLOW_RESOURCES</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -69,16 +61,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Rootless</string>
 			<key>id</key>
 			<string>Rootless</string>
 			<key>label</key>
 			<string>ROOTLESS_MODE</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -95,16 +81,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_Filesystem</string>
 			<key>id</key>
 			<string>Hook_Filesystem</string>
 			<key>label</key>
 			<string>HOOK_FILE_SYSTEM</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -113,16 +93,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DynamicLibraries</string>
 			<key>id</key>
 			<string>Hook_DynamicLibraries</string>
 			<key>label</key>
 			<string>HOOK_DYLIB</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -131,16 +105,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_URLScheme</string>
 			<key>id</key>
 			<string>Hook_URLScheme</string>
 			<key>label</key>
 			<string>HOOK_URLSCHEME</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -149,16 +117,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_EnvVars</string>
 			<key>id</key>
 			<string>Hook_EnvVars</string>
 			<key>label</key>
 			<string>HOOK_ENVVARS</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -175,16 +137,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DeviceCheck</string>
 			<key>id</key>
 			<string>Hook_DeviceCheck</string>
 			<key>label</key>
 			<string>HOOK_DETECTFMWK</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<true/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -193,16 +149,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_FilesystemExtra</string>
 			<key>id</key>
 			<string>Hook_FilesystemExtra</string>
 			<key>label</key>
 			<string>HOOK_FILE_SYSTEM_EX</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -211,16 +161,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_Foundation</string>
 			<key>id</key>
 			<string>Hook_Foundation</string>
 			<key>label</key>
 			<string>HOOK_FOUNDATION</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -229,16 +173,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_FakeMac</string>
 			<key>id</key>
 			<string>Hook_FakeMac</string>
 			<key>label</key>
 			<string>HOOK_MAC</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -255,16 +193,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_MachBootstrap</string>
 			<key>id</key>
 			<string>Hook_MachBootstrap</string>
 			<key>label</key>
 			<string>HOOK_MACH</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -273,16 +205,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_SymLookup</string>
 			<key>id</key>
 			<string>Hook_SymLookup</string>
 			<key>label</key>
 			<string>HOOK_SYMLOOKUP</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -291,16 +217,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_ObjCRuntime</string>
 			<key>id</key>
 			<string>Hook_ObjCRuntime</string>
 			<key>label</key>
 			<string>HOOK_OBJC</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -309,16 +229,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_AntiDebugging</string>
 			<key>id</key>
 			<string>Hook_AntiDebugging</string>
 			<key>label</key>
 			<string>HOOK_ANTIDBG</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -327,16 +241,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_Syscall</string>
 			<key>id</key>
 			<string>Hook_Syscall</string>
 			<key>label</key>
 			<string>HOOK_SYSCALL</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -345,16 +253,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_HideApps</string>
 			<key>id</key>
 			<string>Hook_HideApps</string>
 			<key>label</key>
 			<string>HOOK_APPENUM</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -371,16 +273,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_Sandbox</string>
 			<key>id</key>
 			<string>Hook_Sandbox</string>
 			<key>label</key>
 			<string>HOOK_SANDBOX</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -389,16 +285,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_LowLevelC</string>
 			<key>id</key>
 			<string>Hook_LowLevelC</string>
 			<key>label</key>
 			<string>HOOK_LLC</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -407,16 +297,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_Memory</string>
 			<key>id</key>
 			<string>Hook_Memory</string>
 			<key>label</key>
 			<string>HOOK_MEM</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -425,16 +309,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_TweakClasses</string>
 			<key>id</key>
 			<string>Hook_TweakClasses</string>
 			<key>label</key>
 			<string>HOOK_TWEAKCLASS</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -443,16 +321,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Hook_DynamicLibrariesExtra</string>
 			<key>id</key>
 			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
 			<string>HOOK_DYLD</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

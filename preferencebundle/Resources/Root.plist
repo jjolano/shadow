@@ -15,16 +15,10 @@
 		<dict>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
-			<key>key</key>
-			<string>Global_Enabled</string>
 			<key>id</key>
 			<string>Global_Enabled</string>
 			<key>label</key>
 			<string>ALWAYS_ON</string>
-			<key>defaults</key>
-			<string>me.jjolano.shadow</string>
-			<key>default</key>
-			<false/>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
@@ -39,10 +33,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>key</key>
-			<string>Link_Global_Hooks</string>
-			<key>id</key>
-			<string>Link_Global_Hooks</string>
 			<key>detail</key>
 			<string>SHDWHooksListController</string>
 			<key>isController</key>
@@ -88,10 +78,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>key</key>
-			<string>Btn_Respring</string>
-			<key>id</key>
-			<string>Btn_Respring</string>
 			<key>action</key>
 			<string>respring:</string>
 			<key>label</key>
@@ -100,10 +86,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>key</key>
-			<string>Btn_ResetSettings</string>
-			<key>id</key>
-			<string>Btn_ResetSettings</string>
 			<key>action</key>
 			<string>reset:</string>
 			<key>label</key>
@@ -127,10 +109,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>key</key>
-			<string>Link_About</string>
-			<key>id</key>
-			<string>Link_About</string>
 			<key>detail</key>
 			<string>SHDWAboutListController</string>
 			<key>isController</key>
