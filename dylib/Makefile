@@ -13,7 +13,7 @@ Shadow_LIBRARIES = sandy
 Shadow_FRAMEWORKS = Foundation
 Shadow_EXTRA_FRAMEWORKS = HookKit
 Shadow_PRIVATE_FRAMEWORKS = AppSupport MobileCoreServices
-Shadow_CFLAGS = -fobjc-arc -DTHEOS_LEAN_AND_MEAN
+Shadow_CFLAGS = -fobjc-arc
 Shadow_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 Shadow_LDFLAGS += -weak_framework CydiaSubstrate
 

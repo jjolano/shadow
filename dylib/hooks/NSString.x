@@ -1,5 +1,7 @@
 #import "hooks.h"
 
+typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDictionary<NSAttributedStringDocumentAttributeKey, id> *, NSError *);
+
 %group shadowhook_NSString
 %hook NSString
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
@@ -147,39 +149,39 @@
 // }
 %end
 
-// %hook NSAttributedString
-// - (instancetype)initWithHTML:(NSData *)data baseURL:(NSURL *)base documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict {
-//     if([_shadow isURLRestricted:base] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-//         return nil;
-//     }
+%hook NSAttributedString
+- (instancetype)initWithHTML:(NSData *)data baseURL:(NSURL *)base documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict {
+    if([_shadow isURLRestricted:base] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
 
-//     return %orig;
-// }
+    return %orig;
+}
 
-// - (instancetype)initWithURL:(NSURL *)url options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict error:(NSError * _Nullable *)error {
-//     if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-//         if(error) {
-//             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
-//         }
+- (instancetype)initWithURL:(NSURL *)url options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict error:(NSError * _Nullable *)error {
+    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
 
-//         return nil;
-//     }
+        return nil;
+    }
 
-//     return %orig;
-// }
+    return %orig;
+}
 
-// // + (void)loadFromHTMLWithFileURL:(NSURL *)fileURL options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
-// //     if([_shadow isURLRestricted:fileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-// //         if(completionHandler) {
-// //             completionHandler(nil, nil, nil);
-// //         }
++ (void)loadFromHTMLWithFileURL:(NSURL *)fileURL options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
+    if([_shadow isURLRestricted:fileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(completionHandler) {
+            completionHandler(nil, nil, nil);
+        }
 
-// //         return;
-// //     }
+        return;
+    }
 
-// //     %orig;
-// // }
-// %end
+    %orig;
+}
+%end
 %end
 
 void shadowhook_NSString(HKSubstitutor* hooks) {
