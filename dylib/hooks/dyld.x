@@ -66,6 +66,25 @@ static void* replaced_dlopen(const char* path, int mode) {
     return handle;
 }
 
+static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
+static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
+    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return original_dlopen_internal(path, mode, caller);
+    }
+
+    if([_shadow isCPathRestricted:path]) {
+        return NULL;
+    }
+
+    void* handle = original_dlopen_internal(path, mode, caller);
+
+    if([_shadow isAddrRestricted:handle]) {
+        return NULL;
+    }
+
+    return handle;
+}
+
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
     bool result = original_dlopen_preflight(path);
@@ -341,10 +360,43 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {
-    MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+    // dlopen hook code from Choicy
+    MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+    void* dlopen_global_var_ptr = MSFindSymbol(libdyldImage, "__ZN5dyld45gDyldE");
+
+    if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1 && !dlopen_global_var_ptr) {
+        void* dlopen_internal_ptr = MSFindSymbol(libdyldImage, "__ZL15dlopen_internalPKciPv");
+
+        if(dlopen_internal_ptr) {
+            MSHookFunction(dlopen_internal_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
+        } else {
+            MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+        }
+    } else {
+        void* dlopen_ptr = MSFindSymbol(libdyldImage, "_dlopen");
+
+        if(dlopen_ptr) {
+            MSHookFunction(dlopen_ptr, replaced_dlopen, (void **) &original_dlopen);
+        }
+
+        void* dlopen_from_ptr = MSFindSymbol(libdyldImage, "_dlopen_from");
+
+        if(dlopen_from_ptr) {
+            MSHookFunction(dlopen_from_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
+        }
+
+        if(!dlopen_ptr || !dlopen_from_ptr) {
+            MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+        }
+    }
+
+    MSCloseImage(libdyldImage);
 }
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
     MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
+}
+
+void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks) {
     MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
 }

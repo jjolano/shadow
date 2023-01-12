@@ -12,3 +12,11 @@
 #else
 #define NSLog(...) (void)0
 #endif
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_14_1
+#define kCFCoreFoundationVersionNumber_iOS_14_1 1751.108
+#endif
+
+#ifndef kCFCoreFoundationVersionNumber_iOS_11_0
+#define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
+#endif

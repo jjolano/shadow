@@ -27,6 +27,7 @@
 #import <spawn.h>
 #import <objc/runtime.h>
 
+#import "../../api/common.h"
 #import "../../api/Shadow.h"
 #import <substrate.h>
 #import <HookKit.h>
@@ -35,13 +36,9 @@
 #ifdef hookkit_h
 #define MSHookFunction(a,b,c)   [hooks hookFunction:a withReplacement:b outOldPtr:c]
 #define MSHookMessageEx         HKHookMessage
+#define MSGetImageByName        HKOpenImage
 #define MSFindSymbol            HKFindSymbol
-#endif
-
-#ifdef DEBUG
-#define NSLog(...) NSLog(__VA_ARGS__)
-#else
-#define NSLog(...) (void)0
+#define MSCloseImage            HKCloseImage
 #endif
 
 // private symbols
@@ -77,6 +74,7 @@ extern void shadowhook_libc_lowlevel(HKSubstitutor* hooks);
 extern void shadowhook_libc_antidebugging(HKSubstitutor* hooks);
 extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symlookup(HKSubstitutor* hooks);
+extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
 extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_dyld_shdw_add_image(const struct mach_header* mh, intptr_t vmaddr_slide);
