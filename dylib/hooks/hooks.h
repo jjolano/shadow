@@ -35,6 +35,7 @@
 #ifdef hookkit_h
 #define MSHookFunction(a,b,c)   [hooks hookFunction:a withReplacement:b outOldPtr:c]
 #define MSHookMessageEx         HKHookMessage
+#define MSFindSymbol            HKFindSymbol
 #endif
 
 #ifdef DEBUG
