@@ -1,5 +1,5 @@
 #define BYPASS_VERSION      "5.4"
-#define API_VERSION         "6.0"
+#define API_VERSION         "6.1"
 
 #define BUNDLE_ID           "me.jjolano.shadow"
 #define MACH_SERVICE_NAME   BUNDLE_ID ".service"

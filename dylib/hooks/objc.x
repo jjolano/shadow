@@ -127,7 +127,7 @@ static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
-    if(result && ![aClassName hasPrefix:@"NS"] && ![aClassName hasPrefix:@"UI"]) {
+    if(result) {
         if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             return nil;
         }
