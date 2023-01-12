@@ -1,4 +1,4 @@
-#define BYPASS_VERSION      "5.3"
+#define BYPASS_VERSION      "5.4"
 #define API_VERSION         "6.0"
 
 #define BUNDLE_ID           "me.jjolano.shadow"
