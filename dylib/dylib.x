@@ -14,10 +14,6 @@
 #import <libSandy.h>
 #import <HookKit.h>
 
-#ifndef kCFCoreFoundationVersionNumber_iOS_11_0
-#define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
-#endif
-
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
 
@@ -67,14 +63,13 @@ ShadowService* _srv = nil;
     }
 
     NSString* executablePath = [bundle executablePath];
-    NSString* bundlePath = [bundle bundlePath];
 
     // Only load Shadow for sandboxed applications.
     // Don't load for App Extensions (.. unless developers are adding detection in those too :/)
     if(![bundle appStoreReceiptURL]
     || [executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
-    || ![bundlePath hasSuffix:@".app"]) {
+    || ![[[executablePath stringByDeletingLastPathComponent] pathExtension] isEqualToString:@"app"]) {
         return;
     }
 
@@ -263,12 +258,6 @@ ShadowService* _srv = nil;
         shadowhook_sandbox(substitutor);
     }
 
-    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
-        NSLog(@"%@", @"+ dylibex");
-
-        shadowhook_dyld_extra(substitutor);
-    }
-
     if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
         NSLog(@"%@", @"+ classes");
         
@@ -279,12 +268,19 @@ ShadowService* _srv = nil;
         NSLog(@"%@", @"+ dlsym");
 
         shadowhook_dyld_symlookup(substitutor);
+        shadowhook_dyld_symaddrlookup(substitutor);
     }
 
     #ifdef hookkit_h
     HKExecuteBatch();
     HKDisableBatching();
     #endif
+
+    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+        NSLog(@"%@", @"+ dylibex");
+
+        shadowhook_dyld_extra(substitutor);
+    }
 
     NSLog(@"%@", @"completed hooks");
 }
