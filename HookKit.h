@@ -81,7 +81,7 @@ typedef const struct HKImage* HKImageRef;
 #define HKHookMemory(_target, _data, _size)         [HK_SUBSTITUTOR hookMemory:_target withData:_data size:_size]
 #define HKHookMessage(_class, _sel, _imp, _result)  [HK_SUBSTITUTOR hookMessageInClass:_class withSelector:_sel withReplacement:_imp outOldPtr:(void **)_result]
 
-#define HKOpenImage(_path)          [HK_SUBSTITUTOR openImage:@(_path)]
-#define HKCloseImage(_image)        [HK_SUBSTITUTOR closeImage:_image]
-#define HKFindSymbol(_image, _sym)  [HK_SUBSTITUTOR findSymbolInImage:_image symbolName:@(_sym)]
+#define HKOpenImage(_path)          (void *)[HK_SUBSTITUTOR openImage:@(_path)]
+#define HKCloseImage(_image)        [HK_SUBSTITUTOR closeImage:(HKImageRef)_image]
+#define HKFindSymbol(_image, _sym)  [HK_SUBSTITUTOR findSymbolInImage:(HKImageRef)_image symbolName:@(_sym)]
 #endif
