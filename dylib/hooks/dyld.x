@@ -49,12 +49,18 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
+    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return original_dlopen(path, mode);
+    }
+
+    if([_shadow isCPathRestricted:path]) {
+        return NULL;
+    }
+
     void* handle = original_dlopen(path, mode);
 
-    if(handle) {
-        if(([_shadow isCPathRestricted:path] || [_shadow isAddrRestricted:handle]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return NULL;
-        }
+    if([_shadow isAddrRestricted:handle]) {
+        return NULL;
     }
 
     return handle;
