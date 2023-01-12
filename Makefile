@@ -11,7 +11,7 @@ HookKit_FRAMEWORKS = Foundation
 HookKit_EXTRA_FRAMEWORKS = CydiaSubstrate
 HookKit_LIBRARIES = dobby
 HookKit_INSTALL_PATH = /Library/Frameworks
-HookKit_CFLAGS = -fobjc-arc -DTHEOS_LEAN_AND_MEAN
+HookKit_CFLAGS = -fobjc-arc
 HookKit_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 HookKit_LDFLAGS += -Lvendor/dobby -weak_framework CydiaSubstrate
 

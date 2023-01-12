@@ -157,7 +157,7 @@
         _types |= HK_LIB_SUBSTRATE;
     }
 
-    if(libellekit_handle == substrate_handle) {
+    if(libellekit_handle && libellekit_handle == substrate_handle) {
         _MSHookMessageEx = NULL;
         _MSHookFunction = NULL;
         _MSHookMemory = NULL;

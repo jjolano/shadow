@@ -83,5 +83,5 @@ typedef const struct HKImage* HKImageRef;
 
 #define HKOpenImage(_path)          [HK_SUBSTITUTOR openImage:@(_path)]
 #define HKCloseImage(_image)        [HK_SUBSTITUTOR closeImage:_image]
-#define HKFindSymbol(_image, _sym)  [HK_SUBSTITUTOR findSymbolInImage:_image symbolName:_sym]
+#define HKFindSymbol(_image, _sym)  [HK_SUBSTITUTOR findSymbolInImage:_image symbolName:@(_sym)]
 #endif
