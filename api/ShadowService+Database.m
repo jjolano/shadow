@@ -72,7 +72,7 @@
     NSMutableSet* schemes = [NSMutableSet new];
 
     for(NSString* app in system_apps) {
-        NSBundle* appBundle = [NSBundle bundleWithPath:app];
+        NSBundle* appBundle = [NSBundle bundleWithPath:ROOT_PATH_NS(app)];
 
         if(!appBundle) {
             continue;
