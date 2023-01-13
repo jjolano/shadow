@@ -365,28 +365,26 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     void* dlopen_global_var_ptr = MSFindSymbol(libdyldImage, "__ZN5dyld45gDyldE");
 
     if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1 && !dlopen_global_var_ptr) {
+        MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+
         void* dlopen_internal_ptr = MSFindSymbol(libdyldImage, "__ZL15dlopen_internalPKciPv");
 
         if(dlopen_internal_ptr) {
             MSHookFunction(dlopen_internal_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
-        } else {
-            MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
         }
     } else {
         void* dlopen_ptr = MSFindSymbol(libdyldImage, "_dlopen");
 
         if(dlopen_ptr) {
             MSHookFunction(dlopen_ptr, replaced_dlopen, (void **) &original_dlopen);
+        } else {
+            MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
         }
 
         void* dlopen_from_ptr = MSFindSymbol(libdyldImage, "_dlopen_from");
 
         if(dlopen_from_ptr) {
             MSHookFunction(dlopen_from_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
-        }
-
-        if(!dlopen_ptr || !dlopen_from_ptr) {
-            MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
         }
     }
 

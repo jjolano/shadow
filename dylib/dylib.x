@@ -271,16 +271,16 @@ ShadowService* _srv = nil;
         shadowhook_dyld_symaddrlookup(substitutor);
     }
 
-    #ifdef hookkit_h
-    HKExecuteBatch();
-    HKDisableBatching();
-    #endif
-
     if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
         NSLog(@"%@", @"+ dylibex");
 
         shadowhook_dyld_extra(substitutor);
     }
+
+    #ifdef hookkit_h
+    HKExecuteBatch();
+    HKDisableBatching();
+    #endif
 
     NSLog(@"%@", @"completed hooks");
 }
