@@ -166,6 +166,18 @@
         _MSFindSymbol = NULL;
     }
 
+    if(libellekit_handle && libellekit_handle == libhooker_handle) {
+        _LHHookFunctions = NULL;
+        _LHPatchMemory = NULL;
+        _LHOpenImage = NULL;
+        _LHCloseImage = NULL;
+        _LHFindSymbols = NULL;
+    }
+
+    if(libellekit_handle && libellekit_handle == libblackjack_handle) {
+        _LBHookMessage = NULL;
+    }
+
     if(_types & HK_LIB_LIBHOOKER) {
         if(!libhooker_handle) libhooker_handle = dlopen([libhooker_path fileSystemRepresentation], RTLD_LAZY);
         if(!libblackjack_handle) libblackjack_handle = dlopen([libblackjack_path fileSystemRepresentation], RTLD_LAZY);
@@ -345,8 +357,6 @@
 }
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
-    hookkit_status_t result = HK_ERR;
-
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LBHookMessage) {
             int lh_result = _LBHookMessage(objcClass, selector, replacement, old_ptr);
@@ -357,7 +367,7 @@
                 // handle libhooker error codes
                 lib_errno = lh_result;
                 lib_errno_type = HK_LIB_LIBHOOKER;
-                return result;
+                return HK_ERR;
             }
         }
     }
@@ -372,7 +382,7 @@
                 // handle substitute error codes
                 lib_errno = sub_result;
                 lib_errno_type = HK_LIB_SUBSTITUTE;
-                return result;
+                return HK_ERR;
             }
         }
     }
@@ -384,11 +394,7 @@
 
     // todo: maybe have native objc swizzling?
 
-    if(result == HK_ERR) {
-        result |= HK_ERR_NOT_SUPPORTED;
-    }
-
-    return result;
+    return HK_ERR_NOT_SUPPORTED;
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
@@ -401,8 +407,6 @@
         functionHooks = [functionHooks arrayByAddingObject:hook];
         return HK_OK;
     }
-
-    hookkit_status_t result = HK_ERR;
 
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LHHookFunctions) {
@@ -418,7 +422,7 @@
                 // handle libhooker error codes
                 lib_errno = lh_result;
                 lib_errno_type = HK_LIB_LIBHOOKER;
-                return result;
+                return HK_ERR;
             }
         }
     }
@@ -437,7 +441,7 @@
                 // handle substitute error codes
                 lib_errno = sub_result;
                 lib_errno_type = HK_LIB_SUBSTITUTE;
-                return result;
+                return HK_ERR;
             }
         }
     }
@@ -449,16 +453,26 @@
             if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, old_ptr}}, 1)) {
                 return HK_OK;
             }
+
+            // return HK_ERR;
         }
+
+        // if we're here, it could be a private symbol?
+        return HK_ERR;
     }
     #endif
 
     #ifdef dobby_h
     if(_types == HK_LIB_DOBBY) {
         dobby_enable_near_branch_trampoline();
-        DobbyHook(function, replacement, (dobby_dummy_func_t *)old_ptr);
+
+        if(DobbyHook(function, replacement, (dobby_dummy_func_t *)old_ptr)) {
+            dobby_disable_near_branch_trampoline();
+            return HK_OK;
+        }
+
         dobby_disable_near_branch_trampoline();
-        return HK_OK;
+        return HK_ERR;
     }
     #endif
 
@@ -467,11 +481,7 @@
         return HK_OK;
     }
 
-    if(result == HK_ERR) {
-        result |= HK_ERR_NOT_SUPPORTED;
-    }
-
-    return result;
+    return HK_ERR_NOT_SUPPORTED;
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
@@ -484,8 +494,6 @@
         memoryHooks = [memoryHooks arrayByAddingObject:hook];
         return HK_OK;
     }
-
-    hookkit_status_t result = HK_ERR;
 
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LHPatchMemory) {
@@ -501,7 +509,7 @@
                 // handle libhooker error codes
                 lib_errno = lh_result;
                 lib_errno_type = HK_LIB_LIBHOOKER;
-                return result;
+                return HK_ERR;
             }
         }
     }
@@ -513,6 +521,12 @@
         }
     }
 
+    #ifdef fishhook_h
+    if(_types == HK_LIB_FISHHOOK) {
+        // return HK_ERR_NOT_SUPPORTED;
+    }
+    #endif
+
     #ifdef dobby_h
     if(_types == HK_LIB_DOBBY) {
         MemoryOperationError dobby_result = DobbyCodePatch(target, (uint8_t *)data, size);
@@ -522,7 +536,7 @@
         } else {
             lib_errno = dobby_result;
             lib_errno_type = HK_LIB_DOBBY;
-            return result;
+            return HK_ERR;
         }
     }
     #endif
@@ -532,11 +546,7 @@
         return HK_OK;
     }
 
-    if(result == HK_ERR) {
-        result |= HK_ERR_NOT_SUPPORTED;
-    }
-
-    return result;
+    return HK_ERR_NOT_SUPPORTED;
 }
 
 - (HKImageRef)openImage:(NSString *)path {
@@ -585,20 +595,58 @@
 }
 
 - (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols {
-    hookkit_status_t result = HK_ERR;
-
     if(image != NULL) {
         // libhooker and substitute do not natively handle a NULL value (all images) for image. Keep that to substrate-only as a compatibility layer.
 
         if(_types & HK_LIB_LIBHOOKER) {
             if(_LHFindSymbols) {
-                // todo
+                NSMutableData* _symbolNames = [NSMutableData dataWithLength:(sizeof(char *) * [symbolNames count])];
+                NSMutableData* _searchSyms = [NSMutableData dataWithLength:(sizeof(void *) * [symbolNames count])];
+
+                char** _names = (char **)[_symbolNames mutableBytes];
+                
+                for(NSString* symbolName in symbolNames) {
+                    *_names = (char *)[symbolName UTF8String];
+                    _names++;
+                }
+
+                _LHFindSymbols((struct libhooker_image *)image, (const char **)[_symbolNames bytes], (void **)[_searchSyms mutableBytes], [symbolNames count]);
+
+                NSMutableArray* syms = [NSMutableArray new];
+                const void** _syms = (const void **)[_searchSyms bytes];
+
+                for(int i = 0; i < [symbolNames count]; i++) {
+                    [syms addObject:[NSValue valueWithPointer:_syms[i]]];
+                }
+
+                *outSymbols = [syms copy];
+                return HK_OK;
             }
         }
         
         if(_types & HK_LIB_SUBSTITUTE) {
             if(_substitute_find_private_syms) {
-                // todo
+                NSMutableData* _symbolNames = [NSMutableData dataWithLength:(sizeof(char *) * [symbolNames count])];
+                NSMutableData* _searchSyms = [NSMutableData dataWithLength:(sizeof(void *) * [symbolNames count])];
+
+                char** _names = (char **)[_symbolNames mutableBytes];
+                
+                for(NSString* symbolName in symbolNames) {
+                    *_names = (char *)[symbolName UTF8String];
+                    _names++;
+                }
+
+                _substitute_find_private_syms((struct substitute_image *)image, (const char **)[_symbolNames bytes], (void **)[_searchSyms mutableBytes], [symbolNames count]);
+
+                NSMutableArray* syms = [NSMutableArray new];
+                const void** _syms = (const void **)[_searchSyms bytes];
+
+                for(int i = 0; i < [symbolNames count]; i++) {
+                    [syms addObject:[NSValue valueWithPointer:_syms[i]]];
+                }
+
+                *outSymbols = [syms copy];
+                return HK_OK;
             }
         }
     }
@@ -615,12 +663,8 @@
         *outSymbols = [syms copy];
         return HK_OK;
     }
-
-    if(result == HK_ERR) {
-        result |= HK_ERR_NOT_SUPPORTED;
-    }
-
-    return result;
+    
+    return HK_ERR_NOT_SUPPORTED;
 }
 
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
@@ -635,8 +679,6 @@
 }
 
 - (hookkit_status_t)executeHooks {
-    hookkit_status_t result = HK_ERR;
-
     BOOL didFunctions = ([functionHooks count] == 0);
     BOOL didMemory = ([memoryHooks count] == 0);
 
@@ -768,14 +810,12 @@
     }
 
     if(didFunctions && didMemory) {
-        result = HK_OK;
+        return HK_OK;
+    } else {
+        return HK_OK | HK_ERR;
     }
 
-    if(result == HK_ERR) {
-        result |= HK_ERR_NOT_SUPPORTED;
-    }
-
-    return result;
+    return HK_ERR_NOT_SUPPORTED;
 }
 
 - (int)getLibErrno:(hookkit_lib_t *)outType {

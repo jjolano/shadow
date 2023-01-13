@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 FRAMEWORK_NAME = HookKit
 
 HookKit_FILES = HookKit.m $(wildcard vendor/fishhook/fishhook.c)
-HookKit_PUBLIC_HEADERS = HookKit.h
+# HookKit_PUBLIC_HEADERS = HookKit.h
 HookKit_FRAMEWORKS = Foundation
 HookKit_EXTRA_FRAMEWORKS = CydiaSubstrate
 HookKit_LIBRARIES = dobby
