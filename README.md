@@ -6,19 +6,19 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 
 > Can you add support/bypass for *app name*?
 
-Due to the design philosophy of Shadow, no. To elaborate, Shadow focuses on hiding the jailbreak via detection methods, not reverse engineering the applications. **This is a very important distinction.**
-
-It can be argued that discovering detection methods is a result of reverse engineering, but please understand this is a task that asks for an extremely high amount of time and effort in addition to the skillset required. This is a hobby project, not a full time job.
+No. Technically, I don't "add support" for apps. Nothing in Shadow is designed specifically for any app.
 
 > *app name* keeps crashing with Shadow enabled.
 
-This is due to either one of two things: jailbreak detection, or a hook from Shadow is causing the crash. If the latter (and the hook is not from Dangerous Hooks), please create a new GitHub Issue with the name of the app and the hook causing the crash. Also, please ensure the app itself actually does have jailbreak detection.
-
-Support will be limited for unstable jailbreak bootstraps, as the issue may also originate from the jailbreak itself.
+Please create a new Issue with details about your Shadow settings if this is not detection related.
 
 > *app name* runs slow with Shadow enabled.
 
-This is expected behaviour, as extra processing is done on basically everything. This can be limited by reducing the hooks enabled. If it is extreme, please create a GitHub Issue. Another reason may be because of a tweak conflict. Try disabling all tweaks except Shadow and see if the problem persists.
+This is expected behaviour due to extra processessing by Shadow.
+
+> *Questions related to Xina*
+
+As of now I will choose not to offer support for running Shadow on Xina jailbroken devices. Without being able to test Shadow in a full capacity, I cannot guarantee the same results when attempting to bypass detection.
 
 ## Troubleshooting
 
@@ -32,17 +32,21 @@ If your jailbreak is still getting detected, here are some things to try:
 * Use another bypass tweak, ideally an app-specific bypass tweak. Be wary of enabling multiple bypass tweaks in case of conflicts.
 * Downgrade the app. Sometimes, newer versions have updated detection methods.
 
+## Contributing
+
+Pull requests are welcome. For translations, please refer to the [English translation](preferencebundle/Resources/en.lproj/) within the preference bundle resource files.
+
 ## Installation
 
-Add my repo (`https://ios.jjolano.me`) to your package manager and install the Shadow (`me.jjolano.shadow`) package. Alternatively, download the [latest release](https://github.com/jjolano/shadow/releases) directly from GitHub and open the file with your package manager.
+Add my [repo](https://ios.jjolano.me) to your package manager and install the Shadow (`me.jjolano.shadow`) package. Alternatively, download the [latest release](https://github.com/jjolano/shadow/releases/latest) directly from GitHub and open the file with your package manager.
 
-You may need additional repositories for dependencies - these are the current dependencies outside of having tweak injection:
+You may need additional repositories for dependencies - these are the current dependencies:
 
-* `libSandy` from opa334's Repo (`https://opa334.github.io`)
-* `AltList` from opa334‘s Repo (`https://opa334.github.io`)
-* `HookKit Framework` (same repo as Shadow)
+* `libSandy` from [opa334's Repo](https://opa334.github.io)
+* `AltList` from [opa334‘s Repo](https://opa334.github.io)
+* `HookKit Framework`
 
-A recommended (but not required) package is `Injection Foundation` from PoomSmart's Repo (`https://poomsmart.github.io/repo`). This package ensures that Shadow is injected properly into certain apps.
+Additionally, a recommended (but not required) package is `Injection Foundation` from [PoomSmart's Repo](https://poomsmart.github.io/repo). This package ensures that Shadow is injected properly into certain apps.
 
 ## Usage
 
