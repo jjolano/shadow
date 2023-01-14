@@ -4,8 +4,10 @@
 
 @interface Shadow : NSObject
 @property ShadowService* service;
+@property BOOL runningInApp;
 @property BOOL tweakCompatibility;
 @property BOOL rootlessMode;
+@property BOOL enhancedPathResolve;
 
 - (BOOL)isCallerTweak:(NSArray*)backtrace;
 
@@ -15,8 +17,8 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 - (BOOL)isAddrRestricted:(const void *)addr;
 
-- (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr;
-- (void *)getOrigFunc:(NSString *)fname elseAddr:(void *)addr;
+- (void)setOrigFunc:(NSString *)fname withAddr:(void **)addr_ptr;
+- (void *)getOrigFunc:(NSString *)fname;
 
 + (instancetype)shadowWithService:(ShadowService *)_service;
 @end
