@@ -17,8 +17,5 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 - (BOOL)isAddrRestricted:(const void *)addr;
 
-- (void)setOrigFunc:(NSString *)fname withAddr:(void **)addr_ptr;
-- (void *)getOrigFunc:(NSString *)fname;
-
 + (instancetype)shadowWithService:(ShadowService *)_service;
 @end

@@ -804,9 +804,6 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
     MSHookFunction(link, replaced_link, (void **) &original_link);
     // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
-
-    [_shadow setOrigFunc:@"access" withAddr:(void **) &original_access];
-    [_shadow setOrigFunc:@"lstat" withAddr:(void **) &original_lstat];
 }
 
 void shadowhook_libc_extra(HKSubstitutor* hooks) {

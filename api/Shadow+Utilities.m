@@ -3,7 +3,7 @@
 #import <sys/stat.h>
 
 @implementation Shadow (Utilities)
-+ (BOOL)shouldResolvePath:(NSString *)path lstat:(void *)lstat_ptr {
++ (BOOL)shouldResolvePath:(NSString *)path {
     if(![path isAbsolutePath] || [path characterAtIndex:0] == '~') {
         return YES;
     }
@@ -13,21 +13,6 @@
     if([pred evaluateWithObject:path]) {
         // resolving relative path component
         return YES;
-    }
-
-    // check if path is symlink
-    NSString* path_tmp = path;
-
-    struct stat buf;
-    int (*original_lstat)(const char* pathname, struct stat* buf) = lstat_ptr;
-    if(!original_lstat) return NO;
-    
-    while(![path_tmp isEqualToString:@"/"]) {
-        if(original_lstat([path UTF8String], &buf) != -1 && buf.st_mode & S_IFLNK) {
-            return YES;
-        }
-
-        path_tmp = [path_tmp stringByDeletingLastPathComponent];
     }
     
     return NO;

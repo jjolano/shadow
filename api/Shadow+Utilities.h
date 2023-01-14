@@ -2,6 +2,6 @@
 #import "Shadow.h"
 
 @interface Shadow (Utilities)
-+ (BOOL)shouldResolvePath:(NSString *)path lstat:(void *)lstat_ptr;
++ (BOOL)shouldResolvePath:(NSString *)path;
 + (NSString *)getStandardizedPath:(NSString *)path;
 @end
