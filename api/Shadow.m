@@ -8,21 +8,10 @@
 #import "../apple_priv/dyld_priv.h"
 
 @implementation Shadow {
-    NSMutableDictionary* orig_funcs;
-
     // App-specific
     NSString* bundlePath;
     NSString* homePath;
     NSString* realHomePath;
-}
-
-- (void)setOrigFunc:(NSString *)fname withAddr:(void **)addr {
-    [orig_funcs setValue:[NSValue valueWithPointer:addr] forKey:fname];
-}
-
-- (void *)getOrigFunc:(NSString *)fname {
-    NSValue* result = [orig_funcs objectForKey:fname];
-    return result ? *(void **)[result pointerValue] : NULL;
 }
 
 - (BOOL)isCallerTweak:(NSArray *)backtrace {
@@ -100,10 +89,7 @@
     }
 
     if(resolve) {
-        static void* lstat_ptr = NULL;
-        if(_enhancedPathResolve && !lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat"];
-
-        if(_service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
+        if(_service && ([[self class] shouldResolvePath:path] || _enhancedPathResolve)) {
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
             path = [_service resolvePath:path];
         }
@@ -180,7 +166,6 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        orig_funcs = [NSMutableDictionary new];
         bundlePath = [[NSBundle mainBundle] bundlePath];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
