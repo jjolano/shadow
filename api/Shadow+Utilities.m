@@ -20,7 +20,7 @@
 
     struct stat buf;
     int (*original_lstat)(const char* pathname, struct stat* buf) = lstat_ptr;
-    if(!original_lstat) original_lstat = lstat;
+    if(!original_lstat) return NO;
     
     while(![path_tmp isEqualToString:@"/"]) {
         if(original_lstat([path UTF8String], &buf) != -1 && buf.st_mode & S_IFLNK) {
