@@ -16,18 +16,13 @@
     NSString* realHomePath;
 }
 
-- (void)setOrigFunc:(NSString *)fname withAddr:(void *)addr {
+- (void)setOrigFunc:(NSString *)fname withAddr:(void **)addr {
     [orig_funcs setValue:[NSValue valueWithPointer:addr] forKey:fname];
 }
 
-- (void *)getOrigFunc:(NSString *)fname elseAddr:(void *)addr {
-    NSNumber* result = [orig_funcs objectForKey:fname];
-
-    if(result) {
-        return [result pointerValue];
-    }
-
-    return addr;
+- (void *)getOrigFunc:(NSString *)fname {
+    NSValue* result = [orig_funcs objectForKey:fname];
+    return result ? *(void **)[result pointerValue] : NULL;
 }
 
 - (BOOL)isCallerTweak:(NSArray *)backtrace {
@@ -76,18 +71,7 @@
     if(addr) {
         // See if this address belongs to a restricted file.
         const char* image_path = dyld_image_path_containing_address(addr);
-
-        if(image_path) {
-            NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-            if([image_name hasPrefix:bundlePath]) {
-                return NO;
-            }
-
-            if([self isPathRestricted:image_name]) {
-                return YES;
-            }
-        }
+        return [self isCPathRestricted:image_path];
     }
 
     return NO;
@@ -117,7 +101,7 @@
 
     if(resolve) {
         static void* lstat_ptr = NULL;
-        if(!lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat" elseAddr:lstat];
+        if(_enhancedPathResolve && !lstat_ptr) lstat_ptr = [self getOrigFunc:@"lstat"];
 
         if(_service && [[self class] shouldResolvePath:path lstat:lstat_ptr]) {
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
@@ -140,6 +124,7 @@
         }
     }
 
+    // Rootless shortcuts
     if(_rootlessMode) {
         if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
             return NO;
@@ -147,6 +132,13 @@
 
         if([path hasPrefix:@"/var/jb"]) {
             return YES;
+        }
+    }
+
+    // Exclude app bundle and data paths
+    if(_runningInApp) {
+        if([path hasPrefix:bundlePath] || [path hasPrefix:homePath]) {
+            return NO;
         }
     }
 
@@ -189,25 +181,17 @@
 - (instancetype)init {
     if((self = [super init])) {
         orig_funcs = [NSMutableDictionary new];
-        bundlePath = [[[NSBundle mainBundle] bundlePath] stringByDeletingLastPathComponent];
+        bundlePath = [[NSBundle mainBundle] bundlePath];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
         _tweakCompatibility = NO;
         _service = nil;
+        _rootlessMode = NO;
+        _runningInApp = NO;
 
-        if([bundlePath hasPrefix:@"/private/var"]) {
-            NSMutableArray* pathComponents = [[bundlePath pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            bundlePath = [NSString pathWithComponents:pathComponents];
-        }
-
-        if([homePath hasPrefix:@"/User"]) {
-            NSMutableArray* pathComponents = [[homePath pathComponents] mutableCopy];
-            [pathComponents removeObjectAtIndex:1];
-            [pathComponents removeObjectAtIndex:0];
-
-            homePath = [realHomePath stringByAppendingPathComponent:[NSString pathWithComponents:pathComponents]];
-        }
+        bundlePath = [[self class] getStandardizedPath:bundlePath];
+        homePath = [[self class] getStandardizedPath:homePath];
+        realHomePath = [[self class] getStandardizedPath:realHomePath];
     }
 
     return self;
