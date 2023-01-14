@@ -14,7 +14,7 @@ Please create a new Issue with details about your Shadow settings if this is not
 
 > *app name* runs slow with Shadow enabled.
 
-This is expected behaviour due to extra processessing by Shadow.
+This is expected behaviour due to extra processing by Shadow.
 
 > *Questions related to Xina*
 
