@@ -16,7 +16,7 @@
 "ENHANCEMENT_SETTINGS" = "Enhancement Settings";
 
 "ENH_PATH_RESOLVING" = "Enhance Path Processing";
-"ENH_PR_DESC" = "Use this setting to enable extra processing on file access operations. This will have a noticeable impact on performance."
+"ENH_PR_DESC" = "Use this setting to enable extra processing on file access operations. This will have a noticeable impact on performance.";
 
 "ESSENTIAL_HOOKS" = "Essential Hooks";
 "ESSENTIAL_HOOKS_DESC" = "Essential hooks cover the most common jailbreak detection methods.";
