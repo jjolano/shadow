@@ -1,0 +1,5 @@
+interest /usr/lib
+interest /var
+interest /private/var
+interest /System
+interest /Applications
