@@ -1,14 +1,15 @@
 #!/usr/bin/env sh
-set -e
 
 case "$1" in
     configure)
         chown -R mobile:mobile /Library/Shadow
         chmod -R 0777 /Library/Shadow
+        echo -n "shdw: "
         /usr/local/bin/shdw -g || true
     ;;
 
     triggered)
+        echo -n "shdw: "
         /usr/local/bin/shdw -g || true
     ;;
 esac

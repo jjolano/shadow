@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+case "$1" in
+    triggered)
+        echo -n "shdw: "
+        /usr/local/bin/shdw -g || true
+    ;;
+esac
+
+exit 0
