@@ -32,7 +32,7 @@
 "HOOK_DETECTFMWK" = "Detection Frameworks";
 "HOOK_FILE_SYSTEM_EX" = "File System (Extra)";
 "HOOK_FOUNDATION" = "Foundation Framework"; /* Foundation is the name of Apple's framework. */
-"HOOK_MAC" = "M1 Mac (iOS 14+)";
+"HOOK_MAC" = "M1 Mac Spoof (iOS 14+)";
 
 "EXTRA_HOOKS" = "Extra Hooks";
 "EXTRA_HOOKS_DESC" = "Extra hooks cover even more methods that may be used by jailbreak detection, including private APIs.";

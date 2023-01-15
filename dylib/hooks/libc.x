@@ -115,6 +115,28 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
     return result;
 }
 
+static int (*original_getmntinfo)(struct statfs** mntbufp, int flags);
+static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
+    int result = original_getmntinfo(mntbufp, flags);
+
+    if(result > 0) {
+        struct statfs** buf_ptr = mntbufp;
+        struct statfs** buf_end = mntbufp + sizeof(struct statfs *) * result;
+
+        while(buf_ptr < buf_end) {
+            if(strcmp((*buf_ptr)->f_mntonname, "/") == 0) {
+                // Mark rootfs read-only
+                (*buf_ptr)->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
+                break;
+            }
+
+            buf_ptr++;
+        }
+    }
+
+    return result;
+}
+
 static int (*original_statfs)(const char* pathname, struct statfs* buf);
 static int replaced_statfs(const char* pathname, struct statfs* buf) {
     int result = original_statfs(pathname, buf);
@@ -720,6 +742,23 @@ static pid_t replaced_getppid() {
 //     return -1;
 // }
 
+static int (*original_kill)(pid_t pid, int sig);
+static int replaced_kill(pid_t pid, int sig) {
+    if(sig == 0) {
+        int my_pid = getpid();
+
+        if(my_pid == pid) {
+            return 0;
+        }
+    }
+
+    return original_kill(pid, sig);
+}
+
+static int replaced_system(const char* command) {
+    return 0;
+}
+
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
     void* arg;
@@ -808,15 +847,7 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
     MSHookFunction(link, replaced_link, (void **) &original_link);
     // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
-}
-
-void shadowhook_libc_extra(HKSubstitutor* hooks) {
-    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
-    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
-    MSHookFunction(execve, replaced_execve, (void **) &original_execve);
-    MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
-    MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
-    MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
+    MSHookFunction(getmntinfo, replaced_getmntinfo, (void **) &original_getmntinfo);
     MSHookFunction(getattrlist, replaced_getattrlist, (void **) &original_getattrlist);
     MSHookFunction(symlink, replaced_symlink, (void **) &original_symlink);
     MSHookFunction(rename, replaced_rename, (void **) &original_rename);
@@ -830,6 +861,21 @@ void shadowhook_libc_extra(HKSubstitutor* hooks) {
     MSHookFunction(futimes, replaced_futimes, (void **) &original_futimes);
     MSHookFunction(fchdir, replaced_fchdir, (void **) &original_fchdir);
     MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
+    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
+    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
+}
+
+void shadowhook_libc_extra(HKSubstitutor* hooks) {
+    MSHookFunction(execve, replaced_execve, (void **) &original_execve);
+    MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
+    MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
+    MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
+
+    void* sym_system = MSFindSymbol(NULL, "_system");
+
+    if(sym_system) {
+        MSHookFunction(sym_system, replaced_system, NULL);
+    }
 }
 
 void shadowhook_libc_envvar(HKSubstitutor* hooks) {
@@ -846,5 +892,6 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
     MSHookFunction(getppid, replaced_getppid, NULL);
+    MSHookFunction(kill, replaced_kill, (void **) &original_kill);
     // MSHookFunction(fork, replaced_fork, NULL);
 }

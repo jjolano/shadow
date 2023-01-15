@@ -25,7 +25,7 @@
     "HOOK_FILE_SYSTEM_EX" = "File System (Extra)";
     "HOOK_FOUNDATION" = "Foundation Framework";
     "HOOK_LLC" = "Low-Level File Handles";
-    "HOOK_MAC" = "M1 Mac (iOS 14+)";
+    "HOOK_MAC" = "M1 Mac Spoof (iOS 14+)";
     "HOOK_MACH" = "Mach Service Lookups";
     "HOOK_MEM" = "Hide Executable Memory";
     "HOOK_OBJC" = "Objective-C Class Methods";
