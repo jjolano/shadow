@@ -742,18 +742,18 @@ static pid_t replaced_getppid() {
 //     return -1;
 // }
 
-static int (*original_kill)(pid_t pid, int sig);
-static int replaced_kill(pid_t pid, int sig) {
-    if(sig == 0) {
-        int my_pid = getpid();
+// static int (*original_kill)(pid_t pid, int sig);
+// static int replaced_kill(pid_t pid, int sig) {
+//     if(sig == 0) {
+//         int my_pid = getpid();
 
-        if(my_pid == pid) {
-            return 0;
-        }
-    }
+//         if(my_pid == pid) {
+//             return 0;
+//         }
+//     }
 
-    return original_kill(pid, sig);
-}
+//     return original_kill(pid, sig);
+// }
 
 static int replaced_system(const char* command) {
     return 0;
@@ -892,6 +892,6 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
     MSHookFunction(getppid, replaced_getppid, NULL);
-    MSHookFunction(kill, replaced_kill, (void **) &original_kill);
+    // MSHookFunction(kill, replaced_kill, (void **) &original_kill);
     // MSHookFunction(fork, replaced_fork, NULL);
 }

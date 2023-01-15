@@ -87,8 +87,18 @@ ShadowService* _srv = nil;
     NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];
 
     // Only load Shadow for applications in /var.
-    if(![bundleType isEqualToString:@"app"]
-    || (![executablePath hasPrefix:@"/var"] && ![executablePath hasPrefix:@"/private/var"])) {
+    if(![bundleType isEqualToString:@"app"]) {
+        return;
+    }
+
+    if([executablePath hasPrefix:@"/Applications"]
+    || [executablePath hasPrefix:@"/System"]
+    || [executablePath hasPrefix:@"/private/preboot"]
+    || [executablePath hasPrefix:@"/var/jb"]) {
+        return;
+    }
+
+    if(![[NSBundle mainBundle] appStoreReceiptURL]) {
         return;
     }
 
