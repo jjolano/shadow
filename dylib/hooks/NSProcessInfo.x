@@ -18,6 +18,10 @@
         [filtered_result removeObjectForKey:@"_SafeMode"];
         [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
 
+        if(result[@"SHELL"]) {
+            [filtered_result setObject:@"/bin/sh" forKey:@"SHELL"];
+        }
+
         // struct utsname systemInfo;
         // uname(&systemInfo);
         // [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_DEVICE_NAME"];

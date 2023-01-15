@@ -31,7 +31,7 @@ ShadowService* _srv = nil;
         NSDictionary* ruleset_dpkg = [ShadowService generateDatabase];
 
         if(ruleset_dpkg) {
-            [_srv addRuleset:ruleset_dpkg];
+            // [_srv addRuleset:ruleset_dpkg];
 
             BOOL success = [ruleset_dpkg writeToFile:@SHADOW_DB_PLIST atomically:NO];
 
@@ -44,6 +44,8 @@ ShadowService* _srv = nil;
             } else {
                 NSLog(@"%@", @"failed to save generate db");
             }
+
+            [_srv loadRulesets];
         }
     }];
 }

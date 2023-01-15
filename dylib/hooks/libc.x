@@ -661,6 +661,10 @@ static char* replaced_getenv(const char* name) {
         || strcmp(name, "_SubstituteSafeMode") == 0) {
             return NULL;
         }
+
+        if(strcmp(name, "SHELL") == 0) {
+            return "/bin/sh";
+        }
     }
 
     return result;
