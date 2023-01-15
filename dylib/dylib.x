@@ -14,6 +14,26 @@
 #import <libSandy.h>
 #import <HookKit.h>
 
+// code from Choicy
+//methods of getting executablePath and bundleIdentifier with the least side effects possible
+//for more information, check out https://github.com/checkra1n/BugTracker/issues/343
+extern char*** _NSGetArgv();
+NSString* safe_getExecutablePath() {
+	char* executablePathC = **_NSGetArgv();
+	return [NSString stringWithUTF8String:executablePathC];
+}
+
+NSString* safe_getBundleIdentifier() {
+	CFBundleRef mainBundle = CFBundleGetMainBundle();
+
+	if(mainBundle != NULL) {
+		CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
+		return (__bridge NSString*)bundleIdentifierCF;
+	}
+
+	return nil;
+}
+
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
 
@@ -54,8 +74,7 @@ ShadowService* _srv = nil;
 
 %ctor {
     // Determine the application we're injected into.
-    NSBundle* bundle = [NSBundle mainBundle];
-    NSString* bundleIdentifier = [bundle bundleIdentifier];
+    NSString* bundleIdentifier = safe_getBundleIdentifier();
 
     // Injected into SpringBoard.
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
@@ -64,14 +83,12 @@ ShadowService* _srv = nil;
         return;
     }
 
-    NSString* executablePath = [bundle executablePath];
+    NSString* executablePath = safe_getExecutablePath();
+    NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];
 
-    // Only load Shadow for sandboxed applications.
-    // Don't load for App Extensions (.. unless developers are adding detection in those too :/)
-    if(![bundle appStoreReceiptURL]
-    || [executablePath hasPrefix:@"/Applications"]
-    || [executablePath hasPrefix:@"/System"]
-    || ![[[executablePath stringByDeletingLastPathComponent] pathExtension] isEqualToString:@"app"]) {
+    // Only load Shadow for applications in /var.
+    if(![bundleType isEqualToString:@"app"]
+    || (![executablePath hasPrefix:@"/var"] && ![executablePath hasPrefix:@"/private/var"])) {
         return;
     }
 
