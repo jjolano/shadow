@@ -755,9 +755,11 @@ static pid_t replaced_getppid() {
 //     return original_kill(pid, sig);
 // }
 
-static int replaced_system(const char* command) {
-    return 0;
-}
+// static int (*original_system)(const char* command);
+// static int replaced_system(const char* command) {
+//     if(command == NULL) return 0;
+//     return original_system(command);
+// }
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
@@ -871,11 +873,11 @@ void shadowhook_libc_extra(HKSubstitutor* hooks) {
     MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
     MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
 
-    void* sym_system = MSFindSymbol(NULL, "_system");
+    // void* sym_system = MSFindSymbol(NULL, "_system");
 
-    if(sym_system) {
-        MSHookFunction(sym_system, replaced_system, NULL);
-    }
+    // if(sym_system) {
+    //     MSHookFunction(sym_system, replaced_system, NULL);
+    // }
 }
 
 void shadowhook_libc_envvar(HKSubstitutor* hooks) {
