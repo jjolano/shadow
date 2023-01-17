@@ -12,6 +12,14 @@
 				<key>type</key>
 				<string>mach</string>
 				<key>extension_class</key>
+				<string>com.apple.app-sandbox.mach</string>
+				<key>mach_name</key>
+				<string>me.jjolano.shadow.service</string>
+			</dict>
+			<dict>
+				<key>type</key>
+				<string>mach</string>
+				<key>extension_class</key>
 				<string>com.apple.security.exception.mach-lookup.global-name</string>
 				<key>mach_name</key>
 				<string>me.jjolano.shadow.service</string>
