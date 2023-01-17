@@ -102,6 +102,12 @@ ShadowService* _srv = nil;
         return;
     }
 
+    // Don't load in certain apps
+    if([bundleIdentifier isEqualToString:@"com.opa334.TrollStore"]
+    || [bundleIdentifier hasPrefix:@"com.apple"]) {
+        return;
+    }
+
     NSLog(@"%@", @"loaded in app");
 
     libSandy_applyProfile("ShadowService");
