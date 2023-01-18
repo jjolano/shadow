@@ -69,7 +69,7 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext {
@@ -79,41 +79,19 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath {
-    NSArray* result = %orig;
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
-
-        for(NSURL* url in result) {
-            if(![_shadow isURLRestricted:url]) {
-                [result_filtered addObject:url];
-            }
-        }
-
-        result = [result_filtered copy];
-    }
-
-    return %orig;
-}
-
-- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
-    NSURL* result = %orig;
-
-    if([_shadow isURLRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:subpath] && !isTweak) {
         return nil;
     }
 
-    return %orig;
-}
-
-- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
     NSArray* result = %orig;
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isTweak) {
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSURL* url in result) {
@@ -125,7 +103,47 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
+}
+
+- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:subpath] && !isTweak) {
+        return nil;
+    }
+
+    NSURL* result = %orig;
+
+    if([_shadow isURLRestricted:result] && !isTweak) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:subpath] && !isTweak) {
+        return nil;
+    }
+
+    NSArray* result = %orig;
+
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
+
+        for(NSURL* url in result) {
+            if(![_shadow isURLRestricted:url]) {
+                [result_filtered addObject:url];
+            }
+        }
+
+        result = [result_filtered copy];
+    }
+
+    return result;
 }
 
 + (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
@@ -135,13 +153,19 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if(([_shadow isPathRestricted:subpath] || [_shadow isURLRestricted:bundleURL]) && !isTweak) {
+        return nil;
+    }
+
     NSArray* result = %orig;
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isTweak) {
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSURL* url in result) {
@@ -153,7 +177,7 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext {
@@ -163,7 +187,7 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath {
@@ -173,7 +197,7 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
@@ -183,13 +207,19 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:subpath] && !isTweak) {
+        return nil;
+    }
+
     NSArray* result = %orig;
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isTweak) {
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* path in result) {
@@ -201,13 +231,19 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 
 - (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:subpath] && !isTweak) {
+        return nil;
+    }
+
     NSArray* result = %orig;
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isTweak) {
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* path in result) {
@@ -219,7 +255,7 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 
 + (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)bundlePath {
@@ -229,13 +265,19 @@
         return nil;
     }
 
-    return %orig;
+    return result;
 }
 
 + (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)bundlePath {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:bundlePath] && !isTweak) {
+        return nil;
+    }
+
     NSArray* result = %orig;
 
-    if(![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isTweak) {
         NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* path in result) {
@@ -247,7 +289,7 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 
 + (NSArray<NSBundle *> *)allBundles {
@@ -265,7 +307,7 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 
 + (NSArray<NSBundle *> *)allFrameworks {
@@ -283,7 +325,7 @@
         result = [result_filtered copy];
     }
 
-    return %orig;
+    return result;
 }
 %end
 %end

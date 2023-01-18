@@ -1,8 +1,8 @@
 #import "hooks.h"
 
-NSArray<NSDictionary *>* _shdw_dyld_collection = nil;
-NSArray<NSValue *>* _shdw_dyld_add_image = nil;
-NSArray<NSValue *>* _shdw_dyld_remove_image = nil;
+static NSArray<NSDictionary *>* _shdw_dyld_collection = nil;
+static NSArray<NSValue *>* _shdw_dyld_add_image = nil;
+static NSArray<NSValue *>* _shdw_dyld_remove_image = nil;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
 static uint32_t (*original_dyld_image_count)();
