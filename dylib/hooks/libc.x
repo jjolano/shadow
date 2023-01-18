@@ -478,6 +478,16 @@ static int replaced_execve(const char* pathname, char* const argv[], char* const
     return original_execve(pathname, argv, envp);
 }
 
+// static int (*original_execvpe)(const char* pathname, char* const argv[], char* const envp[]);
+// static int replaced_execvpe(const char* pathname, char* const argv[], char* const envp[]) {
+//     if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         errno = ENOENT;
+//         return -1;
+//     }
+
+//     return original_execvpe(pathname, argv, envp);
+// }
+
 static int (*original_execvp)(const char* pathname, char* const argv[]);
 static int replaced_execvp(const char* pathname, char* const argv[]) {
     if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
@@ -486,6 +496,16 @@ static int replaced_execvp(const char* pathname, char* const argv[]) {
     }
 
     return original_execvp(pathname, argv);
+}
+
+static int (*original_execv)(const char* pathname, char* const argv[]);
+static int replaced_execv(const char* pathname, char* const argv[]) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_execv(pathname, argv);
 }
 
 static int (*original_posix_spawn)(pid_t* pid, const char* pathname, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
@@ -870,6 +890,8 @@ void shadowhook_libc(HKSubstitutor* hooks) {
 void shadowhook_libc_extra(HKSubstitutor* hooks) {
     MSHookFunction(execve, replaced_execve, (void **) &original_execve);
     MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
+    //MSHookFunction(execvpe, replaced_execvpe, (void **) &original_execvpe);
+    MSHookFunction(execv, replaced_execv, (void **) &original_execv);
     MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
     MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
 
