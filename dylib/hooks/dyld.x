@@ -339,6 +339,9 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
                     // because we are injected lets not link anything to our selfs
                     memset(info, 0, sizeof(Dl_info));
                     result = 0;
+
+                    // clear dlsym error
+                    dlerror();
                 }
             }
         }
