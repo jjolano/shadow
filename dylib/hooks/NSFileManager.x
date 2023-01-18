@@ -1,29 +1,33 @@
 #import "hooks.h"
 
+static char* _NSDirectoryEnumerator_shdw_key = "shdw";
+
 %group shadowhook_NSFileManager
-
 %hook NSDirectoryEnumerator
-%property (nonatomic, strong) NSString* shdwDir;
-
 - (NSArray *)allObjects {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
-    NSArray* result = %orig;
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
-    if(result) {
-        NSString* base = [self valueForKey:@"shdwDir"];
-        NSMutableArray* result_filtered = [result mutableCopy];
+    if(!isTweak && [_shadow isPathRestricted:base]) {
+        return @[];
+    }
+
+    NSArray* result = %orig; 
+
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
         
         for(id entry in result) {
-            if([entry isKindOfClass:[NSURL class]]) {
-                if([_shadow isURLRestricted:entry] && ![_shadow isCallerTweak:backtrace]) {
-                    [result_filtered removeObject:entry];
-                }
-            } else if([entry isKindOfClass:[NSString class]] && base) {
-                NSString* path = [base stringByAppendingPathComponent:entry];
+            NSString* path = nil;
 
-                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-                    [result_filtered removeObject:path];
-                }
+            if([entry isKindOfClass:[NSURL class]]) {
+                path = [entry path];
+            } else if([entry isKindOfClass:[NSString class]] && base) {
+                path = [base stringByAppendingPathComponent:entry];
+            }
+
+            if(![_shadow isPathRestricted:path]) {
+                [result_filtered addObject:entry];
             }
         }
 
@@ -34,33 +38,32 @@
 }
 
 - (id)nextObject {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
+
+    if(!isTweak && [_shadow isPathRestricted:base]) {
+        return nil;
+    }
+
     id result = %orig;
 
-    if(result) {
-        if([result isKindOfClass:[NSURL class]]) {
-            do {
-                if([_shadow isURLRestricted:result] && ![_shadow isCallerTweak:backtrace]) {
-                    result = %orig;
-                } else {
-                    break;
-                }
-            } while(result);
-        } else if([result isKindOfClass:[NSString class]]) {
-            NSString* base = [self valueForKey:@"shdwDir"];
+    if(result && !isTweak) {
+        // keep looping until we get something unrestricted or nil
+        do {
+            NSString* path = nil;
 
-            if(base) {
-                do {
-                    NSString* path = [base stringByAppendingPathComponent:result];
-
-                    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-                        result = %orig;
-                    } else {
-                        break;
-                    }
-                } while(result);
+            if([result isKindOfClass:[NSURL class]]) {
+                path = [result path];
+            } else if([result isKindOfClass:[NSString class]] && base) {
+                path = [base stringByAppendingPathComponent:result];
             }
-        }
+
+            if(path && [_shadow isPathRestricted:path]) {
+                result = %orig;
+            } else {
+                break;
+            }
+        } while(result);
     }
 
     return result;
@@ -133,23 +136,24 @@
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
-    NSArray<NSURL *> * result = %orig;
-    
-    if(result) {
-        if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:backtrace]) {
-            if(error) {
-                *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
-            }
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
 
-            return nil;
+    if([_shadow isURLRestricted:url] && !isTweak) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
 
-        NSMutableArray* result_filtered = [result mutableCopy];
+        return nil;
+    }
+    
+    NSArray* result = %orig;
+    
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSURL* result_url in result) {
-            if([_shadow isURLRestricted:result_url] && ![_shadow isCallerTweak:backtrace]) {
-                [result_filtered removeObject:result_url];
+            if(![_shadow isURLRestricted:result_url]) {
+                [result_filtered addObject:result_url];
             }
         }
 
@@ -160,30 +164,30 @@
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
-    NSArray<NSString *> * result = %orig;
-    
-    if(result) {
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-            if(error) {
-                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
-            }
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
 
-            return nil;
+    if([_shadow isPathRestricted:path] && !isTweak) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
 
-        NSMutableArray* result_filtered = [result mutableCopy];
+        return nil;
+    }
+    
+    NSArray* result = %orig;
+    
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
 
             if(![abspath isAbsolutePath]) {
-                // reconstruct path
-                abspath = [path stringByAppendingPathComponent:abspath];
+                abspath = [path stringByAppendingPathComponent:result_path];
             }
 
-            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
-                [result_filtered removeObject:result_path];
+            if(![_shadow isPathRestricted:abspath]) {
+                [result_filtered addObject:result_path];
             }
         }
 
@@ -197,7 +201,7 @@
     NSDirectoryEnumerator* result = %orig;
     
     if(result) {
-        [result setValue:[url path] forKey:@"shdwDir"];
+        objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtURL", url);
     }
 
@@ -208,7 +212,7 @@
     NSDirectoryEnumerator* result = %orig;
 
     if(result) {
-        [result setValue:path forKey:@"shdwDir"];
+        objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtPath", path);
     }
     
@@ -216,30 +220,30 @@
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
-    NSArray<NSString *> * result = %orig;
-    
-    if(result) {
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-            if(error) {
-                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
-            }
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
 
-            return nil;
+    if([_shadow isPathRestricted:path] && !isTweak) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
 
-        NSMutableArray* result_filtered = [result mutableCopy];
+        return nil;
+    }
+    
+    NSArray* result = %orig;
+    
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
 
             if(![abspath isAbsolutePath]) {
-                // reconstruct path
-                abspath = [path stringByAppendingPathComponent:abspath];
+                abspath = [path stringByAppendingPathComponent:result_path];
             }
 
-            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
-                [result_filtered removeObject:result_path];
+            if(![_shadow isPathRestricted:abspath]) {
+                [result_filtered addObject:result_path];
             }
         }
 
@@ -250,26 +254,26 @@
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
-    NSArray<NSString *> * result = %orig;
-    
-    if(result) {
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-            return nil;
-        }
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
 
-        NSMutableArray* result_filtered = [result mutableCopy];
+    if([_shadow isPathRestricted:path] && !isTweak) {
+        return nil;
+    }
+    
+    NSArray* result = %orig;
+    
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
 
         for(NSString* result_path in result) {
             NSString* abspath = result_path;
 
             if(![abspath isAbsolutePath]) {
-                // reconstruct path
-                abspath = [path stringByAppendingPathComponent:abspath];
+                abspath = [path stringByAppendingPathComponent:result_path];
             }
 
-            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
-                [result_filtered removeObject:result_path];
+            if(![_shadow isPathRestricted:abspath]) {
+                [result_filtered addObject:result_path];
             }
         }
 
@@ -329,7 +333,17 @@
     }
 
     // Make sure rootfs is marked read-only
-    NSDictionary<NSFileAttributeKey, id> * result = %orig;
+    NSDictionary<NSFileAttributeKey, id>* result = %orig;
+
+    if(result && (
+        [path hasPrefix:@"/private/preboot"]
+        || [path hasPrefix:@"/private/var"]
+        || [path hasPrefix:@"/var"]
+    )) {
+        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
+        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
+        result = [result_filtered copy];
+    }
 
     return result;
 }
@@ -344,7 +358,17 @@
     }
 
     // Make sure rootfs is marked read-only
-    NSDictionary<NSFileAttributeKey, id> * result = %orig;
+    NSDictionary<NSFileAttributeKey, id>* result = %orig;
+
+    if(result && (
+        [path hasPrefix:@"/private/preboot"]
+        || [path hasPrefix:@"/private/var"]
+        || [path hasPrefix:@"/var"]
+    )) {
+        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
+        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
+        result = [result_filtered copy];
+    }
 
     return result;
 }
@@ -404,32 +428,42 @@
     }
 
     // Make sure rootfs is marked read-only
-    NSDictionary* result = %orig;
+    NSDictionary<NSFileAttributeKey, id>* result = %orig;
+
+    if(result && (
+        [path hasPrefix:@"/private/preboot"]
+        || [path hasPrefix:@"/private/var"]
+        || [path hasPrefix:@"/var"]
+    )) {
+        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
+        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
+        result = [result_filtered copy];
+    }
 
     return result;
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
-    NSArray* backtrace = [NSThread callStackReturnAddresses];
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isPathRestricted:path] && !isTweak) {
+        return nil;
+    }
+    
     NSArray* result = %orig;
     
-    if(result) {
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:backtrace]) {
-            return nil;
-        }
+    if(result && !isTweak) {
+        NSMutableArray* result_filtered = [NSMutableArray new];
 
-        NSMutableArray* result_filtered = [result mutableCopy];
-
-        for(NSString* result_path in result_filtered) {
+        for(NSString* result_path in result) {
             NSString* abspath = result_path;
 
             if(![abspath isAbsolutePath]) {
-                // reconstruct path
-                abspath = [path stringByAppendingPathComponent:abspath];
+                abspath = [path stringByAppendingPathComponent:result_path];
             }
 
-            if([_shadow isPathRestricted:abspath] && ![_shadow isCallerTweak:backtrace]) {
-                [result_filtered removeObject:result_path];
+            if(![_shadow isPathRestricted:abspath]) {
+                [result_filtered addObject:result_path];
             }
         }
 
