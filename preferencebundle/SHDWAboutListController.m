@@ -41,71 +41,31 @@
 	return [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"TRANSLATOR" value:@"Unknown" table:@"About"];
 }
 
-- (NSString *)aboutPackageVersion:(id)sender {
-	if(packageVersion) {
-		return packageVersion;
-	}
-
-	// Check if we are in a rootless environment.
-	NSDictionary* jb_attr = [[NSFileManager defaultManager] attributesOfItemAtPath:@"/var/jb" error:nil];
-	BOOL rootless = [jb_attr[NSFileType] isEqualToString:NSFileTypeSymbolicLink];
-
-	NSString* dpkgPath = @"/usr/bin/dpkg-query";
-
-	if(rootless) {
-		dpkgPath = @"/var/jb/usr/bin/dpkg-query";
-	}
-	
-	if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgPath]) {
-		return @"unknown";
-	}
-
-	NSTask* task = [NSTask new];
-	NSPipe* stdoutPipe = [NSPipe new];
-
-	[task setLaunchPath:dpkgPath];
-	[task setArguments:@[@"-W", @"me.jjolano.shadow"]];
-	[task setStandardOutput:stdoutPipe];
-	[task launch];
-	[task waitUntilExit];
-
-	if([task terminationStatus] == 0) {
-		NSData* data = [[stdoutPipe fileHandleForReading] readDataToEndOfFile];
-		NSString* output = [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding];
-
-		NSCharacterSet* separator = [NSCharacterSet newlineCharacterSet];
-		NSArray<NSString *>* lines = [output componentsSeparatedByCharactersInSet:separator];
-
-		for(NSString* entry in lines) {
-			NSArray<NSString *>* line = [entry componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-			packageVersion = [line lastObject];
-			break;
-		}
-	} else {
-		packageVersion = @"unknown";
-	}
-
-	return packageVersion;
-}
-
 - (NSString *)aboutLatestVersion:(id)sender {
 	if(latestVersion) {
 		return latestVersion;
 	}
 
-	NSURLRequest* request = [[NSURLRequest alloc] initWithURL:[NSURL URLWithString:@"https://api.github.com/repos/jjolano/shadow/releases/latest"]];
+	NSURL* update_url = [NSURL URLWithString:@"https://api.github.com/repos/jjolano/shadow/releases/latest"];
 
-	__block NSDictionary* json;
-	[NSURLConnection sendAsynchronousRequest:request queue:[NSOperationQueue mainQueue] completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
-		if(!connectionError) {
-			json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-			latestVersion = [json[@"tag_name"] substringFromIndex:1];
+	NSURLSession* session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:nil delegateQueue:[NSOperationQueue mainQueue]];
+	NSURLSessionDataTask* task = [session dataTaskWithURL:update_url completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+		if(!error) {
+			NSDictionary* json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+
+			if(json) {
+				latestVersion = [json[@"tag_name"] substringFromIndex:1];
+			} else {
+				latestVersion = @"unknown";
+			}
 		} else {
 			latestVersion = @"unknown";
 		}
 
 		[self reloadSpecifier:sender];
 	}];
+
+	[task resume];
 
 	return latestVersion;
 }
