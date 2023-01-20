@@ -88,13 +88,10 @@
         path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
     }
 
-    NSString* resolved_path = nil;
-
     if(resolve) {
         if(_service && (_enhancedPathResolve || [[self class] shouldResolvePath:path])) {
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
-            resolved_path = [_service resolvePath:path];
-            resolved_path = [[self class] getStandardizedPath:resolved_path];
+            path = [_service resolvePath:path];
         }
     }
 
@@ -133,7 +130,7 @@
 
     // Check if path is restricted from Shadow Service.
     if(_service) {
-        if([_service isPathRestricted:resolved_path] || [_service isPathRestricted:path]) {
+        if([_service isPathRestricted:path]) {
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
             return YES;
         }
