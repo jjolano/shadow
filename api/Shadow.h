@@ -3,11 +3,11 @@
 #import "ShadowService.h"
 
 @interface Shadow : NSObject
-@property ShadowService* service;
-@property BOOL runningInApp;
-@property BOOL tweakCompatibility;
-@property BOOL rootlessMode;
-@property BOOL enhancedPathResolve;
+@property (nonatomic, readwrite, strong) ShadowService* service;
+@property (nonatomic, readwrite, assign) BOOL runningInApp;
+@property (nonatomic, readwrite, assign) BOOL tweakCompatibility;
+@property (nonatomic, readwrite, assign) BOOL rootlessMode;
+@property (nonatomic, readwrite, assign) BOOL enhancedPathResolve;
 
 - (BOOL)isCallerTweak:(NSArray*)backtrace;
 
