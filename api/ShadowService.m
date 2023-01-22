@@ -278,7 +278,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
-    if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
         return NO;
     }
 

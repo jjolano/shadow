@@ -182,23 +182,24 @@ ShadowService* _srv = nil;
     HKSubstitutor* substitutor = NULL;
     #endif
 
-    if([prefs_load[@"Hook_Filesystem"] boolValue]) {
-        NSLog(@"%@", @"+ filesystem");
-
-        shadowhook_libc(substitutor);
-        shadowhook_NSFileManager(substitutor);
-    }
-
     if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
         NSLog(@"%@", @"+ dylib");
 
         // Register before hooking
         _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
         _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
-        _dyld_register_func_for_add_image(shadowhook_dyld_shdw_add_image);
-        _dyld_register_func_for_remove_image(shadowhook_dyld_shdw_remove_image);
 
         shadowhook_dyld(substitutor);
+    }
+
+    if([prefs_load[@"Hook_Filesystem"] boolValue]) {
+        NSLog(@"%@", @"+ filesystem");
+
+        shadowhook_libc(substitutor);
+        shadowhook_NSFileManager(substitutor);
+        shadowhook_NSFileHandle(substitutor);
+        shadowhook_NSFileVersion(substitutor);
+        shadowhook_NSFileWrapper(substitutor);
     }
 
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
@@ -212,15 +213,6 @@ ShadowService* _srv = nil;
 
         shadowhook_libc_envvar(substitutor);
         shadowhook_NSProcessInfo(substitutor);
-    }
-
-    if([prefs_load[@"Hook_FilesystemExtra"] boolValue]) {
-        NSLog(@"%@", @"+ filesystemex");
-
-        shadowhook_libc_extra(substitutor);
-        shadowhook_NSFileHandle(substitutor);
-        shadowhook_NSFileVersion(substitutor);
-        shadowhook_NSFileWrapper(substitutor);
     }
 
     if([prefs_load[@"Hook_Foundation"] boolValue]) {
