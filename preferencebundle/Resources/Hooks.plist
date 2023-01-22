@@ -170,18 +170,6 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_FilesystemExtra</string>
-			<key>label</key>
-			<string>HOOK_FILE_SYSTEM_EX</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
 			<string>Hook_Foundation</string>
 			<key>label</key>
 			<string>HOOK_FOUNDATION</string>

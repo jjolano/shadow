@@ -15,38 +15,32 @@
 }
 
 - (BOOL)isCallerTweak:(NSArray *)backtrace {
-    void* ret_addr = __builtin_return_address(1);
+    static const char* self_image_name = NULL;
+
+    if(!self_image_name) {
+        void* caller_addr = __builtin_extract_return_addr(__builtin_return_address(0));
+        self_image_name = dyld_image_path_containing_address(caller_addr);
+    }
+
+    void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
 
     if([self isAddrRestricted:ret_addr]) {
         return YES;
     }
 
     if(backtrace) {
-        NSString* self_image_name = nil;
-        bool skipped = false;
-
         for(NSNumber* sym_addr in backtrace) {
-            void* ptr_addr = (void *)[sym_addr unsignedLongValue];
+            void* ptr_addr = [sym_addr pointerValue];
 
             // Lookup symbol
             const char* image_path = dyld_image_path_containing_address(ptr_addr);
 
             if(image_path) {
-                NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
-
-                if(!skipped) {
-                    // Skip the first entry
-                    skipped = true;
-                    self_image_name = [image_name copy];
+                if(strcmp(image_path, self_image_name) == 0) {
                     continue;
                 }
                 
-                if([self isPathRestricted:image_name]) {
-                    if([image_name isEqualToString:self_image_name]) {
-                        // skip Shadow calls
-                        continue;
-                    }
-
+                if([self isCPathRestricted:image_path]) {
                     return YES;
                 }
             }
@@ -79,7 +73,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve {
-    if(!path || [path isEqualToString:@"/"] || [path isEqualToString:@""]) {
+    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
         return NO;
     }
 
@@ -93,12 +87,12 @@
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
             path = [_service resolvePath:path];
         }
-    }
-
-    if([path characterAtIndex:0] == '~') {
-        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
-        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
-        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
+    } else {
+        if([path characterAtIndex:0] == '~') {
+            path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
+            path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
+            path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
+        }
     }
 
     path = [[self class] getStandardizedPath:path];
@@ -129,11 +123,9 @@
     }
 
     // Check if path is restricted from Shadow Service.
-    if(_service) {
-        if([_service isPathRestricted:path]) {
-            NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
-            return YES;
-        }
+    if(_service && [_service isPathRestricted:path]) {
+        NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+        return YES;
     }
 
     NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);

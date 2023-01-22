@@ -12,7 +12,6 @@
         @"Hook_DynamicLibraries" : @(YES),
         @"Hook_URLScheme" : @(YES),
         @"Hook_EnvVars" : @(YES),
-        @"Hook_FilesystemExtra" : @(NO),
         @"Hook_Foundation" : @(NO),
         @"Hook_DeviceCheck" : @(YES),
         @"Hook_MachBootstrap" : @(NO),
