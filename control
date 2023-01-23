@@ -1,9 +1,13 @@
-Package: me.jjolano.shadow
-Name: Shadow
-Depends: mobilesubstrate, ws.hbang.common, applist, preferenceloader
-Version: 2.0.22
+Package: me.jjolano.shadow.legacy
+Name: Shadow (legacy)
+Depends: firmware (>= 8.0), firmware (<< 15.0), mobilesubstrate, ws.hbang.common, applist
+Recommends: preferenceloader
+Provides: me.jjolano.shadow
+Replaces: me.jjolano.shadow
+Conflicts: me.jjolano.shadow
+Version: 2.0.23
 Architecture: iphoneos-arm
-Description: A lightweight general jailbreak detection bypass.
+Description: Legacy version of Shadow v2 for fallback/historical purposes. Compatible with iOS 8 - 14. No support will be given for this package.
 Maintainer: jjolano
 Author: jjolano
-Section: Tweaks
+Section: System
