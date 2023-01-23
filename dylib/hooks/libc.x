@@ -696,11 +696,6 @@ static pid_t replaced_getppid() {
     return 1;
 }
 
-// static pid_t replaced_fork() {
-//     errno = ENOSYS;
-//     return -1;
-// }
-
 // static int (*original_kill)(pid_t pid, int sig);
 // static int replaced_kill(pid_t pid, int sig) {
 //     if(sig == 0) {
@@ -712,12 +707,6 @@ static pid_t replaced_getppid() {
 //     }
 
 //     return original_kill(pid, sig);
-// }
-
-// static int (*original_system)(const char* command);
-// static int replaced_system(const char* command) {
-//     if(command == NULL) return 0;
-//     return original_system(command);
 // }
 
 static int (*original_open)(const char *pathname, int oflag, ...);
