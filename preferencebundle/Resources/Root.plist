@@ -61,7 +61,9 @@
 			<array>
 				<dict>
 					<key>sectionType</key>
-					<string>Visible</string>
+					<string>Custom</string>
+					<key>sectionPredicate</key>
+					<string>NOT (atl_bundleIdentifier BEGINSWITH 'com.apple') AND atl_isHidden == NO</string>
 				</dict>
 			</array>
 			<key>useSearchBar</key>
