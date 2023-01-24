@@ -7,7 +7,6 @@ shdw_CFLAGS = -fobjc-arc
 shdw_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 shdw_CODESIGN_FLAGS = -Sentitlements.plist
 shdw_INSTALL_PATH = /usr/local/bin
-shdw_PRIVATE_FRAMEWORKS = AppSupport
 shdw_EXTRA_FRAMEWORKS = Shadow
 shdw_FRAMEWORKS = Foundation
 
