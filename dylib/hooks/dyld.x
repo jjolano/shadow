@@ -53,15 +53,16 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
-    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isCPathRestricted:path] && !isTweak) {
         return NULL;
     }
 
     void* handle = original_dlopen(path, mode);
 
-    if(handle && [_shadow isAddrRestricted:handle] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        dlclose(handle);
-        return NULL;
+    if(handle && (!path || (path && path[0] != '/')) && !isTweak) {
+        // todo: handle this case
     }
 
     return handle;
@@ -69,15 +70,16 @@ static void* replaced_dlopen(const char* path, int mode) {
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
-    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+
+    if([_shadow isCPathRestricted:path] && !isTweak) {
         return NULL;
     }
-    
+
     void* handle = original_dlopen_internal(path, mode, caller);
 
-    if(handle && [_shadow isAddrRestricted:handle] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-        dlclose(handle);
-        return NULL;
+    if(handle && (!path || (path && path[0] != '/')) && !isTweak) {
+        // todo: handle this case
     }
 
     return handle;
@@ -85,15 +87,11 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
-    bool result = original_dlopen_preflight(path);
-
-    if(result) {
-        if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            return false;
-        }
+    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return false;
     }
 
-    return result;
+    return original_dlopen_preflight(path);
 }
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
