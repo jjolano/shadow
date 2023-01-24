@@ -1,6 +1,6 @@
 #import "SHDWHooksListController.h"
-#import "../api/ShadowService+Settings.h"
 
+#import <Shadow/ShadowService+Settings.h>
 #import <HookKit.h>
 
 @implementation SHDWHooksListController {

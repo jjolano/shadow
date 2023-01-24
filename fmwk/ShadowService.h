@@ -1,5 +1,5 @@
 #import <Foundation/Foundation.h>
-#import "common.h"
+#import "../common.h"
 
 @interface ShadowService : NSObject
 - (void)startService;

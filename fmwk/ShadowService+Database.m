@@ -1,7 +1,7 @@
 #import "ShadowService+Database.h"
 #import "ShadowService+Restriction.h"
 
-#import "rootless.h"
+#import "../vendor/rootless.h"
 
 @implementation ShadowService (Database)
 + (NSDictionary *)generateDatabase {

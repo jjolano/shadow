@@ -1,13 +1,14 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import "../api/common.h"
-#import "../api/rootless.h"
-#import "../api/Shadow.h"
-#import "../api/ShadowService.h"
+#import "../vendor/rootless.h"
 
-#import "../api/ShadowService+Settings.h"
-#import "../api/ShadowService+Database.h"
+#import "../common.h"
+
+#import <Shadow/Shadow.h>
+#import <Shadow/ShadowService.h>
+#import <Shadow/ShadowService+Settings.h>
+#import <Shadow/ShadowService+Database.h>
 
 #import "hooks/hooks.h"
 
