@@ -1,5 +1,5 @@
 #import "SHDWATLController.h"
-#import "../api/ShadowService+Settings.h"
+#import <Shadow/ShadowService+Settings.h>
 
 @implementation SHDWATLController {
 	NSUserDefaults* prefs;

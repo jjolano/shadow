@@ -1,6 +1,7 @@
 #import "SHDWRootListController.h"
-#import "../api/ShadowService+Settings.h"
-#import "../api/rootless.h"
+
+#import <Shadow/ShadowService+Settings.h>
+#import "../vendor/rootless.h"
 
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;

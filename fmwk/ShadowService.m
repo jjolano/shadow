@@ -2,7 +2,7 @@
 #import "ShadowService+Restriction.h"
 #import "ShadowService+Settings.h"
 
-#import "rootless.h"
+#import "../vendor/rootless.h"
 
 #import <AppSupport/CPDistributedMessagingCenter.h>
 

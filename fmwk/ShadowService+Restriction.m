@@ -1,5 +1,4 @@
 #import "ShadowService+Restriction.h"
-#import "../apple_priv/NSTask.h"
 
 @implementation ShadowService (Restriction)
 + (BOOL)isPathCompliant:(NSString *)path withRuleset:(NSDictionary *)ruleset {
