@@ -1,4 +1,5 @@
 #import "ShadowService+Settings.h"
+#import "../common.h"
 
 @implementation ShadowService (Settings)
 + (NSDictionary *)getDefaultPreferences {
