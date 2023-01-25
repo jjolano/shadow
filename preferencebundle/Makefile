@@ -1,3 +1,5 @@
+INSTALL_TARGET_PROCESSES = Preferences
+
 include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = ShadowSettings
