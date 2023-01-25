@@ -69,20 +69,28 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
-    return [self isPathRestricted:path resolve:YES];
+    return [self isPathRestricted:path options:nil];
 }
 
-- (BOOL)isPathRestricted:(NSString *)path resolve:(BOOL)resolve {
-    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
+- (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
+    if(!_restrictionEnabled || !path || [path isEqualToString:@"/"] || [path length] == 0) {
         return NO;
     }
 
     if(![path isAbsolutePath]) {
+        NSString* cwd = options[kShadowRestrictionWorkingDir];
+
+        if(!cwd) {
+            char ccwd[PATH_MAX];
+            getcwd(ccwd, PATH_MAX);
+            cwd = @(ccwd);
+        }
+
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
-        path = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:path];
+        path = [cwd stringByAppendingPathComponent:path];
     }
 
-    if(resolve) {
+    if(!options[kShadowRestrictionEnableResolve] || [options[kShadowRestrictionEnableResolve] boolValue]) {
         if(_service && (_enhancedPathResolve || [[self class] shouldResolvePath:path])) {
             NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
             path = [_service resolvePath:path];
@@ -133,6 +141,10 @@
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
+    return [self isURLRestricted:url options:nil];
+}
+
+- (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options {
     if(!url) {
         return NO;
     }
@@ -148,7 +160,11 @@
             }
         }
 
-        return [self isPathRestricted:path];
+        if(!options) {
+            return [self isPathRestricted:path];
+        }
+
+        return [self isPathRestricted:path options:options];
     }
 
     if(_service && [_service isURLSchemeRestricted:[url scheme]]) {
@@ -167,6 +183,7 @@
         _service = nil;
         _rootlessMode = NO;
         _runningInApp = NO;
+        _restrictionEnabled = YES;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];

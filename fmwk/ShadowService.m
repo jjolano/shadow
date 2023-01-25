@@ -325,9 +325,7 @@
 
 - (NSDictionary *)getVersions {
     return @{
-        @"build_date" : [NSString stringWithFormat:@"%@ %@", @__DATE__, @__TIME__],
-        @"bypass_version" : @BYPASS_VERSION,
-        @"api_version" : @API_VERSION
+        @"build_date" : [NSString stringWithFormat:@"%@ %@", @__DATE__, @__TIME__]
     };
 }
 

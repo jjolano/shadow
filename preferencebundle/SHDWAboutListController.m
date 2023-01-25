@@ -17,14 +17,6 @@
 	return _specifiers;
 }
 
-- (NSString *)aboutBypassVersion:(id)sender {
-	return versions[@"bypass_version"];
-}
-
-- (NSString *)aboutAPIVersion:(id)sender {
-	return versions[@"api_version"];
-}
-
 - (NSString *)aboutBuildDate:(id)sender {
 	return versions[@"build_date"];
 }

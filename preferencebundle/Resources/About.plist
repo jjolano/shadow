@@ -14,22 +14,6 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
-			<string>BYPASS_VERSION</string>
-			<key>get</key>
-			<string>aboutBypassVersion:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSTitleValueCell</string>
-			<key>label</key>
-			<string>SERVICE_VERSION</string>
-			<key>get</key>
-			<string>aboutAPIVersion:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSTitleValueCell</string>
-			<key>label</key>
 			<string>BUILD_DATE</string>
 			<key>get</key>
 			<string>aboutBuildDate:</string>
