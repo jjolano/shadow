@@ -3,7 +3,8 @@
 
 #import <Foundation/Foundation.h>
 
-#import <Shadow/common.h>
+#import "../common.h"
+
 #import <Shadow/Shadow.h>
 #import <Shadow/ShadowService+Database.h>
 
