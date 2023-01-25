@@ -174,9 +174,8 @@ ShadowService* _srv = nil;
 
     if(hooklibs != HK_LIB_NONE) {
         [substitutor setTypes:hooklibs];
+        [substitutor initLibraries];
     }
-
-    [substitutor initLibraries];
     
     HKEnableBatching();
     #else
