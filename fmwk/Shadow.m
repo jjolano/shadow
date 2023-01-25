@@ -82,8 +82,12 @@
 
         if(!cwd) {
             char ccwd[PATH_MAX];
-            getcwd(ccwd, PATH_MAX);
-            cwd = @(ccwd);
+
+            if(getcwd(ccwd, PATH_MAX)) {
+                cwd = @(ccwd);
+            } else {
+                cwd = @"/";
+            }
         }
 
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
