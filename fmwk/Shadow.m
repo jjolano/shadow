@@ -5,7 +5,7 @@
 #import <dlfcn.h>
 #import <pwd.h>
 
-#import "../apple_priv/dyld_priv.h"
+#import "../vendor/apple/dyld_priv.h"
 
 @implementation Shadow {
     // App-specific

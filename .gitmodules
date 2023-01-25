@@ -1,0 +1,3 @@
+[submodule "vendor/HookKit"]
+	path = vendor/HookKit
+	url = https://github.com/jjolano/HookKit.git

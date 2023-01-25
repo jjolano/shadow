@@ -3,9 +3,10 @@
 
 #import <Foundation/Foundation.h>
 
-#import "../api/common.h"
-#import "../api/Shadow.h"
-#import "../api/ShadowService+Database.h"
+#import "../common.h"
+
+#import <Shadow/Shadow.h>
+#import <Shadow/ShadowService+Database.h>
 
 int main(int argc, char *argv[], char *envp[]) {
     @autoreleasepool {

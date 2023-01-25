@@ -1,13 +1,14 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import "../api/common.h"
-#import "../api/rootless.h"
-#import "../api/Shadow.h"
-#import "../api/ShadowService.h"
+#import "../vendor/rootless.h"
 
-#import "../api/ShadowService+Settings.h"
-#import "../api/ShadowService+Database.h"
+#import "../common.h"
+
+#import <Shadow/Shadow.h>
+#import <Shadow/ShadowService.h>
+#import <Shadow/ShadowService+Settings.h>
+#import <Shadow/ShadowService+Database.h>
 
 #import "hooks/hooks.h"
 
@@ -152,7 +153,7 @@ ShadowService* _srv = nil;
     #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
     
-    if(prefs_load[@"HK_Library"]) {
+    if(prefs_load[@"HK_Library"] && ![prefs_load[@"HK_Library"] isEqualToString:@"auto"]) {
         hookkit_lib_t hooklibs_available_types = [HKSubstitutor getAvailableSubstitutorTypes];
         NSArray<NSDictionary *>* hooklibs_available_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs_available_types];
 
@@ -173,9 +174,8 @@ ShadowService* _srv = nil;
 
     if(hooklibs != HK_LIB_NONE) {
         [substitutor setTypes:hooklibs];
+        [substitutor initLibraries];
     }
-
-    [substitutor initLibraries];
     
     HKEnableBatching();
     #else

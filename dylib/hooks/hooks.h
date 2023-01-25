@@ -27,8 +27,9 @@
 #import <spawn.h>
 #import <objc/runtime.h>
 
-#import "../../api/common.h"
-#import "../../api/Shadow.h"
+#import "../../common.h"
+#import <Shadow/Shadow.h>
+
 #import <substrate.h>
 #import <HookKit.h>
 
@@ -42,9 +43,9 @@
 #endif
 
 // private symbols
-#import "../../apple_priv/dyld_priv.h"
-#import "../../apple_priv/codesign.h"
-#import "../../apple_priv/ptrace.h"
+#import "../../vendor/apple/dyld_priv.h"
+#import "../../vendor/apple/codesign.h"
+#import "../../vendor/apple/ptrace.h"
 
 extern Shadow* _shadow;
 
