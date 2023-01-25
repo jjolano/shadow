@@ -265,7 +265,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         // Only use resolve flag if target is not a symlink.
-        if([_shadow isPathRestricted:path resolve:(buf && buf->st_mode & S_IFLNK) ? NO : YES] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path options:@{ kShadowRestrictionEnableResolve : @((buf && buf->st_mode & S_IFLNK) ? NO : YES) }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
