@@ -153,7 +153,7 @@ ShadowService* _srv = nil;
     #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
     
-    if(prefs_load[@"HK_Library"]) {
+    if(prefs_load[@"HK_Library"] && ![prefs_load[@"HK_Library"] isEqualToString:@"auto"]) {
         hookkit_lib_t hooklibs_available_types = [HKSubstitutor getAvailableSubstitutorTypes];
         NSArray<NSDictionary *>* hooklibs_available_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs_available_types];
 
