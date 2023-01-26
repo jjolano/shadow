@@ -78,19 +78,7 @@
         // Resolve and standardize path.
         if(dpkgPath) {
             // Unsandboxed and unhooked - safe to resolve
-            NSString* path = [[rawPath stringByExpandingTildeInPath] stringByStandardizingPath];
-
-            if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents removeObjectAtIndex:1];
-                path = [NSString pathWithComponents:pathComponents];
-            }
-
-            if([path hasPrefix:@"/var/tmp"]) {
-                NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-                [pathComponents removeObjectAtIndex:1];
-                path = [NSString pathWithComponents:pathComponents];
-            }
+            NSString* path = [rawPath stringByStandardizingPath];
 
             response = @{
                 @"path" : path
