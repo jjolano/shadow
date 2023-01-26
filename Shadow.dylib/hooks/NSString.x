@@ -184,6 +184,19 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 %end
 %end
 
+%group shadowhook_NSCharacterSet
+%hook NSCharacterSet
++ (NSCharacterSet *)characterSetWithContentsOfFile:(NSString *)fName {
+    if([_shadow isPathRestricted:fName] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
+%end
+
 void shadowhook_NSString(HKSubstitutor* hooks) {
     %init(shadowhook_NSString);
+    %init(shadowhook_NSCharacterSet);
 }

@@ -1,10 +1,8 @@
 #import "Shadow+Utilities.h"
 
-#import <sys/stat.h>
-
 @implementation Shadow (Utilities)
 + (BOOL)shouldResolvePath:(NSString *)path {
-    if(![path isAbsolutePath] || [path characterAtIndex:0] == '~') {
+    if([path characterAtIndex:0] == '~') {
         return YES;
     }
 
@@ -14,31 +12,24 @@
         // resolving relative path component
         return YES;
     }
-    
+
     return NO;
 }
 
 + (NSString *)getStandardizedPath:(NSString *)path {
-    while([path containsString:@"/./"]) {
-        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-    }
+    NSURL* url = [NSURL URLWithString:path];
 
-    while([path containsString:@"//"]) {
-        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-    }
+    if(url) {
+        path = [[url standardizedURL] path];
+    } else {
+        NSString* filename = [path lastPathComponent];
+        NSString* basename = [path stringByDeletingLastPathComponent];
 
-    if([path length] > 1) {
-        if([path hasSuffix:@"/"]) {
-            path = [path substringToIndex:[path length] - 1];
-        }
+        url = [NSURL URLWithString:basename];
 
-        while([path hasSuffix:@"/."]) {
-            path = [path stringByDeletingLastPathComponent];
-        }
-        
-        while([path hasSuffix:@"/.."]) {
-            path = [path stringByDeletingLastPathComponent];
-            path = [path stringByDeletingLastPathComponent];
+        if(url) {
+            path = [[url standardizedURL] path];
+            path = [path stringByAppendingPathComponent:filename];
         }
     }
 

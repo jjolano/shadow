@@ -1,6 +1,3 @@
-#define BYPASS_VERSION      "5.5"
-#define API_VERSION         "6.2"
-
 #define BUNDLE_ID           "me.jjolano.shadow"
 #define MACH_SERVICE_NAME   BUNDLE_ID ".service"
 #define SHADOW_RULESETS     "/Library/Shadow/rulesets"
