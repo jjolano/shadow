@@ -1,4 +1,4 @@
-#import "HookKit.h"
+#import <HookKit.h>
 #import <Foundation/Foundation.h>
 
 #import "vendor/pac.h"

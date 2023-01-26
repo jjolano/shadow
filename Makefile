@@ -12,6 +12,6 @@ HookKit_LIBRARIES = dobby
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_CFLAGS = -fobjc-arc -IHeaders
 HookKit_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
-HookKit_LDFLAGS += -Lvendor/dobby
+HookKit_LDFLAGS += -Lvendor/dobby -weak_framework CydiaSubstrate
 
 include $(THEOS_MAKE_PATH)/framework.mk

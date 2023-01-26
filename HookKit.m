@@ -1,6 +1,4 @@
-#import "HookKit.h"
 #import "HookKit_priv.h"
-
 #import <dlfcn.h>
 
 @implementation HKFunctionHook
@@ -808,10 +806,6 @@
             didMemory = YES;
         }
     }
-
-    // clear arrays
-    functionHooks = [NSArray new];
-    memoryHooks = [NSArray new];
 
     if(didFunctions && didMemory) {
         return HK_OK;
