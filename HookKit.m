@@ -810,8 +810,8 @@
     }
 
     // clear arrays
-    functionHooks = nil;
-    memoryHooks = nil;
+    functionHooks = [NSArray new];
+    memoryHooks = [NSArray new];
 
     if(didFunctions && didMemory) {
         return HK_OK;
