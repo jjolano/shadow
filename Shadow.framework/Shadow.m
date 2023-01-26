@@ -25,11 +25,11 @@
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
     const char* caller_image_name = dyld_image_path_containing_address(ret_addr);
 
-    if(!caller_image_name) {
-        return NO;
+    if(self_image_name && caller_image_name && strcmp(self_image_name, caller_image_name) == 0) {
+        return YES;
     }
 
-    if(strcmp(self_image_name, caller_image_name) == 0 || [self isCPathRestricted:caller_image_name]) {
+    if([self isCPathRestricted:caller_image_name]) {
         return YES;
     }
 
@@ -82,13 +82,6 @@
         return NO;
     }
 
-    if(!options && _enhancedPathResolve) {
-        NSMutableDictionary* opt = [options mutableCopy];
-        [opt setObject:@(YES) forKey:kShadowRestrictionEnableResolve];
-
-        options = [opt copy];
-    }
-
     path = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
     if(![path isAbsolutePath]) {
@@ -102,14 +95,22 @@
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    if(!options[kShadowRestrictionEnableResolve] || [options[kShadowRestrictionEnableResolve] boolValue]) {
-        if([[self class] shouldResolvePath:path] || [options[kShadowRestrictionEnableResolve] boolValue]) {
-            NSMutableDictionary* opt = [options mutableCopy];
-            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+    BOOL resolve = _enhancedPathResolve;
 
-            if([self isPathRestricted:[_service resolvePath:path] options:[opt copy]]) {
-                return YES;
-            }
+    if(!resolve) {
+        if(options && options[kShadowRestrictionEnableResolve]) {
+            resolve = [options[kShadowRestrictionEnableResolve] boolValue];
+        } else {
+            resolve = YES;
+        }
+    }
+
+    if(_enhancedPathResolve || (resolve && [[self class] shouldResolvePath:path])) {
+        NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
+        [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+
+        if(_service && [self isPathRestricted:[_service resolvePath:path] options:[opt copy]]) {
+            return YES;
         }
     }
 
@@ -147,7 +148,7 @@
     }
 
     // Check if path is restricted from Shadow Service.
-    if([_service isPathRestricted:path]) {
+    if(_service && [_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
@@ -183,7 +184,7 @@
         return [self isPathRestricted:path options:options];
     }
 
-    if([_service isURLSchemeRestricted:[url scheme]]) {
+    if(_service && [_service isURLSchemeRestricted:[url scheme]]) {
         return YES;
     }
 
