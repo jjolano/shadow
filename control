@@ -6,5 +6,5 @@ Architecture: iphoneos-arm
 Description: An iOS tweak developer framework to unify code substitution APIs in runtime. This is a developer package, designed to be used by other packages.
 Maintainer: jjolano
 Author: jjolano
-Section: Developer Frameworks
+Section: Development
 Tag: role::developer
