@@ -809,6 +809,10 @@
         }
     }
 
+    // clear arrays
+    functionHooks = nil;
+    memoryHooks = nil;
+
     if(didFunctions && didMemory) {
         return HK_OK;
     } else {
