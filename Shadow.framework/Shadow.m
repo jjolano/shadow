@@ -103,7 +103,7 @@
     }
 
     if(!options[kShadowRestrictionEnableResolve] || [options[kShadowRestrictionEnableResolve] boolValue]) {
-        if([options[kShadowRestrictionEnableResolve] boolValue] || [[self class] shouldResolvePath:path]) {
+        if([[self class] shouldResolvePath:path] || [options[kShadowRestrictionEnableResolve] boolValue]) {
             NSMutableDictionary* opt = [options mutableCopy];
             [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
