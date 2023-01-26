@@ -23,8 +23,13 @@
     }
 
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
+    const char* caller_image_name = dyld_image_path_containing_address(ret_addr);
 
-    if([self isAddrRestricted:ret_addr]) {
+    if(!caller_image_name) {
+        return NO;
+    }
+
+    if(strcmp(self_image_name, caller_image_name) == 0 || [self isCPathRestricted:caller_image_name]) {
         return YES;
     }
 
@@ -77,17 +82,20 @@
         return NO;
     }
 
+    if(!options && _enhancedPathResolve) {
+        NSMutableDictionary* opt = [options mutableCopy];
+        [opt setObject:@(YES) forKey:kShadowRestrictionEnableResolve];
+
+        options = [opt copy];
+    }
+
+    path = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
     if(![path isAbsolutePath]) {
         NSString* cwd = options[kShadowRestrictionWorkingDir];
 
         if(!cwd) {
-            char ccwd[PATH_MAX];
-
-            if(getcwd(ccwd, PATH_MAX)) {
-                cwd = @(ccwd);
-            } else {
-                cwd = @"/";
-            }
+            cwd = [[NSFileManager defaultManager] currentDirectoryPath];
         }
 
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
@@ -95,16 +103,20 @@
     }
 
     if(!options[kShadowRestrictionEnableResolve] || [options[kShadowRestrictionEnableResolve] boolValue]) {
-        if(_service && (_enhancedPathResolve || [[self class] shouldResolvePath:path])) {
-            NSLog(@"%@: %@: %@", @"isPathRestricted", @"resolving path", path);
-            path = [_service resolvePath:path];
+        if([options[kShadowRestrictionEnableResolve] boolValue] || [[self class] shouldResolvePath:path]) {
+            NSMutableDictionary* opt = [options mutableCopy];
+            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+
+            if([self isPathRestricted:[_service resolvePath:path] options:[opt copy]]) {
+                return YES;
+            }
         }
-    } else {
-        if([path characterAtIndex:0] == '~') {
-            path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
-            path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
-            path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
-        }
+    }
+
+    if([path characterAtIndex:0] == '~') {
+        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
+        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
+        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
     }
 
     path = [[self class] getStandardizedPath:path];
@@ -135,7 +147,7 @@
     }
 
     // Check if path is restricted from Shadow Service.
-    if(_service && [_service isPathRestricted:path]) {
+    if([_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         return YES;
     }
@@ -171,7 +183,7 @@
         return [self isPathRestricted:path options:options];
     }
 
-    if(_service && [_service isURLSchemeRestricted:[url scheme]]) {
+    if([_service isURLSchemeRestricted:[url scheme]]) {
         return YES;
     }
 

@@ -2,16 +2,16 @@
 
 @implementation ShadowService (Restriction)
 + (BOOL)isPathCompliant:(NSString *)path withRuleset:(NSDictionary *)ruleset {
-    if(![path isAbsolutePath]) {
-        // Don't handle relative paths
-        return YES;
-    }
-
     // Verify structure
     NSDictionary* ruleset_fss = ruleset[@"FileSystemStructure"];
 
     if(!ruleset_fss || ruleset_fss[path]) {
         // no need to check further
+        return YES;
+    }
+
+    if(![path isAbsolutePath]) {
+        // Don't handle relative paths
         return YES;
     }
     
@@ -45,14 +45,10 @@
 }
 
 + (BOOL)isPathWhitelisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
-    if(![path isAbsolutePath] || [path isEqualToString:@"/"]) {
-        return NO;
-    }
-
     // Check whitelisted exact paths
     NSSet* ruleset_wepath = ruleset[@"WhitelistExactPaths"];
 
-    if(ruleset_wepath && [ruleset_wepath containsObject:path]) {
+    if([ruleset_wepath containsObject:path]) {
         return YES;
     }
 
@@ -70,7 +66,7 @@
     // Check whitelisted predicates
     NSPredicate* ruleset_wpred = ruleset[@"WhitelistPredicates"];
 
-    if(ruleset_wpred && [ruleset_wpred evaluateWithObject:path]) {
+    if([ruleset_wpred evaluateWithObject:path]) {
         return YES;
     }
 
@@ -90,14 +86,10 @@
 }
 
 + (BOOL)isPathBlacklisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
-    if(![path isAbsolutePath] || [path isEqualToString:@"/"]) {
-        return NO;
-    }
-
     // Check blacklisted exact paths
     NSSet* ruleset_bepath = ruleset[@"BlacklistExactPaths"];
 
-    if(ruleset_bepath && [ruleset_bepath containsObject:path]) {
+    if([ruleset_bepath containsObject:path]) {
         return YES;
     }
 
@@ -115,7 +107,7 @@
     // Check blacklisted predicates
     NSPredicate* ruleset_bpred = ruleset[@"BlacklistPredicates"];
 
-    if(ruleset_bpred && [ruleset_bpred evaluateWithObject:path]) {
+    if([ruleset_bpred evaluateWithObject:path]) {
         return YES;
     }
 
