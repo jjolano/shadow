@@ -53,7 +53,9 @@
         @"/usr/libexec",
         @"/usr/lib/system",
         @"/var/mobile/Library/Caches",
-        @"/var/mobile/Media"
+        @"/var/mobile/Media",
+        @"/System/Library/PrivateFrameworks/CoreEmoji.framework",
+        @"/System/Library/PrivateFrameworks/TextInput.framework"
     ];
 
     for(NSString* name in filter_names) {
