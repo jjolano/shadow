@@ -355,6 +355,10 @@
 }
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!objcClass || !selector || !replacement) {
+        return HK_ERR;
+    }
+
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LBHookMessage) {
             int lh_result = _LBHookMessage(objcClass, selector, replacement, old_ptr);
@@ -396,6 +400,10 @@
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!function || !replacement) {
+        return HK_ERR;
+    }
+
     if(_batching) {
         HKFunctionHook* hook = [HKFunctionHook new];
         [hook setFunction:[NSValue valueWithPointer:function]];
@@ -483,6 +491,10 @@
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(!target) {
+        return HK_ERR;
+    }
+
     if(_batching) {
         HKMemoryHook* hook = [HKMemoryHook new];
         [hook setTarget:[NSValue valueWithPointer:target]];
@@ -548,6 +560,10 @@
 }
 
 - (HKImageRef)openImage:(NSString *)path {
+    if(!path) {
+        return NULL;
+    }
+
     if(_types & HK_LIB_LIBHOOKER) {
         if(_LHOpenImage) {
             return (HKImageRef)_LHOpenImage([path fileSystemRepresentation]);
@@ -666,6 +682,10 @@
 }
 
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    if(!symbolName) {
+        return NULL;
+    }
+    
     NSArray<NSValue *>* syms = nil;
     hookkit_status_t result = [self findSymbolsInImage:image symbolNames:@[symbolName] outSymbols:&syms];
 
