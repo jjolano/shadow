@@ -1,0 +1,17 @@
+"ABOUT_TITLE" = "关于";
+"BYPASS_VERSION" = "屏蔽版本";
+"SERVICE_VERSION" = "服务版本";
+"BUILD_DATE" = "构建日期";
+"SOFTWARE_LICENSE" = "软件许可";
+"UPDATES_HDR" = "更新";
+"PACKAGE_VERSION" = "安装包版本";
+"LATEST_VERSION" = "最新版本";
+"CREDITS_HDR" = "致谢";
+"DEVELOPER" = "开发者";
+"VISIT_GITHUB" = "在GitHub上查看Shadow";
+"VISIT_KOFI" = "在Ko-fi上赞助作者";
+"LOCALIZATION_HDR" = "简体中文翻译";
+"VISIT_CHANGELOG" = "查看最新的更新日志";
+
+/* your name here! */
+"TRANSLATOR" = "nehyci";
