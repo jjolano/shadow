@@ -48,7 +48,7 @@ If your jailbreak is still getting detected, here are some things to try:
 
 ## Contributing
 
-Pull requests are welcome. For translations, please refer to the [English translation](preferencebundle/Resources/en.lproj/) within the preference bundle resource files.
+Pull requests are welcome. For translations, please refer to the [English translation](ShadowSettings.bundle/Resources/en.lproj/) within the preference bundle resource files.
 
 ## Installation
 
