@@ -1,0 +1,19 @@
+"GLOBAL_SETTINGS" = "全局设置";
+
+"ALWAYS_ON" = "始终开启";
+"ALWAYS_ON_DESC" = "默认情况下，在所有应用中尝试屏蔽越狱检测。如果被应用设置覆盖，则没有效果。";
+
+"BYPASS_SETTINGS" = "屏蔽设置";
+"BYPASS_SETTINGS_DESC" = "调整越狱检测屏蔽的强度。可能影响应用性能。";
+
+"ROOT_APP_SETTINGS" = "应用设置";
+"ROOT_APP_SETTINGS_DESC" = "如果启用，每个应用的设置将覆盖全局设置。";
+
+"APPLICATIONS" = "应用";
+
+"RESPRING" = "重启SpringBoard";
+"RESET" = "重置设置";
+"RESET_PROMPT" = "这将重置Shadow的所有设置。";
+"RESET_CANCEL" = "取消";
+
+"ROOT_ABOUT" = "关于";

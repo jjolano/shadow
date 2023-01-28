@@ -1,0 +1,54 @@
+"INTERNAL_SETTINGS" = "内部设置";
+"HK_LIB_DESC" = "控制Hook方法。一些Hook库可能提供更好的屏蔽效果，但也可能影响应用的稳定性。";
+
+"HOOKING_LIBRARY" = "Hook库";
+"HK_LIB_SELECT" = "这是一个可以在您的设备上使用的Hook库列表。 选择 \"自动\" 来允许HookKit为您的设备选择最合适的Hook库。";
+"AUTOMATIC" = "自动";
+
+"COMPAT_SETTINGS" = "兼容性设置";
+
+"ALLOW_RESOURCES" = "允许插件资源";
+"ALLOW_RESOURCES_DESC" = "某些插件需要完全访问一些越狱资源。除非需要插件，否则不要启用此功能。";
+
+"ROOTLESS_MODE" = "启用无根模式";
+"ROOTLESS_MODE_DESC" = "如果您在无根越狱中运行Shadow，请启用此设置。如果您使用的越狱不是无根越狱，请不要启用。";
+
+"ENHANCEMENT_SETTINGS" = "优化设置";
+
+"ENH_PATH_RESOLVING" = "优化路径处理";
+"ENH_PR_DESC" = "启用此设置将产生对文件访问操作的额外处理，但会对性能产生明显影响。";
+
+"ESSENTIAL_HOOKS" = "基本Hook";
+"ESSENTIAL_HOOKS_DESC" = "基本Hook包含最常见的越狱检测方法。";
+
+"HOOK_FILE_SYSTEM" = "文件系统";
+"HOOK_DYLIB" = "动态库";
+"HOOK_URLSCHEME" = "URL处理";
+"HOOK_ENVVARS" = "环境变量";
+
+"REC_HOOKS" = "推荐Hook";
+"REC_HOOKS_DESC" = "推荐Hook包含可能使用的其他越狱检测方法。";
+
+"HOOK_DETECTFMWK" = "检测框架";
+"HOOK_FILE_SYSTEM_EX" = "文件系统（额外）";
+"HOOK_FOUNDATION" = "Foundation框架"; /* Foundation是Apple的框架名称. */
+"HOOK_MAC" = "M1 Mac 伪装（iOS 14+）";
+
+"EXTRA_HOOKS" = "额外Hook";
+"EXTRA_HOOKS_DESC" = "额外Hook包含可能使用的更多越狱检测方法，包括私有API。";
+
+"HOOK_MACH" = "Mach服务查找";
+"HOOK_SYMLOOKUP" = "运行时符号查找";
+"HOOK_OBJC" = "Objective-C方法";
+"HOOK_ANTIDBG" = "反调试方法";
+"HOOK_SYSCALL" = "私有系统调用";
+"HOOK_APPENUM" = "应用枚举";
+
+"DNGR_HOOKS" = "危险Hook";
+"DNGR_HOOKS_DESC" = "底层屏蔽方法。这些Hook可能会使一些应用程序崩溃。";
+
+"HOOK_SANDBOX" = "增强应用沙盒";
+"HOOK_LLC" = "底层文件处理";
+"HOOK_MEM" = "隐藏可执行内存";
+"HOOK_TWEAKCLASS" = "隐藏插件的Objective-C类";
+"HOOK_DYLD" = "动态库加载器";
