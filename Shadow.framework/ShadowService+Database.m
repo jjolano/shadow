@@ -45,7 +45,7 @@
         }
     }
 
-    // Filter some conflicting filenames.
+    // filter installed ruleset
     NSArray* filter_names = @[
         @"/.",
         @"/Library/Application Support",
@@ -53,7 +53,11 @@
         @"/usr/libexec",
         @"/usr/lib/system",
         @"/var/mobile/Library/Caches",
-        @"/var/mobile/Media"
+        @"/var/mobile/Media",
+        @"/System/Library/PrivateFrameworks/CoreEmoji.framework",
+        @"/System/Library/PrivateFrameworks/CoreEmoji.framework/SearchEngineOverrideLists",
+        @"/System/Library/PrivateFrameworks/CoreEmoji.framework/SearchModel-en",
+        @"/System/Library/PrivateFrameworks/TextInput.framework"
     ];
 
     for(NSString* name in filter_names) {
@@ -67,6 +71,13 @@
         [db_installed removeObject:name];
     }
 
+    NSArray* filtered_db_installed = [db_installed allObjects];
+
+    NSPredicate* emoji = [NSPredicate predicateWithFormat:@"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
+    NSPredicate* not_emoji = [NSCompoundPredicate notPredicateWithSubpredicate:emoji];
+    filtered_db_installed = [filtered_db_installed filteredArrayUsingPredicate:not_emoji];
+
+    // url schemes
     NSPredicate* system_apps_pred = [NSPredicate predicateWithFormat:@"SELF ENDSWITH[c] '.app'"];
     NSArray* system_apps = [[db_installed allObjects] filteredArrayUsingPredicate:system_apps_pred];
     NSMutableSet* schemes = [NSMutableSet new];
@@ -96,7 +107,7 @@
             @"Name" : @"dpkg installed files",
             @"Author" : @"Shadow Service"
         },
-        @"BlacklistExactPaths" : [db_installed allObjects],
+        @"BlacklistExactPaths" : filtered_db_installed,
         @"BlacklistURLSchemes" : [schemes allObjects]
     };
 }

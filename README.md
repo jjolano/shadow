@@ -10,6 +10,7 @@ While Shadow does work fine on palera1n, please note the following potential iss
 
 * Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. This may be fixed in a future update to the jailbreak itself. You will need to reinstall the `libSandy` package otherwise Shadow will not function.
 * On 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. For now, please use the `fishhook` hooking library.
+* You may see `shdw: Killed: 9` upon installation of Shadow and subsequently other tweaks. This is due to (a lack of?) codesigning on palera1n. This does not affect functionality. `AutoSign` can be installed to fix this.
 
 ## Frequently Asked Questions
 
@@ -47,7 +48,7 @@ If your jailbreak is still getting detected, here are some things to try:
 
 ## Contributing
 
-Pull requests are welcome. For translations, please refer to the [English translation](preferencebundle/Resources/en.lproj/) within the preference bundle resource files.
+Pull requests are welcome. For translations, please refer to the [English translation](ShadowSettings.bundle/Resources/en.lproj/) within the preference bundle resource files.
 
 ## Installation
 

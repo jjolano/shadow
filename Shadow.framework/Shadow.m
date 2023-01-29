@@ -125,8 +125,7 @@
     // Extra tweak compatibility
     if(_tweakCompatibility) {
         if([path hasPrefix:@"/Library/Application Support"]
-        || [path hasPrefix:@"/System/Library/PrivateFrameworks/CoreEmoji.framework"]
-        || [path hasPrefix:@"/System/Library/PrivateFrameworks/TextInput.framework"]) {
+        || [path hasPrefix:@"/Library/Themes"]) {
             return NO;
         }
     }
