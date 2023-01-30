@@ -175,7 +175,6 @@
 			<string>mediaanalysisd-service</string>
 			<string>sharedCaches</string>
 			<string>videosubscriptionsd</string>
-			<string>TelephonyUI-8</string>
 			<string>rtcreportingd</string>
 		</array>
 		<key>/var/mobile/Library/Cookies</key>
@@ -481,6 +480,7 @@
 		<string>/var/mobile/Library/Application Support/com.apple</string>
 		<string>/var/mobile/Library/com.apple</string>
 		<string>/var/mobile/Library/Logs/com.apple</string>
+		<string>/var/mobile/Library/Caches/TelephonyUI-</string>
 	</array>
 	<key>WhitelistPredicates</key>
 	<array>
