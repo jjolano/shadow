@@ -23,13 +23,9 @@
     }
 
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
-    const char* caller_image_name = dyld_image_path_containing_address(ret_addr);
+    const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
-    if(self_image_name && caller_image_name && strcmp(self_image_name, caller_image_name) == 0) {
-        return YES;
-    }
-
-    if([self isCPathRestricted:caller_image_name]) {
+    if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
         return YES;
     }
 
@@ -97,15 +93,13 @@
 
     BOOL resolve = _enhancedPathResolve;
 
-    if(!resolve) {
-        if(options && options[kShadowRestrictionEnableResolve]) {
+    if(options) {
+        if(options[kShadowRestrictionEnableResolve]) {
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
-        } else {
-            resolve = YES;
         }
     }
 
-    if(_enhancedPathResolve || (resolve && [[self class] shouldResolvePath:path])) {
+    if(resolve || [[self class] shouldResolvePath:path]) {
         NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
         [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
@@ -202,6 +196,7 @@
         _rootlessMode = NO;
         _runningInApp = NO;
         _restrictionEnabled = YES;
+        _enhancedPathResolve = NO;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
