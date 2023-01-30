@@ -97,9 +97,11 @@
         if(options[kShadowRestrictionEnableResolve]) {
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
+    } else {
+        resolve = [[self class] shouldResolvePath:path];
     }
 
-    if(resolve || [[self class] shouldResolvePath:path]) {
+    if(resolve) {
         NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
         [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
