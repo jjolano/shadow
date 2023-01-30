@@ -2,7 +2,7 @@
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -12,7 +12,7 @@ static int replaced_access(const char* pathname, int mode) {
 
 static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -44,7 +44,7 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
             }
         }
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             errno = ENOENT;
             return -1;
         }
@@ -55,7 +55,7 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
 
 static int (*original_chdir)(const char* pathname);
 static int replaced_chdir(const char* pathname) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -72,7 +72,7 @@ static int replaced_fchdir(int fd) {
         char pathname[PATH_MAX];
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
                 errno = ENOENT;
                 return -1;
             }
@@ -85,7 +85,7 @@ static int replaced_fchdir(int fd) {
 
 static int (*original_chroot)(const char* pathname);
 static int replaced_chroot(const char* pathname) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -144,7 +144,7 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
     if(result == 0 && pathname) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct statfs));
             errno = ENOENT;
             return -1;
@@ -177,7 +177,7 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
             path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-            if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                 memset(buf, 0, sizeof(struct statfs));
                 errno = ENOENT;
                 return -1;
@@ -247,7 +247,7 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     if(result == 0) {
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
@@ -265,7 +265,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
         // Only use resolve flag if target is not a symlink.
-        if([_shadow isPathRestricted:path options:@{ kShadowRestrictionEnableResolve : @((buf && buf->st_mode & S_IFLNK) ? NO : YES) }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path options:@{ kShadowRestrictionEnableResolve : @((buf && buf->st_mode & S_IFLNK) ? NO : YES) }] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
@@ -290,7 +290,7 @@ static int replaced_fstat(int fd, struct stat* buf) {
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
             path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
 
-            if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                 errno = EBADF;
                 return -1;
             }
@@ -326,7 +326,7 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
             }
         }
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct stat));
             errno = ENOENT;
             return -1;
@@ -362,7 +362,7 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
             }
         }
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             errno = ENOENT;
             return -1;
         }
@@ -395,7 +395,7 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
             do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@((*oresult)->d_name)];
 
-                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                     // call readdir again to skip ahead
                     result = original_readdir_r(dirp, entry, oresult);
                 } else {
@@ -425,7 +425,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
             do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@(result->d_name)];
 
-                if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+                if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                     // call readdir again to skip ahead
                     result = original_readdir(dirp);
                 } else {
@@ -440,7 +440,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return NULL;
     }
@@ -450,7 +450,7 @@ static FILE* replaced_fopen(const char* pathname, const char* mode) {
 
 static FILE* (*original_freopen)(const char* pathname, const char* mode, FILE* stream);
 static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stream) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return NULL;
     }
@@ -460,7 +460,7 @@ static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stre
 
 static char* (*original_realpath)(const char* pathname, char* resolved_path);
 static char* replaced_realpath(const char* pathname, char* resolved_path) {
-    if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isCPathRestricted:pathname] || [_shadow isCPathRestricted:resolved_path]) && !isCallerTweak()) {
         errno = ENOENT;
         return NULL;
     }
@@ -470,7 +470,7 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
 
 static int (*original_getattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
 static int replaced_getattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
-    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:path] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -480,7 +480,7 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
 static int (*original_symlink)(const char* path1, const char* path2);
 static int replaced_symlink(const char* path1, const char* path2) {
-    if([_shadow isCPathRestricted:path2] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:path2] && !isCallerTweak()) {
         errno = EACCES;
         return -1;
     }
@@ -490,7 +490,7 @@ static int replaced_symlink(const char* path1, const char* path2) {
 
 static int (*original_link)(const char* path1, const char* path2);
 static int replaced_link(const char* path1, const char* path2) {
-    if(([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2]) && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -500,7 +500,7 @@ static int replaced_link(const char* path1, const char* path2) {
 
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
-    if(([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new]) && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -510,7 +510,7 @@ static int replaced_rename(const char* old, const char* new) {
 
 static int (*original_remove)(const char* pathname);
 static int replaced_remove(const char* pathname) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -520,7 +520,7 @@ static int replaced_remove(const char* pathname) {
 
 static int (*original_unlink)(const char* pathname);
 static int replaced_unlink(const char* pathname) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -552,7 +552,7 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
             }
         }
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             errno = ENOENT;
             return -1;
         }
@@ -563,7 +563,7 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
 
 static int (*original_rmdir)(const char* pathname);
 static int replaced_rmdir(const char* pathname) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -573,7 +573,7 @@ static int replaced_rmdir(const char* pathname) {
 
 static long (*original_pathconf)(const char* pathname, int name);
 static long replaced_pathconf(const char* pathname, int name) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -590,7 +590,7 @@ static long replaced_fpathconf(int fd, int name) {
         char pathname[PATH_MAX];
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
                 errno = ENOENT;
                 return -1;
             }
@@ -603,7 +603,7 @@ static long replaced_fpathconf(int fd, int name) {
 
 static int (*original_utimes)(const char* pathname, const struct timeval times[2]);
 static int replaced_utimes(const char* pathname, const struct timeval times[2]) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -620,7 +620,7 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
         char pathname[PATH_MAX];
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+            if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
                 errno = ENOENT;
                 return -1;
             }
@@ -711,7 +711,7 @@ static pid_t replaced_getppid() {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
-    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return -1;
     }
@@ -738,7 +738,7 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
     if(result != -1) {
         char fd_pathname[PATH_MAX];
 
-        if(fcntl(result, F_GETPATH, fd_pathname) == 0 && [_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(fcntl(result, F_GETPATH, fd_pathname) == 0 && [_shadow isCPathRestricted:fd_pathname] && !isCallerTweak()) {
             close(result);
             errno = ENOENT;
             return -1;
@@ -750,7 +750,7 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
 static DIR* (*original___opendir2)(const char* pathname, size_t bufsize);
 static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
-    /*if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    /*if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
         errno = ENOENT;
         return NULL;
     }*/

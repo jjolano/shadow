@@ -7,7 +7,7 @@
 // //     if(result) {
 // //         const char* image_name = dyld_image_path_containing_address(result);
 
-// //         if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+// //         if([_shadow isCPathRestricted:image_name] && !isCallerTweak()) {
 // //             return nil;
 // //         }
 // //     }
@@ -24,7 +24,7 @@
 // //         if(impl) {
 // //             const char* image_name = dyld_image_path_containing_address(impl);
 
-// //             if([_shadow isCPathRestricted:image_name] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+// //             if([_shadow isCPathRestricted:image_name] && !isCallerTweak()) {
 // //                 return nil;
 // //             }
 // //         }
@@ -39,7 +39,7 @@ static const char* replaced_class_getImageName(Class cls) {
     const char* result = original_class_getImageName(cls);
 
     if(result) {
-        if([_shadow isCPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isCPathRestricted:result] && !isCallerTweak()) {
             return NULL;
         }
     }
@@ -52,7 +52,7 @@ static const char* replaced_class_getImageName(Class cls) {
 //     Class result = original_objc_lookUpClass(name);
 
 //     if(result) {
-//         if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         if([_shadow isAddrRestricted:(void *)result] && !isCallerTweak()) {
 //             return nil;
 //         }
 //     }
@@ -65,7 +65,7 @@ static const char* replaced_class_getImageName(Class cls) {
 //     id result = original_objc_getClass(name);
 
 //     if(result) {
-//         if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         if([_shadow isAddrRestricted:(void *)result] && !isCallerTweak()) {
 //             return nil;
 //         }
 //     }
@@ -78,7 +78,7 @@ static const char* replaced_class_getImageName(Class cls) {
 //     Class result = original_objc_getMetaClass(name);
 
 //     if(result) {
-//         if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+//         if([_shadow isAddrRestricted:(void *)result] && !isCallerTweak()) {
 //             return nil;
 //         }
 //     }
@@ -90,7 +90,7 @@ static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *out
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
     const char * _Nonnull * result = original_objc_copyImageNames(outCount);
 
-    if(result && *outCount && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && *outCount && !isCallerTweak()) {
         const char* exec_name = _dyld_get_image_name(0);
         unsigned int i;
 
@@ -111,7 +111,7 @@ static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* 
     const char * _Nonnull * result = original_objc_copyClassNamesForImage(image, outCount);
 
     if(result) {
-        if([_shadow isCPathRestricted:image] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isCPathRestricted:image] && !isCallerTweak()) {
             if(outCount) {
                 *outCount = 0;
             }
@@ -128,7 +128,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
     if(result) {
-        if([_shadow isAddrRestricted:(void *)result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isAddrRestricted:(void *)result] && !isCallerTweak()) {
             return nil;
         }
     }

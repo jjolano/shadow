@@ -32,7 +32,7 @@ static int replaced_syscall(int number, ...) {
     || number == SYS_pathconf) {
         const char* pathname = va_arg(args, const char *);
 
-        if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
             errno = ENOENT;
             return -1;
         }
