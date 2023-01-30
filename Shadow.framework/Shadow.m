@@ -120,8 +120,7 @@
 
     // Extra tweak compatibility
     if(_tweakCompatibility) {
-        if([path hasPrefix:@"/Library/Application Support"]
-        || [path hasPrefix:@"/Library/Themes"]) {
+        if([path hasPrefix:@"/Library/Application Support"]) {
             return NO;
         }
     }
