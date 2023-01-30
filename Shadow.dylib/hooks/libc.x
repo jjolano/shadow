@@ -711,26 +711,18 @@ static pid_t replaced_getppid() {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
+    if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return -1;
+    }
+
     void* arg;
     va_list args;
     va_start(args, oflag);
     arg = va_arg(args, void *);
     va_end(args);
 
-    int result = original_open(pathname, oflag, arg);
-
-    if(result != -1) {
-        char fd_pathname[PATH_MAX];
-        fcntl(result, F_GETPATH, fd_pathname);
-
-        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            close(result);
-            errno = ENOENT;
-            return -1;
-        }
-    }
-
-    return result;
+    return original_open(pathname, oflag, arg);
 }
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
@@ -745,9 +737,8 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
     if(result != -1) {
         char fd_pathname[PATH_MAX];
-        fcntl(result, F_GETPATH, fd_pathname);
 
-        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if(fcntl(result, F_GETPATH, fd_pathname) == 0 && [_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
             close(result);
             errno = ENOENT;
             return -1;
@@ -759,22 +750,12 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
 static DIR* (*original___opendir2)(const char* pathname, size_t bufsize);
 static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
-    DIR* result = original___opendir2(pathname, bufsize);
+    /*if([_shadow isCPathRestricted:pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        errno = ENOENT;
+        return NULL;
+    }*/
 
-    if(result) {
-        int fd = dirfd(result);
-
-        char fd_pathname[PATH_MAX];
-        fcntl(fd, F_GETPATH, fd_pathname);
-
-        if([_shadow isCPathRestricted:fd_pathname] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
-            closedir(result);
-            errno = ENOENT;
-            return NULL;
-        }
-    }
-
-    return result;
+    return original___opendir2(pathname, bufsize);
 }
 
 void shadowhook_libc(HKSubstitutor* hooks) {

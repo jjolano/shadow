@@ -79,7 +79,7 @@
 
     // url schemes
     NSPredicate* system_apps_pred = [NSPredicate predicateWithFormat:@"SELF ENDSWITH[c] '.app'"];
-    NSArray* system_apps = [[db_installed allObjects] filteredArrayUsingPredicate:system_apps_pred];
+    NSArray* system_apps = [filtered_db_installed filteredArrayUsingPredicate:system_apps_pred];
     NSMutableSet* schemes = [NSMutableSet new];
 
     for(NSString* app in system_apps) {
