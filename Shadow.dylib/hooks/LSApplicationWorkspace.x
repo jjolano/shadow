@@ -11,7 +11,7 @@
 - (NSArray<LSApplicationProxy *> *)allApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
 
         for(LSApplicationProxy* ap in result) {
@@ -29,7 +29,7 @@
 - (NSArray<LSApplicationProxy *> *)allInstalledApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
 
         for(LSApplicationProxy* ap in result) {
@@ -47,7 +47,7 @@
 - (NSArray<LSApplicationProxy *> *)directionsApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
 
         for(LSApplicationProxy* ap in result) {
@@ -65,7 +65,7 @@
 - (NSArray<LSApplicationProxy *> *)unrestrictedApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
 
         for(LSApplicationProxy* ap in result) {
@@ -83,7 +83,7 @@
 - (NSArray<NSString *> *)installedApplications {
     NSArray<NSString *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
 
         for(NSString* app_bundleId in result) {
@@ -103,7 +103,7 @@
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForHandlingURLScheme:(NSString *)urlScheme {
-    if([[_shadow service] isURLSchemeRestricted:urlScheme] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([[_shadow service] isURLSchemeRestricted:urlScheme] && !isCallerTweak()) {
         return @[];
     }
 
@@ -111,7 +111,7 @@
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return @[];
     }
 
@@ -119,7 +119,7 @@
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url legacySPI:(BOOL)legacySPI {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return @[];
     }
 
@@ -129,7 +129,7 @@
 - (NSArray<NSString *> *)publicURLSchemes {
     NSArray<NSString *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
 
         for(NSString* scheme in result) {
@@ -147,7 +147,7 @@
 - (NSArray<NSString *> *)privateURLSchemes {
     NSArray<NSString *>* result = %orig;
 
-    if(result && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && !isCallerTweak()) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
 
         for(NSString* scheme in result) {

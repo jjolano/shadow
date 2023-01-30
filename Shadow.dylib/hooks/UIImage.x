@@ -3,7 +3,7 @@
 %group shadowhook_UIImage
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (UIImage *)imageWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
         return nil;
     }
 

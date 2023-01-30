@@ -3,7 +3,7 @@
 %group shadowhook_NSURL
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:self] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -15,7 +15,7 @@
 }
 
 - (BOOL)checkPromisedItemIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:self] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -27,7 +27,7 @@
 }
 
 - (NSURL *)fileReferenceURL {
-    if([_shadow isURLRestricted:self] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:self] && !isCallerTweak()) {
         return nil;
     }
 
@@ -35,7 +35,7 @@
 }
 
 + (NSData *)bookmarkDataWithContentsOfURL:(NSURL *)bookmarkFileURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:bookmarkFileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:bookmarkFileURL] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -51,7 +51,7 @@
 %group shadowhook_NSURLSession
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return nil;
     }
 
@@ -59,7 +59,7 @@
 }
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return nil;
     }
 
@@ -67,7 +67,7 @@
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return nil;
     }
 
@@ -75,7 +75,7 @@
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
-    if([_shadow isURLRestricted:url] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
         return nil;
     }
 
@@ -83,7 +83,7 @@
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL {
-    if([_shadow isURLRestricted:fileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:fileURL] && !isCallerTweak()) {
         return nil;
     }
 
@@ -91,7 +91,7 @@
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if([_shadow isURLRestricted:fileURL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:fileURL] && !isCallerTweak()) {
         return nil;
     }
 
@@ -103,7 +103,7 @@
 %group shadowhook_NSURLRequest
 %hook NSURLRequest
 + (instancetype)requestWithURL:(NSURL *)URL {
-    if([_shadow isURLRestricted:URL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:URL] && !isCallerTweak()) {
         return nil;
     }
 
@@ -111,7 +111,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)URL {
-    if([_shadow isURLRestricted:URL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:URL] && !isCallerTweak()) {
         return nil;
     }
 
@@ -119,7 +119,7 @@
 }
 
 + (instancetype)requestWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if([_shadow isURLRestricted:URL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:URL] && !isCallerTweak()) {
         return nil;
     }
 
@@ -127,7 +127,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if([_shadow isURLRestricted:URL] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:URL] && !isCallerTweak()) {
         return nil;
     }
 
