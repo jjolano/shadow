@@ -23,13 +23,9 @@
     }
 
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
-    const char* caller_image_name = dyld_image_path_containing_address(ret_addr);
+    const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
-    if(self_image_name && caller_image_name && strcmp(self_image_name, caller_image_name) == 0) {
-        return YES;
-    }
-
-    if([self isCPathRestricted:caller_image_name]) {
+    if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
         return YES;
     }
 
