@@ -93,15 +93,13 @@
 
     BOOL resolve = _enhancedPathResolve;
 
-    if(!resolve) {
-        if(options && options[kShadowRestrictionEnableResolve]) {
+    if(options) {
+        if(options[kShadowRestrictionEnableResolve]) {
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
-        } else {
-            resolve = YES;
         }
     }
 
-    if(_enhancedPathResolve || (resolve && [[self class] shouldResolvePath:path])) {
+    if(resolve || [[self class] shouldResolvePath:path]) {
         NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
         [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
@@ -198,6 +196,7 @@
         _rootlessMode = NO;
         _runningInApp = NO;
         _restrictionEnabled = YES;
+        _enhancedPathResolve = NO;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
