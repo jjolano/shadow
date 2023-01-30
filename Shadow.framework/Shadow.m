@@ -25,8 +25,10 @@
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
     const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
-    if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
-        return YES;
+    if(ret_image_name) {
+        if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
+            return YES;
+        }
     }
 
     if(backtrace) {
@@ -37,7 +39,7 @@
             const char* image_path = dyld_image_path_containing_address(ptr_addr);
 
             if(image_path) {
-                if(strcmp(image_path, self_image_name) == 0) {
+                if(self_image_name && strcmp(image_path, self_image_name) == 0) {
                     continue;
                 }
                 
@@ -120,8 +122,7 @@
 
     // Extra tweak compatibility
     if(_tweakCompatibility) {
-        if([path hasPrefix:@"/Library/Application Support"]
-        || [path hasPrefix:@"/Library/Themes"]) {
+        if([path hasPrefix:@"/Library/Application Support"]) {
             return NO;
         }
     }

@@ -44,7 +44,7 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
     const char* result = original_dyld_get_image_name(image_index);
 
-    if([_shadow isCPathRestricted:result] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:result] && !isCallerTweak()) {
         return "/usr/lib/dyld";
     }
 
@@ -53,7 +53,7 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isCPathRestricted:path] && !isTweak) {
         return NULL;
@@ -70,7 +70,7 @@ static void* replaced_dlopen(const char* path, int mode) {
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isCPathRestricted:path] && !isTweak) {
         return NULL;
@@ -87,7 +87,7 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
-    if([_shadow isCPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isCPathRestricted:path] && !isCallerTweak()) {
         return false;
     }
 
@@ -96,7 +96,7 @@ static bool replaced_dlopen_preflight(const char* path) {
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_add_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(isCallerTweak()) {
         return original_dyld_register_func_for_add_image(func);
     }
 
@@ -124,7 +124,7 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
 static void (*original_dyld_register_func_for_remove_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_remove_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(isCallerTweak()) {
         return original_dyld_register_func_for_remove_image(func);
     }
 
@@ -145,7 +145,7 @@ static kern_return_t (*original_task_info)(task_name_t target_task, task_flavor_
 static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt) {
     kern_return_t result = original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
 
-    if([_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(isCallerTweak()) {
         return result;
     }
 
@@ -259,7 +259,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
     if(addr) {
         // Check origin of resolved symbol
-        if([_shadow isAddrRestricted:addr] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isAddrRestricted:addr] && !isCallerTweak()) {
             if(symbol) {
                 NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
             }
@@ -278,7 +278,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     if(result) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
 
-        if([_shadow isPathRestricted:path] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             if(info->dli_sname) {
                 NSLog(@"%@: %@: %@ -> %s", @"dyld", @"dladdr", path, info->dli_sname);
 

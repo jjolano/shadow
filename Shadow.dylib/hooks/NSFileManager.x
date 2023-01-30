@@ -5,7 +5,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
     if(!isTweak && [_shadow isPathRestricted:base]) {
@@ -38,7 +38,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (id)nextObject {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
     if(!isTweak && [_shadow isPathRestricted:base]) {
@@ -72,7 +72,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -80,7 +80,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -88,7 +88,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -96,7 +96,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -104,7 +104,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -112,7 +112,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -120,7 +120,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -128,7 +128,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
-    if(([_shadow isPathRestricted:path1 options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:path2 options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:path1 options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:path2 options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         return NO;
     }
 
@@ -136,7 +136,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isTweak) {
         if(error) {
@@ -164,7 +164,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isTweak) {
         if(error) {
@@ -220,7 +220,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isTweak) {
         if(error) {
@@ -254,7 +254,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isTweak) {
         return nil;
@@ -284,7 +284,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary *services, NSError *error))completionHandler {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(completionHandler) {
             completionHandler(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil]);
         }
@@ -296,7 +296,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -308,7 +308,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -316,7 +316,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -324,7 +324,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -349,7 +349,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -374,7 +374,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:directoryURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:otherURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:directoryURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:otherURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -386,7 +386,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -407,7 +407,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -415,7 +415,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSDictionary *)fileAttributesAtPath:(NSString *)path traverseLink:(BOOL)yorn {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -423,7 +423,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSDictionary *)fileSystemAttributesAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -444,7 +444,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
-    BOOL isTweak = [_shadow isCallerTweak:[NSThread callStackReturnAddresses]];
+    BOOL isTweak = isCallerTweak();
 
     if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isTweak) {
         return nil;
@@ -474,7 +474,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSString *)pathContentOfSymbolicLinkAtPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return nil;
     }
 
@@ -482,7 +482,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:originalItemURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:newItemURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:originalItemURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:newItemURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -494,7 +494,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -506,7 +506,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -518,7 +518,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -530,7 +530,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -544,7 +544,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (BOOL)isUbiquitousItemAtURL:(NSURL *)url {
     BOOL result = %orig;
 
-    if(result && [_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(result && [_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -552,7 +552,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:destinationURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:destinationURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -564,7 +564,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -576,7 +576,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -588,7 +588,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -600,7 +600,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -612,7 +612,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -624,7 +624,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isURLRestricted:srcURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isURLRestricted:dstURL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -636,7 +636,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:srcPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dstPath options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -648,7 +648,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         return NO;
     }
 
@@ -656,7 +656,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         return NO;
     }
 
@@ -664,7 +664,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -672,7 +672,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -680,7 +680,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if(([_shadow isPathRestricted:src options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] || [_shadow isPathRestricted:dest options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }]) && !isCallerTweak()) {
         return NO;
     }
 
@@ -688,7 +688,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -700,7 +700,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -712,7 +712,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         return NO;
     }
 
@@ -720,7 +720,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:URL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:URL options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -732,7 +732,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isPathRestricted:path options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -744,7 +744,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 }
 
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && ![_shadow isCallerTweak:[NSThread callStackReturnAddresses]]) {
+    if([_shadow isURLRestricted:url options:@{ kShadowRestrictionWorkingDir : [self currentDirectoryPath] }] && !isCallerTweak()) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }

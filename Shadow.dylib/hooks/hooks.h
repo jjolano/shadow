@@ -49,6 +49,8 @@
 
 extern Shadow* _shadow;
 
+#define isCallerTweak()         [_shadow isCallerTweak:[NSThread callStackReturnAddresses]]
+
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);
 extern void shadowhook_libc(HKSubstitutor* hooks);
