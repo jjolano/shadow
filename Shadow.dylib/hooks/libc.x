@@ -711,18 +711,25 @@ static pid_t replaced_getppid() {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
-    if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
-        errno = ENOENT;
-        return -1;
-    }
-
     void* arg;
     va_list args;
     va_start(args, oflag);
     arg = va_arg(args, void *);
     va_end(args);
 
-    return original_open(pathname, oflag, arg);
+    int result = original_open(pathname, oflag, arg);
+
+    if(result != -1) {
+        char fd_pathname[PATH_MAX];
+
+        if(fcntl(result, F_GETPATH, fd_pathname) == 0 && [_shadow isCPathRestricted:fd_pathname] && !isCallerTweak()) {
+            close(result);
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return result;
 }
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
@@ -750,12 +757,20 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
 static DIR* (*original___opendir2)(const char* pathname, size_t bufsize);
 static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
-    /*if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
-        errno = ENOENT;
-        return NULL;
-    }*/
+    DIR* result = original___opendir2(pathname, bufsize);
 
-    return original___opendir2(pathname, bufsize);
+    if(result) {
+        int fd = dirfd(result);
+        char fd_pathname[PATH_MAX];
+
+        if(fcntl(fd, F_GETPATH, fd_pathname) == 0 && [_shadow isCPathRestricted:fd_pathname] && !isCallerTweak()) {
+            closedir(result);
+            errno = ENOENT;
+            return NULL;
+        }
+    }
+
+    return result;
 }
 
 void shadowhook_libc(HKSubstitutor* hooks) {
