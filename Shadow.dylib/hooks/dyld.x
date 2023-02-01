@@ -192,7 +192,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         return;
     }
 
-    NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strlen(image_path)];
+    NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strnlen(image_path, PATH_MAX)];
 
     // Add if safe dylib.
     if([image_name hasPrefix:@"/System"] || [image_name hasPrefix:@"/Developer"] || ![_shadow isPathRestricted:image_name]) {
@@ -276,7 +276,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     int result = original_dladdr(addr, info);
     
     if(result) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strlen(info->dli_fname)];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strnlen(info->dli_fname, PATH_MAX)];
 
         if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             if(info->dli_sname) {

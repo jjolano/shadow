@@ -131,15 +131,10 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 
 static int (*original_fcntl)(int fd, int cmd, ...);
 static int replaced_fcntl(int fd, int cmd, ...) {
-    void* arg[6];
+    void* arg;
     va_list args;
     va_start(args, cmd);
-    arg[0] = va_arg(args, void*);
-    arg[1] = va_arg(args, void*);
-    arg[2] = va_arg(args, void*);
-    arg[3] = va_arg(args, void*);
-    arg[4] = va_arg(args, void*);
-    arg[5] = va_arg(args, void*);
+    arg = va_arg(args, void *);
     va_end(args);
 
     if(cmd == F_ADDSIGS) {
@@ -150,10 +145,10 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 
     if(cmd == F_CHECK_LV) {
         // Library Validation
-        if(arg[0]) {
-            original_fcntl(fd, cmd, arg[0]);
+        if(arg) {
+            original_fcntl(fd, cmd, arg);
 
-            fchecklv_t* checkInfo = (fchecklv_t*) arg[0];
+            fchecklv_t* checkInfo = (fchecklv_t *) arg;
             ((char *) checkInfo->lv_error_message)[0] = '\0';
 
             return 0;
@@ -164,7 +159,7 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         return -1;
     }
 
-    return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
+    return original_fcntl(fd, cmd, arg);
 }
 
 static int fn_enosys() {
