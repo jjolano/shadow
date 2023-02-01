@@ -12,7 +12,7 @@
 @property (nonatomic, readwrite, assign) BOOL rootlessMode;
 @property (nonatomic, readwrite, assign) BOOL enhancedPathResolve;
 
-- (BOOL)isCallerTweak:(NSArray*)backtrace;
+- (BOOL)isCallerTweak;
 
 - (BOOL)isCPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
