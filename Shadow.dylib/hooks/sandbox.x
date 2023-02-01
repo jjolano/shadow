@@ -100,55 +100,34 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
     return result;
 }
 
-// static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
-// static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
-//     void* data;
-//     va_list args;
-//     va_start(args, type);
-//     data = va_arg(args, void*);
-//     va_end(args);
+static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
+static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
+    void* data[5];
+    va_list args;
+    va_start(args, type);
 
-//     if(operation) {
-//         NSString* op = @(operation);
+    for(int i = 0; i < 5; i++) {
+        data[i] = va_arg(args, void *);
+    }
 
-//         if(data) {
-//             NSLog(@"%@: %@: %s", @"sandbox_check", op, (const char *)data);
-//         } else {
-//             NSLog(@"%@: %@", @"sandbox_check", op);
-//         }
+    va_end(args);
 
-//         if([op isEqualToString:@"mach-lookup"]) {
-//             if(data) {
-//                 NSString* name = @((const char *)data);
+    if(operation && strcmp(operation, "mach-lookup") == 0 && data[0] && !isCallerTweak()) {
+        const char* name = (const char *)data[0];
 
-//                 if(![name hasPrefix:@"com.apple"]) {
-//                     if([name hasPrefix:@"org.coolstar"]
-//                     || [name hasPrefix:@"com.ex"]
-//                     || [name hasPrefix:@"org.saurik"]
-//                     || [name hasPrefix:@"me.jjolano"]
-//                     || [name hasPrefix:@"lh:"]
-//                     || [name hasPrefix:@"cy:"]
-//                     || [name hasPrefix:@"rbs:"]) {
-//                         return -1;
-//                     }
-//                 }
-//             }
-//         }
+        if(strstr(name, "cy:") == name
+        || strstr(name, "lh:") == name
+        || strstr(name, "rbs:") == name
+        || strstr(name, "jailbreakd") == name
+        || strstr(name, "org.coolstar") == name
+        || strstr(name, "com.ex") == name
+        || strstr(name, "org.saurik") == name) {
+            return -1;
+        }
+    }
 
-//         if([op hasPrefix:@"file"]
-//         || [op isEqualToString:@"process-exec"]) {
-//             if(data) {
-//                 NSString* path = @((const char *)data);
-
-//                 if([_shadow isPathRestricted:path]) {
-//                     return -1;
-//                 }
-//             }
-//         }
-//     }
-
-//     return original_sandbox_check(pid, operation, type, data);
-// }
+    return original_sandbox_check(pid, operation, type, data[0], data[1], data[2], data[3], data[4]);
+}
 
 static int (*original_fcntl)(int fd, int cmd, ...);
 static int replaced_fcntl(int fd, int cmd, ...) {
@@ -202,7 +181,7 @@ static int fn_enosys() {
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
-    // MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
+    MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
     MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
     MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
     MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
