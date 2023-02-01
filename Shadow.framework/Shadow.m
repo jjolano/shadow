@@ -65,7 +65,7 @@
 
 - (BOOL)isCPathRestricted:(const char *)path {
     if(path) {
-        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)]];
+        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strnlen(path, PATH_MAX)]];
     }
 
     return NO;

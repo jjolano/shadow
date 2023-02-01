@@ -26,7 +26,7 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
     && dirfd != fileno(stderr)
     && dirfd != fileno(stdout)
     && dirfd != fileno(stdin)) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if(![path isAbsolutePath]) {
             // Get file descriptor path.
@@ -36,7 +36,7 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
             if(dirfd == AT_FDCWD) {
                 pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
             } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strnlen(pathnameParent, PATH_MAX)];
             }
 
             if(pathParent) {
@@ -142,7 +142,7 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
     int result = original_statfs(pathname, buf);
 
     if(result == 0 && pathname) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct statfs));
@@ -175,7 +175,7 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
         NSString* path = nil;
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
             if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                 memset(buf, 0, sizeof(struct statfs));
@@ -245,7 +245,7 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     int result = original_stat(pathname, buf);
     
     if(result == 0) {
-        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             memset(buf, 0, sizeof(struct stat));
@@ -262,7 +262,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     int result = original_lstat(pathname, buf);
 
     if(result == 0) {
-        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         // Only use resolve flag if target is not a symlink.
         if([_shadow isPathRestricted:path options:@{ kShadowRestrictionEnableResolve : @((buf && buf->st_mode & S_IFLNK) ? NO : YES) }] && !isCallerTweak()) {
@@ -288,7 +288,7 @@ static int replaced_fstat(int fd, struct stat* buf) {
         NSString* path = nil;
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+            path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
             if([_shadow isPathRestricted:path] && !isCallerTweak()) {
                 errno = EBADF;
@@ -308,7 +308,7 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
     && dirfd != fileno(stderr)
     && dirfd != fileno(stdout)
     && dirfd != fileno(stdin)) {
-        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if(![path isAbsolutePath]) {
             // Get file descriptor path.
@@ -318,7 +318,7 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
             if(dirfd == AT_FDCWD) {
                 pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
             } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strnlen(pathnameParent, PATH_MAX)];
             }
 
             if(pathParent) {
@@ -344,7 +344,7 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     && dirfd != fileno(stderr)
     && dirfd != fileno(stdout)
     && dirfd != fileno(stdin)) {
-        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if(![path isAbsolutePath]) {
             // Get file descriptor path.
@@ -354,7 +354,7 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
             if(dirfd == AT_FDCWD) {
                 pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
             } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strnlen(pathnameParent, PATH_MAX)];
             }
 
             if(pathParent) {
@@ -390,7 +390,7 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
         NSString* pathParent = nil;
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
             do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@((*oresult)->d_name)];
@@ -420,7 +420,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
         NSString* pathParent = nil;
 
         if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+            pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
             do {
                 NSString* path = [pathParent stringByAppendingPathComponent:@(result->d_name)];
@@ -534,7 +534,7 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
     && dirfd != fileno(stderr)
     && dirfd != fileno(stdout)
     && dirfd != fileno(stdin)) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strlen(pathname)];
+        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathname length:strnlen(pathname, PATH_MAX)];
 
         if(![path isAbsolutePath]) {
             // Get file descriptor path.
@@ -544,7 +544,7 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
             if(dirfd == AT_FDCWD) {
                 pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
             } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strlen(pathnameParent)];
+                pathParent = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:pathnameParent length:strnlen(pathnameParent, PATH_MAX)];
             }
 
             if(pathParent) {
