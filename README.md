@@ -60,6 +60,8 @@ You may need additional repositories for dependencies - these are the current de
 * `AltList` from [opa334‘s Repo](https://opa334.github.io)
 * `HookKit Framework`
 
+A recommended (but not required) package is `Injection Foundation` from PoomSmart's Repo (`https://poomsmart.github.io/repo`). This package ensures that Shadow is injected properly into certain apps.
+
 ## Usage
 
 After installation, settings are available in the Settings app. You may configure global defaults, or add an app-specific configuration. Shadow allows fine-grained control of its bypass strength, so there will be many options available to configure.
