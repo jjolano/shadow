@@ -26,7 +26,7 @@
     const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
     if(ret_image_name) {
-        if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
+        if(strstr(ret_image_name, "/System") == ret_image_name || [self isCPathRestricted:ret_image_name]) {
             return YES;
         }
     }
