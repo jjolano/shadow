@@ -47,7 +47,7 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
     // interesting ports: 4, HOST_SEATBELT_PORT, HOST_PRIV_PORT
     NSLog(@"%@: %d", @"host_get_special_port", which);
 
-    if(node == HOST_LOCAL_NODE) {
+    if(!isCallerTweak() && node == HOST_LOCAL_NODE) {
         if(which == HOST_PRIV_PORT) {
             if(port) {
                 *port = MACH_PORT_NULL;
@@ -72,12 +72,14 @@ static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int 
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
     NSLog(@"%@: %d", @"task_get_special_port", which_port);
 
-    if(task == mach_task_self()) {
-        if(which_port == TASK_SEATBELT_PORT) {
+    if(!isCallerTweak()) {
+        if(task == mach_task_self()) {
+            if(which_port == TASK_SEATBELT_PORT) {
+                return KERN_FAILURE;
+            }
+        } else {
             return KERN_FAILURE;
         }
-    } else {
-        return KERN_FAILURE;
     }
 
     return original_task_get_special_port(task, which_port, special_port);
@@ -100,92 +102,68 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
     return result;
 }
 
-// static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
-// static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
-//     void* data;
-//     va_list args;
-//     va_start(args, type);
-//     data = va_arg(args, void*);
-//     va_end(args);
-
-//     if(operation) {
-//         NSString* op = @(operation);
-
-//         if(data) {
-//             NSLog(@"%@: %@: %s", @"sandbox_check", op, (const char *)data);
-//         } else {
-//             NSLog(@"%@: %@", @"sandbox_check", op);
-//         }
-
-//         if([op isEqualToString:@"mach-lookup"]) {
-//             if(data) {
-//                 NSString* name = @((const char *)data);
-
-//                 if(![name hasPrefix:@"com.apple"]) {
-//                     if([name hasPrefix:@"org.coolstar"]
-//                     || [name hasPrefix:@"com.ex"]
-//                     || [name hasPrefix:@"org.saurik"]
-//                     || [name hasPrefix:@"me.jjolano"]
-//                     || [name hasPrefix:@"lh:"]
-//                     || [name hasPrefix:@"cy:"]
-//                     || [name hasPrefix:@"rbs:"]) {
-//                         return -1;
-//                     }
-//                 }
-//             }
-//         }
-
-//         if([op hasPrefix:@"file"]
-//         || [op isEqualToString:@"process-exec"]) {
-//             if(data) {
-//                 NSString* path = @((const char *)data);
-
-//                 if([_shadow isPathRestricted:path]) {
-//                     return -1;
-//                 }
-//             }
-//         }
-//     }
-
-//     return original_sandbox_check(pid, operation, type, data);
-// }
-
-static int (*original_fcntl)(int fd, int cmd, ...);
-static int replaced_fcntl(int fd, int cmd, ...) {
-    void* arg[6];
+static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
+static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
+    void* data[5];
     va_list args;
-    va_start(args, cmd);
-    arg[0] = va_arg(args, void*);
-    arg[1] = va_arg(args, void*);
-    arg[2] = va_arg(args, void*);
-    arg[3] = va_arg(args, void*);
-    arg[4] = va_arg(args, void*);
-    arg[5] = va_arg(args, void*);
-    va_end(args);
+    va_start(args, type);
 
-    if(cmd == F_ADDSIGS) {
-        // Prevent adding invalid code signatures.
-        errno = EINVAL;
-        return -1;
+    for(int i = 0; i < 5; i++) {
+        data[i] = va_arg(args, void *);
     }
 
-    if(cmd == F_CHECK_LV) {
-        // Library Validation
-        if(arg[0]) {
-            original_fcntl(fd, cmd, arg[0]);
+    va_end(args);
 
-            fchecklv_t* checkInfo = (fchecklv_t*) arg[0];
-            ((char *) checkInfo->lv_error_message)[0] = '\0';
+    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && data[0]) {
+        const char* name = (const char *)data[0];
 
-            return 0;
+        if(strstr(name, "cy:") == name
+        || strstr(name, "lh:") == name
+        || strstr(name, "rbs:") == name
+        || strstr(name, "jailbreakd") == name
+        || strstr(name, "org.coolstar") == name
+        || strstr(name, "com.ex") == name
+        || strstr(name, "org.saurik") == name) {
+            return -1;
         }
     }
 
-    if(cmd == F_ADDFILESIGS_RETURN) {
-        return -1;
+    return original_sandbox_check(pid, operation, type, data[0], data[1], data[2], data[3], data[4]);
+}
+
+static int (*original_fcntl)(int fd, int cmd, ...);
+static int replaced_fcntl(int fd, int cmd, ...) {
+    void* arg;
+    va_list args;
+    va_start(args, cmd);
+    arg = va_arg(args, void *);
+    va_end(args);
+
+    if(!isCallerTweak()) {
+        if(cmd == F_ADDSIGS) {
+            // Prevent adding invalid code signatures.
+            errno = EINVAL;
+            return -1;
+        }
+
+        if(cmd == F_CHECK_LV) {
+            // Library Validation
+            if(arg) {
+                original_fcntl(fd, cmd, arg);
+
+                fchecklv_t* checkInfo = (fchecklv_t *) arg;
+                ((char *) checkInfo->lv_error_message)[0] = '\0';
+
+                return 0;
+            }
+        }
+
+        if(cmd == F_ADDFILESIGS_RETURN) {
+            return -1;
+        }
     }
 
-    return original_fcntl(fd, cmd, arg[0], arg[1], arg[2], arg[3], arg[4], arg[5]);
+    return original_fcntl(fd, cmd, arg);
 }
 
 static int fn_enosys() {
@@ -202,7 +180,7 @@ static int fn_enosys() {
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
-    // MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
+    MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
     MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
     MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
     MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);

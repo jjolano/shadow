@@ -14,40 +14,16 @@
     NSString* realHomePath;
 }
 
-- (BOOL)isCallerTweak:(NSArray *)backtrace {
-    static const char* self_image_name = NULL;
-
-    if(!self_image_name) {
-        void* caller_addr = __builtin_extract_return_addr(__builtin_return_address(0));
-        self_image_name = dyld_image_path_containing_address(caller_addr);
-    }
-
+- (BOOL)isCallerTweak {
     void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
     const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
     if(ret_image_name) {
-        if([self isCPathRestricted:ret_image_name] || strstr(ret_image_name, "/System") != NULL) {
-            return YES;
+        if(strstr(ret_image_name, [bundlePath fileSystemRepresentation]) != NULL) {
+            return NO;
         }
-    }
 
-    if(backtrace) {
-        for(NSNumber* sym_addr in backtrace) {
-            void* ptr_addr = [sym_addr pointerValue];
-
-            // Lookup symbol
-            const char* image_path = dyld_image_path_containing_address(ptr_addr);
-
-            if(image_path) {
-                if(self_image_name && strcmp(image_path, self_image_name) == 0) {
-                    continue;
-                }
-                
-                if([self isCPathRestricted:image_path]) {
-                    return YES;
-                }
-            }
-        }
+        return YES;
     }
 
     return NO;
@@ -65,7 +41,7 @@
 
 - (BOOL)isCPathRestricted:(const char *)path {
     if(path) {
-        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strlen(path)]];
+        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strnlen(path, PATH_MAX)]];
     }
 
     return NO;

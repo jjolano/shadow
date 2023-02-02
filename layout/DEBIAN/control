@@ -1,7 +1,7 @@
 Package: me.jjolano.shadow.beta
 Name: Shadow (beta)
 Depends: firmware (>= 8.0), mobilesubstrate, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 0.1.5)
-Recommends: preferenceloader
+Recommends: preferenceloader, com.ps.injectionfoundation
 Provides: me.jjolano.shadow
 Replaces: me.jjolano.shadow
 Conflicts: me.jjolano.shadow

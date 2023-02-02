@@ -6,6 +6,7 @@
 #import "../common.h"
 
 #import <Shadow/Shadow.h>
+#import <Shadow/Shadow+Utilities.h>
 #import <Shadow/ShadowService.h>
 #import <Shadow/ShadowService+Settings.h>
 #import <Shadow/ShadowService+Database.h>
@@ -14,26 +15,6 @@
 
 #import <libSandy.h>
 #import <HookKit.h>
-
-// code from Choicy
-//methods of getting executablePath and bundleIdentifier with the least side effects possible
-//for more information, check out https://github.com/checkra1n/BugTracker/issues/343
-extern char*** _NSGetArgv();
-NSString* safe_getExecutablePath() {
-	char* executablePathC = **_NSGetArgv();
-	return [NSString stringWithUTF8String:executablePathC];
-}
-
-NSString* safe_getBundleIdentifier() {
-	CFBundleRef mainBundle = CFBundleGetMainBundle();
-
-	if(mainBundle != NULL) {
-		CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
-		return (__bridge NSString*)bundleIdentifierCF;
-	}
-
-	return nil;
-}
 
 Shadow* _shadow = nil;
 ShadowService* _srv = nil;
@@ -75,7 +56,7 @@ ShadowService* _srv = nil;
 
 %ctor {
     // Determine the application we're injected into.
-    NSString* bundleIdentifier = safe_getBundleIdentifier();
+    NSString* bundleIdentifier = [Shadow getBundleIdentifier];
 
     // Injected into SpringBoard.
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
@@ -84,7 +65,7 @@ ShadowService* _srv = nil;
         return;
     }
 
-    NSString* executablePath = safe_getExecutablePath();
+    NSString* executablePath = [Shadow getExecutablePath];
     NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];
 
     // Only load Shadow for applications in /var.

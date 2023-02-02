@@ -10,7 +10,7 @@
 - (NSDictionary *)environment {
 	NSDictionary* result = %orig;
 
-    if(result) {
+    if(!isCallerTweak() && result) {
         NSMutableDictionary* filtered_result = [result mutableCopy];
 
         [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];

@@ -4,4 +4,6 @@
 @interface Shadow (Utilities)
 + (BOOL)shouldResolvePath:(NSString *)path;
 + (NSString *)getStandardizedPath:(NSString *)path;
++ (NSString *)getExecutablePath;
++ (NSString *)getBundleIdentifier;
 @end
