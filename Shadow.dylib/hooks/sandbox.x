@@ -47,7 +47,7 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
     // interesting ports: 4, HOST_SEATBELT_PORT, HOST_PRIV_PORT
     NSLog(@"%@: %d", @"host_get_special_port", which);
 
-    if(node == HOST_LOCAL_NODE) {
+    if(!isCallerTweak() && node == HOST_LOCAL_NODE) {
         if(which == HOST_PRIV_PORT) {
             if(port) {
                 *port = MACH_PORT_NULL;
@@ -72,12 +72,14 @@ static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int 
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
     NSLog(@"%@: %d", @"task_get_special_port", which_port);
 
-    if(task == mach_task_self()) {
-        if(which_port == TASK_SEATBELT_PORT) {
+    if(!isCallerTweak()) {
+        if(task == mach_task_self()) {
+            if(which_port == TASK_SEATBELT_PORT) {
+                return KERN_FAILURE;
+            }
+        } else {
             return KERN_FAILURE;
         }
-    } else {
-        return KERN_FAILURE;
     }
 
     return original_task_get_special_port(task, which_port, special_port);
@@ -112,7 +114,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 
     va_end(args);
 
-    if(operation && strcmp(operation, "mach-lookup") == 0 && data[0] && !isCallerTweak()) {
+    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && data[0]) {
         const char* name = (const char *)data[0];
 
         if(strstr(name, "cy:") == name
@@ -137,26 +139,28 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     arg = va_arg(args, void *);
     va_end(args);
 
-    if(cmd == F_ADDSIGS) {
-        // Prevent adding invalid code signatures.
-        errno = EINVAL;
-        return -1;
-    }
-
-    if(cmd == F_CHECK_LV) {
-        // Library Validation
-        if(arg) {
-            original_fcntl(fd, cmd, arg);
-
-            fchecklv_t* checkInfo = (fchecklv_t *) arg;
-            ((char *) checkInfo->lv_error_message)[0] = '\0';
-
-            return 0;
+    if(!isCallerTweak()) {
+        if(cmd == F_ADDSIGS) {
+            // Prevent adding invalid code signatures.
+            errno = EINVAL;
+            return -1;
         }
-    }
 
-    if(cmd == F_ADDFILESIGS_RETURN) {
-        return -1;
+        if(cmd == F_CHECK_LV) {
+            // Library Validation
+            if(arg) {
+                original_fcntl(fd, cmd, arg);
+
+                fchecklv_t* checkInfo = (fchecklv_t *) arg;
+                ((char *) checkInfo->lv_error_message)[0] = '\0';
+
+                return 0;
+            }
+        }
+
+        if(cmd == F_ADDFILESIGS_RETURN) {
+            return -1;
+        }
     }
 
     return original_fcntl(fd, cmd, arg);

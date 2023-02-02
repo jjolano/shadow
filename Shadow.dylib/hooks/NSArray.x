@@ -3,7 +3,7 @@
 %group shadowhook_NSArray
 %hook NSArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -19,7 +19,7 @@
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -27,7 +27,7 @@
 }
 
 - (NSArray *)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -39,7 +39,7 @@
 }
 
 + (NSArray *)arrayWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -53,7 +53,7 @@
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -61,7 +61,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -69,7 +69,7 @@
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if([_shadow isPathRestricted:path] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -77,7 +77,7 @@
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 

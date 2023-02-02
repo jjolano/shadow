@@ -5,7 +5,7 @@
 - (BOOL)canOpenURL:(NSURL *)url {
     NSLog(@"%@: %@", @"canOpenURL", url);
     
-    if([_shadow isURLRestricted:url] && !isCallerTweak()) {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
         return NO;
     }
 

@@ -2,11 +2,11 @@
 
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    if(service_name) {
+    if(!isCallerTweak() && service_name) {
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_check_in", name);
 
-        if(![name hasPrefix:@"com.apple"] && !isCallerTweak()) {
+        if(![name hasPrefix:@"com.apple"]) {
             if([name hasPrefix:@"cy:"]
             || [name hasPrefix:@"lh:"]
             || [name hasPrefix:@"rbs:"]
@@ -24,11 +24,11 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    if(service_name) {
+    if(!isCallerTweak() && service_name) {
         NSString* name = @(service_name);
         NSLog(@"%@: %@", @"bootstrap_look_up", name);
 
-        if(![name hasPrefix:@"com.apple"] && !isCallerTweak()) {
+        if(![name hasPrefix:@"com.apple"]) {
             if([name hasPrefix:@"cy:"]
             || [name hasPrefix:@"lh:"]
             || [name hasPrefix:@"rbs:"]

@@ -32,7 +32,7 @@ static int replaced_syscall(int number, ...) {
     || number == SYS_pathconf) {
         const char* pathname = va_arg(args, const char *);
 
-        if([_shadow isCPathRestricted:pathname] && !isCallerTweak()) {
+        if(!isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
             errno = ENOENT;
             return -1;
         }
@@ -56,7 +56,7 @@ static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t
 static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
     int ret = original_csops(pid, ops, useraddr, usersize);
 
-    if(pid == getpid()) {
+    if(!isCallerTweak() && pid == getpid()) {
         if(ops == CS_OPS_STATUS) {
             // (Un)set some flags
             ret &= ~CS_PLATFORM_BINARY;
