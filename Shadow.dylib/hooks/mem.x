@@ -4,7 +4,7 @@ static kern_return_t (*original_vm_region_64)(vm_map_read_t target_task, vm_addr
 static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address_t* address, vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name) {
     kern_return_t result = original_vm_region_64(target_task, address, size, flavor, info, infoCnt, object_name);
 
-    if(result == KERN_SUCCESS && flavor != VM_REGION_TOP_INFO) {
+    if(!isCallerTweak() && result == KERN_SUCCESS && flavor != VM_REGION_TOP_INFO) {
         // Hide executable flag
         vm_region_basic_info_64_t rinfo = (vm_region_basic_info_64_t)info;
 
@@ -20,7 +20,7 @@ static kern_return_t (*original_vm_region_recurse_64)(vm_map_read_t target_task,
 static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm_address_t* address, vm_size_t* size, natural_t* nesting_depth, vm_region_recurse_info_t info, mach_msg_type_number_t* infoCnt) {
     kern_return_t result = original_vm_region_recurse_64(target_task, address, size, nesting_depth, info, infoCnt);
 
-    if(result == KERN_SUCCESS) {
+    if(!isCallerTweak() && result == KERN_SUCCESS) {
         // Hide executable flag
         vm_region_basic_info_64_t rinfo = (vm_region_basic_info_64_t)info;
 
