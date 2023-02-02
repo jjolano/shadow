@@ -23,7 +23,7 @@ I only offer support in English.
 Before submitting a new issue, please ensure the following details are provided:
 
 * iOS version
-* Jailbreak type
+* Jailbreak type (Taurine, unc0ver, palera1n, etc...)
 * Code substitution platform (libhooker, Substitute, Substrate, ElleKit)
 * Options used
 * Apps affected
