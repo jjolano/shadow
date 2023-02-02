@@ -5,7 +5,7 @@ Recommends: preferenceloader, com.ps.injectionfoundation
 Provides: me.jjolano.shadow.beta
 Replaces: me.jjolano.shadow.beta
 Conflicts: me.jjolano.shadow.beta
-Version: 3.6.2
+Version: 3.6.3
 Architecture: iphoneos-arm
 Description: A modern jailbreak detection bypass for jailbroken iOS.
 Maintainer: jjolano
