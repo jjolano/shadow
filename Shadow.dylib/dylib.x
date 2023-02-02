@@ -206,6 +206,7 @@ ShadowService* _srv = nil;
         shadowhook_NSURL(substitutor);
         shadowhook_NSData(substitutor);
         shadowhook_UIImage(substitutor);
+        shadowhook_NSThread(substitutor);
     }
 
     if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {

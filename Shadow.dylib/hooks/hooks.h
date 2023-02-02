@@ -83,3 +83,4 @@ extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
 extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
+extern void shadowhook_NSThread(HKSubstitutor* hooks);
