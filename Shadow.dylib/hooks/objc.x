@@ -47,44 +47,44 @@ static const char* replaced_class_getImageName(Class cls) {
     return result;
 }
 
-static Class (*original_objc_lookUpClass)(const char* name);
-static Class replaced_objc_lookUpClass(const char* name) {
-    Class result = original_objc_lookUpClass(name);
+// static Class (*original_objc_lookUpClass)(const char* name);
+// static Class replaced_objc_lookUpClass(const char* name) {
+//     Class result = original_objc_lookUpClass(name);
 
-    if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-            return nil;
-        }
-    }
+//     if(result) {
+//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-static id (*original_objc_getClass)(const char* name);
-static id replaced_objc_getClass(const char* name) {
-    id result = original_objc_getClass(name);
+// static id (*original_objc_getClass)(const char* name);
+// static id replaced_objc_getClass(const char* name) {
+//     id result = original_objc_getClass(name);
 
-    if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-            return nil;
-        }
-    }
+//     if(result) {
+//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
-static Class (*original_objc_getMetaClass)(const char* name);
-static Class replaced_objc_getMetaClass(const char* name) {
-    Class result = original_objc_getMetaClass(name);
+// static Class (*original_objc_getMetaClass)(const char* name);
+// static Class replaced_objc_getMetaClass(const char* name) {
+//     Class result = original_objc_getMetaClass(name);
 
-    if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-            return nil;
-        }
-    }
+//     if(result) {
+//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
+//             return nil;
+//         }
+//     }
 
-    return result;
-}
+//     return result;
+// }
 
 static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
@@ -145,7 +145,7 @@ void shadowhook_objc(HKSubstitutor* hooks) {
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
-    MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
-    MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
-    MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
+    // MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
+    // MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
+    // MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
 }
