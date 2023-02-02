@@ -128,12 +128,12 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
     if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
+        if(!isCallerTweak() && [_shadow isAddrRestricted:(__bridge const void *)[result class]]) {
             return nil;
         }
     }
 
-    return result;
+    return [result class];
 }
 
 void shadowhook_objc(HKSubstitutor* hooks) {
