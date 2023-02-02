@@ -40,7 +40,7 @@ static const char* replaced_class_getImageName(Class cls) {
 
     if(result) {
         if(!isCallerTweak() && [_shadow isCPathRestricted:result]) {
-            return NULL;
+            return "/usr/lib/dyld";
         }
     }
 
@@ -133,7 +133,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
         }
     }
 
-    return [result class];
+    return result;
 }
 
 void shadowhook_objc(HKSubstitutor* hooks) {
