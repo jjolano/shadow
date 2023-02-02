@@ -27,9 +27,11 @@
 
             return YES;
         }
+
+        return NO;
     }
 
-    return NO;
+    return YES;
 }
 
 - (BOOL)isAddrRestricted:(const void *)addr {
