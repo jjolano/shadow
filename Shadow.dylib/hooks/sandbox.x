@@ -114,7 +114,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 
     va_end(args);
 
-    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && data[0]) {
+    if(operation && strcmp(operation, "mach-lookup") == 0 && data[0] && !isCallerTweak()) {
         const char* name = (const char *)data[0];
 
         if(strstr(name, "cy:") == name

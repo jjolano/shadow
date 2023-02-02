@@ -114,16 +114,11 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
     // do initial call
     if(_shdw_dyld_collection) {
-        static NSOperationQueue* queue = nil;
-        if(!queue) queue = [NSOperationQueue new];
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
 
-        [queue addOperationWithBlock:^(){
-            NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-
-            for(NSDictionary* dylib in _dyld_collection) {
-                func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
-            }
-        }];
+        for(NSDictionary* dylib in _dyld_collection) {
+            func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
+        }
     }
 }
 
@@ -193,20 +188,14 @@ static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t f
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
     const char* image_path = dyld_image_path_containing_address(mh);
 
-    if(!image_path) {
-        return;
-    }
-
-    NSString* image_name = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strnlen(image_path, PATH_MAX)];
-
     // Add if safe dylib.
-    if([image_name hasPrefix:@"/System"] || [image_name hasPrefix:@"/Developer"] || ![_shadow isPathRestricted:image_name]) {
+    if(image_path && (strstr(image_path, "/System") == image_path || ![_shadow isCPathRestricted:image_path])) {
         if(!_shdw_dyld_collection) {
             _shdw_dyld_collection = [NSMutableArray new];
         }
 
         NSDictionary* dylib = @{
-            @"name" : image_name,
+            @"name" : @(image_path),
             @"mach_header" : [NSValue valueWithPointer:mh],
             @"slide" : [NSValue valueWithPointer:(void *)vmaddr_slide]
         };

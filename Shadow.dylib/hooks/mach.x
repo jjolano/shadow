@@ -3,19 +3,16 @@
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* service_name, mach_port_t* sp) {
     if(!isCallerTweak() && service_name) {
-        NSString* name = @(service_name);
-        NSLog(@"%@: %@", @"bootstrap_check_in", name);
+        NSLog(@"%@: %s", @"bootstrap_check_in", service_name);
 
-        if(![name hasPrefix:@"com.apple"]) {
-            if([name hasPrefix:@"cy:"]
-            || [name hasPrefix:@"lh:"]
-            || [name hasPrefix:@"rbs:"]
-            || [name hasPrefix:@"org.coolstar"]
-            || [name hasPrefix:@"com.ex"]
-            || [name hasPrefix:@"com.saurik"]
-            || [name hasPrefix:@"me.jjolano"]){
-                return BOOTSTRAP_UNKNOWN_SERVICE;
-            }
+        if(strstr(service_name, "cy:") == service_name
+        || strstr(service_name, "lh:") == service_name
+        || strstr(service_name, "rbs:") == service_name
+        || strstr(service_name, "org.coolstar") == service_name
+        || strstr(service_name, "com.ex") == service_name
+        || strstr(service_name, "com.saurik") == service_name
+        || strstr(service_name, "me.jjolano") == service_name){
+            return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }
 
@@ -25,19 +22,16 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
 static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
     if(!isCallerTweak() && service_name) {
-        NSString* name = @(service_name);
-        NSLog(@"%@: %@", @"bootstrap_look_up", name);
+        NSLog(@"%@: %s", @"bootstrap_look_up", service_name);
 
-        if(![name hasPrefix:@"com.apple"]) {
-            if([name hasPrefix:@"cy:"]
-            || [name hasPrefix:@"lh:"]
-            || [name hasPrefix:@"rbs:"]
-            || [name hasPrefix:@"org.coolstar"]
-            || [name hasPrefix:@"com.ex"]
-            || [name hasPrefix:@"com.saurik"]
-            || [name hasPrefix:@"me.jjolano"]){
-                return BOOTSTRAP_UNKNOWN_SERVICE;
-            }
+        if(strstr(service_name, "cy:") == service_name
+        || strstr(service_name, "lh:") == service_name
+        || strstr(service_name, "rbs:") == service_name
+        || strstr(service_name, "org.coolstar") == service_name
+        || strstr(service_name, "com.ex") == service_name
+        || strstr(service_name, "com.saurik") == service_name
+        || strstr(service_name, "me.jjolano") == service_name){
+            return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }
 
