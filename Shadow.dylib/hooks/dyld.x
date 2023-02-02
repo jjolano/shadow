@@ -114,11 +114,16 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
     // do initial call
     if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        static NSOperationQueue* queue = nil;
+        if(!queue) queue = [NSOperationQueue new];
 
-        for(NSDictionary* dylib in _dyld_collection) {
-            func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
-        }
+        [queue addOperationWithBlock:^(){
+            NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+            for(NSDictionary* dylib in _dyld_collection) {
+                func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
+            }
+        }];
     }
 }
 
@@ -211,13 +216,18 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         [_shdw_dyld_collection addObject:dylib];
 
         // Call event handlers.
-        NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
-        NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
+        static NSOperationQueue* queue = nil;
+        if(!queue) queue = [NSOperationQueue new];
 
-        for(NSValue* func_ptr in _dyld_add_image) {
-            void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-            func(mh, vmaddr_slide);
-        }
+        [queue addOperationWithBlock:^(){
+            NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
+            NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
+
+            for(NSValue* func_ptr in _dyld_add_image) {
+                void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                func(mh, vmaddr_slide);
+            }
+        }];
     }
 }
 
@@ -242,13 +252,18 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
             [_shdw_dyld_collection removeObject:dylibToRemove];
 
             // Call event handlers.
-            NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
-            NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
+            static NSOperationQueue* queue = nil;
+            if(!queue) queue = [NSOperationQueue new];
 
-            for(NSValue* func_ptr in _dyld_remove_image) {
-                void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                func(mh, vmaddr_slide);
-            }
+            [queue addOperationWithBlock:^(){
+                NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
+                NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
+
+                for(NSValue* func_ptr in _dyld_remove_image) {
+                    void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                    func(mh, vmaddr_slide);
+                }
+            }];
         }
     }
 }
