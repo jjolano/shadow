@@ -3,12 +3,12 @@
 static NSMutableArray<NSDictionary *>* _shdw_dyld_collection = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_add_image = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_remove_image = nil;
-static NSOperationQueue* _shdw_dyld_queue = nil;
+// static NSOperationQueue* _shdw_dyld_queue = nil;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
-    if(_shdw_dyld_collection && !isCallerTweak()) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
         return [_dyld_collection count];
     }
@@ -18,7 +18,7 @@ static uint32_t replaced_dyld_image_count() {
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
-    if(_shdw_dyld_collection && !isCallerTweak()) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
         return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
     }
@@ -28,7 +28,7 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    if(_shdw_dyld_collection && !isCallerTweak()) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
         return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] pointerValue] : 0;
     }
@@ -38,7 +38,7 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
-    if(_shdw_dyld_collection && !isCallerTweak()) {
+    if(_shdw_dyld_collection) {
         NSArray* _dyld_collection = [_shdw_dyld_collection copy];
         return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
     }
@@ -215,12 +215,10 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         if(_dyld_add_image) {
             NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
 
-            [_shdw_dyld_queue addOperationWithBlock:^(){
-                for(NSValue* func_ptr in _dyld_add_image) {
-                    void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                    func(mh, vmaddr_slide);
-                }
-            }];
+            for(NSValue* func_ptr in _dyld_add_image) {
+                void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                if(func) func(mh, vmaddr_slide);
+            }
         }
     }
 }
@@ -255,12 +253,10 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
             if(_dyld_remove_image) {
                 NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
                 
-                [_shdw_dyld_queue addOperationWithBlock:^(){
-                    for(NSValue* func_ptr in _dyld_remove_image) {
-                        void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                        if(func) func(mh, vmaddr_slide);
-                    }
-                }];
+                for(NSValue* func_ptr in _dyld_remove_image) {
+                    void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                    if(func) func(mh, vmaddr_slide);
+                }
             }
         }
     }
@@ -314,7 +310,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 }
 
 void shadowhook_dyld(HKSubstitutor* hooks) {
-    _shdw_dyld_queue = [NSOperationQueue new];
+    // _shdw_dyld_queue = [NSOperationQueue new];
 
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);

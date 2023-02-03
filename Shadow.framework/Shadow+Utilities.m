@@ -23,15 +23,28 @@ extern char*** _NSGetArgv();
 
     if(url) {
         path = [[url standardizedURL] path];
-    } else {
-        NSString* filename = [path lastPathComponent];
-        NSString* basename = [path stringByDeletingLastPathComponent];
+    }
 
-        url = [NSURL URLWithString:basename];
+    while([path containsString:@"/./"]) {
+        path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+    }
 
-        if(url) {
-            path = [[url standardizedURL] path];
-            path = [path stringByAppendingPathComponent:filename];
+    while([path containsString:@"//"]) {
+        path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+    }
+
+    if([path length] > 1) {
+        if([path hasSuffix:@"/"]) {
+            path = [path substringToIndex:[path length] - 1];
+        }
+
+        while([path hasSuffix:@"/."]) {
+            path = [path stringByDeletingLastPathComponent];
+        }
+        
+        while([path hasSuffix:@"/.."]) {
+            path = [path stringByDeletingLastPathComponent];
+            path = [path stringByDeletingLastPathComponent];
         }
     }
 
