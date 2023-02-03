@@ -8,6 +8,8 @@
 #import "../vendor/apple/dyld_priv.h"
 
 @implementation Shadow {
+    NSCache<NSString *, NSNumber *>* cache;
+
     // App-specific
     NSString* bundlePath;
     NSString* homePath;
@@ -63,6 +65,12 @@
 
     path = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
+    if([path characterAtIndex:0] == '~' && ([path hasPrefix:@"~/"] || [path hasPrefix:@"~mobile/"] || [path hasPrefix:@"~root/"])) {
+        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
+        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
+        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
+    }
+
     if(![path isAbsolutePath]) {
         NSString* cwd = options[kShadowRestrictionWorkingDir];
 
@@ -74,14 +82,16 @@
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    BOOL resolve = _enhancedPathResolve;
+    path = [[self class] getStandardizedPath:path];
+
+    BOOL resolve = NO;
 
     if(options) {
         if(options[kShadowRestrictionEnableResolve]) {
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
     } else {
-        resolve = [[self class] shouldResolvePath:path];
+        resolve = (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || _enhancedPathResolve;
     }
 
     if(resolve) {
@@ -93,13 +103,11 @@
         }
     }
 
-    if([path characterAtIndex:0] == '~') {
-        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
-        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
-        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
-    }
+    NSNumber* cached = [cache objectForKey:path];
 
-    path = [[self class] getStandardizedPath:path];
+    if(cached) {
+        return [cached boolValue];
+    }
 
     // Extra tweak compatibility
     if(_tweakCompatibility) {
@@ -129,10 +137,14 @@
     // Check if path is restricted from Shadow Service.
     if(_service && [_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+        [cache setObject:@(YES) forKey:path];
+
         return YES;
     }
 
     NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
+    [cache setObject:@(NO) forKey:path];
+
     return NO;
 }
 
@@ -185,6 +197,8 @@
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
         realHomePath = [[self class] getStandardizedPath:realHomePath];
+
+        cache = [NSCache new];
     }
 
     return self;
