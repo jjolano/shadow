@@ -268,7 +268,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
     if(addr) {
         // Check origin of resolved symbol
-        if(!isCallerTweak() && [_shadow isAddrRestricted:addr]) {
+        if([_shadow isAddrRestricted:addr] && !isCallerTweak()) {
             if(symbol) {
                 NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
             }
@@ -287,7 +287,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     if(result) {
         NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strnlen(info->dli_fname, PATH_MAX)];
 
-        if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
             if(info->dli_sname) {
                 NSLog(@"%@: %@: %@ -> %s", @"dyld", @"dladdr", path, info->dli_sname);
 
