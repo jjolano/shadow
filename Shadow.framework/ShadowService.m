@@ -8,21 +8,12 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @implementation ShadowService {
-    NSCache<NSString *, NSNumber *>* responseCache;
     NSString* dpkgPath;
     NSArray* rulesets;
     CPDistributedMessagingCenter* center;
 }
 
 - (void)addRuleset:(NSDictionary *)ruleset {
-    NSMutableArray* rulesets_arr = nil;
-
-    if(!rulesets) {
-        rulesets_arr = [NSMutableArray new];
-    } else {
-        rulesets_arr = [rulesets mutableCopy];
-    }
-
     // Preprocess ruleset
     NSMutableDictionary* ruleset_processed = [ruleset mutableCopy];
 
@@ -53,8 +44,7 @@
         [ruleset_processed setObject:bpred_compound forKey:@"BlacklistPredicates"];
     }
 
-    [rulesets_arr addObject:[ruleset_processed copy]];
-    rulesets = [rulesets_arr copy];
+    rulesets = [rulesets arrayByAddingObject:[ruleset_processed copy]];
 }
 
 - (NSDictionary *)handleMessageNamed:(NSString *)name withUserInfo:(NSDictionary *)userInfo {
@@ -94,25 +84,16 @@
         
         NSString* path = userInfo[@"path"];
 
-        NSLog(@"%@: %@", name, path);
-        
-        // Check if path is restricted.
-        BOOL restricted = NO;
-
         if(path && [path isAbsolutePath] && rulesets) {
+            NSLog(@"%@: %@", name, path);
+        
+            // Check if path is restricted.
+            BOOL restricted = NO;
+
             // Check rulesets
             if(!restricted) {
                 for(NSDictionary* ruleset in rulesets) {
-                    if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
-                        restricted = YES;
-                        break;
-                    }
-                }
-            }
-
-            if(!restricted) {
-                for(NSDictionary* ruleset in rulesets) {
-                    if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+                    if(![[self class] isPathCompliant:path withRuleset:ruleset] || [[self class] isPathBlacklisted:path withRuleset:ruleset]) {
                         restricted = YES;
                         break;
                     }
@@ -127,11 +108,11 @@
                     }
                 }
             }
-        }
 
-        response = @{
-            @"restricted" : @(restricted)
-        };
+            response = @{
+                @"restricted" : @(restricted)
+            };
+        }
     } else if([name isEqualToString:@"isURLSchemeRestricted"]) {
         if(!userInfo) {
             return nil;
@@ -271,26 +252,19 @@
         return NO;
     }
 
-    NSNumber* response_cached = [responseCache objectForKey:path];
-
-    if(response_cached) {
-        return [response_cached boolValue];
-    }
-
     NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{@"path" : path} useService:(rulesets == nil)];
 
     if(response) {
         BOOL restricted = [response[@"restricted"] boolValue];
 
-        if(!restricted) {
-            BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
+        // if(!restricted) {
+        //     BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
 
-            if(responseParent) {
-                restricted = YES;
-            }
-        }
+        //     if(responseParent) {
+        //         restricted = YES;
+        //     }
+        // }
 
-        [responseCache setObject:@(restricted) forKey:path];
         return restricted;
     }
 
@@ -319,10 +293,9 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        responseCache = [NSCache new];
         center = nil;
         dpkgPath = nil;
-        rulesets = nil;
+        rulesets = @[];
     }
 
     return self;
