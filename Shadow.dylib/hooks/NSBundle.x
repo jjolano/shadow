@@ -84,11 +84,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* url in result) {
-            if(![_shadow isURLRestricted:url]) {
-                [result_filtered addObject:url];
+            if([_shadow isURLRestricted:url]) {
+                [result_filtered removeObject:url];
             }
         }
 
@@ -112,11 +112,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* url in result) {
-            if(![_shadow isURLRestricted:url]) {
-                [result_filtered addObject:url];
+            if([_shadow isURLRestricted:url]) {
+                [result_filtered removeObject:url];
             }
         }
 
@@ -140,11 +140,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* url in result) {
-            if(![_shadow isURLRestricted:url]) {
-                [result_filtered addObject:url];
+            if([_shadow isURLRestricted:url]) {
+                [result_filtered removeObject:url];
             }
         }
 
@@ -188,11 +188,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* path in result) {
-            if(![_shadow isPathRestricted:path]) {
-                [result_filtered addObject:path];
+            if([_shadow isPathRestricted:path]) {
+                [result_filtered removeObject:path];
             }
         }
 
@@ -206,11 +206,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* path in result) {
-            if(![_shadow isPathRestricted:path]) {
-                [result_filtered addObject:path];
+            if([_shadow isPathRestricted:path]) {
+                [result_filtered removeObject:path];
             }
         }
 
@@ -234,11 +234,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* path in result) {
-            if(![_shadow isPathRestricted:path]) {
-                [result_filtered addObject:path];
+            if([_shadow isPathRestricted:path]) {
+                [result_filtered removeObject:path];
             }
         }
 
@@ -252,11 +252,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSBundle* bundle in result) {
-            if(![_shadow isPathRestricted:[bundle bundlePath]]) {
-                [result_filtered addObject:bundle];
+            if([_shadow isPathRestricted:[bundle bundlePath]]) {
+                [result_filtered removeObject:bundle];
             }
         }
 
@@ -270,11 +270,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSBundle* bundle in result) {
-            if(![_shadow isPathRestricted:[bundle bundlePath]]) {
-                [result_filtered addObject:bundle];
+            if([_shadow isPathRestricted:[bundle bundlePath]]) {
+                [result_filtered removeObject:bundle];
             }
         }
 

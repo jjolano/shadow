@@ -12,11 +12,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
 
         for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
+            if([_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered removeObject:ap];
             }
         }
 
@@ -30,11 +30,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
 
         for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
+            if([_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered removeObject:ap];
             }
         }
 
@@ -48,11 +48,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
 
         for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
+            if([_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered removeObject:ap];
             }
         }
 
@@ -66,11 +66,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
 
         for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
+            if([_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered removeObject:ap];
             }
         }
 
@@ -84,14 +84,14 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
 
         for(NSString* app_bundleId in result) {
             LSBundleProxy* app_bundle = [LSBundleProxy bundleProxyForIdentifier:app_bundleId];
 
             if(app_bundle) {
-                if(![_shadow isURLRestricted:[app_bundle bundleURL]]) {
-                    [result_filtered addObject:app_bundleId];
+                if([_shadow isURLRestricted:[app_bundle bundleURL]]) {
+                    [result_filtered removeObject:app_bundleId];
                 }
             }
         }
@@ -130,11 +130,11 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
 
         for(NSString* scheme in result) {
-            if(![[_shadow service] isURLSchemeRestricted:scheme]) {
-                [result_filtered addObject:scheme];
+            if([[_shadow service] isURLSchemeRestricted:scheme]) {
+                [result_filtered removeObject:scheme];
             }
         }
 
@@ -148,11 +148,11 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [NSMutableArray new];
+        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
 
         for(NSString* scheme in result) {
-            if(![[_shadow service] isURLSchemeRestricted:scheme]) {
-                [result_filtered addObject:scheme];
+            if([[_shadow service] isURLSchemeRestricted:scheme]) {
+                [result_filtered removeObject:scheme];
             }
         }
 
