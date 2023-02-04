@@ -16,8 +16,8 @@
     NSString* realHomePath;
 }
 
-- (BOOL)isCallerTweak {
-    void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
+- (BOOL)isCallerTweak:(const void *)ret_addr {
+    if(!ret_addr) ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
 
     if(ret_addr) {
         const char* ret_image_name = dyld_image_path_containing_address(ret_addr);

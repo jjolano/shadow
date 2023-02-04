@@ -49,7 +49,7 @@
 
 extern Shadow* _shadow;
 
-#define isCallerTweak()         [_shadow isCallerTweak]
+#define isCallerTweak()         [_shadow isCallerTweak:__builtin_extract_return_addr(__builtin_return_address(0))]
 
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);
