@@ -15,7 +15,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig; 
 
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
         
         for(id entry in result) {
             NSString* path = nil;
@@ -26,8 +26,8 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
                 path = [base stringByAppendingPathComponent:entry];
             }
 
-            if(![_shadow isPathRestricted:path]) {
-                [result_filtered addObject:entry];
+            if([_shadow isPathRestricted:path]) {
+                [result_filtered removeObject:entry];
             }
         }
 
@@ -149,11 +149,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig;
     
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* result_url in result) {
-            if(![_shadow isURLRestricted:result_url options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
-                [result_filtered addObject:result_url];
+            if([_shadow isURLRestricted:result_url options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+                [result_filtered removeObject:result_url];
             }
         }
 
@@ -177,17 +177,13 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig;
     
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = result_path;
+            NSString* abspath = [path stringByAppendingPathComponent:result_path];
 
-            if(![abspath isAbsolutePath]) {
-                abspath = [path stringByAppendingPathComponent:result_path];
-            }
-
-            if(![_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -233,13 +229,13 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig;
     
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
             NSString* abspath = [path stringByAppendingPathComponent:result_path];
 
-            if(![_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -259,13 +255,13 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig;
     
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
             NSString* abspath = [path stringByAppendingPathComponent:result_path];
 
-            if(![_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
@@ -445,17 +441,13 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     NSArray* result = %orig;
     
     if(!isTweak && result) {
-        NSMutableArray* result_filtered = [NSMutableArray new];
+        NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = result_path;
+            NSString* abspath = [path stringByAppendingPathComponent:result_path];
 
-            if(![abspath isAbsolutePath]) {
-                abspath = [path stringByAppendingPathComponent:result_path];
-            }
-
-            if(![_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
-                [result_filtered addObject:result_path];
+            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+                [result_filtered removeObject:result_path];
             }
         }
 
