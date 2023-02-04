@@ -257,13 +257,13 @@
     if(response) {
         BOOL restricted = [response[@"restricted"] boolValue];
 
-        // if(!restricted) {
-        //     BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
+        if(!restricted) {
+            BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
 
-        //     if(responseParent) {
-        //         restricted = YES;
-        //     }
-        // }
+            if(responseParent) {
+                restricted = YES;
+            }
+        }
 
         return restricted;
     }
