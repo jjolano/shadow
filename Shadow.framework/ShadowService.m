@@ -8,6 +8,8 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @implementation ShadowService {
+    NSCache<NSString *, NSNumber *>* cache;
+
     NSString* dpkgPath;
     NSArray* rulesets;
     CPDistributedMessagingCenter* center;
@@ -252,6 +254,12 @@
         return NO;
     }
 
+    NSNumber* cached = [cache objectForKey:path];
+
+    if(cached) {
+        return [cached boolValue];
+    }
+
     NSDictionary* response = [self sendIPC:@"isPathRestricted" withArgs:@{@"path" : path} useService:(rulesets == nil)];
 
     if(response) {
@@ -265,6 +273,7 @@
             }
         }
 
+        [cache setObject:@(restricted) forKey:path];
         return restricted;
     }
 
@@ -296,6 +305,8 @@
         center = nil;
         dpkgPath = nil;
         rulesets = @[];
+
+        cache = [NSCache new];
     }
 
     return self;
