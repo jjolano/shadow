@@ -128,7 +128,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
     if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(__bridge const void *)[result class]]) {
+        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
             return nil;
         }
     }
