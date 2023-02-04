@@ -6,7 +6,6 @@
 
 @interface Shadow : NSObject
 @property (nonatomic, readwrite, strong) ShadowService* service;
-@property BOOL restrictionEnabled;
 @property (nonatomic, readwrite, assign) BOOL runningInApp;
 @property (nonatomic, readwrite, assign) BOOL tweakCompatibility;
 @property (nonatomic, readwrite, assign) BOOL rootlessMode;

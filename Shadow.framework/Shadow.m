@@ -29,11 +29,9 @@
 
             return YES;
         }
-
-        return NO;
     }
 
-    return YES;
+    return NO;
 }
 
 - (BOOL)isAddrRestricted:(const void *)addr {
@@ -59,7 +57,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
-    if(!_restrictionEnabled || !path || [path isEqualToString:@"/"] || [path length] == 0) {
+    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
         return NO;
     }
 
@@ -191,7 +189,6 @@
         _service = nil;
         _rootlessMode = NO;
         _runningInApp = NO;
-        _restrictionEnabled = YES;
         _enhancedPathResolve = NO;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
