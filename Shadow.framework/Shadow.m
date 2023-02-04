@@ -81,7 +81,7 @@
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
     } else {
-        resolve = (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [path characterAtIndex:0] == '~' || _enhancedPathResolve || [[self class] shouldResolvePath:path];
+        resolve = _enhancedPathResolve || (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [[self class] shouldResolvePath:path];
     }
 
     if(resolve) {
