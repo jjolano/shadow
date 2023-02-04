@@ -7,9 +7,7 @@
 @interface Shadow : NSObject
 @property (nonatomic, readwrite, strong) ShadowService* service;
 @property (nonatomic, readwrite, assign) BOOL runningInApp;
-@property (nonatomic, readwrite, assign) BOOL tweakCompatibility;
 @property (nonatomic, readwrite, assign) BOOL rootlessMode;
-@property (nonatomic, readwrite, assign) BOOL enhancedPathResolve;
 
 - (BOOL)isCallerTweak:(const void *)ret_addr;
 

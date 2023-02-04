@@ -68,17 +68,11 @@
         }
 
         // Resolve and standardize path.
-        if(dpkgPath) {
-            // Unsandboxed and unhooked - safe to resolve
-            NSString* path = [rawPath stringByStandardizingPath];
+        NSString* path = [rawPath stringByStandardizingPath];
 
-            response = @{
-                @"path" : path
-            };
-        } else {
-            // Sandboxed and hooked
-            return nil;
-        }
+        response = @{
+            @"path" : path
+        };
     } else if([name isEqualToString:@"isPathRestricted"]) {
         if(!userInfo) {
             return nil;
@@ -95,7 +89,16 @@
             // Check rulesets
             if(!restricted) {
                 for(NSDictionary* ruleset in rulesets) {
-                    if(![[self class] isPathCompliant:path withRuleset:ruleset] || [[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+                    if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
+                        restricted = YES;
+                        break;
+                    }
+                }
+            }
+
+            if(!restricted) {
+                for(NSDictionary* ruleset in rulesets) {
+                    if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
                         restricted = YES;
                         break;
                     }

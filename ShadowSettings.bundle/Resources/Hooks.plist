@@ -35,26 +35,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>COMPAT_SETTINGS</string>
-			<key>footerText</key>
-			<string>ALLOW_RESOURCES_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Tweak_CompatEx</string>
-			<key>label</key>
-			<string>ALLOW_RESOURCES</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
 			<key>footerText</key>
 			<string>ROOTLESS_MODE_DESC</string>
 		</dict>
@@ -65,26 +45,6 @@
 			<string>Rootless</string>
 			<key>label</key>
 			<string>ROOTLESS_MODE</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>ENHANCEMENT_SETTINGS</string>
-			<key>footerText</key>
-			<string>ENH_PR_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Enhance_PathResolve</string>
-			<key>label</key>
-			<string>ENH_PATH_RESOLVING</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

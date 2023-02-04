@@ -61,8 +61,6 @@
         return NO;
     }
 
-    path = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
     if([path characterAtIndex:0] != '~' && ![path isAbsolutePath]) {
         NSString* cwd = options[kShadowRestrictionWorkingDir];
 
@@ -74,21 +72,21 @@
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    BOOL resolve = NO;
+    BOOL resolve = YES;
 
     if(options) {
         if(options[kShadowRestrictionEnableResolve]) {
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
-    } else {
-        resolve = _enhancedPathResolve || (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [[self class] shouldResolvePath:path];
     }
 
     if(resolve) {
+        NSString* resolved_path = [_service resolvePath:path];
+
         NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
         [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
-        if(_service && [self isPathRestricted:[_service resolvePath:path] options:[opt copy]]) {
+        if(![resolved_path isEqualToString:path] && [self isPathRestricted:resolved_path options:[opt copy]]) {
             return YES;
         }
     }
@@ -103,13 +101,6 @@
 
     if(cached) {
         return [cached boolValue];
-    }
-
-    // Extra tweak compatibility
-    if(_tweakCompatibility) {
-        if([path hasPrefix:@"/Library/Application Support"]) {
-            return NO;
-        }
     }
 
     // Rootless shortcuts
@@ -131,7 +122,7 @@
     }
 
     // Check if path is restricted from Shadow Service.
-    if(_service && [_service isPathRestricted:path]) {
+    if([_service isPathRestricted:path]) {
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
         [cache setObject:@(YES) forKey:path];
 
@@ -139,8 +130,6 @@
     }
 
     NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
-    [cache setObject:@(NO) forKey:path];
-
     return NO;
 }
 
@@ -171,7 +160,7 @@
         return [self isPathRestricted:path options:options];
     }
 
-    if(_service && [_service isURLSchemeRestricted:[url scheme]]) {
+    if([_service isURLSchemeRestricted:[url scheme]]) {
         return YES;
     }
 
@@ -183,11 +172,9 @@
         bundlePath = [[NSBundle mainBundle] bundlePath];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
-        _tweakCompatibility = NO;
         _service = nil;
         _rootlessMode = NO;
         _runningInApp = NO;
-        _enhancedPathResolve = NO;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
