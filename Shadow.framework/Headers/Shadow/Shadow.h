@@ -11,7 +11,7 @@
 @property (nonatomic, readwrite, assign) BOOL rootlessMode;
 @property (nonatomic, readwrite, assign) BOOL enhancedPathResolve;
 
-- (BOOL)isCallerTweak;
+- (BOOL)isCallerTweak:(const void *)ret_addr;
 
 - (BOOL)isCPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;

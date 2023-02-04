@@ -16,8 +16,8 @@
     NSString* realHomePath;
 }
 
-- (BOOL)isCallerTweak {
-    void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
+- (BOOL)isCallerTweak:(const void *)ret_addr {
+    if(!ret_addr) ret_addr = __builtin_extract_return_addr(__builtin_return_address(1));
 
     if(ret_addr) {
         const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
@@ -81,7 +81,7 @@
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
     } else {
-        resolve = (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [path characterAtIndex:0] == '~' || _enhancedPathResolve || [[self class] shouldResolvePath:path];
+        resolve = _enhancedPathResolve || (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [[self class] shouldResolvePath:path];
     }
 
     if(resolve) {
