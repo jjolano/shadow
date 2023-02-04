@@ -23,7 +23,7 @@
         const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
         if(ret_image_name) {
-            if(strstr(ret_image_name, [bundlePath fileSystemRepresentation]) != NULL) {
+            if(strstr(ret_image_name, [[bundlePath copy] fileSystemRepresentation]) != NULL) {
                 return NO;
             }
 
@@ -63,13 +63,7 @@
 
     path = [path stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-    if([path characterAtIndex:0] == '~' && ([path hasPrefix:@"~/"] || [path hasPrefix:@"~mobile/"] || [path hasPrefix:@"~root/"])) {
-        path = [path stringByReplacingOccurrencesOfString:@"~mobile" withString:@"/var/mobile"];
-        path = [path stringByReplacingOccurrencesOfString:@"~root" withString:@"/var/root"];
-        path = [path stringByReplacingOccurrencesOfString:@"~" withString:realHomePath];
-    }
-
-    if(![path isAbsolutePath]) {
+    if([path characterAtIndex:0] != '~' && ![path isAbsolutePath]) {
         NSString* cwd = options[kShadowRestrictionWorkingDir];
 
         if(!cwd) {
@@ -80,8 +74,6 @@
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    path = [[self class] getStandardizedPath:path];
-
     BOOL resolve = NO;
 
     if(options) {
@@ -89,7 +81,7 @@
             resolve = [options[kShadowRestrictionEnableResolve] boolValue];
         }
     } else {
-        resolve = (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || _enhancedPathResolve;
+        resolve = (_runningInApp && ([path hasPrefix:bundlePath] || [path hasPrefix:homePath])) || [path characterAtIndex:0] == '~' || _enhancedPathResolve || [[self class] shouldResolvePath:path];
     }
 
     if(resolve) {
@@ -100,6 +92,12 @@
             return YES;
         }
     }
+
+    if(![path isAbsolutePath]) {
+        return NO;
+    }
+
+    path = [[self class] getStandardizedPath:path];
 
     NSNumber* cached = [cache objectForKey:path];
 
