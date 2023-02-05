@@ -61,7 +61,13 @@
         return NO;
     }
 
-    if([path characterAtIndex:0] != '~' && ![path isAbsolutePath]) {
+    path = [path stringByExpandingTildeInPath];
+
+    if([path characterAtIndex:0] == '~') {
+        return NO;
+    }
+
+    if(![path isAbsolutePath]) {
         NSString* cwd = options[kShadowRestrictionWorkingDir];
 
         if(!cwd) {
@@ -71,6 +77,8 @@
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
         path = [cwd stringByAppendingPathComponent:path];
     }
+
+    path = [[self class] getStandardizedPath:path];
 
     BOOL resolve = YES;
 
@@ -96,8 +104,6 @@
     if(![path isAbsolutePath]) {
         return NO;
     }
-
-    path = [[self class] getStandardizedPath:path];
 
     NSNumber* cached = [cache objectForKey:path];
 
