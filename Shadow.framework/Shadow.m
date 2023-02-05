@@ -72,7 +72,7 @@
         path = [cwd stringByAppendingPathComponent:path];
     }
 
-    BOOL resolve = [path containsString:realHomePath] || [[self class] shouldResolvePath:path];
+    BOOL resolve = YES;
 
     if(options) {
         if(options[kShadowRestrictionEnableResolve]) {
