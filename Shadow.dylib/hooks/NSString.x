@@ -103,7 +103,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
     NSUInteger result = %orig;
 
-    if(!isCallerTweak() && result > 0 && [_shadow isPathRestricted:self]) {
+    if(!isCallerTweak() && result && [_shadow isPathRestricted:self]) {
         if(outputName) {
             *outputName = nil;
         }
@@ -118,35 +118,35 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
     return result;
 }
 
-// - (NSString *)stringByResolvingSymlinksInPath {
-//     NSString* result = %orig;
+- (NSString *)stringByResolvingSymlinksInPath {
+    NSString* result = %orig;
 
-// !isCallerTweak() &&     if([_shadow isPathRestricted:result]) {
-//         return self;
-//     }
+    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+        return self;
+    }
 
-//     return result;
-// }
+    return result;
+}
 
 // - (NSString *)stringByExpandingTildeInPath {
 //     NSString* result = %orig;
 
-// !isCallerTweak() &&     if([_shadow isPathRestricted:result]) {
+//     if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
 //         return self;
 //     }
 
 //     return result;
 // }
 
-// - (NSString *)stringByStandardizingPath {
-//     NSString* result = %orig;
+- (NSString *)stringByStandardizingPath {
+    NSString* result = %orig;
 
-// !isCallerTweak() &&     if([_shadow isPathRestricted:result]) {
-//         return self;
-//     }
+    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+        return self;
+    }
 
-//     return result;
-// }
+    return result;
+}
 %end
 
 %hook NSAttributedString
