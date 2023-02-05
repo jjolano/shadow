@@ -83,11 +83,13 @@
     if(resolve) {
         NSString* resolved_path = [_service resolvePath:path];
 
-        NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
-        [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+        if(![resolved_path isEqualToString:path]) {
+            NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
+            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
-        if(![resolved_path isEqualToString:path] && [self isPathRestricted:resolved_path options:[opt copy]]) {
-            return YES;
+            if([self isPathRestricted:resolved_path options:[opt copy]]) {
+                return YES;
+            }
         }
     }
 
