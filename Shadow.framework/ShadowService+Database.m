@@ -1,5 +1,6 @@
 #import "ShadowService+Database.h"
 #import "ShadowService+Restriction.h"
+#import "Shadow+Utilities.h"
 
 #import "../vendor/rootless.h"
 
@@ -29,15 +30,19 @@
                 if([[db_file lastPathComponent] isEqualToString:@"base.list"] || [[db_file lastPathComponent] isEqualToString:@"firmware-sbin.list"]) {
                     // exception
                     for(NSString* line in lines) {
-                        if(![line isEqualToString:@""]) {
-                            [db_exception addObject:line];
+                        NSString* standardized_line = [Shadow getStandardizedPath:line];
+
+                        if(standardized_line && ![standardized_line isEqualToString:@""]) {
+                            [db_exception addObject:standardized_line];
                         }
                     }
                 } else {
                     // installed
                     for(NSString* line in lines) {
-                        if(![line isEqualToString:@""]) {
-                            [db_installed addObject:line];
+                        NSString* standardized_line = [Shadow getStandardizedPath:line];
+
+                        if(standardized_line && ![standardized_line isEqualToString:@""]) {
+                            [db_installed addObject:standardized_line];
                         }
                     }
                 }
