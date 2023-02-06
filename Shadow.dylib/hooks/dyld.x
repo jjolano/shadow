@@ -3,120 +3,123 @@
 static NSMutableArray<NSDictionary *>* _shdw_dyld_collection = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_add_image = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_remove_image = nil;
+static BOOL _shdw_dyld_error = NO;
 // static NSOperationQueue* _shdw_dyld_queue = nil;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
+// todo: maybe hook this private symbol
+// extern void call_funcs_for_add_image(struct mach_header *mh, unsigned long vmaddr_slide);
+
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
-    if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return [_dyld_collection count];
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    if(isCallerTweak() || !_dyld_collection) {
+        return original_dyld_image_count();
     }
 
-    return original_dyld_image_count();
+    return [_dyld_collection count];
 }
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
-    if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    if(isCallerTweak() || !_dyld_collection) {
+        return original_dyld_get_image_header(image_index);
     }
 
-    return original_dyld_get_image_header(image_index);
+    return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
 }
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] pointerValue] : 0;
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    if(isCallerTweak() || !_dyld_collection) {
+        return original_dyld_get_image_vmaddr_slide(image_index);
     }
-    
-    return original_dyld_get_image_vmaddr_slide(image_index);
+
+    return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] pointerValue] : 0;
 }
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
-    if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    if(isCallerTweak() || !_dyld_collection) {
+        return original_dyld_get_image_name(image_index);
     }
 
-    const char* result = original_dyld_get_image_name(image_index);
-
-    if(!isCallerTweak() && [_shadow isCPathRestricted:result]) {
-        result = "/usr/lib/dyld";
-    }
-
-    return result;
+    return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
 }
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isCPathRestricted:path]) {
-        return NULL;
+    if(isTweak || ![_shadow isCPathRestricted:path]) {
+        return original_dlopen(path, mode);
     }
 
     void* handle = original_dlopen(path, mode);
 
-    if(!isTweak && handle && (!path || (path && path[0] != '/'))) {
+    if((!path || (path && path[0] != '/')) && handle && !isTweak) {
         // todo: handle this case
     }
 
-    return handle;
+    _shdw_dyld_error = YES;
+    return NULL;
 }
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isCPathRestricted:path]) {
-        return NULL;
+    if(isTweak || ![_shadow isCPathRestricted:path]) {
+        return original_dlopen_internal(path, mode, caller);
     }
 
     void* handle = original_dlopen_internal(path, mode, caller);
 
-    if(!isTweak && handle && (!path || (path && path[0] != '/'))) {
+    if((!path || (path && path[0] != '/')) && handle && !isTweak) {
         // todo: handle this case
     }
 
-    return handle;
+    _shdw_dyld_error = YES;
+    return NULL;
 }
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
-    if(!isCallerTweak() && [_shadow isCPathRestricted:path]) {
-        return false;
+    BOOL isTweak = isCallerTweak();
+
+    if(isTweak || ![_shadow isCPathRestricted:path]) {
+        return original_dlopen_preflight(path);
     }
 
-    return original_dlopen_preflight(path);
+    bool result = original_dlopen_preflight(path);
+
+    if((!path || (path && path[0] != '/')) && result && !isTweak) {
+        // todo: handle this case
+    }
+
+    return false;
 }
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_add_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerTweak()) {
+    if(isCallerTweak() || !func) {
         return original_dyld_register_func_for_add_image(func);
     }
 
-    if(!func) {
-        // Don't do anything if function doesn't exist
-        return;
-    }
-
     // add to our collection
-    if(!_shdw_dyld_add_image) {
-        _shdw_dyld_add_image = [NSMutableArray new];
-    }
-
     [_shdw_dyld_add_image addObject:[NSValue valueWithPointer:func]];
 
     // do initial call
-    if(_shdw_dyld_collection) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
 
+    if(_dyld_collection) {
         for(NSDictionary* dylib in _dyld_collection) {
             func((struct mach_header *)[dylib[@"mach_header"] pointerValue], (intptr_t)[dylib[@"slide"] pointerValue]);
         }
@@ -125,18 +128,8 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
 static void (*original_dyld_register_func_for_remove_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_remove_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerTweak()) {
+    if(isCallerTweak() || !func) {
         return original_dyld_register_func_for_remove_image(func);
-    }
-
-    if(!func) {
-        // Don't do anything if function doesn't exist
-        return;
-    }
-
-    // add to our collection
-    if(!_shdw_dyld_remove_image) {
-        _shdw_dyld_remove_image = [NSMutableArray new];
     }
 
     [_shdw_dyld_remove_image addObject:[NSValue valueWithPointer:func]];
@@ -144,43 +137,16 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
 
 static kern_return_t (*original_task_info)(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt);
 static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt) {
-    kern_return_t result = original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
-
     if(isCallerTweak()) {
-        return result;
+        return original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
     }
 
-    if(flavor == TASK_DYLD_INFO) {
-        if(result == KERN_SUCCESS) {
-            NSLog(@"%@: %@", @"task_info", @"TASK_DYLD_INFO");
+    kern_return_t result = original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
 
-            struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
-            struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
-            dyld_info->infoArrayCount = 1;
-
-            // todo: rebuild/filter this array
-            // NSMutableData* data = _shdw_dyld_task_dyld_info ? _shdw_dyld_task_dyld_info : [NSMutableData data];
-            // struct dyld_image_info* infoArray = [[NSMutableData dataWithBytes:dyld_info->infoArray length:(sizeof(struct dyld_image_info) * dyld_info->infoArrayCount)] mutableBytes];
-            // struct dyld_image_info* infoArrayEnd = infoArray + (sizeof(struct dyld_image_info) * dyld_info->infoArrayCount);
-
-            // while(infoArray < infoArrayEnd) {
-            //     if(![_shadow isCPathRestricted:infoArray->imageFilePath]) {
-            //         // add to our filtered array
-            //         NSLog(@"%@: %@: %s", @"task_info", @"adding", infoArray->imageFilePath);
-
-            //         NSMutableData* info_safe = [NSMutableData dataWithBytes:infoArray length:sizeof(struct dyld_image_info)];
-            //         [data appendData:info_safe];
-            //     }
-
-            //     infoArray++;
-            // }
-
-            // _shdw_dyld_task_dyld_info = data;
-            // dyld_info->infoArray = [_shdw_dyld_task_dyld_info bytes];
-            // dyld_info->infoArrayCount = [_shdw_dyld_task_dyld_info length] / sizeof(struct dyld_image_info);
-        }
-
-        return result;
+    if(flavor == TASK_DYLD_INFO && result == KERN_SUCCESS) {
+        struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
+        struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
+        dyld_info->infoArrayCount = 1;
     }
 
     return result;
@@ -212,12 +178,12 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         // Call event handlers.
         NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
 
-        if(_dyld_add_image) {
+        if(_dyld_add_image && [_dyld_add_image count] > 0) {
             NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
 
             for(NSValue* func_ptr in _dyld_add_image) {
                 void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                if(func) func(mh, vmaddr_slide);
+                func(mh, vmaddr_slide);
             }
         }
     }
@@ -228,10 +194,9 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         return;
     }
 
-    if(_shdw_dyld_collection) {
-        // Check if we already have this lib.
-        // If not, do nothing
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    if(_dyld_collection) {
         NSDictionary* dylibToRemove = nil;
 
         for(NSDictionary* dylib in _dyld_collection) {
@@ -250,58 +215,81 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
             // Call event handlers.
             NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
 
-            if(_dyld_remove_image) {
+            if(_dyld_remove_image && [_dyld_remove_image count] > 0) {
                 NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
                 
                 for(NSValue* func_ptr in _dyld_remove_image) {
                     void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                    if(func) func(mh, vmaddr_slide);
+                    func(mh, vmaddr_slide);
                 }
             }
         }
     }
+}
+
+static char* (*original_dlerror)(void);
+static char* replaced_dlerror(void) {
+    if(isCallerTweak() || !_shdw_dyld_error) {
+        return original_dlerror();
+    }
+
+    _shdw_dyld_error = NO;
+    return "library not found";
 }
 
 static void* (*original_dlsym)(void* handle, const char* symbol);
 static void* replaced_dlsym(void* handle, const char* symbol) {
-    void* addr = original_dlsym(handle, symbol);
-
-    if(addr) {
-        // Check origin of resolved symbol
-        if([_shadow isAddrRestricted:addr] && !isCallerTweak()) {
-            if(symbol) {
-                NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
-            }
-
-            return NULL;
-        }
+    if(isCallerTweak()) {
+        return original_dlsym(handle, symbol);
     }
 
-    return addr;
+    void* addr = original_dlsym(handle, symbol);
+
+    if(![_shadow isAddrRestricted:addr]) {
+        return addr;
+    }
+
+    if(symbol) {
+        NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
+    }
+
+    _shdw_dyld_error = YES;
+    return NULL;
 }
 
 static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
+    if(isCallerTweak()) {
+        return original_dladdr(addr, info);
+    }
+
     int result = original_dladdr(addr, info);
     
     if(result) {
-        NSString *path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:info->dli_fname length:strnlen(info->dli_fname, PATH_MAX)];
+        if(info) {
+            if([_shadow isCPathRestricted:info->dli_fname]) {
+                if(info->dli_sname) {
+                    NSLog(@"%@: %@: %s -> %s", @"dyld", @"dladdr", info->dli_fname, info->dli_sname);
 
-        if([_shadow isPathRestricted:path] && !isCallerTweak()) {
-            if(info->dli_sname) {
-                NSLog(@"%@: %@: %@ -> %s", @"dyld", @"dladdr", path, info->dli_sname);
+                    void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
 
-                void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
-
-                if(orig_addr) {
-                    // Return the original lookup if possible
-                    result = original_dladdr(orig_addr, info);
-                } else {
-                    // if original addr was not found most likly its not a hooked function from us
-                    // because we are injected lets not link anything to our selfs
-                    memset(info, 0, sizeof(Dl_info));
-                    result = 0;
+                    if(orig_addr) {
+                        return original_dladdr(orig_addr, info);
+                    }
                 }
+
+                // if original addr was not found most likly its not a hooked function from us
+                // because we are injected lets not link anything to our selfs
+                memset(info, 0, sizeof(Dl_info));
+                result = 0;
+
+                _shdw_dyld_error = YES;
+            }
+        } else {
+            if([_shadow isAddrRestricted:addr]) {
+                result = 0;
+
+                _shdw_dyld_error = YES;
             }
         }
     }
@@ -311,6 +299,8 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
 void shadowhook_dyld(HKSubstitutor* hooks) {
     // _shdw_dyld_queue = [NSOperationQueue new];
+    _shdw_dyld_add_image = [NSMutableArray new];
+    _shdw_dyld_remove_image = [NSMutableArray new];
 
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
@@ -321,6 +311,8 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
 
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
+
+    MSHookFunction(dlerror, replaced_dlerror, (void **) &original_dlerror);
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {
