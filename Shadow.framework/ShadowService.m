@@ -8,7 +8,9 @@
 #import <AppSupport/CPDistributedMessagingCenter.h>
 
 @implementation ShadowService {
-    NSCache<NSString *, NSNumber *>* cache;
+    NSCache<NSString *, NSNumber *>* cache_restricted;
+    NSCache<NSString *, NSNumber *>* cache_compliant;
+    NSCache<NSString *, NSNumber *>* cache_urlscheme;
 
     NSString* dpkgPath;
     NSArray* rulesets;
@@ -73,6 +75,27 @@
         response = @{
             @"path" : path
         };
+    } else if([name isEqualToString:@"isPathCompliant"]) {
+        if(!userInfo) {
+            return nil;
+        }
+        
+        NSString* path = userInfo[@"path"];
+
+        BOOL compliant = YES;
+
+        if(path && [path isAbsolutePath] && rulesets) {
+            for(NSDictionary* ruleset in rulesets) {
+                if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
+                    compliant = NO;
+                    break;
+                }
+            }
+        }
+
+        response = @{
+            @"compliant" : @(compliant)
+        };
     } else if([name isEqualToString:@"isPathRestricted"]) {
         if(!userInfo) {
             return nil;
@@ -87,15 +110,6 @@
             BOOL restricted = NO;
 
             // Check rulesets
-            if(!restricted) {
-                for(NSDictionary* ruleset in rulesets) {
-                    if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
-                        restricted = YES;
-                        break;
-                    }
-                }
-            }
-
             if(!restricted) {
                 for(NSDictionary* ruleset in rulesets) {
                     if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
@@ -177,6 +191,7 @@
         // Register messages.
         SEL handler = @selector(handleMessageNamed:withUserInfo:);
 
+        [center registerForMessageName:@"isPathCompliant" target:self selector:handler];
         [center registerForMessageName:@"isPathRestricted" target:self selector:handler];
         [center registerForMessageName:@"isURLSchemeRestricted" target:self selector:handler];
         [center registerForMessageName:@"resolvePath" target:self selector:handler];
@@ -252,12 +267,34 @@
     return path;
 }
 
+- (BOOL)isPathCompliant:(NSString *)path {
+    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
+        return NO;
+    }
+
+    NSNumber* cached = [cache_compliant objectForKey:path];
+
+    if(cached) {
+        return [cached boolValue];
+    }
+
+    NSDictionary* response = [self sendIPC:@"isPathCompliant" withArgs:@{@"path" : path} useService:(rulesets == nil)];
+
+    if(response) {
+        BOOL compliant = [response[@"compliant"] boolValue];
+        [cache_compliant setObject:@(compliant) forKey:path];
+        return compliant;
+    }
+
+    return YES;
+}
+
 - (BOOL)isPathRestricted:(NSString *)path {
     if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
         return NO;
     }
 
-    NSNumber* cached = [cache objectForKey:path];
+    NSNumber* cached = [cache_restricted objectForKey:path];
 
     if(cached) {
         return [cached boolValue];
@@ -276,7 +313,7 @@
             }
         }
 
-        [cache setObject:@(restricted) forKey:path];
+        [cache_restricted setObject:@(restricted) forKey:path];
         return restricted;
     }
 
@@ -288,10 +325,18 @@
         return NO;
     }
 
+    NSNumber* cached = [cache_urlscheme objectForKey:scheme];
+
+    if(cached) {
+        return [cached boolValue];
+    }
+
     NSDictionary* response = [self sendIPC:@"isURLSchemeRestricted" withArgs:@{@"scheme" : scheme} useService:(rulesets == nil)];
 
     if(response) {
-        return [response[@"restricted"] boolValue];
+        BOOL restricted = [response[@"restricted"] boolValue];
+        [cache_urlscheme setObject:@(restricted) forKey:scheme];
+        return restricted;
     }
 
     return NO;
@@ -309,7 +354,9 @@
         dpkgPath = nil;
         rulesets = @[];
 
-        cache = [NSCache new];
+        cache_restricted = [NSCache new];
+        cache_compliant = [NSCache new];
+        cache_urlscheme = [NSCache new];
     }
 
     return self;
