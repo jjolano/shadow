@@ -10,6 +10,7 @@
 - (NSDictionary *)sendIPC:(NSString *)messageName withArgs:(NSDictionary *)args;
 
 - (NSString *)resolvePath:(NSString *)path;
+- (BOOL)isPathCompliant:(NSString *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isURLSchemeRestricted:(NSString *)scheme;
 - (NSDictionary *)getVersions;

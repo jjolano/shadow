@@ -8,8 +8,6 @@
 #import "../vendor/apple/dyld_priv.h"
 
 @implementation Shadow {
-    NSCache<NSString *, NSNumber *>* cache;
-
     // App-specific
     NSString* bundlePath;
     NSString* homePath;
@@ -80,37 +78,6 @@
 
     path = [[self class] getStandardizedPath:path];
 
-    BOOL resolve = YES;
-
-    if(options) {
-        if(options[kShadowRestrictionEnableResolve]) {
-            resolve = [options[kShadowRestrictionEnableResolve] boolValue];
-        }
-    }
-
-    if(resolve) {
-        NSString* resolved_path = [_service resolvePath:path];
-
-        if(![resolved_path isEqualToString:path]) {
-            NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
-            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
-
-            if([self isPathRestricted:resolved_path options:[opt copy]]) {
-                return YES;
-            }
-        }
-    }
-
-    if(![path isAbsolutePath]) {
-        return NO;
-    }
-
-    NSNumber* cached = [cache objectForKey:path];
-
-    if(cached) {
-        return [cached boolValue];
-    }
-
     // Rootless shortcuts
     if(_rootlessMode) {
         if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
@@ -122,19 +89,36 @@
         }
     }
 
-    // Exclude app bundle and data paths
-    if(_runningInApp) {
-        if([path hasPrefix:bundlePath] || [path hasPrefix:homePath]) {
-            return NO;
-        }
+    if(_service && ![_service isPathCompliant:path]) {
+        return YES;
     }
 
     // Check if path is restricted from Shadow Service.
-    if([_service isPathRestricted:path]) {
-        NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
-        [cache setObject:@(YES) forKey:path];
+    if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
+        if([_service isPathRestricted:path]) {
+            NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+            return YES;
+        }
+    }
 
-        return YES;
+    // Check resolved path.
+    BOOL resolve = YES;
+
+    if(options) {
+        if(options[kShadowRestrictionEnableResolve]) {
+            resolve = [options[kShadowRestrictionEnableResolve] boolValue];
+        }
+    }
+
+    if(resolve) {
+        NSString* resolved_path = [_service resolvePath:path];
+
+        NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
+        [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+
+        if([self isPathRestricted:resolved_path options:[opt copy]]) {
+            return YES;
+        }
     }
 
     NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
@@ -187,8 +171,6 @@
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
         realHomePath = [[self class] getStandardizedPath:realHomePath];
-
-        cache = [NSCache new];
     }
 
     return self;
