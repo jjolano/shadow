@@ -21,7 +21,7 @@
         const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
 
         if(ret_image_name) {
-            if(strstr(ret_image_name, [[bundlePath copy] fileSystemRepresentation]) != NULL) {
+            if(strstr(ret_image_name, [bundlePath fileSystemRepresentation]) != NULL) {
                 return NO;
             }
 

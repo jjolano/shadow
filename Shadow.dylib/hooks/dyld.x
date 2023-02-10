@@ -58,14 +58,18 @@ static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     BOOL isTweak = isCallerTweak();
 
-    if(isTweak || ![_shadow isCPathRestricted:path]) {
+    if(isTweak || !path) {
         return original_dlopen(path, mode);
     }
 
-    void* handle = original_dlopen(path, mode);
-
-    if((!path || (path && path[0] != '/')) && handle && !isTweak) {
-        // todo: handle this case
+    if(path[0] != '/') {
+        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+            return original_dlopen(path, mode);
+        }
+    } else {
+        if(![_shadow isCPathRestricted:path]) {
+            return original_dlopen(path, mode);
+        }
     }
 
     _shdw_dyld_error = YES;
@@ -76,14 +80,18 @@ static void* (*original_dlopen_internal)(const char* path, int mode, void* calle
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
     BOOL isTweak = isCallerTweak();
 
-    if(isTweak || ![_shadow isCPathRestricted:path]) {
+    if(isTweak || !path) {
         return original_dlopen_internal(path, mode, caller);
     }
 
-    void* handle = original_dlopen_internal(path, mode, caller);
-
-    if((!path || (path && path[0] != '/')) && handle && !isTweak) {
-        // todo: handle this case
+    if(path[0] != '/') {
+        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+            return original_dlopen_internal(path, mode, caller);
+        }
+    } else {
+        if(![_shadow isCPathRestricted:path]) {
+            return original_dlopen_internal(path, mode, caller);
+        }
     }
 
     _shdw_dyld_error = YES;
@@ -94,14 +102,18 @@ static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
     BOOL isTweak = isCallerTweak();
 
-    if(isTweak || ![_shadow isCPathRestricted:path]) {
+    if(isTweak || !path) {
         return original_dlopen_preflight(path);
     }
 
-    bool result = original_dlopen_preflight(path);
-
-    if((!path || (path && path[0] != '/')) && result && !isTweak) {
-        // todo: handle this case
+    if(path[0] != '/') {
+        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+            return original_dlopen_preflight(path);
+        }
+    } else {
+        if(![_shadow isCPathRestricted:path]) {
+            return original_dlopen_preflight(path);
+        }
     }
 
     return false;
@@ -160,30 +172,34 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     const char* image_path = dyld_image_path_containing_address(mh);
 
     // Add if safe dylib.
-    if(image_path && (strstr(image_path, "/System") == image_path || ![_shadow isCPathRestricted:image_path])) {
-        if(!_shdw_dyld_collection) {
-            _shdw_dyld_collection = [NSMutableArray new];
-        }
+    if(image_path) {
+        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strnlen(image_path, PATH_MAX)];
 
-        NSDictionary* dylib = @{
-            @"name" : @(image_path),
-            @"mach_header" : [NSValue valueWithPointer:mh],
-            @"slide" : [NSValue valueWithPointer:(void *)vmaddr_slide]
-        };
+        if([path hasPrefix:@"/System"] || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
+            if(!_shdw_dyld_collection) {
+                _shdw_dyld_collection = [NSMutableArray new];
+            }
 
-        NSLog(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
+            NSDictionary* dylib = @{
+                @"name" : path,
+                @"mach_header" : [NSValue valueWithPointer:mh],
+                @"slide" : [NSValue valueWithPointer:(void *)vmaddr_slide]
+            };
 
-        [_shdw_dyld_collection addObject:dylib];
+            NSLog(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
 
-        // Call event handlers.
-        NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
+            [_shdw_dyld_collection addObject:dylib];
 
-        if(_dyld_add_image && [_dyld_add_image count] > 0) {
-            NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
+            // Call event handlers.
+            NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
 
-            for(NSValue* func_ptr in _dyld_add_image) {
-                void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                func(mh, vmaddr_slide);
+            if(_dyld_add_image && [_dyld_add_image count] > 0) {
+                NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
+
+                for(NSValue* func_ptr in _dyld_add_image) {
+                    void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                    func(mh, vmaddr_slide);
+                }
             }
         }
     }
