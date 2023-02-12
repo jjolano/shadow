@@ -89,24 +89,31 @@
         }
     }
 
-    // Skip checks if file doesn't exist
-    if(![options objectForKey:kShadowRestrictionCheckExist] || [[options objectForKey:kShadowRestrictionCheckExist] boolValue]) {
-        if(access([path fileSystemRepresentation], F_OK) != 0) {
-            return NO;
-        }
-    }
-
     // Check if path is restricted from Shadow Service.
-    if(_service) {
-        if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
-            if(![_service isPathCompliant:path]) {
-                return YES;
-            }
+    if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
+        // add file extension if missing in path
+        NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
 
-            if([_service isPathRestricted:path]) {
-                NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
-                return YES;
+        if(file_ext) {
+            if(![[path pathExtension] isEqualToString:file_ext]) {
+                path = [path stringByAppendingFormat:@".%@", file_ext];
             }
+        }
+        
+        // Skip checks if file doesn't exist
+        if(![options objectForKey:kShadowRestrictionCheckFileExist] || [[options objectForKey:kShadowRestrictionCheckFileExist] boolValue]) {
+            if(access([path fileSystemRepresentation], F_OK) != 0) {
+                return NO;
+            }
+        }
+        
+        if(![_service isPathCompliant:path]) {
+            return YES;
+        }
+
+        if([_service isPathRestricted:path]) {
+            NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+            return YES;
         }
     }
 

@@ -1,9 +1,10 @@
 #import <Foundation/Foundation.h>
 #import "ShadowService.h"
 
-#define kShadowRestrictionEnableResolve @"kShadowRestrictionEnableResolve"
-#define kShadowRestrictionWorkingDir    @"kShadowRestrictionWorkingDir"
-#define kShadowRestrictionCheckExist    @"kShadowRestrictionCheckExist"
+#define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
+#define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
+#define kShadowRestrictionCheckFileExist        @"kShadowRestrictionCheckFileExist"
+#define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
 
 @interface Shadow : NSObject
 @property (nonatomic, readwrite, strong) ShadowService* service;

@@ -95,13 +95,14 @@
         }
 
         NSDictionary* plist = [appBundle infoDictionary];
+        NSDictionary* urltypes = [plist objectForKey:@"CFBundleURLTypes"];
 
-        if(plist && plist[@"CFBundleURLTypes"]) {
-            for(NSDictionary* type in plist[@"CFBundleURLTypes"]) {
-                if(type[@"CFBundleURLSchemes"]) {
-                    for(NSString* scheme in type[@"CFBundleURLSchemes"]) {
-                        [schemes addObject:scheme];
-                    }
+        if(urltypes) {
+            for(NSDictionary* type in urltypes) {
+                NSArray* urlschemes = [type objectForKey:@"CFBundleURLSchemes"];
+
+                if(urlschemes) {
+                    [schemes addObjectsFromArray:urlschemes];
                 }
             }
         }

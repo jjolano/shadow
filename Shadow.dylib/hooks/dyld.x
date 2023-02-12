@@ -63,7 +63,10 @@ static void* replaced_dlopen(const char* path, int mode) {
     }
 
     if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+        if(![_shadow isPathRestricted:@(path) options:@{
+            kShadowRestrictionWorkingDir : @"/usr/lib",
+            kShadowRestrictionFileExtension : @"dylib"
+            }]) {
             return original_dlopen(path, mode);
         }
     } else {
@@ -85,7 +88,10 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
     }
 
     if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+        if(![_shadow isPathRestricted:@(path) options:@{
+            kShadowRestrictionWorkingDir : @"/usr/lib",
+            kShadowRestrictionFileExtension : @"dylib"
+            }]) {
             return original_dlopen_internal(path, mode, caller);
         }
     } else {
@@ -107,7 +113,10 @@ static bool replaced_dlopen_preflight(const char* path) {
     }
 
     if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{kShadowRestrictionWorkingDir : @"/usr/lib"}]) {
+        if(![_shadow isPathRestricted:@(path) options:@{
+            kShadowRestrictionWorkingDir : @"/usr/lib",
+            kShadowRestrictionFileExtension : @"dylib"
+            }]) {
             return original_dlopen_preflight(path);
         }
     } else {
