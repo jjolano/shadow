@@ -4,17 +4,17 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 
 ## Known Issues
 
-### palera1n (rooted)
+### palera1n
 
 While Shadow does work fine on palera1n, please note the following potential issues:
 
-* Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. This may be fixed in a future update to the jailbreak itself. You will need to reinstall the `libSandy` package otherwise Shadow will not function.
-* On 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. For now, please use the `fishhook` hooking library.
-* You may see `shdw: Killed: 9` upon installation of Shadow and subsequently other tweaks. This is due to (a lack of?) codesigning on palera1n. This does not affect functionality. `AutoSign` can be installed to fix this.
+* Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. To fix this issue, you will need to reinstall the `libSandy` package after activating the jailbreak. This affects Shadow's ability to load preferences.
+* On iOS 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. In this case, please use the `fishhook` hooking library.
+* You may see `shdw: Killed: 9` in your package manager. It is safe to ignore this error message.
 
 ### Xina (iOS 15)
 
-Make sure Rootless mode is enabled. Shadow may or may not work. There are no guarantees.
+Make sure Rootless mode is enabled. There are no guarantees if Shadow will function properly on Xina. You may find that some apps fail to be bypassed, while it works for another jailbreak.
 
 ## Submitting Issues
 
