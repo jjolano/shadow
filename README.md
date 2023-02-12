@@ -20,6 +20,8 @@ Make sure Rootless mode is enabled. Shadow may or may not work. There are no gua
 
 I only offer support in English.
 
+#### Please do not submit issues if your app is still getting detected, unless the same version of the app is bypassed on a previous version of Shadow.
+
 Before submitting a new issue, please ensure the following details are provided:
 
 * iOS version
@@ -27,8 +29,6 @@ Before submitting a new issue, please ensure the following details are provided:
 * Code substitution platform (libhooker, Substitute, Substrate, ElleKit)
 * Options used
 * Apps affected
-
-Please do not submit issues about detection, unless it **currently** works on a previous version of Shadow.
 
 If a certain option is causing apps to crash, please include the name of the option.
 
