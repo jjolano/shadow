@@ -176,24 +176,18 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strnlen(image_path, PATH_MAX)];
 
         if([path hasPrefix:@"/System"] || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
-            if(!_shdw_dyld_collection) {
-                _shdw_dyld_collection = [NSMutableArray new];
-            }
+            NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
 
-            NSDictionary* dylib = @{
+            [_shdw_dyld_collection addObject:@{
                 @"name" : path,
                 @"mach_header" : [NSValue valueWithPointer:mh],
                 @"slide" : [NSValue valueWithPointer:(void *)vmaddr_slide]
-            };
-
-            NSLog(@"%@: %@: %@", @"dyld", @"adding lib", dylib[@"name"]);
-
-            [_shdw_dyld_collection addObject:dylib];
+            }];
 
             // Call event handlers.
             NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
 
-            if(_dyld_add_image && [_dyld_add_image count] > 0) {
+            if([_dyld_add_image count]) {
                 NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
 
                 for(NSValue* func_ptr in _dyld_add_image) {
@@ -211,33 +205,30 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
     }
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    NSDictionary* dylibToRemove = nil;
 
-    if(_dyld_collection) {
-        NSDictionary* dylibToRemove = nil;
-
-        for(NSDictionary* dylib in _dyld_collection) {
-            if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
-                // Don't remove while in enumeration, store for later
-                dylibToRemove = dylib;
-                break;
-            }
+    for(NSDictionary* dylib in _dyld_collection) {
+        if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
+            // Don't remove while in enumeration, store for later
+            dylibToRemove = dylib;
+            break;
         }
+    }
 
-        if(dylibToRemove) {
-            // Remove this from our collection
-            NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylibToRemove[@"name"]);
-            [_shdw_dyld_collection removeObject:dylibToRemove];
+    if(dylibToRemove) {
+        // Remove this from our collection
+        NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylibToRemove[@"name"]);
+        [_shdw_dyld_collection removeObject:dylibToRemove];
 
-            // Call event handlers.
-            NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
+        // Call event handlers.
+        NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
 
-            if(_dyld_remove_image && [_dyld_remove_image count] > 0) {
-                NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
-                
-                for(NSValue* func_ptr in _dyld_remove_image) {
-                    void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
-                    func(mh, vmaddr_slide);
-                }
+        if([_dyld_remove_image count]) {
+            NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
+            
+            for(NSValue* func_ptr in _dyld_remove_image) {
+                void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
+                func(mh, vmaddr_slide);
             }
         }
     }
@@ -314,9 +305,12 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 }
 
 void shadowhook_dyld(HKSubstitutor* hooks) {
-    // _shdw_dyld_queue = [NSOperationQueue new];
+    _shdw_dyld_collection = [NSMutableArray new];
     _shdw_dyld_add_image = [NSMutableArray new];
     _shdw_dyld_remove_image = [NSMutableArray new];
+
+    _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
+    _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);

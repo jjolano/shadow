@@ -3,6 +3,7 @@
 
 #define kShadowRestrictionEnableResolve @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir    @"kShadowRestrictionWorkingDir"
+#define kShadowRestrictionCheckExist    @"kShadowRestrictionCheckExist"
 
 @interface Shadow : NSObject
 @property (nonatomic, readwrite, strong) ShadowService* service;

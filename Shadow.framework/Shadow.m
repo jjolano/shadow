@@ -55,7 +55,7 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
-    if(!path || [path isEqualToString:@"/"] || [path length] == 0) {
+    if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
         return NO;
     }
 
@@ -66,7 +66,7 @@
     }
 
     if(![path isAbsolutePath]) {
-        NSString* cwd = options[kShadowRestrictionWorkingDir];
+        NSString* cwd = [options objectForKey:kShadowRestrictionWorkingDir];
 
         if(!cwd) {
             cwd = [[NSFileManager defaultManager] currentDirectoryPath];
@@ -78,7 +78,7 @@
 
     path = [[self class] getStandardizedPath:path];
 
-    // Rootless shortcuts
+    // Rootless mode: skip most checks outside of /var
     if(_rootlessMode) {
         if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
             return NO;
@@ -89,28 +89,29 @@
         }
     }
 
-    if(_service && ![_service isPathCompliant:path]) {
-        return YES;
+    // Skip checks if file doesn't exist
+    if(![options objectForKey:kShadowRestrictionCheckExist] || [[options objectForKey:kShadowRestrictionCheckExist] boolValue]) {
+        if(access([path fileSystemRepresentation], F_OK) != 0) {
+            return NO;
+        }
     }
 
     // Check if path is restricted from Shadow Service.
-    if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
-        if([_service isPathRestricted:path]) {
-            NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
-            return YES;
+    if(_service) {
+        if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
+            if(![_service isPathCompliant:path]) {
+                return YES;
+            }
+
+            if([_service isPathRestricted:path]) {
+                NSLog(@"%@: %@: %@", @"isPathRestricted", @"restricted", path);
+                return YES;
+            }
         }
     }
 
     // Check resolved path.
-    BOOL resolve = YES;
-
-    if(options) {
-        if(options[kShadowRestrictionEnableResolve]) {
-            resolve = [options[kShadowRestrictionEnableResolve] boolValue];
-        }
-    }
-
-    if(resolve) {
+    if(![options objectForKey:kShadowRestrictionEnableResolve] || [[options objectForKey:kShadowRestrictionEnableResolve] boolValue]) {
         NSString* resolved_path = [_service resolvePath:path];
 
         NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
@@ -145,10 +146,6 @@
             }
         }
 
-        if(!options) {
-            return [self isPathRestricted:path];
-        }
-
         return [self isPathRestricted:path options:options];
     }
 
@@ -161,7 +158,7 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        bundlePath = [[NSBundle mainBundle] bundlePath];
+        bundlePath = [[[self class] getExecutablePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
         realHomePath = @(getpwuid(getuid())->pw_dir);
         _service = nil;
