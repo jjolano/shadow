@@ -44,7 +44,7 @@
     NSDictionary* default_prefs = [self getDefaultPreferences];
     NSMutableDictionary* result = [default_prefs mutableCopy];
     NSUserDefaults* shdw_prefs = [self getUserDefaults];
-    NSDictionary* app_settings = [shdw_prefs objectForKey:bundleIdentifier];
+    NSDictionary* app_settings = bundleIdentifier ? [shdw_prefs objectForKey:bundleIdentifier] : nil;
 
     if(app_settings && app_settings[@"App_Enabled"] && [app_settings[@"App_Enabled"] boolValue]) {
         // Use app overrides.

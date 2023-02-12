@@ -3,7 +3,7 @@
 case "$1" in
     triggered)
         echo -n "shdw: "
-        /usr/local/bin/shdw -g || true
+        $DPKG_ROOT/usr/local/bin/shdw -g || true
     ;;
 esac
 

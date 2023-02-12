@@ -70,18 +70,6 @@
         return YES;
     }
 
-    // NSArray* ruleset_wpred = ruleset[@"WhitelistPredicates"];
-
-    // if(ruleset_wpred) {
-    //     for(NSString* wpred in ruleset_wpred) {
-    //         NSPredicate* pred = [NSPredicate predicateWithFormat:wpred];
-            
-    //         if([pred evaluateWithObject:path]) {
-    //             return YES;
-    //         }
-    //     }
-    // }
-
     return NO;
 }
 
@@ -110,18 +98,6 @@
     if([ruleset_bpred evaluateWithObject:path]) {
         return YES;
     }
-
-    // NSArray* ruleset_bpred = ruleset[@"BlacklistPredicates"];
-
-    // if(ruleset_bpred) {
-    //     for(NSString* bpred in ruleset_bpred) {
-    //         NSPredicate* pred = [NSPredicate predicateWithFormat:bpred];
-            
-    //         if([pred evaluateWithObject:path]) {
-    //             return YES;
-    //         }
-    //     }
-    // }
 
     return NO;
 }

@@ -3,21 +3,6 @@
 extern char*** _NSGetArgv();
 
 @implementation Shadow (Utilities)
-+ (BOOL)shouldResolvePath:(NSString *)path {
-    if([path characterAtIndex:0] == '~') {
-        return YES;
-    }
-
-    NSPredicate* pred = [NSPredicate predicateWithFormat:@"SELF LIKE '*/./*' OR SELF LIKE '*/../*' OR SELF ENDSWITH '/.' OR SELF ENDSWITH '/..'"];
-
-    if([pred evaluateWithObject:path]) {
-        // resolving relative path component
-        return YES;
-    }
-
-    return NO;
-}
-
 + (NSString *)getStandardizedPath:(NSString *)path {
     NSURL* url = [NSURL URLWithString:path];
 
@@ -34,7 +19,7 @@ extern char*** _NSGetArgv();
     }
 
     if([path length] > 1) {
-        if([path hasSuffix:@"/"]) {
+        while([path hasSuffix:@"/"] && [path length] > 1) {
             path = [path substringToIndex:[path length] - 1];
         }
 

@@ -163,11 +163,7 @@ ShadowService* _srv = nil;
 
     if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
         NSLog(@"%@", @"+ dylib");
-
-        // Register before hooking
-        _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
-        _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
-
+        
         shadowhook_dyld(substitutor);
     }
 

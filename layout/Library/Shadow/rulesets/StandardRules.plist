@@ -30,6 +30,14 @@
 			<string>usr</string>
 			<string>var</string>
 		</array>
+		<key>/private</key>
+		<array>
+			<string>etc</string>
+			<string>preboot</string>
+			<string>system_data</string>
+			<string>var</string>
+			<string>xarts</string>
+		</array>
 		<key>/var</key>
 		<array>
 			<string>.DocumentRevisions-V100</string>
