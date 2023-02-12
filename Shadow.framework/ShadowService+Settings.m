@@ -43,22 +43,26 @@
 + (NSDictionary *)getPreferences:(NSString *)bundleIdentifier {
     NSDictionary* default_prefs = [self getDefaultPreferences];
     NSMutableDictionary* result = [default_prefs mutableCopy];
+
     NSUserDefaults* shdw_prefs = [self getUserDefaults];
     NSDictionary* app_settings = bundleIdentifier ? [shdw_prefs objectForKey:bundleIdentifier] : nil;
 
-    if(app_settings && app_settings[@"App_Enabled"] && [app_settings[@"App_Enabled"] boolValue]) {
+    BOOL useAppSettings = [[app_settings objectForKey:@"App_Enabled"] boolValue];
+
+    if(useAppSettings) {
         // Use app overrides.
         [result setObject:@(YES) forKey:@"App_Enabled"];
 
         for(NSString* key in default_prefs) {
             id value = [app_settings objectForKey:key];
-            id defaultValue = @(NO);
-
-            if([default_prefs[key] isKindOfClass:[NSString class]]) {
-                defaultValue = default_prefs[key];
-            }
 
             if(!value) {
+                id defaultValue = @(NO);
+
+                if([[default_prefs objectForKey:key] isKindOfClass:[NSString class]]) {
+                    defaultValue = [default_prefs objectForKey:key];
+                }
+
                 value = defaultValue;
             }
             
@@ -79,10 +83,6 @@
 }
 
 + (NSDictionary *)getPreferences:(NSString *)bundleIdentifier usingService:(ShadowService *)service {
-    if(!service) {
-        return nil;
-    }
-
     return [service sendIPC:@"getPreferences" withArgs:@{@"bundleIdentifier" : bundleIdentifier}];
 }
 @end

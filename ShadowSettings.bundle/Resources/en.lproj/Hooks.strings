@@ -10,8 +10,8 @@
 "ALLOW_RESOURCES" = "Allow Tweak Resources";
 "ALLOW_RESOURCES_DESC" = "Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed by a tweak.";
 
-"ROOTLESS_MODE" = "Enable Rootless Mode";
-"ROOTLESS_MODE_DESC" = "Use this setting if you are running Shadow on a rootless jailbreak. Do not enable this if your jailbreak is not rootless.";
+"ROOTLESS_MODE" = "Rootless Optimizations";
+"ROOTLESS_MODE_DESC" = "Enables rootless optimizations for better performance. Do not enable this if your jailbreak is not rootless.";
 
 "ENHANCEMENT_SETTINGS" = "Enhancement Settings";
 
