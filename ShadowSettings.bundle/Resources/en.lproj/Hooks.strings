@@ -5,19 +5,6 @@
 "HK_LIB_SELECT" = "This is a list of hooking libraries available to use on your device. Select \"Automatic\" to allow HookKit to choose the best hooking library for your device.";
 "AUTOMATIC" = "Automatic";
 
-"COMPAT_SETTINGS" = "Compatibility Settings";
-
-"ALLOW_RESOURCES" = "Allow Tweak Resources";
-"ALLOW_RESOURCES_DESC" = "Certain tweaks require full access to some jailbreak resources. Do not enable this unless needed by a tweak.";
-
-"ROOTLESS_MODE" = "Rootless Optimizations";
-"ROOTLESS_MODE_DESC" = "Enables rootless optimizations for better performance. Do not enable this if your jailbreak is not rootless.";
-
-"ENHANCEMENT_SETTINGS" = "Enhancement Settings";
-
-"ENH_PATH_RESOLVING" = "Enhance Path Processing";
-"ENH_PR_DESC" = "Use this setting to enable extra processing on file access operations. This will have a noticeable impact on performance.";
-
 "ESSENTIAL_HOOKS" = "Essential Hooks";
 "ESSENTIAL_HOOKS_DESC" = "Essential hooks cover the most common jailbreak detection methods.";
 

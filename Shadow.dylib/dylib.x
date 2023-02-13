@@ -124,7 +124,15 @@ ShadowService* _srv = nil;
     _shadow = [Shadow shadowWithService:_srv];
 
     [_shadow setRunningInApp:YES];
-    [_shadow setRootlessMode:[prefs_load[@"Rootless"] boolValue]];
+
+    // Automatically use rootless optimizations depending on where this dylib was loaded.
+    NSString* tweak_path = [Shadow getTweakPath];
+    BOOL rootless = ([tweak_path hasPrefix:@"/private/preboot"] || [tweak_path hasPrefix:@"/var"] || [tweak_path hasPrefix:@"/private/var"]);
+
+    if(rootless) {
+        [_shadow setRootlessMode:rootless];
+        NSLog(@"%@", @"rootless optimizations enabled");
+    }
 
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
