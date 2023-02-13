@@ -35,24 +35,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>ROOTLESS_MODE_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Rootless</string>
-			<key>label</key>
-			<string>ROOTLESS_MODE</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>ESSENTIAL_HOOKS</string>
 			<key>footerText</key>

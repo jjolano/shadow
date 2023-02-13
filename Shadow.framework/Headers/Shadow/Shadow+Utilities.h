@@ -5,4 +5,5 @@
 + (NSString *)getStandardizedPath:(NSString *)path;
 + (NSString *)getExecutablePath;
 + (NSString *)getBundleIdentifier;
++ (NSString *)getTweakPath;
 @end

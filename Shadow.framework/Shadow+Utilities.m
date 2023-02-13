@@ -1,4 +1,5 @@
 #import "Shadow+Utilities.h"
+#import "../vendor/apple/dyld_priv.h"
 
 extern char*** _NSGetArgv();
 
@@ -65,5 +66,19 @@ extern char*** _NSGetArgv();
 	}
 
 	return nil;
+}
+
++ (NSString *)getTweakPath {
+    const void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(0));
+
+    if(ret_addr) {
+        const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
+
+        if(ret_image_name) {
+            return @(ret_image_name);
+        }
+    }
+
+    return nil;
 }
 @end
