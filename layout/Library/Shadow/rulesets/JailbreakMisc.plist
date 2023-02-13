@@ -50,6 +50,7 @@
 		<string>SELF LIKE '/private/preboot/*/procursus*'</string>
 		<string>SELF LIKE '/private/preboot/*/jb*'</string>
 		<string>SELF LIKE '/var/run/*.pid'</string>
+		<string>SELF LIKE '/cores/*'</string>
 		<string>SELF ENDSWITH '.distrib'</string>
 		<string>SELF ENDSWITH '_TrollStore'</string>
 		<string>SELF LIKE '/*/LIAPP*'</string>

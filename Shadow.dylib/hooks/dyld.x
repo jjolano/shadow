@@ -12,53 +12,47 @@ static BOOL _shdw_dyld_error = NO;
 
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-
-    if(isCallerTweak() || !_dyld_collection) {
+    if(isCallerTweak()) {
         return original_dyld_image_count();
     }
 
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     return [_dyld_collection count];
 }
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-
-    if(isCallerTweak() || !_dyld_collection) {
+    if(isCallerTweak()) {
         return original_dyld_get_image_header(image_index);
     }
 
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
 }
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-
-    if(isCallerTweak() || !_dyld_collection) {
+    if(isCallerTweak()) {
         return original_dyld_get_image_vmaddr_slide(image_index);
     }
 
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] pointerValue] : 0;
 }
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-
-    if(isCallerTweak() || !_dyld_collection) {
+    if(isCallerTweak()) {
         return original_dyld_get_image_name(image_index);
     }
 
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
 }
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
-    BOOL isTweak = isCallerTweak();
-
-    if(isTweak || !path) {
+    if(isCallerTweak() || !path) {
         return original_dlopen(path, mode);
     }
 
@@ -81,9 +75,7 @@ static void* replaced_dlopen(const char* path, int mode) {
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
-    BOOL isTweak = isCallerTweak();
-
-    if(isTweak || !path) {
+    if(isCallerTweak() || !path) {
         return original_dlopen_internal(path, mode, caller);
     }
 
@@ -106,9 +98,7 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
-    BOOL isTweak = isCallerTweak();
-
-    if(isTweak || !path) {
+    if(isCallerTweak() || !path) {
         return original_dlopen_preflight(path);
     }
 
@@ -168,6 +158,8 @@ static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t f
         struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
         struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
         dyld_info->infoArrayCount = 1;
+
+        // todo: improve this
     }
 
     return result;
