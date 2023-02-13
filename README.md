@@ -11,6 +11,7 @@ While Shadow does work fine on palera1n, please note the following potential iss
 * Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. To fix this issue, you will need to reinstall the `libSandy` package after activating the jailbreak. This affects Shadow's ability to load preferences.
 * On iOS 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. In this case, please use the `fishhook` hooking library.
 * You may see `shdw: Killed: 9` in your package manager. It is safe to ignore this error message.
+* For rootless palera1n, please use `dirtypatch` or `AutoPatch` and the rootless repo: `https://ios.jjolano.me/rootless`
 
 ### Xina (iOS 15)
 
