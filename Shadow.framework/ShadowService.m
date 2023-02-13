@@ -272,6 +272,10 @@
 }
 
 - (BOOL)isURLSchemeRestricted:(NSString *)scheme {
+    if(!scheme) {
+        return NO;
+    }
+
     NSNumber* cached = [cache_urlscheme objectForKey:scheme];
 
     if(cached) {
