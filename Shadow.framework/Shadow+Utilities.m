@@ -20,7 +20,7 @@ extern char*** _NSGetArgv();
     }
 
     if([path length] > 1) {
-        while([path hasSuffix:@"/"] && [path length] > 1) {
+        if([path hasSuffix:@"/"]) {
             path = [path substringToIndex:[path length] - 1];
         }
 

@@ -70,6 +70,10 @@
 
         if(!cwd) {
             cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+        } else {
+            if(![cwd isAbsolutePath]) {
+                cwd = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:cwd];
+            }
         }
 
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);

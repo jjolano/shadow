@@ -833,6 +833,4 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
     MSHookFunction(getppid, replaced_getppid, NULL);
-    // MSHookFunction(kill, replaced_kill, (void **) &original_kill);
-    // MSHookFunction(fork, replaced_fork, NULL);
 }

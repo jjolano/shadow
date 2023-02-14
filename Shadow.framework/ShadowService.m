@@ -209,10 +209,12 @@
 }
 
 - (NSString *)resolvePath:(NSString *)path {
-    NSDictionary* response = [self sendIPC:@"resolvePath" withArgs:@{@"path" : path} useService:NO];
+    if(path) {
+        NSDictionary* response = [self sendIPC:@"resolvePath" withArgs:@{@"path" : path} useService:NO];
 
-    if(response) {
-        path = [response objectForKey:@"path"];
+        if(response) {
+            path = [response objectForKey:@"path"];
+        }
     }
 
     return path;
