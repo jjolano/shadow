@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Experiencing issues after updating Shadow? Choose this issue template. Do not report detection issues, unless it works when downgrading Shadow.
 title: "[Bug] "
 labels: bug
 assignees: jjolano
