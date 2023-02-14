@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Experiencing issues after updating Shadow? Choose this issue template. Do not report detection issues, unless it works when downgrading Shadow.
+about: Experiencing crashes or found a bug? Report it here. Avoid reporting detection issues, unless it works with a previous version of Shadow.
 title: "[Bug] "
 labels: bug
 assignees: jjolano
