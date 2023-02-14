@@ -272,32 +272,21 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     }
 
     int result = original_dladdr(addr, info);
-    
-    if(result) {
+
+    if(result && [_shadow isAddrRestricted:addr]) {
         if(info) {
-            if([_shadow isCPathRestricted:info->dli_fname]) {
-                if(info->dli_sname) {
-                    NSLog(@"%@: %@: %s -> %s", @"dyld", @"dladdr", info->dli_fname, info->dli_sname);
+            void* sym;
 
-                    void* orig_addr = original_dlsym(RTLD_NEXT, info->dli_sname);
-
-                    if(orig_addr) {
-                        return original_dladdr(orig_addr, info);
-                    }
-                }
-
-                // if original addr was not found most likly its not a hooked function from us
-                // because we are injected lets not link anything to our selfs
-                memset(info, 0, sizeof(Dl_info));
-                result = 0;
-
-                _shdw_dyld_error = YES;
-            }
-        } else {
-            if([_shadow isAddrRestricted:addr]) {
-                result = 0;
-
-                _shdw_dyld_error = YES;
+            // try to find the real original addr
+            do {
+                sym = dlsym(RTLD_NEXT, info->dli_sname);
+            } while(sym && [_shadow isAddrRestricted:sym]);
+            
+            if(sym) {
+                return original_dladdr(sym, info);
+            } else {
+                // as a fallback, we'll just say this addr is part of the executable itself
+                info->dli_fname = [[Shadow getExecutablePath] fileSystemRepresentation];
             }
         }
     }

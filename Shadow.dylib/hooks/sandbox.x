@@ -29,40 +29,24 @@
 
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
-    return KERN_FAILURE;
-    // // Check if the app has this entitlement (likely not).
-    // CFErrorRef err = nil;
-    // NSArray* ent = (__bridge NSArray *)SecTaskCopyValueForEntitlement(SecTaskCreateFromSelf(NULL), CFSTR("get-task-allow"), &err);
-
-    // if(!ent || true) {
-    //     NSLog(@"%@: %@", @"deny task_for_pid", @(pid));
-    //     return KERN_FAILURE;
-    // }
-
-    // return %orig;
+    if(!isCallerTweak()) {
+        NSLog(@"%@: %d", @"task_for_pid", pid);
+        return KERN_FAILURE;
+    }
+    
+    return original_task_for_pid(task, pid, target);
 }
 
 static kern_return_t (*original_host_get_special_port)(host_priv_t host_priv, int node, int which, mach_port_t* port);
 static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int node, int which, mach_port_t* port) {
-    // interesting ports: 4, HOST_SEATBELT_PORT, HOST_PRIV_PORT
-    NSLog(@"%@: %d", @"host_get_special_port", which);
+    if(!isCallerTweak()) {
+        NSLog(@"%@: %d", @"host_get_special_port", which);
 
-    if(!isCallerTweak() && node == HOST_LOCAL_NODE) {
-        if(which == HOST_PRIV_PORT) {
-            if(port) {
-                *port = MACH_PORT_NULL;
-            }
-
-            return KERN_SUCCESS;
+        if(port) {
+            *port = MACH_PORT_NULL;
         }
 
-        if(which == 4 /* kernel (hgsp4) */) {
-            return KERN_FAILURE;
-        }
-
-        if(which == HOST_SEATBELT_PORT) {
-            return KERN_FAILURE;
-        }
+        return KERN_FAILURE;
     }
 
     return original_host_get_special_port(host_priv, node, which, port);
@@ -70,33 +54,34 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
 
 static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int which_port, mach_port_t *special_port);
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
-    NSLog(@"%@: %d", @"task_get_special_port", which_port);
-
     if(!isCallerTweak()) {
-        if(task == mach_task_self()) {
-            if(which_port == TASK_SEATBELT_PORT) {
-                return KERN_FAILURE;
-            }
-        } else {
-            return KERN_FAILURE;
+        NSLog(@"%@: %d", @"task_get_special_port", which_port);
+
+        if(special_port) {
+            *special_port = MACH_PORT_NULL;
         }
+        
+        return KERN_FAILURE;
     }
 
     return original_task_get_special_port(task, which_port, special_port);
 }
 
-static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
-static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
-    return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
-}
+// static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
+// static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
+//     return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
+// }
 
 static int (*original_sigaction)(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact);
 static int replaced_sigaction(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact) {
     int result = original_sigaction(sig, act, oact);
-    NSLog(@"%@: %d", @"sigaction", sig);
+
+    if(!isCallerTweak()) {
+        NSLog(@"%@: %d", @"sigaction", sig);
     
-    if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
-        memset(oact, 0, sizeof(struct sigaction));
+        if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
+            memset(oact, 0, sizeof(struct sigaction));
+        }
     }
 
     return result;
@@ -114,7 +99,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 
     va_end(args);
 
-    if(operation && strcmp(operation, "mach-lookup") == 0 && data[0] && !isCallerTweak()) {
+    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && data[0]) {
         const char* name = (const char *)data[0];
 
         if(strstr(name, "cy:") == name
@@ -184,7 +169,7 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
     MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
     MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
-    MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
+    // MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
     MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
     MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
     // MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
