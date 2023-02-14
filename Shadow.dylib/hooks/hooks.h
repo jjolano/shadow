@@ -29,6 +29,7 @@
 
 #import "../../common.h"
 #import <Shadow/Shadow.h>
+#import <Shadow/Shadow+Utilities.h>
 
 #import <substrate.h>
 #import <HookKit.h>

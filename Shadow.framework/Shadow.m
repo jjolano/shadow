@@ -90,7 +90,9 @@
     }
 
     // Check if path is restricted from Shadow Service.
-    if(!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath])) {
+    BOOL path_isOutsideSandbox = (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]);
+
+    if(!_runningInApp || path_isOutsideSandbox) {
         // add file extension if missing in path
         NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
 
@@ -105,6 +107,10 @@
             if(access([path fileSystemRepresentation], F_OK) != 0) {
                 return NO;
             }
+
+            // if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            //     return YES;
+            // }
         }
         
         if(![_service isPathCompliant:path]) {
@@ -129,7 +135,10 @@
         }
     }
 
-    NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
+    if(path_isOutsideSandbox) {
+        NSLog(@"%@: %@: %@", @"isPathRestricted", @"allowed", path);
+    }
+
     return NO;
 }
 

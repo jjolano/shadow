@@ -36,12 +36,14 @@
 
 static const char* (*original_class_getImageName)(Class cls);
 static const char* replaced_class_getImageName(Class cls) {
+    if(isCallerTweak()) {
+        return original_class_getImageName(cls);
+    }
+
     const char* result = original_class_getImageName(cls);
 
-    if(result) {
-        if(!isCallerTweak() && [_shadow isCPathRestricted:result]) {
-            return "/usr/lib/dyld";
-        }
+    if(result && [_shadow isCPathRestricted:result]) {
+        return [[Shadow getExecutablePath] fileSystemRepresentation];
     }
 
     return result;
@@ -88,15 +90,20 @@ static const char* replaced_class_getImageName(Class cls) {
 
 static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
+    if(isCallerTweak()) {
+        return original_objc_copyImageNames(outCount);
+    }
+
     const char * _Nonnull * result = original_objc_copyImageNames(outCount);
 
-    if(!isCallerTweak() && result && *outCount) {
+    if(result && *outCount) {
         const char* exec_name = _dyld_get_image_name(0);
         unsigned int i;
 
         for(i = 0; i < *outCount; i++) {
             if(strcmp(result[i], exec_name) == 0) {
                 // Stop after app executable.
+                // todo: improve this to filter instead
                 *outCount = (i + 1);
                 break;
             }
@@ -108,29 +115,23 @@ static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCou
 
 static const char * _Nonnull * (*original_objc_copyClassNamesForImage)(const char* image, unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* image, unsigned int *outCount) {
-    const char * _Nonnull * result = original_objc_copyClassNamesForImage(image, outCount);
-
-    if(result) {
-        if(!isCallerTweak() && [_shadow isCPathRestricted:image]) {
-            if(outCount) {
-                *outCount = 0;
-            }
-
-            return NULL;
-        }
+    if(isCallerTweak() || ![_shadow isCPathRestricted:image]) {
+        return original_objc_copyClassNamesForImage(image, outCount);
     }
 
-    return result;
+    return NULL;
 }
 
 static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
+    if(isCallerTweak()) {
+        return original_NSClassFromString(aClassName);
+    }
+
     Class result = original_NSClassFromString(aClassName);
 
-    if(result) {
-        if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-            return nil;
-        }
+    if(result && [_shadow isCPathRestricted:class_getImageName(result)]) {
+        return nil;
     }
 
     return result;
