@@ -22,11 +22,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 
             if([entry isKindOfClass:[NSURL class]]) {
                 path = [entry path];
-            } else if([entry isKindOfClass:[NSString class]] && base) {
-                path = [base stringByAppendingPathComponent:entry];
+            } else if([entry isKindOfClass:[NSString class]]) {
+                path = entry;
             }
 
-            if([_shadow isPathRestricted:path]) {
+            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : base}]) {
                 [result_filtered removeObject:entry];
             }
         }
@@ -54,11 +54,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 
             if([result isKindOfClass:[NSURL class]]) {
                 path = [result path];
-            } else if([result isKindOfClass:[NSString class]] && base) {
-                path = [base stringByAppendingPathComponent:result];
+            } else if([result isKindOfClass:[NSString class]]) {
+                path = result;
             }
 
-            if(path && [_shadow isPathRestricted:path]) {
+            if(path && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : base}]) {
                 result = %orig;
             } else {
                 break;
@@ -180,9 +180,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = [path stringByAppendingPathComponent:result_path];
-
-            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+            if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
         }
@@ -232,9 +230,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = [path stringByAppendingPathComponent:result_path];
-
-            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+            if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
         }
@@ -258,9 +254,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = [path stringByAppendingPathComponent:result_path];
-
-            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+            if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
         }
@@ -388,13 +382,6 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
     NSLog(@"%@: %@", @"changeCurrentDirectoryPath", path);
 
-    NSString* cwd = [self currentDirectoryPath];
-
-    if(![path isAbsolutePath]) {
-        // reconstruct path
-        path = [cwd stringByAppendingPathComponent:path];
-    }
-
     if(!isCallerTweak() && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         return NO;
     }
@@ -444,9 +431,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
-            NSString* abspath = [path stringByAppendingPathComponent:result_path];
-
-            if([_shadow isPathRestricted:abspath options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+            if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
         }

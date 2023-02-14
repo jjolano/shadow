@@ -19,6 +19,15 @@
 
     return result;
 }
+
+- (NSArray *)callStackSymbols {
+    if(isCallerTweak()) {
+        return %orig;
+    }
+
+    // todo: properly filter this (maybe use NSPredicate?)
+    return @[];
+}
 %end
 %end
 
