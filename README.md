@@ -16,22 +16,6 @@ While Shadow does work fine on palera1n, please note the following potential iss
 
 There are no guarantees if Shadow will function properly on Xina. You may find that some apps fail to be bypassed, while it works for another jailbreak. You may also find inconsistent tweak behaviour. For this reason, I cannot offer support for Xina.
 
-## Submitting Issues
-
-I only offer support in English.
-
-#### Please do not submit issues if your app is still getting detected, unless the same version of the app is bypassed on a previous version of Shadow.
-
-Before submitting a new issue, please ensure the following details are provided:
-
-* iOS version
-* Jailbreak type (Taurine, unc0ver, palera1n, etc...)
-* Code substitution platform (libhooker, Substitute, Substrate, ElleKit)
-* Options used
-* Apps affected
-
-If a certain option is causing apps to crash, please include the name of the option.
-
 ## Troubleshooting
 
 Some ideas to try:
