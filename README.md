@@ -6,7 +6,7 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 
 ### Xina (iOS 15)
 
-# There are no guarantees if Shadow will function properly on Xina. You may find that some apps fail to be bypassed, while it works for another jailbreak. You may also find inconsistent tweak behaviour. For this reason, I cannot offer support for Xina.
+<font size="7">There are no guarantees if Shadow will function properly on Xina. You may find that some apps fail to be bypassed, while it works for another jailbreak. You may also find inconsistent tweak behaviour. For this reason, I cannot offer support for Xina.</font>
 
 ### palera1n
 
