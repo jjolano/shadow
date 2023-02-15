@@ -1,6 +1,4 @@
 #import "SHDWAboutListController.h"
-
-#import "../vendor/apple/NSTask.h"
 #import <Shadow/ShadowService.h>
 
 @implementation SHDWAboutListController {
