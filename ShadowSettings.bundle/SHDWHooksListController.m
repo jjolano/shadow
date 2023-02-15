@@ -47,7 +47,7 @@
 		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
 
 		[hk_lib_values addObject:@"auto"];
-		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Auto" table:@"Hooks"]];
+		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Automatic" table:@"Hooks"]];
 
         for(NSDictionary* hooklib_info in hooklibs_info) {
 			[hk_lib_values addObject:hooklib_info[@"id"]];
