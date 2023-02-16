@@ -453,6 +453,26 @@
 			<string>syslogd</string>
 			<string>wifid</string>
 		</array>
+		<key>/usr/lib</key>
+		<array>
+			<string>bbmasks</string>
+			<string>dyld</string>
+			<string>libCoreKE.dylib</string>
+			<string>libMTLCapture.dylib</string>
+			<string>libMTLToolsDiagnostics.dylib</string>
+			<string>libSystem.B_asan.dylib</string>
+			<string>libSystem_asan.dylib</string>
+			<string>libffi-trampolines.dylib</string>
+			<string>libobjc-trampolines.dylib</string>
+			<string>libstdc++.6.dylib</string>
+			<string>libstdc++.6.0.9.dylib</string>
+			<string>system</string>
+			<string>swift</string>
+			<string>updaters</string>
+			<string>log</string>
+			<string>xpc</string>
+			<string>libstdc++.dylib</string>
+		</array>
 		<key>/sbin</key>
 		<array>
 			<string>fsck</string>
