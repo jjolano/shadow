@@ -44,7 +44,7 @@
 
 - (BOOL)isCPathRestricted:(const char *)path {
     if(path) {
-        return [self isPathRestricted:[[NSFileManager defaultManager] stringWithFileSystemRepresentation:path length:strnlen(path, PATH_MAX)]];
+        return [self isPathRestricted:[NSString stringWithUTF8String:path]];
     }
 
     return NO;
@@ -68,12 +68,8 @@
     if(![path isAbsolutePath]) {
         NSString* cwd = [options objectForKey:kShadowRestrictionWorkingDir];
 
-        if(!cwd) {
+        if(!cwd || ![cwd isAbsolutePath]) {
             cwd = [[NSFileManager defaultManager] currentDirectoryPath];
-        } else {
-            if(![cwd isAbsolutePath]) {
-                cwd = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:cwd];
-            }
         }
 
         NSLog(@"%@: %@: %@", @"isPathRestricted", @"relative path", path);
@@ -82,21 +78,21 @@
 
     path = [[self class] getStandardizedPath:path];
 
-    // Rootless mode: skip most checks outside of /var
-    if(_rootlessMode) {
-        if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
-            return NO;
-        }
-
-        if([path hasPrefix:@"/var/jb"]) {
-            return YES;
-        }
-    }
-
     // Check if path is restricted from Shadow Service.
-    BOOL path_isOutsideSandbox = (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]);
+    BOOL path_isOutsideSandbox = (!_runningInApp || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]));
 
-    if(!_runningInApp || path_isOutsideSandbox) {
+    if(path_isOutsideSandbox) {
+        // Rootless mode: skip most checks outside of /var
+        if(_rootlessMode) {
+            if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
+                return NO;
+            }
+
+            if([path hasPrefix:@"/var/jb"]) {
+                return YES;
+            }
+        }
+
         // add file extension if missing in path
         NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
 

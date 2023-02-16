@@ -174,7 +174,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 
     // Add if safe dylib.
     if(image_path) {
-        NSString* path = [[NSFileManager defaultManager] stringWithFileSystemRepresentation:image_path length:strnlen(image_path, PATH_MAX)];
+        NSString* path = [NSString stringWithUTF8String:image_path];
 
         if([path hasPrefix:@"/System"] || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
             NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);

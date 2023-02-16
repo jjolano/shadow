@@ -20,14 +20,14 @@
     return result;
 }
 
-- (NSArray *)callStackSymbols {
-    if(isCallerTweak()) {
-        return %orig;
-    }
+// - (NSArray *)callStackSymbols {
+//     if(isCallerTweak()) {
+//         return %orig;
+//     }
 
-    // todo: properly filter this (maybe use NSPredicate?)
-    return @[];
-}
+//     // todo: properly filter this (maybe use NSPredicate?)
+//     return %orig;
+// }
 %end
 %end
 
