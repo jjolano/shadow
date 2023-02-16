@@ -125,9 +125,9 @@ ShadowService* _srv = nil;
 
     [_shadow setRunningInApp:YES];
 
-    // Automatically use rootless optimizations depending on where this dylib was loaded.
+    // Automatically use rootless optimizations.
     NSString* tweak_path = [Shadow getTweakPath];
-    BOOL rootless = ([tweak_path hasPrefix:@"/private/preboot"] || [tweak_path hasPrefix:@"/var"] || [tweak_path hasPrefix:@"/private/var"]);
+    BOOL rootless = ([tweak_path hasPrefix:@"/private"] || [tweak_path hasPrefix:@"/var"] || access("/var/jb/xina", F_OK) == 0);
 
     if(rootless) {
         [_shadow setRootlessMode:rootless];

@@ -32,7 +32,7 @@
                     for(NSString* line in lines) {
                         NSString* standardized_line = [Shadow getStandardizedPath:line];
 
-                        if(standardized_line && ![standardized_line isEqualToString:@""]) {
+                        if(standardized_line && [standardized_line length]) {
                             [db_exception addObject:standardized_line];
                         }
                     }
@@ -41,7 +41,7 @@
                     for(NSString* line in lines) {
                         NSString* standardized_line = [Shadow getStandardizedPath:line];
 
-                        if(standardized_line && ![standardized_line isEqualToString:@""]) {
+                        if(standardized_line && [standardized_line length]) {
                             [db_installed addObject:standardized_line];
                         }
                     }

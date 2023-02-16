@@ -130,7 +130,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
 
     Class result = original_NSClassFromString(aClassName);
 
-    if(result && [_shadow isCPathRestricted:class_getImageName(result)]) {
+    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
         return nil;
     }
 

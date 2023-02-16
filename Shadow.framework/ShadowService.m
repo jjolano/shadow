@@ -209,7 +209,7 @@
 }
 
 - (NSString *)resolvePath:(NSString *)path {
-    if(path) {
+    if(path && [path length]) {
         NSDictionary* response = [self sendIPC:@"resolvePath" withArgs:@{@"path" : path} useService:NO];
 
         if(response) {
@@ -274,7 +274,7 @@
 }
 
 - (BOOL)isURLSchemeRestricted:(NSString *)scheme {
-    if(!scheme) {
+    if(!scheme || [scheme length] == 0) {
         return NO;
     }
 

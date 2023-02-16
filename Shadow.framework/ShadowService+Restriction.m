@@ -2,6 +2,10 @@
 
 @implementation ShadowService (Restriction)
 + (BOOL)isPathCompliant:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(!path || !ruleset || [path length] == 0) {
+        return YES;
+    }
+
     // Verify structure
     NSDictionary* ruleset_fss = [ruleset objectForKey:@"FileSystemStructure"];
 
@@ -40,6 +44,10 @@
 }
 
 + (BOOL)isPathWhitelisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(!path || !ruleset || [path length] == 0) {
+        return NO;
+    }
+
     // Check whitelisted exact paths
     NSSet* ruleset_wepath = [ruleset objectForKey:@"WhitelistExactPaths"];
 
@@ -69,6 +77,10 @@
 }
 
 + (BOOL)isPathBlacklisted:(NSString *)path withRuleset:(NSDictionary *)ruleset {
+    if(!path || !ruleset || [path length] == 0) {
+        return NO;
+    }
+
     // Check blacklisted exact paths
     NSSet* ruleset_bepath = [ruleset objectForKey:@"BlacklistExactPaths"];
 
