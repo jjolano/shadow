@@ -11,30 +11,32 @@ static int replaced_syscall(int number, ...) {
     memcpy(stack, args, sizeof(stack));
 
     // Handle single pathname syscalls
-    if(number == SYS_open
-    || number == SYS_chdir
-    || number == SYS_access
-    || number == SYS_execve
-    || number == SYS_chroot
-    || number == SYS_rmdir
-    || number == SYS_stat
-    || number == SYS_lstat
-    || number == SYS_getattrlist
-    || number == SYS_open_extended
-    || number == SYS_stat_extended
-    || number == SYS_lstat_extended
-    || number == SYS_access_extended
-    || number == SYS_stat64
-    || number == SYS_lstat64
-    || number == SYS_stat64_extended
-    || number == SYS_lstat64_extended
-    || number == SYS_readlink
-    || number == SYS_pathconf) {
-        const char* pathname = va_arg(args, const char *);
+    if(!isCallerTweak()) {
+        if(number == SYS_open
+        || number == SYS_chdir
+        || number == SYS_access
+        || number == SYS_execve
+        || number == SYS_chroot
+        || number == SYS_rmdir
+        || number == SYS_stat
+        || number == SYS_lstat
+        || number == SYS_getattrlist
+        || number == SYS_open_extended
+        || number == SYS_stat_extended
+        || number == SYS_lstat_extended
+        || number == SYS_access_extended
+        || number == SYS_stat64
+        || number == SYS_lstat64
+        || number == SYS_stat64_extended
+        || number == SYS_lstat64_extended
+        || number == SYS_readlink
+        || number == SYS_pathconf) {
+            const char* pathname = va_arg(args, const char *);
 
-        if(!isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
-            errno = ENOENT;
-            return -1;
+            if([_shadow isCPathRestricted:pathname]) {
+                errno = ENOENT;
+                return -1;
+            }
         }
     }
 

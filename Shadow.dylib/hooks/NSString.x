@@ -101,9 +101,13 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
+    if(isCallerTweak() || ![_shadow isPathRestricted:self]) {
+        return %orig;
+    }
+
     NSUInteger result = %orig;
 
-    if(!isCallerTweak() && result && [_shadow isPathRestricted:self]) {
+    if(result && ([_shadow isPathRestricted:self] || (outputName && [_shadow isPathRestricted:*outputName]))) {
         if(outputName) {
             *outputName = nil;
         }
