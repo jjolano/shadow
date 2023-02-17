@@ -97,6 +97,46 @@
 
     return %orig;
 }
+
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
+    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
+    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+        if(errorPtr) {
+            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
 %end
 %end
 

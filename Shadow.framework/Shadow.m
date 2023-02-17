@@ -88,7 +88,7 @@
                 return NO;
             }
 
-            if([path hasPrefix:@"/var/jb"]) {
+            if([path hasPrefix:@"/var/jb"] || [path hasPrefix:@"/cores/"]) {
                 return YES;
             }
         }
@@ -103,14 +103,11 @@
         }
         
         // Skip checks if file doesn't exist
-        if(![options objectForKey:kShadowRestrictionCheckFileExist] || [[options objectForKey:kShadowRestrictionCheckFileExist] boolValue]) {
-            if(access([path fileSystemRepresentation], F_OK) != 0) {
-                return NO;
-            }
+        if([path hasPrefix:@"/usr/lib"] && access([path fileSystemRepresentation], F_OK) != 0) {
+            // reset errno
+            errno = 0;
 
-            // if(![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            //     return YES;
-            // }
+            return NO;
         }
         
         if(![_service isPathCompliant:path]) {
@@ -155,7 +152,7 @@
         NSString *path = [url path];
 
         if([url isFileReferenceURL]) {
-            NSURL *surl = [url standardizedURL];
+            NSURL *surl = [url filePathURL];
 
             if(surl) {
                 path = [surl path];

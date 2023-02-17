@@ -3,6 +3,10 @@
 %group shadowhook_NSProcessInfo
 %hook NSProcessInfo
 - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+    if(isCallerTweak()) {
+        return %orig;
+    }
+
     // Override version checks that use this method.
     return YES;
 }
@@ -18,7 +22,7 @@
         [filtered_result removeObjectForKey:@"_SafeMode"];
         [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
 
-        if(result[@"SHELL"]) {
+        if([result objectForKey:@"SHELL"]) {
             [filtered_result setObject:@"/bin/sh" forKey:@"SHELL"];
         }
 
@@ -37,6 +41,10 @@
 %group shadowhook_NSProcessInfo_fakemac
 %hook NSProcessInfo
 - (BOOL)isiOSAppOnMac {
+    if(isCallerTweak()) {
+        return %orig;
+    }
+
     // actually would be funny if this bypasses a lot of checks
     return YES;
 }

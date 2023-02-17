@@ -26,7 +26,55 @@
     return %orig;
 }
 
+- (BOOL)getPromisedItemResourceValue:(id  _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
+    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (NSDictionary<NSURLResourceKey, id> *)promisedItemResourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
+    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+        if(error) {
+            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+        }
+
+        return nil;
+    }
+
+    return %orig;
+}
+
 - (NSURL *)fileReferenceURL {
+    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)filePathURL {
+    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)URLByResolvingSymlinksInPath {
+    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (NSURL *)URLByStandardizingPath {
     if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
         return nil;
     }

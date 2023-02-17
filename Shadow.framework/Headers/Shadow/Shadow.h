@@ -3,7 +3,6 @@
 
 #define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
-#define kShadowRestrictionCheckFileExist        @"kShadowRestrictionCheckFileExist"
 #define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
 
 @interface Shadow : NSObject

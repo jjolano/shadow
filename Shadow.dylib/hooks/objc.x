@@ -36,17 +36,13 @@
 
 static const char* (*original_class_getImageName)(Class cls);
 static const char* replaced_class_getImageName(Class cls) {
-    if(isCallerTweak()) {
-        return original_class_getImageName(cls);
-    }
-
     const char* result = original_class_getImageName(cls);
 
-    if(result && [_shadow isCPathRestricted:result]) {
-        return [[Shadow getExecutablePath] fileSystemRepresentation];
+    if(isCallerTweak() || ![_shadow isCPathRestricted:result]) {
+        return result;
     }
 
-    return result;
+    return [[Shadow getExecutablePath] fileSystemRepresentation];
 }
 
 // static Class (*original_objc_lookUpClass)(const char* name);
@@ -90,23 +86,21 @@ static const char* replaced_class_getImageName(Class cls) {
 
 static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
-    if(isCallerTweak()) {
-        return original_objc_copyImageNames(outCount);
-    }
-
     const char * _Nonnull * result = original_objc_copyImageNames(outCount);
 
-    if(result && *outCount) {
-        const char* exec_name = _dyld_get_image_name(0);
-        unsigned int i;
+    if(isCallerTweak() || !result || !outCount) {
+        return result;
+    }
 
-        for(i = 0; i < *outCount; i++) {
-            if(strcmp(result[i], exec_name) == 0) {
-                // Stop after app executable.
-                // todo: improve this to filter instead
-                *outCount = (i + 1);
-                break;
-            }
+    const char* exec_name = _dyld_get_image_name(0);
+    unsigned int i;
+
+    for(i = 0; i < *outCount; i++) {
+        if(strcmp(result[i], exec_name) == 0) {
+            // Stop after app executable.
+            // todo: improve this to filter instead
+            *outCount = (i + 1);
+            break;
         }
     }
 
@@ -124,17 +118,13 @@ static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* 
 
 static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
-    if(isCallerTweak()) {
-        return original_NSClassFromString(aClassName);
-    }
-
     Class result = original_NSClassFromString(aClassName);
 
-    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
-        return nil;
+    if(isCallerTweak() || ![_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return result;
     }
 
-    return result;
+    return nil;
 }
 
 void shadowhook_objc(HKSubstitutor* hooks) {

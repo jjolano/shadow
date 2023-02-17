@@ -6,15 +6,20 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
     BOOL isTweak = isCallerTweak();
+
+    if(isTweak) {
+        return %orig;
+    }
+
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
-    if(!isTweak && [_shadow isPathRestricted:base]) {
+    if([_shadow isPathRestricted:base]) {
         return @[];
     }
 
     NSArray* result = %orig; 
 
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
         
         for(id entry in result) {
@@ -39,31 +44,34 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 
 - (id)nextObject {
     BOOL isTweak = isCallerTweak();
+
+    if(isTweak) {
+        return %orig;
+    }
+
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
-    if(!isTweak && [_shadow isPathRestricted:base]) {
+    if([_shadow isPathRestricted:base]) {
         return nil;
     }
 
     id result = %orig;
 
-    if(!isTweak && result) {
-        // keep looping until we get something unrestricted or nil
-        do {
-            NSString* path = nil;
+    // keep looping until we get something unrestricted or nil
+    while(result) {
+        NSString* path = nil;
 
-            if([result isKindOfClass:[NSURL class]]) {
-                path = [result path];
-            } else if([result isKindOfClass:[NSString class]]) {
-                path = result;
-            }
+        if([result isKindOfClass:[NSURL class]]) {
+            path = [result path];
+        } else if([result isKindOfClass:[NSString class]]) {
+            path = result;
+        }
 
-            if(path && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : base}]) {
-                result = %orig;
-            } else {
-                break;
-            }
-        } while(result);
+        if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : base}]) {
+            result = %orig;
+        } else {
+            break;
+        }
     }
 
     return result;
@@ -138,7 +146,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isURLRestricted:url options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+    if(isTweak) {
+        return %orig;
+    }
+
+    if([_shadow isURLRestricted:url options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -148,7 +160,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     
     NSArray* result = %orig;
     
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSURL* result_url in result) {
@@ -166,7 +178,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+    if(isTweak) {
+        return %orig;
+    }
+
+    if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -176,7 +192,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     
     NSArray* result = %orig;
     
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
@@ -194,7 +210,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
     NSDirectoryEnumerator* result = %orig;
     
-    if(result) {
+    if(!isCallerTweak() && result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtURL", url);
     }
@@ -205,7 +221,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
     NSDirectoryEnumerator* result = %orig;
 
-    if(result) {
+    if(!isCallerTweak() && result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtPath", path);
     }
@@ -216,7 +232,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+    if(isTweak) {
+        return %orig;
+    }
+
+    if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -226,7 +246,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     
     NSArray* result = %orig;
     
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
@@ -244,13 +264,17 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+    if(isTweak) {
+        return %orig;
+    }
+
+    if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         return nil;
     }
     
     NSArray* result = %orig;
     
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {
@@ -421,13 +445,17 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
     BOOL isTweak = isCallerTweak();
 
-    if(!isTweak && [_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
+    if(isTweak) {
+        return %orig;
+    }
+
+    if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [self currentDirectoryPath]}]) {
         return nil;
     }
     
     NSArray* result = %orig;
     
-    if(!isTweak && result) {
+    if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
         for(NSString* result_path in result) {

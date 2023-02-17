@@ -92,6 +92,16 @@ static int replaced_chroot(const char* pathname) {
     return -1;
 }
 
+static int (*original_creat)(const char* pathname, mode_t mode);
+static int replaced_creat(const char* pathname, mode_t mode) {
+    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+        return original_creat(pathname, mode);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
 static int (*original_getfsstat)(struct statfs* buf, int bufsize, int flags);
 static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
     if(isCallerTweak()) {
@@ -785,6 +795,7 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(access, replaced_access, (void **) &original_access);
     MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
     MSHookFunction(chroot, replaced_chroot, (void **) &original_chroot);
+    MSHookFunction(creat, replaced_creat, (void **) &original_creat);
     MSHookFunction(statfs, replaced_statfs, (void **) &original_statfs);
     MSHookFunction(fstatfs, replaced_fstatfs, (void **) &original_fstatfs);
     MSHookFunction(statvfs, replaced_statvfs, (void **) &original_statvfs);
