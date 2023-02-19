@@ -67,19 +67,12 @@
         __block BOOL compliant = YES;
 
         if(path && [path isAbsolutePath]) {
-            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
+            for(NSDictionary* ruleset in rulesets) {
                 if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
                     compliant = NO;
-                    *stop = YES;
+                    break;
                 }
-            }];
-            
-            // for(NSDictionary* ruleset in rulesets) {
-            //     if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
-            //         compliant = NO;
-            //         break;
-            //     }
-            // }
+            }
         }
 
         response = @{
@@ -94,17 +87,28 @@
         if(path && [path isAbsolutePath]) {
             NSLog(@"%@: %@", name, path);
 
+            // for(NSDictionary* ruleset in rulesets) {
+            //     if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
+            //         restricted = NO;
+            //         break;
+            //     } else {
+            //         if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+            //             restricted = YES;
+            //         }
+            //     }
+            // }
+
             __block BOOL blacklisted = NO;
             __block BOOL whitelisted = NO;
 
             [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
-                if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
-                    blacklisted = YES;
-                }
-
                 if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
                     whitelisted = YES;
                     *stop = YES;
+                } else {
+                    if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+                        blacklisted = YES;
+                    }
                 }
             }];
 
@@ -140,23 +144,14 @@
 
         if(scheme) {
             // Check rulesets
-            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
+            for(NSDictionary* ruleset in rulesets) {
                 NSSet* bschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
 
                 if([bschemes containsObject:scheme]) {
                     restricted = YES;
-                    *stop = YES;
+                    break;
                 }
-            }];
-
-            // for(NSDictionary* ruleset in rulesets) {
-            //     NSSet* bschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
-
-            //     if([bschemes containsObject:scheme]) {
-            //         restricted = YES;
-            //         break;
-            //     }
-            // }
+            }
         }
 
         response = @{
