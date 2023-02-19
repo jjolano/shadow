@@ -21,27 +21,26 @@
     NSMutableDictionary* ruleset_processed = [ruleset mutableCopy];
 
     NSArray* wpred = [ruleset objectForKey:@"WhitelistPredicates"];
-    NSArray* bpred = [ruleset objectForKey:@"BlacklistPredicates"];
 
-    if(wpred && [wpred count]) {
+    if([wpred count]) {
         NSMutableArray* wpred_new = [NSMutableArray new];
 
         for(NSString* pred_str in wpred) {
-            NSPredicate* pred = [NSPredicate predicateWithFormat:pred_str];
-            [wpred_new addObject:pred];
+            [wpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
         }
 
         NSPredicate* wpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:wpred_new];
         [ruleset_processed setObject:wpred_compound forKey:@"WhitelistPredicates"];
     }
 
-    if(bpred && [bpred count]) {
+    NSArray* bpred = [ruleset objectForKey:@"BlacklistPredicates"];
+
+    if([bpred count]) {
         NSMutableArray* bpred_new = [NSMutableArray new];
 
         for(NSString* pred_str in bpred) {
-            NSPredicate* pred = [NSPredicate predicateWithFormat:pred_str];
-            [bpred_new addObject:pred];
-        }
+            [bpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
+        };
 
         NSPredicate* bpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:bpred_new];
         [ruleset_processed setObject:bpred_compound forKey:@"BlacklistPredicates"];
@@ -65,15 +64,22 @@
     } else if([name isEqualToString:@"isPathCompliant"]) {
         NSString* path = [userInfo objectForKey:@"path"];
 
-        BOOL compliant = YES;
+        __block BOOL compliant = YES;
 
         if(path && [path isAbsolutePath]) {
-            for(NSDictionary* ruleset in rulesets) {
+            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
                 if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
                     compliant = NO;
-                    break;
+                    *stop = YES;
                 }
-            }
+            }];
+            
+            // for(NSDictionary* ruleset in rulesets) {
+            //     if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
+            //         compliant = NO;
+            //         break;
+            //     }
+            // }
         }
 
         response = @{
@@ -88,24 +94,40 @@
         if(path && [path isAbsolutePath]) {
             NSLog(@"%@: %@", name, path);
 
-            // Check rulesets
-            if(!restricted) {
-                for(NSDictionary* ruleset in rulesets) {
-                    if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
-                        restricted = YES;
-                        break;
-                    }
-                }
-            }
+            __block BOOL blacklisted = NO;
+            __block BOOL whitelisted = NO;
 
-            if(restricted) {
-                for(NSDictionary* ruleset in rulesets) {
-                    if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
-                        restricted = NO;
-                        break;
-                    }
+            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
+                if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+                    blacklisted = YES;
                 }
-            }
+
+                if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
+                    whitelisted = YES;
+                    *stop = YES;
+                }
+            }];
+
+            restricted = (blacklisted && !whitelisted);
+
+            // Check rulesets
+            // if(!restricted) {
+            //     for(NSDictionary* ruleset in rulesets) {
+            //         if([[self class] isPathBlacklisted:path withRuleset:ruleset]) {
+            //             restricted = YES;
+            //             break;
+            //         }
+            //     }
+            // }
+
+            // if(restricted) {
+            //     for(NSDictionary* ruleset in rulesets) {
+            //         if([[self class] isPathWhitelisted:path withRuleset:ruleset]) {
+            //             restricted = NO;
+            //             break;
+            //         }
+            //     }
+            // }
         }
 
         response = @{
@@ -114,18 +136,27 @@
     } else if([name isEqualToString:@"isURLSchemeRestricted"]) {
         NSString* scheme = [userInfo objectForKey:@"scheme"];
 
-        BOOL restricted = NO;
+        __block BOOL restricted = NO;
 
         if(scheme) {
             // Check rulesets
-            for(NSDictionary* ruleset in rulesets) {
+            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
                 NSSet* bschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
 
                 if([bschemes containsObject:scheme]) {
                     restricted = YES;
-                    break;
+                    *stop = YES;
                 }
-            }
+            }];
+
+            // for(NSDictionary* ruleset in rulesets) {
+            //     NSSet* bschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
+
+            //     if([bschemes containsObject:scheme]) {
+            //         restricted = YES;
+            //         break;
+            //     }
+            // }
         }
 
         response = @{

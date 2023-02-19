@@ -13,7 +13,7 @@
         // no need to check further
         return YES;
     }
-    
+
     NSString* path_tmp = path;
     NSArray* ruleset_fss_base = nil;
 

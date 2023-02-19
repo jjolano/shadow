@@ -127,9 +127,7 @@ ShadowService* _srv = nil;
 
     // Automatically use rootless optimizations.
     NSString* tweak_path = [Shadow getTweakPath];
-    BOOL rootless = ([tweak_path hasPrefix:@"/private"] || [tweak_path hasPrefix:@"/var"] || access("/var/jb/xina", F_OK) == 0);
-
-    errno = 0;
+    BOOL rootless = !([tweak_path hasPrefix:@"/Library"] || [tweak_path hasPrefix:@"/usr/lib"]);
 
     if(rootless) {
         [_shadow setRootlessMode:rootless];
