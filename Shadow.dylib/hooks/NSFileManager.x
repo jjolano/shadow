@@ -248,7 +248,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     
     if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
-
+        
         for(NSString* result_path in result) {
             if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];

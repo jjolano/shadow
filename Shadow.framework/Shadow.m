@@ -103,9 +103,11 @@
         }
         
         // Skip checks if file doesn't exist
+        int errno_old = errno;
+
         if([path hasPrefix:@"/usr/lib"] && access([path fileSystemRepresentation], F_OK) != 0) {
             // reset errno
-            errno = 0;
+            errno = errno_old;
 
             return NO;
         }
