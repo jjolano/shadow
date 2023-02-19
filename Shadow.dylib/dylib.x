@@ -194,6 +194,12 @@ ShadowService* _srv = nil;
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
         NSLog(@"%@", @"+ envvars");
 
+        unsetenv("DYLD_INSERT_LIBRARIES");
+        unsetenv("_MSSafeMode");
+        unsetenv("_SafeMode");
+        unsetenv("_SubstituteSafeMode");
+        setenv("SHELL", "/bin/sh", 1);
+
         shadowhook_libc_envvar(substitutor);
         shadowhook_NSProcessInfo(substitutor);
     }
