@@ -158,6 +158,7 @@ static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t f
         struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
         struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
         dyld_info->infoArrayCount = 1;
+        dyld_info->uuidArrayCount = 1;
 
         // todo: improve this
     }
