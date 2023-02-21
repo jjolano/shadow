@@ -17,34 +17,67 @@
 }
 
 - (void)addRuleset:(NSDictionary *)ruleset {
+    NSOperationQueue* queue = [NSOperationQueue new];
+    [queue setQualityOfService:NSOperationQualityOfServiceUserInteractive];
+
     // Preprocess ruleset
     NSMutableDictionary* ruleset_processed = [ruleset mutableCopy];
 
-    NSArray* wpred = [ruleset objectForKey:@"WhitelistPredicates"];
+    [queue addOperationWithBlock:^{
+        NSArray* burlschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
 
-    if([wpred count]) {
-        NSMutableArray* wpred_new = [NSMutableArray new];
-
-        for(NSString* pred_str in wpred) {
-            [wpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
+        if([burlschemes count]) {
+            [ruleset_processed setObject:[NSSet setWithArray:burlschemes] forKey:@"BlacklistURLSchemes"];
         }
+    }];
 
-        NSPredicate* wpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:wpred_new];
-        [ruleset_processed setObject:wpred_compound forKey:@"WhitelistPredicates"];
-    }
+    [queue addOperationWithBlock:^{
+        NSArray* wexact = [ruleset objectForKey:@"WhitelistExactPaths"];
 
-    NSArray* bpred = [ruleset objectForKey:@"BlacklistPredicates"];
+        if([wexact count]) {
+            [ruleset_processed setObject:[NSSet setWithArray:wexact] forKey:@"WhitelistExactPaths"];
+        }
+    }];
 
-    if([bpred count]) {
-        NSMutableArray* bpred_new = [NSMutableArray new];
+    [queue addOperationWithBlock:^{
+        NSArray* bexact = [ruleset objectForKey:@"BlacklistExactPaths"];
 
-        for(NSString* pred_str in bpred) {
-            [bpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
-        };
+        if([bexact count]) {
+            [ruleset_processed setObject:[NSSet setWithArray:bexact] forKey:@"BlacklistExactPaths"];
+        }
+    }];
 
-        NSPredicate* bpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:bpred_new];
-        [ruleset_processed setObject:bpred_compound forKey:@"BlacklistPredicates"];
-    }
+    [queue addOperationWithBlock:^{
+        NSArray* wpred = [ruleset objectForKey:@"WhitelistPredicates"];
+
+        if([wpred count]) {
+            NSMutableArray* wpred_new = [NSMutableArray new];
+
+            for(NSString* pred_str in wpred) {
+                [wpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
+            }
+
+            NSPredicate* wpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:wpred_new];
+            [ruleset_processed setObject:wpred_compound forKey:@"WhitelistPredicates"];
+        }
+    }];
+
+    [queue addOperationWithBlock:^{
+        NSArray* bpred = [ruleset objectForKey:@"BlacklistPredicates"];
+
+        if([bpred count]) {
+            NSMutableArray* bpred_new = [NSMutableArray new];
+
+            for(NSString* pred_str in bpred) {
+                [bpred_new addObject:[NSPredicate predicateWithFormat:pred_str]];
+            };
+
+            NSPredicate* bpred_compound = [NSCompoundPredicate orPredicateWithSubpredicates:bpred_new];
+            [ruleset_processed setObject:bpred_compound forKey:@"BlacklistPredicates"];
+        }
+    }];
+
+    [queue waitUntilAllOperationsAreFinished];
 
     // Add processed ruleset to our class
     rulesets = [rulesets arrayByAddingObject:[ruleset_processed copy]];
@@ -67,12 +100,12 @@
         __block BOOL compliant = YES;
 
         if(path && [path isAbsolutePath]) {
-            for(NSDictionary* ruleset in rulesets) {
+            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
                 if(![[self class] isPathCompliant:path withRuleset:ruleset]) {
                     compliant = NO;
-                    break;
+                    *stop = YES;
                 }
-            }
+            }];
         }
 
         response = @{
@@ -144,14 +177,14 @@
 
         if(scheme) {
             // Check rulesets
-            for(NSDictionary* ruleset in rulesets) {
+            [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSDictionary* ruleset, NSUInteger idx, BOOL* stop) {
                 NSSet* bschemes = [ruleset objectForKey:@"BlacklistURLSchemes"];
 
                 if([bschemes containsObject:scheme]) {
                     restricted = YES;
-                    break;
+                    *stop = YES;
                 }
-            }
+            }];
         }
 
         response = @{
@@ -185,6 +218,24 @@
 - (void)loadRulesets {
     // load rulesets
     NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:ROOT_PATH_NS(@SHADOW_RULESETS) isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
+
+    // [ruleset_urls enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSURL* url, NSUInteger idx, BOOL* stop) {
+    //     NSDictionary* ruleset = [NSDictionary dictionaryWithContentsOfURL:url];
+
+    //     if(ruleset) {
+    //         [self addRuleset:ruleset];
+
+    //         NSDictionary* info = [ruleset objectForKey:@"RulesetInfo"];
+
+    //         if(info) {
+    //             NSLog(@"loaded ruleset '%@' by %@", [info objectForKey:@"Name"], [info objectForKey:@"Author"]);
+    //         } else {
+    //             NSLog(@"loaded ruleset %@", [[url path] lastPathComponent]);
+    //         }
+    //     } else {
+    //         NSLog(@"failed to load ruleset at url %@", url);
+    //     }
+    // }];
 
     if(ruleset_urls) {
         for(NSURL* url in ruleset_urls) {

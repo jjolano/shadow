@@ -13,6 +13,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
+    if(!base) {
+        NSLog(@"NSDirectoryEnumerator base not found");
+        base = @"";
+    }
+
     if([_shadow isPathRestricted:base]) {
         return @[];
     }
@@ -50,6 +55,11 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     }
 
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
+
+    if(!base) {
+        NSLog(@"NSDirectoryEnumerator base not found");
+        base = @"";
+    }
 
     if([_shadow isPathRestricted:base]) {
         return nil;
@@ -210,7 +220,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
     NSDirectoryEnumerator* result = %orig;
     
-    if(!isCallerTweak() && result) {
+    if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtURL", url);
     }
@@ -221,7 +231,7 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
     NSDirectoryEnumerator* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSLog(@"%@: %@", @"enumeratorAtPath", path);
     }
@@ -248,12 +258,18 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     
     if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
-        
-        for(NSString* result_path in result) {
+
+        [result enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSString* result_path, NSUInteger idx, BOOL* stop) {
             if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
-        }
+        }];
+        
+        // for(NSString* result_path in result) {
+        //     if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
+        //         [result_filtered removeObject:result_path];
+        //     }
+        // }
 
         result = [result_filtered copy];
     }
@@ -277,11 +293,17 @@ static char* _NSDirectoryEnumerator_shdw_key = "shdw";
     if(result) {
         NSMutableArray* result_filtered = [result mutableCopy];
 
-        for(NSString* result_path in result) {
+        [result enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSString* result_path, NSUInteger idx, BOOL* stop) {
             if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
                 [result_filtered removeObject:result_path];
             }
-        }
+        }];
+
+        // for(NSString* result_path in result) {
+        //     if([_shadow isPathRestricted:result_path options:@{kShadowRestrictionWorkingDir : path}]) {
+        //         [result_filtered removeObject:result_path];
+        //     }
+        // }
 
         result = [result_filtered copy];
     }
