@@ -1,0 +1,11 @@
+---
+archs:           [ arm64, arm64e, arm64_32 ]
+platform:        ios
+install-name:    '@rpath/libhooker.dylib'
+current-version: 0.0.0
+compatibility-version: 0.0.0
+exports:
+  - archs:            [ arm64, arm64e, arm64_32 ]
+    symbols:          [ _LHStrError, _LHOpenImage, _LHCloseImage, _LHFindSymbols,
+                        _LHExecMemory, _LHPatchMemory, _LHHookFunctions ]
+...

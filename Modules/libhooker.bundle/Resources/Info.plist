@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleName</key>
+		<string>HookKitLH</string>
+		<key>CFBundleExecutable</key>
+		<string>HookKitLH</string>
+		<key>CFBundleIdentifier</key>
+		<string>me.jjolano.hkmodule.libhooker</string>
+		<key>CFBundleDevelopmentRegion</key>
+		<string>English</string>
+		<key>CFBundleInfoDictionaryVersion</key>
+		<string>6.0</string>
+		<key>CFBundlePackageType</key>
+		<string>BNDL</string>
+		<key>CFBundleShortVersionString</key>
+		<string>1.0</string>
+		<key>CFBundleVersion</key>
+		<string>1</string>
+		<key>ModuleInfo</key>
+		<dict>
+			<key>Author</key>
+			<string>jjolano</string>
+			<key>Version</key>
+			<string>1.0</string>
+			<key>Description</key>
+			<string>libhooker</string>
+			<key>Priority</key>
+			<integer>1</integer>
+			<key>Identifier</key>
+			<string>libhooker</string>
+		</dict>
+	</dict>
+</plist>

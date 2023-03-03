@@ -5,12 +5,12 @@ include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = HookKit
 
-HookKit_FILES = HookKit.m vendor/fishhook/fishhook.c
+HookKit_FILES = Core.m Module.m Module+Internal.m Hook.m Compat.m
 HookKit_FRAMEWORKS = Foundation
-HookKit_LIBRARIES = dobby
+HookKit_EXTRA_FRAMEWORKS = Modulous
 HookKit_INSTALL_PATH = /Library/Frameworks
-HookKit_CFLAGS = -fobjc-arc -IHeaders
+HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor/Modulous.framework/Headers
 HookKit_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
-HookKit_LDFLAGS += -Lvendor/dobby
+HookKit_LDFLAGS += -Fvendor
 
 include $(THEOS_MAKE_PATH)/framework.mk

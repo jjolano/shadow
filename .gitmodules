@@ -1,3 +1,6 @@
-[submodule "vendor/fishhook"]
-	path = vendor/fishhook
+[submodule "Modules/fishhook.bundle/vendor/fishhook"]
+	path = Modules/fishhook.bundle/vendor/fishhook
 	url = https://github.com/facebook/fishhook.git
+[submodule "vendor/Modulous.framework"]
+	path = vendor/Modulous.framework
+	url = https://github.com/jjolano/Modulous.git

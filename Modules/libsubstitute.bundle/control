@@ -1,0 +1,9 @@
+Package: me.jjolano.hkmodule.substitute
+Name: HookKit Module (Substitute)
+Depends: me.jjolano.fmwk.hookkit, com.ex.substitute
+Version: 1.0
+Architecture: iphoneos-arm
+Description: This module provides the Substitute API for HookKit Framework.
+Maintainer: jjolano
+Author: jjolano
+Section: HookKit (Modules)
