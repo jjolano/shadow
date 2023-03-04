@@ -1,8 +1,8 @@
 Package: me.jjolano.fmwk.hookkit
 Name: HookKit Framework
 Depends: firmware (>= 5.0.0), me.jjolano.fmwk.modulous (>= 1.0.0), me.jjolano.fmwk.modulous (<< 2.0.0)
-Recommends: me.jjolano.hkmodule.ellekit | me.jjolano.hkmodule.substitute | me.jjolano.hkmodule.libhooker, me.jjolano.hkmodule.substrate
-Version: 1.0.4
+Recommends: me.jjolano.hkmodule.substrate
+Version: 1.0.5
 Architecture: iphoneos-arm64
 Description: An iOS developer framework for unified hooking methods.
 Maintainer: jjolano

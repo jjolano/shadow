@@ -1,6 +1,8 @@
 #import <HookKit/Core.h>
 #import <Modulous/Loader.h>
 
+#import "vendor/rootless.h"
+
 @implementation HookKitCore {
     ModulousLoader* loader;
     NSMutableDictionary<NSString *, __kindof HookKitModule *>* registeredModules;
@@ -135,7 +137,7 @@
 
 - (instancetype)init {
     if((self = [super init])) {
-        loader = [ModulousLoader loaderWithPath:@"/Library/Modulous/HookKit"];
+        loader = [ModulousLoader loaderWithPath:ROOT_PATH_NS(@"/Library/Modulous/HookKit")];
         registeredModules = [NSMutableDictionary new];
     }
 
