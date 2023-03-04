@@ -345,7 +345,7 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
         }
     }
 
-    MSCloseImage(libdyldImage);
+    // MSCloseImage(libdyldImage);
 }
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
