@@ -3,9 +3,9 @@
 <plist version="1.0">
 	<dict>
 		<key>CFBundleName</key>
-		<string>HookKitSubstrate</string>
+		<string>HookKitSubstrateModule</string>
 		<key>CFBundleExecutable</key>
-		<string>HookKitSubstrate</string>
+		<string>HookKitSubstrateModule</string>
 		<key>CFBundleIdentifier</key>
 		<string>me.jjolano.hkmodule.substrate</string>
 		<key>CFBundleDevelopmentRegion</key>

@@ -30,7 +30,7 @@
 }
 
 - (void)_closeImage:(void *)image {
-    MSCloseImage((MSImageRef)image);
+    // MSCloseImage((MSImageRef)image);
 }
 
 - (void *)_findSymbol:(const char *)symbol image:(void *)image {

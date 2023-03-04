@@ -3,9 +3,9 @@
 <plist version="1.0">
 	<dict>
 		<key>CFBundleName</key>
-		<string>HookKitDobby</string>
+		<string>HookKitDobbyModule</string>
 		<key>CFBundleExecutable</key>
-		<string>HookKitDobby</string>
+		<string>HookKitDobbyModule</string>
 		<key>CFBundleIdentifier</key>
 		<string>me.jjolano.hkmodule.dobby</string>
 		<key>CFBundleDevelopmentRegion</key>

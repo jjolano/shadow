@@ -1,0 +1,9 @@
+Package: me.jjolano.hkmodule.ellekit
+Name: HookKit Module (ElleKit)
+Depends: me.jjolano.fmwk.hookkit, ellekit
+Version: 1.0
+Architecture: iphoneos-arm
+Description: This module provides the ElleKit API for HookKit Framework.
+Maintainer: jjolano
+Author: jjolano
+Section: HookKit (Modules)

@@ -3,11 +3,11 @@
 <plist version="1.0">
 	<dict>
 		<key>CFBundleName</key>
-		<string>HookKitLHModule</string>
+		<string>HookKitElleKitModule</string>
 		<key>CFBundleExecutable</key>
-		<string>HookKitLHModule</string>
+		<string>HookKitElleKitModule</string>
 		<key>CFBundleIdentifier</key>
-		<string>me.jjolano.hkmodule.libhooker</string>
+		<string>me.jjolano.hkmodule.ellekit</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>English</string>
 		<key>CFBundleInfoDictionaryVersion</key>
@@ -25,11 +25,11 @@
 			<key>Version</key>
 			<string>1.0</string>
 			<key>Description</key>
-			<string>libhooker</string>
+			<string>ElleKit</string>
 			<key>Priority</key>
 			<integer>1</integer>
 			<key>Identifier</key>
-			<string>libhooker</string>
+			<string>ellekit</string>
 		</dict>
 	</dict>
 </plist>

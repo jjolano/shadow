@@ -1,0 +1,12 @@
+---
+archs:           [ arm64, arm64e ]
+platform:        ios
+install-name:    '@rpath/libellekit.dylib'
+current-version: 0.0.0
+compatibility-version: 0.0.0
+exports:
+  - archs:            [ arm64, arm64e ]
+    symbols:          [ _LHStrError, _LHOpenImage, _LHCloseImage, _LHFindSymbols,
+                        _LHExecMemory, _LHPatchMemory, _LHHookFunctions,
+                        _LBHookMessage ]
+...

@@ -131,6 +131,7 @@
             [self _closeImage:_image];
 
             if(symbol) {
+                NSLog(@"[HookKit] found symbol %@ in image %s", name, image_name);
                 return symbol;
             }
         }
