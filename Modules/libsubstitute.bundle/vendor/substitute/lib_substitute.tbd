@@ -1,12 +1,19 @@
 ---
-archs:           [ armv7, armv7s, arm64, arm64e ]
-platform:        ios
-install-name:    '@rpath/libsubstitute.dylib'
-current-version: 0.0.0
-compatibility-version: 0.0.0
+archs:                 [ arm64, arm64e ]
+platform:              ios
+install-name:          /usr/lib/libsubstitute.0.dylib
+current-version:       0
+compatibility-version: 0
 exports:
-  - archs:            [ armv7, armv7s, arm64, arm64e ]
-    symbols:          [ _substitute_hook_functions, _substitute_open_image, 
-                        _substitute_close_image, _substitute_find_private_syms,
-                        _substitute_hook_objc_message, _SubHookMemory ]
+  - archs:                [ arm64, arm64e ]
+    symbols:              [ _SubFindSymbol, _SubGetImageByName,
+                            _SubHookFunction, _SubHookMemory,
+                            _SubHookMessageEx,
+                            _substitute_close_image, _substitute_dlopen_in_pid,
+                            _substitute_find_private_syms,
+                            _substitute_free_created_imp,
+                            _substitute_hook_functions,
+                            _substitute_hook_objc_message,
+                            _substitute_interpose_imports,
+                            _substitute_open_image, _substitute_strerror ]
 ...

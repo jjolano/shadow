@@ -9,17 +9,17 @@
 
 - (BOOL)executeHook:(__kindof HookKitHook *)hook {
     if([hook isKindOfClass:[HookKitClassHook class]]) {
-        HookKitClassHook* classHook = (HookKitClassHook *)hook;
+        HookKitClassHook* classHook = hook;
         return [self _hookClass:[classHook objcClass] selector:[classHook selector] replacement:[classHook replacement] orig:[classHook orig]];
     }
 
     if([hook isKindOfClass:[HookKitFunctionHook class]]) {
-        HookKitFunctionHook* functionHook = (HookKitFunctionHook *)hook;
+        HookKitFunctionHook* functionHook = hook;
         return [self _hookFunction:[functionHook function] replacement:[functionHook replacement] orig:[functionHook orig]];
     }
 
     if([hook isKindOfClass:[HookKitMemoryHook class]]) {
-        HookKitMemoryHook* memoryHook = (HookKitMemoryHook *)hook;
+        HookKitMemoryHook* memoryHook = hook;
         return [self _hookRegion:[memoryHook target] data:[memoryHook data] size:[memoryHook size]];
     }
 
@@ -27,10 +27,20 @@
 }
 
 - (int)executeHooks:(NSArray<__kindof HookKitHook *> *)hooks {
+    int total = [hooks count];
     int result = 0;
 
-    NSMutableArray<HookKitFunctionHook *>* functionHooks = [NSMutableArray new];
-    NSMutableArray<HookKitMemoryHook *>* memoryHooks = [NSMutableArray new];
+    NSMutableArray<HookKitFunctionHook *>* functionHooks = nil;
+
+    if([self functionHookBatchingSupported]) {
+        functionHooks = [NSMutableArray new];
+    }
+
+    NSMutableArray<HookKitMemoryHook *>* memoryHooks = nil;
+
+    if([self memoryHookBatchingSupported]) {
+        memoryHooks = [NSMutableArray new];
+    }
 
     for(__kindof HookKitHook* hook in hooks) {
         if([hook isKindOfClass:[HookKitClassHook class]]) {
@@ -42,8 +52,8 @@
         }
 
         if([hook isKindOfClass:[HookKitFunctionHook class]]) {
-            if([self functionHookBatchingSupported]) {
-                [functionHooks addObject:(HookKitFunctionHook *)hook];
+            if(functionHooks) {
+                [functionHooks addObject:hook];
             } else {
                 if([self executeHook:hook]) {
                     result += 1;
@@ -54,8 +64,8 @@
         }
 
         if([hook isKindOfClass:[HookKitMemoryHook class]]) {
-            if([self memoryHookBatchingSupported]) {
-                [memoryHooks addObject:(HookKitMemoryHook *)hook];
+            if(memoryHooks) {
+                [memoryHooks addObject:hook];
             } else {
                 if([self executeHook:hook]) {
                     result += 1;
@@ -66,7 +76,7 @@
         }
     }
 
-    int function_batch_result = [self _hookFunctions:functionHooks];
+    int function_batch_result = functionHooks ? [self _hookFunctions:functionHooks] : -1;
 
     if(function_batch_result == -1) {
         // batching not supported, do one at a time
@@ -79,7 +89,7 @@
         result += function_batch_result;
     }
 
-    int memory_batch_result = [self _hookRegions:memoryHooks];
+    int memory_batch_result = memoryHooks ? [self _hookRegions:memoryHooks] : -1;
 
     if(memory_batch_result == -1) {
         // batching not supported, do one at a time
@@ -91,15 +101,27 @@
     } else {
         result += memory_batch_result;
     }
+
+    if(result < total) {
+        NSLog(@"[HookKit] warning: successfully hooked less than expected (%d/%lu)", result, (unsigned long)total);
+    }
     
     return result;
 }
 
 - (hookkit_image_t)openImageWithURL:(NSURL *)url {
+    if(!url) {
+        return NULL;
+    }
+
     return (hookkit_image_t)[self _openImage:[[url path] fileSystemRepresentation]];
 }
 
 - (hookkit_image_t)openImageWithPath:(NSString *)path {
+    if(!path) {
+        return NULL;
+    }
+
     NSURL* file_url = [NSURL fileURLWithPath:path isDirectory:NO];
     return [self openImageWithURL:file_url];
 }
@@ -111,10 +133,18 @@
 }
 
 - (void *)findSymbolName:(NSString *)name {
+    if(!name) {
+        return NULL;
+    }
+    
     return [self findSymbolName:name inImage:NULL];
 }
 
 - (void *)findSymbolName:(NSString *)name inImage:(hookkit_image_t)image {
+    if(!name) {
+        return NULL;
+    }
+    
     if([self nullImageSearchSupported] || image) {
         return [self _findSymbol:[name UTF8String] image:(void *)image];
     }

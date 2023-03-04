@@ -95,7 +95,10 @@
     HookKitClassHook* hook = [HookKitClassHook hook:objcClass selector:selector replacement:replacement orig:old_ptr];
 
     if(batching) {
-        [batchHooks addObject:hook];
+        @synchronized(batchHooks) {
+            [batchHooks addObject:hook];
+        }
+
         return HK_OK;
     }
 
@@ -106,7 +109,10 @@
     HookKitFunctionHook* hook = [HookKitFunctionHook hook:function replacement:replacement orig:old_ptr];
 
     if(batching) {
-        [batchHooks addObject:hook];
+        @synchronized(batchHooks) {
+            [batchHooks addObject:hook];
+        }
+
         return HK_OK;
     }
 
@@ -117,7 +123,10 @@
     HookKitMemoryHook* hook = [HookKitMemoryHook hook:target data:data size:size];
 
     if(batching) {
-        [batchHooks addObject:hook];
+        @synchronized(batchHooks) {
+            [batchHooks addObject:hook];
+        }
+
         return HK_OK;
     }
 
@@ -148,15 +157,13 @@
 }
 
 - (hookkit_status_t)executeHooks {
-    NSArray<__kindof HookKitHook *>* hooks = [batchHooks copy];
+    int result = 0;
 
-    int result = [module executeHooks:hooks];
-
-    if(result < [hooks count]) {
-        NSLog(@"[HookKit] warning: successfully hooked less than expected (%d/%lu)", result, (unsigned long)[hooks count]);
+    @synchronized(batchHooks) {
+        result = [module executeHooks:batchHooks];
+        [batchHooks removeAllObjects];
     }
 
-    batchHooks = [NSMutableArray new];
     return result ? HK_OK : HK_ERR;
 }
 

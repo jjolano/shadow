@@ -30,6 +30,7 @@
 }
 
 - (void)_closeImage:(void *)image {
+    // for some reason this symbol doesn't actually exist
     // MSCloseImage((MSImageRef)image);
 }
 

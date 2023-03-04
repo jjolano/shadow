@@ -3,8 +3,7 @@
 
 @implementation HookKitCore {
     ModulousLoader* loader;
-    __kindof HookKitModule* _default;
-    NSDictionary<NSString *, __kindof HookKitModule *>* registeredModules;
+    NSMutableDictionary<NSString *, __kindof HookKitModule *>* registeredModules;
 }
 
 + (instancetype)sharedInstance {
@@ -19,13 +18,27 @@
 }
 
 - (__kindof HookKitModule *)defaultModule {
-    if(!_default) {
-        // load the highest priority module
-        NSNumber* module_priority = nil;
-        NSString* module_identifier = nil;
-        NSString* module_load_identifier = nil;
+    static __kindof HookKitModule* defaultModule = nil;
+    static dispatch_once_t onceToken = 0;
 
-        NSArray<NSDictionary *>* modulous_infos = [loader getModuleInfo];
+    dispatch_once(&onceToken, ^{
+        // load the highest priority module
+        NSArray<NSDictionary *>* modulous_infos = [[loader getModuleInfo] sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* a, NSDictionary* b) {
+            NSDictionary* info_a = [a objectForKey:@"ModuleInfo"];
+            NSDictionary* info_b = [b objectForKey:@"ModuleInfo"];
+            NSNumber* prio_a = [info_a objectForKey:@"Priority"];
+            NSNumber* prio_b = [info_b objectForKey:@"Priority"];
+
+            if(!prio_a) {
+                prio_a = @(100);
+            }
+
+            if(!prio_b) {
+                prio_b = @(100);
+            }
+
+            return [prio_a compare:prio_b];
+        }];
 
         if(modulous_infos) {
             for(NSDictionary* modulous_info in modulous_infos) {
@@ -33,28 +46,20 @@
                 NSDictionary* info = [modulous_info objectForKey:@"ModuleInfo"];
 
                 if(info) {
-                    NSNumber* priority = [info objectForKey:@"Priority"];
+                    NSString* module_identifier = [info objectForKey:@"Identifier"];
+                    
+                    [loader loadModulesWithIdentifiers:@[modulous_identifier]];
+                    defaultModule = [self getModuleWithIdentifier:module_identifier];
+                }
 
-                    if(!priority) {
-                        priority = @(0);
-                    }
-
-                    if(!module_priority || [module_priority compare:priority] == NSOrderedDescending) {
-                        module_priority = priority;
-                        module_identifier = [info objectForKey:@"Identifier"];
-                        module_load_identifier = modulous_identifier;
-                    }
+                if(defaultModule) {
+                    break;
                 }
             }
         }
+    });
 
-        if(module_load_identifier) {
-            [loader loadModulesWithIdentifiers:@[module_load_identifier]];
-            _default = [self getModuleWithIdentifier:module_identifier];
-        }
-    }
-
-    return _default;
+    return defaultModule;
 }
 
 - (NSArray<NSDictionary *> *)getModuleInfo {
@@ -91,7 +96,11 @@
 }
 
 - (__kindof HookKitModule *)getModuleWithIdentifier:(NSString *)identifier {
-    __kindof HookKitModule* result = [registeredModules objectForKey:identifier];
+    __kindof HookKitModule* result = nil;
+
+    @synchronized(registeredModules) {
+        result = [registeredModules objectForKey:identifier];
+    }
 
     if(!result) {
         NSArray<NSDictionary *>* modulous_infos = [loader getModuleInfo];
@@ -108,7 +117,9 @@
             }
         }
 
-        result = [registeredModules objectForKey:identifier];
+        @synchronized(registeredModules) {
+            result = [registeredModules objectForKey:identifier];
+        }
     }
 
     return result;
@@ -116,17 +127,16 @@
 
 - (void)registerModule:(__kindof HookKitModule *)module withIdentifier:(NSString *)identifier {
     if(module && identifier) {
-        NSMutableDictionary* modules = [registeredModules mutableCopy];
-        [modules setObject:module forKey:identifier];
-        registeredModules = [modules copy];
+        @synchronized(registeredModules) {
+            [registeredModules setObject:module forKey:identifier];
+        }
     }
 }
 
 - (instancetype)init {
     if((self = [super init])) {
         loader = [ModulousLoader loaderWithPath:@"/Library/Modulous/HookKit"];
-        registeredModules = @{};
-        _default = nil;
+        registeredModules = [NSMutableDictionary new];
     }
 
     return self;
