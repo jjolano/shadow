@@ -1,8 +1,8 @@
 Package: me.jjolano.shadow
 Name: Shadow
-Depends: firmware (>= 8.0), mobilesubstrate, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 0.1.5), me.jjolano.fmwk.hookkit (<< 2.0.0), me.jjolano.hkmodule.substrate | me.jjolano.fmwk.hookkit (<< 1.0.0)
+Depends: firmware (>= 8.0), mobilesubstrate, dpkg, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 0.1.5), me.jjolano.fmwk.hookkit (<< 2.0.0), me.jjolano.hkmodule.fishhook | me.jjolano.fmwk.hookkit (<< 1.0.0)
 Suggests: com.ps.injectionfoundation
-Recommends: preferenceloader, me.jjolano.hkmodule.fishhook | me.jjolano.fmwk.hookkit (<< 1.0.0)
+Recommends: preferenceloader
 Provides: me.jjolano.shadow.beta
 Replaces: me.jjolano.shadow.beta
 Conflicts: me.jjolano.shadow.beta
