@@ -1,7 +1,7 @@
 Package: me.jjolano.hkmodule.dobby
 Name: HookKit Module (Dobby)
-Depends: me.jjolano.fmwk.hookkit
-Version: 1.0
+Depends: me.jjolano.fmwk.hookkit (>= 1.0.0), me.jjolano.fmwk.hookkit (<< 2.0.0)
+Version: 1.0.1
 Architecture: iphoneos-arm
 Description: This module provides Dobby library support for HookKit Framework.
 Maintainer: jjolano

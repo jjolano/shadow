@@ -1,7 +1,7 @@
 Package: me.jjolano.hkmodule.libhooker
 Name: HookKit Module (libhooker)
-Depends: me.jjolano.fmwk.hookkit, org.coolstar.libhooker
-Version: 1.0
+Depends: me.jjolano.fmwk.hookkit (>= 1.0.0), me.jjolano.fmwk.hookkit (<< 2.0.0), org.coolstar.libhooker
+Version: 1.0.1
 Architecture: iphoneos-arm
 Description: This module provides the libhooker API for HookKit Framework.
 Maintainer: jjolano
