@@ -29,7 +29,7 @@
     int result = LHHookFunctions([hooks mutableBytes], [functions count]);
 
     if(result < [functions count]) {
-        NSLog(@"[HKLH] warning: batch LHHookFunctions retval less than expected (%d/%lu)", result, [functions count]);
+        NSLog(@"[HKElleKit] warning: batch LHHookFunctions retval less than expected (%d/%lu)", result, [functions count]);
     }
 
     return result;
@@ -57,7 +57,7 @@
     int result = LHPatchMemory([hooks mutableBytes], [regions count]);
 
     if(result < [regions count]) {
-        NSLog(@"[HKLH] warning: batch LHPatchMemory retval less than expected (%d/%lu)", result, [regions count]);
+        NSLog(@"[HKElleKit] warning: batch LHPatchMemory retval less than expected (%d/%lu)", result, [regions count]);
     }
 
     return result;
