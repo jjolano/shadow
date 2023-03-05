@@ -11,7 +11,7 @@ typedef const struct HKImage* hookkit_image_t;
 @property (nonatomic) BOOL memoryHookBatchingSupported;
 @property (nonatomic) BOOL nullImageSearchSupported;
 
-- (BOOL)executeHook:(id)hook;
+- (BOOL)executeHook:(__kindof HookKitHook *)hook;
 - (int)executeHooks:(NSArray<__kindof HookKitHook *> *)hooks;
 
 - (hookkit_image_t)openImageWithURL:(NSURL *)url;
