@@ -44,12 +44,12 @@
 		<string>/cores/</string>
 		<string>/Library/Caches/cy-</string>
 		<string>/dev/dlci.</string>
-		<string>/private/preboot/jb</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
 		<string>SELF LIKE '/private/preboot/*/procursus*'</string>
 		<string>SELF LIKE '/private/preboot/*/jb*'</string>
+		<string>SELF LIKE '/private/preboot/jb*'</string>
 		<string>SELF LIKE '/var/run/*.pid'</string>
 		<string>SELF ENDSWITH '.distrib'</string>
 		<string>SELF ENDSWITH '_TrollStore'</string>
