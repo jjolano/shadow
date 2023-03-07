@@ -1,16 +1,40 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 case "$1" in
     configure)
-        chown -R mobile:mobile $DPKG_ROOT/Library/Shadow
-        chmod -R 0777 $DPKG_ROOT/Library/Shadow
-        echo -n "shdw: "
-        $DPKG_ROOT/usr/local/bin/shdw -g || true
+        if [ -d "/Library/Shadow" ]; then
+            chown -R mobile:mobile /Library/Shadow
+            chmod -R 0777 /Library/Shadow
+
+            if ! command -v ldid &> /dev/null
+            then
+                ldid -s /usr/local/bin/shdw 2> /dev/null || true
+            fi
+
+            echo -n "shdw: "
+            /usr/local/bin/shdw -g || true
+        else
+            chown -R mobile:mobile /var/jb/Library/Shadow
+            chmod -R 0777 /var/jb/Library/Shadow
+
+            if ! command -v ldid &> /dev/null
+            then
+                ldid -s /var/jb/usr/local/bin/shdw 2> /dev/null || true
+            fi
+
+            echo -n "shdw: "
+            /var/jb/usr/local/bin/shdw -g || true
+        fi
     ;;
 
     triggered)
-        echo -n "shdw: "
-        $DPKG_ROOT/usr/local/bin/shdw -g || true
+        if [ -d "/Library/Shadow" ]; then
+            echo -n "shdw: "
+            /usr/local/bin/shdw -g || true
+        else
+            echo -n "shdw: "
+            /var/jb/usr/local/bin/shdw -g || true
+        fi
     ;;
 esac
 

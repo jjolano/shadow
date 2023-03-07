@@ -1,10 +1,8 @@
 #import "SHDWAboutListController.h"
-#import <Shadow/ShadowService.h>
 
 @implementation SHDWAboutListController {
 	NSString* packageVersion;
 	NSString* latestVersion;
-	NSDictionary* versions;
 }
 
 - (NSArray *)specifiers {
@@ -13,14 +11,6 @@
 	}
 
 	return _specifiers;
-}
-
-- (NSString *)aboutBuildDate:(id)sender {
-	return versions[@"build_date"];
-}
-
-- (NSString *)aboutSoftwareLicense:(id)sender {
-	return @"BSD 3-Clause";
 }
 
 - (NSString *)aboutDeveloper:(id)sender {
@@ -74,12 +64,8 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		ShadowService* service = [ShadowService new];
-
 		packageVersion = nil;
 		latestVersion = nil;
-
-		versions = [service getVersions];
 	}
 
 	return self;

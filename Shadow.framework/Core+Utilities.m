@@ -1,4 +1,4 @@
-#import "Shadow+Utilities.h"
+#import <Shadow/Core+Utilities.h>
 #import "../vendor/apple/dyld_priv.h"
 
 extern char*** _NSGetArgv();
@@ -9,10 +9,10 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    NSURL* url = [NSURL URLWithString:path];
+    NSURL* url = [[NSURL fileURLWithPath:path isDirectory:NO] standardizedURL];
 
     if(url) {
-        path = [[url standardizedURL] path];
+        path = [url path];
     }
 
     while([path containsString:@"/./"]) {
@@ -57,22 +57,37 @@ extern char*** _NSGetArgv();
 //methods of getting executablePath and bundleIdentifier with the least side effects possible
 //for more information, check out https://github.com/checkra1n/BugTracker/issues/343
 + (NSString *)getExecutablePath {
-	char* executablePathC = **_NSGetArgv();
-	return [NSString stringWithUTF8String:executablePathC];
+    static NSString* executablePath = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+	    char* executablePathC = **_NSGetArgv();
+
+        if(executablePathC) {
+            executablePath = @(executablePathC);
+        }
+    });
+
+    return executablePath;
 }
 
 + (NSString *)getBundleIdentifier {
-	CFBundleRef mainBundle = CFBundleGetMainBundle();
+    static NSString* bundleIdentifier = nil;
+    static dispatch_once_t onceToken = 0;
 
-	if(mainBundle != NULL) {
-		CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
-		return (__bridge NSString *) bundleIdentifierCF;
-	}
+    dispatch_once(&onceToken, ^{
+        CFBundleRef mainBundle = CFBundleGetMainBundle();
 
-	return nil;
+        if(mainBundle != NULL) {
+            CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
+            bundleIdentifier = (__bridge NSString *)bundleIdentifierCF;
+        }
+    });
+
+	return bundleIdentifier;
 }
 
-+ (NSString *)getTweakPath {
++ (NSString *)getCallerPath {
     const void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(0));
 
     if(ret_addr) {
@@ -84,5 +99,25 @@ extern char*** _NSGetArgv();
     }
 
     return nil;
+}
+
++ (BOOL)isJBRootless {
+    static BOOL rootless = NO;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        NSString* caller_path = [self getCallerPath];
+        rootless = !([caller_path hasPrefix:@"/Library"] || [caller_path hasPrefix:@"/usr"]);
+    });
+    
+    return rootless;
+}
+
++ (NSString *)getJBPath:(NSString *)path {
+    if(![self isJBRootless] || !path || ![path isAbsolutePath] || [path hasPrefix:@"/var/jb"]) {
+        return path;
+    }
+
+    return [@"/var/jb" stringByAppendingPathComponent:path];
 }
 @end

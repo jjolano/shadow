@@ -1,5 +1,5 @@
 #import "SHDWATLController.h"
-#import <Shadow/ShadowService+Settings.h>
+#import <Shadow/Settings.h>
 
 @implementation SHDWATLController {
 	NSUserDefaults* prefs;
@@ -21,7 +21,7 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [ShadowService getUserDefaults];
+		prefs = [[ShadowSettings sharedInstance] userDefaults];
 	}
 
 	return self;
