@@ -1,3 +1,6 @@
 [submodule "vendor/HookKit.framework"]
 	path = vendor/HookKit.framework
 	url = https://github.com/jjolano/HookKit.git
+[submodule "vendor/Modulous.framework"]
+	path = vendor/Modulous.framework
+	url = https://github.com/jjolano/Modulous.git
