@@ -28,8 +28,7 @@
 #import <objc/runtime.h>
 
 #import "../../common.h"
-#import <Shadow/Shadow.h>
-#import <Shadow/Shadow+Utilities.h>
+#import <Shadow.h>
 
 #import <substrate.h>
 #import <HookKit.h>
@@ -50,7 +49,7 @@
 
 extern Shadow* _shadow;
 
-#define isCallerTweak()         [_shadow isCallerTweak:__builtin_extract_return_addr(__builtin_return_address(0))]
+#define isCallerTweak()         [_shadow isAddrExternal:__builtin_extract_return_addr(__builtin_return_address(0))]
 
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);

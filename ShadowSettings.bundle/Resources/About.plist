@@ -8,29 +8,6 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Shadow</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSTitleValueCell</string>
-			<key>label</key>
-			<string>BUILD_DATE</string>
-			<key>get</key>
-			<string>aboutBuildDate:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSTitleValueCell</string>
-			<key>label</key>
-			<string>SOFTWARE_LICENSE</string>
-			<key>get</key>
-			<string>aboutSoftwareLicense:</string>
-		</dict>
-
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
 			<string>UPDATES_HDR</string>
 		</dict>
 		<dict>

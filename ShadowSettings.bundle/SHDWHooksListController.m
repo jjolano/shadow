@@ -1,6 +1,6 @@
 #import "SHDWHooksListController.h"
 
-#import <Shadow/ShadowService+Settings.h>
+#import <Shadow/Settings.h>
 #import <HookKit.h>
 
 @implementation SHDWHooksListController {
@@ -38,7 +38,7 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [ShadowService getUserDefaults];
+		prefs = [[ShadowSettings sharedInstance] userDefaults];
 
 		hk_lib_values = [NSMutableArray new];
 		hk_lib_titles = [NSMutableArray new];

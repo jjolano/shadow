@@ -1,6 +1,6 @@
 #import "SHDWAppListController.h"
 
-#import <Shadow/ShadowService+Settings.h>
+#import <Shadow/Settings.h>
 #import <HookKit.h>
 
 @implementation SHDWAppListController {
@@ -28,7 +28,7 @@
 	}
 
 	if([[specifier identifier] isEqualToString:@"HK_Library"]) {
-		return [ShadowService getDefaultPreferences][@"HK_Library"];
+		return [[[ShadowSettings sharedInstance] defaultSettings] objectForKey:@"HK_Library"];
 	}
 
 	return nil;
@@ -54,7 +54,7 @@
 
 - (instancetype)init {
 	if((self = [super init])) {
-		prefs = [ShadowService getUserDefaults];
+		prefs = [[ShadowSettings sharedInstance] userDefaults];
 
 		hk_lib_values = [NSMutableArray new];
 		hk_lib_titles = [NSMutableArray new];

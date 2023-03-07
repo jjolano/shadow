@@ -1,9 +1,14 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 case "$1" in
     triggered)
-        echo -n "shdw: "
-        $DPKG_ROOT/usr/local/bin/shdw -g || true
+        if [ -d "/Library/Shadow" ]; then
+            echo -n "shdw: "
+            /usr/local/bin/shdw -g || true
+        else
+            echo -n "shdw: "
+            /var/jb/usr/local/bin/shdw -g || true
+        fi
     ;;
 esac
 

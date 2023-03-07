@@ -1,58 +1,15 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import "../vendor/rootless.h"
-
 #import "../common.h"
-
-#import <Shadow/Shadow.h>
-#import <Shadow/Shadow+Utilities.h>
-#import <Shadow/ShadowService.h>
-#import <Shadow/ShadowService+Settings.h>
-#import <Shadow/ShadowService+Database.h>
-
 #import "hooks/hooks.h"
 
+#import <Shadow.h>
+#import <Shadow/Settings.h>
 #import <libSandy.h>
 #import <HookKit.h>
 
 Shadow* _shadow = nil;
-ShadowService* _srv = nil;
-
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-
-    _srv = [ShadowService new];
-    [_srv startService];
-
-    NSOperationQueue* queue = [NSOperationQueue new];
-
-    [queue addOperationWithBlock:^(){
-        NSDictionary* ruleset_dpkg = [ShadowService generateDatabase];
-
-        if(ruleset_dpkg) {
-            // [_srv addRuleset:ruleset_dpkg];
-
-            BOOL success = [ruleset_dpkg writeToFile:@SHADOW_DB_PLIST atomically:NO];
-
-            if(!success) {
-                success = [ruleset_dpkg writeToFile:@("/var/jb" SHADOW_DB_PLIST) atomically:NO];
-            }
-
-            if(success) {
-                NSLog(@"%@", @"successfully saved generated db");
-            } else {
-                NSLog(@"%@", @"failed to save generate db");
-            }
-
-            [_srv loadRulesets];
-        }
-    }];
-}
-%end
-%end
 
 %ctor {
     // Determine the application we're injected into.
@@ -60,8 +17,6 @@ ShadowService* _srv = nil;
 
     // Injected into SpringBoard.
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-        NSLog(@"%@", @"loaded in SpringBoard");
-        %init(hook_springboard);		
         return;
     }
 
@@ -92,23 +47,12 @@ ShadowService* _srv = nil;
 
     NSLog(@"%@", @"loaded in app");
 
-    libSandy_applyProfile("ShadowService");
-
-    _srv = [ShadowService new];
-    [_srv connectService];
-
     // Load preferences.
-    NSDictionary* prefs_load = nil;
-
     if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_11_0) {
         libSandy_applyProfile("ShadowSettings");
-        prefs_load = [ShadowService getPreferences:bundleIdentifier];
     }
 
-    if(!prefs_load) {
-        // Use Shadow Service to load preferences.
-        prefs_load = [ShadowService getPreferences:bundleIdentifier usingService:_srv];
-    }
+    NSDictionary* prefs_load = [[ShadowSettings sharedInstance] getPreferencesForIdentifier:bundleIdentifier];
 
     NSLog(@"%@", prefs_load);
 
@@ -119,20 +63,7 @@ ShadowService* _srv = nil;
     }
 
     // Initialize Shadow class.
-    [_srv loadRulesets];
-
-    _shadow = [Shadow shadowWithService:_srv];
-
-    [_shadow setRunningInApp:YES];
-
-    // Automatically use rootless optimizations.
-    NSString* tweak_path = [Shadow getTweakPath];
-    BOOL rootless = !([tweak_path hasPrefix:@"/Library"] || [tweak_path hasPrefix:@"/usr/lib"]);
-
-    if(rootless) {
-        [_shadow setRootlessMode:rootless];
-        NSLog(@"%@", @"rootless optimizations enabled");
-    }
+    _shadow = [Shadow new];
 
     // Initialize hooks.
     NSLog(@"%@", @"starting hooks");
