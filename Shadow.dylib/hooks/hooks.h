@@ -47,7 +47,7 @@
 #import "../../vendor/apple/codesign.h"
 #import "../../vendor/apple/ptrace.h"
 
-extern Shadow* _shadow;
+#define _shadow                 [Shadow sharedInstance]
 
 #define isCallerTweak()         [_shadow isAddrExternal:__builtin_extract_return_addr(__builtin_return_address(0))]
 
@@ -77,8 +77,6 @@ extern void shadowhook_libc_antidebugging(HKSubstitutor* hooks);
 extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symlookup(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
-extern void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide);
-extern void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide);
 extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
