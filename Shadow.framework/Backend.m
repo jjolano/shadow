@@ -28,45 +28,25 @@
     NSURL* ruleset_path_url = [NSURL fileURLWithPath:[Shadow getJBPath:@SHADOW_RULESETS] isDirectory:YES];
     NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:ruleset_path_url includingPropertiesForKeys:@[] options:0 error:nil];
 
-    [ruleset_urls enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSURL* url, NSUInteger idx, BOOL* stop) {
-        ShadowRuleset* ruleset = [ShadowRuleset rulesetWithURL:url];
+    if(ruleset_urls) {
+        for(NSURL* url in ruleset_urls) {
+            ShadowRuleset* ruleset = [ShadowRuleset rulesetWithURL:url];
 
-        if(ruleset) {
-            NSDictionary* info = [[ruleset internalDictionary] objectForKey:@"RulesetInfo"];
+            if(ruleset) {
+                NSDictionary* info = [[ruleset internalDictionary] objectForKey:@"RulesetInfo"];
 
-            if(info) {
-                NSLog(@"[ShadowBackend] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
-            } else {
-                NSLog(@"[ShadowBackend] loaded ruleset: %@", url);
-            }
+                if(info) {
+                    NSLog(@"[ShadowBackend] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
+                } else {
+                    NSLog(@"[ShadowBackend] loaded ruleset: %@", url);
+                }
 
-            @synchronized(result) {
                 [result addObject:ruleset];
+            } else {
+                NSLog(@"[ShadowBackend] failed to load ruleset: %@", url);
             }
-        } else {
-            NSLog(@"[ShadowBackend] failed to load ruleset: %@", url);
         }
-    }];
-
-    // if(ruleset_urls) {
-    //     for(NSURL* url in ruleset_urls) {
-    //         ShadowRuleset* ruleset = [ShadowRuleset rulesetWithURL:url];
-
-    //         if(ruleset) {
-    //             NSDictionary* info = [[ruleset internalDictionary] objectForKey:@"RulesetInfo"];
-
-    //             if(info) {
-    //                 NSLog(@"[ShadowBackend] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
-    //             } else {
-    //                 NSLog(@"[ShadowBackend] loaded ruleset: %@", url);
-    //             }
-
-    //             [result addObject:ruleset];
-    //         } else {
-    //             NSLog(@"[ShadowBackend] failed to load ruleset: %@", url);
-    //         }
-    //     }
-    // }
+    }
 
     return [result copy];
 }

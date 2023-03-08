@@ -11,5 +11,6 @@
 + (NSString *)getCallerPath;
 + (BOOL)isJBRootless;
 + (NSString *)getJBPath:(NSString *)path;
++ (NSDictionary *)generateDatabase;
 @end
 #endif
