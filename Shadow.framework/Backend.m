@@ -6,16 +6,12 @@
 
 @implementation ShadowBackend {
     NSArray<ShadowRuleset *>* rulesets;
-
     NSCache<NSString *, NSNumber *>* cache_restricted;
-    NSCache<NSString *, NSNumber *>* cache_urlscheme;
 }
 
 - (instancetype)init {
     if((self = [super init])) {
         cache_restricted = [NSCache new];
-        cache_urlscheme = [NSCache new];
-
         rulesets = [[self class] _loadRulesets];
     }
 
@@ -102,12 +98,6 @@
         return NO;
     }
 
-    NSNumber* cached = [cache_urlscheme objectForKey:scheme];
-
-    if(cached) {
-        return [cached boolValue];
-    }
-
     __block BOOL restricted = NO;
 
     // Check rulesets
@@ -118,7 +108,6 @@
         }
     }];
 
-    [cache_urlscheme setObject:@(restricted) forKey:scheme];
     return restricted;
 }
 @end
