@@ -117,12 +117,7 @@ extern char*** _NSGetArgv();
     NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
     ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[Shadow getJBPath:ruleset_path]];
 
-    NSArray* db_dirs = @[@"/Applications/", @"/System/", @"/var/", @"/usr/lib/"];
     NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
-
-    if([self isJBRootless]) {
-        db_dirs = @[@"/Applications/", @"/var/"];
-    }
 
     NSMutableSet* db_installed = [NSMutableSet new];
     NSMutableSet* db_exception = [NSMutableSet new];
@@ -146,16 +141,6 @@ extern char*** _NSGetArgv();
                         continue;
                     }
 
-                    BOOL skip = YES;
-
-                    // Skip if path is not what we're interested in.
-                    for(NSString* db_dir in db_dirs) {
-                        if([path hasPrefix:db_dir]) {
-                            skip = NO;
-                            break;
-                        }
-                    }
-
                     if([[path pathExtension] isEqualToString:@"app"]) {
                         NSBundle* appBundle = [NSBundle bundleWithPath:[self getJBPath:path]];
 
@@ -175,7 +160,7 @@ extern char*** _NSGetArgv();
                         }
                     }
 
-                    if(skip || (ruleset && ![ruleset isPathCompliant:path])) {
+                    if(ruleset && ![ruleset isPathCompliant:path]) {
                         continue;
                     }
                     
