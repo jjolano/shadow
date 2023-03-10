@@ -8,7 +8,7 @@
     if((self = [super init])) {
         defaultSettings = @{
             @"Global_Enabled" : @(NO),
-            @"HK_Library" : @"auto",
+            @"HK_Library" : @"fishhook",
             @"Hook_Filesystem" : @(YES),
             @"Hook_DynamicLibraries" : @(YES),
             @"Hook_URLScheme" : @(YES),
