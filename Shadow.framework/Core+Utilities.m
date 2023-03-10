@@ -12,7 +12,7 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    NSURL* url = [[NSURL fileURLWithPath:path isDirectory:NO] standardizedURL];
+    NSURL* url = [[NSURL URLWithString:path] standardizedURL];
 
     if(url) {
         path = [url path];
