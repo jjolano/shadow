@@ -1,5 +1,8 @@
 #import <Shadow/Core+Utilities.h>
+#import <Shadow/Ruleset.h>
+
 #import "../vendor/apple/dyld_priv.h"
+#import "../common.h"
 
 extern char*** _NSGetArgv();
 
@@ -9,7 +12,7 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    NSURL* url = [[NSURL URLWithString:path] standardizedURL];
+    NSURL* url = [[NSURL fileURLWithPath:path isDirectory:NO] standardizedURL];
 
     if(url) {
         path = [url path];
@@ -38,16 +41,18 @@ extern char*** _NSGetArgv();
         }
     }
 
-    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+    if([path hasPrefix:@"/private"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
-    }
+        
+        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
 
-    if([path hasPrefix:@"/var/tmp"]) {
-        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        [pathComponents removeObjectAtIndex:1];
-        path = [NSString pathWithComponents:pathComponents];
+        if([path hasPrefix:@"/var/tmp"]) {
+            [pathComponents removeObjectAtIndex:1];
+            path = [NSString pathWithComponents:pathComponents];
+        }
     }
 
     return path;
@@ -63,13 +68,7 @@ extern char*** _NSGetArgv();
 
 + (NSString *)getBundleIdentifier {
     CFBundleRef mainBundle = CFBundleGetMainBundle();
-
-    if(mainBundle != NULL) {
-        CFStringRef bundleIdentifierCF = CFBundleGetIdentifier(mainBundle);
-        return (__bridge NSString *)bundleIdentifierCF;
-    }
-
-    return nil;
+    return mainBundle ? (__bridge NSString *)CFBundleGetIdentifier(mainBundle) : nil;
 }
 
 + (NSString *)getCallerPath {
@@ -114,37 +113,76 @@ extern char*** _NSGetArgv();
         return nil;
     }
 
+    // Load standard (built-in) ruleset.
+    NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
+    ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[Shadow getJBPath:ruleset_path]];
+
+    NSArray* db_dirs = @[@"/Applications/", @"/System/", @"/var/", @"/usr/lib/"];
+    NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
+
+    if([self isJBRootless]) {
+        db_dirs = @[@"/Applications/", @"/var/"];
+    }
+
     NSMutableSet* db_installed = [NSMutableSet new];
     NSMutableSet* db_exception = [NSMutableSet new];
+    NSMutableSet* schemes = [NSMutableSet new];
 
     // Iterate all list files in database.
-    NSArray* db_files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dpkgInfoPath] includingPropertiesForKeys:@[] options:0 error:nil];
+    NSArray* db_files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dpkgInfoPath isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
 
     for(NSURL* db_file in db_files) {
-        if([db_file pathExtension] && [[db_file pathExtension] isEqualToString:@"list"]) {
+        if([[db_file pathExtension] isEqualToString:@"list"]) {
             NSString* content = [NSString stringWithContentsOfURL:db_file encoding:NSUTF8StringEncoding error:nil];
 
             if(content) {
                 // Read all lines
                 NSArray* lines = [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 
-                if([[db_file lastPathComponent] isEqualToString:@"base.list"] || [[db_file lastPathComponent] isEqualToString:@"firmware-sbin.list"]) {
-                    // exception
-                    for(NSString* line in lines) {
-                        NSString* standardized_line = [Shadow getStandardizedPath:line];
+                for(NSString* line in lines) {
+                    NSString* path = [self getStandardizedPath:line];
 
-                        if(standardized_line && [standardized_line length]) {
-                            [db_exception addObject:standardized_line];
+                    if(!path || ![path length]) {
+                        continue;
+                    }
+
+                    BOOL skip = YES;
+
+                    // Skip if path is not what we're interested in.
+                    for(NSString* db_dir in db_dirs) {
+                        if([path hasPrefix:db_dir]) {
+                            skip = NO;
+                            break;
                         }
                     }
-                } else {
-                    // installed
-                    for(NSString* line in lines) {
-                        NSString* standardized_line = [Shadow getStandardizedPath:line];
 
-                        if(standardized_line && [standardized_line length]) {
-                            [db_installed addObject:standardized_line];
+                    if([[path pathExtension] isEqualToString:@"app"]) {
+                        NSBundle* appBundle = [NSBundle bundleWithPath:[self getJBPath:path]];
+
+                        if(appBundle) {
+                            NSDictionary* plist = [appBundle infoDictionary];
+                            NSDictionary* urltypes = [plist objectForKey:@"CFBundleURLTypes"];
+
+                            if(urltypes) {
+                                for(NSDictionary* type in urltypes) {
+                                    NSArray* urlschemes = [type objectForKey:@"CFBundleURLSchemes"];
+
+                                    if(urlschemes) {
+                                        [schemes addObjectsFromArray:urlschemes];
+                                    }
+                                }
+                            }
                         }
+                    }
+
+                    if(skip || (ruleset && ![ruleset isPathCompliant:path])) {
+                        continue;
+                    }
+                    
+                    if([db_list_skip containsObject:[db_file lastPathComponent]]) {
+                        [db_exception addObject:path];
+                    } else {
+                        [db_installed addObject:path];
                     }
                 }
             }
@@ -166,14 +204,9 @@ extern char*** _NSGetArgv();
         @"/System/Library/PrivateFrameworks/TextInput.framework"
     ];
 
+    filter_names = [filter_names arrayByAddingObjectsFromArray:[db_exception allObjects]];
+
     for(NSString* name in filter_names) {
-        [db_installed removeObject:name];
-        [db_exception removeObject:name];
-    }
-
-    NSArray* filter_exception = [db_exception allObjects];
-
-    for(NSString* name in filter_exception) {
         [db_installed removeObject:name];
     }
 
@@ -182,32 +215,6 @@ extern char*** _NSGetArgv();
     NSPredicate* emoji = [NSPredicate predicateWithFormat:@"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
     NSPredicate* not_emoji = [NSCompoundPredicate notPredicateWithSubpredicate:emoji];
     filtered_db_installed = [filtered_db_installed filteredArrayUsingPredicate:not_emoji];
-
-    // url schemes
-    NSPredicate* system_apps_pred = [NSPredicate predicateWithFormat:@"SELF ENDSWITH[c] '.app'"];
-    NSArray* system_apps = [filtered_db_installed filteredArrayUsingPredicate:system_apps_pred];
-    NSMutableSet* schemes = [NSMutableSet new];
-
-    for(NSString* app in system_apps) {
-        NSBundle* appBundle = [NSBundle bundleWithPath:[self getJBPath:app]];
-
-        if(!appBundle) {
-            continue;
-        }
-
-        NSDictionary* plist = [appBundle infoDictionary];
-        NSDictionary* urltypes = [plist objectForKey:@"CFBundleURLTypes"];
-
-        if(urltypes) {
-            for(NSDictionary* type in urltypes) {
-                NSArray* urlschemes = [type objectForKey:@"CFBundleURLSchemes"];
-
-                if(urlschemes) {
-                    [schemes addObjectsFromArray:urlschemes];
-                }
-            }
-        }
-    }
 
     return @{
         @"RulesetInfo" : @{
