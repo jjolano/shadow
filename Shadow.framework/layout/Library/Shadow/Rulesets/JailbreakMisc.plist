@@ -44,6 +44,8 @@
 		<string>/cores/</string>
 		<string>/Library/Caches/cy-</string>
 		<string>/dev/dlci.</string>
+		<string>/Applications/Cydia.app</string>
+		<string>/Applications/Sileo.app</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
@@ -51,9 +53,9 @@
 		<string>SELF LIKE '/private/preboot/*/jb*'</string>
 		<string>SELF LIKE '/private/preboot/jb*'</string>
 		<string>SELF LIKE '/var/run/*.pid'</string>
-		<string>SELF ENDSWITH '.distrib'</string>
-		<string>SELF ENDSWITH '_TrollStore'</string>
-		<string>SELF LIKE '/*/LIAPP*'</string>
+		<string>SELF LIKE '/*/*.distrib'</string>
+		<string>SELF LIKE '/var/*/_TrollStore'</string>
+		<string>SELF LIKE '/*.app/*/LIAPP*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>

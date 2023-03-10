@@ -9,7 +9,7 @@ Replaces: me.jjolano.shadow.beta
 Conflicts: me.jjolano.shadow.beta
 Version: 3.7.0
 Architecture: iphoneos-arm
-Description: A modern jailbreak detection bypass for jailbroken iOS.
+Description: A modern jailbreak detection bypass.
 Maintainer: jjolano
 Author: jjolano
 Section: System

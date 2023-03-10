@@ -77,6 +77,11 @@
 
     NSDictionary* prefs_load = [[ShadowSettings sharedInstance] getPreferencesForIdentifier:bundleIdentifier];
 
+    if(!prefs_load) {
+        NSLog(@"[Shadow] warning: preferences not loaded - libsandy may need to be reinstalled");
+        return;
+    }
+
     NSLog(@"%@", prefs_load);
 
     BOOL enabled = [prefs_load[@"App_Enabled"] boolValue];
