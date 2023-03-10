@@ -1,3 +1,4 @@
 interest /var
 interest /System
 interest /Applications
+interest /usr/lib
