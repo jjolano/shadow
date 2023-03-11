@@ -58,6 +58,13 @@
         return [cached boolValue];
     }
 
+    BOOL restrictedParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
+
+    if(restrictedParent) {
+        [cache_restricted setObject:@(restrictedParent) forKey:path];
+        return restrictedParent;
+    }
+
     __block BOOL compliant = YES;
     __block BOOL blacklisted = NO;
     __block BOOL whitelisted = NO;
@@ -80,16 +87,8 @@
     }];
 
     BOOL restricted = !compliant || (blacklisted && !whitelisted);
-
-    if(!restricted) {
-        BOOL responseParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
-
-        if(responseParent) {
-            restricted = YES;
-        }
-    }
-
     [cache_restricted setObject:@(restricted) forKey:path];
+
     return restricted;
 }
 

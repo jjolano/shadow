@@ -153,11 +153,13 @@
     if(![options objectForKey:kShadowRestrictionEnableResolve] || [[options objectForKey:kShadowRestrictionEnableResolve] boolValue]) {
         NSString* resolved_path = [path stringByStandardizingPath];
 
-        NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
-        [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+        if(![resolved_path isEqualToString:path]) {
+            NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
+            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
-        if([self isPathRestricted:resolved_path options:[opt copy]]) {
-            return YES;
+            if([self isPathRestricted:resolved_path options:[opt copy]]) {
+                return YES;
+            }
         }
     }
 

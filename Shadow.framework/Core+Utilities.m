@@ -12,10 +12,16 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    NSURL* url = [[NSURL URLWithString:path] standardizedURL];
+    NSURL* url = [NSURL URLWithString:path];
 
-    if(url) {
-        path = [url path];
+    if(!url) {
+        url = [NSURL fileURLWithPath:path];
+    }
+
+    NSString* standardized_path = [[url standardizedURL] path];
+
+    if(standardized_path) {
+        path = standardized_path;
     }
 
     while([path containsString:@"/./"]) {
@@ -41,18 +47,16 @@ extern char*** _NSGetArgv();
         }
     }
 
-    if([path hasPrefix:@"/private"]) {
+    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
-        
-        if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
+        [pathComponents removeObjectAtIndex:1];
+        path = [NSString pathWithComponents:pathComponents];
+    }
 
-        if([path hasPrefix:@"/var/tmp"]) {
-            [pathComponents removeObjectAtIndex:1];
-            path = [NSString pathWithComponents:pathComponents];
-        }
+    if([path hasPrefix:@"/var/tmp"]) {
+        NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
+        [pathComponents removeObjectAtIndex:1];
+        path = [NSString pathWithComponents:pathComponents];
     }
 
     return path;
@@ -137,7 +141,7 @@ extern char*** _NSGetArgv();
                 for(NSString* line in lines) {
                     NSString* path = [self getStandardizedPath:line];
 
-                    if(!path || ![path length]) {
+                    if(!path || ![path length] || [path isEqualToString:@"/"]) {
                         continue;
                     }
 
@@ -189,17 +193,15 @@ extern char*** _NSGetArgv();
         @"/System/Library/PrivateFrameworks/TextInput.framework"
     ];
 
-    filter_names = [filter_names arrayByAddingObjectsFromArray:[db_exception allObjects]];
+    filter_names = [[db_exception allObjects] arrayByAddingObjectsFromArray:filter_names];
 
     for(NSString* name in filter_names) {
         [db_installed removeObject:name];
     }
 
-    NSArray* filtered_db_installed = [db_installed allObjects];
-
     NSPredicate* emoji = [NSPredicate predicateWithFormat:@"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
     NSPredicate* not_emoji = [NSCompoundPredicate notPredicateWithSubpredicate:emoji];
-    filtered_db_installed = [filtered_db_installed filteredArrayUsingPredicate:not_emoji];
+    NSArray* filtered_db_installed = [[db_installed allObjects] filteredArrayUsingPredicate:not_emoji];
 
     return @{
         @"RulesetInfo" : @{

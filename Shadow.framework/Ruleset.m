@@ -122,15 +122,6 @@
     if(structure_base) {
         BOOL compliant = NO;
 
-        // [structure_base enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSString* name, NSUInteger idx, BOOL* stop) {
-        //     NSString* structure_path = [path_tmp stringByAppendingPathComponent:name];
-
-        //     if([path hasPrefix:structure_path]) {
-        //         compliant = YES;
-        //         *stop = YES;
-        //     }
-        // }];
-
         for(NSString* name in structure_base) {
             NSString* structure_path = [path_tmp stringByAppendingPathComponent:name];
 
@@ -162,17 +153,6 @@
     }
 
     return NO;
-
-    // __block BOOL whitelisted = NO;
-
-    // [array_whitelist enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSString* whitelist_path, NSUInteger idx, BOOL* stop) {
-    //     if([path hasPrefix:whitelist_path]) {
-    //         whitelisted = YES;
-    //         *stop = YES;
-    //     }
-    // }];
-
-    // return whitelisted;
 }
 
 - (BOOL)isPathBlacklisted:(NSString *)path {
@@ -191,24 +171,9 @@
     }
 
     return NO;
-
-    // __block BOOL blacklisted = NO;
-
-    // [array_blacklist enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(NSString* blacklist_path, NSUInteger idx, BOOL* stop) {
-    //     if([path hasPrefix:blacklist_path]) {
-    //         blacklisted = YES;
-    //         *stop = YES;
-    //     }
-    // }];
-
-    // return blacklisted;
 }
 
 - (BOOL)isURLSchemeRestricted:(NSString *)scheme {
-    if(set_urlschemes) {
-        return [set_urlschemes containsObject:scheme];
-    }
-
-    return NO;
+    return [set_urlschemes containsObject:scheme];
 }
 @end
