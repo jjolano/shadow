@@ -14,6 +14,9 @@
         if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, orig}}, 1)) {
             return YES;
         }
+    } else {
+        // private symbol?
+        return [super _hookFunction:function replacement:replacement orig:orig];
     }
 
     return NO;
@@ -21,6 +24,7 @@
 
 - (int)_hookFunctions:(NSArray<HookKitFunctionHook *> *)functions {
     NSMutableData* hooks = [NSMutableData new];
+    int priv_count = 0;
 
     for(HookKitFunctionHook* function in functions) {
         Dl_info info;
@@ -30,11 +34,16 @@
             };
 
             [hooks appendBytes:&hook length:sizeof(struct rebinding)];
+        } else {
+            // private symbol?
+            if([super _hookFunction:[function function] replacement:[function replacement] orig:[function orig]]) {
+                priv_count += 1;
+            }
         }
     }
 
     rebind_symbols((struct rebinding *)[hooks bytes], [functions count]);
-    return [functions count];
+    return [functions count] + priv_count;
 }
 
 // - (BOOL)_hookRegion:(void *)target data:(const void *)data size:(size_t)size {

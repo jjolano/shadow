@@ -31,12 +31,11 @@
     int result = 0;
 
     NSMutableArray<HookKitFunctionHook *>* functionHooks = nil;
+    NSMutableArray<HookKitMemoryHook *>* memoryHooks = nil;
 
     if([self functionHookBatchingSupported]) {
         functionHooks = [NSMutableArray new];
     }
-
-    NSMutableArray<HookKitMemoryHook *>* memoryHooks = nil;
 
     if([self memoryHookBatchingSupported]) {
         memoryHooks = [NSMutableArray new];

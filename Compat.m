@@ -157,10 +157,9 @@
 }
 
 - (hookkit_status_t)executeHooks {
-    int result = 0;
+    int result = [module executeHooks:[batchHooks copy]];
 
     @synchronized(batchHooks) {
-        result = [module executeHooks:batchHooks];
         [batchHooks removeAllObjects];
     }
 

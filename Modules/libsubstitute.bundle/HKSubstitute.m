@@ -5,15 +5,15 @@ extern void SubHookMemory(void* target, const void* data, size_t size);
 
 @implementation HKSubstitute
 - (BOOL)_hookClass:(Class)objcClass selector:(SEL)selector replacement:(void *)replacement orig:(void **)orig {
-    return substitute_hook_objc_message(objcClass, selector, replacement, (void *)orig, NULL) == SUBSTITUTE_OK;
+    return substitute_hook_objc_message(objcClass, selector, replacement, orig, NULL) == SUBSTITUTE_OK;
 }
 
 - (BOOL)_hookFunction:(void *)function replacement:(void *)replacement orig:(void **)orig {
     struct substitute_function_hook hook = {
-        function, replacement, (void *)orig, 0
+        function, replacement, orig, 0
     };
 
-    return substitute_hook_functions(&hook, 1, NULL, 0) == SUBSTITUTE_OK;
+    return substitute_hook_functions(&hook, 1, NULL, SUBSTITUTE_NO_THREAD_SAFETY) == SUBSTITUTE_OK;
 }
 
 - (int)_hookFunctions:(NSArray<HookKitFunctionHook *> *)functions {
@@ -27,7 +27,7 @@ extern void SubHookMemory(void* target, const void* data, size_t size);
         [hooks appendBytes:&hook length:sizeof(struct substitute_function_hook)];
     }
 
-    int result = substitute_hook_functions([hooks mutableBytes], [functions count], NULL, 0);
+    int result = substitute_hook_functions([hooks bytes], [functions count], NULL, SUBSTITUTE_NO_THREAD_SAFETY);
 
     if(result != SUBSTITUTE_OK) {
         NSLog(@"[HKSubstitute] warning: batch substitute_hook_functions retval: %d", result);
@@ -54,12 +54,13 @@ extern void SubHookMemory(void* target, const void* data, size_t size);
 }
 
 - (void *)_findSymbol:(const char *)symbol image:(void *)image {
-    void* result = NULL;
+    void* addr = NULL;
+    int result = substitute_find_private_syms((struct substitute_image *)image, &symbol, &addr, 1);
 
-    if(substitute_find_private_syms((struct substitute_image *)image, &symbol, &result, 1) == SUBSTITUTE_OK) {
-        return result;
+    if(result != SUBSTITUTE_OK) {
+        NSLog(@"[HKSubstitute] warning: substitute_find_private_syms retval: %d", result);
     }
 
-    return NULL;
+    return addr;
 }
 @end

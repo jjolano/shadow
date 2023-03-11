@@ -13,7 +13,7 @@
     static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
-        sharedInstance = [HookKitCore new];
+        sharedInstance = [self new];
     });
 
     return sharedInstance;
