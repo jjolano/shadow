@@ -212,4 +212,23 @@ extern char*** _NSGetArgv();
         @"BlacklistURLSchemes" : [schemes allObjects]
     };
 }
+
++ (NSArray *)filterPathArray:(NSArray *)array restricted:(BOOL)restricted options:(NSDictionary<NSString *, id> *)options {
+    Shadow* shadow = [Shadow sharedInstance];
+    __block BOOL _restricted = restricted;
+
+    NSIndexSet* indexes = [array indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+        if([obj isKindOfClass:[NSString class]]) {
+            return [shadow isPathRestricted:obj options:options] == _restricted;
+        }
+        
+        if([obj isKindOfClass:[NSURL class]]) {
+            return [shadow isURLRestricted:obj options:options] == _restricted;
+        }
+
+        return NO;
+    }];
+
+    return [array objectsAtIndexes:indexes];
+}
 @end

@@ -2,22 +2,26 @@
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
-        return original_access(pathname, mode);
+    int result = original_access(pathname, mode);
+
+    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    errno = ENOENT;
-    return -1;
+    return result;
 }
 
 static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
-        return original_readlink(pathname, buf, bufsize);
+    ssize_t result = original_readlink(pathname, buf, bufsize);
+
+    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    errno = ENOENT;
-    return -1;
+    return result;
 }
 
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
@@ -272,16 +276,18 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
 
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
-        return original_stat(pathname, buf);
+    int result = original_stat(pathname, buf);
+
+    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+        if(buf) {
+            memset(buf, 0, sizeof(struct stat));
+        }
+        
+        errno = ENOENT;
+        return -1;
     }
 
-    if(buf) {
-        memset(buf, 0, sizeof(struct stat));
-    }
-
-    errno = ENOENT;
-    return -1;
+    return result;
 }
 
 static int (*original_lstat)(const char* pathname, struct stat* buf);
@@ -484,22 +490,26 @@ static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stre
 
 static char* (*original_realpath)(const char* pathname, char* resolved_path);
 static char* replaced_realpath(const char* pathname, char* resolved_path) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
-        return original_realpath(pathname, resolved_path);
+    char* result = original_realpath(pathname, resolved_path);
+
+    if(result && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return NULL;
     }
 
-    errno = ENOENT;
-    return NULL;
+    return result;
 }
 
 static int (*original_getattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
 static int replaced_getattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:path]) {
-        return original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
+    int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
+
+    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
     }
 
-    errno = ENOENT;
-    return -1;
+    return result;
 }
 
 static int (*original_symlink)(const char* path1, const char* path2);

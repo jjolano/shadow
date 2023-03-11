@@ -12,5 +12,6 @@
 + (BOOL)isJBRootless;
 + (NSString *)getJBPath:(NSString *)path;
 + (NSDictionary *)generateDatabase;
++ (NSArray *)filterPathArray:(NSArray *)array restricted:(BOOL)restricted options:(NSDictionary<NSString *, id> *)options;
 @end
 #endif
