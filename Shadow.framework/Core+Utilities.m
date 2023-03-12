@@ -7,6 +7,7 @@
 extern char*** _NSGetArgv();
 
 @implementation Shadow (Utilities)
+
 + (NSString *)getStandardizedPath:(NSString *)path {
     if(!path) {
         return path;

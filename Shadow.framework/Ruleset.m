@@ -1,14 +1,6 @@
 #import <Shadow/Ruleset.h>
 
-@implementation ShadowRuleset {
-    NSSet<NSString *>* set_urlschemes;
-    NSSet<NSString *>* set_whitelist;
-    NSSet<NSString *>* set_blacklist;
-
-    NSPredicate* pred_whitelist;
-    NSPredicate* pred_blacklist;
-}
-
+@implementation ShadowRuleset
 @synthesize internalDictionary;
 
 - (instancetype)init {

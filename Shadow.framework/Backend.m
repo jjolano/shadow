@@ -4,10 +4,7 @@
 
 #import "../common.h"
 
-@implementation ShadowBackend {
-    NSArray<ShadowRuleset *>* rulesets;
-    NSCache<NSString *, NSNumber *>* cache_restricted;
-}
+@implementation ShadowBackend
 
 - (instancetype)init {
     if((self = [super init])) {
@@ -58,13 +55,6 @@
         return [cached boolValue];
     }
 
-    BOOL restrictedParent = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
-
-    if(restrictedParent) {
-        [cache_restricted setObject:@(restrictedParent) forKey:path];
-        return restrictedParent;
-    }
-
     __block BOOL compliant = YES;
     __block BOOL blacklisted = NO;
     __block BOOL whitelisted = NO;
@@ -87,13 +77,24 @@
     }];
 
     BOOL restricted = !compliant || (blacklisted && !whitelisted);
-    [cache_restricted setObject:@(restricted) forKey:path];
 
+    if(!restricted) {
+        restricted = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
+    }
+
+    [cache_restricted setObject:@(restricted) forKey:path];
     return restricted;
 }
 
 - (BOOL)isURLSchemeRestricted:(NSString *)scheme {
     if(!scheme || [scheme length] == 0) {
+        return NO;
+    }
+
+    // Add some exceptions
+    NSArray* exceptions = @[@"file", "http", "https"];
+
+    if([exceptions containsObject:scheme]) {
         return NO;
     }
 

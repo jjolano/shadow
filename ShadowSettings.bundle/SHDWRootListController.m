@@ -2,7 +2,6 @@
 
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Settings.h>
-#import "../vendor/rootless.h"
 
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;

@@ -3,8 +3,16 @@
 
 #import <Foundation/Foundation.h>
 
-@interface ShadowRuleset : NSObject
-@property (nonatomic) NSDictionary* internalDictionary;
+@interface ShadowRuleset : NSObject {
+    NSSet<NSString *>* set_urlschemes;
+    NSSet<NSString *>* set_whitelist;
+    NSSet<NSString *>* set_blacklist;
+
+    NSPredicate* pred_whitelist;
+    NSPredicate* pred_blacklist;
+}
+
+@property (strong, nonatomic) NSDictionary* internalDictionary;
 
 + (instancetype)rulesetWithURL:(NSURL *)url;
 + (instancetype)rulesetWithPath:(NSString *)path;

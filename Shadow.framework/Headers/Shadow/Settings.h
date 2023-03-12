@@ -4,8 +4,8 @@
 #import <Foundation/Foundation.h>
 
 @interface ShadowSettings : NSObject
-@property (nonatomic, readonly) NSDictionary<NSString *, id>* defaultSettings;
-@property (nonatomic, readonly) NSUserDefaults* userDefaults;
+@property (strong, nonatomic, readonly) NSDictionary<NSString *, id>* defaultSettings;
+@property (strong, nonatomic, readonly) NSUserDefaults* userDefaults;
 
 + (instancetype)sharedInstance;
 

@@ -7,10 +7,7 @@
 
 #import "../vendor/apple/dyld_priv.h"
 
-@implementation Shadow {
-    ShadowBackend* backend;
-}
-
+@implementation Shadow
 @synthesize bundlePath, homePath, realHomePath, hasAppSandbox, rootless;
 
 - (instancetype)init {
