@@ -30,16 +30,8 @@
     int total = [hooks count];
     int result = 0;
 
-    NSMutableArray<HookKitFunctionHook *>* functionHooks = nil;
-    NSMutableArray<HookKitMemoryHook *>* memoryHooks = nil;
-
-    if([self functionHookBatchingSupported]) {
-        functionHooks = [NSMutableArray new];
-    }
-
-    if([self memoryHookBatchingSupported]) {
-        memoryHooks = [NSMutableArray new];
-    }
+    NSMutableArray<HookKitFunctionHook *>* functionHooks = [self functionHookBatchingSupported] ? [NSMutableArray new] : nil;
+    NSMutableArray<HookKitMemoryHook *>* memoryHooks = [self memoryHookBatchingSupported] ? [NSMutableArray new] : nil;
 
     for(__kindof HookKitHook* hook in hooks) {
         if([hook isKindOfClass:[HookKitClassHook class]]) {
@@ -75,30 +67,12 @@
         }
     }
 
-    int function_batch_result = functionHooks ? [self _hookFunctions:functionHooks] : -1;
-
-    if(function_batch_result == -1) {
-        // batching not supported, do one at a time
-        for(HookKitFunctionHook* functionHook in functionHooks) {
-            if([self executeHook:functionHook]) {
-                result += 1;
-            }
-        }
-    } else {
-        result += function_batch_result;
+    if(functionHooks) {
+        result += [self _hookFunctions:functionHooks];
     }
 
-    int memory_batch_result = memoryHooks ? [self _hookRegions:memoryHooks] : -1;
-
-    if(memory_batch_result == -1) {
-        // batching not supported, do one at a time
-        for(HookKitMemoryHook* memoryHook in memoryHooks) {
-            if([self executeHook:memoryHook]) {
-                result += 1;
-            }
-        }
-    } else {
-        result += memory_batch_result;
+    if(memoryHooks) {
+        result += [self _hookRegions:memoryHooks];
     }
 
     if(result < total) {

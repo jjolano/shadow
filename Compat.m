@@ -95,10 +95,7 @@
     HookKitClassHook* hook = [HookKitClassHook hook:objcClass selector:selector replacement:replacement orig:old_ptr];
 
     if(batching) {
-        @synchronized(batchHooks) {
-            [batchHooks addObject:hook];
-        }
-
+        [batchHooks addObject:hook];
         return HK_OK;
     }
 
@@ -109,10 +106,7 @@
     HookKitFunctionHook* hook = [HookKitFunctionHook hook:function replacement:replacement orig:old_ptr];
 
     if(batching) {
-        @synchronized(batchHooks) {
-            [batchHooks addObject:hook];
-        }
-
+        [batchHooks addObject:hook];
         return HK_OK;
     }
 
@@ -123,10 +117,7 @@
     HookKitMemoryHook* hook = [HookKitMemoryHook hook:target data:data size:size];
 
     if(batching) {
-        @synchronized(batchHooks) {
-            [batchHooks addObject:hook];
-        }
-
+        [batchHooks addObject:hook];
         return HK_OK;
     }
 
@@ -158,10 +149,7 @@
 
 - (hookkit_status_t)executeHooks {
     int result = [module executeHooks:[batchHooks copy]];
-
-    @synchronized(batchHooks) {
-        [batchHooks removeAllObjects];
-    }
+    [batchHooks removeAllObjects];
 
     return result ? HK_OK : HK_ERR;
 }

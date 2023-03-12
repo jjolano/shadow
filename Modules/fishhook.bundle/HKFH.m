@@ -11,9 +11,7 @@
 - (BOOL)_hookFunction:(void *)function replacement:(void *)replacement orig:(void **)orig {
     Dl_info info;
     if(dladdr(function, &info)) {
-        if(rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, orig}}, 1)) {
-            return YES;
-        }
+        return rebind_symbols((struct rebinding[1]){{info.dli_sname, replacement, orig}}, 1) == 0;
     } else {
         // private symbol?
         return [super _hookFunction:function replacement:replacement orig:orig];
@@ -42,7 +40,7 @@
         }
     }
 
-    rebind_symbols((struct rebinding *)[hooks bytes], [functions count]);
+    rebind_symbols((struct rebinding *)[hooks mutableBytes], [functions count]);
     return [functions count] + priv_count;
 }
 

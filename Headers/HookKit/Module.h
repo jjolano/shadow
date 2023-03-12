@@ -7,9 +7,9 @@
 typedef const struct HKImage* hookkit_image_t;
 
 @interface HookKitModule : NSObject
-@property (nonatomic) BOOL functionHookBatchingSupported;
-@property (nonatomic) BOOL memoryHookBatchingSupported;
-@property (nonatomic) BOOL nullImageSearchSupported;
+@property (assign, nonatomic) BOOL functionHookBatchingSupported;
+@property (assign, nonatomic) BOOL memoryHookBatchingSupported;
+@property (assign, nonatomic) BOOL nullImageSearchSupported;
 
 - (BOOL)executeHook:(__kindof HookKitHook *)hook;
 - (int)executeHooks:(NSArray<__kindof HookKitHook *> *)hooks;

@@ -16,8 +16,8 @@ typedef enum {
 typedef const struct HKImage* HKImageRef;
 
 @interface HKSubstitutor : NSObject
-@property hookkit_lib_t types;
-@property BOOL batching;
+@property (assign, nonatomic) hookkit_lib_t types;
+@property (assign, nonatomic) BOOL batching;
 
 // Internally loads selected hooking libraries and resolves symbols. Use if setting the types property manually after instance creation.
 - (void)initLibraries;

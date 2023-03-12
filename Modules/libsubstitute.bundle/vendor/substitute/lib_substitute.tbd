@@ -1,7 +1,7 @@
 ---
 archs:                 [ arm64, arm64e ]
 platform:              ios
-install-name:          /usr/lib/libsubstitute.dylib
+install-name:          /usr/lib/libsubstitute.0.dylib
 current-version:       0
 compatibility-version: 0
 exports:

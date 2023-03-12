@@ -8,10 +8,10 @@
 
 - (BOOL)_hookFunction:(void *)function replacement:(void *)replacement orig:(void **)orig {
     dobby_enable_near_branch_trampoline();
-    BOOL result = DobbyHook(function, replacement, (dobby_dummy_func_t *)orig);
+    int result = DobbyHook(function, replacement, (dobby_dummy_func_t *)orig);
     dobby_disable_near_branch_trampoline();
 
-    return result;
+    return result == 0;
 }
 
 - (int)_hookFunctions:(NSArray<HookKitFunctionHook *> *)functions {
@@ -20,7 +20,7 @@
     dobby_enable_near_branch_trampoline();
 
     for(HookKitFunctionHook* function in functions) {
-        if(DobbyHook([function function], [function replacement], (dobby_dummy_func_t *)[function orig])) {
+        if(DobbyHook([function function], [function replacement], (dobby_dummy_func_t *)[function orig]) == 0) {
             result += 1;
         }
     }

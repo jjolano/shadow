@@ -7,26 +7,26 @@
 @end
 
 @interface HookKitClassHook : HookKitHook
-@property (nonatomic) Class objcClass;
-@property (nonatomic) SEL selector;
-@property (nonatomic) void* replacement;
-@property (nonatomic) void** orig;
+@property (assign, nonatomic) Class objcClass;
+@property (assign, nonatomic) SEL selector;
+@property (assign, nonatomic) void* replacement;
+@property (assign, nonatomic) void** orig;
 
 + (instancetype)hook:(Class)objcClass selector:(SEL)selector replacement:(void *)replacement orig:(void **)orig;
 @end
 
 @interface HookKitFunctionHook : HookKitHook
-@property (nonatomic) void* function;
-@property (nonatomic) void* replacement;
-@property (nonatomic) void** orig;
+@property (assign, nonatomic) void* function;
+@property (assign, nonatomic) void* replacement;
+@property (assign, nonatomic) void** orig;
 
 + (instancetype)hook:(void *)function replacement:(void *)replacement orig:(void **)orig;
 @end
 
 @interface HookKitMemoryHook : HookKitHook
-@property (nonatomic) void* target;
-@property (nonatomic) const void* data;
-@property (nonatomic) size_t size;
+@property (assign, nonatomic) void* target;
+@property (assign, nonatomic) const void* data;
+@property (assign, nonatomic) size_t size;
 
 + (instancetype)hook:(void *)target data:(const void *)data size:(size_t)size;
 @end
