@@ -148,7 +148,7 @@
 }
 
 - (hookkit_status_t)executeHooks {
-    int result = [module executeHooks:[batchHooks copy]];
+    int result = [module executeHooks:batchHooks];
     [batchHooks removeAllObjects];
 
     return result ? HK_OK : HK_ERR;

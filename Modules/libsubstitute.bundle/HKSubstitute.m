@@ -1,7 +1,6 @@
 #import "HKSubstitute.h"
 #import "vendor/substitute/substitute.h"
-
-extern void SubHookMemory(void* target, const void* data, size_t size);
+#import "vendor/substrate/substrate.h"
 
 @implementation HKSubstitute
 - (BOOL)_hookClass:(Class)objcClass selector:(SEL)selector replacement:(void *)replacement orig:(void **)orig {
@@ -37,7 +36,7 @@ extern void SubHookMemory(void* target, const void* data, size_t size);
 }
 
 - (BOOL)_hookRegion:(void *)target data:(const void *)data size:(size_t)size {
-    SubHookMemory(target, data, size);
+    MSHookMemory(target, data, size);
     return YES;
 }
 
