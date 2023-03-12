@@ -2,17 +2,21 @@
 #define shadow_core_h
 
 #import <Foundation/Foundation.h>
+#import <Shadow/Backend.h>
 
 #define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
 #define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
 
-@interface Shadow : NSObject
-@property (nonatomic, readonly) NSString* bundlePath;
-@property (nonatomic, readonly) NSString* homePath;
-@property (nonatomic, readonly) NSString* realHomePath;
-@property (nonatomic, readonly) BOOL hasAppSandbox;
-@property (nonatomic, readonly) BOOL rootless;
+@interface Shadow : NSObject {
+    ShadowBackend* backend;
+}
+
+@property (strong, nonatomic, readonly) NSString* bundlePath;
+@property (strong, nonatomic, readonly) NSString* homePath;
+@property (strong, nonatomic, readonly) NSString* realHomePath;
+@property (assign, nonatomic, readonly) BOOL hasAppSandbox;
+@property (assign, nonatomic, readonly) BOOL rootless;
 
 + (instancetype)sharedInstance;
 
