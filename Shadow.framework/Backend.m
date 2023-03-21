@@ -92,7 +92,7 @@
     }
 
     // Add some exceptions
-    NSArray* exceptions = @[@"file", "http", "https"];
+    NSArray* exceptions = @[@"file", @"http", @"https"];
 
     if([exceptions containsObject:scheme]) {
         return NO;
