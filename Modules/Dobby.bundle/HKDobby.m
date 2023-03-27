@@ -30,7 +30,7 @@
 }
 
 - (BOOL)_hookRegion:(void *)target data:(const void *)data size:(size_t)size {
-    return DobbyCodePatch(target, (uint8_t *)data, size) == kMemoryOperationSuccess;
+    return DobbyCodePatch(target, (uint8_t *)data, size) == 0;
 }
 
 - (int)_hookRegions:(NSArray<HookKitMemoryHook *> *)regions {

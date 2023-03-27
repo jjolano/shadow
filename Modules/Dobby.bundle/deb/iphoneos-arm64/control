@@ -1,0 +1,8 @@
+Package: me.jjolano.hkmodule.dobby
+Name: HookKit Module (Dobby)
+Version: 1.0.4
+Architecture: iphoneos-arm64
+Description: This module provides Dobby library support for HookKit Framework.
+Maintainer: jjolano
+Author: jjolano
+Section: HookKit (Modules)
