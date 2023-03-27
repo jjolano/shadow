@@ -9,12 +9,12 @@ mkdir -p $PWD/build
 
 # build main project
 for d in deb/iphoneos-* ; do
-    (cd $d && make clean package FINALPACKAGE=1 && cp -p "`ls -dtr1 packages/* | tail -1`" ../../build/ && make clean)
+    (cd $d && make package FINALPACKAGE=1 && cp -p "`ls -dtr1 packages/* | tail -1`" ../../build/)
 done
 
 # build modules
 for d in Modules/*.bundle ; do
     (for dd in $d/deb/iphoneos-* ; do
-        (cd $dd && make clean package FINALPACKAGE=1 && cp -p "`ls -dtr1 packages/* | tail -1`" ../../../../build/ && make clean)
+        (cd $dd && make package FINALPACKAGE=1 && cp -p "`ls -dtr1 packages/* | tail -1`" ../../../../build/)
     done)
 done
