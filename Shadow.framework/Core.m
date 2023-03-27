@@ -40,10 +40,6 @@
     return sharedInstance;
 }
 
-- (BOOL)isCallerAddrExternal {
-    return [self isAddrExternal:__builtin_extract_return_addr(__builtin_return_address(1))];
-}
-
 - (BOOL)isAddrExternal:(const void *)addr {
     if(addr) {
         const char* image_path = dyld_image_path_containing_address(addr);

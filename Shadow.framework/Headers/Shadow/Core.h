@@ -20,8 +20,6 @@
 
 + (instancetype)sharedInstance;
 
-- (BOOL)isCallerAddrExternal;
-
 - (BOOL)isAddrExternal:(const void *)addr;
 - (BOOL)isAddrRestricted:(const void *)addr;
 
