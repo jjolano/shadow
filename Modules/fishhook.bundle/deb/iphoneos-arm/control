@@ -1,6 +1,6 @@
 Package: me.jjolano.hkmodule.fishhook
 Name: HookKit Module (fishhook)
-Version: 1.0.4
+Version: 1.0.5
 Architecture: iphoneos-arm
 Description: This module provides fishhook library support for HookKit Framework.
 Maintainer: jjolano
