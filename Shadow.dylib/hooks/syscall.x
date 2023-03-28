@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 #import "hooks.h"
 
 static int (*original_syscall)(int number, ...);

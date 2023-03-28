@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 #import "SHDWAboutListController.h"
 
 @implementation SHDWAboutListController {
