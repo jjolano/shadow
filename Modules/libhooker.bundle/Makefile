@@ -9,7 +9,8 @@ HookKitLHModule_FILES = Module.m HKLH.m
 HookKitLHModule_LIBRARIES = _libhooker _blackjack
 HookKitLHModule_EXTRA_FRAMEWORKS = HookKit
 HookKitLHModule_CFLAGS = -fobjc-arc -Ivendor/HookKit.framework/Headers
-HookKitLHModule_LDFLAGS = -Fvendor -Lvendor/libhooker
+HookKitLHModule_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+HookKitLHModule_LDFLAGS += -Fvendor -Lvendor/libhooker
 HookKitLHModule_INSTALL_PATH = /Library/Modulous/HookKit
 
 include $(THEOS_MAKE_PATH)/bundle.mk
