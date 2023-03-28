@@ -10,7 +10,6 @@ HookKit_FRAMEWORKS = Foundation
 HookKit_EXTRA_FRAMEWORKS = Modulous
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor/Modulous.framework/Headers
-HookKit_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
-HookKit_LDFLAGS += -Fvendor
+HookKit_LDFLAGS = -Fvendor -install_name @rpath/HookKit.framework/HookKit
 
 include $(THEOS_MAKE_PATH)/framework.mk
