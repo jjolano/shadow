@@ -1,1 +1,8 @@
-deb/iphoneos-arm/control
+Package: me.jjolano.hkmodule.fishhook
+Name: HookKit Module (fishhook)
+Version: 1.0.6
+Architecture: iphoneos-arm
+Description: This module provides fishhook library support for HookKit Framework.
+Maintainer: jjolano
+Author: jjolano
+Section: HookKit (Modules)

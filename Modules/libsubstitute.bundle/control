@@ -1,1 +1,10 @@
-deb/iphoneos-arm/control
+Package: me.jjolano.hkmodule.substitute
+Name: HookKit Module (Substitute)
+Depends: com.ex.substitute
+Provides: me.jjolano.hkmodule.substrate
+Version: 1.0.9
+Architecture: iphoneos-arm
+Description: This module provides the Substitute API for HookKit Framework.
+Maintainer: jjolano
+Author: jjolano
+Section: HookKit (Modules)

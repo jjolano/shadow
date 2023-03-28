@@ -1,9 +1,0 @@
-Package: me.jjolano.hkmodule.substrate
-Name: HookKit Module (Cydia Substrate)
-Depends: mobilesubstrate
-Version: 1.0.5
-Architecture: iphoneos-arm
-Description: This module provides the Cydia Substrate API for HookKit Framework.
-Maintainer: jjolano
-Author: jjolano
-Section: HookKit (Modules)
