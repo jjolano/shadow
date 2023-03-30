@@ -14,24 +14,24 @@
 - (NSDictionary *)environment {
 	NSDictionary* result = %orig;
 
-    if(!isCallerTweak() && result) {
-        NSMutableDictionary* filtered_result = [result mutableCopy];
+    // if(!isCallerTweak() && result) {
+    //     NSMutableDictionary* filtered_result = [result mutableCopy];
 
-        [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-        [filtered_result removeObjectForKey:@"_MSSafeMode"];
-        [filtered_result removeObjectForKey:@"_SafeMode"];
-        [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
+    //     [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
+    //     [filtered_result removeObjectForKey:@"_MSSafeMode"];
+    //     [filtered_result removeObjectForKey:@"_SafeMode"];
+    //     [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
 
-        if([result objectForKey:@"SHELL"]) {
-            [filtered_result setObject:@"/bin/sh" forKey:@"SHELL"];
-        }
+    //     if([result objectForKey:@"SHELL"]) {
+    //         [filtered_result setObject:@"/bin/sh" forKey:@"SHELL"];
+    //     }
 
-        // struct utsname systemInfo;
-        // uname(&systemInfo);
-        // [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_DEVICE_NAME"];
+    //     // struct utsname systemInfo;
+    //     // uname(&systemInfo);
+    //     // [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_DEVICE_NAME"];
 
-        result = [filtered_result copy];
-    }
+    //     result = [filtered_result copy];
+    // }
 
     return result;
 }
