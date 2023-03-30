@@ -117,22 +117,22 @@
 
         // Rootless optimization: skip rooted checks
         if(rootless) {
-            if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"]) {
+            if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"] && ![path hasPrefix:@"/usr/lib"]) {
                 return NO;
             }
 
             if([path hasPrefix:@"/var/jb"] || [path hasPrefix:@"/cores/"]) {
                 return YES;
             }
-        } else {
-            if([path hasPrefix:@"/usr/lib"]) {
-                // Skip checks if file doesn't exist
-                int errno_old = errno;
-                if(access([path fileSystemRepresentation], F_OK) != 0) {
-                    // reset errno
-                    errno = errno_old;
-                    return NO;
-                }
+        }
+
+        if([path hasPrefix:@"/usr/lib"]) {
+            // Skip checks if file doesn't exist
+            int errno_old = errno;
+            if(access([path fileSystemRepresentation], F_OK) != 0) {
+                // reset errno
+                errno = errno_old;
+                return NO;
             }
         }
 

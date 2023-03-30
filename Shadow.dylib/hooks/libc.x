@@ -673,18 +673,18 @@ static char* replaced_getenv(const char* name) {
 
     char* result = original_getenv(name);
 
-    if(result && name) {
-        if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
-        || strcmp(name, "_MSSafeMode") == 0
-        || strcmp(name, "_SafeMode") == 0
-        || strcmp(name, "_SubstituteSafeMode") == 0) {
-            return NULL;
-        }
+    // if(result && name) {
+    //     if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
+    //     || strcmp(name, "_MSSafeMode") == 0
+    //     || strcmp(name, "_SafeMode") == 0
+    //     || strcmp(name, "_SubstituteSafeMode") == 0) {
+    //         return NULL;
+    //     }
 
-        if(strcmp(name, "SHELL") == 0) {
-            return "/bin/sh";
-        }
-    }
+    //     if(strcmp(name, "SHELL") == 0) {
+    //         return "/bin/sh";
+    //     }
+    // }
 
     return result;
 }

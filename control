@@ -7,7 +7,7 @@ Recommends: preferenceloader, me.jjolano.hkmodule.fishhook
 Provides: me.jjolano.shadow.beta
 Replaces: me.jjolano.shadow.beta
 Conflicts: me.jjolano.shadow.beta
-Version: 3.7.1
+Version: 3.7.2
 Architecture: iphoneos-arm
 Description: A modern jailbreak detection bypass.
 Maintainer: jjolano

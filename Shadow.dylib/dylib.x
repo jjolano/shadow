@@ -157,6 +157,12 @@
         unsetenv("_MSSafeMode");
         unsetenv("_SafeMode");
         unsetenv("_SubstituteSafeMode");
+        unsetenv("JSC_useGC");
+        unsetenv("JSC_useDollarVM");
+        unsetenv("JAILBREAKD_PATH");
+        unsetenv("JAILBREAKD_ARG");
+        unsetenv("JAILBREAKD_CDHASH");
+        
         setenv("SHELL", "/bin/sh", 1);
 
         shadowhook_libc_envvar(substitutor);

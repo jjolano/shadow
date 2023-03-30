@@ -112,15 +112,29 @@ extern char*** _NSGetArgv();
 
 + (NSDictionary *)generateDatabase {
     // Determine dpkg info database path.
-    NSString* dpkgInfoPath = [self getJBPath:@"/Library/dpkg/info"];
+    NSArray* dpkgInfoPaths = @[
+        @"/Library/dpkg/info",
+        @"/var/lib/dpkg/info"
+    ];
 
-    if(![[NSFileManager defaultManager] fileExistsAtPath:dpkgInfoPath]) {
+    NSString* dpkgInfoPath = nil;
+
+    for(NSString* path in dpkgInfoPaths) {
+        NSString* path_r = [self getJBPath:path];
+        
+        if([[NSFileManager defaultManager] fileExistsAtPath:path_r]) {
+            dpkgInfoPath = path_r;
+            break;
+        }
+    }
+
+    if(!dpkgInfoPath) {
         return nil;
     }
 
-    // Load standard (built-in) ruleset.
-    NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
-    ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[Shadow getJBPath:ruleset_path]];
+    // // Load standard (built-in) ruleset.
+    // NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
+    // ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[Shadow getJBPath:ruleset_path]];
 
     NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
 
@@ -142,7 +156,7 @@ extern char*** _NSGetArgv();
                 for(NSString* line in lines) {
                     NSString* path = [self getStandardizedPath:line];
 
-                    if(!path || ![path length] || [path isEqualToString:@"/"]) {
+                    if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
                         continue;
                     }
 
@@ -165,9 +179,9 @@ extern char*** _NSGetArgv();
                         }
                     }
 
-                    if(ruleset && ![ruleset isPathCompliant:path]) {
-                        continue;
-                    }
+                    // if(ruleset && ![ruleset isPathCompliant:path]) {
+                    //     continue;
+                    // }
                     
                     if([db_list_skip containsObject:[db_file lastPathComponent]]) {
                         [db_exception addObject:path];
@@ -194,22 +208,20 @@ extern char*** _NSGetArgv();
         @"/System/Library/PrivateFrameworks/TextInput.framework"
     ];
 
-    filter_names = [[db_exception allObjects] arrayByAddingObjectsFromArray:filter_names];
-
-    for(NSString* name in filter_names) {
-        [db_installed removeObject:name];
-    }
+    [db_exception addObjectsFromArray:filter_names];
+    [db_installed minusSet:db_exception];
 
     NSPredicate* emoji = [NSPredicate predicateWithFormat:@"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
     NSPredicate* not_emoji = [NSCompoundPredicate notPredicateWithSubpredicate:emoji];
-    NSArray* filtered_db_installed = [[db_installed allObjects] filteredArrayUsingPredicate:not_emoji];
+    
+    [db_installed filterUsingPredicate:not_emoji];
 
     return @{
         @"RulesetInfo" : @{
             @"Name" : @"dpkg installed files",
             @"Author" : @"Shadow Service"
         },
-        @"BlacklistExactPaths" : filtered_db_installed,
+        @"BlacklistExactPaths" : [db_installed allObjects],
         @"BlacklistURLSchemes" : [schemes allObjects]
     };
 }
