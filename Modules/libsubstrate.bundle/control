@@ -1,5 +1,6 @@
 Package: me.jjolano.hkmodule.substrate
 Name: HookKit Module (Cydia Substrate)
+Pre-Depends: me.jjolano.fmwk.hookkit
 Depends: mobilesubstrate
 Version: 1.0.7
 Architecture: iphoneos-arm

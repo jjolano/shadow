@@ -1,7 +1,6 @@
 #import <HookKit/Core.h>
 #import <Modulous/Loader.h>
-
-#import "vendor/apple/dyld_priv.h"
+#import <RootBridge.h>
 
 @implementation HookKitCore {
     ModulousLoader* loader;
@@ -135,24 +134,9 @@
     }
 }
 
-+ (BOOL)_isRootless {
-    // Check if running rootless.
-    const void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(0));
-
-    if(ret_addr) {
-        const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
-
-        if(ret_image_name && !(strstr(ret_image_name, "/Library") == ret_image_name || strstr(ret_image_name, "/usr") == ret_image_name)) {
-            return YES;
-        }
-    }
-
-    return NO;
-}
-
 - (instancetype)init {
     if((self = [super init])) {
-        loader = [ModulousLoader loaderWithPath:[[self class] _isRootless] ? @"/var/jb/Library/Modulous/HookKit" : @"/Library/Modulous/HookKit"];
+        loader = [ModulousLoader loaderWithPath:[RootBridge getJBPath:@"/Library/Modulous/HookKit"]];
         registeredModules = [NSMutableDictionary new];
     }
 

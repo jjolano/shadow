@@ -1,5 +1,6 @@
 Package: me.jjolano.hkmodule.libhooker
 Name: HookKit Module (libhooker)
+Pre-Depends: me.jjolano.fmwk.hookkit
 Depends: org.coolstar.libhooker (>= 1.0.0)
 Provides: me.jjolano.hkmodule.substrate
 Version: 1.0.6

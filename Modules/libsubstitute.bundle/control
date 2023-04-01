@@ -1,6 +1,7 @@
 Package: me.jjolano.hkmodule.substitute
 Name: HookKit Module (Substitute)
-Depends: com.ex.substitute
+Pre-Depends: me.jjolano.fmwk.hookkit
+Depends: com.ex.substitute | com.ex.libsubstitute | science.xnu.substitute, mobilesubstrate
 Provides: me.jjolano.hkmodule.substrate
 Version: 1.0.9
 Architecture: iphoneos-arm

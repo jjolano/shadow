@@ -1,6 +1,9 @@
 #import "HKDobby.h"
 #import "vendor/dobby/dobby.h"
 
+#import <stdlib.h>
+#import <string.h>
+
 @implementation HKDobby
 // - (BOOL)_hookClass:(Class)objcClass selector:(SEL)selector replacement:(void *)replacement orig:(void **)orig {
 //     return NO;
@@ -37,15 +40,24 @@
     return -1;
 }
 
-// - (void *)_openImage:(const char *)path {
-//     return (void *)MSGetImageByName(path);
-// }
+- (void *)_openImage:(const char *)path {
+    void* image = malloc(sizeof(const char *) * strlen(path));
 
-// - (void)_closeImage:(void *)image {
-//     MSCloseImage((MSImageRef)image);
-// }
+    if(image) {
+        strcpy(image, path);
+        return image;
+    }
 
-// - (void *)_findSymbol:(const char *)symbol image:(void *)image {
-//     return MSFindSymbol((MSImageRef)image, symbol);
-// }
+    return NULL;
+}
+
+- (void)_closeImage:(void *)image {
+    if(image) {
+        free(image);
+    }
+}
+
+- (void *)_findSymbol:(const char *)symbol image:(void *)image {
+    return DobbySymbolResolver(image, symbol);
+}
 @end

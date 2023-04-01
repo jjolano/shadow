@@ -7,9 +7,9 @@ FRAMEWORK_NAME = HookKit
 
 HookKit_FILES = Core.m Module.m Module+Internal.m Hook.m Compat.m
 HookKit_FRAMEWORKS = Foundation
-HookKit_EXTRA_FRAMEWORKS = Modulous
+HookKit_EXTRA_FRAMEWORKS = Modulous RootBridge
 HookKit_INSTALL_PATH = /Library/Frameworks
-HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor/Modulous.framework/Headers
+HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor/Modulous.framework/Headers -Ivendor/RootBridge.framework/Headers
 HookKit_LDFLAGS = -Fvendor -install_name @rpath/HookKit.framework/HookKit
 
 include $(THEOS_MAKE_PATH)/framework.mk
