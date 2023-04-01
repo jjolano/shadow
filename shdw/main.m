@@ -5,6 +5,8 @@
 #import <Shadow.h>
 #import <Shadow/Core+Utilities.h>
 
+#import <RootBridge.h>
+
 #import "../common.h"
 
 int main(int argc, char *argv[], char *envp[]) {
@@ -32,7 +34,7 @@ int main(int argc, char *argv[], char *envp[]) {
             NSDictionary* ruleset_dpkg = [Shadow generateDatabase];
 
             if(ruleset_dpkg) {
-                BOOL success = [ruleset_dpkg writeToFile:[Shadow getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
+                BOOL success = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
 
                 if(success) {
                     printf("successfully regenerated dpkg ruleset\n");

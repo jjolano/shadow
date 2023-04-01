@@ -1,6 +1,7 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Backend.h>
 #import <Shadow/Ruleset.h>
+#import <RootBridge.h>
 
 #import "../common.h"
 
@@ -18,7 +19,7 @@
 + (NSArray<ShadowRuleset *> *)_loadRulesets {
     NSMutableArray<ShadowRuleset *>* result = [NSMutableArray new];
 
-    NSURL* ruleset_path_url = [NSURL fileURLWithPath:[Shadow getJBPath:@SHADOW_RULESETS] isDirectory:YES];
+    NSURL* ruleset_path_url = [NSURL fileURLWithPath:[RootBridge getJBPath:@SHADOW_RULESETS] isDirectory:YES];
     NSArray* ruleset_urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:ruleset_path_url includingPropertiesForKeys:@[] options:0 error:nil];
 
     if(ruleset_urls) {

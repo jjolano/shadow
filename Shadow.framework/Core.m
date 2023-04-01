@@ -1,6 +1,7 @@
 #import <Shadow/Core.h>
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Backend.h>
+#import <RootBridge.h>
 
 #import <dlfcn.h>
 #import <pwd.h>
@@ -21,7 +22,7 @@
         realHomePath = [[self class] getStandardizedPath:realHomePath];
 
         hasAppSandbox = [[bundlePath pathExtension] isEqualToString:@"app"];
-        rootless = [[self class] isJBRootless];
+        rootless = [RootBridge isJBRootless];
 
         backend = [ShadowBackend new];
     }

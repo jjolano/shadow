@@ -8,6 +8,7 @@
 #import <Shadow/Settings.h>
 #import <libSandy.h>
 #import <HookKit.h>
+#import <RootBridge.h>
 
 %group hook_springboard
 %hook SpringBoard
@@ -20,7 +21,7 @@
         NSDictionary* ruleset_dpkg = [Shadow generateDatabase];
 
         if(ruleset_dpkg) {
-            BOOL success = [ruleset_dpkg writeToFile:[Shadow getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
+            BOOL success = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
 
             if(success) {
                 NSLog(@"successfully saved generated db");
@@ -162,7 +163,7 @@
         unsetenv("JAILBREAKD_PATH");
         unsetenv("JAILBREAKD_ARG");
         unsetenv("JAILBREAKD_CDHASH");
-        
+
         setenv("SHELL", "/bin/sh", 1);
 
         shadowhook_libc_envvar(substitutor);
