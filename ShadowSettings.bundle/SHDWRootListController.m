@@ -3,6 +3,8 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Settings.h>
 
+#import <RootBridge.h>
+
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;
 }
@@ -25,14 +27,14 @@
 }
 
 - (void)respring:(id)sender {
-	if([[NSFileManager defaultManager] fileExistsAtPath:[Shadow getJBPath:@"/usr/bin/sbreload"]]) {
+	if([[NSFileManager defaultManager] fileExistsAtPath:[RootBridge getJBPath:@"/usr/bin/sbreload"]]) {
 		pid_t pid;
 		const char *args[] = {"sbreload", NULL, NULL, NULL};
-		posix_spawn(&pid, [[Shadow getJBPath:@"/usr/bin/sbreload"] fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
+		posix_spawn(&pid, [[RootBridge getJBPath:@"/usr/bin/sbreload"] fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
 	} else {
 		pid_t pid;
 		const char *args[] = {"killall", "-9", "SpringBoard", NULL};
-		posix_spawn(&pid, [[Shadow getJBPath:@"/usr/bin/killall"] fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
+		posix_spawn(&pid, [[RootBridge getJBPath:@"/usr/bin/killall"] fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
 	}
 }
 

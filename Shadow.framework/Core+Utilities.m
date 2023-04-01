@@ -1,5 +1,6 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Ruleset.h>
+#import <RootBridge.h>
 
 #import "../vendor/apple/dyld_priv.h"
 #import "../common.h"
@@ -76,40 +77,6 @@ extern char*** _NSGetArgv();
     return mainBundle ? (__bridge NSString *)CFBundleGetIdentifier(mainBundle) : nil;
 }
 
-+ (NSString *)getCallerPath {
-    const void* ret_addr = __builtin_extract_return_addr(__builtin_return_address(0));
-
-    if(ret_addr) {
-        const char* ret_image_name = dyld_image_path_containing_address(ret_addr);
-
-        if(ret_image_name) {
-            return @(ret_image_name);
-        }
-    }
-
-    return nil;
-}
-
-+ (BOOL)isJBRootless {
-    static BOOL rootless = NO;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        NSString* caller_path = [self getCallerPath];
-        rootless = !([caller_path hasPrefix:@"/Library"] || [caller_path hasPrefix:@"/usr"]);
-    });
-
-    return rootless;
-}
-
-+ (NSString *)getJBPath:(NSString *)path {
-    if(![self isJBRootless] || !path || ![path isAbsolutePath] || [path hasPrefix:@"/var/jb"]) {
-        return path;
-    }
-
-    return [@"/var/jb" stringByAppendingPathComponent:path];
-}
-
 + (NSDictionary *)generateDatabase {
     // Determine dpkg info database path.
     NSArray* dpkgInfoPaths = @[
@@ -120,8 +87,8 @@ extern char*** _NSGetArgv();
     NSString* dpkgInfoPath = nil;
 
     for(NSString* path in dpkgInfoPaths) {
-        NSString* path_r = [self getJBPath:path];
-        
+        NSString* path_r = [RootBridge getJBPath:path];
+
         if([[NSFileManager defaultManager] fileExistsAtPath:path_r]) {
             dpkgInfoPath = path_r;
             break;
@@ -134,7 +101,7 @@ extern char*** _NSGetArgv();
 
     // // Load standard (built-in) ruleset.
     // NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
-    // ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[Shadow getJBPath:ruleset_path]];
+    // ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[RootBridge getJBPath:ruleset_path]];
 
     NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
 
@@ -161,7 +128,7 @@ extern char*** _NSGetArgv();
                     }
 
                     if([[path pathExtension] isEqualToString:@"app"]) {
-                        NSBundle* appBundle = [NSBundle bundleWithPath:[self getJBPath:path]];
+                        NSBundle* appBundle = [NSBundle bundleWithPath:[RootBridge getJBPath:path]];
 
                         if(appBundle) {
                             NSDictionary* plist = [appBundle infoDictionary];
