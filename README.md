@@ -14,7 +14,6 @@ While Shadow does work fine on palera1n, please note the following potential iss
 
 * Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. To fix this issue, you will need to reinstall the `libSandy` package after activating the jailbreak. This affects Shadow's ability to load preferences.
 * On iOS 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. In this case, please use the `fishhook` hooking library.
-* You may see `shdw: Killed: 9` in your package manager. It is safe to ignore this error message.
 
 ## Troubleshooting
 
@@ -37,9 +36,10 @@ Add my [repo](https://ios.jjolano.me) to your package manager and install the Sh
 
 You may need additional repositories for dependencies - these are the current dependencies:
 
-* `libSandy` from [opa334's Repo](https://opa334.github.io)
-* `AltList` from [opa334‘s Repo](https://opa334.github.io)
-* `HookKit Framework`
+* `libSandy` from [opa334's Repo](https://opa334.github.io) (preferences)
+* `AltList` from [opa334‘s Repo](https://opa334.github.io) (preferences)
+* `HookKit Framework` (hooking + hooking library feature)
+* `RootBridge Framework` (rootless compatibility)
 
 A recommended (but not required) package is `Injection Foundation` from PoomSmart's Repo (`https://poomsmart.github.io/repo`). This package ensures that Shadow is injected properly into certain apps.
 
