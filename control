@@ -1,7 +1,7 @@
 Package: me.jjolano.fmwk.hookkit
 Name: HookKit Framework
 Depends: firmware (>= 8.0), me.jjolano.fmwk.modulous, me.jjolano.fmwk.rootbridge
-Version: 1.0.14
+Version: 1.0.15
 Architecture: iphoneos-arm
 Description: An iOS developer framework for unified hooking methods.
 Maintainer: jjolano

@@ -3,7 +3,7 @@ Name: HookKit Module (Substitute)
 Pre-Depends: me.jjolano.fmwk.hookkit
 Depends: com.ex.substitute | com.ex.libsubstitute | science.xnu.substitute, mobilesubstrate
 Provides: me.jjolano.hkmodule.substrate
-Version: 1.0.9
+Version: 1.0.10
 Architecture: iphoneos-arm
 Description: This module provides the Substitute API for HookKit Framework.
 Maintainer: jjolano
