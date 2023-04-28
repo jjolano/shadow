@@ -14,6 +14,7 @@ While Shadow does work fine on palera1n, please note the following potential iss
 
 * Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. To fix this issue, you will need to reinstall the `libSandy` package after activating the jailbreak. This affects Shadow's ability to load preferences.
 * On iOS 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. In this case, please use the `fishhook` hooking library.
+* On iOS 16.4+, `libSandy` is currently reported to not work. Shadow is unable to function due to not being able to load preferences.
 
 ## Troubleshooting
 
