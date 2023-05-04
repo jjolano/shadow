@@ -4,32 +4,25 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 
 ## Known Issues
 
-### Xina (iOS 15) :no_entry:
+### XinaA15
 
-There are no guarantees if Shadow will function properly on Xina. You may find that some apps fail to be bypassed, while it works for another jailbreak. You may also find inconsistent tweak behaviour. Crash logs produced from this jailbreak are also useless as it does not include any information about tweaks. For these reasons, I **cannot** offer support for Xina.
+* No support is given, but Shadow should still be functional.
 
-### palera1n :white_check_mark:
+### palera1n / Dopamine
 
-While Shadow does work fine on palera1n, please note the following potential issues:
-
-* Re-jailbreaking does not reactivate `libSandy` due to the lack of userspace rebooting. To fix this issue, you will need to reinstall the `libSandy` package after activating the jailbreak. This affects Shadow's ability to load preferences.
-* On iOS 16.2 (and probably future versions), Substitute appears to have issues hooking C functions. This may be fixed in a future update to the jailbreak if/when it switches to ElleKit. In this case, please use the `fishhook` hooking library.
+* On iOS 16.2+, Substitute appears to have issues hooking C functions. In this case, please use the `fishhook` hooking library.
 * On iOS 16.4+, `libSandy` is currently reported to not work. Shadow is unable to function due to not being able to load preferences.
 
 ## Troubleshooting
 
-Some ideas to try:
+Shadow is not guaranteed to work on all apps, but here are some ideas to try:
 
-* Use a different hooking library. `fishhook` is a safe option.
+* Use a different hooking library. `fishhook` is a safe option, but is somewhat limited in what it can hook.
 * Disable all tweaks except Shadow. You can use Choicy or libhooker Configurator to do this per-app.
 * Use vnodebypass, if supported on your system.
-* If semi-(un)tethered, reboot into normal jailed iOS and use the app.
+* If semi-(un)tethered or rootless, reboot into normal jailed iOS and use the app.
 * Use another bypass tweak, ideally an app-specific bypass tweak. Be wary of enabling multiple bypass tweaks in case of conflicts.
 * Downgrade the app. Sometimes, newer versions have updated detection methods.
-
-## Contributing
-
-Pull requests are welcome. For translations, please refer to the [English translation](ShadowSettings.bundle/Resources/en.lproj/) within the preference bundle resource files.
 
 ## Installation
 
