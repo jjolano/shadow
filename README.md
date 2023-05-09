@@ -11,7 +11,7 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 ### palera1n
 
 * On iOS 16.2+, Substitute appears to have issues hooking C functions. In this case, please use the `fishhook` hooking library.
-* On iOS 16.4+, `libSandy` is currently reported to not work. Shadow is unable to function due to not being able to load preferences.
+* On iOS 16.4+, `libSandy` is currently reported to not work. Shadow is unable to function due to not being able to load preferences. Should be fixed in libSandy 1.1.
 
 ## Troubleshooting
 
