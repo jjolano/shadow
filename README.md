@@ -10,8 +10,7 @@ A jailbreak detection bypass for modern iOS jailbreaks.
 
 ### palera1n
 
-* On iOS 16.2+, Substitute appears to have issues hooking C functions. In this case, please use the `fishhook` hooking library.
-* On iOS 16.4+, `libSandy` is currently reported to not work. Shadow is unable to function due to not being able to load preferences. Should be fixed in libSandy 1.1.
+* On iOS 16.2+, Substitute appears to have issues hooking C functions. In this case, please use the `fishhook` hooking library or replace Substitute with ElleKit (?).
 
 ## Troubleshooting
 
@@ -30,10 +29,10 @@ Add my [repo](https://ios.jjolano.me) to your package manager and install the Sh
 
 You may need additional repositories for dependencies - these are the current dependencies:
 
-* `libSandy` from [opa334's Repo](https://opa334.github.io) (preferences)
-* `AltList` from [opa334‘s Repo](https://opa334.github.io) (preferences)
-* `HookKit Framework` (hooking + hooking library feature)
-* `RootBridge Framework` (rootless compatibility)
+* `libSandy` from [opa334's Repo](https://opa334.github.io) (preferences - sandboxed loading)
+* `AltList` from [opa334‘s Repo](https://opa334.github.io) (preferences - application listing)
+* `HookKit Framework` (hooking + change hooking library feature)
+* `RootBridge Framework` (rootless compatibility/universal binary building)
 
 A recommended (but not required) package is `Injection Foundation` from PoomSmart's Repo (`https://poomsmart.github.io/repo`). This package ensures that Shadow is injected properly into certain apps.
 
