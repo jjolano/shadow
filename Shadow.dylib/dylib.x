@@ -152,20 +152,43 @@
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
         NSLog(@"+ envvars");
 
-        unsetenv("DYLD_INSERT_LIBRARIES");
-        unsetenv("_MSSafeMode");
-        unsetenv("_SafeMode");
-        unsetenv("_SubstituteSafeMode");
-        unsetenv("JSC_useGC");
-        unsetenv("JSC_useDollarVM");
-        unsetenv("JAILBREAKD_PATH");
-        unsetenv("JAILBREAKD_ARG");
-        unsetenv("JAILBREAKD_CDHASH");
+        NSProcessInfo* procInfo = [NSProcessInfo processInfo];
+        NSDictionary* procEnv = [procInfo environment];
+
+        NSArray* safe_envvars = @[
+            @"CFFIXED_USER_HOME",
+            @"HOME",
+            @"LOGNAME",
+            @"PATH",
+            @"SHELL",
+            @"TMPDIR",
+            @"USER",
+            @"XPC_FLAGS",
+            @"XPC_SERVICE_NAME",
+            @"__CF_USER_TEXT_ENCODING"
+        ];
+
+        for(NSString* envvar in procEnv) {
+            if(![safe_envvars containsObject:envvar]) {
+                NSLog(@"+ removing envvar: %@", envvar);
+                unsetenv([envvar UTF8String]);
+            }
+        }
+
+        // unsetenv("DYLD_INSERT_LIBRARIES");
+        // unsetenv("_MSSafeMode");
+        // unsetenv("_SafeMode");
+        // unsetenv("_SubstituteSafeMode");
+        // unsetenv("JSC_useGC");
+        // unsetenv("JSC_useDollarVM");
+        // unsetenv("JAILBREAKD_PATH");
+        // unsetenv("JAILBREAKD_ARG");
+        // unsetenv("JAILBREAKD_CDHASH");
 
         setenv("SHELL", "/bin/sh", 1);
 
-        shadowhook_libc_envvar(substitutor);
-        shadowhook_NSProcessInfo(substitutor);
+        // shadowhook_libc_envvar(substitutor);
+        // shadowhook_NSProcessInfo(substitutor);
     }
 
     if([prefs_load[@"Hook_Foundation"] boolValue]) {

@@ -1,18 +1,18 @@
 #import "hooks.h"
 
-%group shadowhook_NSProcessInfo
-%hook NSProcessInfo
-- (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
-    if(isCallerTweak()) {
-        return %orig;
-    }
+// %group shadowhook_NSProcessInfo
+// %hook NSProcessInfo
+// - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+//     if(isCallerTweak()) {
+//         return %orig;
+//     }
 
-    // Override version checks that use this method.
-    return YES;
-}
+//     // Override version checks that use this method.
+//     return YES;
+// }
 
-- (NSDictionary *)environment {
-	NSDictionary* result = %orig;
+// - (NSDictionary *)environment {
+// 	NSDictionary* result = %orig;
 
     // if(!isCallerTweak() && result) {
     //     NSMutableDictionary* filtered_result = [result mutableCopy];
@@ -33,13 +33,22 @@
     //     result = [filtered_result copy];
     // }
 
-    return result;
-}
-%end
-%end
+//     return result;
+// }
+// %end
+// %end
 
 %group shadowhook_NSProcessInfo_fakemac
 %hook NSProcessInfo
+- (BOOL)macCatalystApp {
+    if(isCallerTweak()) {
+        return %orig;
+    }
+
+    // actually would be funny if this bypasses a lot of checks
+    return YES;
+}
+
 - (BOOL)isiOSAppOnMac {
     if(isCallerTweak()) {
         return %orig;
@@ -52,7 +61,7 @@
 %end
 
 void shadowhook_NSProcessInfo(HKSubstitutor* hooks) {
-    %init(shadowhook_NSProcessInfo);
+    // %init(shadowhook_NSProcessInfo);
 }
 
 void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks) {
