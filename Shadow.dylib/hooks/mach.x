@@ -11,7 +11,9 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
         || strstr(service_name, "org.coolstar") == service_name
         || strstr(service_name, "com.ex") == service_name
         || strstr(service_name, "com.saurik") == service_name
-        || strstr(service_name, "me.jjolano") == service_name){
+        || strstr(service_name, "com.opa334") == service_name
+        || strstr(service_name, "me.jjolano") == service_name
+        || strstr(service_name, "jailbreakd") != NULL){
             return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }
@@ -30,7 +32,9 @@ static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* serv
         || strstr(service_name, "org.coolstar") == service_name
         || strstr(service_name, "com.ex") == service_name
         || strstr(service_name, "com.saurik") == service_name
-        || strstr(service_name, "me.jjolano") == service_name){
+        || strstr(service_name, "com.opa334") == service_name
+        || strstr(service_name, "me.jjolano") == service_name
+        || strstr(service_name, "jailbreakd") != NULL){
             return BOOTSTRAP_UNKNOWN_SERVICE;
         }
     }

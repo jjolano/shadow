@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
 
+if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
+then
+    DPKG_ROOT="/var/jb"
+fi
+
 case "$1" in
     configure)
-        if [ -d "/Library/Shadow" ]; then
-            chown -R mobile:mobile /Library/Shadow
-            chmod -R 0777 /Library/Shadow
-
-            echo -n "shdw: "
-            /usr/local/bin/shdw -g || true
-        else
-            chown -R mobile:mobile /var/jb/Library/Shadow
-            chmod -R 0777 /var/jb/Library/Shadow
-
-            echo -n "shdw: "
-            /var/jb/usr/local/bin/shdw -g || true
+        if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
+        then
+            # create preferences directory on rootless if for some reason it doesn't exist
+            if [[ ! -d "$DPKG_ROOT/var/mobile/Library/Preferences" ]]
+            then
+                mkdir -p "$DPKG_ROOT/var/mobile/Library/Preferences"
+                chown -R mobile:mobile "$DPKG_ROOT/var/mobile/Library/Preferences"
+                chmod -R 0777 "$DPKG_ROOT/var/mobile/Library/Preferences"
+            fi
         fi
+
+        chown -R mobile:mobile "$DPKG_ROOT/Library/Shadow"
+        chmod -R 0777 "$DPKG_ROOT/Library/Shadow"
+
+        "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
     ;;
 
     triggered)
-        if [ -d "/Library/Shadow" ]; then
-            echo -n "shdw: "
-            /usr/local/bin/shdw -g || true
-        else
-            echo -n "shdw: "
-            /var/jb/usr/local/bin/shdw -g || true
-        fi
+        "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
     ;;
 esac
 

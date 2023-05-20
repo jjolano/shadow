@@ -65,6 +65,9 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
             // (Un)set some flags
             ret &= ~CS_PLATFORM_BINARY;
             ret &= ~CS_GET_TASK_ALLOW;
+            ret &= ~CS_INSTALLER;
+            ret &= ~CS_ENTITLEMENTS_VALIDATED;
+            ret |= 0x0000300; /* CS_JIT_ALLOW */
             ret |= CS_REQUIRE_LV;
         }
 

@@ -121,6 +121,17 @@
             <string>services</string>
             <string>ttys</string>
 		</array>
+		<key>/var/containers</key>
+		<array>
+			<string>Bundle</string>
+			<string>Data</string>
+			<string>Shared</string>
+			<string>Temp</string>
+		</array>
+		<key>/var/containers/Bundle</key>
+		<array>
+			<string>Application</string>
+		</array>
 		<key>/var/mobile</key>
 		<array>
 			<string>Applications</string>
@@ -202,6 +213,7 @@
 		</array>
 		<key>/var/mobile/Library/Application Support</key>
 		<array>
+			<string>Containers</string>
 			<string>CloudDocs</string>
 			<string>CloudKitMailConversationsFlags</string>
 			<string>FileProvider</string>
@@ -501,6 +513,7 @@
 		<string>/var/mobile/Library/Caches/.com.apple</string>
 		<string>/tmp/com.apple</string>
 		<string>/var/mobile/Library/Saved Application State/com.apple</string>
+		<string>/var/mobile/Library/Application Support/Containers/com.apple</string>
 		<string>/var/mobile/Library/SplashBoard/Snapshots/com.apple</string>
 		<string>/var/mobile/Library/Cookies/com.apple</string>
 		<string>/Library/LaunchDaemons/com.apple</string>
@@ -519,6 +532,7 @@
 	<array>
 		<string>/tmp/</string>
 		<string>/var/mobile/Library/Saved Application State/</string>
+		<string>/var/mobile/Library/Application Support/Containers/</string>
 		<string>/var/mobile/Library/SplashBoard/Snapshots/</string>
 		<string>/var/root/</string>
 		<string>/var/log/</string>

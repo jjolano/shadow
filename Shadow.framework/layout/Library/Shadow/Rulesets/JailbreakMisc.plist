@@ -46,6 +46,7 @@
 		<string>/Library/Caches/cy-</string>
 		<string>/dev/dlci.</string>
 		<string>/private/preboot/jb-</string>
+		<string>/var/MobileSoftwareUpdate/mnt1</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>

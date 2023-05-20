@@ -1,4 +1,5 @@
 #import <Shadow/Settings.h>
+#import <RootBridge.h>
 #import "../common.h"
 
 @implementation ShadowSettings
@@ -29,7 +30,7 @@
             @"Hook_HideApps" : @(NO)
         };
 
-        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:[RootBridge getJBPath:@SHADOW_PREFS_PLIST]];
         [userDefaults registerDefaults:defaultSettings];
     }
 
@@ -48,6 +49,10 @@
 }
 
 - (NSDictionary<NSString *, id> *)getPreferencesForIdentifier:(NSString *)bundleIdentifier {
+    if(!userDefaults) {
+        return nil;
+    }
+
     NSMutableDictionary* result = [defaultSettings mutableCopy];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
 
