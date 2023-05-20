@@ -14,6 +14,7 @@ int main(int argc, char *argv[], char *envp[]) {
         if(argc == 1) {
             printf("shdw - command line utility for Shadow\n");
             printf("usage: %s [-g] | <path> [path [...]]\n", argv[0]);
+            printf("\tpath: check if path is restricted\n");
             printf("\t-g: regenerate dpkg installed ruleset\n");
 
             return 0;
