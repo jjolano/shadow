@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 
+if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
+then
+    DPKG_ROOT="/var/jb"
+fi
+
 case "$1" in
     triggered)
-        if [ -d "/Library/Shadow" ]; then
-            echo -n "shdw: "
-            /usr/local/bin/shdw -g || true
-        else
-            echo -n "shdw: "
-            /var/jb/usr/local/bin/shdw -g || true
-        fi
+        "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
     ;;
 esac
 

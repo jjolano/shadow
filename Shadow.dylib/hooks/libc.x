@@ -119,6 +119,11 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
         struct statfs* buf_end = buf + sizeof(struct statfs) * result;
 
         while(buf_ptr < buf_end) {
+            if([_shadow isCPathRestricted:buf_ptr->f_mntonname]) {
+                // handle bindfs/chroot
+                strcpy(buf_ptr->f_mntonname, "/");
+            }
+
             if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
                 buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
@@ -145,6 +150,11 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
         struct statfs** buf_end = mntbufp + sizeof(struct statfs *) * result;
 
         while(buf_ptr < buf_end) {
+            if([_shadow isCPathRestricted:(*buf_ptr)->f_mntonname]) {
+                // handle bindfs/chroot
+                strcpy((*buf_ptr)->f_mntonname, "/");
+            }
+
             if(strcmp((*buf_ptr)->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
                 (*buf_ptr)->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
@@ -174,6 +184,11 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
     if(result == 0) {
         // Modify flags
         if(buf) {
+            if([_shadow isCPathRestricted:buf->f_mntonname]) {
+                // handle bindfs/chroot
+                strcpy(buf->f_mntonname, "/");
+            }
+
             if(strcmp(buf->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
                 buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
@@ -207,6 +222,11 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
     if(result == 0) {
         // Modify flags
         if(buf) {
+            if([_shadow isCPathRestricted:buf->f_mntonname]) {
+                // handle bindfs/chroot
+                strcpy(buf->f_mntonname, "/");
+            }
+
             if(strcmp(buf->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
                 buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
@@ -239,6 +259,11 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
     int result = original_statvfs(pathname, buf);
 
     if(result == 0) {
+        if([_shadow isCPathRestricted:st.f_mntonname]) {
+            // handle bindfs/chroot
+            strcpy(st.f_mntonname, "/");
+        }
+        
         if(strcmp(st.f_mntonname, "/") == 0) {
             // Mark rootfs read-only
             buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
@@ -265,6 +290,11 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
     int result = original_fstatvfs(fd, buf);
 
     if(result == 0) {
+        if([_shadow isCPathRestricted:st.f_mntonname]) {
+            // handle bindfs/chroot
+            strcpy(st.f_mntonname, "/");
+        }
+
         if(strcmp(st.f_mntonname, "/") == 0) {
             // Mark rootfs read-only
             buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;

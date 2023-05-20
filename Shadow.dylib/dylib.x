@@ -60,12 +60,10 @@
     }
 
     // Don't load in certain apps
-    if([bundleIdentifier isEqualToString:@"com.opa334.TrollStore"]
+    if([bundleIdentifier hasPrefix:@"com.opa334"]
+    || [bundleIdentifier hasPrefix:@"org.coolstar"]
+    || [bundleIdentifier hasPrefix:@"science.xnu"]
     || [bundleIdentifier hasPrefix:@"com.apple"]) {
-        return;
-    }
-
-    if(![[NSBundle mainBundle] appStoreReceiptURL]) {
         return;
     }
 
@@ -79,7 +77,7 @@
     NSDictionary* prefs_load = [[ShadowSettings sharedInstance] getPreferencesForIdentifier:bundleIdentifier];
 
     if(!prefs_load) {
-        NSLog(@"[Shadow] warning: preferences not loaded - libsandy may need to be reinstalled");
+        NSLog(@"[Shadow] warning: preferences not loaded");
         return;
     }
 

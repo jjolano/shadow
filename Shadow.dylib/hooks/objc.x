@@ -1,37 +1,17 @@
 #import "hooks.h"
 
 // %group shadowhook_objc
-// %hookf(IMP, method_getImplementation, Method m) {
-//     IMP result = %orig;
+// %hook NSObject
+// + (Class)class {
+//     Class result = %orig;
 
-//     if(!isCallerTweak() && result) {
-//         const char* image_name = dyld_image_path_containing_address(result);
-
-//         if([_shadow isCPathRestricted:image_name]) {
-//             return nil;
-//         }
+//     if(!isCallerTweak() && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+//         return nil;
 //     }
 
 //     return result;
 // }
-
-// %hookf(Method, class_getInstanceMethod, Class cls, SEL name) {
-//     Method result = %orig;
-
-//     if(!isCallerTweak() && result) {
-//         IMP impl = method_getImplementation(result);
-
-//         if(impl) {
-//             const char* image_name = dyld_image_path_containing_address(impl);
-
-//             if([_shadow isCPathRestricted:image_name]) {
-//                 return nil;
-//             }
-//         }
-//     }
-
-//     return result;
-// }
+// %end
 // %end
 
 static const char* (*original_class_getImageName)(Class cls);
@@ -44,45 +24,6 @@ static const char* replaced_class_getImageName(Class cls) {
 
     return [[Shadow getExecutablePath] fileSystemRepresentation];
 }
-
-// static Class (*original_objc_lookUpClass)(const char* name);
-// static Class replaced_objc_lookUpClass(const char* name) {
-//     Class result = original_objc_lookUpClass(name);
-
-//     if(result) {
-//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-//             return nil;
-//         }
-//     }
-
-//     return result;
-// }
-
-// static id (*original_objc_getClass)(const char* name);
-// static id replaced_objc_getClass(const char* name) {
-//     id result = original_objc_getClass(name);
-
-//     if(result) {
-//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-//             return nil;
-//         }
-//     }
-
-//     return result;
-// }
-
-// static Class (*original_objc_getMetaClass)(const char* name);
-// static Class replaced_objc_getMetaClass(const char* name) {
-//     Class result = original_objc_getMetaClass(name);
-
-//     if(result) {
-//         if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)result]) {
-//             return nil;
-//         }
-//     }
-
-//     return result;
-// }
 
 static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
@@ -127,6 +68,34 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     return nil;
 }
 
+typedef struct _NXMapTable NXMapTable;
+typedef struct _NXHashTable NXHashTable;
+
+extern void* NXMapGet(NXMapTable *table, const char *name);
+extern void* NXHashGet(NXHashTable *table, const void *data);
+
+static void* (*original_NXMapGet)(NXMapTable *table, const char *name);
+static void* replaced_NXMapGet(NXMapTable *table, const char *name) {
+    void* result = original_NXMapGet(table, name);
+
+    if(isCallerTweak() || ![_shadow isAddrRestricted:result]) {
+        return result;
+    }
+
+    return nil;
+}
+
+static void* (*original_NXHashGet)(NXHashTable *table, const void *data);
+static void* replaced_NXHashGet(NXHashTable *table, const void *data) {
+    void* result = original_NXHashGet(table, data);
+
+    if(isCallerTweak() || ![_shadow isAddrRestricted:result]) {
+        return result;
+    }
+
+    return nil;
+}
+
 void shadowhook_objc(HKSubstitutor* hooks) {
     // %init(shadowhook_objc);
     MSHookFunction(class_getImageName, replaced_class_getImageName, (void **) &original_class_getImageName);
@@ -136,7 +105,6 @@ void shadowhook_objc(HKSubstitutor* hooks) {
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
-    // MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
-    // MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
-    // MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
+    MSHookFunction(NXMapGet, replaced_NXMapGet, (void **) &original_NXMapGet);
+    MSHookFunction(NXHashGet, replaced_NXHashGet, (void **) &original_NXHashGet);
 }

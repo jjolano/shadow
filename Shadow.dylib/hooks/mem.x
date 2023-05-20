@@ -9,6 +9,7 @@ static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address
         vm_region_basic_info_64_t rinfo = (vm_region_basic_info_64_t)info;
 
         if(rinfo->protection) {
+            rinfo->protection |= VM_PROT_READ;
             rinfo->protection &= ~VM_PROT_EXECUTE;
         }
     }
@@ -25,6 +26,7 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
         vm_region_basic_info_64_t rinfo = (vm_region_basic_info_64_t)info;
 
         if(rinfo->protection) {
+            rinfo->protection |= VM_PROT_READ;
             rinfo->protection &= ~VM_PROT_EXECUTE;
         }
     }
