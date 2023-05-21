@@ -7,17 +7,6 @@ fi
 
 case "$1" in
     configure)
-        if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
-        then
-            # create preferences directory on rootless if for some reason it doesn't exist
-            if [[ ! -d "$DPKG_ROOT/var/mobile/Library/Preferences" ]]
-            then
-                mkdir -p "$DPKG_ROOT/var/mobile/Library/Preferences"
-                chown -R mobile:mobile "$DPKG_ROOT/var/mobile/Library/Preferences"
-                chmod -R 0777 "$DPKG_ROOT/var/mobile/Library/Preferences"
-            fi
-        fi
-
         chown -R mobile:mobile "$DPKG_ROOT/Library/Shadow"
         chmod -R 0777 "$DPKG_ROOT/Library/Shadow"
 
