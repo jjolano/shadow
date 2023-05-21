@@ -30,7 +30,7 @@
             @"Hook_HideApps" : @(NO)
         };
 
-        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:[RootBridge getJBPath:@SHADOW_PREFS_PLIST]];
+        userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
         [userDefaults registerDefaults:defaultSettings];
     }
 
