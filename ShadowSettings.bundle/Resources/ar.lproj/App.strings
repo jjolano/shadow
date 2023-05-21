@@ -1,7 +1,6 @@
 {
 "APP_SETTINGS" = "إعدادات التطبيق";
 "APP_SETTINGS_DESC" = "تفعيل إعدادات التخطي لهذا التطبيق.";
-
 "ENABLE_SHADOW" = "تفعيل Shadow";
 "ENABLED" = "مُفعَّل";
 }
