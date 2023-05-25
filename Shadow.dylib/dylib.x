@@ -63,7 +63,8 @@
     if([bundleIdentifier hasPrefix:@"com.opa334"]
     || [bundleIdentifier hasPrefix:@"org.coolstar"]
     || [bundleIdentifier hasPrefix:@"science.xnu"]
-    || [bundleIdentifier hasPrefix:@"com.apple"]) {
+    || [bundleIdentifier hasPrefix:@"com.apple"]
+    || [bundleIdentifier hasPrefix:@"com.samiiau.loader"]) {
         return;
     }
 
