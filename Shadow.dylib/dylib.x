@@ -64,7 +64,8 @@
     || [bundleIdentifier hasPrefix:@"org.coolstar"]
     || [bundleIdentifier hasPrefix:@"science.xnu"]
     || [bundleIdentifier hasPrefix:@"com.apple"]
-    || [bundleIdentifier hasPrefix:@"com.samiiau.loader"]) {
+    || [bundleIdentifier hasPrefix:@"com.samiiau.loader"]
+    || [bundleIdentifier hasPrefix:@"com.llsc12.palera1nLoader"]) {
         return;
     }
 
