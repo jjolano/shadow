@@ -187,10 +187,10 @@
         return [self isPathRestricted:path options:options];
     }
 
-    return [self isURLSchemeRestricted:[url scheme]];
+    return [self isSchemeRestricted:[url scheme]];
 }
 
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme {
-    return [backend isURLSchemeRestricted:scheme];
+- (BOOL)isSchemeRestricted:(NSString *)scheme {
+    return [backend isSchemeRestricted:scheme];
 }
 @end

@@ -10,6 +10,6 @@
 }
 
 - (BOOL)isPathRestricted:(NSString *)path;
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme;
+- (BOOL)isSchemeRestricted:(NSString *)scheme;
 @end
 #endif

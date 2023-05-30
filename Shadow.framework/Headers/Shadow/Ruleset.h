@@ -20,6 +20,6 @@
 - (BOOL)isPathCompliant:(NSString *)path;
 - (BOOL)isPathWhitelisted:(NSString *)path;
 - (BOOL)isPathBlacklisted:(NSString *)path;
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme;
+- (BOOL)isSchemeRestricted:(NSString *)scheme;
 @end
 #endif

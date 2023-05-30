@@ -30,6 +30,6 @@
 - (BOOL)isURLRestricted:(NSURL *)url;
 - (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options;
 
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme;
+- (BOOL)isSchemeRestricted:(NSString *)scheme;
 @end
 #endif

@@ -165,7 +165,7 @@
     return NO;
 }
 
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme {
+- (BOOL)isSchemeRestricted:(NSString *)scheme {
     return [set_urlschemes containsObject:scheme];
 }
 @end
