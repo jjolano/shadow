@@ -103,7 +103,7 @@
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForHandlingURLScheme:(NSString *)urlScheme {
-    if(!isCallerTweak() && [_shadow isURLSchemeRestricted:urlScheme]) {
+    if(!isCallerTweak() && [_shadow isSchemeRestricted:urlScheme]) {
         return @[];
     }
 
@@ -133,7 +133,7 @@
         NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
 
         for(NSString* scheme in result) {
-            if([_shadow isURLSchemeRestricted:scheme]) {
+            if([_shadow isSchemeRestricted:scheme]) {
                 [result_filtered removeObject:scheme];
             }
         }
@@ -151,7 +151,7 @@
         NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
 
         for(NSString* scheme in result) {
-            if([_shadow isURLSchemeRestricted:scheme]) {
+            if([_shadow isSchemeRestricted:scheme]) {
                 [result_filtered removeObject:scheme];
             }
         }
