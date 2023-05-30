@@ -87,7 +87,7 @@
     return restricted;
 }
 
-- (BOOL)isURLSchemeRestricted:(NSString *)scheme {
+- (BOOL)isSchemeRestricted:(NSString *)scheme {
     if(!scheme || [scheme length] == 0) {
         return NO;
     }
@@ -103,7 +103,7 @@
 
     // Check rulesets
     [rulesets enumerateObjectsWithOptions:NSEnumerationConcurrent usingBlock:^(ShadowRuleset* ruleset, NSUInteger idx, BOOL* stop) {
-        if([ruleset isURLSchemeRestricted:scheme]) {
+        if([ruleset isSchemeRestricted:scheme]) {
             restricted = YES;
             *stop = YES;
         }
