@@ -57,6 +57,16 @@ static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* 
     return NULL;
 }
 
+static id (*original_objc_getClass)(const char *name); 
+static id replaced_objc_getClass(const char *name) {
+    id result = original_objc_getClass(name);
+
+    if(isCallerTweak() || ![_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return result;
+    }
+    return nil;
+}
+
 static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
@@ -104,6 +114,7 @@ void shadowhook_objc(HKSubstitutor* hooks) {
 }
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
+    MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
     MSHookFunction(NXMapGet, replaced_NXMapGet, (void **) &original_NXMapGet);
     MSHookFunction(NXHashGet, replaced_NXHashGet, (void **) &original_NXHashGet);
