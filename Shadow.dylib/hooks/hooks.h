@@ -6,6 +6,7 @@
 #import <sys/statvfs.h>
 #import <sys/mount.h>
 #import <sys/syscall.h>
+#import <sys/ioctl.h>
 #import <sys/utsname.h>
 #import <sys/syslimits.h>
 #import <sys/time.h>
