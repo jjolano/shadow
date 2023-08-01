@@ -74,10 +74,10 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
             ret |= 0x0000300; /* CS_JIT_ALLOW */
             ret |= CS_REQUIRE_LV;
 
-	    int flags = 0;
+            int flags = 0;
             original_csops(pid, ops, &flags, sizeof(flags));
             if(flags & CS_DEBUGGED) {
-		*(int*)useraddr &= ~CS_DEBUGGED;
+                *(int*)useraddr &= ~CS_DEBUGGED;
             }
         }
 
