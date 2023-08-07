@@ -2,6 +2,10 @@
 
 #import "hooks.h"
 
+#ifndef CS_DEBUGGED
+#define CS_DEBUGGED 0x10000000
+#endif
+
 static int (*original_syscall)(int number, ...);
 static int replaced_syscall(int number, ...) {
     NSLog(@"%@: %d", @"syscall", number);
@@ -69,6 +73,12 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
             ret &= ~CS_ENTITLEMENTS_VALIDATED;
             ret |= 0x0000300; /* CS_JIT_ALLOW */
             ret |= CS_REQUIRE_LV;
+
+            int flags = 0;
+            original_csops(pid, ops, &flags, sizeof(flags));
+            if(flags & CS_DEBUGGED) {
+                *(int*)useraddr &= ~CS_DEBUGGED;
+            }
         }
 
         if(ops == CS_OPS_CDHASH) {

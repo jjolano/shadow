@@ -768,6 +768,32 @@ static pid_t replaced_getppid() {
     return 1;
 }
 
+static int (*original_isatty)(int fd);
+static int replaced_isatty(int fd) {
+    int result = original_isatty(fd);
+    if (result && fd == STDOUT_FILENO) {
+        errno = ENOENT;
+        return 0;
+    }
+    return result;
+}
+
+static int (*original_ioctl)(int fd, unsigned long request, ...);
+static int replaced_ioctl(int fd, unsigned long request, ...) {
+    void* arg;
+    va_list args;
+    va_start(args, request);
+    arg = va_arg(args, void *);
+    va_end(args);
+
+    int result = original_ioctl(fd, request, arg);
+    if(!result && request == TIOCGWINSZ) {
+        errno = ENOTTY;
+        return -1;
+    }
+    return result;
+}
+
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
     void* arg;
@@ -884,4 +910,6 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
     MSHookFunction(getppid, replaced_getppid, NULL);
+    MSHookFunction(isatty, replaced_isatty, (void **) &original_isatty);
+    MSHookFunction(ioctl, replaced_ioctl, (void **) &original_ioctl);
 }
