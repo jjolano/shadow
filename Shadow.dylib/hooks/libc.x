@@ -786,7 +786,7 @@ static int replaced_ioctl(int fd, unsigned long request, ...) {
     arg = va_arg(args, void *);
     va_end(args);
 
-    int result = original_ioctl(fd, request, args);
+    int result = original_ioctl(fd, request, arg);
     if(!result && request == TIOCGWINSZ) {
         errno = ENOTTY;
         return -1;
