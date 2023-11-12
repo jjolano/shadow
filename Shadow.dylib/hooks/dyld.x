@@ -1,3 +1,6 @@
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wframe-address"
+
 #import "hooks.h"
 
 static NSMutableArray<NSDictionary *>* _shdw_dyld_collection = nil;
@@ -9,6 +12,52 @@ static BOOL _shdw_dyld_error = NO;
 
 // todo: maybe hook this private symbol
 // extern void call_funcs_for_add_image(struct mach_header *mh, unsigned long vmaddr_slide);
+#include <os/log.h>
+#undef isCallerTweak
+bool isCallerTweak() {
+    // NSLog(@"%@", NSThread.callStackSymbols);
+    // os_log(OS_LOG_DEFAULT, "%{public}@", NSThread.callStackSymbols);
+    // return true;
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    void *retaddrs[] = {
+        __builtin_return_address(0),
+        __builtin_return_address(1),
+        __builtin_return_address(2),
+        __builtin_return_address(3),
+        __builtin_return_address(4),
+        __builtin_return_address(5),
+        __builtin_return_address(6),
+        __builtin_return_address(7),
+    };
+    for (int i = 0; i < 8; i++) {
+        void *addr = __builtin_extract_return_addr(retaddrs[i]);
+        if (![_shadow isAddrExternal:addr]) { // address is belong to app
+            return false;
+        }
+
+        const char* image_path = dyld_image_path_containing_address(addr);
+
+        for (NSDictionary *img in _dyld_collection) {
+            if (!strcmp([img[@"name"] UTF8String], image_path)) {
+                return false; // is in safe module list
+            }
+        }
+        // if (![_shadow isAddrRestricted:addr]) { // address is belong to tweak
+        //     return true;
+        // }
+    }
+    return true;
+    // for (NSString *sym in NSThread.callStackSymbols) {
+    //     // do something with object
+    //     if ([sym containsString:@"libinjector.dylib"]) { // RootHide's injector
+    //         return true;
+    //     }
+    //     if ([sym containsString:@"tweaks_iterate"] || [sym containsString:@"injection_init"]) { // RootHide's injector
+    //         return true;
+    //     }
+    // }
+    // return false;
+}
 
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
@@ -42,12 +91,15 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
+    // NSLog(@"_dyld_get_image_name from %p (%d): %@", __builtin_extract_return_addr(__builtin_return_address(0)), isCallerTweak(), NSThread.callStackSymbols);
     if(isCallerTweak()) {
         return original_dyld_get_image_name(image_index);
     }
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+    const char *ret = image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] UTF8String] : NULL;
+    // NSLog(@"_dyld_get_image_name -> %s", ret ? ret: "");
+    return ret;
 }
 
 static void* (*original_dlopen)(const char* path, int mode);
@@ -177,6 +229,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     if(image_path) {
         NSString* path = [NSString stringWithUTF8String:image_path];
 
+        NSLog(@"%@: %@: %@", @"dyld", @"checking lib", path);
         if([path hasPrefix:@"/System"] || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
             NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
 
@@ -304,14 +357,20 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
+
+    // !! err in ellekit's substrate, because _dyld_image_count uses x16, conflicts with ellekit
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
+    
     MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
     MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
     MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
 
     MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
-    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
+    
+    // !! will cause err in Dobby if directly hook using import address, must use findSymbol
+    void *p_dlopen_preflight = MSFindSymbol(MSGetImageByName("/usr/lib/system/libdyld.dylib"), "_dlopen_preflight");
+    MSHookFunction(p_dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 
     MSHookFunction(dlerror, replaced_dlerror, (void **) &original_dlerror);
 }

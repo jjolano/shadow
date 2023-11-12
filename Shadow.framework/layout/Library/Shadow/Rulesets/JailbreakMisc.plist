@@ -58,6 +58,8 @@
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
+		<string>SELF LIKE[c] '/usr/lib/*systemhook*'</string>
+		<string>SELF LIKE[c] '/var/containers/Bundle/Application/.jbroot-*/*'</string>
 	</array>
 	<key>BlacklistURLSchemes</key>
 	<array>

@@ -49,6 +49,8 @@ extern char*** _NSGetArgv();
         }
     }
 
+    //path = [RootBridge getJBPath:path]; // RootHide jb have the same layout as rootful jb, we need to manually convert the path
+
     if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
