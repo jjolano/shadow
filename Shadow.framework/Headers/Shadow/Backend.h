@@ -7,9 +7,10 @@
 __attribute__((visibility("default")))
 @interface ShadowBackend : NSObject {
     NSArray<RulesetEngine *>* rulesets;
-    NSCache<NSString *, NSNumber *>* cache_restricted;
+    NSCache<NSString *, NSArray *>* cache_restricted;
     double rulesetDirMtime;
     NSArray<NSNumber *>* rulesetFileMtimes;
+    NSUInteger rulesetGeneration;
 }
 
 - (BOOL)isPathRestricted:(NSString *)path;

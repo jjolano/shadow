@@ -70,6 +70,7 @@ static double lastRulesetCheck = 0.0;
 
 - (void)_reloadRulesets {
     rulesets = [self _loadRulesets];
+    rulesetGeneration += 1;
     [cache_restricted removeAllObjects];
 }
 
@@ -116,16 +117,18 @@ static double lastRulesetCheck = 0.0;
 
     [self _checkRulesetChanges];
 
-    NSNumber* cached = [cache_restricted objectForKey:path];
+    NSUInteger gen = rulesetGeneration;
 
-    if(cached) {
-        return [cached boolValue];
+    NSArray* cached = [cache_restricted objectForKey:path];
+
+    if(cached && [[cached objectAtIndex:0] unsignedIntegerValue] == gen) {
+        return [[cached objectAtIndex:1] boolValue];
     }
 
     // pass 1: compliance (hard veto)
     for(RulesetEngine* ruleset in rulesets) {
         if(![ruleset isPathCompliant:path]) {
-            [cache_restricted setObject:@(YES) forKey:path];
+            [cache_restricted setObject:@[@(gen), @(YES)] forKey:path];
             return YES;
         }
     }
@@ -156,7 +159,7 @@ static double lastRulesetCheck = 0.0;
         restricted = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
     }
 
-    [cache_restricted setObject:@(restricted) forKey:path];
+    [cache_restricted setObject:@[@(gen), @(restricted)] forKey:path];
     return restricted;
 }
 

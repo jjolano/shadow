@@ -114,7 +114,7 @@
 - (BOOL)path:(NSString *)path hasComponentPrefix:(NSString *)prefix {
     NSUInteger prefix_len = [prefix length];
 
-    if(prefix_len == 0) {
+    if(prefix_len == 0 || [prefix isEqualToString:@"/"]) {
         return YES;
     }
 
@@ -123,6 +123,23 @@
     }
 
     return [path hasPrefix:prefix] && [path characterAtIndex:prefix_len] == '/';
+}
+
+- (BOOL)path:(NSString *)path hasFilenamePrefix:(NSString *)prefix {
+    NSUInteger prefix_len = [prefix length];
+
+    if(prefix_len == 0 || [prefix isEqualToString:@"/"]) {
+        return YES;
+    }
+
+    if(prefix_len == [path length]) {
+        return [path isEqualToString:prefix];
+    }
+
+    // Prefix may end mid-filename (com.apple -> com.apple.locationd.plist), but must
+    // not span a slash boundary (com.apple -> com.appleEvil/subdir/file is a miss).
+    // Search from prefix_len + 1: the boundary char itself may be '/'.
+    return [path hasPrefix:prefix] && [path rangeOfString:@"/" options:0 range:NSMakeRange(prefix_len + 1, [path length] - prefix_len - 1)].location == NSNotFound;
 }
 
 - (NSArray<NSString *>*)_normalizePaths:(NSArray<NSString *>*)paths {
@@ -187,7 +204,7 @@
     }
 
     for(NSString* whitelist_path in array_whitelist) {
-        if([self path:path hasComponentPrefix:whitelist_path]) {
+        if([self path:path hasFilenamePrefix:whitelist_path]) {
             return YES;
         }
     }
@@ -201,7 +218,7 @@
     }
 
     for(NSString* blacklist_path in array_blacklist) {
-        if([self path:path hasComponentPrefix:blacklist_path]) {
+        if([self path:path hasFilenamePrefix:blacklist_path]) {
             return YES;
         }
     }

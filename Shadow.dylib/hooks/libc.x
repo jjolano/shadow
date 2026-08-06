@@ -1,5 +1,7 @@
 #import "hooks.h"
 
+#import <string.h>
+
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
     int result = original_access(pathname, mode);
@@ -768,6 +770,15 @@ static pid_t replaced_getppid() {
     return 1;
 }
 
+// freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
+// jailbroken devices (symlink into writable bootstrap) and fails on stock.
+// Fail the same way stock does (ENOENT — the path doesn't resolve).
+static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
+    return pathname
+        && (oflag & O_CREAT)
+        && (strstr(pathname, ".jbroot") != NULL);
+}
+
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
     void* arg;
@@ -775,6 +786,13 @@ static int replaced_open(const char *pathname, int oflag, ...) {
     va_start(args, oflag);
     arg = va_arg(args, void *);
     va_end(args);
+
+    if(!isCallerTweak() && shdw_is_jbroot_write_probe(pathname, oflag)) {
+        // Stock fails with ENOENT since .jbroot doesn't exist there; must match
+        // exactly so the probe can't distinguish us via a different errno.
+        errno = ENOENT;
+        return -1;
+    }
 
     if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
         return original_open(pathname, oflag, arg);
@@ -794,6 +812,13 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
     if(isCallerTweak()) {
         return original_openat(dirfd, pathname, oflag, arg);
+    }
+
+    if(shdw_is_jbroot_write_probe(pathname, oflag)) {
+        // Stock fails with ENOENT since .jbroot doesn't exist there; must match
+        // exactly so the probe can't distinguish us via a different errno.
+        errno = ENOENT;
+        return -1;
     }
 
     if(pathname

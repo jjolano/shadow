@@ -107,11 +107,28 @@ signature scan — only catches inline hooks, not fishhook GOT rebinding).
   `amIMSHooked`/`amIRuntimeHooked`/`denyMSHook`/`denyFishHook`/`denySymbolHook`. The only
   automatic anti-evasion is `checkDYLD` (uses `_dyld_image_count`/`_dyld_get_image_name` —
   both hooked by shadow) + the `ShadowRuleset`/`internalDictionary` ObjC probe (class+method
-  renamed). `denyMSHook` does NOT unpatch hooks — it only locates the original stub (returns
+  renamed).   `denyMSHook` does NOT unpatch hooks — it only locates the original stub (returns
   nil for fishhook hooks); `denyFishHook` reverts GOT slots only (inline ElleKit dladdr/dlsym
   hooks are immune — subInline routing is correct). The suite NEVER reads `dyld_all_image_infos`
-  directly (no `_dyld_get_all_image_infos`, no `task_info`, no `dyld_process_info_create`) —
-  W2 memory hiding is defense-in-depth for freeRASP-style readers, not required by the suite.
+  directly (no `_dyld_get_all_image_infos`, no `task_info`, no `dyld_process_info_create`).
+  W2 memory hiding + dyld API hooks cover the suite entirely; research on dyld4 internals
+  (apple-oss-distributions/dyld main/dyld-940/dyld-852) maps the residual enumeration surface:
+  already covered — `_dyld_image_count/name/header/slide` (hooked; dyld4 `loaded` vector),
+  `_dyld_register_func_for_add_image/remove_image` (hooked — Sentry/Crashlytics callbacks
+  receive the filtered collection and shadow wins the injection-order race), `dlopen/dlsym/dladdr`
+  (hooked), `task_info`/legacy cross-process `_dyld_process_info_create` (struct patch).   Gaps closed (dyld.x, build-verified): `dyld_image_path_containing_address` (hooked by
+  concurrent worker) + `dyld_image_header_containing_address` (new hook, `_Thread_local`
+  reentrancy guard, app-embedded callers get NULL for restricted addresses — dyld's own
+  "not in any image" signal), and `compact_dyld_image_info_addr/size` zeroing (second Atlas
+  copy; dyld's absence signal is size==0; re-applied per rebuild, `version >= 16` guard for
+  older struct layouts). Deferred to device testing (unverifiable here,
+  private/ObjC-backed): Atlas snapshot SPI (`dyld_process_snapshot_create_for_process`,
+  vtable `_dyld_process_info_create` via `_dyld_legacy_introspection_vtable`), infoArray
+  re-publish race ordering, `_dyld_process_info_notify` event streams, `dladdr`-based
+  attribution. freeRASP note: detection core is a closed binary (`TalsecRuntime.xcframework`
+  + `libRHProbe.dat` hardening probe, explicitly names Shadow in hook detection) — assume any
+  vector above; image-list hiding is necessary but not sufficient against its own-integrity
+  probe.
   Residual accepted: an app that explicitly calls `amIMSHooked`/`denyMSHook` on exactly the
   inline-hooked functions (dladdr/dlsym/dlopen_internal, objc runtime C hooks) can see/locate
   those templates; `getMachOFileHashValue` (SHA256 of `__TEXT.__text`) detects inline patches
