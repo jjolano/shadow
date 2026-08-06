@@ -2,3 +2,6 @@ interest /var/mobile
 interest /var/jb/Applications
 interest /System
 interest /Applications
+interest /var/jb
+interest /Library
+interest /usr

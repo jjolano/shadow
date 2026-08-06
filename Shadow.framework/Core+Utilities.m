@@ -101,7 +101,7 @@ extern char*** _NSGetArgv();
 
     // // Load standard (built-in) ruleset.
     // NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
-    // ShadowRuleset* ruleset = [ShadowRuleset rulesetWithPath:[RootBridge getJBPath:ruleset_path]];
+    // RulesetEngine* ruleset = [RulesetEngine rulesetWithPath:[RootBridge getJBPath:ruleset_path]];
 
     NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
 

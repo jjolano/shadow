@@ -4,6 +4,7 @@
 
 #import <Shadow.h>
 #import <Shadow/Core+Utilities.h>
+#import <Shadow/SystemRulesGenerator.h>
 
 #import <RootBridge.h>
 
@@ -15,7 +16,7 @@ int main(int argc, char *argv[], char *envp[]) {
             printf("shdw - command line utility for Shadow\n");
             printf("usage: %s [-g] | <path> [path [...]]\n", argv[0]);
             printf("\tpath: check if path is restricted\n");
-            printf("\t-g: regenerate dpkg installed ruleset\n");
+            printf("\t-g: regenerate dpkg installed + system rulesets\n");
 
             return 0;
         }
@@ -33,13 +34,13 @@ int main(int argc, char *argv[], char *envp[]) {
 
         if(regenerateDb) {
             NSDictionary* ruleset_dpkg = [Shadow generateDatabase];
+            BOOL dpkg_ok = NO;
 
             if(ruleset_dpkg) {
-                BOOL success = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
+                dpkg_ok = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
 
-                if(success) {
+                if(dpkg_ok) {
                     printf("successfully regenerated dpkg ruleset\n");
-                    return 0;
                 } else {
                     fprintf(stderr, "error: failed to save generated ruleset\n");
                 }
@@ -47,7 +48,17 @@ int main(int argc, char *argv[], char *envp[]) {
                 fprintf(stderr, "error: could not generate ruleset\n");
             }
 
-            return -1;
+            BOOL system_ok = [SystemRulesGenerator writeSystemRuleset];
+
+            if(system_ok) {
+                printf("successfully regenerated system ruleset\n");
+            } else {
+                fprintf(stderr, "error: failed to generate system ruleset\n");
+            }
+
+            // Fail-soft: exit status reflects the dpkg ruleset only; postinst
+            // depends on -g succeeding even if SystemRules generation fails.
+            return dpkg_ok ? 0 : -1;
         }
 
         Shadow* shadow = [Shadow sharedInstance];

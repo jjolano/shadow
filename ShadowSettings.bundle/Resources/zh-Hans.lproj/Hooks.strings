@@ -10,9 +10,6 @@
 "ALLOW_RESOURCES" = "允许插件资源";
 "ALLOW_RESOURCES_DESC" = "某些插件需要完全访问一些越狱资源。除非需要插件，否则不要启用此功能。";
 
-"ROOTLESS_MODE" = "启用无根模式";
-"ROOTLESS_MODE_DESC" = "如果您在无根越狱中运行Shadow，请启用此设置。如果您使用的越狱不是无根越狱，请不要启用。";
-
 "ENHANCEMENT_SETTINGS" = "优化设置";
 
 "ENH_PATH_RESOLVING" = "优化路径处理";

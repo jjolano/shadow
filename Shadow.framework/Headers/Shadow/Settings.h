@@ -3,6 +3,7 @@
 
 #import <Foundation/Foundation.h>
 
+__attribute__((visibility("default")))
 @interface ShadowSettings : NSObject
 @property (strong, nonatomic, readonly) NSDictionary<NSString *, id>* defaultSettings;
 @property (strong, nonatomic, readonly) NSUserDefaults* userDefaults;

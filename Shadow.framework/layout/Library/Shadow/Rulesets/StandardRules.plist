@@ -73,37 +73,6 @@
             <string>vm</string>
             <string>wireless</string>
 		</array>
-		<key>/Library</key>
-		<array>
-			<string>Application Support</string>
-			<string>Audio</string>
-            <string>Caches</string>
-            <string>Filesystems</string>
-            <string>Frameworks</string>
-            <string>Internet Plug-Ins</string>
-            <string>Keychains</string>
-            <string>LaunchAgents</string>
-            <string>LaunchDaemons</string>
-            <string>Logs</string>
-            <string>Managed Preferences</string>
-            <string>MobileDevice</string>
-            <string>MusicUISupport</string>
-            <string>Preferences</string>
-            <string>Printers</string>
-            <string>RegionFeatures</string>
-            <string>Ringtones</string>
-            <string>Updates</string>
-            <string>Wallpaper</string>
-        </array>
-		<key>/usr</key>
-		<array>
-			<string>bin</string>
-            <string>lib</string>
-            <string>libexec</string>
-            <string>sbin</string>
-            <string>share</string>
-            <string>standalone</string>
-		</array>
 		<key>/etc</key>
 		<array>
 			<string>asl</string>
@@ -159,11 +128,6 @@
 			<string>iTunesRestore</string>
 			<string>iTunes_Control</string>
 		</array>
-		<key>/bin</key>
-		<array>
-			<string>ps</string>
-			<string>df</string>
-		</array>
 		<key>/var/mobile/Library/Preferences</key>
 		<array>
 			<string>.GlobalPreferences.plist</string>
@@ -205,11 +169,6 @@
 			<string>asl</string>
 			<string>mDNSResponder</string>
 			<string>ppp</string>
-		</array>
-		<key>/Library/Application Support</key>
-		<array>
-			<string>AggregateDictionary</string>
-			<string>BTServer</string>
 		</array>
 		<key>/var/mobile/Library/Application Support</key>
 		<array>
@@ -366,28 +325,6 @@
 		<array>
 			<string>ModuleConfiguration.plist</string>
 		</array>
-		<key>/usr/share</key>
-		<array>
-			<string>CSI</string>
-			<string>com.apple.languageassetd</string>
-			<string>icu</string>
-			<string>langid</string>
-			<string>locale</string>
-			<string>misc</string>
-			<string>morphun</string>
-			<string>progressui</string>
-			<string>tokenizer</string>
-			<string>zoneinfo</string>
-			<string>zoneinfo.default</string>
-		</array>
-		<key>/usr/share/locale</key>
-		<array>
-			<string>UTF-8</string>
-		</array>
-		<key>/usr/share/locale/UTF-8</key>
-		<array>
-			<string>LC_CTYPE</string>
-		</array>
 		<key>/var/mobile/Library/Logs</key>
 		<array>
 			<string>AppleSupport</string>
@@ -402,108 +339,6 @@
 			<string>RTCReporting</string>
 			<string>WirelessRadioManager</string>
 			<string>mobileactivationd</string>
-		</array>
-		<key>/usr/bin</key>
-		<array>
-			<string>DumpBasebandCrash</string>
-			<string>IOMFB_FDR_Loader</string>
-			<string>PerfPowerServicesExtended</string>
-			<string>abmlite</string>
-			<string>afktool</string>
-			<string>brctl</string>
-			<string>codecctl</string>
-			<string>fileproviderctl</string>
-			<string>footprint</string>
-			<string>hidutil</string>
-			<string>hpmdiagnose</string>
-			<string>kbdebug</string>
-			<string>lsdiagnose</string>
-			<string>ltop</string>
-			<string>nfsstat</string>
-			<string>orionmicroupdate</string>
-			<string>powerlogHelperd</string>
-			<string>swift-inspect</string>
-			<string>sysdiagnose</string>
-			<string>tailspin</string>
-			<string>taskinfo</string>
-			<string>umtool</string>
-			<string>vm_stat</string>
-			<string>zprint</string>
-		</array>
-		<key>/usr/sbin</key>
-		<array>
-			<string>BTAvrCP</string>
-			<string>BTLEServer</string>
-			<string>BTMagic</string>
-			<string>BTMap</string>
-			<string>BTPbap</string>
-			<string>BlueTool</string>
-			<string>WRM_CoreDataStore.momd</string>
-			<string>WirelessRadioManagerd</string>
-			<string>absd</string>
-			<string>addNetworkInterface</string>
-			<string>aslmanager</string>
-			<string>audioclocksyncd</string>
-			<string>bluetoothd</string>
-			<string>cfprefsd</string>
-			<string>ckksctl</string>
-			<string>distnoted</string>
-			<string>fairplayd.A2</string>
-			<string>filecoordinationd</string>
-			<string>hdik</string>
-			<string>ioreg</string>
-			<string>mDNSResponder</string>
-			<string>mDNSResponderHelper</string>
-			<string>mediaserverd</string>
-			<string>notifyd</string>
-			<string>nvram</string>
-			<string>otctl</string>
-			<string>pppd</string>
-			<string>racoon</string>
-			<string>rtadvd</string>
-			<string>spindump</string>
-			<string>syslogd</string>
-			<string>wifid</string>
-		</array>
-		<key>/usr/lib</key>
-		<array>
-			<string>bbmasks</string>
-			<string>dyld</string>
-			<string>libCoreKE.dylib</string>
-			<string>libMTLCapture.dylib</string>
-			<string>libMTLToolsDiagnostics.dylib</string>
-			<string>libSystem.B_asan.dylib</string>
-			<string>libSystem_asan.dylib</string>
-			<string>libffi-trampolines.dylib</string>
-			<string>libobjc-trampolines.dylib</string>
-			<string>libstdc++.6.dylib</string>
-			<string>libstdc++.6.0.9.dylib</string>
-			<string>system</string>
-			<string>swift</string>
-			<string>updaters</string>
-			<string>log</string>
-			<string>xpc</string>
-			<string>libstdc++.dylib</string>
-		</array>
-		<key>/sbin</key>
-		<array>
-			<string>fsck</string>
-			<string>fsck_apfs</string>
-			<string>fsck_exfat</string>
-			<string>fsck_hfs</string>
-			<string>fsck_msdos</string>
-			<string>launchd</string>
-			<string>mount</string>
-			<string>mount_apfs</string>
-			<string>mount_hfs</string>
-			<string>mount_lifs</string>
-			<string>mount_nfs</string>
-			<string>mount_tmpfs</string>
-			<string>newfs_apfs</string>
-			<string>newfs_exfat</string>
-			<string>newfs_hfs</string>
-			<string>newfs_msdos</string>
-			<string>umount</string>
 		</array>
 	</dict>
 	<key>WhitelistPaths</key>
