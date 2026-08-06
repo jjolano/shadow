@@ -65,13 +65,14 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 
     for(NSString* entry in entries) {
         NSString* name = [entry lastPathComponent];
+        NSString* entryPath = [fsPath stringByAppendingPathComponent:entry];
         [children addObject:name];
 
         if(descend) {
-            NSString* fileType = [[fm attributesOfItemAtPath:entry error:NULL] objectForKey:NSFileType];
+            NSString* fileType = [[fm attributesOfItemAtPath:entryPath error:NULL] objectForKey:NSFileType];
 
             if([fileType isEqualToString:NSFileTypeDirectory]) {
-                [self _buildStructure:structure fsPath:entry canonPath:[canonPath stringByAppendingPathComponent:name] remaining:nextRemaining];
+                [self _buildStructure:structure fsPath:entryPath canonPath:[canonPath stringByAppendingPathComponent:name] remaining:nextRemaining];
             }
         }
     }
@@ -80,9 +81,9 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 // Walks all zones at their configured depth limit. Zones that do not exist are
-// skipped; a failed enumeration keeps the partial structure and stops (caller
-// warns).
-+ (void)_walkStructureZonesWithPrefix:(NSString*)fsPrefix into:(NSMutableDictionary*)structure {
+// skipped (not failures). Returns NO if any existing zone failed to enumerate;
+// the partial structure is kept for a live-filesystem fallback.
++ (BOOL)_walkStructureZonesWithPrefix:(NSString*)fsPrefix into:(NSMutableDictionary*)structure {
     NSFileManager* fm = [NSFileManager defaultManager];
 
     for(NSUInteger i = 0; i < kSystemZoneCount; i++) {
@@ -97,9 +98,11 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 
         if(![self _buildStructure:structure fsPath:fsPath canonPath:zonePath remaining:zone->depth]) {
             fprintf(stderr, "warning: SystemRules: failed walking %s, keeping partial structure\n", zone->path);
-            break;
+            return NO;
         }
     }
+
+    return YES;
 }
 
 // Collects every entry (files, dirs, symlinks) under fsPath, canonicalized, full depth.
@@ -114,12 +117,18 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     for(NSString* entry in entries) {
         NSString* name = [entry lastPathComponent];
         NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:name]];
+
+        if(IsCryptexZone(canon)) {
+            continue;
+        }
+
+        NSString* entryPath = [fsPath stringByAppendingPathComponent:entry];
         [set addObject:canon];
 
-        NSString* fileType = [[fm attributesOfItemAtPath:entry error:NULL] objectForKey:NSFileType];
+        NSString* fileType = [[fm attributesOfItemAtPath:entryPath error:NULL] objectForKey:NSFileType];
 
         if([fileType isEqualToString:NSFileTypeDirectory]) {
-            [self _collectPaths:entry canonPath:canon into:set];
+            [self _collectPaths:entryPath canonPath:canon into:set];
         }
     }
 }
@@ -158,7 +167,13 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     for(NSString* entry in entries) {
         NSString* name = [entry lastPathComponent];
         NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:name]];
-        NSString* fileType = [[fm attributesOfItemAtPath:entry error:NULL] objectForKey:NSFileType];
+
+        if(IsCryptexZone(canon)) {
+            continue;
+        }
+
+        NSString* entryPath = [fsPath stringByAppendingPathComponent:entry];
+        NSString* fileType = [[fm attributesOfItemAtPath:entryPath error:NULL] objectForKey:NSFileType];
         BOOL isDir = [fileType isEqualToString:NSFileTypeDirectory];
 
         if(![snapshotSet containsObject:canon]) {
@@ -170,7 +185,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         }
 
         if(isDir) {
-            [self _diffWalk:entry canonPath:canon snapshotSet:snapshotSet exact:exact dirs:dirs];
+            [self _diffWalk:entryPath canonPath:canon snapshotSet:snapshotSet exact:exact dirs:dirs];
         }
     }
 }
@@ -215,45 +230,51 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         }
 
         char buf[4096];
+        int ret = fs_snapshot_list(fd, NULL, buf, sizeof(buf), 0);
 
-        if(fs_snapshot_list(fd, NULL, buf, sizeof(buf), 0) == 0) {
-            NSMutableArray* names = [NSMutableArray new];
-            uint32_t offset = 0;
+        if(ret < 0) {
+            close(fd);
+            continue;
+        }
 
-            while(offset + sizeof(uint32_t) <= sizeof(buf)) {
-                uint32_t nameLength;
-                memcpy(&nameLength, buf + offset, sizeof(nameLength));
-                offset += sizeof(nameLength);
+        // Some xnu versions return the byte count (positive) instead of 0.
+        size_t parseBound = (ret > 0) ? (size_t)ret : sizeof(buf);
+        NSMutableArray* names = [NSMutableArray new];
+        uint32_t offset = 0;
 
-                if(nameLength == 0) {
-                    break;
-                }
+        while(offset + sizeof(uint32_t) <= parseBound) {
+            uint32_t nameLength;
+            memcpy(&nameLength, buf + offset, sizeof(nameLength));
+            offset += sizeof(nameLength);
 
-                if(offset + nameLength > sizeof(buf)) {
-                    break;
-                }
-
-                [names addObject:[NSString stringWithUTF8String:buf + offset]];
-                offset += nameLength;
+            if(nameLength == 0) {
+                break;
             }
 
-            NSString* chosen = nil;
-
-            for(NSString* name in names) {
-                if([name containsString:@"com.apple.os.update"]) {
-                    chosen = name;
-                    break;
-                }
+            if(offset + nameLength > parseBound) {
+                break;
             }
 
-            if(!chosen && [names count] > 0) {
-                chosen = [names objectAtIndex:0];
-            }
+            [names addObject:[NSString stringWithUTF8String:buf + offset]];
+            offset += nameLength;
+        }
 
-            if(chosen) {
-                *outFd = fd;
-                return chosen;
+        NSString* chosen = nil;
+
+        for(NSString* name in names) {
+            if([name containsString:@"com.apple.os.update"]) {
+                chosen = name;
+                break;
             }
+        }
+
+        if(!chosen && [names count] > 0) {
+            chosen = [names objectAtIndex:0];
+        }
+
+        if(chosen) {
+            *outFd = fd;
+            return chosen;
         }
 
         close(fd);
@@ -269,6 +290,8 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     NSMutableArray* dirs = [NSMutableArray new];
 
     BOOL snapshotUsed = NO;
+    BOOL snapshotWalkOK = NO;
+    NSString* snapshotNameUsed = nil;
 
     if(![RootBridge isJBRootless]) {
         int fd = -1;
@@ -278,11 +301,14 @@ static BOOL IsCryptexZone(NSString* zonePath) {
             NSString* mountpoint = [RootBridge getJBPath:@"/tmp/ShadowSnapshot"];
             [fm createDirectoryAtPath:mountpoint withIntermediateDirectories:YES attributes:nil error:NULL];
 
-            if(fs_snapshot_mount(fd, [mountpoint UTF8String], [snapshotName UTF8String], 0) == 0) {
-                snapshotUsed = YES;
+            BOOL mounted = (fs_snapshot_mount(fd, [mountpoint UTF8String], [snapshotName UTF8String], 0) == 0);
 
-                // Structure comes from the stock snapshot; walk partial on failure.
-                [self _walkStructureZonesWithPrefix:mountpoint into:structure];
+            if(mounted) {
+                snapshotUsed = YES;
+                snapshotNameUsed = snapshotName;
+
+                // Structure comes from the stock snapshot; a partial walk falls back to live below.
+                snapshotWalkOK = [self _walkStructureZonesWithPrefix:mountpoint into:structure];
 
                 // Diff: live zones (full depth) minus snapshot zones (full depth).
                 NSMutableSet* snapshotSet = [NSMutableSet new];
@@ -297,19 +323,29 @@ static BOOL IsCryptexZone(NSString* zonePath) {
                 fprintf(stderr, "warning: SystemRules: failed to mount snapshot, using live filesystem\n");
             }
 
-            unmount([mountpoint UTF8String], MNT_FORCE);
-            rmdir([mountpoint UTF8String]);
+            if(mounted) {
+                unmount([mountpoint UTF8String], MNT_FORCE);
+                rmdir([mountpoint UTF8String]);
+            }
+
             close(fd);
         } else {
             fprintf(stderr, "warning: SystemRules: no usable system snapshot, using live filesystem\n");
         }
     }
 
-    if(!snapshotUsed) {
-        [self _walkStructureZonesWithPrefix:nil into:structure];
+    if(snapshotUsed && !snapshotWalkOK) {
+        fprintf(stderr, "warning: SystemRules: partial snapshot walk, falling back to live filesystem\n");
+        snapshotUsed = NO;
     }
 
-    if([structure count] == 0 && !snapshotUsed) {
+    BOOL liveWalkOK = YES;
+
+    if(!snapshotUsed) {
+        liveWalkOK = [self _walkStructureZonesWithPrefix:nil into:structure];
+    }
+
+    if(!liveWalkOK || [structure count] == 0) {
         fprintf(stderr, "error: SystemRules: failed to walk system zones\n");
         return nil;
     }
@@ -317,15 +353,25 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     NSDateFormatter* formatter = [NSDateFormatter new];
     [formatter setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
 
-    NSMutableDictionary* ruleset = [NSMutableDictionary new];
-    [ruleset setObject:@{
+    NSMutableDictionary* ruleset_info = [NSMutableDictionary dictionaryWithDictionary:@{
         @"Name": @"System Rules (generated)",
         @"Author": @"Shadow Service",
         @"GeneratedAt": [formatter stringFromDate:[NSDate date]]
-    } forKey:@"RulesetInfo"];
+    }];
+
+    if(snapshotNameUsed) {
+        [ruleset_info setObject:snapshotNameUsed forKey:@"SnapshotName"];
+    }
+
+    NSMutableDictionary* ruleset = [NSMutableDictionary new];
+    [ruleset setObject:ruleset_info forKey:@"RulesetInfo"];
     [ruleset setObject:structure forKey:@"FileSystemStructure"];
 
     if([exact count] > 0 || [dirs count] > 0) {
+        // Overlapping zones (/System vs /System/Library) produce duplicates; dedupe before the cap.
+        exact = [[[NSSet setWithArray:exact] allObjects] mutableCopy];
+        dirs = [[[NSSet setWithArray:dirs] allObjects] mutableCopy];
+
         [exact sortUsingSelector:@selector(compare:)];
         [dirs sortUsingSelector:@selector(compare:)];
 
@@ -356,18 +402,32 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 + (BOOL)writeSystemRuleset {
+    NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/SystemRules.plist"];
+
+    // Warn if the system snapshot rotated since the last generation (e.g. an
+    // iOS update) — the old ruleset may have blacklisted Apple's new files.
+    NSDictionary* previous = [NSDictionary dictionaryWithContentsOfFile:path];
+    NSString* previousSnapshot = [[previous objectForKey:@"RulesetInfo"] objectForKey:@"SnapshotName"];
+
     NSDictionary* ruleset = [self generateSystemRuleset];
 
     if(!ruleset) {
         return NO;
     }
 
-    NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/SystemRules.plist"];
+    NSString* currentSnapshot = [[ruleset objectForKey:@"RulesetInfo"] objectForKey:@"SnapshotName"];
+
+    if(previousSnapshot && !currentSnapshot) {
+        fprintf(stderr, "warning: SystemRules: no system snapshot available (previously '%s'); using live filesystem\n", [previousSnapshot UTF8String]);
+    } else if(previousSnapshot && currentSnapshot && ![previousSnapshot isEqualToString:currentSnapshot]) {
+        fprintf(stderr, "note: SystemRules: system snapshot changed '%s' -> '%s' (iOS update?); regenerated against the current snapshot\n", [previousSnapshot UTF8String], [currentSnapshot UTF8String]);
+    }
+
     NSFileManager* fm = [NSFileManager defaultManager];
 
     [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:NULL];
 
-    return [ruleset writeToFile:path atomically:NO];
+    return [ruleset writeToFile:path atomically:YES];
 }
 
 @end

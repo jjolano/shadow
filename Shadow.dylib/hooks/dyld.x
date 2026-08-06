@@ -148,6 +148,41 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
     return result;
 }
 
+// _dyld_get_image_header_containing_address / dyld_image_header_containing_address:
+// same leak as the path variant — resolves an address back to its owning image
+// header, which would expose a filtered dylib even though it's gone from every
+// enumeration API. Same pattern as above; unlike the path variant there is no
+// plausible fake header, so restricted images resolve to "not in any image"
+// (NULL) — the same signal dyld itself returns for unmapped addresses.
+static _Thread_local BOOL _shdw_dyighca_in_hook = NO;
+
+static const struct mach_header* (*original_dyld_image_header_containing_address)(const void* addr);
+static const struct mach_header* replaced_dyld_image_header_containing_address(const void* addr) {
+    if(_shdw_dyighca_in_hook || !addr) {
+        return original_dyld_image_header_containing_address(addr);
+    }
+
+    _shdw_dyighca_in_hook = YES;
+
+    // Is the CALLER of this hook inside the app bundle (app code or an
+    // embedded detection framework)? Not the addr arg. Non-embedded callers
+    // (the tweak itself, other injected dylibs) pass through untouched.
+    BOOL caller_outside_app = [_shadow isAddrExternal:__builtin_return_address(0)];
+
+    _shdw_dyighca_in_hook = NO;
+
+    if(caller_outside_app) {
+        return original_dyld_image_header_containing_address(addr);
+    }
+
+    // Embedded caller probing a filtered image's address: report no image.
+    if([_shadow isAddrRestricted:addr]) {
+        return NULL;
+    }
+
+    return original_dyld_image_header_containing_address(addr);
+}
+
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     if(isCallerTweak() || !path) {
@@ -503,6 +538,16 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
             _shdw_all_image_infos->uuidArray = uuidCount ? _shdw_dyld_uuid_array : _shdw_all_image_infos->uuidArray;
             _shdw_all_image_infos->uuidArrayCount = (uint32_t) uuidCount;
 
+            // Atlas (v16+, iOS 11+): a second, complete serialized image table
+            // published via compact_dyld_image_info_addr/size — the filtered
+            // infoArray patch alone would leave it leaking every image. Zero
+            // both; dyld itself signals absence with size == 0. Guarded on the
+            // struct version: older dyld layouts lack these fields.
+            if(_shdw_all_image_infos->version >= 16) {
+                _shdw_all_image_infos->compact_dyld_image_info_addr = 0;
+                _shdw_all_image_infos->compact_dyld_image_info_size = 0;
+            }
+
             vm_protect(mach_task_self(), page, vm_page_size, FALSE, originalProtection);
         } else if(!protectFailed) {
             protectFailed = YES;
@@ -555,6 +600,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // Directly linkable — declared in vendor/apple/dyld_priv.h (Core.m calls
     // it the same way); no MSFindSymbol needed.
     MSHookFunction(dyld_image_path_containing_address, replaced_dyld_image_path_containing_address, (void **) &original_dyld_image_path_containing_address);
+    MSHookFunction(dyld_image_header_containing_address, replaced_dyld_image_header_containing_address, (void **) &original_dyld_image_header_containing_address);
 
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 
