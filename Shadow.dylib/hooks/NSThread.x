@@ -6,11 +6,11 @@
     NSArray* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray* result_filtered = [result mutableCopy];
+        NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSNumber* ret_addr in result) {
-            if([_shadow isAddrRestricted:[ret_addr pointerValue]]) {
-                [result_filtered removeObject:ret_addr];
+            if(![_shadow isAddrRestricted:[ret_addr pointerValue]]) {
+                [result_filtered addObject:ret_addr];
             }
         }
 

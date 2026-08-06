@@ -7,9 +7,21 @@ fi
 
 case "$1" in
     configure)
-        chown -R mobile:mobile "$DPKG_ROOT/Library/Shadow"
-        chmod -R 0777 "$DPKG_ROOT/Library/Shadow"
+        # Prefs plist: root-owned 0644 so apps (running as mobile) cannot write
+        # their own hiding config; cfprefsd (root) still writes via the Settings
+        # UI. Same path on rootful and rootless (/var/mobile exists on both).
+        mkdir -p /var/mobile/Library/Preferences
+        touch /var/mobile/Library/Preferences/me.jjolano.shadow.plist
+        chown root:wheel /var/mobile/Library/Preferences/me.jjolano.shadow.plist
+        chmod 0644 /var/mobile/Library/Preferences/me.jjolano.shadow.plist
 
+        # Ruleset tree: root-owned, dirs 0755 / files 0644 (X grants execute
+        # on directories only). World-writable mobile-owned rulesets let any
+        # protected app tamper with its own hiding rules.
+        chown -R root:wheel "$DPKG_ROOT/Library/Shadow"
+        chmod -R u=rwX,go=rX "$DPKG_ROOT/Library/Shadow"
+
+        # shdw runs as root from postinst/triggers, so it can still write.
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
     ;;
 

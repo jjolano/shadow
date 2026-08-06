@@ -27,7 +27,8 @@
             @"Hook_Sandbox" : @(NO),
             @"Hook_Memory" : @(NO),
             @"Hook_TweakClasses" : @(NO),
-            @"Hook_HideApps" : @(NO)
+            @"Hook_HideApps" : @(NO),
+            @"MemoryLevelHiding" : @(NO)
         };
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];

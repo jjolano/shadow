@@ -5,13 +5,28 @@
 
 #import "../common.h"
 
-static double lastRulesetCheck = 0.0;
+#import <stdatomic.h>
+
+// Last time the ruleset dir was scanned. Atomic: multiple hook threads race the
+// 1s gate, and a plain double lets several of them scan the same interval.
+static _Atomic(double) lastRulesetCheck = 0.0;
+
+@interface ShadowBackend () {
+    // Sorted ruleset URLs from the last load; the per-second change check
+    // stats these cached URLs instead of re-enumerating + re-sorting the dir.
+    NSArray<NSURL *>* rulesetURLs;
+}
+@end
 
 @implementation ShadowBackend
 
 - (instancetype)init {
     if((self = [super init])) {
         cache_restricted = [NSCache new];
+        // 1024 entries ≈ tens of KB: the queried-path working set plus its
+        // cached ancestors is a few hundred in practice, so this bounds memory
+        // without thrashing the hot path.
+        [cache_restricted setCountLimit:1024];
         rulesets = [self _loadRulesets];
     }
 
@@ -42,6 +57,8 @@ static double lastRulesetCheck = 0.0;
             return [[a lastPathComponent] compare:[b lastPathComponent]];
         }];
 
+        rulesetURLs = ruleset_urls;
+
         for(NSURL* url in ruleset_urls) {
             RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
 
@@ -65,6 +82,9 @@ static double lastRulesetCheck = 0.0;
     }
 
     rulesetFileMtimes = [mtimes copy];
+
+    // Rulesets were just (re)loaded; don't re-scan on the first decision.
+    atomic_store_explicit(&lastRulesetCheck, [NSDate timeIntervalSinceReferenceDate], memory_order_release);
     return [result copy];
 }
 
@@ -76,31 +96,31 @@ static double lastRulesetCheck = 0.0;
 
 - (void)_checkRulesetChanges {
     double now = [NSDate timeIntervalSinceReferenceDate];
+    double last = atomic_load_explicit(&lastRulesetCheck, memory_order_acquire);
 
-    if(now - lastRulesetCheck < 1.0) {
+    if(now - last < 1.0) {
         return;
     }
 
-    lastRulesetCheck = now;
+    // Claim this interval; exactly one thread scans per second.
+    double expected = last;
 
-    NSFileManager* fm = [NSFileManager defaultManager];
+    if(!atomic_compare_exchange_strong_explicit(&lastRulesetCheck, &expected, now, memory_order_acq_rel, memory_order_acquire)) {
+        return;
+    }
+
     NSString* dir = [RootBridge getJBPath:@SHADOW_RULESETS];
 
+    // All ruleset files live directly in this dir and the generated ruleset is
+    // written with atomically:YES (rename), so a dir-mtime change catches adds,
+    // removes and renames. In-place edits don't touch the dir mtime and are
+    // caught by the per-file stats on the cached URL list below.
     if([self _fileMtime:dir] != rulesetDirMtime) {
         [self _reloadRulesets];
         return;
     }
 
-    NSArray* urls = [fm contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dir isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
-
-    if(!urls || [urls count] != [rulesetFileMtimes count]) {
-        [self _reloadRulesets];
-        return;
-    }
-
-    urls = [urls sortedArrayUsingComparator:^NSComparisonResult(NSURL* a, NSURL* b) {
-        return [[a lastPathComponent] compare:[b lastPathComponent]];
-    }];
+    NSArray<NSURL*>* urls = rulesetURLs;
 
     for(NSUInteger i = 0; i < [urls count]; i++) {
         if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[rulesetFileMtimes objectAtIndex:i] doubleValue]) {
@@ -119,16 +139,24 @@ static double lastRulesetCheck = 0.0;
 
     NSUInteger gen = rulesetGeneration;
 
-    NSArray* cached = [cache_restricted objectForKey:path];
+    // Header types this cache as <NSString *, NSArray *>; entries are packed
+    // NSNumbers, so cast (header is public and unchanged).
+    NSNumber* cached = (NSNumber *)[cache_restricted objectForKey:path];
 
-    if(cached && [[cached objectAtIndex:0] unsignedIntegerValue] == gen) {
-        return [[cached objectAtIndex:1] boolValue];
+    if(cached) {
+        // Packed as (generation << 1) | restricted: one NSNumber per entry
+        // instead of a 2-element array, with identical generation invalidation.
+        unsigned long long v = [cached unsignedLongLongValue];
+
+        if((NSUInteger)(v >> 1) == gen) {
+            return (v & 1) != 0;
+        }
     }
 
     // pass 1: compliance (hard veto)
     for(RulesetEngine* ruleset in rulesets) {
         if(![ruleset isPathCompliant:path]) {
-            [cache_restricted setObject:@[@(gen), @(YES)] forKey:path];
+            [cache_restricted setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | 1) forKey:path];
             return YES;
         }
     }
@@ -159,7 +187,7 @@ static double lastRulesetCheck = 0.0;
         restricted = [self isPathRestricted:[path stringByDeletingLastPathComponent]];
     }
 
-    [cache_restricted setObject:@[@(gen), @(restricted)] forKey:path];
+    [cache_restricted setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | (restricted ? 1 : 0)) forKey:path];
     return restricted;
 }
 
@@ -170,10 +198,8 @@ static double lastRulesetCheck = 0.0;
 
     [self _checkRulesetChanges];
 
-    // Add some exceptions
-    NSArray* exceptions = @[@"file", @"http", @"https"];
-
-    if([exceptions containsObject:scheme]) {
+    // Add some exceptions (direct compares: no per-call array allocation).
+    if([scheme isEqualToString:@"file"] || [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
         return NO;
     }
 

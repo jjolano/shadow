@@ -91,39 +91,62 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
 
 static int (*original_sandbox_check)(pid_t pid, const char *operation, enum sandbox_filter_type type, ...);
 static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...) {
-    void* data[5];
     va_list args;
     va_start(args, type);
 
-    for(int i = 0; i < 5; i++) {
-        data[i] = va_arg(args, void *);
-    }
+    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && type == SANDBOX_FILTER_MACH) {
+        // Only the MACH filter's vararg is a name string (PATH/NAME filters
+        // take pointers, PID/INDEX take ints, NONE takes nothing). Read it
+        // from a COPY so the forward below still sees the full arg list.
+        va_list inspect;
+        va_copy(inspect, args);
+        const char* name = va_arg(inspect, const char *);
+        va_end(inspect);
 
-    va_end(args);
-
-    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && data[0]) {
-        const char* name = (const char *)data[0];
-
-        if(strstr(name, "cy:") == name
+        if(name
+        && (strstr(name, "cy:") == name
         || strstr(name, "lh:") == name
         || strstr(name, "rbs:") == name
         || strstr(name, "jailbreakd") == name
         || strstr(name, "org.coolstar") == name
         || strstr(name, "com.ex") == name
-        || strstr(name, "org.saurik") == name) {
+        || strstr(name, "org.saurik") == name)) {
+            va_end(args);
             return -1;
         }
     }
 
-    return original_sandbox_check(pid, operation, type, data[0], data[1], data[2], data[3], data[4]);
+    // Forward the exact varargs for the filter type: NONE takes none, PID
+    // takes an int, the rest take one string.
+    switch(type) {
+        case SANDBOX_FILTER_NONE:
+            va_end(args);
+            return original_sandbox_check(pid, operation, type);
+
+        case SANDBOX_FILTER_PID: {
+            pid_t filter_pid = va_arg(args, pid_t);
+            va_end(args);
+            return original_sandbox_check(pid, operation, type, filter_pid);
+        }
+
+        default: {
+            const char* filter_name = va_arg(args, const char *);
+            va_end(args);
+            return original_sandbox_check(pid, operation, type, filter_name);
+        }
+    }
 }
 
 static int (*original_fcntl)(int fd, int cmd, ...);
 static int replaced_fcntl(int fd, int cmd, ...) {
-    void* arg;
+    // The third argument's type is command-dependent: a pointer for
+    // F_GETPATH/F_CHECK_LV, an integer for F_SETFL/F_SETFD/... Read the
+    // full slot as intptr_t (pointer-width, the promoted form) and pass it
+    // through unchanged — narrowing to int would truncate pointers.
+    intptr_t arg;
     va_list args;
     va_start(args, cmd);
-    arg = va_arg(args, void *);
+    arg = va_arg(args, intptr_t);
     va_end(args);
 
     if(!isCallerTweak()) {
@@ -135,8 +158,8 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 
         if(cmd == F_CHECK_LV) {
             // Library Validation
-            if(arg) {
-                original_fcntl(fd, cmd, arg);
+            if(arg != 0) {
+                original_fcntl(fd, cmd, (void *) arg);
 
                 fchecklv_t* checkInfo = (fchecklv_t *) arg;
                 ((char *) checkInfo->lv_error_message)[0] = '\0';
@@ -150,7 +173,7 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         }
     }
 
-    return original_fcntl(fd, cmd, arg);
+    return original_fcntl(fd, cmd, (void *) arg);
 }
 
 static int fn_enosys() {

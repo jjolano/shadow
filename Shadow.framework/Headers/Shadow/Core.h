@@ -7,6 +7,7 @@
 #define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
 #define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
+#define kShadowRestrictionNoFollow              @"kShadowRestrictionNoFollow"
 
 __attribute__((visibility("default")))
 @interface Shadow : NSObject {

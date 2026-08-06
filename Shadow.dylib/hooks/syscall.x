@@ -2,15 +2,143 @@
 
 #import "hooks.h"
 
-static int (*original_syscall)(int number, ...);
-static int replaced_syscall(int number, ...) {
+// Forwards a syscall() call with exact arguments. There is no v-syscall, so
+// a va_list can't be forwarded through a variadic `...`: the trampoline
+// re-reads the argument list and re-passes it with explicit parameters.
+// Intercepted numbers get their real signatures (all of them take pointers
+// and/or ints — reading pointer-width slots preserves every value); other
+// numbers forward the 8-register window and surplus slots are ignored by
+// the callee.
+static long (*original_syscall)(int number, ...);
+
+static long shdw_syscall_forward(int number, va_list args) {
+    switch(number) {
+        case SYS_chdir:
+        case SYS_chroot:
+        case SYS_rmdir:
+            return original_syscall(number, (const char *) va_arg(args, intptr_t));
+
+        case SYS_access:
+        case SYS_stat:
+        case SYS_lstat:
+        case SYS_stat64:
+        case SYS_lstat64:
+        case SYS_pathconf: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (int) a2);
+        }
+
+        case SYS_execve: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (char *const *) a2, (char *const *) a3);
+        }
+
+        case SYS_readlink: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3);
+        }
+
+        case SYS_open: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+
+            // open only takes a mode when O_CREAT is set.
+            if(((int) a2) & O_CREAT) {
+                intptr_t a3 = va_arg(args, intptr_t);
+
+                return original_syscall(number, (const char *) a1, (int) a2, (mode_t) a3);
+            }
+
+            return original_syscall(number, (const char *) a1, (int) a2);
+        }
+
+        case SYS_stat_extended:
+        case SYS_lstat_extended:
+        case SYS_stat64_extended:
+        case SYS_lstat64_extended: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4);
+        }
+
+        case SYS_access_extended: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4);
+        }
+
+        case SYS_ptrace: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int) a1, (pid_t) a2, (caddr_t) a3, (int) a4);
+        }
+
+        case SYS_getattrlist: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4, (unsigned long) a5);
+        }
+
+        case SYS_open_extended: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+            intptr_t a6 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4, (int) a5, (void *) a6);
+        }
+
+        default: {
+            // Not intercepted: forward the 8-register window (same coverage
+            // as the old memcpy of the save area, but ABI-portable). The
+            // callee reads only the args its number declares.
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+            intptr_t a6 = va_arg(args, intptr_t);
+            intptr_t a7 = va_arg(args, intptr_t);
+            intptr_t a8 = va_arg(args, intptr_t);
+
+            return original_syscall(number, a1, a2, a3, a4, a5, a6, a7, a8);
+        }
+    }
+}
+
+static long replaced_syscall(int number, ...) {
     NSLog(@"%@: %d", @"syscall", number);
 
-	va_list args;
-	va_start(args, number);
+    va_list args;
+    va_start(args, number);
 
-    void* stack[8];
-    memcpy(stack, args, sizeof(stack));
+    // Read the decision args from a COPY so the forward trampoline below
+    // still sees the full, unadvanced argument list.
+    va_list inspect;
+    va_copy(inspect, args);
 
     // Handle single pathname syscalls
     if(!isCallerTweak()) {
@@ -33,10 +161,12 @@ static int replaced_syscall(int number, ...) {
         || number == SYS_lstat64_extended
         || number == SYS_readlink
         || number == SYS_pathconf) {
-            const char* pathname = va_arg(args, const char *);
+            const char* pathname = va_arg(inspect, const char *);
 
             if([_shadow isCPathRestricted:pathname]) {
                 errno = ENOENT;
+                va_end(inspect);
+                va_end(args);
                 return -1;
             }
         }
@@ -44,16 +174,21 @@ static int replaced_syscall(int number, ...) {
 
     // Handle ptrace (anti debug)
     if(number == SYS_ptrace) {
-        int _request = va_arg(args, int);
+        int _request = va_arg(inspect, int);
 
         if(_request == PT_DENY_ATTACH) {
+            va_end(inspect);
+            va_end(args);
             return 0;
         }
     }
 
+    va_end(inspect);
+
+    long result = shdw_syscall_forward(number, args);
     va_end(args);
 
-    return original_syscall(number, stack[0], stack[1], stack[2], stack[3], stack[4], stack[5], stack[6], stack[7]);
+    return result;
 }
 
 static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);

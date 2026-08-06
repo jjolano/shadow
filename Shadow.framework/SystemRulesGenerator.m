@@ -64,15 +64,14 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     NSInteger nextRemaining = (remaining < 0) ? -1 : remaining - 1;
 
     for(NSString* entry in entries) {
-        NSString* name = [entry lastPathComponent];
         NSString* entryPath = [fsPath stringByAppendingPathComponent:entry];
-        [children addObject:name];
+        [children addObject:entry];
 
         if(descend) {
             NSString* fileType = [[fm attributesOfItemAtPath:entryPath error:NULL] objectForKey:NSFileType];
 
             if([fileType isEqualToString:NSFileTypeDirectory]) {
-                [self _buildStructure:structure fsPath:entryPath canonPath:[canonPath stringByAppendingPathComponent:name] remaining:nextRemaining];
+                [self _buildStructure:structure fsPath:entryPath canonPath:[canonPath stringByAppendingPathComponent:entry] remaining:nextRemaining];
             }
         }
     }
@@ -115,8 +114,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     }
 
     for(NSString* entry in entries) {
-        NSString* name = [entry lastPathComponent];
-        NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:name]];
+        NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:entry]];
 
         if(IsCryptexZone(canon)) {
             continue;
@@ -165,8 +163,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     }
 
     for(NSString* entry in entries) {
-        NSString* name = [entry lastPathComponent];
-        NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:name]];
+        NSString* canon = [Shadow getStandardizedPath:[canonPath stringByAppendingPathComponent:entry]];
 
         if(IsCryptexZone(canon)) {
             continue;
@@ -211,75 +208,77 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     }
 }
 
-// Finds a system-volume snapshot name by scanning /dev/disk* devices.
-// Prefers "com.apple.os.update-*", falls back to the first snapshot found.
-// Leaves the device fd open in *outFd (caller closes).
+// Finds a system-volume snapshot name from the volume-root directory fd.
+// fs_snapshot_list/mount expect a VOLUME fd (the volume root directory), not a
+// raw /dev/disk* character device. Rootful: / IS the system volume root, so
+// open("/", O_DIRECTORY) is the volume. Leaves the fd open in *outFd (caller
+// closes); returns nil (fail soft) if the volume root cannot be opened or the
+// list call fails.
 + (NSString*)_findSnapshotNameWithFd:(int*)outFd {
-    NSArray* devEntries = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:@"/dev" error:NULL];
+    int fd = open("/", O_RDONLY | O_DIRECTORY);
 
-    for(NSString* devEntry in devEntries) {
-        if(![devEntry hasPrefix:@"disk"]) {
-            continue;
-        }
-
-        NSString* devPath = [@"/dev" stringByAppendingPathComponent:devEntry];
-        int fd = open([devPath UTF8String], O_RDONLY);
-
-        if(fd < 0) {
-            continue;
-        }
-
-        char buf[4096];
-        int ret = fs_snapshot_list(fd, NULL, buf, sizeof(buf), 0);
-
-        if(ret < 0) {
-            close(fd);
-            continue;
-        }
-
-        // Some xnu versions return the byte count (positive) instead of 0.
-        size_t parseBound = (ret > 0) ? (size_t)ret : sizeof(buf);
-        NSMutableArray* names = [NSMutableArray new];
-        uint32_t offset = 0;
-
-        while(offset + sizeof(uint32_t) <= parseBound) {
-            uint32_t nameLength;
-            memcpy(&nameLength, buf + offset, sizeof(nameLength));
-            offset += sizeof(nameLength);
-
-            if(nameLength == 0) {
-                break;
-            }
-
-            if(offset + nameLength > parseBound) {
-                break;
-            }
-
-            [names addObject:[NSString stringWithUTF8String:buf + offset]];
-            offset += nameLength;
-        }
-
-        NSString* chosen = nil;
-
-        for(NSString* name in names) {
-            if([name containsString:@"com.apple.os.update"]) {
-                chosen = name;
-                break;
-            }
-        }
-
-        if(!chosen && [names count] > 0) {
-            chosen = [names objectAtIndex:0];
-        }
-
-        if(chosen) {
-            *outFd = fd;
-            return chosen;
-        }
-
-        close(fd);
+    if(fd < 0) {
+        return nil;
     }
 
+    char buf[4096];
+    int ret = fs_snapshot_list(fd, NULL, buf, sizeof(buf), 0);
+
+    if(ret < 0) {
+        close(fd);
+        return nil;
+    }
+
+    // Some xnu versions return the byte count (positive) instead of 0.
+    size_t parseBound = (ret > 0) ? (size_t)ret : sizeof(buf);
+    NSMutableArray* names = [NSMutableArray new];
+    uint32_t offset = 0;
+
+    while(offset + sizeof(uint32_t) <= parseBound) {
+        uint32_t nameLength;
+        memcpy(&nameLength, buf + offset, sizeof(nameLength));
+        offset += sizeof(nameLength);
+
+        if(nameLength == 0) {
+            break;
+        }
+
+        // Bounds in size_t: a garbage nameLength must never index past the
+        // returned bytes (or wrap around in uint32 arithmetic).
+        if((size_t)offset + nameLength > parseBound) {
+            break;
+        }
+
+        // Reject non-UTF8 garbage instead of inserting it.
+        NSString* name = [[NSString alloc] initWithBytes:buf + offset length:nameLength encoding:NSUTF8StringEncoding];
+
+        if(!name) {
+            break;
+        }
+
+        [names addObject:name];
+        offset += nameLength;
+    }
+
+    NSString* chosen = nil;
+
+    for(NSString* name in names) {
+        if([name containsString:@"com.apple.os.update"]) {
+            chosen = name;
+            break;
+        }
+    }
+
+    if(!chosen && [names count] > 0) {
+        chosen = [names objectAtIndex:0];
+    }
+
+    if(chosen) {
+        *outFd = fd;
+        return chosen;
+    }
+
+    close(fd);
     return nil;
 }
 
