@@ -50,7 +50,15 @@
 		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Automatic" table:@"Hooks"]];
 
         for(NSDictionary* hooklib_info in hooklibs_info) {
-			[hk_lib_values addObject:hooklib_info[@"id"]];
+            // Substitute/Substrate are obsolete swizzling backends — not
+            // offered in the picker (auto/ElleKit/fishhook only).
+            NSString* hooklib_id = hooklib_info[@"id"];
+
+            if([hooklib_id isEqualToString:@"substrate"] || [hooklib_id isEqualToString:@"substitute"]) {
+                continue;
+            }
+
+			[hk_lib_values addObject:hooklib_id];
 			[hk_lib_titles addObject:hooklib_info[@"name"]];
         }
 	}

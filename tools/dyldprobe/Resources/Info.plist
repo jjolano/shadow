@@ -22,6 +22,14 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>cydia</string>
+		<string>sileo</string>
+		<string>zbra</string>
+		<string>xina</string>
+		<string>filza</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -41,6 +41,14 @@ BOOL shdw_detector_present = NO;
     // Determine the application we're injected into.
     NSString* bundleIdentifier = [Shadow getBundleIdentifier];
 
+    // Injected into SpringBoard: system-wide janitor — restore any leaked
+    // vnode state left by killed apps (leaked vnode refs panic the kernel at
+    // shutdown if never restored).
+    if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
+        shadowhook_vnode_restore();
+        return;
+    }
+
     NSString* executablePath = [Shadow getExecutablePath];
     NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];
 
@@ -49,10 +57,17 @@ BOOL shdw_detector_present = NO;
         return;
     }
 
-    if([executablePath hasPrefix:@"/Applications"]
+    // TEST-ONLY allowlist: dyldprobe (the W5/W2 verification probe) installs
+    // to /Applications, which the check below would otherwise exclude — let
+    // Shadow load into it so hiding can be verified on-device. Exact
+    // bundle-id match only; the com.apple / jailbreak-tool denylists below
+    // still apply.
+    BOOL isDyldProbe = [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"];
+
+    if(!isDyldProbe && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
     || [executablePath hasPrefix:@"/private/preboot"]
-    || [executablePath hasPrefix:@"/var/jb"]) {
+    || [executablePath hasPrefix:@"/var/jb"])) {
         return;
     }
 
@@ -114,14 +129,23 @@ BOOL shdw_detector_present = NO;
         }
     }
 
-    // subMain: current behavior preserved — default substitutor, HK_Library
-    // pref overrides as before. Used for ObjC-method hooks (fishhook can't
-    // swizzle methods) and as the fallback for every other group.
+    // subMain: ALWAYS the default substitutor. The HK_Library pref may only
+    // configure the C-function substitutors (subCFunc/subSymLookup below) —
+    // subMain backs every ObjC-method hook group, and fishhook cannot swizzle
+    // ObjC methods, so applying the pref here (as before) silently broke
+    // those groups whenever the pref picked fishhook. Never setTypes: on
+    // subMain.
     HKSubstitutor* subMain = [HKSubstitutor defaultSubstitutor];
 
-    if(hooklibs != HK_LIB_NONE) {
-        [subMain setTypes:hooklibs];
-        [subMain initLibraries];
+    // ObjC groups need a method-swizzling backend. With no ElleKit /
+    // Substrate / Substitute available (e.g. pref=fishhook on a fishhook-only
+    // device) subMain is fishhook-only and those groups would fail at hook
+    // time anyway — log once and skip them gracefully, never crash.
+    hookkit_lib_t available_types = [HKSubstitutor getAvailableSubstitutorTypes];
+    BOOL objcBackendAvailable = (available_types & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE)) != 0;
+
+    if(!objcBackendAvailable) {
+        NSLog(@"[Shadow] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
     }
 
     // subFish: fishhook backend. Rebinds pointer-table slots only — function
@@ -137,10 +161,16 @@ BOOL shdw_detector_present = NO;
     // only when a detection library is present.
     HKSubstitutor* subInline = ([HKSubstitutor getAvailableSubstitutorTypes] & HK_LIB_ELLEKIT) ? [HKSubstitutor substitutorWithTypes:HK_LIB_ELLEKIT] : NULL;
 
-    // C-function groups: subFish when available, else subMain. Escalation:
-    // with a detection library present, stealth beats the HK_Library pref —
+    // C-function groups: the HK_Library pref picks the backend here —
+    // fishhook by default (clean prologues), ElleKit when explicitly
+    // selected (stale substrate/substitute prefs fall back to fishhook).
+    // Escalation: with a detection library present, stealth beats the pref —
     // C groups stay on fishhook even if the pref selected ElleKit.
     HKSubstitutor* subCFunc = subFish ? subFish : subMain;
+
+    if(!shdw_detector_present && (hooklibs & HK_LIB_ELLEKIT)) {
+        subCFunc = subInline ? subInline : subMain;
+    }
 
     // dlsym/dladdr group: fishhook by default — clean prologues, so
     // amIMSHooked-style prologue scanners see nothing. Tradeoff: fishhook is
@@ -166,7 +196,11 @@ BOOL shdw_detector_present = NO;
     HKSubstitutor* subDyldExtra = NULL;
     #endif
 
-    if([prefs_load[@"Hook_DynamicLibraries"] boolValue]) {
+    // AR4 escalation: when a detection library is present these dyld hooks
+    // install regardless of the corresponding prefs — a detector in the
+    // process sees the jailbreak either way, so the prefs must not be able
+    // to leave the dyld surface exposed.
+    if([prefs_load[@"Hook_DynamicLibraries"] boolValue] || shdw_detector_present) {
         NSLog(@"+ dylib");
         
         shadowhook_dyld(subCFunc);
@@ -176,16 +210,21 @@ BOOL shdw_detector_present = NO;
         NSLog(@"+ filesystem");
 
         shadowhook_libc(subCFunc);
-        shadowhook_NSFileManager(subMain);
-        shadowhook_NSFileHandle(subMain);
-        shadowhook_NSFileVersion(subMain);
-        shadowhook_NSFileWrapper(subMain);
+
+        if(objcBackendAvailable) {
+            shadowhook_NSFileManager(subMain);
+            shadowhook_NSFileHandle(subMain);
+            shadowhook_NSFileVersion(subMain);
+            shadowhook_NSFileWrapper(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
         NSLog(@"+ urlscheme");
 
-        shadowhook_UIApplication(subMain);
+        if(objcBackendAvailable) {
+            shadowhook_UIApplication(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
@@ -233,14 +272,16 @@ BOOL shdw_detector_present = NO;
     if([prefs_load[@"Hook_Foundation"] boolValue]) {
         NSLog(@"+ foundation");
 
-        shadowhook_NSArray(subMain);
-        shadowhook_NSDictionary(subMain);
-        shadowhook_NSBundle(subMain);
-        shadowhook_NSString(subMain);
-        shadowhook_NSURL(subMain);
-        shadowhook_NSData(subMain);
-        shadowhook_UIImage(subMain);
-        shadowhook_NSThread(subMain);
+        if(objcBackendAvailable) {
+            shadowhook_NSArray(subMain);
+            shadowhook_NSDictionary(subMain);
+            shadowhook_NSBundle(subMain);
+            shadowhook_NSString(subMain);
+            shadowhook_NSURL(subMain);
+            shadowhook_NSData(subMain);
+            shadowhook_UIImage(subMain);
+            shadowhook_NSThread(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
@@ -270,16 +311,20 @@ BOOL shdw_detector_present = NO;
     if([prefs_load[@"Hook_ObjCRuntime"] boolValue]) {
         NSLog(@"+ objc");
 
-        // libobjc C functions (objc_copyImageNames etc.) are exported symbols
-        // fishhook could rebind, but the runtime calls some of them directly
-        // in hot paths — keep them inline via subMain to be safe.
-        shadowhook_objc(subMain);
+        if(objcBackendAvailable) {
+            // libobjc C functions (objc_copyImageNames etc.) are exported symbols
+            // fishhook could rebind, but the runtime calls some of them directly
+            // in hot paths — keep them inline via subMain to be safe.
+            shadowhook_objc(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_FakeMac"] boolValue]) {
         NSLog(@"+ m1");
 
-        shadowhook_NSProcessInfo_fakemac(subMain);
+        if(objcBackendAvailable) {
+            shadowhook_NSProcessInfo_fakemac(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_Syscall"] boolValue]) {
@@ -297,7 +342,9 @@ BOOL shdw_detector_present = NO;
     if([prefs_load[@"Hook_HideApps"] boolValue]) {
         NSLog(@"+ apps");
 
-        shadowhook_LSApplicationWorkspace(subMain);
+        if(objcBackendAvailable) {
+            shadowhook_LSApplicationWorkspace(subMain);
+        }
     }
 
     if([prefs_load[@"Hook_Sandbox"] boolValue]) {
@@ -309,12 +356,14 @@ BOOL shdw_detector_present = NO;
     if([prefs_load[@"Hook_TweakClasses"] boolValue]) {
         NSLog(@"+ classes");
         
-        // Same reasoning as shadowhook_objc above: C-function hooks in the
-        // runtime path stay on subMain.
-        shadowhook_objc_hidetweakclasses(subMain);
+        if(objcBackendAvailable) {
+            // Same reasoning as shadowhook_objc above: C-function hooks in the
+            // runtime path stay on subMain.
+            shadowhook_objc_hidetweakclasses(subMain);
+        }
     }
 
-    if([prefs_load[@"Hook_SymLookup"] boolValue]) {
+    if([prefs_load[@"Hook_SymLookup"] boolValue] || shdw_detector_present) {
         NSLog(@"+ dlsym");
 
         // dlsym/dladdr: fishhook keeps prologues clean; escalates to inline
@@ -323,7 +372,7 @@ BOOL shdw_detector_present = NO;
         shadowhook_dyld_symaddrlookup(subSymLookup);
     }
 
-    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue]) {
+    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue] || shdw_detector_present) {
         NSLog(@"+ dylibex");
 
         // dlopen_internal is a private libdyld symbol fishhook can't rebind —
@@ -339,6 +388,11 @@ BOOL shdw_detector_present = NO;
     HKExecuteBatch();
     HKDisableBatching();
     #endif
+
+    // Vnode-layer file hiding (KRW). Runs after prefs/rulesets have been
+    // read from disk and after all hooks are batch-executed, so our own
+    // reads are unaffected by the hiding.
+    shadowhook_vnode(subCFunc);
 
     NSLog(@"completed hooks");
 }

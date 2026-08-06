@@ -5,11 +5,54 @@
 
 #import <dlfcn.h>
 #import <pwd.h>
+#import <stdlib.h>
 
 #import "../vendor/apple/dyld_priv.h"
+#import "../common.h"
+
+// Bounded decision cache for -[Shadow isPathRestricted:options:].
+static NSCache* decisionCache;
+
+// How long a cached decision is honored (see isPathRestricted:options:).
+static const NSTimeInterval kDecisionCacheTTL = 2.0;
+
+// Restricted roots that never hold legitimate app data: the rootless /var/jb
+// fast-path, its canonical target (/var/jb is a symlink to
+// /private/preboot/<hash>/jb on rootless) and rooted /cores crash dumps.
+static BOOL isPathInRestrictedRoot(NSString* path) {
+    // Canonical rootless jbroot target, resolved once. nil when not rootless
+    // (realpath("/var/jb") fails), so the jbroot check is a no-op there.
+    static NSString* jbrootTarget = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        char resolved[PATH_MAX];
+
+        if(realpath("/var/jb", resolved)) {
+            jbrootTarget = [NSString stringWithUTF8String:resolved];
+        }
+    });
+
+    if([path hasPrefix:@"/var/jb"]
+        || [path hasPrefix:@"/cores/"]
+        || [path hasPrefix:@"/private/preboot"]) {
+        return YES;
+    }
+
+    if(jbrootTarget && [path hasPrefix:jbrootTarget]) {
+        return YES;
+    }
+
+    return NO;
+}
 
 @implementation Shadow
 @synthesize bundlePath, homePath, realHomePath, hasAppSandbox, rootless;
+
++ (void)load {
+    decisionCache = [NSCache new];
+    [decisionCache setCountLimit:512];
+}
 
 - (instancetype)init {
     if((self = [super init])) {
@@ -84,6 +127,33 @@
         return NO;
     }
 
+    // Bounded decision cache: repeat queries of the same absolute path with
+    // default options skip tilde expansion, NSURL canonicalization, the
+    // rootless access() probe and the backend lookup. Entries carry the time
+    // they were computed and are only honored within kDecisionCacheTTL, so a
+    // changed file system (new/removed jbroot files) or a ruleset reload is
+    // observed at most TTL later. The backend's ruleset generation is not
+    // reachable from here (protected ivar, no getter), so TTL is used instead
+    // of a generation check. Options are never cached: they alter the
+    // decision (working dir, file extension, resolve re-check, symlink
+    // resolution).
+    BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
+
+    if(cacheable) {
+        NSArray* cached = [decisionCache objectForKey:path];
+
+        if(cached) {
+            double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
+
+            if(age >= 0 && age <= kDecisionCacheTTL) {
+                return [[cached objectAtIndex:1] boolValue];
+            }
+        }
+    }
+
+    NSString* original_path = path;
+    BOOL restricted = NO;
+
     // Resolve any tilde paths.
     path = [path stringByExpandingTildeInPath];
 
@@ -108,6 +178,30 @@
     // Run checks if path is outside the app sandbox.
     BOOL shouldCheckPath = (!hasAppSandbox || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]));
 
+    // Resolve-before-exempt: a symlink inside the sandbox (or bundle) can
+    // point at jailbreak files outside it, so a lexical prefix match against
+    // homePath/bundlePath is not a safe exemption. realpath() the exempted
+    // candidate and re-check the resolved target against the restricted
+    // roots. A failed resolution (path does not exist) keeps the exemption —
+    // a non-existent path can't leak anything. No-follow (readlink/lstat
+    // link-location checks) and any other options-bearing queries skip
+    // resolution; cacheable queries fold the result into the bounded decision
+    // cache (same TTL), amortizing the realpath syscall.
+    BOOL noFollow = [[options objectForKey:kShadowRestrictionNoFollow] boolValue];
+
+    if(!shouldCheckPath
+        && !noFollow
+        && ((options == nil) || ([options count] == 0))) {
+        char resolved_path[PATH_MAX];
+
+        if(realpath([path fileSystemRepresentation], resolved_path)) {
+            if(isPathInRestrictedRoot([NSString stringWithUTF8String:resolved_path])) {
+                restricted = YES;
+                goto done;
+            }
+        }
+    }
+
     if(shouldCheckPath) {
         // Add file extension if needed.
         NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
@@ -116,10 +210,12 @@
             path = [path stringByAppendingFormat:@".%@", file_ext];
         }
 
-        // Rootless optimization: skip rooted checks
+        // Rootless optimization: skip rooted checks. Covers /var/jb, its
+        // canonical preboot target and /cores/ via isPathInRestrictedRoot.
         if(rootless) {
-            if([path hasPrefix:@"/var/jb"] || [path hasPrefix:@"/cores/"]) {
-                return YES;
+            if(isPathInRestrictedRoot(path)) {
+                restricted = YES;
+                goto done;
             }
 
             BOOL checkable = [path hasPrefix:@"/var"]
@@ -137,15 +233,16 @@
                 errno = errno_old;
 
                 if(!exists) {
-                    return NO;
+                    goto done;
                 }
 
                 if([backend isPathRestricted:path]) {
                     NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
-                    return YES;
+                    restricted = YES;
+                    goto done;
                 }
 
-                return NO;
+                goto done;
             }
         }
 
@@ -159,13 +256,14 @@
             if(access([check_path fileSystemRepresentation], F_OK) != 0) {
                 // reset errno
                 errno = errno_old;
-                return NO;
+                goto done;
             }
         }
 
         if([backend isPathRestricted:path]) {
             NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
-            return YES;
+            restricted = YES;
+            goto done;
         }
     }
 
@@ -178,7 +276,8 @@
             [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
 
             if([self isPathRestricted:resolved_path options:[opt copy]]) {
-                return YES;
+                restricted = YES;
+                goto done;
             }
         }
     }
@@ -187,7 +286,12 @@
         NSLog(@"[Shadow] isPathRestricted: allowed path: %@", path);
     }
 
-    return NO;
+done:
+    if(cacheable) {
+        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted)] forKey:original_path];
+    }
+
+    return restricted;
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {

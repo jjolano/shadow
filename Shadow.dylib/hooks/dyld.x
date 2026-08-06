@@ -11,24 +11,27 @@ static BOOL _shdw_dyld_error = NO;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
 // Real dyld_all_image_infos global (resolved in shadowhook_dyld). When set,
-// we patch its arrays directly and skip the task_info hook. When NULL (very
-// old iOS), the task_info hack below stays active.
+// we patch its arrays directly. When NULL (very old iOS), memory hiding stays
+// off (fail soft); the API-level enumeration hooks still hide images.
 static struct dyld_all_image_infos* _shdw_all_image_infos = NULL;
 
-// Filtered mirrors of dyld's image info / uuid arrays: single fixed-capacity
-// vm_allocate'd buffers (never reallocated or freed, so the pointers we
-// publish into dyld_all_image_infos stay valid forever), rebuilt in place
-// under the lock whenever the collection changes. Path strings are retained
-// in `_shdw_dyld_path_pool` for the lifetime of the process so
-// fileSystemRepresentation pointers never dangle after a collection removal.
-// In-place rebuilds can tear for an external walker mid-walk (µs window) —
-// harmless: it only ever misreads a path, and a detection suite misreading
-// paths is exactly the direction we want.
+// Filtered mirrors of dyld's image info / uuid arrays: two fixed-capacity
+// vm_allocate'd generation buffers each (never reallocated or freed, so the
+// pointers we publish into dyld_all_image_infos stay valid forever). The
+// writer fills the inactive generation under the lock and publishes it
+// count-first, pointer-last — a direct reader that catches a mid-swap read
+// sees the new count against the previous generation's entries, which are
+// stale-but-valid within the fixed capacity, never a torn or over-read
+// buffer. Path strings are retained in `_shdw_dyld_path_pool` for the
+// lifetime of the process so fileSystemRepresentation pointers never dangle
+// after a collection removal.
 #define SHADOW_DYLD_MIRROR_CAPACITY 4096   // beyond any real process's image count
 
 static os_unfair_lock _shdw_dyld_mirror_lock = OS_UNFAIR_LOCK_INIT;
-static struct dyld_image_info* _shdw_dyld_info_array = NULL;
-static struct dyld_uuid_info* _shdw_dyld_uuid_array = NULL;
+static struct dyld_image_info* _shdw_dyld_info_buffers[2] = {NULL, NULL};
+static struct dyld_image_info* _shdw_dyld_info_published = NULL;
+static struct dyld_uuid_info* _shdw_dyld_uuid_buffers[2] = {NULL, NULL};
+static struct dyld_uuid_info* _shdw_dyld_uuid_published = NULL;
 static NSMutableArray* _shdw_dyld_path_pool = nil;
 
 // dyld's original uuid array, captured before our first patch overwrites the
@@ -36,6 +39,46 @@ static NSMutableArray* _shdw_dyld_path_pool = nil;
 // own filtered mirror, or new image uuids would never appear).
 static const struct dyld_uuid_info* _shdw_real_uuid_array = NULL;
 static uintptr_t _shdw_real_uuid_count = 0;
+
+// H1: caller-classification cache storage (see hooks.h). Shared (non-static)
+// so a single invalidate call from the image add/remove callbacks below
+// clears the cache for every file that uses isCallerTweak(). The generation
+// bumps on every invalidate; entries store the generation they were computed
+// at and readers reject mismatches, so a classification computed before an
+// image-list change but stored after the clear can never be trusted.
+shdw_caller_cache_entry_t _shdw_caller_cache[SHADOW_CALLER_CACHE_ENTRIES];
+uintptr_t _shdw_caller_cache_generation = 0;
+
+// Set once shadowhook_dyld has registered its add/remove callbacks: only
+// then is the cache invalidated on image-list changes, so only then is it
+// safe to consult (otherwise a stale entry could outlive an unload/reload).
+BOOL _shdw_dyld_hooks_active = NO;
+
+void shdw_caller_cache_invalidate(void) {
+    // Bump before clearing: a store racing in after the clear still carries
+    // the pre-bump generation and is rejected by readers.
+    __atomic_fetch_add(&_shdw_caller_cache_generation, 1, __ATOMIC_RELAXED);
+    memset(_shdw_caller_cache, 0, sizeof(_shdw_caller_cache));
+}
+
+// C4: immutable snapshot of the collection for the hot dyld enumeration
+// accessors. Two fixed-capacity vm_allocate'd buffers (never freed or
+// reallocated, so the published pointer can't dangle); the writer fills the
+// inactive buffer under the lock and publishes it. Readers take the same
+// lock (see shdw_dyld_snapshot_begin), so a read can never observe a torn or
+// mismatched entry. `name` pointers come from `_shdw_dyld_path_pool`, which
+// retains every path string for the process lifetime, so they never dangle.
+typedef struct {
+    uint32_t count;
+    struct {
+        struct mach_header* mh;
+        intptr_t slide;
+        const char* name;
+    } entry[SHADOW_DYLD_MIRROR_CAPACITY];
+} shdw_dyld_snapshot_t;
+
+static shdw_dyld_snapshot_t* _shdw_dyld_snapshot = NULL;
+static shdw_dyld_snapshot_t* _shdw_dyld_snapshot_buffers[2] = {NULL, NULL};
 
 // Feature flag: "MemoryLevelHiding" in Shadow's prefs plist (default OFF).
 // SHADOW_PREFS_PLIST tracks the bundle id (me.jjolano.shadow); on rootless the
@@ -73,14 +116,38 @@ static void shadowhook_dyld_rebuild_dyldinfo(void);
 // todo: maybe hook this private symbol
 // extern void call_funcs_for_add_image(struct mach_header *mh, unsigned long vmaddr_slide);
 
+// Locked snapshot access for the hot accessors: the snapshot is rebuilt
+// under `_shdw_dyld_mirror_lock`, so reading it under the same lock can
+// never observe a torn or mismatched entry (an uncontended unfair lock is a
+// few ns — nothing compared to the array copies this replaced). Returns NULL
+// when no snapshot has ever been published (allocation failed); callers then
+// fall back to the old collection path.
+static shdw_dyld_snapshot_t* shdw_dyld_snapshot_begin(void) {
+    os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
+    return _shdw_dyld_snapshot;
+}
+
+static void shdw_dyld_snapshot_end(void) {
+    os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+}
+
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
     if(isCallerTweak()) {
         return original_dyld_image_count();
     }
 
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    return [_dyld_collection count];
+    shdw_dyld_snapshot_t* snapshot = shdw_dyld_snapshot_begin();
+
+    if(!snapshot) {
+        NSArray* collection = [_shdw_dyld_collection copy];
+        shdw_dyld_snapshot_end();
+        return (uint32_t) [collection count];
+    }
+
+    uint32_t count = snapshot->count;
+    shdw_dyld_snapshot_end();
+    return count;
 }
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
@@ -89,8 +156,17 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
         return original_dyld_get_image_header(image_index);
     }
 
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    return image_index < [_dyld_collection count] ? (struct mach_header *)[_dyld_collection[image_index][@"mach_header"] pointerValue] : NULL;
+    shdw_dyld_snapshot_t* snapshot = shdw_dyld_snapshot_begin();
+
+    if(!snapshot) {
+        NSArray* collection = [_shdw_dyld_collection copy];
+        shdw_dyld_snapshot_end();
+        return image_index < [collection count] ? (struct mach_header *)[collection[image_index][@"mach_header"] pointerValue] : NULL;
+    }
+
+    const struct mach_header* header = image_index < snapshot->count ? snapshot->entry[image_index].mh : NULL;
+    shdw_dyld_snapshot_end();
+    return header;
 }
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
@@ -99,8 +175,17 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
         return original_dyld_get_image_vmaddr_slide(image_index);
     }
 
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    return image_index < [_dyld_collection count] ? (intptr_t)[_dyld_collection[image_index][@"slide"] pointerValue] : 0;
+    shdw_dyld_snapshot_t* snapshot = shdw_dyld_snapshot_begin();
+
+    if(!snapshot) {
+        NSArray* collection = [_shdw_dyld_collection copy];
+        shdw_dyld_snapshot_end();
+        return image_index < [collection count] ? (intptr_t)[collection[image_index][@"slide"] pointerValue] : 0;
+    }
+
+    intptr_t slide = image_index < snapshot->count ? snapshot->entry[image_index].slide : 0;
+    shdw_dyld_snapshot_end();
+    return slide;
 }
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
@@ -109,8 +194,17 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
         return original_dyld_get_image_name(image_index);
     }
 
-    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    return image_index < [_dyld_collection count] ? [_dyld_collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+    shdw_dyld_snapshot_t* snapshot = shdw_dyld_snapshot_begin();
+
+    if(!snapshot) {
+        NSArray* collection = [_shdw_dyld_collection copy];
+        shdw_dyld_snapshot_end();
+        return image_index < [collection count] ? [collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+    }
+
+    const char* name = image_index < snapshot->count ? snapshot->entry[image_index].name : NULL;
+    shdw_dyld_snapshot_end();
+    return name;
 }
 
 // _dyld_image_path_containing_address is called directly by commercial
@@ -131,7 +225,7 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
     _shdw_dyipca_in_hook = YES;
 
     // Is the CALLER of this hook inside the tweak? (not the addr arg)
-    BOOL caller_is_tweak = [_shadow isAddrExternal:__builtin_return_address(0)];
+    BOOL caller_is_tweak = shdw_caller_is_tweak(__builtin_return_address(0));
 
     _shdw_dyipca_in_hook = NO;
 
@@ -167,7 +261,7 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
     // Is the CALLER of this hook inside the app bundle (app code or an
     // embedded detection framework)? Not the addr arg. Non-embedded callers
     // (the tweak itself, other injected dylibs) pass through untouched.
-    BOOL caller_outside_app = [_shadow isAddrExternal:__builtin_return_address(0)];
+    BOOL caller_outside_app = shdw_caller_is_tweak(__builtin_return_address(0));
 
     _shdw_dyighca_in_hook = NO;
 
@@ -279,30 +373,13 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
     [_shdw_dyld_remove_image addObject:[NSValue valueWithPointer:func]];
 }
 
-static kern_return_t (*original_task_info)(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt);
-static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_outCnt) {
-    if(isCallerTweak()) {
-        return original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
-    }
-
-    kern_return_t result = original_task_info(target_task, flavor, task_info_out, task_info_outCnt);
-
-    if(flavor == TASK_DYLD_INFO && result == KERN_SUCCESS) {
-        struct task_dyld_info *task_info = (struct task_dyld_info *) task_info_out;
-        struct dyld_all_image_infos *dyld_info = (struct dyld_all_image_infos *) task_info->all_image_info_addr;
-        dyld_info->infoArrayCount = 1;
-        dyld_info->uuidArrayCount = 1;
-
-        // todo: improve this
-    }
-
-    return result;
-}
-
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(!mh) {
         return;
     }
+
+    // The dyld image list changed: caller classifications may be stale.
+    shdw_caller_cache_invalidate();
 
     const char* image_path = dyld_image_path_containing_address(mh);
 
@@ -345,6 +422,9 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
     if(!mh) {
         return;
     }
+
+    // The dyld image list changed: caller classifications may be stale.
+    shdw_caller_cache_invalidate();
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSDictionary* dylibToRemove = nil;
@@ -419,53 +499,237 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
     if(result && [_shadow isAddrRestricted:addr]) {
         if(info) {
-            void* sym;
+            // One lookup only: dlsym with identical args returns the same
+            // result every time, so if it resolves to a restricted address
+            // the old loop would spin forever — apply the executable-name
+            // fallback immediately instead.
+            void* sym = dlsym(RTLD_NEXT, info->dli_sname);
 
-            // try to find the real original addr
-            do {
-                sym = dlsym(RTLD_NEXT, info->dli_sname);
-            } while(sym && [_shadow isAddrRestricted:sym]);
-            
-            if(sym) {
+            if(sym && ![_shadow isAddrRestricted:sym]) {
                 return original_dladdr(sym, info);
-            } else {
-                // as a fallback, we'll just say this addr is part of the executable itself
-                info->dli_fname = [[Shadow getExecutablePath] fileSystemRepresentation];
             }
+
+            // as a fallback, we'll just say this addr is part of the executable itself
+            info->dli_fname = [[Shadow getExecutablePath] fileSystemRepresentation];
         }
     }
 
     return result;
 }
 
+// A hidden image is one absent from the filtered collection: updatelibs only
+// ever adds safe (non-restricted) images, so anything not in the collection
+// is hidden. mh == NULL (unknown) is never "hidden".
+static BOOL shdw_dyld_image_is_hidden(const struct mach_header* mh) {
+    if(!mh) {
+        return NO;
+    }
+
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    for(NSDictionary* dylib in _dyld_collection) {
+        if((struct mach_header *)[dylib[@"mach_header"] pointerValue] == mh) {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
+// iOS 12+ SPI: resolves addresses to their containing image (uuid + offset).
+// dyld zero-fills entries for addresses it doesn't know; extend the same
+// "unknown" signal to addresses inside hidden images so stack-backtrace
+// symbolication can't walk past the dyld API filter.
+static void (*original_dyld_images_for_addresses)(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]);
+static void replaced_dyld_images_for_addresses(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]) {
+    if(isCallerTweak()) {
+        return original_dyld_images_for_addresses(count, addresses, infos);
+    }
+
+    original_dyld_images_for_addresses(count, addresses, infos);
+
+    if(!infos) {
+        return;
+    }
+
+    for(unsigned i = 0; i < count; i++) {
+        if(shdw_dyld_image_is_hidden(infos[i].image)) {
+            memset(&infos[i], 0, sizeof(infos[i]));
+        }
+    }
+}
+
+// iOS 12+ SPI: register a per-load callback (replays currently-loaded images
+// at registration). Same fan-out pattern as the add_image registration above:
+// app callbacks are stored in slots, and our own handler — registered with
+// real dyld at hook-install time — delivers only visible images, so a hidden
+// image never reaches a detector's callback, even on later loads.
+#define SHADOW_MAX_IMAGE_LOAD_CBS 8
+static void (*shdw_image_load_cbs[SHADOW_MAX_IMAGE_LOAD_CBS])(const struct mach_header* mh, const char* path, bool unloadable);
+static void shdw_image_load_handler(const struct mach_header* mh, const char* path, bool unloadable) {
+    if(shdw_dyld_image_is_hidden(mh)) {
+        return;
+    }
+
+    for(int i = 0; i < SHADOW_MAX_IMAGE_LOAD_CBS; i++) {
+        if(shdw_image_load_cbs[i]) {
+            shdw_image_load_cbs[i](mh, path, unloadable);
+        }
+    }
+}
+static void (*original_dyld_register_for_image_loads)(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
+static void replaced_dyld_register_for_image_loads(void (*func)(const struct mach_header* mh, const char* path, bool unloadable)) {
+    if(isCallerTweak() || !func) {
+        return original_dyld_register_for_image_loads(func);
+    }
+
+    for(int i = 0; i < SHADOW_MAX_IMAGE_LOAD_CBS; i++) {
+        if(!shdw_image_load_cbs[i]) {
+            shdw_image_load_cbs[i] = func;
+            break;
+        }
+    }
+
+    // Replay the visible images now, mirroring dyld's registration-time replay.
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    for(NSDictionary* dylib in _dyld_collection) {
+        func((struct mach_header *)[dylib[@"mach_header"] pointerValue], [dylib[@"name"] fileSystemRepresentation], false);
+    }
+}
+
+// iOS 13+ SPI: bulk variant — one callback with the whole image list at
+// registration, then per-dlopen batches. Filtered the same way.
+#define SHADOW_MAX_BULK_LOAD_CBS 8
+static void (*shdw_bulk_load_cbs[SHADOW_MAX_BULK_LOAD_CBS])(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]);
+static void shdw_bulk_load_handler(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]) {
+    const struct mach_header* visible_mhs[SHADOW_DYLD_MIRROR_CAPACITY];
+    const char* visible_paths[SHADOW_DYLD_MIRROR_CAPACITY];
+    unsigned n = 0;
+    unsigned cap = MIN(imageCount, (unsigned) SHADOW_DYLD_MIRROR_CAPACITY);
+
+    for(unsigned i = 0; i < cap; i++) {
+        if(shdw_dyld_image_is_hidden(mhs[i])) {
+            continue;
+        }
+
+        visible_mhs[n] = mhs[i];
+        visible_paths[n] = paths ? paths[i] : NULL;
+        n++;
+    }
+
+    for(int i = 0; i < SHADOW_MAX_BULK_LOAD_CBS; i++) {
+        if(shdw_bulk_load_cbs[i]) {
+            shdw_bulk_load_cbs[i](n, visible_mhs, visible_paths);
+        }
+    }
+}
+static void (*original_dyld_register_for_bulk_image_loads)(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
+static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[])) {
+    if(isCallerTweak() || !func) {
+        return original_dyld_register_for_bulk_image_loads(func);
+    }
+
+    for(int i = 0; i < SHADOW_MAX_BULK_LOAD_CBS; i++) {
+        if(!shdw_bulk_load_cbs[i]) {
+            shdw_bulk_load_cbs[i] = func;
+            break;
+        }
+    }
+
+    // Replay the visible images now.
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    NSUInteger count = MIN([_dyld_collection count], (NSUInteger) SHADOW_DYLD_MIRROR_CAPACITY);
+    const struct mach_header* mhs[SHADOW_DYLD_MIRROR_CAPACITY];
+    const char* paths[SHADOW_DYLD_MIRROR_CAPACITY];
+
+    for(NSUInteger i = 0; i < count; i++) {
+        NSDictionary* dylib = _dyld_collection[i];
+        mhs[i] = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
+        paths[i] = [dylib[@"name"] fileSystemRepresentation];
+    }
+
+    func((unsigned) count, mhs, paths);
+}
+
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
-    // Degraded mode: no struct to patch, keep the task_info hack.
+    os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
+
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+    NSUInteger count = MIN([_dyld_collection count], SHADOW_DYLD_MIRROR_CAPACITY);
+
+    // C4: refresh the hot-path snapshot (always, even when the memory-hiding
+    // mirrors below are disabled). Fill the inactive buffer, then publish it.
+    // On allocation failure nothing is published — the previously published
+    // snapshot (or none) stays in place, and the accessors fall back to the
+    // collection until the first successful publish. Readers take this lock
+    // (see the accessors), so the publish needs no atomics; kept as one
+    // anyway for clarity.
+    static BOOL snapshotAllocFailed = NO;
+
+    if(!snapshotAllocFailed) {
+        for(int bufferIndex = 0; bufferIndex < 2; bufferIndex++) {
+            if(!_shdw_dyld_snapshot_buffers[bufferIndex]
+            && vm_allocate(mach_task_self(), (vm_address_t *) &_shdw_dyld_snapshot_buffers[bufferIndex], sizeof(shdw_dyld_snapshot_t), VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
+                snapshotAllocFailed = YES;
+                NSLog(@"shadow: dyld: failed to allocate image snapshot, enumeration hooks report an empty image list (fail soft)");
+                break;
+            }
+        }
+    }
+
+    if(!snapshotAllocFailed) {
+        shdw_dyld_snapshot_t* snapshot = (_shdw_dyld_snapshot == _shdw_dyld_snapshot_buffers[1]) ? _shdw_dyld_snapshot_buffers[0] : _shdw_dyld_snapshot_buffers[1];
+
+        snapshot->count = (uint32_t) count;
+
+        for(NSUInteger i = 0; i < count; i++) {
+            NSDictionary* dylib = _dyld_collection[i];
+
+            snapshot->entry[i].mh = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
+            snapshot->entry[i].slide = (intptr_t)[dylib[@"slide"] pointerValue];
+            snapshot->entry[i].name = [dylib[@"name"] fileSystemRepresentation];
+        }
+
+        __atomic_store_n(&_shdw_dyld_snapshot, snapshot, __ATOMIC_RELEASE);
+    }
+
+    // No struct to patch (pre-modern iOS): memory hiding stays off (fail
+    // soft); the API-level enumeration hooks above still hide images.
     if(!_shdw_all_image_infos) {
+        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
 
     // Feature-flagged (default OFF): leave dyld's real data alone entirely.
     if(!shdw_dyld_memory_hiding_enabled()) {
+        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
 
-    os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
-
-    // Allocate the fixed-capacity mirrors once (lazily). vm_allocate'd, never
-    // reallocated: the published pointers can't dangle.
+    // Allocate the fixed-capacity generation buffers once (lazily).
+    // vm_allocate'd, never freed or reallocated: the published pointers can't
+    // dangle, and a reader holding the previous generation never sees it
+    // rewritten while the new one is being published.
     static BOOL mirrorAllocFailed = NO;
 
     if(!mirrorAllocFailed) {
-        if(!_shdw_dyld_info_array
-        && vm_allocate(mach_task_self(), (vm_address_t *) &_shdw_dyld_info_array, SHADOW_DYLD_MIRROR_CAPACITY * sizeof(struct dyld_image_info), VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
-            mirrorAllocFailed = YES;
-            NSLog(@"shadow: dyld: failed to allocate info mirror, memory hiding disabled (fail soft)");
+        for(int bufferIndex = 0; bufferIndex < 2; bufferIndex++) {
+            if(!_shdw_dyld_info_buffers[bufferIndex]
+            && vm_allocate(mach_task_self(), (vm_address_t *) &_shdw_dyld_info_buffers[bufferIndex], SHADOW_DYLD_MIRROR_CAPACITY * sizeof(struct dyld_image_info), VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
+                mirrorAllocFailed = YES;
+                NSLog(@"shadow: dyld: failed to allocate info mirror, memory hiding disabled (fail soft)");
+                break;
+            }
         }
 
-        if(!_shdw_dyld_uuid_array
-        && vm_allocate(mach_task_self(), (vm_address_t *) &_shdw_dyld_uuid_array, SHADOW_DYLD_MIRROR_CAPACITY * sizeof(struct dyld_uuid_info), VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
-            mirrorAllocFailed = YES;
-            NSLog(@"shadow: dyld: failed to allocate uuid mirror, memory hiding disabled (fail soft)");
+        for(int bufferIndex = 0; bufferIndex < 2; bufferIndex++) {
+            if(!_shdw_dyld_uuid_buffers[bufferIndex]
+            && vm_allocate(mach_task_self(), (vm_address_t *) &_shdw_dyld_uuid_buffers[bufferIndex], SHADOW_DYLD_MIRROR_CAPACITY * sizeof(struct dyld_uuid_info), VM_FLAGS_ANYWHERE) != KERN_SUCCESS) {
+                mirrorAllocFailed = YES;
+                NSLog(@"shadow: dyld: failed to allocate uuid mirror, memory hiding disabled (fail soft)");
+                break;
+            }
         }
     }
 
@@ -478,18 +742,21 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     }
 
     if(!mirrorAllocFailed) {
-        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-        NSUInteger count = MIN([_dyld_collection count], SHADOW_DYLD_MIRROR_CAPACITY);
+        // Pick the inactive generation buffers (the ones not currently
+        // published); a reader holding the other generation keeps seeing its
+        // intact contents until the next swap.
+        struct dyld_image_info* infoGen = (_shdw_dyld_info_published == _shdw_dyld_info_buffers[1]) ? _shdw_dyld_info_buffers[0] : _shdw_dyld_info_buffers[1];
+        struct dyld_uuid_info* uuidGen = (_shdw_dyld_uuid_published == _shdw_dyld_uuid_buffers[1]) ? _shdw_dyld_uuid_buffers[0] : _shdw_dyld_uuid_buffers[1];
 
         // Filtered dyld_image_info array, one entry per collection entry.
         for(NSUInteger i = 0; i < count; i++) {
             NSDictionary* dylib = _dyld_collection[i];
 
-            _shdw_dyld_info_array[i].imageLoadAddress = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
-            _shdw_dyld_info_array[i].imageFilePath = [dylib[@"name"] fileSystemRepresentation];
+            infoGen[i].imageLoadAddress = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
+            infoGen[i].imageFilePath = [dylib[@"name"] fileSystemRepresentation];
 
             // ponytail: imageFileModDate is unused by detection suites; they only walk names/counts
-            _shdw_dyld_info_array[i].imageFileModDate = 0;
+            infoGen[i].imageFileModDate = 0;
         }
 
         // Filtered uuid array: keep dyld's own uuid entries whose load address
@@ -503,8 +770,8 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
 
                 for(uintptr_t j = 0; j < _shdw_real_uuid_count; j++) {
                     if(_shdw_real_uuid_array[j].imageLoadAddress == mh) {
-                        _shdw_dyld_uuid_array[uuidCount].imageLoadAddress = mh;
-                        memcpy(_shdw_dyld_uuid_array[uuidCount].imageUUID, _shdw_real_uuid_array[j].imageUUID, sizeof(uuid_t));
+                        uuidGen[uuidCount].imageLoadAddress = mh;
+                        memcpy(uuidGen[uuidCount].imageUUID, _shdw_real_uuid_array[j].imageUUID, sizeof(uuid_t));
                         uuidCount++;
                         break;
                     }
@@ -533,10 +800,21 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         }
 
         if(!protectFailed && vm_protect(mach_task_self(), page, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
-            _shdw_all_image_infos->infoArray = _shdw_dyld_info_array;
+            // Count first, pointer last: a reader catching the swap sees the
+            // new count with the previous generation's entries — stale but
+            // within the fixed capacity — never a torn or over-read buffer.
             _shdw_all_image_infos->infoArrayCount = (uint32_t) count;
-            _shdw_all_image_infos->uuidArray = uuidCount ? _shdw_dyld_uuid_array : _shdw_all_image_infos->uuidArray;
+            _shdw_all_image_infos->infoArray = infoGen;
+            _shdw_dyld_info_published = infoGen;
+
             _shdw_all_image_infos->uuidArrayCount = (uint32_t) uuidCount;
+
+            if(uuidCount) {
+                _shdw_all_image_infos->uuidArray = uuidGen;
+                _shdw_dyld_uuid_published = uuidGen;
+            }
+            // else: count is 0, uuidArray pointer left untouched — readers see
+            // zero entries regardless of what the pointer points at.
 
             // Atlas (v16+, iOS 11+): a second, complete serialized image table
             // published via compact_dyld_image_info_addr/size — the filtered
@@ -567,6 +845,10 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
     _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 
+    // The add/remove callbacks above drive caller-cache invalidation; only
+    // once they're registered is it safe for isCallerTweak() to use the cache.
+    _shdw_dyld_hooks_active = YES;
+
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
     MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
@@ -575,8 +857,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
 
     // Resolve the exported dyld_all_image_infos global so we can patch its
-    // arrays directly. task_info returns the SAME struct address, so once
-    // patching is active the task_info hook is redundant.
+    // arrays directly.
     _shdw_all_image_infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
 
     if(!_shdw_all_image_infos) {
@@ -592,9 +873,9 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
         // is already populated by the registration above).
         shadowhook_dyld_rebuild_dyldinfo();
     } else {
-        // Very old iOS: degrade to the task_info hack (lie about counts).
-        NSLog(@"[Shadow] dyld_all_image_infos not found, falling back to task_info hack");
-        MSHookFunction(task_info, replaced_task_info, (void **) &original_task_info);
+        // dyld_all_image_infos unresolvable (pre-modern iOS): memory hiding
+        // stays off (fail soft) — the API-level hooks above still hide images.
+        NSLog(@"[Shadow] dyld_all_image_infos not found, memory hiding unavailable (fail soft)");
     }
 
     // Directly linkable — declared in vendor/apple/dyld_priv.h (Core.m calls
@@ -605,6 +886,36 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 
     MSHookFunction(dlerror, replaced_dlerror, (void **) &original_dlerror);
+
+    // Modern dyld SPIs (iOS 12+/13+). Resolved by name via MSFindSymbol so the
+    // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
+    // silently on OSes without them.
+    MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+
+    void* images_for_addresses_ptr = MSFindSymbol(libdyldImage, "_dyld_images_for_addresses");
+
+    if(images_for_addresses_ptr) {
+        MSHookFunction(images_for_addresses_ptr, replaced_dyld_images_for_addresses, (void **) &original_dyld_images_for_addresses);
+    }
+
+    void* register_for_image_loads_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_image_loads");
+
+    if(register_for_image_loads_ptr) {
+        MSHookFunction(register_for_image_loads_ptr, replaced_dyld_register_for_image_loads, (void **) &original_dyld_register_for_image_loads);
+
+        // Our own handler, registered with real dyld once: it fans out only
+        // visible images to every app-registered callback (the hook above
+        // stores app callbacks instead of forwarding them).
+        original_dyld_register_for_image_loads(shdw_image_load_handler);
+    }
+
+    void* register_for_bulk_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_bulk_image_loads");
+
+    if(register_for_bulk_ptr) {
+        MSHookFunction(register_for_bulk_ptr, replaced_dyld_register_for_bulk_image_loads, (void **) &original_dyld_register_for_bulk_image_loads);
+
+        original_dyld_register_for_bulk_image_loads(shdw_bulk_load_handler);
+    }
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {

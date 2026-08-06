@@ -37,7 +37,15 @@ int main(int argc, char *argv[], char *envp[]) {
             BOOL dpkg_ok = NO;
 
             if(ruleset_dpkg) {
-                dpkg_ok = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
+                NSString* db_path = [RootBridge getJBPath:@(SHADOW_DB_PLIST)];
+                // Atomic: serialize to a temp file in the same directory, then
+                // rename() over the target. A crash mid-write leaves the
+                // previous dpkg ruleset intact instead of a truncated plist.
+                NSString* tmp_path = [db_path stringByAppendingString:@".tmp"];
+
+                if([ruleset_dpkg writeToFile:tmp_path atomically:NO]) {
+                    dpkg_ok = (rename([tmp_path UTF8String], [db_path UTF8String]) == 0);
+                }
 
                 if(dpkg_ok) {
                     printf("successfully regenerated dpkg ruleset\n");

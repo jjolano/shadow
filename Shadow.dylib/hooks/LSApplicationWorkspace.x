@@ -12,11 +12,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(LSApplicationProxy* ap in result) {
-            if([_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered removeObject:ap];
+            if(![_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered addObject:ap];
             }
         }
 
@@ -30,11 +30,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(LSApplicationProxy* ap in result) {
-            if([_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered removeObject:ap];
+            if(![_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered addObject:ap];
             }
         }
 
@@ -48,11 +48,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(LSApplicationProxy* ap in result) {
-            if([_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered removeObject:ap];
+            if(![_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered addObject:ap];
             }
         }
 
@@ -66,11 +66,11 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [result mutableCopy];
+        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(LSApplicationProxy* ap in result) {
-            if([_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered removeObject:ap];
+            if(![_shadow isURLRestricted:[ap bundleURL]]) {
+                [result_filtered addObject:ap];
             }
         }
 
@@ -84,15 +84,14 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
+        NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* app_bundleId in result) {
             LSBundleProxy* app_bundle = [LSBundleProxy bundleProxyForIdentifier:app_bundleId];
+            BOOL restricted = app_bundle && [_shadow isURLRestricted:[app_bundle bundleURL]];
 
-            if(app_bundle) {
-                if([_shadow isURLRestricted:[app_bundle bundleURL]]) {
-                    [result_filtered removeObject:app_bundleId];
-                }
+            if(!restricted) {
+                [result_filtered addObject:app_bundleId];
             }
         }
 
@@ -130,11 +129,11 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
+        NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* scheme in result) {
-            if([_shadow isSchemeRestricted:scheme]) {
-                [result_filtered removeObject:scheme];
+            if(![_shadow isSchemeRestricted:scheme]) {
+                [result_filtered addObject:scheme];
             }
         }
 
@@ -148,11 +147,11 @@
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerTweak() && result) {
-        NSMutableArray<NSString *>* result_filtered = [result mutableCopy];
+        NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* scheme in result) {
-            if([_shadow isSchemeRestricted:scheme]) {
-                [result_filtered removeObject:scheme];
+            if(![_shadow isSchemeRestricted:scheme]) {
+                [result_filtered addObject:scheme];
             }
         }
 

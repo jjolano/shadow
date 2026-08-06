@@ -9,6 +9,9 @@
 //   2. the dyld API view (_dyld_image_count / _dyld_get_image_name)
 //   3. file-existence probes of known jailbreak paths
 //   4. URL scheme probes (canOpenURL)
+// Plus W2-specific checks appended as sections 5-7: dlsym/dladdr on a
+// hidden image's symbol, add/remove-image stress against the direct
+// infoArray read, and uuid / infoArrayChangeTimestamp invariants.
 // Run it with Shadow disabled for this app (baseline), then with Shadow
 // enabled and all hooks on — the two reports are the test.
 
@@ -92,6 +95,113 @@ static NSString* ProbeReport(void) {
     for(NSString* s in @[@"cydia://", @"sileo://", @"zbra://", @"xina://", @"filza://"]) {
         BOOL openable = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:s]];
         [out appendFormat:@"  %-12@ %@\n", s, openable ? @"OPENABLE" : @"no"];
+    }
+
+    [out appendString:@"\n== 5. dlsym/dladdr in hidden images ==\n"];
+    // Symbols exported by jailbreak dylibs (libhooker/ElleKit). If one
+    // resolves, its owning image must be absent from the direct infoArray
+    // read and dladdr must not reveal the jailbreak path.
+    for(NSString* symName in @[@"hookObjcMessage", @"MSHookFunction", @"MSHookMessageEx"]) {
+        void* sym = dlsym(RTLD_DEFAULT, [symName UTF8String]);
+
+        if(!sym) {
+            [out appendFormat:@"  %-20@ not resolvable\n", symName];
+            continue;
+        }
+
+        Dl_info info;
+        BOOL gotInfo = dladdr(sym, &info) && info.dli_fname;
+        [out appendFormat:@"  %-20@ %p  dladdr: %@\n", symName, sym, gotInfo ? @(info.dli_fname) : @"?"];
+    }
+
+    [out appendString:@"\n== 6. add/remove image stress ==\n"];
+    // dlopen/dlclose a benign dylib repeatedly. The direct infoArray read
+    // must track the load state (present while loaded, gone after dlclose)
+    // and must never show a hidden (jailbreak-path) image on any iteration.
+    const char* stressPath = "/usr/lib/libxml2.dylib";
+    NSArray* hiddenMarkers = @[
+        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
+        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
+    ];
+    BOOL stressOK = YES;
+
+    for(int i = 0; i < 8; i++) {
+        void* handle = dlopen(stressPath, RTLD_NOW);
+
+        if(!handle) {
+            [out appendFormat:@"  iter %d: dlopen(%s) failed: %s\n", i, stressPath, dlerror() ? dlerror() : "?"];
+            stressOK = NO;
+            break;
+        }
+
+        struct dyld_all_image_infos* live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        BOOL seenLoaded = NO;
+
+        if(live && live->infoArray) {
+            for(uint32_t j = 0; j < live->infoArrayCount; j++) {
+                NSString* p = live->infoArray[j].imageFilePath ? @(live->infoArray[j].imageFilePath) : @"";
+
+                if([p isEqualToString:@(stressPath)]) {
+                    seenLoaded = YES;
+                }
+
+                for(NSString* marker in hiddenMarkers) {
+                    if([p containsString:marker]) {
+                        [out appendFormat:@"  iter %d: HIDDEN IMAGE LEAKED: %@\n", i, p];
+                        stressOK = NO;
+                    }
+                }
+            }
+        }
+
+        if(!seenLoaded) {
+            [out appendFormat:@"  iter %d: %s NOT visible in direct infoArray after dlopen\n", i, stressPath];
+            stressOK = NO;
+        }
+
+        dlclose(handle);
+
+        live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        BOOL stillLoaded = NO;
+
+        if(live && live->infoArray) {
+            for(uint32_t j = 0; j < live->infoArrayCount; j++) {
+                NSString* p = live->infoArray[j].imageFilePath ? @(live->infoArray[j].imageFilePath) : @"";
+
+                if([p isEqualToString:@(stressPath)]) {
+                    stillLoaded = YES;
+                }
+            }
+        }
+
+        if(stillLoaded) {
+            [out appendFormat:@"  iter %d: %s still visible in direct infoArray after dlclose\n", i, stressPath];
+            stressOK = NO;
+        }
+    }
+
+    [out appendFormat:@"  stress result: %@\n", stressOK ? @"OK" : @"FAILED"];
+
+    [out appendString:@"\n== 7. uuid / infoArrayChangeTimestamp invariants ==\n"];
+
+    struct dyld_all_image_infos* invariants = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+
+    if(invariants) {
+        [out appendFormat:@"  version = %u\n", invariants->version];
+        [out appendFormat:@"  infoArrayChangeTimestamp = %llu\n", (unsigned long long)invariants->infoArrayChangeTimestamp];
+        [out appendFormat:@"  infoArrayCount = %lu, uuidArrayCount = %lu\n", (unsigned long)invariants->infoArrayCount, (unsigned long)invariants->uuidArrayCount];
+
+        if(invariants->uuidArray) {
+            for(uint32_t i = 0; i < invariants->uuidArrayCount && i < 4; i++) {
+                const unsigned char* u = invariants->uuidArray[i].imageUUID;
+                [out appendFormat:@"  uuid[%u] %p: %02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X\n",
+                    i, invariants->uuidArray[i].imageLoadAddress,
+                    u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7],
+                    u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]];
+            }
+        }
+    } else {
+        [out appendString:@"  (dyld_all_image_infos unavailable)\n"];
     }
 
     [out appendString:@"\n== done ==\n"];
