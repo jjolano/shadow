@@ -1,0 +1,9 @@
+Package: me.jjolano.dyldprobe
+Name: dyldprobe
+Depends: firmware (>= 12.0)
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: W5 verification probe for Shadow v5 — direct dyld_all_image_infos read, dyld API view, JB path probes, URL scheme probes.
+Maintainer: Shadow v5
+Author: Shadow v5
+Section: Utilities

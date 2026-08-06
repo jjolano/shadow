@@ -8,6 +8,7 @@
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
 #define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
 
+__attribute__((visibility("default")))
 @interface Shadow : NSObject {
     ShadowBackend* backend;
 }

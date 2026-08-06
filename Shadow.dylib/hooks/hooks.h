@@ -51,6 +51,10 @@
 
 #define isCallerTweak()         [_shadow isAddrExternal:__builtin_extract_return_addr(__builtin_return_address(0))]
 
+// Set by dylib.x when a known detection library (IOSSecuritySuite/freeRASP)
+// is loaded; read by dyld.x to escalate memory-level hiding.
+extern BOOL shdw_detector_present;
+
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);
 extern void shadowhook_libc(HKSubstitutor* hooks);

@@ -1,13 +1,15 @@
 #import <Shadow/Ruleset.h>
 
-@implementation ShadowRuleset
-@synthesize internalDictionary;
+@implementation RulesetEngine
+@synthesize payloadDictionary;
 
 - (instancetype)init {
     if((self = [super init])) {
         set_urlschemes = nil;
         set_whitelist = nil;
         set_blacklist = nil;
+        array_whitelist = nil;
+        array_blacklist = nil;
 
         pred_whitelist = nil;
         pred_blacklist = nil;
@@ -20,8 +22,8 @@
     NSDictionary* ruleset_dict = [NSDictionary dictionaryWithContentsOfURL:url];
 
     if(ruleset_dict) {
-        ShadowRuleset* ruleset = [self new];
-        [ruleset setInternalDictionary:ruleset_dict];
+        RulesetEngine* ruleset = [self new];
+        [ruleset setPayloadDictionary:ruleset_dict];
         [ruleset _compile];
         return ruleset;
     }
@@ -38,7 +40,7 @@
     NSOperationQueue* queue = [NSOperationQueue new];
     [queue setQualityOfService:NSOperationQualityOfServiceUserInteractive];
 
-    NSArray* urlschemes = [internalDictionary objectForKey:@"BlacklistURLSchemes"];
+    NSArray* urlschemes = [payloadDictionary objectForKey:@"BlacklistURLSchemes"];
 
     if(urlschemes) {
         [queue addOperationWithBlock:^{
@@ -46,7 +48,7 @@
         }];
     }
 
-    NSArray* whitelist_paths = [internalDictionary objectForKey:@"WhitelistExactPaths"];
+    NSArray* whitelist_paths = [payloadDictionary objectForKey:@"WhitelistExactPaths"];
 
     if(whitelist_paths) {
         [queue addOperationWithBlock:^{
@@ -54,7 +56,7 @@
         }];
     }
 
-    NSArray* blacklist_paths = [internalDictionary objectForKey:@"BlacklistExactPaths"];
+    NSArray* blacklist_paths = [payloadDictionary objectForKey:@"BlacklistExactPaths"];
 
     if(blacklist_paths) {
         [queue addOperationWithBlock:^{
@@ -62,7 +64,23 @@
         }];
     }
 
-    NSArray* whitelist_preds = [internalDictionary objectForKey:@"WhitelistPredicates"];
+    NSArray* whitelist_prefixes = [payloadDictionary objectForKey:@"WhitelistPaths"];
+
+    if(whitelist_prefixes) {
+        [queue addOperationWithBlock:^{
+            array_whitelist = [self _normalizePaths:whitelist_prefixes];
+        }];
+    }
+
+    NSArray* blacklist_prefixes = [payloadDictionary objectForKey:@"BlacklistPaths"];
+
+    if(blacklist_prefixes) {
+        [queue addOperationWithBlock:^{
+            array_blacklist = [self _normalizePaths:blacklist_prefixes];
+        }];
+    }
+
+    NSArray* whitelist_preds = [payloadDictionary objectForKey:@"WhitelistPredicates"];
 
     if(whitelist_preds) {
         [queue addOperationWithBlock:^{
@@ -76,7 +94,7 @@
         }];
     }
 
-    NSArray* blacklist_preds = [internalDictionary objectForKey:@"BlacklistPredicates"];
+    NSArray* blacklist_preds = [payloadDictionary objectForKey:@"BlacklistPredicates"];
 
     if(blacklist_preds) {
         [queue addOperationWithBlock:^{
@@ -93,8 +111,42 @@
     [queue waitUntilAllOperationsAreFinished];
 }
 
+- (BOOL)path:(NSString *)path hasComponentPrefix:(NSString *)prefix {
+    NSUInteger prefix_len = [prefix length];
+
+    if(prefix_len == 0) {
+        return YES;
+    }
+
+    if(prefix_len == [path length]) {
+        return [path isEqualToString:prefix];
+    }
+
+    return [path hasPrefix:prefix] && [path characterAtIndex:prefix_len] == '/';
+}
+
+- (NSArray<NSString *>*)_normalizePaths:(NSArray<NSString *>*)paths {
+    NSMutableArray<NSString *>* normalized = [NSMutableArray new];
+
+    for(NSString* raw in paths) {
+        NSString* entry = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+        if([entry length] == 0) {
+            continue;
+        }
+
+        if(![entry isEqualToString:@"/"] && [entry hasSuffix:@"/"]) {
+            entry = [entry substringToIndex:[entry length] - 1];
+        }
+
+        [normalized addObject:entry];
+    }
+
+    return [normalized copy];
+}
+
 - (BOOL)isPathCompliant:(NSString *)path {
-    NSDictionary* structure = [internalDictionary objectForKey:@"FileSystemStructure"];
+    NSDictionary* structure = [payloadDictionary objectForKey:@"FileSystemStructure"];
 
     // Skip checks if ruleset doesn't define a structure or if path is a key.
     if(!structure || [structure objectForKey:path]) {
@@ -117,7 +169,7 @@
         for(NSString* name in structure_base) {
             NSString* structure_path = [path_tmp stringByAppendingPathComponent:name];
 
-            if([path hasPrefix:structure_path]) {
+            if([self path:path hasComponentPrefix:structure_path]) {
                 compliant = YES;
                 break;
             }
@@ -134,13 +186,9 @@
         return YES;
     }
 
-    NSArray* array_whitelist = [internalDictionary objectForKey:@"WhitelistPaths"];
-
-    if(array_whitelist) {
-        for(NSString* whitelist_path in array_whitelist) {
-            if([path hasPrefix:whitelist_path]) {
-                return YES;
-            }
+    for(NSString* whitelist_path in array_whitelist) {
+        if([self path:path hasComponentPrefix:whitelist_path]) {
+            return YES;
         }
     }
 
@@ -152,13 +200,9 @@
         return YES;
     }
 
-    NSArray* array_blacklist = [internalDictionary objectForKey:@"BlacklistPaths"];
-
-    if(array_blacklist) {
-        for(NSString* blacklist_path in array_blacklist) {
-            if([path hasPrefix:blacklist_path]) {
-                return YES;
-            }
+    for(NSString* blacklist_path in array_blacklist) {
+        if([self path:path hasComponentPrefix:blacklist_path]) {
+            return YES;
         }
     }
 

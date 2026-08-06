@@ -118,19 +118,45 @@
 
         // Rootless optimization: skip rooted checks
         if(rootless) {
-            if(![path hasPrefix:@"/var"] && ![path hasPrefix:@"/private/preboot"] && ![path hasPrefix:@"/usr/lib"]) {
-                return NO;
-            }
-
             if([path hasPrefix:@"/var/jb"] || [path hasPrefix:@"/cores/"]) {
                 return YES;
+            }
+
+            BOOL checkable = [path hasPrefix:@"/var"]
+                || [path hasPrefix:@"/private/preboot"]
+                || [path hasPrefix:@"/usr/lib"];
+
+            if(!checkable) {
+                // Rooted-flavored query on a rootless jailbreak: the jailbreak file,
+                // if it exists, lives under /var/jb + path. Only evaluate rulesets
+                // (against the canonical rooted-flavored path, so existing ruleset
+                // entries/predicates apply) if the concrete jbroot file exists.
+                NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
+                int errno_old = errno;
+                BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
+                errno = errno_old;
+
+                if(!exists) {
+                    return NO;
+                }
+
+                if([backend isPathRestricted:path]) {
+                    NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
+                    return YES;
+                }
+
+                return NO;
             }
         }
 
         if([path hasPrefix:@"/usr/lib"]) {
             // Skip checks if file doesn't exist
             int errno_old = errno;
-            if(access([path fileSystemRepresentation], F_OK) != 0) {
+            NSString* check_path = path;
+            if(rootless) {
+                check_path = [@"/var/jb" stringByAppendingString:path];
+            }
+            if(access([check_path fileSystemRepresentation], F_OK) != 0) {
                 // reset errno
                 errno = errno_old;
                 return NO;
