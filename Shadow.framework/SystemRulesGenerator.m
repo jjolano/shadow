@@ -283,6 +283,35 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     return nil;
 }
 
+// ProductVersion from SystemVersion.plist; "unknown" if unreadable.
++ (NSString*)_currentiOSVersion {
+    NSDictionary* systemVersion = [NSDictionary dictionaryWithContentsOfFile:@"/System/Library/CoreServices/SystemVersion.plist"];
+    NSString* version = [systemVersion objectForKey:@"ProductVersion"];
+    return version ? version : @"unknown";
+}
+
+// The device state the generated ruleset is a function of: iOS version always,
+// plus the current system snapshot name when rootful. Regeneration is skipped
+// when this matches the previously generated ruleset.
++ (NSDictionary*)_currentRulesetIdentity {
+    NSMutableDictionary* identity = [NSMutableDictionary dictionaryWithObject:[self _currentiOSVersion] forKey:@"iOSVersion"];
+
+    if(![RootBridge isJBRootless]) {
+        int fd = -1;
+        NSString* snapshotName = [self _findSnapshotNameWithFd:&fd];
+
+        if(snapshotName && fd >= 0) {
+            [identity setObject:snapshotName forKey:@"SnapshotName"];
+        }
+
+        if(fd >= 0) {
+            close(fd);
+        }
+    }
+
+    return identity;
+}
+
 + (NSDictionary*)generateSystemRuleset {
     NSFileManager* fm = [NSFileManager defaultManager];
     NSMutableDictionary* structure = [NSMutableDictionary new];
@@ -356,7 +385,8 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     NSMutableDictionary* ruleset_info = [NSMutableDictionary dictionaryWithDictionary:@{
         @"Name": @"System Rules (generated)",
         @"Author": @"Shadow Service",
-        @"GeneratedAt": [formatter stringFromDate:[NSDate date]]
+        @"GeneratedAt": [formatter stringFromDate:[NSDate date]],
+        @"iOSVersion": [self _currentiOSVersion]
     }];
 
     if(snapshotNameUsed) {
@@ -401,33 +431,48 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     return ruleset;
 }
 
-+ (BOOL)writeSystemRuleset {
++ (NSInteger)writeSystemRuleset {
     NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/SystemRules.plist"];
 
-    // Warn if the system snapshot rotated since the last generation (e.g. an
-    // iOS update) — the old ruleset may have blacklisted Apple's new files.
+    // Read the previous ruleset once: used for the up-to-date gate below and
+    // for the snapshot-change/degradation warnings after regeneration.
     NSDictionary* previous = [NSDictionary dictionaryWithContentsOfFile:path];
-    NSString* previousSnapshot = [[previous objectForKey:@"RulesetInfo"] objectForKey:@"SnapshotName"];
+    NSDictionary* previousInfo = [previous objectForKey:@"RulesetInfo"];
+    NSString* previousSnapshot = [previousInfo objectForKey:@"SnapshotName"];
+    NSString* previousVersion = [previousInfo objectForKey:@"iOSVersion"];
+
+    NSDictionary* identity = [self _currentRulesetIdentity];
+    NSString* currentVersion = [identity objectForKey:@"iOSVersion"];
+    NSString* currentSnapshot = [identity objectForKey:@"SnapshotName"];
+
+    // Nothing that affects the ruleset changed since the last generation.
+    if(previous && [previousVersion isEqualToString:currentVersion]
+    && (!currentSnapshot || [previousSnapshot isEqualToString:currentSnapshot])) {
+        printf("system ruleset is current, skipping regeneration\n");
+        return 0;
+    }
 
     NSDictionary* ruleset = [self generateSystemRuleset];
 
     if(!ruleset) {
-        return NO;
+        return -1;
     }
 
-    NSString* currentSnapshot = [[ruleset objectForKey:@"RulesetInfo"] objectForKey:@"SnapshotName"];
+    // Warn if the system snapshot rotated since the last generation (e.g. an
+    // iOS update) — the old ruleset may have blacklisted Apple's new files.
+    NSString* currentSnapshotUsed = [[ruleset objectForKey:@"RulesetInfo"] objectForKey:@"SnapshotName"];
 
-    if(previousSnapshot && !currentSnapshot) {
+    if(previousSnapshot && !currentSnapshotUsed) {
         fprintf(stderr, "warning: SystemRules: no system snapshot available (previously '%s'); using live filesystem\n", [previousSnapshot UTF8String]);
-    } else if(previousSnapshot && currentSnapshot && ![previousSnapshot isEqualToString:currentSnapshot]) {
-        fprintf(stderr, "note: SystemRules: system snapshot changed '%s' -> '%s' (iOS update?); regenerated against the current snapshot\n", [previousSnapshot UTF8String], [currentSnapshot UTF8String]);
+    } else if(previousSnapshot && currentSnapshotUsed && ![previousSnapshot isEqualToString:currentSnapshotUsed]) {
+        fprintf(stderr, "note: SystemRules: system snapshot changed '%s' -> '%s' (iOS update?); regenerated against the current snapshot\n", [previousSnapshot UTF8String], [currentSnapshotUsed UTF8String]);
     }
 
     NSFileManager* fm = [NSFileManager defaultManager];
 
     [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:NULL];
 
-    return [ruleset writeToFile:path atomically:YES];
+    return [ruleset writeToFile:path atomically:YES] ? 1 : -1;
 }
 
 @end
