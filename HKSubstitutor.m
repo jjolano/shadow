@@ -7,6 +7,7 @@
 #import "vendor/libhooker/libhooker.h"
 #import "vendor/libhooker/libblackjack.h"
 #import "vendor/fishhook/fishhook.h"
+#import "vendor/substrate/substrate.h"
 
 #pragma mark - libhooker (ElleKit) runtime resolution
 
@@ -40,6 +41,79 @@ static BOOL libhooker_available(void) {
 
         available = fn_LBHookMessage && fn_LHHookFunctions && fn_LHPatchMemory
             && fn_LHOpenImage && fn_LHCloseImage && fn_LHFindSymbols;
+    });
+
+    return available;
+}
+
+#pragma mark - Cydia Substrate / Substitute (MS-compatible API) runtime resolution
+
+// Both libraries expose the classic Cydia Substrate C API. Cydia Substrate
+// exports the MS* symbols directly; libsubstitute exports them under MS*
+// (older versions) or Sub* (newer versions) names, so try both.
+static void *substrate_handle = NULL;
+static void *(*substrate_hookFunction)(void *, void *, void **) = NULL;
+static void (*substrate_hookMessageEx)(Class, SEL, void *, void **) = NULL;
+static void *(*substrate_getImageByName)(const char *) = NULL;
+static void *(*substrate_findSymbol)(void *, const char *) = NULL;
+
+static BOOL substrate_available(void) {
+    static BOOL available = NO;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        substrate_handle = dlopen([[RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"] fileSystemRepresentation], RTLD_LAZY);
+
+        if(!substrate_handle) {
+            return;
+        }
+
+        substrate_hookFunction = (void *(*)(void *, void *, void **))dlsym(substrate_handle, "MSHookFunction");
+        substrate_hookMessageEx = (void (*)(Class, SEL, void *, void **))dlsym(substrate_handle, "MSHookMessageEx");
+        substrate_getImageByName = (void *(*)(const char *))dlsym(substrate_handle, "MSGetImageByName");
+        substrate_findSymbol = (void *(*)(void *, const char *))dlsym(substrate_handle, "MSFindSymbol");
+
+        available = substrate_hookFunction && substrate_hookMessageEx
+            && substrate_getImageByName && substrate_findSymbol;
+    });
+
+    return available;
+}
+
+static void *libsubstitute_handle = NULL;
+static void *(*substitute_hookFunction)(void *, void *, void **) = NULL;
+static void (*substitute_hookMessageEx)(Class, SEL, void *, void **) = NULL;
+static void *(*substitute_getImageByName)(const char *) = NULL;
+static void *(*substitute_findSymbol)(void *, const char *) = NULL;
+
+static void *resolve_ms_symbol(void *handle, const char *name, const char *fallback) {
+    void *symbol = dlsym(handle, name);
+
+    if(!symbol && fallback) {
+        symbol = dlsym(handle, fallback);
+    }
+
+    return symbol;
+}
+
+static BOOL substitute_available(void) {
+    static BOOL available = NO;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        libsubstitute_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"] fileSystemRepresentation], RTLD_LAZY);
+
+        if(!libsubstitute_handle) {
+            return;
+        }
+
+        substitute_hookFunction = (void *(*)(void *, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookFunction", "SubHookFunction");
+        substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
+        substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
+        substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
+
+        available = substitute_hookFunction && substitute_hookMessageEx
+            && substitute_getImageByName && substitute_findSymbol;
     });
 
     return available;
@@ -224,6 +298,116 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 @end
 
+// Shared implementation for backends exposing the Cydia Substrate C API.
+// Batching is not supported: hooks are applied immediately at hook time, and
+// memory patches are not supported.
+@interface HKMSBackend : NSObject <HKSubstitutorBackend> {
+@protected
+    void *(*msHookFunction)(void *, void *, void **);
+    void (*msHookMessageEx)(Class, SEL, void *, void **);
+    void *(*msGetImageByName)(const char *);
+    void *(*msFindSymbol)(void *, const char *);
+}
+
+- (instancetype)initWithHookFunction:(void *(*)(void *, void *, void **))hookFunction
+                      hookMessageEx:(void (*)(Class, SEL, void *, void **))hookMessageEx
+                    getImageByName:(void *(*)(const char *))getImageByName
+                       findSymbol:(void *(*)(void *, const char *))findSymbol;
+@end
+
+@implementation HKMSBackend
+- (instancetype)initWithHookFunction:(void *(*)(void *, void *, void **))hookFunction
+                      hookMessageEx:(void (*)(Class, SEL, void *, void **))hookMessageEx
+                    getImageByName:(void *(*)(const char *))getImageByName
+                       findSymbol:(void *(*)(void *, const char *))findSymbol {
+    if((self = [super init])) {
+        msHookFunction = hookFunction;
+        msHookMessageEx = hookMessageEx;
+        msGetImageByName = getImageByName;
+        msFindSymbol = findSymbol;
+    }
+
+    return self;
+}
+
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    msHookMessageEx(objcClass, selector, replacement, old_ptr);
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    msHookFunction(function, replacement, old_ptr);
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: hooks are applied at hook time
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return (HKImageRef)msGetImageByName([path fileSystemRepresentation]);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    // MSCloseImage is not actually exported by either library at runtime
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return msFindSymbol((void *)image, symbol);
+    }
+
+    // image == NULL: iterate all loaded dyld images
+    int count = _dyld_image_count();
+
+    for(int i = 0; i < count; i++) {
+        const char *image_name = _dyld_get_image_name(i);
+
+        if(image_name) {
+            void *found = msFindSymbol(msGetImageByName(image_name), symbol);
+
+            if(found) {
+                NSLog(@"[HookKit] found symbol %s in image %s", symbol, image_name);
+                return found;
+            }
+        }
+    }
+
+    return NULL;
+}
+@end
+
+// Cydia Substrate backend: unc0ver and 32-bit jailbreaks.
+@interface HKSubstrateBackend : HKMSBackend
+@end
+
+@implementation HKSubstrateBackend
+- (instancetype)init {
+    return [super initWithHookFunction:substrate_hookFunction hookMessageEx:substrate_hookMessageEx getImageByName:substrate_getImageByName findSymbol:substrate_findSymbol];
+}
+@end
+
+// Substitute backend: checkra1n-classic (Substitute-based jailbreaks).
+@interface HKSubstituteBackend : HKMSBackend
+@end
+
+@implementation HKSubstituteBackend
+- (instancetype)init {
+    return [super initWithHookFunction:substitute_hookFunction hookMessageEx:substitute_hookMessageEx getImageByName:substitute_getImageByName findSymbol:substitute_findSymbol];
+}
+@end
+
 // fishhook backend: rebind_symbols for C functions; dlsym/dyld iteration for symbol lookup.
 // Batching is not supported: function hooks are applied immediately, and ObjC message
 // hooks and memory patches are not supported at all.
@@ -325,6 +509,14 @@ typedef NS_ENUM(int, HKHookKind) {
         return [HKElleKitBackend new];
     }
 
+    if(substrate_available()) {
+        return [HKSubstrateBackend new];
+    }
+
+    if(substitute_available()) {
+        return [HKSubstituteBackend new];
+    }
+
     return [HKFishhookBackend new];
 }
 
@@ -349,6 +541,16 @@ typedef NS_ENUM(int, HKHookKind) {
         return;
     }
 
+    if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
+        backend = [HKSubstrateBackend new];
+        return;
+    }
+
+    if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
+        backend = [HKSubstituteBackend new];
+        return;
+    }
+
     if(types & HK_LIB_FISHHOOK) {
         backend = [HKFishhookBackend new];
         return;
@@ -365,6 +567,14 @@ typedef NS_ENUM(int, HKHookKind) {
         types |= HK_LIB_ELLEKIT;
     }
 
+    if(substrate_available()) {
+        types |= HK_LIB_SUBSTRATE;
+    }
+
+    if(substitute_available()) {
+        types |= HK_LIB_SUBSTITUTE;
+    }
+
     return types;
 }
 
@@ -376,6 +586,22 @@ typedef NS_ENUM(int, HKHookKind) {
             @"id" : @"ellekit",
             @"name" : @"ElleKit",
             @"type" : @(HK_LIB_ELLEKIT)
+        }];
+    }
+
+    if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
+        [result addObject:@{
+            @"id" : @"substrate",
+            @"name" : @"Cydia Substrate",
+            @"type" : @(HK_LIB_SUBSTRATE)
+        }];
+    }
+
+    if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
+        [result addObject:@{
+            @"id" : @"substitute",
+            @"name" : @"Substitute",
+            @"type" : @(HK_LIB_SUBSTITUTE)
         }];
     }
 
