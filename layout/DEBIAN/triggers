@@ -5,3 +5,6 @@ interest /Applications
 interest /var/jb
 interest /Library
 interest /usr
+interest /etc
+interest /var/db
+interest /var/lib

@@ -6,6 +6,7 @@
 __attribute__((visibility("default")))
 @interface SystemRulesGenerator : NSObject
 + (NSDictionary *)generateSystemRuleset;
-+ (BOOL)writeSystemRuleset;
+// 1 = regenerated/written, 0 = skipped (up to date), -1 = failure.
++ (NSInteger)writeSystemRuleset;
 @end
 #endif

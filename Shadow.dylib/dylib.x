@@ -14,30 +14,6 @@
 // dyld.x (memory-hiding escalation) and by the hook-backend routing below.
 BOOL shdw_detector_present = NO;
 
-%group hook_springboard
-%hook SpringBoard
-- (void)applicationDidFinishLaunching:(UIApplication *)application {
-    %orig;
-
-    NSOperationQueue* queue = [NSOperationQueue new];
-
-    [queue addOperationWithBlock:^(){
-        NSDictionary* ruleset_dpkg = [Shadow generateDatabase];
-
-        if(ruleset_dpkg) {
-            BOOL success = [ruleset_dpkg writeToFile:[RootBridge getJBPath:@(SHADOW_DB_PLIST)] atomically:NO];
-
-            if(success) {
-                NSLog(@"successfully saved generated db");
-            } else {
-                NSLog(@"failed to save generate db");
-            }
-        }
-    }];
-}
-%end
-%end
-
 %ctor {
     // Detector-presence detection, run before prefs loading and before any
     // hook installation: dyld APIs are still unhooked here, so the real
@@ -64,12 +40,6 @@ BOOL shdw_detector_present = NO;
 
     // Determine the application we're injected into.
     NSString* bundleIdentifier = [Shadow getBundleIdentifier];
-
-    // Injected into SpringBoard.
-    if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-        %init(hook_springboard);
-        return;
-    }
 
     NSString* executablePath = [Shadow getExecutablePath];
     NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];

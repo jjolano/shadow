@@ -16,7 +16,7 @@ int main(int argc, char *argv[], char *envp[]) {
             printf("shdw - command line utility for Shadow\n");
             printf("usage: %s [-g] | <path> [path [...]]\n", argv[0]);
             printf("\tpath: check if path is restricted\n");
-            printf("\t-g: regenerate dpkg installed + system rulesets\n");
+            printf("\t-g: regenerate dpkg ruleset; system ruleset regenerated only when iOS version or snapshot changed\n");
 
             return 0;
         }
@@ -48,11 +48,11 @@ int main(int argc, char *argv[], char *envp[]) {
                 fprintf(stderr, "error: could not generate ruleset\n");
             }
 
-            BOOL system_ok = [SystemRulesGenerator writeSystemRuleset];
+            NSInteger system_result = [SystemRulesGenerator writeSystemRuleset];
 
-            if(system_ok) {
+            if(system_result == 1) {
                 printf("successfully regenerated system ruleset\n");
-            } else {
+            } else if(system_result == -1) {
                 fprintf(stderr, "error: failed to generate system ruleset\n");
             }
 
