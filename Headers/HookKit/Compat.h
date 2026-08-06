@@ -10,7 +10,9 @@ typedef enum {
 } hookkit_status_t;
 
 typedef enum {
-    HK_LIB_NONE = 0
+    HK_LIB_NONE = 0,
+    HK_LIB_ELLEKIT = (1 << 0),
+    HK_LIB_FISHHOOK = (1 << 1)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
