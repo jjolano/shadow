@@ -1602,6 +1602,241 @@ static DIR* replaced___opendir2(const char* pathname, int flags) {
     return NULL;
 }
 
+// --- stat64 family + protected-open variants ---------------------------------
+// These are legacy/compat exports: the stat64 family and open_dprotected_np/
+// openat_dprotected_np are absent on modern iOS (64-bit stat IS stat64), and
+// openat_authenticated_np is not in the SDK at all. All seven are resolved at
+// runtime and skipped cleanly when libSystem doesn't export them; policies
+// mirror their stat/lstat/fd/*at/open/openat counterparts with the 64-bit
+// struct layouts, and the protection args pass through untouched.
+
+struct ad_open_auth;  // <sys/open.h> is not in the theos SDK
+
+// struct stat64 is not visible in this build configuration: the SDK guards it
+// behind feature macros and omits it entirely on LP64 platforms where struct
+// stat already IS the 64-bit layout. Define the 32-bit layout ourselves
+// (mirrors xnu's __DARWIN_STRUCT_STAT64) and alias struct stat on LP64.
+#if defined(__LP64__)
+#define shdw_stat64_t struct stat
+#else
+struct shdw_stat64 {
+    __int32_t    st_dev;
+    __uint16_t   st_mode;
+    __uint16_t   st_nlink;
+    __uint64_t   st_ino;
+    __uint32_t   st_uid;
+    __uint32_t   st_gid;
+    __int32_t    st_rdev;
+    struct timespec st_atimespec;
+    struct timespec st_mtimespec;
+    struct timespec st_ctimespec;
+    struct timespec st_birthtimespec;
+    __int64_t    st_size;
+    __int64_t    st_blocks;
+    __int32_t    st_blksize;
+    __uint32_t   st_flags;
+    __uint32_t   st_gen;
+    __int32_t    st_lspare;
+    __int64_t    st_qspare[2];
+};
+#define shdw_stat64_t struct shdw_stat64
+#endif
+
+static int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
+static int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
+    SHADOW_TRIP(pathname, "stat64");
+
+    int result = original_stat64(pathname, buf);
+
+    if(result != -1 && !isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
+        if(buf) {
+            memset(buf, 0, sizeof(shdw_stat64_t));
+        }
+
+        errno = ENOENT;
+        return -1;
+    }
+
+    return result;
+}
+
+static int (*original_lstat64)(const char* pathname, shdw_stat64_t* buf);
+static int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
+    SHADOW_TRIP(pathname, "lstat64");
+
+    if(isCallerExternal()) {
+        return original_lstat64(pathname, buf);
+    }
+
+    shdw_stat64_t _buf;
+    int result = original_lstat64(pathname, &_buf);
+
+    if(result == 0) {
+        NSString* path = [NSString stringWithUTF8String:pathname];
+
+        // Only use resolve flag if target is not a symlink (link-LOCATION
+        // check, same policy as lstat).
+        if([_shadow isPathRestricted:path options:@{
+            kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode)),
+            kShadowRestrictionNoFollow : @YES
+        }]) {
+            errno = ENOENT;
+            return -1;
+        }
+
+        // NULL caller buffer keeps stock semantics (EFAULT from the kernel).
+        if(buf == NULL) {
+            return original_lstat64(pathname, NULL);
+        }
+
+        // Only copy on success: on failure _buf is uninitialized stack.
+        memcpy(buf, &_buf, sizeof(shdw_stat64_t));
+    }
+
+    return result;
+}
+
+static int (*original_fstat64)(int fd, shdw_stat64_t* buf);
+static int replaced_fstat64(int fd, shdw_stat64_t* buf) {
+    if(isCallerExternal()) {
+        return original_fstat64(fd, buf);
+    }
+
+    if(fd != fileno(stderr)
+    && fd != fileno(stdout)
+    && fd != fileno(stdin)) {
+        // Get file descriptor path.
+        char pathname[PATH_MAX];
+
+        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+            errno = EBADF;
+            return -1;
+        }
+    }
+
+    return original_fstat64(fd, buf);
+}
+
+static int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
+static int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags) {
+    SHADOW_TRIP(pathname, "fstatat64");
+
+    if(isCallerExternal()) {
+        return original_fstatat64(dirfd, pathname, buf, flags);
+    }
+
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
+    }
+
+    return original_fstatat64(dirfd, pathname, buf, flags);
+}
+
+static int (*original_open_dprotected_np)(const char* path, int flags, int class, int dpflags, ...);
+static int replaced_open_dprotected_np(const char* path, int flags, int class, int dpflags, ...) {
+    SHADOW_TRIP(path, "open_dprotected_np");
+
+    mode_t mode = 0;
+
+    // Same vararg rule as open: the mode argument exists only with O_CREAT.
+    if(flags & O_CREAT) {
+        va_list args;
+        va_start(args, dpflags);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+    }
+
+    if(!isCallerExternal() && shdw_is_jbroot_write_probe(path, flags)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if(isCallerExternal() || ![_shadow isCPathRestricted:path]) {
+        if(flags & O_CREAT) {
+            return original_open_dprotected_np(path, flags, class, dpflags, mode);
+        }
+
+        return original_open_dprotected_np(path, flags, class, dpflags);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_openat_dprotected_np)(int dirfd, const char* path, int flags, int class, int dpflags, ...);
+static int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int class, int dpflags, ...) {
+    SHADOW_TRIP(path, "openat_dprotected_np");
+
+    mode_t mode = 0;
+
+    if(flags & O_CREAT) {
+        va_list args;
+        va_start(args, dpflags);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+    }
+
+    if(isCallerExternal()) {
+        if(flags & O_CREAT) {
+            return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
+        }
+
+        return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
+    }
+
+    if(shdw_is_jbroot_write_probe(path, flags)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    if(flags & O_CREAT) {
+        return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
+    }
+
+    return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
+}
+
+static int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
+static int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...) {
+    SHADOW_TRIP(path, "openat_authenticated_np");
+
+    mode_t mode = 0;
+
+    if(flags & O_CREAT) {
+        va_list args;
+        va_start(args, flags);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+    }
+
+    if(isCallerExternal()) {
+        if(flags & O_CREAT) {
+            return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
+        }
+
+        return original_openat_authenticated_np(dirfd, path, auth, flags);
+    }
+
+    if(shdw_is_jbroot_write_probe(path, flags)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    if(flags & O_CREAT) {
+        return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
+    }
+
+    return original_openat_authenticated_np(dirfd, path, auth, flags);
+}
+
 void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(access, replaced_access, (void **) &original_access);
     MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
@@ -1670,6 +1905,26 @@ void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
     MSHookFunction(open, replaced_open, (void **) &original_open);
     MSHookFunction(openat, replaced_openat, (void **) &original_openat);
     MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
+
+    // The stat64 family and protected-open variants are not exported on
+    // modern iOS; resolve at runtime and skip cleanly when absent.
+    struct { const char* name; void* replacement; void** outOld; } shdw_lowlevel_symbols[] = {
+        { "stat64",                    (void*) replaced_stat64,                    (void**) &original_stat64 },
+        { "lstat64",                   (void*) replaced_lstat64,                   (void**) &original_lstat64 },
+        { "fstat64",                   (void*) replaced_fstat64,                   (void**) &original_fstat64 },
+        { "fstatat64",                 (void*) replaced_fstatat64,                 (void**) &original_fstatat64 },
+        { "open_dprotected_np",        (void*) replaced_open_dprotected_np,        (void**) &original_open_dprotected_np },
+        { "openat_dprotected_np",      (void*) replaced_openat_dprotected_np,      (void**) &original_openat_dprotected_np },
+        { "openat_authenticated_np",   (void*) replaced_openat_authenticated_np,   (void**) &original_openat_authenticated_np },
+    };
+
+    for(size_t i = 0; i < sizeof(shdw_lowlevel_symbols) / sizeof(shdw_lowlevel_symbols[0]); i++) {
+        void* target = dlsym(RTLD_DEFAULT, shdw_lowlevel_symbols[i].name);
+
+        if(target) {
+            MSHookFunction(target, shdw_lowlevel_symbols[i].replacement, shdw_lowlevel_symbols[i].outOld);
+        }
+    }
 }
 
 void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
