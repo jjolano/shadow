@@ -547,7 +547,11 @@ static void shdw_install_tier2(void) {
         // safe no-op. subCFunc: fishhook by default (clean prologues — the
         // envvar getter must stay indistinguishable from stock).
         shadowhook_libc_envvar(subCFunc);
-        // shadowhook_NSProcessInfo(substitutor);
+        // NSProcessInfo caches the launch environment at its first access (the
+        // ctor touched it above), so the -environment/-arguments hooks must
+        // install before app code can read the cached snapshot — ctor-time,
+        // not tier-2. subMain: ObjC-method swizzles.
+        shadowhook_NSProcessInfo(subMain);
     }
 
     if([prefs_load[@"Hook_Foundation"] boolValue]) {
