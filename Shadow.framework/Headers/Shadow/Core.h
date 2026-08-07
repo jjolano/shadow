@@ -53,6 +53,13 @@ __attribute__((visibility("default")))
 // package-manager/loader bundle IDs (static list) or any ruleset's
 // BlacklistBundleIDs (user-extensible).
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID;
+
+// C0-3: protected-name policy — YES when the path is restricted by a ruleset
+// OR its basename matches one of Shadow's own artifacts (Shadow.dylib,
+// Shadow.framework, libSandy.dylib, HookKit.framework, RootBridge.framework,
+// substrate/substitute/ellekit), case-insensitive prefix match on the
+// basename so rootful and rootless (/var/jb) prefixes both resolve to it.
+- (BOOL)isProtectedImagePath:(NSString *)path;
 @end
 
 // C0-2 internal read scope (see the note above the interface). The cleanup
