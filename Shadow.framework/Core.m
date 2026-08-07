@@ -246,22 +246,24 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     // Bounded decision cache: repeat queries of the same absolute path with
     // default options skip tilde expansion, NSURL canonicalization, the
     // rootless access() probe and the backend lookup. Entries carry the time
-    // they were computed and are only honored within kDecisionCacheTTL, so a
-    // changed file system (new/removed jbroot files) or a ruleset reload is
-    // observed at most TTL later. The backend's ruleset generation is not
-    // reachable from here (protected ivar, no getter), so TTL is used instead
-    // of a generation check. Options are never cached: they alter the
+    // they were computed, the backend's ruleset generation (C0-5), and the
+    // restricted verdict; they are honored only within kDecisionCacheTTL AND
+    // while the generation matches, so a changed file system (new/removed
+    // jbroot files) is observed at most TTL later while a ruleset reload
+    // invalidates immediately. Options are never cached: they alter the
     // decision (working dir, file extension, resolve re-check, symlink
     // resolution).
     BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
 
     if(cacheable) {
+        NSUInteger gen = [backend rulesetGeneration];
         NSArray* cached = [decisionCache objectForKey:path];
 
         if(cached) {
             double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
 
-            if(age >= 0 && age <= kDecisionCacheTTL) {
+            if(age >= 0 && age <= kDecisionCacheTTL
+                && [[cached objectAtIndex:2] unsignedIntegerValue] == gen) {
                 return [[cached objectAtIndex:1] boolValue];
             }
         }
@@ -369,7 +371,9 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 
 done:
     if(cacheable) {
-        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted)] forKey:original_path];
+        // C0-5: generation tag — a ruleset reload invalidates the entry at
+        // the next query even inside the TTL window.
+        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([backend rulesetGeneration])] forKey:original_path];
     }
 
     return restricted;
