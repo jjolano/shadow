@@ -108,39 +108,94 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
     return result;
 }
 
+// Shared dirfd→path resolution for the *at family. Classifies a dirfd+path
+// pair without trusting the fd NUMBER: descriptors 0-2 can be closed and
+// reused, so a hook that exempts them filters by identity, not number.
+// Absolute paths ignore dirfd entirely; relative paths resolve against
+// AT_FDCWD (process cwd) or the dirfd's own path via F_GETPATH. The caller
+// replays the original call for descriptors it must not judge (the kernel
+// reports the genuine EBADF/ENOTDIR), and fails closed with ENOENT for a
+// valid directory vnode whose path cannot be resolved — EBADF on a valid
+// dirfd is a fingerprint, ENOENT is what a stock device answers for a path
+// query that must not succeed.
+typedef enum {
+    SHADW_DIRFD_OK = 0,        // `out` holds the resolved parent directory
+    SHADW_DIRFD_ABSOLUTE,      // path is absolute; dirfd is irrelevant
+    SHADW_DIRFD_ORIGINAL,      // replay the original call (kernel reports the genuine error)
+    SHADW_DIRFD_DENY,          // valid dir vnode, path unresolvable: fail closed
+} shdw_dirfd_status_t;
+
+static shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* out, size_t outlen) {
+    if(path == NULL || path[0] == '\0') {
+        // No path semantics to classify here — EFAULT/EINVAL come from the kernel.
+        return SHADW_DIRFD_ORIGINAL;
+    }
+
+    if(path[0] == '/') {
+        return SHADW_DIRFD_ABSOLUTE;
+    }
+
+    if(dirfd == AT_FDCWD) {
+        return getcwd(out, outlen) ? SHADW_DIRFD_OK : SHADW_DIRFD_DENY;
+    }
+
+    if(fcntl(dirfd, F_GETPATH, out) != -1) {
+        return SHADW_DIRFD_OK;
+    }
+
+    struct stat st;
+
+    if(fstat(dirfd, &st) == 0 && S_ISDIR(st.st_mode)) {
+        // Valid directory vnode that can't be named: fail closed.
+        return SHADW_DIRFD_DENY;
+    }
+
+    // Invalid or non-directory descriptor: the kernel reports the genuine
+    // error (EBADF/ENOTDIR) — never synthesize one here.
+    return SHADW_DIRFD_ORIGINAL;
+}
+
+// Applies the shared dirfd resolution to one *at path argument: returns YES
+// when the query must be denied (errno = ENOENT already set). Each hook gates
+// on isCallerExternal() first, keeping the return-address read inline at the
+// hook site — this helper is never reached for tweak/system callers.
+static BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
+    if(pathname == NULL || pathname[0] == '\0') {
+        return NO;
+    }
+
+    char parent[PATH_MAX];
+    shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
+
+    if(status == SHADW_DIRFD_ABSOLUTE) {
+        if([_shadow isCPathRestricted:pathname]) {
+            errno = ENOENT;
+            return YES;
+        }
+    } else if(status == SHADW_DIRFD_DENY) {
+        errno = ENOENT;
+        return YES;
+    } else if(status == SHADW_DIRFD_OK) {
+        NSString* path = [NSString stringWithUTF8String:pathname];
+
+        if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]}]) {
+            errno = ENOENT;
+            return YES;
+        }
+    }
+
+    // SHADW_DIRFD_ORIGINAL: let the kernel answer.
+    return NO;
+}
+
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsize) {
     if(isCallerExternal()) {
         return original_readlinkat(dirfd, pathname, buf, bufsize);
     }
 
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        if(pathname[0] == '/') {
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            NSString* path = [NSString stringWithUTF8String:pathname];
-
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
-
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [NSString stringWithUTF8String:pathnameParent];
-            }
-
-            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : pathParent}]) {
-                errno = EBADF;
-                return -1;
-            }
-        }
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
     }
 
     return original_readlinkat(dirfd, pathname, buf, bufsize);
@@ -528,33 +583,8 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        if(pathname[0] == '/') {
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            NSString* path = [NSString stringWithUTF8String:pathname];
-
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
-
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [NSString stringWithUTF8String:pathnameParent];
-            }
-
-            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : pathParent}]) {
-                errno = EBADF;
-                return -1;
-            }
-        }
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
     }
 
     return original_fstatat(dirfd, pathname, buf, flags);
@@ -568,33 +598,8 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        if(pathname[0] == '/') {
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            NSString* path = [NSString stringWithUTF8String:pathname];
-
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
-
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [NSString stringWithUTF8String:pathnameParent];
-            }
-
-            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : pathParent}]) {
-                errno = EBADF;
-                return -1;
-            }
-        }
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
     }
 
     return original_faccessat(dirfd, pathname, mode, flags);
@@ -889,36 +894,127 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
         return original_unlinkat(dirfd, pathname, flags);
     }
 
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        if(pathname[0] == '/') {
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                return -1;
-            }
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
+    }
+
+    return original_unlinkat(dirfd, pathname, flags);
+}
+
+static int (*original_linkat)(int dirfd1, const char* path1, int dirfd2, const char* path2, int flags);
+static int replaced_linkat(int dirfd1, const char* path1, int dirfd2, const char* path2, int flags) {
+    if(isCallerExternal()) {
+        return original_linkat(dirfd1, path1, dirfd2, path2, flags);
+    }
+
+    // Both path arguments are resolved against their own dirfd.
+    if(shdw_at_path_denied(dirfd1, path1) || shdw_at_path_denied(dirfd2, path2)) {
+        return -1;
+    }
+
+    return original_linkat(dirfd1, path1, dirfd2, path2, flags);
+}
+
+static int (*original_symlinkat)(const char* path1, int dirfd, const char* path2);
+static int replaced_symlinkat(const char* path1, int dirfd, const char* path2) {
+    if(isCallerExternal()) {
+        return original_symlinkat(path1, dirfd, path2);
+    }
+
+    // Link LOCATION (path2, resolved against dirfd): same policy as symlink.
+    if(shdw_at_path_denied(dirfd, path2)) {
+        return -1;
+    }
+
+    // Link TARGET (path1): a relative target resolves against the directory
+    // containing the link, so classify the joined path, not the raw string.
+    if(path1 && path1[0] == '/') {
+        if([_shadow isCPathRestricted:path1]) {
+            errno = EACCES;
+            return -1;
+        }
+    } else if(path1 && path1[0]) {
+        NSString* linkDir = nil;
+
+        if(path2 && path2[0] == '/') {
+            linkDir = [[NSString stringWithUTF8String:path2] stringByDeletingLastPathComponent];
         } else {
-            NSString* path = [NSString stringWithUTF8String:pathname];
+            char parent[PATH_MAX];
+            shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, path2, parent, sizeof(parent));
 
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
+            if(status == SHADW_DIRFD_OK) {
+                linkDir = [NSString stringWithUTF8String:parent];
 
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [NSString stringWithUTF8String:pathnameParent];
+                if(path2 && path2[0]) {
+                    linkDir = [linkDir stringByAppendingPathComponent:[[NSString stringWithUTF8String:path2] stringByDeletingLastPathComponent]];
+                }
             }
+        }
 
-            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : pathParent}]) {
-                errno = EBADF;
+        if(linkDir && linkDir.length) {
+            NSString* joined = [[linkDir stringByAppendingPathComponent:[NSString stringWithUTF8String:path1]] stringByStandardizingPath];
+
+            if([_shadow isCPathRestricted:[joined fileSystemRepresentation]]) {
+                errno = EACCES;
                 return -1;
             }
         }
     }
 
-    return original_unlinkat(dirfd, pathname, flags);
+    return original_symlinkat(path1, dirfd, path2);
+}
+
+static int (*original_renameat)(int fromfd, const char* from, int tofd, const char* to);
+static int replaced_renameat(int fromfd, const char* from, int tofd, const char* to) {
+    if(isCallerExternal()) {
+        return original_renameat(fromfd, from, tofd, to);
+    }
+
+    // Both path arguments are resolved against their own dirfd.
+    if(shdw_at_path_denied(fromfd, from) || shdw_at_path_denied(tofd, to)) {
+        return -1;
+    }
+
+    return original_renameat(fromfd, from, tofd, to);
+}
+
+static int (*original_mkdirat)(int dirfd, const char* path, mode_t mode);
+static int replaced_mkdirat(int dirfd, const char* path, mode_t mode) {
+    if(isCallerExternal()) {
+        return original_mkdirat(dirfd, path, mode);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_mkdirat(dirfd, path, mode);
+}
+
+static int (*original_utimensat)(int dirfd, const char* path, const struct timespec times[2], int flags);
+static int replaced_utimensat(int dirfd, const char* path, const struct timespec times[2], int flags) {
+    if(isCallerExternal()) {
+        return original_utimensat(dirfd, path, times, flags);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_utimensat(dirfd, path, times, flags);
+}
+
+static int (*original_fchmodat)(int dirfd, const char* path, mode_t mode, int flags);
+static int replaced_fchmodat(int dirfd, const char* path, mode_t mode, int flags) {
+    if(isCallerExternal()) {
+        return original_fchmodat(dirfd, path, mode, flags);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_fchmodat(dirfd, path, mode, flags);
 }
 
 static int (*original_rmdir)(const char* pathname);
@@ -1143,33 +1239,8 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         return -1;
     }
 
-    if(pathname
-    && dirfd != fileno(stderr)
-    && dirfd != fileno(stdout)
-    && dirfd != fileno(stdin)) {
-        if(pathname[0] == '/') {
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                return -1;
-            }
-        } else {
-            NSString* path = [NSString stringWithUTF8String:pathname];
-
-            // Get file descriptor path.
-            char pathnameParent[PATH_MAX];
-            NSString* pathParent = nil;
-
-            if(dirfd == AT_FDCWD) {
-                pathParent = [[NSFileManager defaultManager] currentDirectoryPath];
-            } else if(fcntl(dirfd, F_GETPATH, pathnameParent) != -1) {
-                pathParent = [NSString stringWithUTF8String:pathnameParent];
-            }
-
-            if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : pathParent}]) {
-                errno = EBADF;
-                return -1;
-            }
-        }
+    if(shdw_at_path_denied(dirfd, pathname)) {
+        return -1;
     }
 
     if(oflag & O_CREAT) {
@@ -1218,6 +1289,17 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(remove, replaced_remove, (void **) &original_remove);
     MSHookFunction(unlink, replaced_unlink, (void **) &original_unlink);
     MSHookFunction(unlinkat, replaced_unlinkat, (void **) &original_unlinkat);
+    MSHookFunction(linkat, replaced_linkat, (void **) &original_linkat);
+    MSHookFunction(symlinkat, replaced_symlinkat, (void **) &original_symlinkat);
+    MSHookFunction(renameat, replaced_renameat, (void **) &original_renameat);
+    MSHookFunction(mkdirat, replaced_mkdirat, (void **) &original_mkdirat);
+
+    if(@available(iOS 11, *)) {
+        // utimensat is iOS 11+; skip on older systems.
+        MSHookFunction(utimensat, replaced_utimensat, (void **) &original_utimensat);
+    }
+
+    MSHookFunction(fchmodat, replaced_fchmodat, (void **) &original_fchmodat);
     MSHookFunction(rmdir, replaced_rmdir, (void **) &original_rmdir);
     MSHookFunction(pathconf, replaced_pathconf, (void **) &original_pathconf);
     MSHookFunction(fpathconf, replaced_fpathconf, (void **) &original_fpathconf);
