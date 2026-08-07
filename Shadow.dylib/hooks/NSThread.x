@@ -5,7 +5,7 @@
 + (NSArray *)callStackReturnAddresses {
     NSArray* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSNumber* ret_addr in result) {
@@ -23,7 +23,7 @@
 + (NSArray *)callStackSymbols {
     NSArray* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* line in result) {

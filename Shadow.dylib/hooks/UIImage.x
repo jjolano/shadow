@@ -46,7 +46,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 %group shadowhook_UIImage
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -54,7 +54,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 }
 
 + (UIImage *)imageWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -62,7 +62,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 }
 
 + (UIImage *)imageNamed:(NSString *)name {
-    if(!isCallerExternal() && shdw_imageNameProtected(name)) {
+    if(isCallerExternal() && shdw_imageNameProtected(name)) {
         return nil;
     }
 
@@ -70,7 +70,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 }
 
 + (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle {
-    if(!isCallerExternal() && shdw_assetRestricted(name, bundle)) {
+    if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
 
@@ -78,7 +78,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 }
 
 + (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle compatibleWithTraitCollection:(UITraitCollection *)traitCollection {
-    if(!isCallerExternal() && shdw_assetRestricted(name, bundle)) {
+    if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
 
@@ -88,7 +88,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 // id instead of UIImageConfiguration: the type is iOS 13+ and the tweak
 // targets iOS 9; selector dispatch only needs the pointer ABI.
 + (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle withConfiguration:(id)configuration {
-    if(!isCallerExternal() && shdw_assetRestricted(name, bundle)) {
+    if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
 
@@ -96,7 +96,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 }
 
 + (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle variableValue:(double)value withConfiguration:(id)configuration {
-    if(!isCallerExternal() && shdw_assetRestricted(name, bundle)) {
+    if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
 

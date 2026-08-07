@@ -3,7 +3,7 @@
 %group shadowhook_NSArray
 %hook NSArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -19,7 +19,7 @@
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -27,7 +27,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -35,7 +35,7 @@
 }
 
 - (NSArray *)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -47,7 +47,7 @@
 }
 
 + (NSArray *)arrayWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -59,7 +59,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return NO;
     }
 
@@ -67,7 +67,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return NO;
     }
 
@@ -75,7 +75,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
         }
@@ -89,7 +89,7 @@
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -97,7 +97,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -105,7 +105,7 @@
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -113,7 +113,7 @@
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 

@@ -179,7 +179,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -187,7 +187,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         // Out-param leak: the directory bit must not survive the hiding.
         if(isDirectory) {
             *isDirectory = NO;
@@ -200,7 +200,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -212,7 +212,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
     // rootful jailbreak stock (non-jb) paths are legitimately writable and we
     // do not claim otherwise. Write intent is passed so restricted paths are
     // denied even when the probe target does not exist yet.
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -220,7 +220,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -228,7 +228,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -236,7 +236,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -244,7 +244,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [path1 isAbsolutePath] && [path2 isAbsolutePath]);
 
@@ -257,9 +257,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -281,9 +279,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -305,7 +301,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         return nil;
     }
 
@@ -332,7 +328,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -347,9 +343,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -371,9 +365,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -391,7 +383,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 }
 
 - (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary *services, NSError *error))completionHandler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(completionHandler) {
             // Async contract: never invoke a blocked-path completion inline.
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -422,7 +414,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -435,7 +427,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Both-sides validation: the link is allowed but its destination may
     // point into a restricted tree. Error names the (caller-supplied) link
     // path, never the resolved destination — that would leak it.
-    if(result && !isCallerExternal()) {
+    if(result && isCallerExternal()) {
         NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
 
         if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
@@ -451,7 +443,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -459,7 +451,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -467,7 +459,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -479,7 +471,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -491,7 +483,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:directoryURL];
         }
@@ -503,7 +495,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -517,7 +509,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
     NSLog(@"%@: %@", @"changeCurrentDirectoryPath", path);
 
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -525,7 +517,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary *)fileAttributesAtPath:(NSString *)path traverseLink:(BOOL)yorn {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -533,7 +525,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary *)fileSystemAttributesAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -541,9 +533,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -561,13 +551,13 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSString *)pathContentOfSymbolicLinkAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
     NSString* result = %orig;
 
-    if(result && !isCallerExternal()) {
+    if(result && isCallerExternal()) {
         NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
 
         if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
@@ -581,7 +571,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — replacing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:newItemURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:newItemURL options:_shdw_urlWriteOptions()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
@@ -595,7 +585,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — copying a directory that
     // contains a restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -609,7 +599,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — copying a directory that
     // contains a restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
             || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
@@ -626,7 +616,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — moving a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -640,7 +630,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — moving a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:srcPath options:_shdw_writeOptions(self, [srcPath isAbsolutePath])]
             || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
@@ -657,7 +647,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)isUbiquitousItemAtURL:(NSURL *)url {
     BOOL result = %orig;
 
-    if(!isCallerExternal() && result && [_shadow isURLRestricted:url options:nil]) {
+    if(isCallerExternal() && result && [_shadow isURLRestricted:url options:nil]) {
         return NO;
     }
 
@@ -665,7 +655,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:url options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:destinationURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:url options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:destinationURL options:_shdw_urlWriteOptions()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -677,7 +667,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -689,7 +679,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -701,7 +691,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -713,7 +703,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // Link location: write intent — a probe creating a link at a
         // restricted path must be denied even when the target is absent.
         NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
@@ -750,7 +740,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:path];
@@ -774,7 +764,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -786,7 +776,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
             || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
@@ -801,7 +791,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
             || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
@@ -812,7 +802,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:src options:_shdw_writeOptions(self, [src isAbsolutePath])]
             || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
@@ -823,7 +813,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -831,7 +821,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -839,7 +829,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
             || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
@@ -850,7 +840,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -862,7 +852,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -874,7 +864,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -884,7 +874,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — removing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:URL options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
@@ -898,7 +888,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — removing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -912,7 +902,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — trashing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -924,7 +914,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -936,7 +926,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSArray<NSURL *> *)mountedVolumeURLsIncludingResourceValuesForKeys:(NSArray<NSURLResourceKey> *)propertyKeys options:(NSVolumeEnumerationOptions)options {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -950,7 +940,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSURL *)URLForDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domain appropriateForURL:(NSURL *)url create:(BOOL)shouldCreate error:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // create:YES writes the directory (possibly creating it), so the
         // probe is classified with write intent; read intent otherwise.
         NSDictionary* options = shouldCreate ? @{kShadowRestrictionOperation : kShadowRestrictionOpWrite} : nil;
@@ -966,7 +956,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
     NSURL* result = %orig;
 
-    if(result && !isCallerExternal() && [_shadow isURLRestricted:result]) {
+    if(result && isCallerExternal() && [_shadow isURLRestricted:result]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:result];
         }
@@ -978,7 +968,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSArray<NSURL *> *)URLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domainMask {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -994,7 +984,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (NSURL *)containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
     NSURL* result = %orig;
 
-    if(result && !isCallerExternal() && [_shadow isURLRestricted:result]) {
+    if(result && isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 

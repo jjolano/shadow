@@ -32,7 +32,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<LSApplicationProxy *> *)allApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -42,7 +42,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<LSApplicationProxy *> *)allInstalledApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -52,7 +52,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<LSApplicationProxy *> *)directionsApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -62,7 +62,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<LSApplicationProxy *> *)unrestrictedApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -72,7 +72,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<NSString *> *)installedApplications {
     NSArray<NSString *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* app_bundleId in result) {
@@ -98,13 +98,13 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForHandlingURLScheme:(NSString *)urlScheme {
-    if(!isCallerExternal() && [_shadow isSchemeRestricted:urlScheme]) {
+    if(isCallerExternal() && [_shadow isSchemeRestricted:urlScheme]) {
         return @[];
     }
 
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -112,13 +112,13 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return @[];
     }
 
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -126,13 +126,13 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url legacySPI:(BOOL)legacySPI {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return @[];
     }
 
     NSArray<LSApplicationProxy *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         result = shdw_filter_application_proxies(result);
     }
 
@@ -142,7 +142,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<NSString *> *)publicURLSchemes {
     NSArray<NSString *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* scheme in result) {
@@ -160,7 +160,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 - (NSArray<NSString *> *)privateURLSchemes {
     NSArray<NSString *>* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* scheme in result) {

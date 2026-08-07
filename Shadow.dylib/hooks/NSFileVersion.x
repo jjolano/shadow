@@ -2,8 +2,7 @@
 
 // Drop versions whose real URL is hidden: the -URL hook already returns nil
 // for restricted versions, so nil is a denial signal in either direction
-// (filtered answer with correct spans, or truthful answer under the
-// span-collection lag — reclassified here).
+// (filtered answer for external callers, truthful answer for Shadow's own).
 static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     NSMutableArray* filtered = [NSMutableArray arrayWithCapacity:[versions count]];
 
@@ -21,7 +20,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 %group shadowhook_NSFileVersion
 %hook NSFileVersion
 + (NSFileVersion *)currentVersionOfItemAtURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -29,13 +28,13 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSArray<NSFileVersion *> *)otherVersionsOfItemAtURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
     NSArray* result = %orig;
 
-    if(result && !isCallerExternal()) {
+    if(result && isCallerExternal()) {
         result = _shdw_filterVersionArray(result);
     }
 
@@ -43,7 +42,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSFileVersion *)versionOfItemAtURL:(NSURL *)url forPersistentIdentifier:(id)persistentIdentifier {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -51,7 +50,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSURL *)temporaryDirectoryURLForNewVersionOfItemAtURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -59,7 +58,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSFileVersion *)addVersionOfItemAtURL:(NSURL *)url withContentsOfURL:(NSURL *)contentsURL options:(NSFileVersionAddingOptions)options error:(NSError * _Nullable *)outError {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // The versioned item is written; the contents source is read.
         NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 
@@ -76,13 +75,13 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSArray<NSFileVersion *> *)unresolvedConflictVersionsOfItemAtURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
     NSArray* result = %orig;
 
-    if(result && !isCallerExternal()) {
+    if(result && isCallerExternal()) {
         result = _shdw_filterVersionArray(result);
     }
 
@@ -95,7 +94,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 - (NSURL *)URL {
     NSURL* result = %orig;
 
-    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 
@@ -103,7 +102,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 - (NSURL *)replaceItemAtURL:(NSURL *)url options:(NSFileVersionReplacingOptions)options error:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 
         NSURL* selfURL = [self URL];
@@ -119,7 +118,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 
     NSURL* result = %orig;
 
-    if(result && !isCallerExternal() && [_shadow isURLRestricted:result]) {
+    if(result && isCallerExternal() && [_shadow isURLRestricted:result]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:result];
         }
@@ -131,7 +130,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 - (BOOL)removeAndReturnError:(NSError * _Nullable *)error {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         NSURL* selfURL = [self URL];
 
         if(!selfURL || [_shadow isURLRestricted:selfURL options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
@@ -147,7 +146,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (BOOL)removeOtherVersionsOfItemAtURL:(NSURL *)url error:(NSError * _Nullable *)outError {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -159,7 +158,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (void)getNonlocalVersionsOfItemAtURL:(NSURL *)url completionHandler:(void (^)(NSArray<NSFileVersion *> *nonlocalFileVersions, NSError *error))completionHandler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(completionHandler) {
             // Async-contract: never invoke a blocked-path completion inline.
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
