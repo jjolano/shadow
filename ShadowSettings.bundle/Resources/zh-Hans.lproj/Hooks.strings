@@ -44,3 +44,4 @@
 "HOOK_TWEAKCLASS" = "隐藏插件的Objective-C类";
 "HOOK_DYLD" = "动态库加载器";
 "MEM_LEVEL_HIDING" = "内存级隐藏";
+"VNODE_HIDING" = "Vnode 级隐藏";

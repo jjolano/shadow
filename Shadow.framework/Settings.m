@@ -33,7 +33,8 @@
             @"Hook_Memory" : @(NO),
             @"Hook_TweakClasses" : @(YES),
             @"Hook_HideApps" : @(YES),
-            @"MemoryLevelHiding" : @(NO)
+            @"MemoryLevelHiding" : @(NO),
+            @"VnodeHiding" : @(NO)
         };
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
