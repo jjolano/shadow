@@ -216,4 +216,28 @@ extern char*** _NSGetArgv();
 
     return [array objectsAtIndexes:indexes];
 }
+
+// C0-3: error factory for the file layer. Stock-looking NSCocoaErrorDomain
+// errors with the standard file userInfo keys; path and/or url may be nil.
++ (NSError *)fileErrorWithCode:(NSInteger)code path:(NSString *)path url:(NSURL *)url {
+    NSMutableDictionary* userInfo = [NSMutableDictionary new];
+
+    if(path) {
+        [userInfo setObject:path forKey:NSFilePathErrorKey];
+    }
+
+    if(url) {
+        [userInfo setObject:url forKey:NSURLErrorKey];
+    }
+
+    return [NSError errorWithDomain:NSCocoaErrorDomain code:code userInfo:userInfo];
+}
+
++ (NSError *)fileNoSuchFileErrorForPath:(NSString *)path {
+    return [self fileErrorWithCode:NSFileNoSuchFileError path:path url:nil];
+}
+
++ (NSError *)fileNoSuchFileErrorForURL:(NSURL *)url {
+    return [self fileErrorWithCode:NSFileNoSuchFileError path:url ? [url path] : nil url:url];
+}
 @end
