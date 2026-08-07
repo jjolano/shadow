@@ -3,6 +3,8 @@
 #import <bootstrap.h>
 #import <RootBridge.h>
 
+#import "../../protocol.h"
+
 // Vnode-layer file hiding — thin Mach IPC client. All kernel-touching work
 // (krw init, vnode pinning, VISSHADOW, state file) lives in the privileged
 // daemon (shadowd); this strictly-unprivileged client sends acquire/release
@@ -14,36 +16,10 @@
 // blocked, no hooking is affected. Pure userspace IPC: no arch guards, no
 // hook substitution needed.
 
-// Protocol (shadowd/main.m verbatim): request is a complex message carrying
-// the reply port as a MACH_MSG_TYPE_MAKE_SEND descriptor; reply is a plain
-// message. Status is an errno value (0 ok | EPERM | ENOTSUP | EBUSY).
-#define SHADOWD_MAGIC    0x53484457  // 'SHDW'
-#define SHADOWD_VERSION  1
-
-typedef enum {
-    SHADOWD_OP_PING    = 1,
-    SHADOWD_OP_ACQUIRE = 2,
-    SHADOWD_OP_RELEASE = 3,
-} shadowd_op_t;
-
-typedef struct {
-    mach_msg_header_t header;
-    mach_msg_body_t msgh_body;
-    mach_msg_port_descriptor_t replyPort;   // MACH_MSG_TYPE_MAKE_SEND
-    uint32_t magic;
-    uint32_t version;
-    uint32_t op;
-    uint32_t requestId;
-} shadowd_request_t;
-
-typedef struct {
-    mach_msg_header_t header;
-    uint32_t magic;
-    uint32_t version;
-    uint32_t requestId;
-    uint32_t status;
-} shadowd_reply_t;
-
+// Protocol (protocol.h, shared with shadowd/main.m): request is a complex
+// message carrying the reply port as a MACH_MSG_TYPE_MAKE_SEND descriptor;
+// reply is a plain message. Status is an errno value (0 ok | EPERM | ENOTSUP |
+// EBUSY).
 #define SHADOWD_REPLY_TIMEOUT_MS 2000
 
 // Kept for the process lifetime once acquire succeeds: the service-port send

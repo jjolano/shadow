@@ -1,1 +1,4 @@
-{ }
+// Loads in every process on both Substrate and ElleKit (NSObject exists in
+// every process via libobjc); the %ctor gates then decide whether to dlopen
+// the payload (ShadowCore.dylib).
+{ Filter = { Classes = ("NSObject") } }
