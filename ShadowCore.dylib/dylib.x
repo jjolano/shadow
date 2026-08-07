@@ -304,20 +304,32 @@ static void shdw_install_tier2(void) {
         }
     }
 
-    // subMain: ALWAYS the default substitutor. The HK_Library pref may only
+    // subMain: ALWAYS the default substitutor, except on devices where no
+    // runtime library is loaded (see below). The HK_Library pref may only
     // configure the C-function substitutors (subCFunc/subSymLookup below) —
     // subMain backs every ObjC-method hook group, and fishhook cannot swizzle
     // ObjC methods, so applying the pref here (as before) silently broke
     // those groups whenever the pref picked fishhook. Never setTypes: on
     // subMain.
-    HKSubstitutor* subMain = [HKSubstitutor defaultSubstitutor];
 
     // ObjC groups need a method-swizzling backend. With no ElleKit /
     // Substrate / Substitute available (e.g. pref=fishhook on a fishhook-only
-    // device) subMain is fishhook-only and those groups would fail at hook
-    // time anyway — log once and skip them gracefully, never crash.
+    // device) the default substitutor is fishhook-only and those groups would
+    // fail at hook time anyway — log once and skip them gracefully, never
+    // crash.
     hookkit_lib_t available_types = [HKSubstitutor getAvailableSubstitutorTypes];
-    BOOL objcBackendAvailable = (available_types & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE)) != 0;
+    BOOL runtimeBackendAvailable = (available_types & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE)) != 0;
+
+    // subMain: the default substitutor, EXCEPT on devices where no runtime
+    // library is loaded — there the default lands on fishhook, which cannot
+    // swizzle ObjC methods, so fall back to HookKit's own native backend
+    // (arm64/arm64e, HK_LIB_NATIVE, also message-capable). The HK_Library pref
+    // never configures subMain: fishhook cannot swizzle ObjC methods, so
+    // applying the pref here silently broke every ObjC group.
+    HKSubstitutor* subMain = runtimeBackendAvailable ? [HKSubstitutor defaultSubstitutor]
+        : ((available_types & HK_LIB_NATIVE) ? [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE] : [HKSubstitutor defaultSubstitutor]);
+
+    BOOL objcBackendAvailable = runtimeBackendAvailable || (available_types & HK_LIB_NATIVE);
 
     if(!objcBackendAvailable) {
         NSLog(@"[Shadow] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
@@ -337,12 +349,14 @@ static void shdw_install_tier2(void) {
     HKSubstitutor* subInline = ([HKSubstitutor getAvailableSubstitutorTypes] & HK_LIB_ELLEKIT) ? [HKSubstitutor substitutorWithTypes:HK_LIB_ELLEKIT] : NULL;
 
     // C-function groups: the HK_Library pref picks the backend here —
-    // fishhook by default (clean prologues), ElleKit when explicitly
-    // selected (stale substrate/substitute prefs fall back to fishhook).
+    // fishhook by default (clean prologues), any selectable backend when
+    // explicitly chosen (stale substrate/substitute prefs fall back to
+    // fishhook). Swift is a vtable-only API with no function hooks, so it
+    // can never be a C-function backend.
     HKSubstitutor* subCFunc = subFish ? subFish : subMain;
 
-    if(hooklibs & HK_LIB_ELLEKIT) {
-        subCFunc = subInline ? subInline : subMain;
+    if(hooklibs && !(hooklibs & HK_LIB_SWIFT)) {
+        subCFunc = [HKSubstitutor substitutorWithTypes:hooklibs];
     }
 
     // dlsym/dladdr group: inline-first — inline trampolines are
@@ -358,10 +372,12 @@ static void shdw_install_tier2(void) {
     HKSubstitutor* subDyldExtra = subInline ? subInline : subMain;
 
     // Batching must be enabled per instance; the HK*Batching macros below
-    // only touch the default substitutor (subMain).
+    // only touch the default substitutor (subMain). subCFunc may be a fresh
+    // pref-selected instance — setBatching: is idempotent, so no dedup needed.
     [subMain setBatching:YES];
     [subFish setBatching:YES];
     [subInline setBatching:YES];
+    [subCFunc setBatching:YES];
     HKEnableBatching();
     #else
     HKSubstitutor* subMain = NULL;
