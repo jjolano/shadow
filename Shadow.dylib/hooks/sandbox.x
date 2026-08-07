@@ -595,6 +595,119 @@ static pid_t replaced_vfork(void) {
     return original_vfork();
 }
 
+// --- system/popen: the executed binary is /bin/sh, so the execve path
+// check cannot fire on the command itself; any whitespace-separated token
+// that names a restricted executable path (contains '/') denies the whole
+// command with the exec family's ENOENT style. ponytail: no shell grammar
+// parsing — quoted paths are not split; add a parser if a detector probes
+// through quoting. ---
+
+static BOOL shdw_command_hides_restricted_path(const char* command) {
+    if(!command) {
+        return NO;
+    }
+
+    size_t len = strlen(command);
+    char* copy = malloc(len + 1);
+
+    if(!copy) {
+        return NO;
+    }
+
+    memcpy(copy, command, len + 1);
+
+    BOOL denied = NO;
+    char* save = NULL;
+
+    for(char* token = strtok_r(copy, " \t\r\n", &save); token; token = strtok_r(NULL, " \t\r\n", &save)) {
+        if(strchr(token, '/') && [_shadow isCPathRestricted:token]) {
+            denied = YES;
+            break;
+        }
+    }
+
+    free(copy);
+    return denied;
+}
+
+static int (*original_system)(const char* command);
+static int replaced_system(const char* command) {
+    if(command == NULL) {
+        // Stock system(NULL) answers shell availability.
+        return original_system(NULL);
+    }
+
+    if(!isCallerExternal() && shdw_command_hides_restricted_path(command)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_system(command);
+}
+
+static FILE* (*original_popen)(const char* command, const char* type);
+static FILE* replaced_popen(const char* command, const char* type) {
+    if(!isCallerExternal() && shdw_command_hides_restricted_path(command)) {
+        errno = ENOENT;
+        return NULL;
+    }
+
+    return original_popen(command, type);
+}
+
+// wordexp: intentionally NOT hooked — it only expands shell words and never
+// executes a program, so the exec policy cannot apply; filtering its output
+// would corrupt legitimate expansions. TODO: revisit if a detector probes
+// path existence through it.
+
+// sandbox_check_by_audit_token: applies the sandbox_check policy only when
+// the token belongs to THIS process (a jailbreak library judging a foreign
+// process is not our surface — pass through). The audit token's pid
+// component is val[4] (AU_TOKEN_PID).
+static int (*original_sandbox_check_by_audit_token)(audit_token_t token, const char *operation, enum sandbox_filter_type type, ...);
+static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char *operation, enum sandbox_filter_type type, ...) {
+    va_list args;
+    va_start(args, type);
+
+    if(!isCallerExternal() && (pid_t) token.val[4] == getpid() && operation) {
+        // Read from a COPY so the forward below still sees the full list.
+        va_list inspect;
+        va_copy(inspect, args);
+
+        if(shdw_sandbox_check_inspect(operation, (int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK, inspect)) {
+            va_end(inspect);
+            va_end(args);
+            return 1;
+        }
+
+        va_end(inspect);
+    }
+
+    // Forward with the exact varargs for the filter type (same arity matrix
+    // as sandbox_check).
+    switch((int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK) {
+        case SANDBOX_FILTER_NONE:
+            va_end(args);
+            return original_sandbox_check_by_audit_token(token, operation, type);
+
+        default: {
+            const char* filter_name = va_arg(args, const char *);
+            va_end(args);
+            return original_sandbox_check_by_audit_token(token, operation, type, filter_name);
+        }
+    }
+}
+
+// task_get_exception_ports: pass-through (conservative). Exception handler
+// ports cannot be attributed to restricted images (a port right carries no
+// owning-image identity), and hiding a legitimate handler would break crash
+// reporting / XPC. TODO: filter/hide rights attributable to restricted
+// images once attribution exists; deallocate removed rights.
+static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
+static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
+    return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
+}
+
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
@@ -637,5 +750,26 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     sym_signal = MSFindSymbol(NULL, "___sigaction");
     if(sym_signal) {
         MSHookFunction(sym_signal, replaced___sigaction, (void **) &original___sigaction);
+    }
+
+    // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
+    void* sym_misc = MSFindSymbol(NULL, "_system");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_system, (void **) &original_system);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "_popen");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_popen, (void **) &original_popen);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "_sandbox_check_by_audit_token");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_sandbox_check_by_audit_token, (void **) &original_sandbox_check_by_audit_token);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "_task_get_exception_ports");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
     }
 }
