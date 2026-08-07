@@ -1474,13 +1474,13 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(dyld_image_path_containing_address, replaced_dyld_image_path_containing_address, (void **) &original_dyld_image_path_containing_address);
     MSHookFunction(dyld_image_header_containing_address, replaced_dyld_image_header_containing_address, (void **) &original_dyld_image_header_containing_address);
 
-    // Address-attribution siblings (plan Wave 1c): the slide/unwind pair is
-    // ancient and directly linkable; the _dyld_get_image_header_containing_address
+    // Address-attribution siblings (plan Wave 1c): the slide pair is ancient
+    // and directly linkable; _dyld_find_unwind_sections is SJLJ-guarded (not
+    // exported on armv7) and the _dyld_get_image_header_containing_address
     // alias (dyld4, iOS 15+), _dyld_get_image_uuid (iOS 10+) and
     // dyld_image_get_installname (dyld3/4) are resolved by name below so the
     // legacy (iOS 9) build doesn't link against symbols it lacks.
     MSHookFunction(_dyld_get_image_slide, replaced_dyld_get_image_slide, (void **) &original_dyld_get_image_slide);
-    MSHookFunction(_dyld_find_unwind_sections, replaced_dyld_find_unwind_sections, (void **) &original_dyld_find_unwind_sections);
 
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 
@@ -1490,6 +1490,12 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
     // silently on OSes without them.
     MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+
+    void* findUnwindSectionsPtr = MSFindSymbol(libdyldImage, "_dyld_find_unwind_sections");
+
+    if(findUnwindSectionsPtr) {
+        MSHookFunction(findUnwindSectionsPtr, replaced_dyld_find_unwind_sections, (void **) &original_dyld_find_unwind_sections);
+    }
 
     void* getImageHeaderContainingAddressPtr = MSFindSymbol(libdyldImage, "_dyld_get_image_header_containing_address");
 
