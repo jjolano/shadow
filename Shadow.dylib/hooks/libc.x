@@ -188,6 +188,40 @@ static BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     return NO;
 }
 
+// Classifies a readlink result: absolute targets are checked directly;
+// relative targets resolve against the directory CONTAINING the link (that's
+// where the kernel resolves them from). A target whose parent directory can't
+// be resolved is denied — never exposed unclassified.
+static BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char* target) {
+    if(target[0] == '/') {
+        return [_shadow isCPathRestricted:target];
+    }
+
+    NSString* linkPath = nil;
+
+    if(pathname[0] == '/') {
+        linkPath = [NSString stringWithUTF8String:pathname];
+    } else {
+        char parent[PATH_MAX];
+        shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
+
+        if(status != SHADW_DIRFD_OK) {
+            // The link's parent can't be resolved: fail closed. (The
+            // unresolvable-dirfd case was already denied by the location
+            // check before this helper ran.)
+            return YES;
+        }
+
+        linkPath = [[NSString stringWithUTF8String:parent] stringByAppendingPathComponent:[NSString stringWithUTF8String:pathname]];
+    }
+
+    NSString* joined = [[[linkPath stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:[NSString stringWithUTF8String:target]]
+        stringByStandardizingPath];
+
+    return [_shadow isCPathRestricted:[joined fileSystemRepresentation]];
+}
+
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsize) {
     if(isCallerExternal()) {
@@ -198,7 +232,42 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
         return -1;
     }
 
-    return original_readlinkat(dirfd, pathname, buf, bufsize);
+    // buf NULL or bufsize 0: stock readlinkat fails (EFAULT/EINVAL); the
+    // local-buffer path below must not turn those into a success.
+    if(buf == NULL || bufsize == 0) {
+        return original_readlinkat(dirfd, pathname, buf, bufsize);
+    }
+
+    // Read into a temp buffer first: a link in a safe location can still
+    // name a restricted path in its CONTENT, and on denial the caller's
+    // buffer must be left untouched.
+    char content[PATH_MAX];
+    ssize_t result = original_readlinkat(dirfd, pathname, content, sizeof(content));
+
+    if(result != -1 && result < (ssize_t) sizeof(content)) {
+        content[result] = '\0';
+
+        if(shdw_readlink_target_restricted(dirfd, pathname, content)) {
+            errno = ENOENT;
+            return -1;
+        }
+
+        size_t copy_len = (size_t) result;
+
+        if(copy_len > bufsize) {
+            copy_len = bufsize;
+        }
+
+        if(copy_len > 0) {
+            memcpy(buf, content, copy_len);
+        }
+
+        return (ssize_t) copy_len;
+    }
+
+    // ponytail: a link longer than PATH_MAX can't be validated as a string;
+    // it can't be a JB indicator path either (those are short), so forward.
+    return result;
 }
 
 static int (*original_chdir)(const char* pathname);
@@ -798,6 +867,13 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
     if(result && !isCallerExternal()) {
         if([_shadow isCPathRestricted:pathname]) {
             errno = ENOENT;
+
+            if(resolved_path == NULL) {
+                // realpath malloc'd the result; it becomes unreachable once
+                // we return NULL — free it first.
+                free(result);
+            }
+
             return NULL;
         }
 
@@ -806,6 +882,11 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
         // not restricted, so check the resolved string as well.
         if([_shadow isCPathRestricted:result]) {
             errno = EACCES;
+
+            if(resolved_path == NULL) {
+                free(result);
+            }
+
             return NULL;
         }
     }
