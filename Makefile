@@ -1,8 +1,10 @@
-ARCHS ?= arm64 arm64e
-# TARGET: clang:latest keeps the toolchain current; the 12.0 floor matches
-# control's Depends: firmware (>= 12.0). Note: theos bumps the arm64e slice
-# minos to 14.0 on this floor.
-TARGET ?= iphone:clang:latest:12.0
+ARCHS ?= armv7 armv7s arm64 arm64e
+# TARGET: clang:latest keeps the toolchain current; the 9.0 floor matches
+# control's Depends: firmware (>= 9.0) and lets one fat package serve armv7
+# through arm64e, the way 1.0.x shipped. Note: theos bumps the arm64e slice
+# minos to 14.0 automatically, so the low floor costs the modern slices
+# nothing. The rootless pass overrides both (see build.sh).
+TARGET ?= iphone:clang:latest:9.0
 
 include $(THEOS)/makefiles/common.mk
 
@@ -34,16 +36,16 @@ endif
 # HKGum: thin wrapper dylib statically linking the frida-gum devkit. The
 # framework never links gum — the Frida backend dlopens HKGum.dylib at
 # runtime via RootBridge (see HKSubstitutor.m), keeping LGPL code out of the
-# framework binary. arm64/arm64e only (no armv7 gum devkit), so the legacy
-# armv7/armv7s build skips the whole product. Rootless packaging maps
-# /usr/lib -> /var/jb/usr/lib automatically.
-ifeq ($(filter arm64,$(ARCHS)),arm64)
+# framework binary. The devkit ships no armv7 slice, so this product is pinned
+# to arm64/arm64e per-product rather than gated on the global ARCHS: that lets
+# the framework span all four slices in one pass while gum stays 64-bit.
+# Rootless packaging maps /usr/lib -> /var/jb/usr/lib automatically.
 LIBRARY_NAME = HKGum
 HKGum_FILES = vendor/gum/hkgum.c
+HKGum_ARCHS = arm64 arm64e
 HKGum_LDFLAGS = -Lvendor/gum -lfrida-gum
 HKGum_INSTALL_PATH = /usr/lib
 include $(THEOS_MAKE_PATH)/library.mk
-endif
 
 # Host-side relocator test. Runs on the build machine, not the device: it only
 # exercises instruction decode/re-encode, which is where the crashes come from.
