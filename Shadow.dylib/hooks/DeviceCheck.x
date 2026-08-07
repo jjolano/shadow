@@ -346,9 +346,9 @@ static void shdw_install_probe_abi(const char* className, const char* selName, v
     }
 
     if(encoding[0] == 'B' || encoding[0] == 'c') {
-        MSHookMessageEx(cls, sel, (IMP) &shdw_replaced_probe_BOOL, origBool);
+        HKHookMessage(cls, sel, (IMP) &shdw_replaced_probe_BOOL, origBool);
     } else if(encoding[0] == '@') {
-        MSHookMessageEx(cls, sel, (IMP) &shdw_replaced_probe_obj, origObj);
+        HKHookMessage(cls, sel, (IMP) &shdw_replaced_probe_obj, origObj);
     }
     // Unknown encoding: skip.
 }
