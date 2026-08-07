@@ -16,45 +16,100 @@
 
 static const char* (*original_class_getImageName)(Class cls);
 static const char* replaced_class_getImageName(Class cls) {
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
+        return original_class_getImageName(cls);
+    }
+
+    // Protected class (its data lives in a protected image): report "no
+    // image" — NULL, never a fake executable path (plan Wave 1c).
+    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+        return NULL;
+    }
+
     const char* result = original_class_getImageName(cls);
 
-    if(isCallerExternal() || ![_shadow isCPathRestricted:result]) {
-        return result;
-    }
-
-    return [[Shadow getExecutablePath] fileSystemRepresentation];
-}
-
-static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
-static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
-    const char * _Nonnull * result = original_objc_copyImageNames(outCount);
-
-    if(isCallerExternal() || !result || !outCount) {
-        return result;
-    }
-
-    const char* exec_name = _dyld_get_image_name(0);
-    unsigned int i;
-
-    for(i = 0; i < *outCount; i++) {
-        if(strcmp(result[i], exec_name) == 0) {
-            // Stop after app executable.
-            // todo: improve this to filter instead
-            *outCount = (i + 1);
-            break;
-        }
+    if(result && [_shadow isProtectedImagePath:@(result)]) {
+        return NULL;
     }
 
     return result;
 }
 
+static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *outCount);
+static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
+    if(!isCallerExternal()) {
+        return original_objc_copyImageNames(outCount);
+    }
+
+    // Always resolve through a local count (the original rejects
+    // outCount == NULL), then build a malloc'd NULL-terminated filtered copy
+    // with strdup'd names (the originals are owned by the original array) and
+    // free the original. outCount == NULL still gets the FILTERED array, and
+    // *outCount is only written when non-NULL. The old truncate-at-exec
+    // heuristic is gone (plan Wave 1c).
+    unsigned int localCount = 0;
+    const char **result = original_objc_copyImageNames(&localCount);
+
+    if(!result) {
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    const char **filtered = malloc(((size_t)localCount + 1) * sizeof(char *));
+
+    if(!filtered) {
+        // malloc failure: fail soft with the stock list (the process is OOM).
+        if(outCount) {
+            *outCount = localCount;
+        }
+
+        return result;
+    }
+
+    unsigned int n = 0;
+
+    for(unsigned int i = 0; i < localCount; i++) {
+        const char* name = result[i];
+
+        if(!name || [_shadow isProtectedImagePath:@(name)]) {
+            continue;
+        }
+
+        filtered[n] = strdup(name);
+        n++;
+    }
+
+    filtered[n] = NULL;
+    free(result);
+
+    if(outCount) {
+        *outCount = n;
+    }
+
+    return filtered;
+}
+
 static const char * _Nonnull * (*original_objc_copyClassNamesForImage)(const char* image, unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* image, unsigned int *outCount) {
-    if(isCallerExternal() || ![_shadow isCPathRestricted:image]) {
+    if(!isCallerExternal()) {
         return original_objc_copyClassNamesForImage(image, outCount);
     }
 
-    return NULL;
+    if([_shadow isProtectedImagePath:@(image)]) {
+        // Zero the count before returning NULL so callers can't misread a
+        // stale count (plan Wave 1c).
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    return original_objc_copyClassNamesForImage(image, outCount);
 }
 
 static Class (*original_NSClassFromString)(NSString* aClassName);
