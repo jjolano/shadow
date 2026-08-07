@@ -271,3 +271,71 @@ ptrace PT_DENY_ATTACH, bootstrap lookup denials, dyld snapshot facade, symlink-t
 4. sandbox variadic arity matrix varies by OS — fail to original on unknown commands.
 5. Caller-ownership inversion — highest-value Core change, highest regression risk; TLS bypass
    for Shadow internals must be airtight or Shadow deadlocks itself out of its own reads.
+
+---
+
+## Execution status (2026-08-07)
+
+All Phase 0 (shared foundations) and Phase 1 (P0) items implemented and merged, 50 commits
+(`v5: plan-wave-*`) on top of 95bdeb8. Full aggregate `make` passes: exit 0, 0 errors
+(34 warnings = pre-existing arm64e-ABI toolchain noise, present in untouched files too).
+armv7/armv7s compile clean; legacy-flavor link verification requires the legacy dep staging.
+
+### Landed
+
+- **Phase 0**: operation-aware read/write intent (kShadowRestrictionOperation, write probes
+  skip existence gates); caller-truth inversion (isCallerExternal = truth only for
+  Shadow-owned images / SHADOW_INTERNAL_SCOPE; own-ranges collector repointed to
+  Shadow-owned artifacts); error factory (NSCocoaErrorDomain + path/URL userInfo);
+  scheme case-insensitivity (Backend + Ruleset); bundle-ID predicate (+ ruleset
+  BlacklistBundleIDs); isProtectedImagePath exact-name predicate; detector escalation
+  force-installs objc/tweakclasses groups, detector-name list extended, envvar group +
+  NSProcessInfo env/args activated at ctor; safe-group defaults flipped
+  (ObjCRuntime/TweakClasses/SymLookup/LowLevelC/HideApps); atomic ruleset-generation getter
+  + generation-tagged decision cache; static ruleset entries for Shadow's own artifacts.
+- **File layer**: NSFileAppendOnly spoofs deleted; preflight-before-%orig on existence/
+  readability/contents (+ *isDirectory cleared); enumerator fast-enumeration filtering,
+  unconditional, restricted-root reject, errorHandler wrap; symlink both-sides validation;
+  NSURL result post-filtering + resource values + bookmark resolution; NSURLSession
+  blocked-task helper (real cancelled task, one async error); NSURLRequest constructors
+  removed; NSFileVersion object protection + async completions; setAttributes/
+  URLForDirectory/mountedVolumeURLs/containerURL; full error-factory + write-intent sweep.
+- **C layer**: shared dirfd resolver (+ linkat/symlinkat/renameat/mkdirat/utimensat/
+  fchmodat), shared mount sanitizer (remove+compact, no synthetic MNT_SNAPSHOT) +
+  getmntinfo_r_np; exact .jbroot component; readlinkat/realpath target handling; readdir
+  fail-closed; getenv filtering; sysctl KERN_PROC semantics; caller-gated getppid;
+  stat64/protected-open variants; csops clear-only + MARKKILL pre-reject; vm_region
+  interval-skipping; hide-only-elevated Mach ports + shared bootstrap matcher;
+  sandbox_check file-op denials; typed exec wrappers (no ENOSYS); signal aliases;
+  raw SYS_openat/fstatat/csops/sysctl dispatcher + __syscall; sysctlbyname, csops_audittoken,
+  _NSGetEnviron, system/popen, bootstrap 2/3/per_user, sandbox_check_by_audit_token.
+- **dyld/objc**: own-ranges repoint; NXMapGet/HashGet removed; method-getter IMPs → NULL;
+  objc_copyImageNames fully filtered; class lookup/enumeration hooked; dlsym policy table +
+  thread-local dlerror + RTLD_NEXT caller capture; dladdr zeroed; /System admission removed;
+  all_image_infos patch unpref-gated; imp_getBlock block-invoke inspection; CFBundle*
+  wrappers; objc_setHook chained proxies; method-metadata hooks; dlopen tokenized resolution.
+- **Foundation/UI**: NSThread class-method hooks + symbol filtering; isMacCatalystApp +
+  environment + arguments; LSApplicationWorkspace bundle-ID predicate; NSAttributedString
+  async failure; DeviceCheck isSupported + encoding-aware ABI hooks; UIApplication openURL
+  variants; UIImage imageNamed variants; NSBundle metadata/load-state; NSString
+  completePath post-filter + write APIs + WebKit loaders; collection error normalization +
+  missing variants.
+
+### Deferred (TODO comments in code; device-test territory)
+
+- dyld callback tail-branch thunks, _dyld_objc_notify_register/objc_addLoadImageFunc,
+  _dyld_process_info_*/snapshot APIs, NSAddImage family, mirror grow-on-demand,
+  notifier-inline rebuild (dyld.x)
+- Recursive copy/move/remove/trash descendant preflight (needs unhooked subtree walk)
+- NSFileWrapper full containment (fileWrappers/regularFileContents/serializedRepresentation)
+- NSFileHandle fd-based surfaces
+- LaunchServices/MobileInstallation payload content filtering
+- Late-loaded detector-class hook retry (dylib.x watcher wiring)
+- DCDevice/AppAttest async generation APIs (cannot forge server-verifiable artifacts)
+- wordexp / pid_for_task / mach_port_names / task_get_exception_ports upgrade paths (conservative pass-throughs)
+
+### Remaining verification
+
+- On-device adversarial matrix (rootless + rootful) from the Verification section —
+  requires the dyldprobe tool + detector suite on hardware
+- Legacy armv7 packaging pass (build.sh pass 3) with legacy dep staging
