@@ -33,7 +33,6 @@
             @"Hook_Memory" : @(NO),
             @"Hook_TweakClasses" : @(YES),
             @"Hook_HideApps" : @(YES),
-            @"MemoryLevelHiding" : @(NO),
             @"VnodeHiding" : @(NO)
         };
 

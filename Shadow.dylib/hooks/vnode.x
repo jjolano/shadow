@@ -168,8 +168,8 @@ shdw_acquire(void) {
     return KERN_SUCCESS;
 }
 
-// Feature gate: "VnodeHiding" in Shadow's prefs plist (default OFF) — same
-// pattern as dyld.x's MemoryLevelHiding. SHADOW_PREFS_PLIST tracks the bundle
+// Feature gate: "VnodeHiding" in Shadow's prefs plist (default OFF).
+// SHADOW_PREFS_PLIST tracks the bundle
 // id (me.jjolano.shadow); on rootless the plist lives under /var/jb, so try
 // both paths. The pref is read ONCE (dispatch_once); the detector escalation
 // is re-evaluated per call so a detection library that loads after the first
