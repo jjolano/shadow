@@ -1,12 +1,24 @@
 #import "hooks.h"
 
 %group shadowhook_DeviceCheck
-// %hook DCDevice
-// - (BOOL)isSupported {
-//     // maybe returning unsupported can skip some app attest token generations
-// 	return NO;
-// }
-// %end
+// Opt-in (Hook_DeviceCheck): attestation fails closed — apps that require
+// DeviceCheck attestation see "unsupported" and must fall back to their
+// degraded path instead of minting real attestation artifacts.
+// TODO: DCDevice generateToken/generateKey and DCAppAttestService
+// generateKey/attestKey/generateAssertion are deliberately NOT hooked — the
+// artifacts are server-verifiable, so a forged value would fail attestation
+// on the server side; returning "unsupported" here is the only honest answer.
+%hook DCDevice
+- (BOOL)isSupported {
+	return NO;
+}
+%end
+
+%hook DCAppAttestService
+- (BOOL)isSupported {
+	return NO;
+}
+%end
 
 %hook UIDevice
 + (BOOL)isJailbroken {
@@ -87,11 +99,10 @@
 }
 %end
 
-%hook UBReportMetadataDevice
-- (void *)is_rooted {
-    return NULL;
-}
-%end
+// UBReportMetadataDevice -is_rooted and EnrollParameters -jailbroken are
+// installed manually (shdw_install_probe_abi below): their return ABI varies
+// between SDK versions (BOOL on some, object on others), and a fixed
+// signature against the wrong ABI returns garbage.
 
 %hook UtilitySystem
 + (bool)isJailbreak {
@@ -129,11 +140,7 @@
 }
 %end
 
-%hook EnrollParameters
-- (void *)jailbroken {
-    return NULL;
-}
-%end
+// EnrollParameters -jailbroken: see the note at UBReportMetadataDevice.
 
 %hook EMDskppConfigurationBuilder
 - (bool)jailbreakStatus {
@@ -302,6 +309,57 @@
 %end
 %end
 
+// Encoding-aware install for third-party rooted/jailbroken properties whose
+// return ABI varies between SDK versions. The runtime method encoding is
+// inspected at install: B@:/c@: → BOOL-returning hook (NO), @@: →
+// object-returning hook (nil), anything else → skip and leave the real
+// method untouched.
+static BOOL shdw_replaced_probe_BOOL(id self, SEL _cmd) {
+    return NO;
+}
+
+static id shdw_replaced_probe_obj(id self, SEL _cmd) {
+    return nil;
+}
+
+static void shdw_install_probe_abi(const char* className, const char* selName, void** origBool, void** origObj) {
+    Class cls = objc_getClass(className);
+
+    if(!cls) {
+        return;
+    }
+
+    SEL sel = sel_registerName(selName);
+    Method method = class_getInstanceMethod(cls, sel);
+
+    if(!method) {
+        return;
+    }
+
+    const char* encoding = method_getTypeEncoding(method);
+
+    if(!encoding) {
+        return;
+    }
+
+    if(encoding[0] == 'B' || encoding[0] == 'c') {
+        MSHookMessageEx(cls, sel, (IMP) &shdw_replaced_probe_BOOL, origBool);
+    } else if(encoding[0] == '@') {
+        MSHookMessageEx(cls, sel, (IMP) &shdw_replaced_probe_obj, origObj);
+    }
+    // Unknown encoding: skip.
+}
+
+static BOOL (*shdw_orig_ub_is_rooted_BOOL)(id, SEL) = NULL;
+static id (*shdw_orig_ub_is_rooted_obj)(id, SEL) = NULL;
+static BOOL (*shdw_orig_enroll_jailbroken_BOOL)(id, SEL) = NULL;
+static id (*shdw_orig_enroll_jailbroken_obj)(id, SEL) = NULL;
+
 void shadowhook_DeviceCheck(HKSubstitutor* hooks) {
     %init(shadowhook_DeviceCheck);
+
+    shdw_install_probe_abi("UBReportMetadataDevice", "is_rooted",
+        (void **) &shdw_orig_ub_is_rooted_BOOL, (void **) &shdw_orig_ub_is_rooted_obj);
+    shdw_install_probe_abi("EnrollParameters", "jailbroken",
+        (void **) &shdw_orig_enroll_jailbroken_BOOL, (void **) &shdw_orig_enroll_jailbroken_obj);
 }
