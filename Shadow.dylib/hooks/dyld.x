@@ -415,86 +415,157 @@ static bool replaced_dyld_find_unwind_sections(void* addr, struct dyld_unwind_se
     return original_dyld_find_unwind_sections(addr, info);
 }
 
+// dlopen family resolution (plan Wave 3): expand @executable_path,
+// @loader_path and caller LC_RPATH entries into concrete candidates, then
+// deny when any candidate resolves to a protected path. Bare relative paths
+// resolve against the process CWD. The old synthetic /var/jb/usr/lib
+// working-dir + automatic .dylib suffix behaviors are gone — the real
+// resolution is classified instead. `callerAddr` is the image that issued the
+// dlopen (the explicit caller argument of dlopen_from/dlopen_internal, or the
+// hook's own return address for public dlopen).
+static void shdw_dlopen_add_rpath_candidates(NSString* rest, const struct mach_header* mh, NSMutableArray* candidates) {
+    if(!mh || mh->magic != MH_MAGIC_64 || !rest) {
+        return;
+    }
+
+    const struct load_command* lc = (const void *)((const struct mach_header_64 *)mh + 1);
+
+    for(uint32_t j = 0; j < mh->ncmds; j++) {
+        if(lc->cmd == LC_RPATH) {
+            const struct rpath_command* rp = (const void *)lc;
+            const char* rpath = (const char *)lc + rp->path.offset;
+
+            if(rpath && rpath[0]) {
+                NSString* rpStr = [NSString stringWithUTF8String:rpath];
+
+                // Nested tokens inside an rpath entry (rare): expand them too.
+                if([rpStr hasPrefix:@"@executable_path/"]) {
+                    NSString* execDir = [[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent];
+
+                    if(execDir) {
+                        rpStr = [execDir stringByAppendingPathComponent:[rpStr substringFromIndex:[@"@executable_path/" length]]];
+                    }
+                } else if([rpStr hasPrefix:@"@loader_path/"]) {
+                    const char* mhPath = dyld_image_path_containing_address(mh);
+
+                    if(mhPath) {
+                        NSString* dir = [[NSString stringWithUTF8String:mhPath] stringByDeletingLastPathComponent];
+                        rpStr = [dir stringByAppendingPathComponent:[rpStr substringFromIndex:[@"@loader_path/" length]]];
+                    }
+                }
+
+                [candidates addObject:[rpStr stringByAppendingPathComponent:rest]];
+            }
+        }
+
+        lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+    }
+}
+
+static BOOL shdw_dlopen_resolution_denied(const char* path, const void* callerAddr) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    NSString* p = [NSString stringWithUTF8String:path];
+    NSMutableArray* candidates = [NSMutableArray array];
+
+    if([p hasPrefix:@"@executable_path/"]) {
+        NSString* execDir = [[[NSBundle mainBundle] executablePath] stringByDeletingLastPathComponent];
+
+        if(execDir) {
+            [candidates addObject:[execDir stringByAppendingPathComponent:[p substringFromIndex:[@"@executable_path/" length]]]];
+        }
+    } else if([p hasPrefix:@"@loader_path/"]) {
+        const char* callerPath = callerAddr ? dyld_image_path_containing_address(callerAddr) : NULL;
+
+        if(callerPath) {
+            NSString* dir = [[NSString stringWithUTF8String:callerPath] stringByDeletingLastPathComponent];
+            [candidates addObject:[dir stringByAppendingPathComponent:[p substringFromIndex:[@"@loader_path/" length]]]];
+        }
+    } else if([p hasPrefix:@"@rpath/"]) {
+        NSString* rest = [p substringFromIndex:[@"@rpath/" length]];
+        const struct mach_header* callerMH = callerAddr ? dyld_image_header_containing_address(callerAddr) : NULL;
+
+        shdw_dlopen_add_rpath_candidates(rest, callerMH, candidates);
+    } else if([p hasPrefix:@"@"]) {
+        // Unknown token: dyld fails the load naturally; nothing to protect.
+        return NO;
+    } else if([p hasPrefix:@"/"]) {
+        [candidates addObject:p];
+    } else {
+        // Bare relative path: resolve against the process CWD.
+        NSString* cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+
+        if(cwd) {
+            [candidates addObject:[cwd stringByAppendingPathComponent:p]];
+        }
+    }
+
+    for(NSString* candidate in candidates) {
+        if([_shadow isPathRestricted:candidate options:@{kShadowRestrictionEnableResolve : @(NO)}] || [_shadow isProtectedImagePath:candidate]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     // Each loader operation clears the thread's error state up front.
     _shdw_dyld_error_tls = NULL;
 
-    if(isCallerExternal() || !path) {
+    if(!isCallerExternal() || !path) {
         return original_dlopen(path, mode);
     }
 
-    if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{
-            kShadowRestrictionWorkingDir : [RootBridge getJBPath:@"/usr/lib"],
-            kShadowRestrictionFileExtension : @"dylib"
-            }]) {
-            return original_dlopen(path, mode);
-        }
-    } else {
-        if(![_shadow isCPathRestricted:path]) {
-            return original_dlopen(path, mode);
-        }
+    if(shdw_dlopen_resolution_denied(path, __builtin_extract_return_addr(__builtin_return_address(0)))) {
+        // A non-tweak caller trying to dlopen a jailbreak dylib is a probe.
+        shdw_detector_detected("dlopen");
+
+        _shdw_dyld_error_tls = "library not found";
+        return NULL;
     }
 
-    // A non-tweak caller trying to dlopen a jailbreak dylib is a probe.
-    shdw_detector_detected("dlopen");
-
-    _shdw_dyld_error_tls = "library not found";
-    return NULL;
+    return original_dlopen(path, mode);
 }
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
     _shdw_dyld_error_tls = NULL;
 
-    if(isCallerExternal() || !path) {
+    if(!isCallerExternal() || !path) {
         return original_dlopen_internal(path, mode, caller);
     }
 
-    if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{
-            kShadowRestrictionWorkingDir : [RootBridge getJBPath:@"/usr/lib"],
-            kShadowRestrictionFileExtension : @"dylib"
-            }]) {
-            return original_dlopen_internal(path, mode, caller);
-        }
-    } else {
-        if(![_shadow isCPathRestricted:path]) {
-            return original_dlopen_internal(path, mode, caller);
-        }
+    // dlopen_from/dlopen_internal carry the true caller image explicitly;
+    // @loader_path/@rpath resolve against it.
+    if(shdw_dlopen_resolution_denied(path, caller)) {
+        shdw_detector_detected("dlopen");
+
+        _shdw_dyld_error_tls = "library not found";
+        return NULL;
     }
 
-    shdw_detector_detected("dlopen");
-
-    _shdw_dyld_error_tls = "library not found";
-    return NULL;
+    return original_dlopen_internal(path, mode, caller);
 }
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
     _shdw_dyld_error_tls = NULL;
 
-    if(isCallerExternal() || !path) {
+    if(!isCallerExternal() || !path) {
         return original_dlopen_preflight(path);
     }
 
-    if(path[0] != '/') {
-        if(![_shadow isPathRestricted:@(path) options:@{
-            kShadowRestrictionWorkingDir : [RootBridge getJBPath:@"/usr/lib"],
-            kShadowRestrictionFileExtension : @"dylib"
-            }]) {
-            return original_dlopen_preflight(path);
-        }
-    } else {
-        if(![_shadow isCPathRestricted:path]) {
-            return original_dlopen_preflight(path);
-        }
+    if(shdw_dlopen_resolution_denied(path, __builtin_extract_return_addr(__builtin_return_address(0)))) {
+        shdw_detector_detected("dlopen");
+
+        return false;
     }
 
-    shdw_detector_detected("dlopen");
-
-    return false;
+    return original_dlopen_preflight(path);
 }
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
