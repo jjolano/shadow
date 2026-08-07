@@ -576,11 +576,15 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 
     const char* image_path = dyld_image_path_containing_address(mh);
 
-    // Add if safe dylib.
+    // Add if safe dylib. Same policy for every image — no blanket /System
+    // admission (plan Wave 1c): a protected artifact installed under /System
+    // must not leak into the visible snapshot via the path prefix. The
+    // protected-name predicate also catches Shadow's own artifacts that the
+    // ruleset may not cover.
     if(image_path) {
         NSString* path = [NSString stringWithUTF8String:image_path];
 
-        if([path hasPrefix:@"/System"] || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
+        if(![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}] && ![_shadow isProtectedImagePath:path]) {
             NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
 
             [_shdw_dyld_collection addObject:@{
