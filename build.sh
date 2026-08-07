@@ -35,13 +35,25 @@ build_legacy() {
     local BAK=/tmp/hookkit-control.bak.$$
     trap "mv '$BAK' control 2>/dev/null || true" EXIT
     cp control "$BAK"
-    sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
+
+    # Legacy ships under its own package id, mirroring me.jjolano.shadow.legacy.
+    # Reusing me.jjolano.fmwk.hookkit would put two debs in the repo with an
+    # identical Package/Version/Architecture triple, which APT cannot tell
+    # apart -- it would serve whichever stanza it read last. The firmware
+    # bounds are also made disjoint from the modern package's >= 12.0, so the
+    # two can never both be candidates on one device.
+    sed -e 's/^Package: \(.*\)$/Package: \1.legacy/' \
+        -e 's/^Name: \(.*\)$/Name: \1 (legacy)/' \
+        -e 's/firmware (>= 12.0)/firmware (>= 9.0), firmware (<< 12.0)/' \
+        -e 's/^Conflicts: .*$/Conflicts: me.jjolano.fmwk.hookkit/' \
+        -e 's/^Description: \(.*\)$/Description: \1 Legacy armv7\/armv7s build for iOS 9 - 11. No support will be given for this package./' \
+        control > control.tmp &&
+    printf 'Replaces: me.jjolano.fmwk.hookkit\nProvides: me.jjolano.fmwk.hookkit\n' >> control.tmp &&
+    mv control.tmp control
 
     make clean &&
     ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
-    local deb &&
-    deb=$(cat .theos/last_package) &&
-    cp -p "$deb" "build/$(basename "$deb" .deb)-legacy.deb"
+    cp -p "$(cat .theos/last_package)" build/
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
