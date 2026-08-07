@@ -21,7 +21,7 @@ VENDOR = ../vendor
 CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g
 INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I$(VENDOR)/RootBridge.framework/Headers
 
-SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m \
+SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
        $(FRAMEWORK)/Core.m \
        $(FRAMEWORK)/Backend.m \
        $(FRAMEWORK)/Ruleset.m \
@@ -41,6 +41,9 @@ detect: harness
 
 benign: harness
 	./harness --benign
+
+fuzz: harness
+	./harness --fuzz
 
 adversary: harness
 	./harness --adversary
@@ -72,6 +75,13 @@ detect: harness
 benign: harness
 	$(RUN) tests/harness --benign
 
+fuzz: harness
+	$(RUN) tests/harness --fuzz
+
+# CI fuzz-smoke: known D4 transient class is allowed (reported, not fatal).
+fuzz-smoke: harness
+	$(RUN) env SHADW_FUZZ_ALLOW_D4=1 tests/harness --fuzz
+
 adversary: harness
 	$(RUN) tests/harness --adversary
 
@@ -83,4 +93,4 @@ clean:
 
 endif
 
-.PHONY: test detect adversary detector benign coverage clean
+.PHONY: test detect adversary detector benign fuzz coverage clean

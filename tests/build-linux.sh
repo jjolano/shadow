@@ -23,7 +23,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Ivendor/RootBridge.framework/Headers \
   tests/main.m tests/RootBridgeStub.m tests/fsinterpose.c tests/ShadowFilter.m \
-  tests/detectors/ShadowDetector.m \
+  tests/detectors/ShadowDetector.m tests/Fuzz.m \
   Shadow.framework/Core.m Shadow.framework/Backend.m Shadow.framework/Ruleset.m \
   Shadow.framework/Core+Utilities.m \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
