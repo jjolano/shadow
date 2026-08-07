@@ -911,6 +911,84 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
     return %orig;
 }
+
+- (BOOL)setAttributes:(NSDictionary<NSFileAttributeKey, id> *)attributes ofItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (NSArray<NSURL *> *)mountedVolumeURLsIncludingResourceValuesForKeys:(NSArray<NSURLResourceKey> *)propertyKeys options:(NSVolumeEnumerationOptions)options {
+    if(isCallerExternal()) {
+        return %orig;
+    }
+
+    NSArray* result = %orig;
+
+    if(result) {
+        result = [Shadow filterPathArray:result restricted:NO options:nil];
+    }
+
+    return result;
+}
+
+- (NSURL *)URLForDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domain appropriateForURL:(NSURL *)url create:(BOOL)shouldCreate error:(NSError * _Nullable *)error {
+    if(!isCallerExternal()) {
+        // create:YES writes the directory (possibly creating it), so the
+        // probe is classified with write intent; read intent otherwise.
+        NSDictionary* options = shouldCreate ? @{kShadowRestrictionOperation : kShadowRestrictionOpWrite} : nil;
+
+        if(url && [_shadow isURLRestricted:url options:options]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForURL:url];
+            }
+
+            return nil;
+        }
+    }
+
+    NSURL* result = %orig;
+
+    if(result && !isCallerExternal() && [_shadow isURLRestricted:result]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:result];
+        }
+
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSArray<NSURL *> *)URLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domainMask {
+    if(isCallerExternal()) {
+        return %orig;
+    }
+
+    NSArray* result = %orig;
+
+    if(result) {
+        result = [Shadow filterPathArray:result restricted:NO options:nil];
+    }
+
+    return result;
+}
+
+- (NSURL *)containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
+    NSURL* result = %orig;
+
+    if(result && !isCallerExternal() && [_shadow isURLRestricted:result]) {
+        return nil;
+    }
+
+    return result;
+}
 %end
 %end
 
