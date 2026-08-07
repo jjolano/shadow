@@ -202,8 +202,16 @@ static BOOL shdw_vnode_pref_enabled(void) {
             NSDictionary* appPrefs = prefs[bundleIdentifier];
 
             if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
-                enabled = [appPrefs[@"VnodeHiding"] boolValue];
-                return;
+                // Per-app value wins; a key the app doesn't set inherits the
+                // global (matches the Settings UI and
+                // getPreferencesForIdentifier: — a bare per-app dict must not
+                // silently force the flag off).
+                id value = appPrefs[@"VnodeHiding"];
+
+                if(value) {
+                    enabled = [value boolValue];
+                    return;
+                }
             }
         }
 
