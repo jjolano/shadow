@@ -1,11 +1,6 @@
 {
 "ABOUT_TITLE" = "حول";
-"BYPASS_VERSION" = "إصدار التخطي";
-"SERVICE_VERSION" = "إصدار الخدمة";
-"BUILD_DATE" = "تاريخ البناء";
-"SOFTWARE_LICENSE" = "ترخيص البرمجيات";
 "UPDATES_HDR" = "التحديثات";
-"PACKAGE_VERSION" = "إصدار الحزمة";
 "INSTALLED_VERSION" = "الإصدار المثبت";
 "LATEST_VERSION" = "أحدث إصدار";
 "CREDITS_HDR" = "الاعتمادات";
@@ -15,4 +10,5 @@
 "LOCALIZATION_HDR" = "المترجم";
 "VISIT_CHANGELOG" = "عرض أحدث التغييرات";
 "TRANSLATOR" = "iA7myd";
+"UNKNOWN" = "غير معروف";
 }

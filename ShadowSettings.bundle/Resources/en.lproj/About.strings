@@ -1,10 +1,5 @@
 "ABOUT_TITLE" = "About";
-"BYPASS_VERSION" = "Bypass Version";
-"SERVICE_VERSION" = "Service Version";
-"BUILD_DATE" = "Build Date";
-"SOFTWARE_LICENSE" = "Software License";
 "UPDATES_HDR" = "Updates";
-"PACKAGE_VERSION" = "Package Version";
 "INSTALLED_VERSION" = "Installed Version";
 "LATEST_VERSION" = "Latest Version";
 "CREDITS_HDR" = "Credits";
@@ -16,3 +11,4 @@
 
 /* your name here! */
 "TRANSLATOR" = "jjolano";
+"UNKNOWN" = "Unknown";

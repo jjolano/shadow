@@ -38,9 +38,33 @@ static NSMutableArray* _shdw_dyld_path_pool = nil;
 
 // dyld's original uuid array, captured before our first patch overwrites the
 // struct's uuidArray pointer (later rebuilds must scan the original, not our
-// own filtered mirror, or new image uuids would never appear).
+// own filtered mirror, or new image uuids would never appear). Doubles as the
+// originalUuidArray/originalUuidArrayCount capture for the restore path
+// below (the mirror's uuid fields are only ever written from these).
 static const struct dyld_uuid_info* _shdw_real_uuid_array = NULL;
 static uintptr_t _shdw_real_uuid_count = 0;
+
+// Originals of the remaining patched struct fields, captured at FIRST patch
+// time (before the first publish) so a later ON→OFF pref change can restore
+// dyld's real struct exactly. Re-capturing on a later rebuild would read our
+// own filtered mirrors instead of dyld's originals. Only ever touched under
+// `_shdw_dyld_mirror_lock`.
+static const struct dyld_image_info* _shdw_original_info_array = NULL;
+static uint32_t _shdw_original_info_array_count = 0;
+static uintptr_t _shdw_original_atlas_addr = 0;
+static size_t _shdw_original_atlas_size = 0;
+static BOOL _shdw_originals_captured = NO;
+
+// True while the filtered mirror is published into dyld_all_image_infos.
+// Tracks the patch/restore transition so a runtime ON→OFF pref change undoes
+// the patch instead of leaving it applied forever (the flag is read per
+// rebuild). Only ever touched under `_shdw_dyld_mirror_lock`.
+static BOOL _shdw_mirror_currently_patched = NO;
+
+// vm_protect bookkeeping shared by the patch and restore paths (both run
+// under `_shdw_dyld_mirror_lock`); a failure latches here and disables both.
+static BOOL _shdw_mirror_protect_failed = NO;
+static vm_prot_t _shdw_mirror_original_protection = VM_PROT_READ | VM_PROT_WRITE;
 
 // App-bundle image spans for shdw_caller_is_tweak() (see hooks.h). Rebuilt
 // from the dyld image list whenever it changes and once at install; the
@@ -751,7 +775,61 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
 static void (*shdw_real_register_for_image_loads)(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
 static void (*shdw_real_register_for_bulk_image_loads)(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
 
+// Undo the memory-hiding patch: write dyld's original field values back into
+// dyld_all_image_infos, using the same vm_protect fail-soft dance as the
+// patch (originals captured at first patch time above). Only called under
+// `_shdw_dyld_mirror_lock`; sets `_shdw_mirror_currently_patched = NO` only
+// on success — on vm_protect failure the mirror stays applied and
+// `_shdw_mirror_protect_failed` latches, disabling the patch path as well.
+static void shdw_dyld_mirror_restore_originals(void) {
+    if(!_shdw_originals_captured) {
+        return;
+    }
+
+    mach_vm_address_t page = (mach_vm_address_t) _shdw_all_image_infos & ~(mach_vm_address_t) (vm_page_size - 1);
+
+    if(!_shdw_mirror_protect_failed) {
+        vm_region_basic_info_data_64_t info;
+        mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+        vm_address_t region = page;
+        vm_size_t region_size = 0;
+        mach_port_t object_name = MACH_PORT_NULL;
+
+        if(vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &info, &info_count, &object_name) == KERN_SUCCESS) {
+            _shdw_mirror_original_protection = info.protection;
+        }
+    }
+
+    if(!_shdw_mirror_protect_failed && vm_protect(mach_task_self(), page, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+        _shdw_all_image_infos->infoArray = _shdw_original_info_array;
+        _shdw_all_image_infos->infoArrayCount = _shdw_original_info_array_count;
+        _shdw_all_image_infos->uuidArray = _shdw_real_uuid_array;
+        _shdw_all_image_infos->uuidArrayCount = _shdw_real_uuid_count;
+
+        // Atlas (v16+, iOS 11+): the patch zeroed both, put dyld's originals back.
+        if(_shdw_all_image_infos->version >= 16) {
+            _shdw_all_image_infos->compact_dyld_image_info_addr = _shdw_original_atlas_addr;
+            _shdw_all_image_infos->compact_dyld_image_info_size = _shdw_original_atlas_size;
+        }
+
+        vm_protect(mach_task_self(), page, vm_page_size, FALSE, _shdw_mirror_original_protection);
+        _shdw_mirror_currently_patched = NO;
+    } else if(!_shdw_mirror_protect_failed) {
+        _shdw_mirror_protect_failed = YES;
+        NSLog(@"shadow: dyld: vm_protect failed restoring dyld_all_image_infos, memory hiding stays applied (fail soft)");
+    }
+}
+
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
+    // Prefs I/O (plist read; may lazy-load CF/Foundation) must NOT run under
+    // the mirror lock: rebuild fires from dyld add/remove-image callbacks in
+    // loader context, and holding the unfair lock across it can deadlock or
+    // stall. Read the effective flag once, here, before the lock — the
+    // detector escalation (shdw_detector_present → YES) short-circuits before
+    // any plist read, and the per-app bundle-id override is part of the same
+    // read. No struct to patch (pre-modern iOS) skips the read entirely.
+    BOOL memoryHidingEnabled = _shdw_all_image_infos ? shdw_dyld_memory_hiding_enabled() : NO;
+
     os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
@@ -800,8 +878,16 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         return;
     }
 
-    // Feature-flagged (default OFF): leave dyld's real data alone entirely.
-    if(!shdw_dyld_memory_hiding_enabled()) {
+    // Disabled: if a previous rebuild left the filtered mirror patched in,
+    // restore dyld's original struct fields — the flag is read per rebuild,
+    // so a runtime ON→OFF pref change must actually undo the patch. Fail
+    // soft: on vm_protect failure the mirror stays applied (and
+    // `_shdw_mirror_protect_failed` latches, disabling the patch path too).
+    if(!memoryHidingEnabled) {
+        if(_shdw_mirror_currently_patched) {
+            shdw_dyld_mirror_restore_originals();
+        }
+
         os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
@@ -835,12 +921,27 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         }
     }
 
-    // Capture dyld's real uuid array once, before our patch overwrites the
-    // struct's uuidArray pointer (later rebuilds must scan the original, not
-    // our own filtered mirror, or new image uuids would never appear).
-    if(!_shdw_real_uuid_array) {
+    // FIRST patch only: capture dyld's original field values before the
+    // publish below overwrites them (later rebuilds must scan the original
+    // uuid array, not our own filtered mirror, or new image uuids would
+    // never appear — and a later restore must write back the true originals,
+    // never our own mirrors). _shdw_real_uuid_array/_shdw_real_uuid_count are
+    // the originalUuidArray/originalUuidArrayCount capture; the info and
+    // atlas originals join them here. Captured under the lock, once, guarded
+    // by `_shdw_originals_captured` (never re-captured after a restore).
+    if(!_shdw_originals_captured) {
+        _shdw_originals_captured = YES;
         _shdw_real_uuid_array = _shdw_all_image_infos->uuidArray;
         _shdw_real_uuid_count = _shdw_all_image_infos->uuidArrayCount;
+        _shdw_original_info_array = _shdw_all_image_infos->infoArray;
+        _shdw_original_info_array_count = _shdw_all_image_infos->infoArrayCount;
+
+        // Atlas (v16+, iOS 11+): the patch zeroes both fields, so keep the
+        // originals for the restore.
+        if(_shdw_all_image_infos->version >= 16) {
+            _shdw_original_atlas_addr = _shdw_all_image_infos->compact_dyld_image_info_addr;
+            _shdw_original_atlas_size = _shdw_all_image_infos->compact_dyld_image_info_size;
+        }
     }
 
     if(!mirrorAllocFailed) {
@@ -884,12 +985,12 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         // Publish into dyld's live struct (plain, non-PAC-signed pointers). The
         // page may be read-only: make it writable via vm_protect, write only
         // the four array fields, then restore the original protection. On
-        // failure we log once and keep the previous state (fail soft).
-        static BOOL protectFailed = NO;
-        static vm_prot_t originalProtection = VM_PROT_READ | VM_PROT_WRITE;
+        // failure we log once and keep the previous state (fail soft). The
+        // bookkeeping statics are shared with the restore path
+        // (shdw_dyld_mirror_restore_originals) — a latched failure disables both.
         mach_vm_address_t page = (mach_vm_address_t) _shdw_all_image_infos & ~(mach_vm_address_t) (vm_page_size - 1);
 
-        if(!protectFailed) {
+        if(!_shdw_mirror_protect_failed) {
             vm_region_basic_info_data_64_t info;
             mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
             vm_address_t region = page;
@@ -897,11 +998,11 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
             mach_port_t object_name = MACH_PORT_NULL;
 
             if(vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &info, &info_count, &object_name) == KERN_SUCCESS) {
-                originalProtection = info.protection;
+                _shdw_mirror_original_protection = info.protection;
             }
         }
 
-        if(!protectFailed && vm_protect(mach_task_self(), page, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+        if(!_shdw_mirror_protect_failed && vm_protect(mach_task_self(), page, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
             // Count first, pointer last: a reader catching the swap sees the
             // new count with the previous generation's entries — stale but
             // within the fixed capacity — never a torn or over-read buffer.
@@ -928,9 +1029,13 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
                 _shdw_all_image_infos->compact_dyld_image_info_size = 0;
             }
 
-            vm_protect(mach_task_self(), page, vm_page_size, FALSE, originalProtection);
-        } else if(!protectFailed) {
-            protectFailed = YES;
+            // The filtered mirror is now live in dyld's struct; a later
+            // disabled rebuild restores the originals captured above.
+            _shdw_mirror_currently_patched = YES;
+
+            vm_protect(mach_task_self(), page, vm_page_size, FALSE, _shdw_mirror_original_protection);
+        } else if(!_shdw_mirror_protect_failed) {
+            _shdw_mirror_protect_failed = YES;
             NSLog(@"shadow: dyld: vm_protect failed for dyld_all_image_infos, memory hiding disabled (fail soft)");
         }
     }

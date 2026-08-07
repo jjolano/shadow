@@ -2,6 +2,13 @@
 
 #import "hooks.h"
 
+// CS_JIT_ALLOW (0x20000) is an XNU-internal code-signing flag absent from
+// Apple's public codesign.h; the 0x300-looking bits that DO exist there are
+// CS_HARD|CS_KILL and must not be used for this purpose.
+#ifndef CS_JIT_ALLOW
+#define CS_JIT_ALLOW 0x00020000
+#endif
+
 // Forwards an intercepted syscall() call with exact arguments. There is no
 // v-syscall, so a va_list can't be forwarded through a variadic `...`: the
 // trampoline re-reads the argument list and re-passes it with explicit
@@ -235,20 +242,26 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
                 *flags &= ~CS_GET_TASK_ALLOW;
                 *flags &= ~CS_INSTALLER;
                 *flags &= ~CS_ENTITLEMENTS_VALIDATED;
-                *flags |= 0x0000300; /* CS_JIT_ALLOW */
+                *flags |= CS_JIT_ALLOW;
                 *flags |= CS_REQUIRE_LV;
             }
         }
 
-        if(ops == CS_OPS_CDHASH) {
-            // Hide CDHASH for trustcache checks
-            errno = EBADEXEC;
-            return -1;
-        }
+        // The CDHASH/MARKKILL denials fire only when the original call
+        // succeeded: on a failed call the kernel wrote no hash / executed
+        // no kill, and a synthetic EBADEXEC on top of a real error would
+        // deviate from stock.
+        if(ret == 0) {
+            if(ops == CS_OPS_CDHASH) {
+                // Hide CDHASH for trustcache checks
+                errno = EBADEXEC;
+                return -1;
+            }
 
-        if(ops == CS_OPS_MARKKILL) {
-            errno = EBADEXEC;
-            return -1;
+            if(ops == CS_OPS_MARKKILL) {
+                errno = EBADEXEC;
+                return -1;
+            }
         }
     }
 

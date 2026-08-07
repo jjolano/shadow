@@ -65,6 +65,7 @@
 #import <errno.h>
 #import <inttypes.h>
 #import <signal.h>
+#import <stdatomic.h>
 
 #include "../common.h"   // BUNDLE_ID, MACH_SERVICE_NAME, SHADOW_PREFS_PLIST
 
@@ -309,14 +310,15 @@ static unsigned long long t1sz_boot = 0;
 static bool gFdTableInline = false;
 
 static bool is_arm64e(void) {
-    // A27: initialize to a known non-arm64e value and CHECK the sysctl result —
-    // an uninitialized subtype could coincidentally equal CPU_SUBTYPE_ARM64E
-    // and misclassify, selecting the PAC-unsafe tfp0 backend on arm64e.
+    // A27: FAIL CLOSED — initialize to a known non-arm64e value and CHECK the
+    // sysctl result; on sysctl FAILURE treat the device as arm64e (never
+    // "not arm64e").  Misclassifying an arm64e device as arm64 would select
+    // the PAC-unsafe tfp0 backend on arm64e.
     cpu_subtype_t subtype = 0;
     size_t cpusz = sizeof(cpu_subtype_t);
     if (sysctlbyname("hw.cpusubtype", &subtype, &cpusz, NULL, 0) != 0) {
-        shdw_log("is_arm64e: hw.cpusubtype failed — assuming NOT arm64e");
-        return false;
+        shdw_log("is_arm64e: hw.cpusubtype failed — FAIL CLOSED, assuming arm64e (tfp0 refused)");
+        return true;
     }
     return (subtype == 2 /* CPU_SUBTYPE_ARM64E */);
 }
@@ -422,7 +424,9 @@ typedef enum {
 } krw_state_t;
 
 static krw_mode_t gKrwMode = KRW_NONE;
-static volatile krw_state_t gKrwState = KRW_INIT;
+// NEW-3: gKrwState is written on the background init thread and read on the
+// kernel queue — volatile is NOT synchronization.  Use C11 atomics.
+static _Atomic krw_state_t gKrwState = KRW_INIT;
 static uint64_t gOurProc = 0;   // tfp0 path: cached own-proc from allproc scan
 
 // ---- libjailbreak (Dopamine) ----
@@ -1104,10 +1108,11 @@ static bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId) {
             shdw_log("resolve: vnode validation failed at 0x%llx", vnode);
             break;
         }
-        // Capture v_id — REQUIRED (A24): a failed read fails the resolution.
+        // Capture v_id — REQUIRED (A24): both a failed read AND a legitimate
+        // zero must fail the resolution (v_id of 0 cannot serve as identity).
         uint32_t vid32 = 0;
-        if (!krw_read32(vnode + OFF_VNODE_V_ID, &vid32)) {
-            shdw_log("resolve: v_id read failed at 0x%llx", vnode);
+        if (!krw_read32(vnode + OFF_VNODE_V_ID, &vid32) || vid32 == 0) {
+            shdw_log("resolve: v_id read failed or zero at 0x%llx", vnode);
             break;
         }
         proc_rele_self(proc);
@@ -1582,10 +1587,11 @@ static bool allowlisted(const char *path) {
 // its reply port; hiding on its behalf with no lease must not happen.  A
 // permanently disabled krw backend answers ENOTSUP.
 static uint32_t acquire_status_if_ready(void) {
-    if (gKrwState == KRW_INIT) {
+    krw_state_t st = atomic_load(&gKrwState);
+    if (st == KRW_INIT) {
         return SHADOWD_STATUS_EBUSY;
     }
-    if (gKrwState != KRW_READY) {
+    if (st != KRW_READY) {
         return SHADOWD_STATUS_ENOTSUP;
     }
     return SHADOWD_STATUS_OK;
