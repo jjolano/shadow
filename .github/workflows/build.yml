@@ -1,0 +1,60 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.flavor }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [rootless, rooted, legacy]
+    env:
+      THEOS: /opt/theos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Theos
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential fakeroot rsync curl perl zip git libxml2 libtinfo6
+          sudo git clone --recursive --quiet https://github.com/theos/theos.git $THEOS
+          # kabiroberai's swift toolchain: ships clang 13 (apple/llvm-project,
+          # same compiler as the project's local environment) plus the darwin
+          # compiler-rt libs L1ghtmann's builds omit (needed for the
+          # ___isOSVersionAtLeast shim on iOS < 12 deployment targets).
+          curl -sL -o /tmp/swift-tc.tar.xz \
+            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz
+          sudo tar -xJf /tmp/swift-tc.tar.xz -C $THEOS/toolchain/
+          sudo mkdir -p $THEOS/sdks
+          for sdk in iPhoneOS16.5.sdk iPhoneOS14.5.sdk; do
+            curl -sL -o /tmp/$sdk.tar.xz \
+              https://github.com/theos/sdks/releases/download/master-146e41f/$sdk.tar.xz
+            sudo tar -xJf /tmp/$sdk.tar.xz -C $THEOS/sdks
+          done
+
+      - name: Vendor xpc headers (missing from theos SDKs; libsandy needs them)
+        run: |
+          curl -sL https://github.com/Cryptiiiic/libjbdrw/archive/73fa4bb1bbd515ad11a96141ee9e8478f6146a15.tar.gz \
+            | tar -xz -C /tmp
+          sudo cp -R /tmp/libjbdrw-73fa4bb1bbd515ad11a96141ee9e8478f6146a15/include/xpc \
+            $THEOS/sdks/iPhoneOS16.5.sdk/usr/include/
+          sudo cp -R /tmp/libjbdrw-73fa4bb1bbd515ad11a96141ee9e8478f6146a15/include/xpc \
+            $THEOS/sdks/iPhoneOS14.5.sdk/usr/include/
+
+      - name: Build dependency variants
+        run: bash .github/scripts/build-deps.sh ${{ matrix.flavor }}
+
+      - name: Build Shadow
+        run: ./build.sh ${{ matrix.flavor }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-${{ matrix.flavor }}
+          path: build/*.deb
