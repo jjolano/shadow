@@ -3,11 +3,16 @@
 
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
+#import <objc/runtime.h>
+#import <errno.h>
+#import <string.h>
+#import <stdlib.h>
 
 #import "vendor/libhooker/libhooker.h"
 #import "vendor/libhooker/libblackjack.h"
 #import "vendor/fishhook/fishhook.h"
 #import "vendor/substrate/substrate.h"
+#import "vendor/substitute/substitute.h"
 
 #pragma mark - libhooker (ElleKit) runtime resolution
 
@@ -21,27 +26,32 @@ static struct libhooker_image *(*fn_LHOpenImage)(const char *) = NULL;
 static void (*fn_LHCloseImage)(struct libhooker_image *) = NULL;
 static bool (*fn_LHFindSymbols)(struct libhooker_image *, const char **, void **, size_t) = NULL;
 
+// Only successful probes are cached: if dlopen fails, a later call retries
+// (the engine may appear after HookKit loads).
 static BOOL libhooker_available(void) {
+    static BOOL cached = NO;
     static BOOL available = NO;
-    static dispatch_once_t onceToken = 0;
 
-    dispatch_once(&onceToken, ^{
-        libhooker_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libhooker.dylib"] fileSystemRepresentation], RTLD_LAZY);
+    if(cached) {
+        return available;
+    }
 
-        if(!libhooker_handle) {
-            return;
-        }
+    libhooker_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libhooker.dylib"] fileSystemRepresentation], RTLD_LAZY);
 
-        fn_LBHookMessage = (enum LIBHOOKER_ERR (*)(Class, SEL, void *, void *))dlsym(libhooker_handle, "LBHookMessage");
-        fn_LHHookFunctions = (int (*)(const struct LHFunctionHook *, int))dlsym(libhooker_handle, "LHHookFunctions");
-        fn_LHPatchMemory = (int (*)(const struct LHMemoryPatch *, int))dlsym(libhooker_handle, "LHPatchMemory");
-        fn_LHOpenImage = (struct libhooker_image *(*)(const char *))dlsym(libhooker_handle, "LHOpenImage");
-        fn_LHCloseImage = (void (*)(struct libhooker_image *))dlsym(libhooker_handle, "LHCloseImage");
-        fn_LHFindSymbols = (bool (*)(struct libhooker_image *, const char **, void **, size_t))dlsym(libhooker_handle, "LHFindSymbols");
+    if(!libhooker_handle) {
+        return NO;
+    }
 
-        available = fn_LBHookMessage && fn_LHHookFunctions && fn_LHPatchMemory
-            && fn_LHOpenImage && fn_LHCloseImage && fn_LHFindSymbols;
-    });
+    fn_LBHookMessage = (enum LIBHOOKER_ERR (*)(Class, SEL, void *, void *))dlsym(libhooker_handle, "LBHookMessage");
+    fn_LHHookFunctions = (int (*)(const struct LHFunctionHook *, int))dlsym(libhooker_handle, "LHHookFunctions");
+    fn_LHPatchMemory = (int (*)(const struct LHMemoryPatch *, int))dlsym(libhooker_handle, "LHPatchMemory");
+    fn_LHOpenImage = (struct libhooker_image *(*)(const char *))dlsym(libhooker_handle, "LHOpenImage");
+    fn_LHCloseImage = (void (*)(struct libhooker_image *))dlsym(libhooker_handle, "LHCloseImage");
+    fn_LHFindSymbols = (bool (*)(struct libhooker_image *, const char **, void **, size_t))dlsym(libhooker_handle, "LHFindSymbols");
+
+    available = fn_LBHookMessage && fn_LHHookFunctions && fn_LHPatchMemory
+        && fn_LHOpenImage && fn_LHCloseImage && fn_LHFindSymbols;
+    cached = YES;
 
     return available;
 }
@@ -52,39 +62,51 @@ static BOOL libhooker_available(void) {
 // exports the MS* symbols directly; libsubstitute exports them under MS*
 // (older versions) or Sub* (newer versions) names, so try both.
 static void *substrate_handle = NULL;
-static void *(*substrate_hookFunction)(void *, void *, void **) = NULL;
+static void (*substrate_hookFunction)(void *, void *, void **) = NULL;
 static void (*substrate_hookMessageEx)(Class, SEL, void *, void **) = NULL;
 static void *(*substrate_getImageByName)(const char *) = NULL;
 static void *(*substrate_findSymbol)(void *, const char *) = NULL;
 
 static BOOL substrate_available(void) {
+    static BOOL cached = NO;
     static BOOL available = NO;
-    static dispatch_once_t onceToken = 0;
 
-    dispatch_once(&onceToken, ^{
-        substrate_handle = dlopen([[RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"] fileSystemRepresentation], RTLD_LAZY);
+    if(cached) {
+        return available;
+    }
 
-        if(!substrate_handle) {
-            return;
-        }
+    substrate_handle = dlopen([[RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"] fileSystemRepresentation], RTLD_LAZY);
 
-        substrate_hookFunction = (void *(*)(void *, void *, void **))dlsym(substrate_handle, "MSHookFunction");
-        substrate_hookMessageEx = (void (*)(Class, SEL, void *, void **))dlsym(substrate_handle, "MSHookMessageEx");
-        substrate_getImageByName = (void *(*)(const char *))dlsym(substrate_handle, "MSGetImageByName");
-        substrate_findSymbol = (void *(*)(void *, const char *))dlsym(substrate_handle, "MSFindSymbol");
+    if(!substrate_handle) {
+        return NO;
+    }
 
-        available = substrate_hookFunction && substrate_hookMessageEx
-            && substrate_getImageByName && substrate_findSymbol;
-    });
+    substrate_hookFunction = (void (*)(void *, void *, void **))dlsym(substrate_handle, "MSHookFunction");
+    substrate_hookMessageEx = (void (*)(Class, SEL, void *, void **))dlsym(substrate_handle, "MSHookMessageEx");
+    substrate_getImageByName = (void *(*)(const char *))dlsym(substrate_handle, "MSGetImageByName");
+    substrate_findSymbol = (void *(*)(void *, const char *))dlsym(substrate_handle, "MSFindSymbol");
+
+    available = substrate_hookFunction && substrate_hookMessageEx
+        && substrate_getImageByName && substrate_findSymbol;
+    cached = YES;
 
     return available;
 }
 
 static void *libsubstitute_handle = NULL;
-static void *(*substitute_hookFunction)(void *, void *, void **) = NULL;
+static void (*substitute_hookFunction)(void *, void *, void **) = NULL;
 static void (*substitute_hookMessageEx)(Class, SEL, void *, void **) = NULL;
 static void *(*substitute_getImageByName)(const char *) = NULL;
 static void *(*substitute_findSymbol)(void *, const char *) = NULL;
+
+// Native libsubstitute API, preferred over the MS-compatible shims when present.
+static int (*fn_substitute_hook_functions)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int) = NULL;
+static int (*fn_substitute_hook_objc_message)(Class, SEL, void *, void *, bool *) = NULL;
+static struct substitute_image *(*fn_substitute_open_image)(const char *) = NULL;
+static void (*fn_substitute_close_image)(struct substitute_image *) = NULL;
+static int (*fn_substitute_find_private_syms)(struct substitute_image *, const char **, void **, size_t) = NULL;
+static void *(*fn_substitute_sym_to_ptr)(struct substitute_image *, substitute_sym *) = NULL;
+static BOOL substitute_native_available = NO;
 
 static void *resolve_ms_symbol(void *handle, const char *name, const char *fallback) {
     void *symbol = dlsym(handle, name);
@@ -97,24 +119,39 @@ static void *resolve_ms_symbol(void *handle, const char *name, const char *fallb
 }
 
 static BOOL substitute_available(void) {
+    static BOOL cached = NO;
     static BOOL available = NO;
-    static dispatch_once_t onceToken = 0;
 
-    dispatch_once(&onceToken, ^{
-        libsubstitute_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"] fileSystemRepresentation], RTLD_LAZY);
+    if(cached) {
+        return available;
+    }
 
-        if(!libsubstitute_handle) {
-            return;
-        }
+    libsubstitute_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"] fileSystemRepresentation], RTLD_LAZY);
 
-        substitute_hookFunction = (void *(*)(void *, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookFunction", "SubHookFunction");
-        substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
-        substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
-        substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
+    if(!libsubstitute_handle) {
+        return NO;
+    }
 
-        available = substitute_hookFunction && substitute_hookMessageEx
-            && substitute_getImageByName && substitute_findSymbol;
-    });
+    substitute_hookFunction = (void (*)(void *, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookFunction", "SubHookFunction");
+    substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
+    substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
+    substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
+
+    available = substitute_hookFunction && substitute_hookMessageEx
+        && substitute_getImageByName && substitute_findSymbol;
+
+    fn_substitute_hook_functions = (int (*)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int))dlsym(libsubstitute_handle, "substitute_hook_functions");
+    fn_substitute_hook_objc_message = (int (*)(Class, SEL, void *, void *, bool *))dlsym(libsubstitute_handle, "substitute_hook_objc_message");
+    fn_substitute_open_image = (struct substitute_image *(*)(const char *))dlsym(libsubstitute_handle, "substitute_open_image");
+    fn_substitute_close_image = (void (*)(struct substitute_image *))dlsym(libsubstitute_handle, "substitute_close_image");
+    fn_substitute_find_private_syms = (int (*)(struct substitute_image *, const char **, void **, size_t))dlsym(libsubstitute_handle, "substitute_find_private_syms");
+    fn_substitute_sym_to_ptr = (void *(*)(struct substitute_image *, substitute_sym *))dlsym(libsubstitute_handle, "substitute_sym_to_ptr");
+
+    substitute_native_available = fn_substitute_hook_functions && fn_substitute_hook_objc_message
+        && fn_substitute_open_image && fn_substitute_close_image
+        && fn_substitute_find_private_syms && fn_substitute_sym_to_ptr;
+
+    cached = YES;
 
     return available;
 }
@@ -127,16 +164,23 @@ typedef NS_ENUM(int, HKHookKind) {
     HKHookKindMemory
 };
 
-@interface HKHookOperation : NSObject
-@property (assign, nonatomic) HKHookKind kind;
-@property (assign, nonatomic) Class objcClass;
-@property (assign, nonatomic) SEL selector;
-@property (assign, nonatomic) void *function;
-@property (assign, nonatomic) void *replacement;
-@property (assign, nonatomic) void **orig;
-@property (assign, nonatomic) void *target;
-@property (assign, nonatomic) const void *data;
-@property (assign, nonatomic) size_t size;
+// A deferred hook. Storage that the backend may retain (memory patch bytes,
+// the out-cell written by the backend) is owned here; callerOrig is borrowed
+// and only used for the post-execution copy in executeHooks.
+@interface HKHookOperation : NSObject {
+@public
+    HKHookKind kind;
+    Class objcClass;
+    SEL selector;
+    void *function;
+    void *replacement;
+    void *origValue;    // owned out-cell the backend writes at execute time
+    void **callerOrig;  // borrowed caller out-pointer; copied once, then cleared
+    void *target;
+    NSData *data;       // owned copy of the memory patch bytes
+    size_t size;
+    BOOL succeeded;
+}
 @end
 
 @implementation HKHookOperation
@@ -146,6 +190,7 @@ typedef NS_ENUM(int, HKHookKind) {
 
 @protocol HKSubstitutorBackend <NSObject>
 @property (nonatomic, readonly) BOOL batchingSupported;
+@property (nonatomic, readonly) int lastErrno;
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
@@ -158,7 +203,9 @@ typedef NS_ENUM(int, HKHookKind) {
 @end
 
 // ElleKit backend: libhooker API, resolved at runtime via dlopen/dlsym.
-@interface HKElleKitBackend : NSObject <HKSubstitutorBackend>
+@interface HKElleKitBackend : NSObject <HKSubstitutorBackend> {
+    int _lastErrno;
+}
 @end
 
 @implementation HKElleKitBackend
@@ -166,8 +213,14 @@ typedef NS_ENUM(int, HKHookKind) {
     return YES;
 }
 
+- (int)lastErrno {
+    return _lastErrno;
+}
+
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
-    return fn_LBHookMessage(objcClass, selector, replacement, (void *)old_ptr) == LIBHOOKER_OK ? HK_OK : HK_ERR;
+    enum LIBHOOKER_ERR result = fn_LBHookMessage(objcClass, selector, replacement, (void *)old_ptr);
+    _lastErrno = result;
+    return result == LIBHOOKER_OK ? HK_OK : HK_ERR;
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
@@ -175,7 +228,9 @@ typedef NS_ENUM(int, HKHookKind) {
         function, replacement, (void *)old_ptr, NULL
     };
 
-    return fn_LHHookFunctions(&hook, 1) == 1 ? HK_OK : HK_ERR;
+    int result = fn_LHHookFunctions(&hook, 1);
+    _lastErrno = result;
+    return result == 1 ? HK_OK : HK_ERR;
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
@@ -183,20 +238,29 @@ typedef NS_ENUM(int, HKHookKind) {
         target, data, size, 0
     };
 
-    return fn_LHPatchMemory(&patch, 1) == 1 ? HK_OK : HK_ERR;
+    int result = fn_LHPatchMemory(&patch, 1);
+    _lastErrno = result;
+    return result == 1 ? HK_OK : HK_ERR;
 }
 
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
     int total = (int)[hooks count];
     int succeeded = 0;
+    _lastErrno = 0;
 
     NSMutableData *functionHooks = [NSMutableData new];
     NSMutableData *memoryHooks = [NSMutableData new];
+    NSMutableArray<HKHookOperation *> *functionOps = [NSMutableArray new];
+    NSMutableArray<HKHookOperation *> *memoryOps = [NSMutableArray new];
 
     for(HKHookOperation *hook in hooks) {
-        switch([hook kind]) {
+        switch(hook->kind) {
             case HKHookKindMessage: {
-                if(fn_LBHookMessage([hook objcClass], [hook selector], [hook replacement], (void *)[hook orig]) == LIBHOOKER_OK) {
+                enum LIBHOOKER_ERR result = fn_LBHookMessage(hook->objcClass, hook->selector, hook->replacement, (void *)&hook->origValue);
+                _lastErrno = result;
+
+                if(result == LIBHOOKER_OK) {
+                    hook->succeeded = YES;
                     succeeded += 1;
                 }
 
@@ -205,39 +269,55 @@ typedef NS_ENUM(int, HKHookKind) {
 
             case HKHookKindFunction: {
                 struct LHFunctionHook lh = {
-                    [hook function], [hook replacement], (void *)[hook orig], NULL
+                    hook->function, hook->replacement, &hook->origValue, NULL
                 };
 
                 [functionHooks appendBytes:&lh length:sizeof(struct LHFunctionHook)];
+                [functionOps addObject:hook];
                 break;
             }
 
             case HKHookKindMemory: {
                 struct LHMemoryPatch lh = {
-                    [hook target], [hook data], [hook size], 0
+                    hook->target, [hook->data bytes], hook->size, 0
                 };
 
                 [memoryHooks appendBytes:&lh length:sizeof(struct LHMemoryPatch)];
+                [memoryOps addObject:hook];
                 break;
             }
         }
     }
 
     if([functionHooks length]) {
-        int result = fn_LHHookFunctions([functionHooks mutableBytes], (int)([functionHooks length] / sizeof(struct LHFunctionHook)));
+        int count = (int)([functionHooks length] / sizeof(struct LHFunctionHook));
+        int result = fn_LHHookFunctions([functionHooks mutableBytes], count);
+        _lastErrno = result;
 
-        if(result < (int)([functionHooks length] / sizeof(struct LHFunctionHook))) {
+        if(result < count) {
             NSLog(@"[HKElleKit] warning: batch LHHookFunctions retval less than expected (%d/%lu)", result, (unsigned long)([functionHooks length] / sizeof(struct LHFunctionHook)));
+        }
+
+        // libhooker applies hooks in order and stops at the first failure,
+        // so the first `result` ops succeeded.
+        for(int i = 0; i < result; i++) {
+            functionOps[i]->succeeded = YES;
         }
 
         succeeded += result;
     }
 
     if([memoryHooks length]) {
-        int result = fn_LHPatchMemory([memoryHooks mutableBytes], (int)([memoryHooks length] / sizeof(struct LHMemoryPatch)));
+        int count = (int)([memoryHooks length] / sizeof(struct LHMemoryPatch));
+        int result = fn_LHPatchMemory([memoryHooks mutableBytes], count);
+        _lastErrno = result;
 
-        if(result < (int)([memoryHooks length] / sizeof(struct LHMemoryPatch))) {
+        if(result < count) {
             NSLog(@"[HKElleKit] warning: batch LHPatchMemory retval less than expected (%d/%lu)", result, (unsigned long)([memoryHooks length] / sizeof(struct LHMemoryPatch)));
+        }
+
+        for(int i = 0; i < result; i++) {
+            memoryOps[i]->succeeded = YES;
         }
 
         succeeded += result;
@@ -247,7 +327,11 @@ typedef NS_ENUM(int, HKHookKind) {
         NSLog(@"[HookKit] warning: successfully hooked less than expected (%d/%lu)", succeeded, (unsigned long)total);
     }
 
-    return succeeded > 0 ? HK_OK : HK_ERR;
+    if(succeeded == total) {
+        return HK_OK;
+    }
+
+    return succeeded > 0 ? HK_ERR_PARTIAL : HK_ERR;
 }
 
 - (HKImageRef)openImage:(NSString *)path {
@@ -260,16 +344,41 @@ typedef NS_ENUM(int, HKHookKind) {
     }
 }
 
+// ElleKit expects C symbols with a leading underscore; Substrate-style names
+// come in without one. Try the name as given, then with '_' prepended.
+- (void *)findSymbol:(const char *)name inImage:(struct libhooker_image *)image {
+    if(!image || !name || !name[0]) {
+        return NULL;
+    }
+
+    void *result = NULL;
+    const char *probe = name;
+
+    if(fn_LHFindSymbols(image, &probe, &result, 1) && result) {
+        return result;
+    }
+
+    if(name[0] == '_') {
+        return NULL;
+    }
+
+    char *prefixed = malloc(strlen(name) + 2);
+    prefixed[0] = '_';
+    strcpy(prefixed + 1, name);
+
+    result = NULL;
+    probe = prefixed;
+    fn_LHFindSymbols(image, &probe, &result, 1);
+    free(prefixed);
+
+    return result;
+}
+
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
     const char *symbol = [symbolName UTF8String];
-    void *result = NULL;
 
     if(image) {
-        if(fn_LHFindSymbols((struct libhooker_image *)image, &symbol, &result, 1)) {
-            return result;
-        }
-
-        return NULL;
+        return [self findSymbol:symbol inImage:(struct libhooker_image *)image];
     }
 
     // image == NULL: iterate all loaded dyld images
@@ -281,15 +390,16 @@ typedef NS_ENUM(int, HKHookKind) {
         if(image_name) {
             struct libhooker_image *libhookerImage = fn_LHOpenImage(image_name);
 
-            if(fn_LHFindSymbols(libhookerImage, &symbol, &result, 1)) {
-                fn_LHCloseImage(libhookerImage);
+            if(!libhookerImage) {
+                // no handle, no symbol lookup: skip this image
+                continue;
+            }
 
-                if(result) {
-                    NSLog(@"[HookKit] found symbol %s in image %s", symbol, image_name);
-                    return result;
-                }
-            } else {
-                fn_LHCloseImage(libhookerImage);
+            void *result = [self findSymbol:symbol inImage:libhookerImage];
+            fn_LHCloseImage(libhookerImage);
+
+            if(result) {
+                return result;
             }
         }
     }
@@ -303,20 +413,21 @@ typedef NS_ENUM(int, HKHookKind) {
 // memory patches are not supported.
 @interface HKMSBackend : NSObject <HKSubstitutorBackend> {
 @protected
-    void *(*msHookFunction)(void *, void *, void **);
+    void (*msHookFunction)(void *, void *, void **);
     void (*msHookMessageEx)(Class, SEL, void *, void **);
     void *(*msGetImageByName)(const char *);
     void *(*msFindSymbol)(void *, const char *);
+    int _lastErrno;
 }
 
-- (instancetype)initWithHookFunction:(void *(*)(void *, void *, void **))hookFunction
+- (instancetype)initWithHookFunction:(void (*)(void *, void *, void **))hookFunction
                       hookMessageEx:(void (*)(Class, SEL, void *, void **))hookMessageEx
                     getImageByName:(void *(*)(const char *))getImageByName
                        findSymbol:(void *(*)(void *, const char *))findSymbol;
 @end
 
 @implementation HKMSBackend
-- (instancetype)initWithHookFunction:(void *(*)(void *, void *, void **))hookFunction
+- (instancetype)initWithHookFunction:(void (*)(void *, void *, void **))hookFunction
                       hookMessageEx:(void (*)(Class, SEL, void *, void **))hookMessageEx
                     getImageByName:(void *(*)(const char *))getImageByName
                        findSymbol:(void *(*)(void *, const char *))findSymbol {
@@ -325,6 +436,7 @@ typedef NS_ENUM(int, HKHookKind) {
         msHookMessageEx = hookMessageEx;
         msGetImageByName = getImageByName;
         msFindSymbol = findSymbol;
+        _lastErrno = 0;
     }
 
     return self;
@@ -334,14 +446,32 @@ typedef NS_ENUM(int, HKHookKind) {
     return NO;
 }
 
+- (int)lastErrno {
+    return _lastErrno;
+}
+
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!class_getInstanceMethod(objcClass, selector) && !class_getClassMethod(objcClass, selector)) {
+        _lastErrno = 0;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    // MSHookMessageEx is void and its success is unverifiable — the hook is
+    // submitted, unverified (Substrate API limitation). Some Substrate builds
+    // signal failure through errno.
+    errno = 0;
     msHookMessageEx(objcClass, selector, replacement, old_ptr);
-    return HK_OK;
+    _lastErrno = errno;
+    return errno ? HK_ERR : HK_OK;
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    // MSHookFunction is void — submitted, unverified; some Substrate builds
+    // signal failure through errno.
+    errno = 0;
     msHookFunction(function, replacement, old_ptr);
-    return HK_OK;
+    _lastErrno = errno;
+    return errno ? HK_ERR : HK_OK;
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
@@ -375,11 +505,14 @@ typedef NS_ENUM(int, HKHookKind) {
         const char *image_name = _dyld_get_image_name(i);
 
         if(image_name) {
-            void *found = msFindSymbol(msGetImageByName(image_name), symbol);
+            void *imageHandle = msGetImageByName(image_name);
 
-            if(found) {
-                NSLog(@"[HookKit] found symbol %s in image %s", symbol, image_name);
-                return found;
+            if(imageHandle) {
+                void *found = msFindSymbol(imageHandle, symbol);
+
+                if(found) {
+                    return found;
+                }
             }
         }
     }
@@ -399,12 +532,108 @@ typedef NS_ENUM(int, HKHookKind) {
 @end
 
 // Substitute backend: checkra1n-classic (Substitute-based jailbreaks).
+// Uses libsubstitute's native API when available, otherwise the MS-compatible
+// path (which also fixes the leak of Substitute image handles).
 @interface HKSubstituteBackend : HKMSBackend
 @end
 
 @implementation HKSubstituteBackend
 - (instancetype)init {
     return [super initWithHookFunction:substitute_hookFunction hookMessageEx:substitute_hookMessageEx getImageByName:substitute_getImageByName findSymbol:substitute_findSymbol];
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!substitute_native_available) {
+        return [super hookMessageInClass:objcClass withSelector:selector withReplacement:replacement outOldPtr:old_ptr];
+    }
+
+    if(!class_getInstanceMethod(objcClass, selector) && !class_getClassMethod(objcClass, selector)) {
+        _lastErrno = 0;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    int result = fn_substitute_hook_objc_message(objcClass, selector, replacement, old_ptr, NULL);
+    _lastErrno = result;
+    return result == SUBSTITUTE_OK ? HK_OK : HK_ERR;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!substitute_native_available) {
+        return [super hookFunction:function withReplacement:replacement outOldPtr:old_ptr];
+    }
+
+    struct substitute_function_hook hook = {
+        function, replacement, old_ptr, 0
+    };
+
+    int result = fn_substitute_hook_functions(&hook, 1, NULL, 0);
+    _lastErrno = result;
+    return result == SUBSTITUTE_OK ? HK_OK : HK_ERR;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    if(!substitute_native_available) {
+        return [super openImage:path];
+    }
+
+    return (HKImageRef)fn_substitute_open_image([path fileSystemRepresentation]);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(substitute_native_available && image) {
+        fn_substitute_close_image((struct substitute_image *)image);
+        return;
+    }
+
+    [super closeImage:image];
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    if(!substitute_native_available) {
+        return [super findSymbolInImage:image symbolName:symbolName];
+    }
+
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        void *sym = NULL;
+
+        if(fn_substitute_find_private_syms((struct substitute_image *)image, &symbol, &sym, 1) == SUBSTITUTE_OK && sym) {
+            return fn_substitute_sym_to_ptr((struct substitute_image *)image, (substitute_sym *)sym);
+        }
+
+        return NULL;
+    }
+
+    // image == NULL: iterate all loaded dyld images
+    int count = _dyld_image_count();
+
+    for(int i = 0; i < count; i++) {
+        const char *image_name = _dyld_get_image_name(i);
+
+        if(image_name) {
+            struct substitute_image *subImage = fn_substitute_open_image(image_name);
+
+            if(!subImage) {
+                continue;
+            }
+
+            void *sym = NULL;
+
+            if(fn_substitute_find_private_syms(subImage, &symbol, &sym, 1) == SUBSTITUTE_OK && sym) {
+                void *result = fn_substitute_sym_to_ptr(subImage, (substitute_sym *)sym);
+                fn_substitute_close_image(subImage);
+
+                if(result) {
+                    return result;
+                }
+            } else {
+                fn_substitute_close_image(subImage);
+            }
+        }
+    }
+
+    return NULL;
 }
 @end
 
@@ -414,9 +643,41 @@ typedef NS_ENUM(int, HKHookKind) {
 @interface HKFishhookBackend : NSObject <HKSubstitutorBackend>
 @end
 
-@implementation HKFishhookBackend
+// fishhook's rebind_symbols retains the name and replaced pointers of each
+// struct rebinding for ALL future dlopen events, so they must outlive
+// hookFunction:. Each hook is therefore kept in a process-lifetime store
+// forever — per-hook, bounded. Deliberate: fishhook writes the original
+// through these cells on every future image load.
+@interface HKFishhookRebinding : NSObject {
+@public
+    char *name;
+    void **origCell;
+}
+@end
+
+@implementation HKFishhookRebinding
+@end
+
+static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
+    static NSMutableArray *store = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        store = [NSMutableArray new];
+    });
+
+    return store;
+}
+
+@implementation HKFishhookBackend {
+    int _lastErrno;
+}
 - (BOOL)batchingSupported {
     return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
 }
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
@@ -424,18 +685,41 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+
     Dl_info info;
 
-    if(dladdr(function, &info) && info.dli_sname) {
-        struct rebinding rebinding = {
-            info.dli_sname, replacement, old_ptr
-        };
-
-        return rebind_symbols(&rebinding, 1) == 0 ? HK_OK : HK_ERR;
+    if(!(dladdr(function, &info) && info.dli_sname && info.dli_saddr == function)) {
+        // fishhook rebinds by exported symbol name; private/interior
+        // addresses are not rebindable
+        return HK_ERR_NOT_SUPPORTED;
     }
 
-    // private symbol: fishhook cannot rebind it
-    return HK_ERR_NOT_SUPPORTED;
+    HKFishhookRebinding *owned = [HKFishhookRebinding new];
+    owned->name = strdup(info.dli_sname);
+    owned->origCell = calloc(1, sizeof(void *));
+
+    struct rebinding rebinding = {
+        owned->name, replacement, owned->origCell
+    };
+
+    int result = rebind_symbols(&rebinding, 1);
+
+    if(result != 0) {
+        free(owned->name);
+        free(owned->origCell);
+        return HK_ERR;
+    }
+
+    // Copy synchronously; the caller's pointer is used only here and never
+    // passed to rebind_symbols (which would retain it past this call).
+    if(old_ptr) {
+        *old_ptr = *(owned->origCell);
+    }
+
+    [fishhookRebindingStore() addObject:owned];
+
+    return HK_OK;
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
@@ -448,7 +732,9 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 
 - (HKImageRef)openImage:(NSString *)path {
-    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL);
+    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
+    // contract that openImage does not load images
+    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
 }
 
 - (void)closeImage:(HKImageRef)image {
@@ -484,7 +770,6 @@ typedef NS_ENUM(int, HKHookKind) {
                 dlclose(handle);
 
                 if(found) {
-                    NSLog(@"[HookKit] found symbol %s in image %s", symbol, image_name);
                     return found;
                 }
             }
@@ -497,12 +782,19 @@ typedef NS_ENUM(int, HKHookKind) {
 
 #pragma mark - HKSubstitutor
 
+@interface HKSubstitutor ()
+- (void)noteHookResult:(hookkit_status_t)status;
+- (hookkit_lib_t)backendType;
+@end
+
 @implementation HKSubstitutor {
     id<HKSubstitutorBackend> backend;
     NSMutableArray<HKHookOperation *> *batchHooks;
+    int lastLibErrno;
+    hookkit_lib_t lastLibErrnoType;
 }
 
-@synthesize types, batching;
+@synthesize types, batching, activeType;
 
 + (id<HKSubstitutorBackend>)defaultBackend {
     if(libhooker_available()) {
@@ -525,39 +817,73 @@ typedef NS_ENUM(int, HKHookKind) {
         batchHooks = [NSMutableArray new];
         backend = nil;
         types = HK_LIB_NONE;
+        activeType = HK_LIB_NONE;
+        lastLibErrno = 0;
+        lastLibErrnoType = HK_LIB_NONE;
     }
 
     return self;
 }
 
 - (void)initLibraries {
+    if(backend) {
+        // idempotent: never re-resolve mid-flight (e.g. engine switching)
+        return;
+    }
+
     if(types == HK_LIB_NONE) {
         backend = [[self class] defaultBackend];
-        return;
-    }
-
-    if((types & HK_LIB_ELLEKIT) && libhooker_available()) {
+    } else if((types & HK_LIB_ELLEKIT) && libhooker_available()) {
         backend = [HKElleKitBackend new];
-        return;
-    }
-
-    if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
+    } else if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
         backend = [HKSubstrateBackend new];
-        return;
-    }
-
-    if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
+    } else if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
         backend = [HKSubstituteBackend new];
-        return;
-    }
-
-    if(types & HK_LIB_FISHHOOK) {
+    } else if(types & HK_LIB_FISHHOOK) {
         backend = [HKFishhookBackend new];
-        return;
+    }
+    // explicit types with none available: backend stays nil — the request is
+    // honest; the consumer guards with getAvailableSubstitutorTypes
+
+    if(backend) {
+        activeType = [self backendType];
+    } else {
+        activeType = HK_LIB_NONE;
+    }
+}
+
+- (hookkit_lib_t)backendType {
+    if([backend isKindOfClass:[HKElleKitBackend class]]) {
+        return HK_LIB_ELLEKIT;
     }
 
-    // requested types are unavailable; fall back to the default backend
-    backend = [[self class] defaultBackend];
+    if([backend isKindOfClass:[HKSubstrateBackend class]]) {
+        return HK_LIB_SUBSTRATE;
+    }
+
+    if([backend isKindOfClass:[HKSubstituteBackend class]]) {
+        return HK_LIB_SUBSTITUTE;
+    }
+
+    if([backend isKindOfClass:[HKFishhookBackend class]]) {
+        return HK_LIB_FISHHOOK;
+    }
+
+    return HK_LIB_NONE;
+}
+
+- (void)noteHookResult:(hookkit_status_t)status {
+    if(status == HK_OK || status == HK_ERR_INVALID_ARGUMENT) {
+        // success, or a caller error with no backend-specific detail
+        lastLibErrno = 0;
+        lastLibErrnoType = HK_LIB_NONE;
+    } else if(backend) {
+        lastLibErrno = [backend lastErrno];
+        lastLibErrnoType = activeType;
+    } else {
+        lastLibErrno = 0;
+        lastLibErrnoType = HK_LIB_NONE;
+    }
 }
 
 + (hookkit_lib_t)getAvailableSubstitutorTypes {
@@ -636,61 +962,119 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!objcClass || !selector || !replacement) {
+        [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
     if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
         return HK_ERR_NOT_SUPPORTED;
     }
 
     if(batching && [backend batchingSupported]) {
         HKHookOperation *hook = [HKHookOperation new];
-        [hook setKind:HKHookKindMessage];
-        [hook setObjcClass:objcClass];
-        [hook setSelector:selector];
-        [hook setReplacement:replacement];
-        [hook setOrig:old_ptr];
-        [batchHooks addObject:hook];
+        hook->kind = HKHookKindMessage;
+        hook->objcClass = objcClass;
+        hook->selector = selector;
+        hook->replacement = replacement;
+        hook->callerOrig = old_ptr;
+
+        @synchronized(self) {
+            [batchHooks addObject:hook];
+        }
+
+        [self noteHookResult:HK_OK];
         return HK_OK;
     }
 
-    return [backend hookMessageInClass:objcClass withSelector:selector withReplacement:replacement outOldPtr:old_ptr];
+    // owned cell: the backend never touches the caller's pointer directly
+    void *cell = NULL;
+    hookkit_status_t result = [backend hookMessageInClass:objcClass withSelector:selector withReplacement:replacement outOldPtr:&cell];
+
+    if(result == HK_OK && old_ptr) {
+        *old_ptr = cell;
+    }
+
+    [self noteHookResult:result];
+    return result;
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!function || !replacement) {
+        [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
     if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
         return HK_ERR_NOT_SUPPORTED;
     }
 
     if(batching && [backend batchingSupported]) {
         HKHookOperation *hook = [HKHookOperation new];
-        [hook setKind:HKHookKindFunction];
-        [hook setFunction:function];
-        [hook setReplacement:replacement];
-        [hook setOrig:old_ptr];
-        [batchHooks addObject:hook];
+        hook->kind = HKHookKindFunction;
+        hook->function = function;
+        hook->replacement = replacement;
+        hook->callerOrig = old_ptr;
+
+        @synchronized(self) {
+            [batchHooks addObject:hook];
+        }
+
+        [self noteHookResult:HK_OK];
         return HK_OK;
     }
 
-    return [backend hookFunction:function withReplacement:replacement outOldPtr:old_ptr];
+    // owned cell: the backend never touches the caller's pointer directly
+    void *cell = NULL;
+    hookkit_status_t result = [backend hookFunction:function withReplacement:replacement outOldPtr:&cell];
+
+    if(result == HK_OK && old_ptr) {
+        *old_ptr = cell;
+    }
+
+    [self noteHookResult:result];
+    return result;
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(!target || !data || size == 0) {
+        [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
     if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
         return HK_ERR_NOT_SUPPORTED;
     }
 
     if(batching && [backend batchingSupported]) {
         HKHookOperation *hook = [HKHookOperation new];
-        [hook setKind:HKHookKindMemory];
-        [hook setTarget:target];
-        [hook setData:data];
-        [hook setSize:size];
-        [batchHooks addObject:hook];
+        hook->kind = HKHookKindMemory;
+        hook->target = target;
+        // copy the patch bytes now: the caller's buffer must not outlive the call
+        hook->data = [NSData dataWithBytes:data length:size];
+        hook->size = size;
+
+        @synchronized(self) {
+            [batchHooks addObject:hook];
+        }
+
+        [self noteHookResult:HK_OK];
         return HK_OK;
     }
 
-    return [backend hookMemory:target withData:data size:size];
+    hookkit_status_t result = [backend hookMemory:target withData:data size:size];
+    [self noteHookResult:result];
+    return result;
 }
 
 - (HKImageRef)openImage:(NSString *)path {
+    if(!path) {
+        return NULL;
+    }
+
     if(!backend) {
         return NULL;
     }
@@ -705,17 +1089,37 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 
 - (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols {
+    if(!symbolNames || ![symbolNames count] || !outSymbols) {
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
     NSMutableArray *outSyms = [NSMutableArray new];
+    NSUInteger found = 0;
 
     for(NSString *symbolName in symbolNames) {
-        [outSyms addObject:[NSValue valueWithPointer:[self findSymbolInImage:image symbolName:symbolName]]];
+        void *symbol = [self findSymbolInImage:image symbolName:symbolName];
+
+        if(symbol) {
+            found += 1;
+        }
+
+        [outSyms addObject:[NSValue valueWithPointer:symbol]];
     }
 
     *outSymbols = [outSyms copy];
-    return HK_OK;
+
+    if(found == [symbolNames count]) {
+        return HK_OK;
+    }
+
+    return found > 0 ? HK_ERR_PARTIAL : HK_ERR;
 }
 
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    if(!symbolName || ![symbolName length]) {
+        return NULL;
+    }
+
     if(!backend) {
         return NULL;
     }
@@ -724,17 +1128,40 @@ typedef NS_ENUM(int, HKHookKind) {
 }
 
 - (hookkit_status_t)executeHooks {
-    if(![batchHooks count]) {
-        return HK_OK;
+    NSArray<HKHookOperation *> *hooks;
+
+    @synchronized(self) {
+        if(![batchHooks count]) {
+            [self noteHookResult:HK_OK];
+            return HK_OK;
+        }
+
+        hooks = [batchHooks copy];
+        [batchHooks removeAllObjects];
     }
 
-    hookkit_status_t result = [backend executeHooks:batchHooks];
-    [batchHooks removeAllObjects];
+    hookkit_status_t result = backend ? [backend executeHooks:hooks] : HK_ERR_NOT_SUPPORTED;
 
+    // copy per-op results back to the callers and drop all borrowed references
+    for(HKHookOperation *hook in hooks) {
+        if(hook->callerOrig) {
+            if(hook->succeeded) {
+                *hook->callerOrig = hook->origValue;
+            }
+
+            hook->callerOrig = NULL;
+        }
+    }
+
+    [self noteHookResult:result];
     return result;
 }
 
 - (int)getLibErrno:(hookkit_lib_t *)outType {
-    return 0;
+    if(outType) {
+        *outType = lastLibErrnoType;
+    }
+
+    return lastLibErrno;
 }
 @end

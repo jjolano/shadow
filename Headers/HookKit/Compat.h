@@ -6,7 +6,9 @@
 typedef enum {
     HK_OK = 0,
     HK_ERR = (1 << 0),
-    HK_ERR_NOT_SUPPORTED = (1 << 1)
+    HK_ERR_NOT_SUPPORTED = (1 << 1),
+    HK_ERR_INVALID_ARGUMENT = (1 << 2),
+    HK_ERR_PARTIAL = (1 << 3)
 } hookkit_status_t;
 
 typedef enum {
@@ -19,9 +21,41 @@ typedef enum {
 
 typedef const struct HKImage* HKImageRef;
 
+/*
+ * Backend capability matrix:
+ *
+ *                  message    function    memory    batching
+ *   ElleKit        yes        yes         yes       yes
+ *   Cydia Substrate yes       yes         no        no
+ *   Substitute      yes       yes         no        no
+ *   fishhook        no        yes*        no        no
+ *     * exported symbols only, rebinding by symbol name (see fishhook caveat)
+ *
+ * Symbol name convention: names passed to findSymbolInImage:/
+ * findSymbolsInImage: are Substrate-style — C symbols carry no leading
+ * underscore ("malloc"); C++ mangled names keep their leading underscore.
+ * The Substrate/MS and fishhook backends pass names through unchanged;
+ * ElleKit accepts both forms.
+ *
+ * Threading: hook calls are not thread-safe with respect to the batch queue
+ * (enqueue and executeHooks must not race). The native Substitute API
+ * additionally requires the main thread.
+ *
+ * Batch storage lifetime: while batching, the caller's old_ptr is only
+ * written by executeHooks and is never retained past it.
+ *
+ * fishhook caveat: symbol-based rebinding only — private/interior addresses
+ * are not rebindable, there is no arm64e PAC handling, and old_ptr reflects
+ * the state at hook time (fishhook retains the rebinding for all future
+ * image loads).
+ */
+
 @interface HKSubstitutor : NSObject
 @property (assign, nonatomic) hookkit_lib_t types;
 @property (assign, nonatomic) BOOL batching;
+
+// The backend type actually in use (HK_LIB_NONE if no backend is available).
+@property (readonly, nonatomic) hookkit_lib_t activeType;
 
 // Internally loads selected hooking libraries and resolves symbols. Use if setting the types property manually after instance creation.
 - (void)initLibraries;
@@ -53,7 +87,7 @@ typedef const struct HKImage* HKImageRef;
 // Closes the image handle from openImage.
 - (void)closeImage:(HKImageRef)image;
 
-// Locates private symbols within a given image, and outputs results to outSymbols. image == NULL is supported if the hooking library implements MSFindSymbol. Returns HK_OK if successful.
+// Locates private symbols within a given image, and outputs results to outSymbols (missing symbols are NULL entries). image == NULL is supported if the hooking library implements MSFindSymbol. Returns HK_OK if all symbols were found, HK_ERR_PARTIAL if some, HK_ERR if none.
 - (hookkit_status_t)findSymbolsInImage:(HKImageRef)image symbolNames:(NSArray<NSString *> *)symbolNames outSymbols:(NSArray<NSValue *> **)outSymbols;
 
 // Just like findSymbolsInImage, but for one symbol. Returns the symbol address, or NULL if not found.
