@@ -3,6 +3,7 @@
 #import <string.h>
 #import <stdlib.h>
 #import <os/lock.h>
+#import <sys/xattr.h>
 
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
@@ -942,6 +943,86 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
     return result;
 }
 
+static ssize_t (*original_getxattr)(const char* path, const char* name, void* value, size_t size, u_int32_t position, int options);
+static ssize_t replaced_getxattr(const char* path, const char* name, void* value, size_t size, u_int32_t position, int options) {
+    SHADOW_TRIP(path, "getxattr");
+
+    ssize_t result = original_getxattr(path, name, value, size, position, options);
+
+    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return result;
+}
+
+static ssize_t (*original_listxattr)(const char* path, char* namebuf, size_t size, int options);
+static ssize_t replaced_listxattr(const char* path, char* namebuf, size_t size, int options) {
+    SHADOW_TRIP(path, "listxattr");
+
+    ssize_t result = original_listxattr(path, namebuf, size, options);
+
+    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return result;
+}
+
+// fd-based xattr/getattrlist variants: resolve the descriptor's path via
+// F_GETPATH and deny a restricted path with the same ENOENT the path-based
+// siblings answer. A descriptor whose path can't be named passes through
+// unfiltered (fail open — the fd may be a tty/pipe/socket with no path).
+static ssize_t (*original_fgetxattr)(int fd, const char* name, void* value, size_t size, u_int32_t position, int options);
+static ssize_t replaced_fgetxattr(int fd, const char* name, void* value, size_t size, u_int32_t position, int options) {
+    if(!isCallerExternal()) {
+        return original_fgetxattr(fd, name, value, size, position, options);
+    }
+
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_fgetxattr(fd, name, value, size, position, options);
+}
+
+static ssize_t (*original_flistxattr)(int fd, char* namebuf, size_t size, int options);
+static ssize_t replaced_flistxattr(int fd, char* namebuf, size_t size, int options) {
+    if(!isCallerExternal()) {
+        return original_flistxattr(fd, namebuf, size, options);
+    }
+
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_flistxattr(fd, namebuf, size, options);
+}
+
+static int (*original_fgetattrlist)(int fd, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
+static int replaced_fgetattrlist(int fd, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    if(!isCallerExternal()) {
+        return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
+    }
+
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
+}
+
 static int (*original_symlink)(const char* path1, const char* path2);
 static int replaced_symlink(const char* path1, const char* path2) {
     if(!isCallerExternal()) {
@@ -1869,6 +1950,11 @@ void shadowhook_libc(HKSubstitutor* hooks) {
         }
     }
     [hooks hookFunction:getattrlist withReplacement:replaced_getattrlist outOldPtr:(void **) &original_getattrlist];
+    [hooks hookFunction:getxattr withReplacement:replaced_getxattr outOldPtr:(void **) &original_getxattr];
+    [hooks hookFunction:listxattr withReplacement:replaced_listxattr outOldPtr:(void **) &original_listxattr];
+    [hooks hookFunction:fgetxattr withReplacement:replaced_fgetxattr outOldPtr:(void **) &original_fgetxattr];
+    [hooks hookFunction:flistxattr withReplacement:replaced_flistxattr outOldPtr:(void **) &original_flistxattr];
+    [hooks hookFunction:fgetattrlist withReplacement:replaced_fgetattrlist outOldPtr:(void **) &original_fgetattrlist];
     [hooks hookFunction:symlink withReplacement:replaced_symlink outOldPtr:(void **) &original_symlink];
     [hooks hookFunction:rename withReplacement:replaced_rename outOldPtr:(void **) &original_rename];
     [hooks hookFunction:remove withReplacement:replaced_remove outOldPtr:(void **) &original_remove];
