@@ -615,63 +615,63 @@ static id replaced_imp_getBlock(IMP anImp) {
 
 void shadowhook_objc(HKSubstitutor* hooks) {
     // %init(shadowhook_objc);
-    MSHookFunction(class_getImageName, replaced_class_getImageName, (void **) &original_class_getImageName);
-    MSHookFunction(objc_copyClassNamesForImage, replaced_objc_copyClassNamesForImage, (void **) &original_objc_copyClassNamesForImage);
-    MSHookFunction(objc_copyImageNames, replaced_objc_copyImageNames, (void **) &original_objc_copyImageNames);
-    MSHookFunction(method_getImplementation, replaced_method_getImplementation, (void **) &original_method_getImplementation);
-    MSHookFunction(class_getMethodImplementation, replaced_class_getMethodImplementation, (void **) &original_class_getMethodImplementation);
+    [hooks hookFunction:class_getImageName withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
+    [hooks hookFunction:objc_copyClassNamesForImage withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];
+    [hooks hookFunction:objc_copyImageNames withReplacement:replaced_objc_copyImageNames outOldPtr:(void **) &original_objc_copyImageNames];
+    [hooks hookFunction:method_getImplementation withReplacement:replaced_method_getImplementation outOldPtr:(void **) &original_method_getImplementation];
+    [hooks hookFunction:class_getMethodImplementation withReplacement:replaced_class_getMethodImplementation outOldPtr:(void **) &original_class_getMethodImplementation];
 
     void* imp_getBlock_ptr = dlsym(RTLD_DEFAULT, "imp_getBlock");
     if(imp_getBlock_ptr) {
-        MSHookFunction(imp_getBlock_ptr, replaced_imp_getBlock, (void **) &original_imp_getBlock);
+        [hooks hookFunction:imp_getBlock_ptr withReplacement:replaced_imp_getBlock outOldPtr:(void **) &original_imp_getBlock];
     }
 }
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
-    MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
+    [hooks hookFunction:NSClassFromString withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
 
     // Class lookup / enumeration (plan Wave 1c). objc_getRequiredClass is
     // skipped: its fatal contract (abort on missing class) makes a filtered
     // miss a crash, and it is not a usable probe.
-    MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
-    MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
-    MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
-    MSHookFunction(objc_getClassList, replaced_objc_getClassList, (void **) &original_objc_getClassList);
-    MSHookFunction(objc_copyClassList, replaced_objc_copyClassList, (void **) &original_objc_copyClassList);
+    [hooks hookFunction:objc_getClass withReplacement:replaced_objc_getClass outOldPtr:(void **) &original_objc_getClass];
+    [hooks hookFunction:objc_lookUpClass withReplacement:replaced_objc_lookUpClass outOldPtr:(void **) &original_objc_lookUpClass];
+    [hooks hookFunction:objc_getMetaClass withReplacement:replaced_objc_getMetaClass outOldPtr:(void **) &original_objc_getMetaClass];
+    [hooks hookFunction:objc_getClassList withReplacement:replaced_objc_getClassList outOldPtr:(void **) &original_objc_getClassList];
+    [hooks hookFunction:objc_copyClassList withReplacement:replaced_objc_copyClassList outOldPtr:(void **) &original_objc_copyClassList];
 
     void* enumerateClassesPtr = dlsym(RTLD_DEFAULT, "objc_enumerateClasses");
 
     if(enumerateClassesPtr) {
-        MSHookFunction(enumerateClassesPtr, replaced_objc_enumerateClasses, (void **) &original_objc_enumerateClasses);
+        [hooks hookFunction:enumerateClassesPtr withReplacement:replaced_objc_enumerateClasses outOldPtr:(void **) &original_objc_enumerateClasses];
     }
 
     // Method metadata (plan Wave 3).
-    MSHookFunction(class_copyMethodList, replaced_class_copyMethodList, (void **) &original_class_copyMethodList);
-    MSHookFunction(class_getInstanceMethod, replaced_class_getInstanceMethod, (void **) &original_class_getInstanceMethod);
-    MSHookFunction(class_getClassMethod, replaced_class_getClassMethod, (void **) &original_class_getClassMethod);
+    [hooks hookFunction:class_copyMethodList withReplacement:replaced_class_copyMethodList outOldPtr:(void **) &original_class_copyMethodList];
+    [hooks hookFunction:class_getInstanceMethod withReplacement:replaced_class_getInstanceMethod outOldPtr:(void **) &original_class_getInstanceMethod];
+    [hooks hookFunction:class_getClassMethod withReplacement:replaced_class_getClassMethod outOldPtr:(void **) &original_class_getClassMethod];
 
     void* methodImplAndNamePtr = dlsym(RTLD_DEFAULT, "_method_getImplementationAndName");
 
     if(methodImplAndNamePtr) {
-        MSHookFunction(methodImplAndNamePtr, replaced_method_getImplementationAndName, (void **) &original_method_getImplementationAndName);
+        [hooks hookFunction:methodImplAndNamePtr withReplacement:replaced_method_getImplementationAndName outOldPtr:(void **) &original_method_getImplementationAndName];
     }
 
     void* stretPtr = dlsym(RTLD_DEFAULT, "class_getMethodImplementation_stret");
 
     if(stretPtr) {
-        MSHookFunction(stretPtr, replaced_class_getMethodImplementation_stret, (void **) &original_class_getMethodImplementation_stret);
+        [hooks hookFunction:stretPtr withReplacement:replaced_class_getMethodImplementation_stret outOldPtr:(void **) &original_class_getMethodImplementation_stret];
     }
 
     void* copyClassesForImagePtr = dlsym(RTLD_DEFAULT, "objc_copyClassesForImage");
 
     if(copyClassesForImagePtr) {
-        MSHookFunction(copyClassesForImagePtr, replaced_objc_copyClassesForImage, (void **) &original_objc_copyClassesForImage);
+        [hooks hookFunction:copyClassesForImagePtr withReplacement:replaced_objc_copyClassesForImage outOldPtr:(void **) &original_objc_copyClassesForImage];
     }
 
     void* copyClassNamesForImageHeaderPtr = dlsym(RTLD_DEFAULT, "objc_copyClassNamesForImageHeader");
 
     if(copyClassNamesForImageHeaderPtr) {
-        MSHookFunction(copyClassNamesForImageHeaderPtr, replaced_objc_copyClassNamesForImageHeader, (void **) &original_objc_copyClassNamesForImageHeader);
+        [hooks hookFunction:copyClassNamesForImageHeaderPtr withReplacement:replaced_objc_copyClassNamesForImageHeader outOldPtr:(void **) &original_objc_copyClassNamesForImageHeader];
     }
 
     // Chained-hook SPIs (plan Wave 3): capture the native predecessors and
@@ -680,7 +680,7 @@ void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     void* setHookGetImageNamePtr = dlsym(RTLD_DEFAULT, "objc_setHook_getImageName");
 
     if(setHookGetImageNamePtr) {
-        MSHookFunction(setHookGetImageNamePtr, replaced_objc_setHook_getImageName, (void **) &original_objc_setHook_getImageName);
+        [hooks hookFunction:setHookGetImageNamePtr withReplacement:replaced_objc_setHook_getImageName outOldPtr:(void **) &original_objc_setHook_getImageName];
 
         objc_hook_getImageName native = NULL;
         objc_hook_getImageName restore = NULL;
@@ -693,7 +693,7 @@ void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     void* setHookGetClassPtr = dlsym(RTLD_DEFAULT, "objc_setHook_getClass");
 
     if(setHookGetClassPtr) {
-        MSHookFunction(setHookGetClassPtr, replaced_objc_setHook_getClass, (void **) &original_objc_setHook_getClass);
+        [hooks hookFunction:setHookGetClassPtr withReplacement:replaced_objc_setHook_getClass outOldPtr:(void **) &original_objc_setHook_getClass];
 
         objc_hook_getClass native = NULL;
         objc_hook_getClass restore = NULL;

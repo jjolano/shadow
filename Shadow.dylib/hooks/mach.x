@@ -180,28 +180,28 @@ static kern_return_t replaced_mach_port_names(ipc_space_t task, mach_port_name_a
 }
 
 void shadowhook_mach(HKSubstitutor* hooks) {
-    MSHookFunction(bootstrap_check_in, replaced_bootstrap_check_in, (void **) &original_bootstrap_check_in);
-    MSHookFunction(bootstrap_look_up, replaced_bootstrap_look_up, (void **) &original_bootstrap_look_up);
+    [hooks hookFunction:bootstrap_check_in withReplacement:replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
+    [hooks hookFunction:bootstrap_look_up withReplacement:replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 
     // Runtime-resolve the private siblings; skip cleanly when absent.
-    void* sym = MSFindSymbol(NULL, "_bootstrap_check_in2");
-    if(sym) MSHookFunction(sym, replaced_bootstrap_check_in2, (void **) &original_bootstrap_check_in2);
+    void* sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_check_in2"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in2 outOldPtr:(void **) &original_bootstrap_check_in2];
 
-    sym = MSFindSymbol(NULL, "_bootstrap_check_in3");
-    if(sym) MSHookFunction(sym, replaced_bootstrap_check_in3, (void **) &original_bootstrap_check_in3);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_check_in3"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in3 outOldPtr:(void **) &original_bootstrap_check_in3];
 
-    sym = MSFindSymbol(NULL, "_bootstrap_look_up2");
-    if(sym) MSHookFunction(sym, replaced_bootstrap_look_up2, (void **) &original_bootstrap_look_up2);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up2"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up2 outOldPtr:(void **) &original_bootstrap_look_up2];
 
-    sym = MSFindSymbol(NULL, "_bootstrap_look_up3");
-    if(sym) MSHookFunction(sym, replaced_bootstrap_look_up3, (void **) &original_bootstrap_look_up3);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up3"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up3 outOldPtr:(void **) &original_bootstrap_look_up3];
 
-    sym = MSFindSymbol(NULL, "_bootstrap_look_up_per_user");
-    if(sym) MSHookFunction(sym, replaced_bootstrap_look_up_per_user, (void **) &original_bootstrap_look_up_per_user);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up_per_user"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up_per_user outOldPtr:(void **) &original_bootstrap_look_up_per_user];
 
-    sym = MSFindSymbol(NULL, "_pid_for_task");
-    if(sym) MSHookFunction(sym, replaced_pid_for_task, (void **) &original_pid_for_task);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_pid_for_task"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_pid_for_task outOldPtr:(void **) &original_pid_for_task];
 
-    sym = MSFindSymbol(NULL, "_mach_port_names");
-    if(sym) MSHookFunction(sym, replaced_mach_port_names, (void **) &original_mach_port_names);
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_mach_port_names"];
+    if(sym) [hooks hookFunction:sym withReplacement:replaced_mach_port_names outOldPtr:(void **) &original_mach_port_names];
 }

@@ -30,17 +30,13 @@
 #import "../../common.h"
 #import <Shadow.h>
 
-#import <substrate.h>
 #import <HookKit.h>
 
-// HookKit overrides
-#ifdef hookkit_h
-#define MSHookFunction(a,b,c)   [hooks hookFunction:a withReplacement:b outOldPtr:c]
-#define MSHookMessageEx         HKHookMessage
-#define MSGetImageByName        HKOpenImage
-#define MSFindSymbol            HKFindSymbol
-#define MSCloseImage            HKCloseImage
-#endif
+// Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks, and
+// there is no Logos generator that targets HookKit directly. Route that
+// single substrate-compat name into HookKit's native API; everything else
+// uses HKSubstitutor calls directly.
+#define MSHookMessageEx HKHookMessage
 
 // private symbols
 #import "../../vendor/apple/dyld_priv.h"

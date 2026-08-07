@@ -1838,73 +1838,73 @@ static int replaced_openat_authenticated_np(int dirfd, const char* path, struct 
 }
 
 void shadowhook_libc(HKSubstitutor* hooks) {
-    MSHookFunction(access, replaced_access, (void **) &original_access);
-    MSHookFunction(chdir, replaced_chdir, (void **) &original_chdir);
-    MSHookFunction(chroot, replaced_chroot, (void **) &original_chroot);
-    MSHookFunction(creat, replaced_creat, (void **) &original_creat);
-    MSHookFunction(statfs, replaced_statfs, (void **) &original_statfs);
-    MSHookFunction(fstatfs, replaced_fstatfs, (void **) &original_fstatfs);
-    MSHookFunction(statvfs, replaced_statvfs, (void **) &original_statvfs);
-    MSHookFunction(fstatvfs, replaced_fstatvfs, (void **) &original_fstatvfs);
-    MSHookFunction(stat, replaced_stat, (void **) &original_stat);
-    MSHookFunction(lstat, replaced_lstat, (void **) &original_lstat);
-    MSHookFunction(faccessat, replaced_faccessat, (void **) &original_faccessat);
-    MSHookFunction(readdir_r, replaced_readdir_r, (void **) &original_readdir_r);
-    MSHookFunction(readdir, replaced_readdir, (void **) &original_readdir);
-    MSHookFunction(closedir, replaced_closedir, (void **) &original_closedir);
-    MSHookFunction(fopen, replaced_fopen, (void **) &original_fopen);
-    MSHookFunction(freopen, replaced_freopen, (void **) &original_freopen);
-    MSHookFunction(realpath, replaced_realpath, (void **) &original_realpath);
-    MSHookFunction(readlink, replaced_readlink, (void **) &original_readlink);
-    MSHookFunction(readlinkat, replaced_readlinkat, (void **) &original_readlinkat);
-    MSHookFunction(link, replaced_link, (void **) &original_link);
-    // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
-    MSHookFunction(getmntinfo, replaced_getmntinfo, (void **) &original_getmntinfo);
+    [hooks hookFunction:access withReplacement:replaced_access outOldPtr:(void **) &original_access];
+    [hooks hookFunction:chdir withReplacement:replaced_chdir outOldPtr:(void **) &original_chdir];
+    [hooks hookFunction:chroot withReplacement:replaced_chroot outOldPtr:(void **) &original_chroot];
+    [hooks hookFunction:creat withReplacement:replaced_creat outOldPtr:(void **) &original_creat];
+    [hooks hookFunction:statfs withReplacement:replaced_statfs outOldPtr:(void **) &original_statfs];
+    [hooks hookFunction:fstatfs withReplacement:replaced_fstatfs outOldPtr:(void **) &original_fstatfs];
+    [hooks hookFunction:statvfs withReplacement:replaced_statvfs outOldPtr:(void **) &original_statvfs];
+    [hooks hookFunction:fstatvfs withReplacement:replaced_fstatvfs outOldPtr:(void **) &original_fstatvfs];
+    [hooks hookFunction:stat withReplacement:replaced_stat outOldPtr:(void **) &original_stat];
+    [hooks hookFunction:lstat withReplacement:replaced_lstat outOldPtr:(void **) &original_lstat];
+    [hooks hookFunction:faccessat withReplacement:replaced_faccessat outOldPtr:(void **) &original_faccessat];
+    [hooks hookFunction:readdir_r withReplacement:replaced_readdir_r outOldPtr:(void **) &original_readdir_r];
+    [hooks hookFunction:readdir withReplacement:replaced_readdir outOldPtr:(void **) &original_readdir];
+    [hooks hookFunction:closedir withReplacement:replaced_closedir outOldPtr:(void **) &original_closedir];
+    [hooks hookFunction:fopen withReplacement:replaced_fopen outOldPtr:(void **) &original_fopen];
+    [hooks hookFunction:freopen withReplacement:replaced_freopen outOldPtr:(void **) &original_freopen];
+    [hooks hookFunction:realpath withReplacement:replaced_realpath outOldPtr:(void **) &original_realpath];
+    [hooks hookFunction:readlink withReplacement:replaced_readlink outOldPtr:(void **) &original_readlink];
+    [hooks hookFunction:readlinkat withReplacement:replaced_readlinkat outOldPtr:(void **) &original_readlinkat];
+    [hooks hookFunction:link withReplacement:replaced_link outOldPtr:(void **) &original_link];
+    // [hooks hookFunction:scandir withReplacement:replaced_scandir outOldPtr:(void **) &original_scandir];
+    [hooks hookFunction:getmntinfo withReplacement:replaced_getmntinfo outOldPtr:(void **) &original_getmntinfo];
     {
         // getmntinfo_r_np is an iOS 16+ export; resolve at runtime and skip
         // cleanly on systems that don't provide it.
         void* getmntinfo_r_np_sym = dlsym(RTLD_DEFAULT, "getmntinfo_r_np");
 
         if(getmntinfo_r_np_sym) {
-            MSHookFunction(getmntinfo_r_np_sym, shdw_replaced_getmntinfo_r_np, (void **) &original_getmntinfo_r_np);
+            [hooks hookFunction:getmntinfo_r_np_sym withReplacement:shdw_replaced_getmntinfo_r_np outOldPtr:(void **) &original_getmntinfo_r_np];
         }
     }
-    MSHookFunction(getattrlist, replaced_getattrlist, (void **) &original_getattrlist);
-    MSHookFunction(symlink, replaced_symlink, (void **) &original_symlink);
-    MSHookFunction(rename, replaced_rename, (void **) &original_rename);
-    MSHookFunction(remove, replaced_remove, (void **) &original_remove);
-    MSHookFunction(unlink, replaced_unlink, (void **) &original_unlink);
-    MSHookFunction(unlinkat, replaced_unlinkat, (void **) &original_unlinkat);
-    MSHookFunction(linkat, replaced_linkat, (void **) &original_linkat);
-    MSHookFunction(symlinkat, replaced_symlinkat, (void **) &original_symlinkat);
-    MSHookFunction(renameat, replaced_renameat, (void **) &original_renameat);
-    MSHookFunction(mkdirat, replaced_mkdirat, (void **) &original_mkdirat);
+    [hooks hookFunction:getattrlist withReplacement:replaced_getattrlist outOldPtr:(void **) &original_getattrlist];
+    [hooks hookFunction:symlink withReplacement:replaced_symlink outOldPtr:(void **) &original_symlink];
+    [hooks hookFunction:rename withReplacement:replaced_rename outOldPtr:(void **) &original_rename];
+    [hooks hookFunction:remove withReplacement:replaced_remove outOldPtr:(void **) &original_remove];
+    [hooks hookFunction:unlink withReplacement:replaced_unlink outOldPtr:(void **) &original_unlink];
+    [hooks hookFunction:unlinkat withReplacement:replaced_unlinkat outOldPtr:(void **) &original_unlinkat];
+    [hooks hookFunction:linkat withReplacement:replaced_linkat outOldPtr:(void **) &original_linkat];
+    [hooks hookFunction:symlinkat withReplacement:replaced_symlinkat outOldPtr:(void **) &original_symlinkat];
+    [hooks hookFunction:renameat withReplacement:replaced_renameat outOldPtr:(void **) &original_renameat];
+    [hooks hookFunction:mkdirat withReplacement:replaced_mkdirat outOldPtr:(void **) &original_mkdirat];
 
     if(@available(iOS 11, *)) {
         // utimensat is iOS 11+; skip on older systems.
-        MSHookFunction(utimensat, replaced_utimensat, (void **) &original_utimensat);
+        [hooks hookFunction:utimensat withReplacement:replaced_utimensat outOldPtr:(void **) &original_utimensat];
     }
 
-    MSHookFunction(fchmodat, replaced_fchmodat, (void **) &original_fchmodat);
-    MSHookFunction(rmdir, replaced_rmdir, (void **) &original_rmdir);
-    MSHookFunction(pathconf, replaced_pathconf, (void **) &original_pathconf);
-    MSHookFunction(fpathconf, replaced_fpathconf, (void **) &original_fpathconf);
-    MSHookFunction(utimes, replaced_utimes, (void **) &original_utimes);
-    MSHookFunction(futimes, replaced_futimes, (void **) &original_futimes);
-    MSHookFunction(fchdir, replaced_fchdir, (void **) &original_fchdir);
-    MSHookFunction(getfsstat, replaced_getfsstat, (void **) &original_getfsstat);
-    MSHookFunction(fstat, replaced_fstat, (void **) &original_fstat);
-    MSHookFunction(fstatat, replaced_fstatat, (void **) &original_fstatat);
+    [hooks hookFunction:fchmodat withReplacement:replaced_fchmodat outOldPtr:(void **) &original_fchmodat];
+    [hooks hookFunction:rmdir withReplacement:replaced_rmdir outOldPtr:(void **) &original_rmdir];
+    [hooks hookFunction:pathconf withReplacement:replaced_pathconf outOldPtr:(void **) &original_pathconf];
+    [hooks hookFunction:fpathconf withReplacement:replaced_fpathconf outOldPtr:(void **) &original_fpathconf];
+    [hooks hookFunction:utimes withReplacement:replaced_utimes outOldPtr:(void **) &original_utimes];
+    [hooks hookFunction:futimes withReplacement:replaced_futimes outOldPtr:(void **) &original_futimes];
+    [hooks hookFunction:fchdir withReplacement:replaced_fchdir outOldPtr:(void **) &original_fchdir];
+    [hooks hookFunction:getfsstat withReplacement:replaced_getfsstat outOldPtr:(void **) &original_getfsstat];
+    [hooks hookFunction:fstat withReplacement:replaced_fstat outOldPtr:(void **) &original_fstat];
+    [hooks hookFunction:fstatat withReplacement:replaced_fstatat outOldPtr:(void **) &original_fstatat];
 }
 
 void shadowhook_libc_envvar(HKSubstitutor* hooks) {
-    MSHookFunction(getenv, replaced_getenv, (void **) &original_getenv);
+    [hooks hookFunction:getenv withReplacement:replaced_getenv outOldPtr:(void **) &original_getenv];
 }
 
 void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
-    MSHookFunction(open, replaced_open, (void **) &original_open);
-    MSHookFunction(openat, replaced_openat, (void **) &original_openat);
-    MSHookFunction(__opendir2, replaced___opendir2, (void **) &original___opendir2);
+    [hooks hookFunction:open withReplacement:replaced_open outOldPtr:(void **) &original_open];
+    [hooks hookFunction:openat withReplacement:replaced_openat outOldPtr:(void **) &original_openat];
+    [hooks hookFunction:__opendir2 withReplacement:replaced___opendir2 outOldPtr:(void **) &original___opendir2];
 
     // The stat64 family and protected-open variants are not exported on
     // modern iOS; resolve at runtime and skip cleanly when absent.
@@ -1922,13 +1922,13 @@ void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
         void* target = dlsym(RTLD_DEFAULT, shdw_lowlevel_symbols[i].name);
 
         if(target) {
-            MSHookFunction(target, shdw_lowlevel_symbols[i].replacement, shdw_lowlevel_symbols[i].outOld);
+            [hooks hookFunction:target withReplacement:shdw_lowlevel_symbols[i].replacement outOldPtr:shdw_lowlevel_symbols[i].outOld];
         }
     }
 }
 
 void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
-    MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
-    MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
-    MSHookFunction(getppid, replaced_getppid, (void **) &original_getppid);
+    [hooks hookFunction:ptrace withReplacement:replaced_ptrace outOldPtr:(void **) &original_ptrace];
+    [hooks hookFunction:sysctl withReplacement:replaced_sysctl outOldPtr:(void **) &original_sysctl];
+    [hooks hookFunction:getppid withReplacement:replaced_getppid outOldPtr:(void **) &original_getppid];
 }
