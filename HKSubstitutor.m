@@ -674,10 +674,69 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 }
 @end
 
+// Shared dlfcn image lookup for the backends whose engines bring no image API
+// of their own (fishhook, Dobby, Frida) — the three had byte-identical copies.
+// Deliberately not <HKSubstitutorBackend>-conforming: that would warn on the
+// six hooking methods it has no business implementing. Subclasses declare the
+// protocol themselves.
+// ponytail: the native backend has this same shape over hk_native_open_image/
+// _find_symbol/_close_image; parameterising open/find/close as ivars to absorb
+// it costs more lines than the copy does. Revisit if a fifth copy appears.
+// Declared here, not just defined below: -Wprotocol resolves a subclass's
+// conformance against declared methods, so the inherited trio must be visible
+// at the subclass @interface.
+@interface HKDlfcnBackend : NSObject
+- (HKImageRef)openImage:(NSString *)path;
+- (void)closeImage:(HKImageRef)image;
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName;
+@end
+
+@implementation HKDlfcnBackend
+
+- (HKImageRef)openImage:(NSString *)path {
+    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
+    // contract that openImage does not load images
+    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(image) {
+        dlclose((void *)image);
+    }
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return dlsym((void *)image, symbol);
+    }
+
+    // image == NULL: search the default scope, then all loaded dyld images
+    void *found = dlsym(RTLD_DEFAULT, symbol);
+
+    if(found) {
+        return found;
+    }
+
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
+
+        if(!handle) {
+            return NULL;
+        }
+
+        void *result = dlsym(handle, symbol);
+        dlclose(handle);
+        return result;
+    });
+}
+@end
+
 // fishhook backend: rebind_symbols for C functions; dlsym/dyld iteration for symbol lookup.
 // Batching is not supported: function hooks are applied immediately, and ObjC message
 // hooks and memory patches are not supported at all.
-@interface HKFishhookBackend : NSObject <HKSubstitutorBackend>
+@interface HKFishhookBackend : HKDlfcnBackend <HKSubstitutorBackend>
 @end
 
 // fishhook's rebind_symbols retains the name and replaced pointers of each
@@ -799,45 +858,6 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
     // nothing pending: function hooks are applied at hookFunction: time
     return HK_OK;
-}
-
-- (HKImageRef)openImage:(NSString *)path {
-    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
-    // contract that openImage does not load images
-    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
-}
-
-- (void)closeImage:(HKImageRef)image {
-    if(image) {
-        dlclose((void *)image);
-    }
-}
-
-- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
-    const char *symbol = [symbolName UTF8String];
-
-    if(image) {
-        return dlsym((void *)image, symbol);
-    }
-
-    // image == NULL: search the default scope, then all loaded dyld images
-    void *found = dlsym(RTLD_DEFAULT, symbol);
-
-    if(found) {
-        return found;
-    }
-
-    return hk_search_loaded_images(^void *(const char *image_name) {
-        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
-
-        if(!handle) {
-            return NULL;
-        }
-
-        void *result = dlsym(handle, symbol);
-        dlclose(handle);
-        return result;
-    });
 }
 @end
 
@@ -1121,7 +1141,7 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 // arm64/arm64e only — the static lib has no armv7 slice, so the @interface
 // stays visible for the registry but the @implementation is arch-gated and
 // dobby_available() reports NO on armv7.
-@interface HKDobbyBackend : NSObject <HKSubstitutorBackend> {
+@interface HKDobbyBackend : HKDlfcnBackend <HKSubstitutorBackend> {
     int _lastErrno;
 }
 @end
@@ -1174,45 +1194,6 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
     // nothing pending: function hooks and memory patches apply at hook time
     return HK_OK;
 }
-
-- (HKImageRef)openImage:(NSString *)path {
-    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
-    // contract that openImage does not load images
-    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
-}
-
-- (void)closeImage:(HKImageRef)image {
-    if(image) {
-        dlclose((void *)image);
-    }
-}
-
-- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
-    const char *symbol = [symbolName UTF8String];
-
-    if(image) {
-        return dlsym((void *)image, symbol);
-    }
-
-    // image == NULL: search the default scope, then all loaded dyld images
-    void *found = dlsym(RTLD_DEFAULT, symbol);
-
-    if(found) {
-        return found;
-    }
-
-    return hk_search_loaded_images(^void *(const char *image_name) {
-        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
-
-        if(!handle) {
-            return NULL;
-        }
-
-        void *result = dlsym(handle, symbol);
-        dlclose(handle);
-        return result;
-    });
-}
 @end
 #else   // !arm64: stub — the class symbol must exist for the registry entry,
         // but dobby_available() is NO on armv7 so this is never instantiated.
@@ -1244,17 +1225,9 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
     return HK_OK;
 }
-
-- (HKImageRef)openImage:(NSString *)path {
-    return NULL;
-}
-
-- (void)closeImage:(HKImageRef)image {
-}
-
-- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
-    return NULL;
-}
+// image methods inherited from HKDlfcnBackend: they were NULL stubs here, but
+// dobby_available() is NO on armv7 so this class is never instantiated — the
+// stub existed only so the class symbol resolves for the registry entry.
 @end
 #endif
 
@@ -1274,7 +1247,7 @@ static int (*fn_hkgum_end_transaction)(void) = NULL;
 // Frida backend: inline hooking via frida-gum, loaded at runtime through the
 // HKGum.dylib wrapper (vendor/gum/hkgum.c). No ObjC message hooking and no
 // memory patching; batching is supported via gum interceptor transactions.
-@interface HKFridaBackend : NSObject <HKSubstitutorBackend>
+@interface HKFridaBackend : HKDlfcnBackend <HKSubstitutorBackend>
 @end
 
 @implementation HKFridaBackend {
@@ -1355,45 +1328,6 @@ static int (*fn_hkgum_end_transaction)(void) = NULL;
     _lastErrno = failureErrno;
 
     return hk_batch_status(succeeded, total);
-}
-
-- (HKImageRef)openImage:(NSString *)path {
-    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
-    // contract that openImage does not load images
-    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
-}
-
-- (void)closeImage:(HKImageRef)image {
-    if(image) {
-        dlclose((void *)image);
-    }
-}
-
-- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
-    const char *symbol = [symbolName UTF8String];
-
-    if(image) {
-        return dlsym((void *)image, symbol);
-    }
-
-    // image == NULL: search the default scope, then all loaded dyld images
-    void *found = dlsym(RTLD_DEFAULT, symbol);
-
-    if(found) {
-        return found;
-    }
-
-    return hk_search_loaded_images(^void *(const char *image_name) {
-        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
-
-        if(!handle) {
-            return NULL;
-        }
-
-        void *result = dlsym(handle, symbol);
-        dlclose(handle);
-        return result;
-    });
 }
 @end
 
@@ -1530,6 +1464,7 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
 @interface HKSubstitutor ()
 - (void)noteHookResult:(hookkit_status_t)status;
 - (hookkit_lib_t)backendType;
+- (BOOL)enqueueKind:(HKHookKind)kind status:(hookkit_status_t *)outStatus build:(void (^)(HKHookOperation *hook))build;
 @end
 
 @implementation HKSubstitutor {
@@ -1706,36 +1641,53 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     return defaultSubstitutor;
 }
 
+// Shared tail of the three batching-capable hook entry points: backend
+// presence, the batching decision, the kind check and the enqueue. Returns YES
+// when the call is fully handled (result in *outStatus), NO when the caller
+// should hook immediately. `build` fills in the kind-specific fields and only
+// runs on the enqueue path, so a non-batched hook allocates nothing extra.
+//
+// The caller's argument guard deliberately stays at the call site, ahead of
+// this: hookMemory: copies the patch bytes in `build`, and dataWithBytes:NULL
+// would crash before a guard in here could reject it.
+- (BOOL)enqueueKind:(HKHookKind)kind status:(hookkit_status_t *)outStatus build:(void (^)(HKHookOperation *hook))build {
+    if(!backend) {
+        *outStatus = HK_ERR_NOT_SUPPORTED;
+    } else if(!batching || ![backend batchingSupported]) {
+        return NO;
+    } else if(![backend supportsHookKind:kind]) {
+        *outStatus = HK_ERR_NOT_SUPPORTED;
+    } else {
+        HKHookOperation *hook = [HKHookOperation new];
+        hook->kind = kind;
+        build(hook);
+
+        @synchronized(self) {
+            [batchHooks addObject:hook];
+        }
+
+        *outStatus = HK_OK;
+    }
+
+    [self noteHookResult:*outStatus];
+    return YES;
+}
+
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     if(!objcClass || !selector || !replacement) {
         [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
         return HK_ERR_INVALID_ARGUMENT;
     }
 
-    if(!backend) {
-        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-        return HK_ERR_NOT_SUPPORTED;
-    }
+    hookkit_status_t status;
 
-    if(batching && [backend batchingSupported]) {
-        if(![backend supportsHookKind:HKHookKindMessage]) {
-            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-            return HK_ERR_NOT_SUPPORTED;
-        }
-
-        HKHookOperation *hook = [HKHookOperation new];
-        hook->kind = HKHookKindMessage;
+    if([self enqueueKind:HKHookKindMessage status:&status build:^(HKHookOperation *hook) {
         hook->objcClass = objcClass;
         hook->selector = selector;
         hook->replacement = replacement;
         hook->callerOrig = old_ptr;
-
-        @synchronized(self) {
-            [batchHooks addObject:hook];
-        }
-
-        [self noteHookResult:HK_OK];
-        return HK_OK;
+    }]) {
+        return status;
     }
 
     // owned cell: the backend never touches the caller's pointer directly
@@ -1756,29 +1708,14 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
         return HK_ERR_INVALID_ARGUMENT;
     }
 
-    if(!backend) {
-        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-        return HK_ERR_NOT_SUPPORTED;
-    }
+    hookkit_status_t status;
 
-    if(batching && [backend batchingSupported]) {
-        if(![backend supportsHookKind:HKHookKindFunction]) {
-            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-            return HK_ERR_NOT_SUPPORTED;
-        }
-
-        HKHookOperation *hook = [HKHookOperation new];
-        hook->kind = HKHookKindFunction;
+    if([self enqueueKind:HKHookKindFunction status:&status build:^(HKHookOperation *hook) {
         hook->function = function;
         hook->replacement = replacement;
         hook->callerOrig = old_ptr;
-
-        @synchronized(self) {
-            [batchHooks addObject:hook];
-        }
-
-        [self noteHookResult:HK_OK];
-        return HK_OK;
+    }]) {
+        return status;
     }
 
     // owned cell: the backend never touches the caller's pointer directly
@@ -1799,30 +1736,15 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
         return HK_ERR_INVALID_ARGUMENT;
     }
 
-    if(!backend) {
-        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-        return HK_ERR_NOT_SUPPORTED;
-    }
+    hookkit_status_t status;
 
-    if(batching && [backend batchingSupported]) {
-        if(![backend supportsHookKind:HKHookKindMemory]) {
-            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
-            return HK_ERR_NOT_SUPPORTED;
-        }
-
-        HKHookOperation *hook = [HKHookOperation new];
-        hook->kind = HKHookKindMemory;
+    if([self enqueueKind:HKHookKindMemory status:&status build:^(HKHookOperation *hook) {
         hook->target = target;
         // copy the patch bytes now: the caller's buffer must not outlive the call
         hook->data = [NSData dataWithBytes:data length:size];
         hook->size = size;
-
-        @synchronized(self) {
-            [batchHooks addObject:hook];
-        }
-
-        [self noteHookResult:HK_OK];
-        return HK_OK;
+    }]) {
+        return status;
     }
 
     hookkit_status_t result = [backend hookMemory:target withData:data size:size];
