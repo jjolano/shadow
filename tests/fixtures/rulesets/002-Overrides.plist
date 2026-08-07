@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RulesetInfo</key>
+	<dict>
+		<key>Name</key>
+		<string>Test Overrides</string>
+		<key>Author</key>
+		<string>harness</string>
+	</dict>
+	<key>WhitelistExactPaths</key>
+	<array>
+		<string>/usr/bin/ssh</string>
+	</array>
+	<key>WhitelistPaths</key>
+	<array>
+		<string>/usr/sbin/sshd</string>
+		<string>/var/mobile/Media</string>
+	</array>
+</dict>
+</plist>

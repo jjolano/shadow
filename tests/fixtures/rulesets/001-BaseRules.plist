@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RulesetInfo</key>
+	<dict>
+		<key>Name</key>
+		<string>Test Base Rules</string>
+		<key>Author</key>
+		<string>harness</string>
+	</dict>
+	<key>BlacklistExactPaths</key>
+	<array>
+		<string>/usr/bin/ssh</string>
+		<string>/usr/sbin/fstab</string>
+		<string>/usr/sbin/sshd_config</string>
+		<string>/Applications/Cydia.app</string>
+		<string>/Applications/Evil.app</string>
+		<string>/var/jb</string>
+		<string>/usr/lib/libjailbreak.dylib</string>
+		<string>/usr/lib/libghost.dylib</string>
+	</array>
+	<key>BlacklistPaths</key>
+	<array>
+		<string>/var/binpack</string>
+		<string>/private/preboot</string>
+		<string>/cores</string>
+		<string>/var/mobile/Media/EvilDir</string>
+	</array>
+	<key>BlacklistURLSchemes</key>
+	<array>
+		<string>cydia</string>
+		<string>sileo</string>
+		<string>zbra</string>
+	</array>
+	<key>BlacklistBundleIDs</key>
+	<array>
+		<string>com.example.tracker</string>
+	</array>
+	<key>BlacklistPredicates</key>
+	<array>
+		<string>SELF CONTAINS 'jailbreak'</string>
+		<string>SELF LIKE[c] '*/Cydia.app*'</string>
+	</array>
+</dict>
+</plist>
