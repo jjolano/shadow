@@ -6,6 +6,12 @@
 
 // use of LSApplicationWorkspace seems to be known for getting App Store rejected, but you never know...
 
+// TODO: LaunchServices/MobileInstallation payload content filtering —
+// restricted app IDs inside allowed install plists (LSApplicationProxy
+// reads of /var/mobile/Library/MobileInstallation or LS install records)
+// are not yet filtered; needs the NSFileManager/NSString read paths to
+// post-filter plist payloads by bundle ID.
+
 // C0-3: hidden-app predicate — restricted bundle URL OR case-insensitive
 // restricted bundle ID. Applied to every proxy-returning surface so a proxy
 // can't leak through a variant that only checks one of the two signals.

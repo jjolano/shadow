@@ -1,6 +1,9 @@
 #import "hooks.h"
 
 %group shadowhook_DeviceCheck
+// TODO: late-loaded detector-class hook retry — detector classes that load
+// after this group installs are never hooked; retrying on image-add needs
+// the dylib.x watcher wiring (not implemented here).
 // Opt-in (Hook_DeviceCheck): attestation fails closed — apps that require
 // DeviceCheck attestation see "unsupported" and must fall back to their
 // degraded path instead of minting real attestation artifacts.
