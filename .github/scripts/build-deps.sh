@@ -17,6 +17,7 @@ WORK=${WORK:-/tmp/shadow-deps}
 HOOKKIT=8c6b23c590b98f4d8c3a8ddbd7e5d430c13af01d
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
+ROOTBRIDGE=547cb23cfc3103e520168f5a57af2f45526147f0
 
 mkdir -p "$PB/hookkit/$FLAVOR" "$PB/altlist/$FLAVOR" "$PB/sandy/$FLAVOR"
 
@@ -43,6 +44,21 @@ if [ "$FLAVOR" = rootless ]; then
 else
     LIBDIR=$THEOS/lib
 fi
+
+# --- RootBridge (jjolano; built FIRST — HookKit links the installed framework
+# from $THEOS/lib, so it must be the per-flavor build, not a stale one) ---
+clone_pin jjolano/RootBridge "$ROOTBRIDGE" rootbridge
+(
+    cd "$WORK/rootbridge"
+    make clean >/dev/null 2>&1 || true
+    env $SCHEME ARCHS="$ARCHS" make package FINALPACKAGE=1
+    rm -rf "$ROOT/vendor/RootBridge.framework"
+    cp -R "$LIBDIR/RootBridge.framework" "$ROOT/vendor/"
+    # No RootBridge_PUBLIC_HEADERS in the Makefile; the framework install skips
+    # Headers, which Shadow.framework needs (<RootBridge.h>).
+    [[ -d "$ROOT/vendor/RootBridge.framework/Headers" ]] ||
+        cp -R Headers "$ROOT/vendor/RootBridge.framework/"
+)
 
 # --- HookKit (jjolano's fork; vendored fishhook/substrate/substitute backends) ---
 clone_pin jjolano/HookKit "$HOOKKIT" hookkit

@@ -15,9 +15,9 @@ jobs:
     env:
       THEOS: /opt/theos
     steps:
+      # vendor/ frameworks are built by build-deps.sh (the submodule checkouts
+      # are source repos, not built frameworks), so no submodule checkout here.
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Theos
         run: |
