@@ -1,5 +1,4 @@
 #import "hooks.h"
-#import <RootBridge.h>
 #import <os/lock.h>
 #import <mach/vm_region.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -33,6 +32,11 @@ static struct dyld_all_image_infos* _shdw_all_image_infos = NULL;
 // `_shdw_dyld_path_pool` for the lifetime of the process so
 // fileSystemRepresentation pointers never dangle after a collection removal.
 #define SHADOW_DYLD_MIRROR_CAPACITY 4096   // beyond any real process's image count
+// TODO (device-test territory, not attempted): mirror grow-on-demand past the
+// fixed capacity — a process that somehow exceeds 4096 images would over-run
+// the published buffers. Fixed capacity is deliberate (never-reallocated
+// pointers stay valid forever); a grow path must publish a NEW vm_allocate'd
+// generation and retire the old one only after a quiescent window.
 
 static os_unfair_lock _shdw_dyld_mirror_lock = OS_UNFAIR_LOCK_INIT;
 static struct dyld_image_info* _shdw_dyld_info_buffers[2] = {NULL, NULL};
@@ -1042,6 +1046,24 @@ static void replaced_dyld_images_for_addresses(unsigned count, const void* addre
 // app callbacks are stored in slots, and our own handler — registered with
 // real dyld at hook-install time — delivers only visible images, so a hidden
 // image never reaches a detector's callback, even on later loads.
+//
+// TODO (device-test territory, NOT attempted): the fan-out below runs the
+// app's callbacks from Shadow's own handler frame — a detector can spot the
+// extra frame and, worse, Shadow is on the callback's stack while dyld holds
+// its load lock. The correct shape is authenticated tail-branch thunks that
+// jump into each app callback without an intervening Shadow frame. The same
+// applies to the bulk variant below. NOTE: these two hooks also keep their
+// pre-C0-2 caller gating (external → original) pending that rework; a
+// detector registering through them currently receives dyld's unfiltered
+// replay.
+// TODO (device-test territory, NOT attempted): _dyld_objc_notify_register /
+// objc_addLoadImageFunc — the objc-mapped notifier reaches every image; the
+// add-image registration surface above must be extended to it before those
+// SPIs can be considered hidden.
+// TODO (device-test territory, NOT attempted): _dyld_process_info_* /
+// process-snapshot APIs and NSAddImage / NSLookupSymbolInImage /
+// NSVersionOfRunTimeLibrary — direct image-list/symbol surfaces with no
+// prologue hook today; device prototypes required (private ABI).
 #define SHADOW_MAX_IMAGE_LOAD_CBS 8
 static void (*shdw_image_load_cbs[SHADOW_MAX_IMAGE_LOAD_CBS])(const struct mach_header* mh, const char* path, bool unloadable);
 static void shdw_image_load_handler(const struct mach_header* mh, const char* path, bool unloadable) {
@@ -1193,6 +1215,11 @@ static void shdw_dyld_mirror_restore_originals(void) {
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
     // No prefs I/O here (plan Wave 1c): the mirror patch is unconditional, so
     // nothing runs before the lock except the collection copy itself.
+    // TODO (device-test territory, NOT attempted): notifier-inline rebuild —
+    // this rebuild runs from the add/remove-image callbacks; inlining the
+    // mirror publication into dyld's own notifier path (no collection copy,
+    // no lock hop) is the target shape once the add/remove surface is
+    // replaced by tail-branch thunks.
     os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
