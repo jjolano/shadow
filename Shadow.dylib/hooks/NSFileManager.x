@@ -13,6 +13,21 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
     return @{kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
 }
 
+// Write/create/delete intent. Never nil: a nil options dict reads as read
+// intent and is served from the decision cache, while the write key also
+// disables Core.m's existence gate so a restricted-classified path is denied
+// even when the target does not exist (nonexistent-target write probes).
+static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
+    NSMutableDictionary* options = [NSMutableDictionary dictionaryWithObject:kShadowRestrictionOpWrite
+                                                                      forKey:kShadowRestrictionOperation];
+
+    if(!allAbsolute) {
+        options[kShadowRestrictionWorkingDir] = [fm currentDirectoryPath];
+    }
+
+    return options;
+}
+
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
@@ -96,73 +111,68 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    BOOL result = %orig;
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+        // Out-param leak: the directory bit must not survive the hiding.
+        if(isDirectory) {
+            *isDirectory = NO;
+        }
 
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isReadableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    // TODO: stock-path rootful writeability hiding is out of scope — on a
+    // rootful jailbreak stock (non-jb) paths are legitimately writable and we
+    // do not claim otherwise. Write intent is passed so restricted paths are
+    // denied even when the probe target does not exist yet.
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
-    BOOL result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSData *)contentsAtPath:(NSString *)path {
-    NSData* result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
@@ -325,13 +335,11 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSString *)displayNameAtPath:(NSString *)path {
-    NSString* result = %orig;
-
-    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
-    return result;
+    return %orig;
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
