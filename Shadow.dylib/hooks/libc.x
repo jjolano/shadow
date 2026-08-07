@@ -1221,6 +1221,54 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
+// Sanitized PATH storage: thread-local so the returned pointer keeps getenv's
+// documented lifetime (valid until the next getenv call on this thread) and
+// one thread can't overwrite another's value.
+static _Thread_local char* shdw_getenv_path_storage = NULL;
+static _Thread_local size_t shdw_getenv_path_capacity = 0;
+
+// Removes jailbreak components from a PATH value (/var/jb bootstrap and
+// preboot roots — stock iOS PATH has neither). Returns the original pointer
+// when nothing needed removing, otherwise a sanitized copy in thread-local
+// storage.
+static char* shdw_getenv_sanitized_path(const char* value) {
+    NSArray* parts = [[NSString stringWithUTF8String:value] componentsSeparatedByString:@":"];
+    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
+
+    for(NSString* part in parts) {
+        if([part hasPrefix:@"/var/jb"]
+        || [part hasPrefix:@"/private/preboot"]
+        || [part hasPrefix:@"/preboot"]) {
+            continue;
+        }
+
+        [kept addObject:part];
+    }
+
+    if(kept.count == parts.count) {
+        return (char*) value;
+    }
+
+    NSString* joined = [kept componentsJoinedByString:@":"];
+    size_t len = joined.length + 1;
+
+    if(len > shdw_getenv_path_capacity) {
+        char* grown = realloc(shdw_getenv_path_storage, len);
+
+        if(!grown) {
+            // OOM: fall back to the original value rather than returning a
+            // truncated path.
+            return (char*) value;
+        }
+
+        shdw_getenv_path_storage = grown;
+        shdw_getenv_path_capacity = len;
+    }
+
+    strcpy(shdw_getenv_path_storage, joined.UTF8String);
+    return shdw_getenv_path_storage;
+}
+
 static char* (*original_getenv)(const char* name);
 static char* replaced_getenv(const char* name) {
     if(isCallerExternal()) {
@@ -1229,18 +1277,24 @@ static char* replaced_getenv(const char* name) {
 
     char* result = original_getenv(name);
 
-    // if(result && name) {
-    //     if(strcmp(name, "DYLD_INSERT_LIBRARIES") == 0
-    //     || strcmp(name, "_MSSafeMode") == 0
-    //     || strcmp(name, "_SafeMode") == 0
-    //     || strcmp(name, "_SubstituteSafeMode") == 0) {
-    //         return NULL;
-    //     }
+    if(!result || !name || !name[0]) {
+        return result;
+    }
 
-    //     if(strcmp(name, "SHELL") == 0) {
-    //         return "/bin/sh";
-    //     }
-    // }
+    // Stock iOS never has these set; their presence is the jailbreak signal
+    // a detector reads back from getenv. DYLD_* covers INSERT_LIBRARIES and
+    // every search-path knob.
+    if(strncmp(name, "DYLD_", 5) == 0
+    || strncmp(name, "JAILBREAKD_", 11) == 0
+    || strcmp(name, "_MSSafeMode") == 0
+    || strcmp(name, "_SafeMode") == 0
+    || strcmp(name, "_SubstituteSafeMode") == 0) {
+        return NULL;
+    }
+
+    if(strcmp(name, "PATH") == 0) {
+        return shdw_getenv_sanitized_path(result);
+    }
 
     return result;
 }
