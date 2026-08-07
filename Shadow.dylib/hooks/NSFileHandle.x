@@ -13,7 +13,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 // fileDescriptor, read/write methods) are out of scope — they need an
 // F_GETPATH fd→path resolver; pipes/sockets must pass through untouched.
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
     
@@ -21,7 +21,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 }
 
 + (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -33,7 +33,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 }
 
 + (instancetype)fileHandleForWritingAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_handleWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_handleWriteOptions()]) {
         return nil;
     }
     
@@ -41,7 +41,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 }
 
 + (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_handleWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_handleWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -53,7 +53,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 }
 
 + (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_handleWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_handleWriteOptions()]) {
         return nil;
     }
     
@@ -61,7 +61,7 @@ static NSDictionary* _shdw_handleWriteOptions(void) {
 }
 
 + (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_handleWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_handleWriteOptions()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }

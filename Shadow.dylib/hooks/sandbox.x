@@ -47,7 +47,7 @@ extern BOOL shdw_bootstrap_service_restricted(const char* name);
 
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_task_for_pid(task, pid, target);
     }
 
@@ -72,7 +72,7 @@ static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_por
 
 static kern_return_t (*original_host_get_special_port)(host_priv_t host_priv, int node, int which, mach_port_t* port);
 static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int node, int which, mach_port_t* port) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_host_get_special_port(host_priv, node, which, port);
     }
 
@@ -96,7 +96,7 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
 
 static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int which_port, mach_port_t *special_port);
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_task_get_special_port(task, which_port, special_port);
     }
 
@@ -128,7 +128,7 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
     // Sanitize the previous-handler output only after the original
     // SUCCEEDED: a failed call leaves oact untouched, and zeroing it over a
     // real error would deviate from stock.
-    if(!isCallerExternal() && result == 0) {
+    if(isCallerExternal() && result == 0) {
         NSLog(@"%@: %d", @"sigaction", sig);
 
         if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
@@ -161,24 +161,24 @@ static shdw_sighandler_t shdw_signal_sanitize_previous(shdw_sighandler_t previou
 
 static shdw_sighandler_t (*original_signal)(int sig, shdw_sighandler_t handler);
 static shdw_sighandler_t replaced_signal(int sig, shdw_sighandler_t handler) {
-    return shdw_signal_sanitize_previous(original_signal(sig, handler), !isCallerExternal());
+    return shdw_signal_sanitize_previous(original_signal(sig, handler), isCallerExternal());
 }
 
 static shdw_sighandler_t (*original_bsd_signal)(int sig, shdw_sighandler_t handler);
 static shdw_sighandler_t replaced_bsd_signal(int sig, shdw_sighandler_t handler) {
-    return shdw_signal_sanitize_previous(original_bsd_signal(sig, handler), !isCallerExternal());
+    return shdw_signal_sanitize_previous(original_bsd_signal(sig, handler), isCallerExternal());
 }
 
 static shdw_sighandler_t (*original___signal_nobind)(int sig, shdw_sighandler_t handler);
 static shdw_sighandler_t replaced___signal_nobind(int sig, shdw_sighandler_t handler) {
-    return shdw_signal_sanitize_previous(original___signal_nobind(sig, handler), !isCallerExternal());
+    return shdw_signal_sanitize_previous(original___signal_nobind(sig, handler), isCallerExternal());
 }
 
 static int (*original___sigaction)(int sig, const struct sigaction* act, struct sigaction* oact);
 static int replaced___sigaction(int sig, const struct sigaction* act, struct sigaction* oact) {
     int result = original___sigaction(sig, act, oact);
 
-    if(!isCallerExternal() && result == 0 && oact
+    if(isCallerExternal() && result == 0 && oact
     && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
         memset(oact, 0, sizeof(struct sigaction));
     }
@@ -258,7 +258,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     // types (mach service lookups use GLOBAL_NAME | SANDBOX_CHECK_NO_REPORT;
     // file checks use PATH; PID/index-style types pass an int and are
     // forwarded without inspection).
-    if(!isCallerExternal() && operation) {
+    if(isCallerExternal() && operation) {
         // Read from a COPY so the forward below still sees the full list.
         va_list inspect;
         va_copy(inspect, args);
@@ -279,7 +279,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     // The tweak's own mach-lookup of its daemon service is always allowed:
     // the app sandbox would otherwise deny the vnode client's
     // bootstrap_look_up (sandbox_check is called regardless of caller).
-    if(isCallerExternal() && operation && strcmp(operation, "mach-lookup") == 0
+    if(!isCallerExternal() && operation && strcmp(operation, "mach-lookup") == 0
     && (((int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK) == SANDBOX_FILTER_GLOBAL_NAME
     || ((int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK) == SANDBOX_FILTER_LOCAL_NAME)) {
         va_list inspect;
@@ -368,7 +368,7 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         va_end(args);
     }
 
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if(cmd == F_ADDSIGS) {
             // Prevent adding invalid code signatures.
             errno = EINVAL;
@@ -421,9 +421,12 @@ static int (*original_execvp)(const char* file, char* const argv[]);
 
 // exec policy: a hidden executable path answers ENOENT (the tweak's hidden-
 // path denial style); benign paths go to the original. Only app-origin
-// callers are filtered.
-static BOOL shdw_exec_path_denied(const char* path) {
-    return !isCallerExternal() && path && [_shadow isCPathRestricted:path];
+// callers are filtered. The classification must be passed in from the hook
+// site: isCallerExternal() reads the return address, and inside this helper
+// it would classify the hook's own frame (Shadow-owned) instead of the
+// caller's.
+static BOOL shdw_exec_path_denied(BOOL callerExternal, const char* path) {
+    return callerExternal && path && [_shadow isCPathRestricted:path];
 }
 
 // Collects the NULL-terminated variadic argv of an execl* call into a
@@ -458,7 +461,7 @@ static char** shdw_execl_collect_argv(va_list args) {
 }
 
 static int replaced_execl(const char* path, const char* arg0, ...) {
-    if(shdw_exec_path_denied(path)) {
+    if(shdw_exec_path_denied(isCallerExternal(), path)) {
         errno = ENOENT;
         return -1;
     }
@@ -481,7 +484,7 @@ static int replaced_execl(const char* path, const char* arg0, ...) {
 }
 
 static int replaced_execlp(const char* file, const char* arg0, ...) {
-    if(shdw_exec_path_denied(file)) {
+    if(shdw_exec_path_denied(isCallerExternal(), file)) {
         errno = ENOENT;
         return -1;
     }
@@ -503,7 +506,7 @@ static int replaced_execlp(const char* file, const char* arg0, ...) {
 }
 
 static int replaced_execle(const char* path, const char* arg0, ...) {
-    if(shdw_exec_path_denied(path)) {
+    if(shdw_exec_path_denied(isCallerExternal(), path)) {
         errno = ENOENT;
         return -1;
     }
@@ -526,7 +529,7 @@ static int replaced_execle(const char* path, const char* arg0, ...) {
 }
 
 static int replaced_execv(const char* path, char* const argv[]) {
-    if(shdw_exec_path_denied(path)) {
+    if(shdw_exec_path_denied(isCallerExternal(), path)) {
         errno = ENOENT;
         return -1;
     }
@@ -535,7 +538,7 @@ static int replaced_execv(const char* path, char* const argv[]) {
 }
 
 static int replaced_execvp(const char* file, char* const argv[]) {
-    if(shdw_exec_path_denied(file)) {
+    if(shdw_exec_path_denied(isCallerExternal(), file)) {
         errno = ENOENT;
         return -1;
     }
@@ -544,7 +547,7 @@ static int replaced_execvp(const char* file, char* const argv[]) {
 }
 
 static int replaced_execve(const char* path, char* const argv[], char* const envp[]) {
-    if(shdw_exec_path_denied(path)) {
+    if(shdw_exec_path_denied(isCallerExternal(), path)) {
         errno = ENOENT;
         return -1;
     }
@@ -554,7 +557,7 @@ static int replaced_execve(const char* path, char* const argv[], char* const env
 
 static int (*original_posix_spawn)(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
 static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
-    if(!isCallerExternal() && path && [_shadow isCPathRestricted:path]) {
+    if(isCallerExternal() && path && [_shadow isCPathRestricted:path]) {
         // posix_spawn(2) reports failure as a POSITIVE errno-number return
         // value and does not set errno — returning -1 would violate the
         // contract. ENOENT matches the tweak's hidden-path denial style.
@@ -566,7 +569,7 @@ static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_
 
 static int (*original_posix_spawnp)(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
 static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
-    if(!isCallerExternal() && file && [_shadow isCPathRestricted:file]) {
+    if(isCallerExternal() && file && [_shadow isCPathRestricted:file]) {
         return ENOENT;
     }
 
@@ -575,7 +578,7 @@ static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn
 
 static pid_t (*original_fork)(void);
 static pid_t replaced_fork(void) {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // Stock-like denial for app-origin callers: the app sandbox refuses
         // fork with EPERM on stock iOS.
         errno = EPERM;
@@ -587,7 +590,7 @@ static pid_t replaced_fork(void) {
 
 static pid_t (*original_vfork)(void);
 static pid_t replaced_vfork(void) {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         errno = EPERM;
         return -1;
     }
@@ -637,7 +640,7 @@ static int replaced_system(const char* command) {
         return original_system(NULL);
     }
 
-    if(!isCallerExternal() && shdw_command_hides_restricted_path(command)) {
+    if(isCallerExternal() && shdw_command_hides_restricted_path(command)) {
         errno = ENOENT;
         return -1;
     }
@@ -647,7 +650,7 @@ static int replaced_system(const char* command) {
 
 static FILE* (*original_popen)(const char* command, const char* type);
 static FILE* replaced_popen(const char* command, const char* type) {
-    if(!isCallerExternal() && shdw_command_hides_restricted_path(command)) {
+    if(isCallerExternal() && shdw_command_hides_restricted_path(command)) {
         errno = ENOENT;
         return NULL;
     }
@@ -669,7 +672,7 @@ static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char
     va_list args;
     va_start(args, type);
 
-    if(!isCallerExternal() && (pid_t) token.val[4] == getpid() && operation) {
+    if(isCallerExternal() && (pid_t) token.val[4] == getpid() && operation) {
         // Read from a COPY so the forward below still sees the full list.
         va_list inspect;
         va_copy(inspect, args);

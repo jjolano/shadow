@@ -39,7 +39,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 %group shadowhook_NSURL
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -51,7 +51,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)checkPromisedItemIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -63,7 +63,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)getPromisedItemResourceValue:(id  _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(value) {
             *value = nil;
         }
@@ -79,7 +79,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (NSDictionary<NSURLResourceKey, id> *)promisedItemResourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -93,7 +93,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 - (NSURL *)fileReferenceURL {
     NSURL* result = %orig;
 
-    if(!isCallerExternal() && _shdw_resultURLRestricted(result)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
         return nil;
     }
 
@@ -103,7 +103,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 - (NSURL *)filePathURL {
     NSURL* result = %orig;
 
-    if(!isCallerExternal() && _shdw_resultURLRestricted(result)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
         return nil;
     }
 
@@ -113,7 +113,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 - (NSURL *)URLByResolvingSymlinksInPath {
     NSURL* result = %orig;
 
-    if(!isCallerExternal() && _shdw_resultURLRestricted(result)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
         return nil;
     }
 
@@ -121,7 +121,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (NSURL *)URLByStandardizingPath {
-    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:self]) {
         return nil;
     }
 
@@ -129,7 +129,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 + (NSData *)bookmarkDataWithContentsOfURL:(NSURL *)bookmarkFileURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:bookmarkFileURL]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:bookmarkFileURL]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:bookmarkFileURL];
         }
@@ -141,7 +141,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)getResourceValue:(id _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(value) {
             *value = nil;
         }
@@ -157,7 +157,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -169,7 +169,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)setResourceValue:(id)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
+    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -181,7 +181,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)setResourceValues:(NSDictionary<NSURLResourceKey, id> *)keyedValues error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
+    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -195,7 +195,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 // Cache-mutation APIs: no-ops for restricted URLs — the value cache of a
 // hidden resource must not be observable or manipulable.
 - (void)removeCachedResourceValueForKey:(NSURLResourceKey)key {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
 
@@ -203,7 +203,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (void)removeAllCachedResourceValues {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
 
@@ -211,7 +211,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (void)setTemporaryResourceValue:(id)value forKey:(NSURLResourceKey)key {
-    if(!isCallerExternal() && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
 
@@ -221,7 +221,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 - (instancetype)initByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error {
     self = %orig;
 
-    if(!isCallerExternal() && self && _shdw_resultURLRestricted(self)) {
+    if(isCallerExternal() && self && _shdw_resultURLRestricted(self)) {
         // Clear the stale/output values: a denied resolution reports neither
         // staleness nor a URL.
         if(isStale) {
@@ -241,7 +241,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 + (NSURL *)URLByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error {
     NSURL* result = %orig;
 
-    if(!isCallerExternal() && _shdw_resultURLRestricted(result)) {
+    if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
         if(isStale) {
             *isStale = NO;
         }
@@ -259,7 +259,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 + (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys fromBookmarkData:(NSData *)bookmarkData {
     NSDictionary* result = %orig;
 
-    if(!isCallerExternal() && result) {
+    if(isCallerExternal() && result) {
         // No URL output to classify; resolve the bookmark through our own
         // (hooked) resolver — nil means the target is unresolvable or
         // restricted, so the values are hidden too.
@@ -300,7 +300,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDataTask* task = %orig;
         [task cancel];
 
@@ -311,7 +311,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDataTask* task = %orig(url, ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow — the blocked completion below is the only one delivered
         });
@@ -329,7 +329,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDownloadTask* task = %orig;
         [task cancel];
 
@@ -340,7 +340,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDownloadTask* task = %orig(url, ^(NSURL *location, NSURLResponse *response, NSError *error) {
             // swallow
         });
@@ -358,7 +358,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL {
-    if(!isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
+    if(isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
         NSURLSessionUploadTask* task = %orig;
         [task cancel];
 
@@ -369,7 +369,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
+    if(isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
         NSURLSessionUploadTask* task = %orig(request, fileURL, ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow
         });
@@ -387,7 +387,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
-    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+    if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDataTask* task = %orig;
         [task cancel];
 
@@ -398,7 +398,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+    if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDataTask* task = %orig(request, ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow
         });
@@ -416,7 +416,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
-    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+    if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDownloadTask* task = %orig;
         [task cancel];
 
@@ -427,7 +427,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+    if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDownloadTask* task = %orig(request, ^(NSURL *location, NSURLResponse *response, NSError *error) {
             // swallow
         });

@@ -7,7 +7,7 @@
 // and writeToURL:originalContentsURL: tree containment need an associated
 // source URL, out of scope for this wave.
 - (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -19,7 +19,7 @@
 }
 
 - (instancetype)initSymbolicLinkWithDestinationURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return 0;
     }
 
@@ -27,7 +27,7 @@
 }
 
 - (BOOL)matchesContentsOfURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return NO;
     }
 
@@ -35,7 +35,7 @@
 }
 
 - (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -49,7 +49,7 @@
 - (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
     NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:writeOptions]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:writeOptions]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
