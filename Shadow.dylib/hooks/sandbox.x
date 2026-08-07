@@ -160,10 +160,13 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 static int (*original_fcntl)(int fd, int cmd, ...);
 static int replaced_fcntl(int fd, int cmd, ...) {
     // Only commands that take a third argument get one read: the getters
-    // (F_GETFD/F_GETFL/F_GETOWN/...) take none and must not consume a
-    // vararg the caller never passed.
+    // (F_GETFD/F_GETFL/F_GETOWN/F_GETPROTECTIONCLASS/F_GETLEASE/...) take
+    // none and must not consume a vararg the caller never passed. Anything
+    // not listed below takes an argument (including F_SETSIZE).
     intptr_t arg = 0;
+    off_t size_arg = 0;
     BOOL has_arg = YES;
+    BOOL is_size_arg = NO;
 
     switch(cmd) {
         case F_GETFD:
@@ -177,7 +180,17 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         case F_BARRIERFSYNC:
         case F_GETNOSIGPIPE:
         case F_GETPROTECTIONLEVEL:
+        case F_GETPROTECTIONCLASS:
+#ifdef F_GETLEASE
+        case F_GETLEASE:    /* iOS 16.5+ */
+#endif
             has_arg = NO;
+            break;
+
+        case F_SETSIZE:
+            // F_SETSIZE takes a 64-bit off_t: on armv7 reading the slot as
+            // intptr_t would truncate it, so it is read/forwarded as off_t.
+            is_size_arg = YES;
             break;
 
         default:
@@ -186,13 +199,19 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 
     if(has_arg) {
         // The third argument's type is command-dependent: a pointer for
-        // F_GETPATH/F_CHECK_LV, an int for F_SETFL/F_SETFD/..., a 64-bit
-        // offset for F_SETSIZE. Read the full pointer-width slot (ints are
-        // int-promoted into it on arm64) and pass it through unchanged —
-        // narrowing to int would truncate pointers and offsets.
+        // F_GETPATH/F_CHECK_LV, an int for F_SETFL/F_SETFD/.... Read the
+        // full pointer-width slot (ints are int-promoted into it on arm64)
+        // and pass it through unchanged — narrowing to int would truncate
+        // pointers.
         va_list args;
         va_start(args, cmd);
-        arg = va_arg(args, intptr_t);
+
+        if(is_size_arg) {
+            size_arg = va_arg(args, off_t);
+        } else {
+            arg = va_arg(args, intptr_t);
+        }
+
         va_end(args);
     }
 
@@ -212,7 +231,12 @@ static int replaced_fcntl(int fd, int cmd, ...) {
                 // original call — a failed call leaves it untouched.
                 if(result == 0) {
                     fchecklv_t* checkInfo = (fchecklv_t *) arg;
-                    ((char *) checkInfo->lv_error_message)[0] = '\0';
+
+                    // lv_error_message is optional: the kernel can succeed
+                    // without providing one, so only clear it when present.
+                    if(checkInfo->lv_error_message != NULL) {
+                        ((char *) checkInfo->lv_error_message)[0] = '\0';
+                    }
                 }
 
                 return result;
@@ -225,6 +249,10 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     }
 
     if(has_arg) {
+        if(is_size_arg) {
+            return original_fcntl(fd, cmd, size_arg);
+        }
+
         return original_fcntl(fd, cmd, (void *) arg);
     }
 
@@ -234,6 +262,13 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 static int fn_enosys() {
     errno = ENOSYS;
     return -1;
+}
+
+static int fn_posix_spawn_enosys() {
+    // posix_spawn(2) reports failure as a POSITIVE errno-number return
+    // value and does not set errno — returning -1 would violate the
+    // contract. ENOENT matches the tweak's hidden-path denial style.
+    return ENOENT;
 }
 
 // static int replaced_system(const char* command) {
@@ -260,8 +295,8 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     MSHookFunction(execve, fn_enosys, NULL);
     MSHookFunction(execvp, fn_enosys, NULL);
     MSHookFunction(execv, fn_enosys, NULL);
-    MSHookFunction(posix_spawn, fn_enosys, NULL);
-    MSHookFunction(posix_spawnp, fn_enosys, NULL);
+    MSHookFunction(posix_spawn, fn_posix_spawn_enosys, NULL);
+    MSHookFunction(posix_spawnp, fn_posix_spawn_enosys, NULL);
     MSHookFunction(fork, fn_enosys, NULL);
     MSHookFunction(vfork, fn_enosys, NULL);
 

@@ -27,6 +27,11 @@
 		return prefs_app[key];
 	}
 
+	// The master switch mirrors the global enable state until overridden.
+	if([key isEqualToString:@"App_Enabled"]) {
+		return [prefs objectForKey:@"Global_Enabled"];
+	}
+
 	// Options not overridden for this app inherit the global value.
 	return [prefs objectForKey:key];
 }

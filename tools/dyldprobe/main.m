@@ -2,6 +2,7 @@
 #import <mach-o/dyld.h>
 #import <mach-o/dyld_images.h>
 #import <dlfcn.h>
+#import <stdatomic.h>
 
 // dyldprobe — W5 on-device verification probe for Shadow v5.
 // Shows the jailbreak the way detectors see it, from four angles:
@@ -166,16 +167,32 @@ static NSString* ProbeReport(void) {
     // with the app (second theos target) and is copied to a container path
     // before dlopen, so the path is never in Shadow's restricted domain on
     // either rootful or rootless.
-    NSString* testLibName = @"libshdwtestlib.dylib";
+    // theos emits libshdwtestlib.dylib for the LIBRARY_NAME=shdwtestlib
+    // library target; the unprefixed spelling is accepted too, so a
+    // mismatched install still works. lib-prefixed is preferred (matches
+    // what theos actually installs).
+    NSArray* testLibNames = @[@"libshdwtestlib.dylib", @"shdwtestlib.dylib"];
     NSString* installedLib = nil;
+    NSString* foundLibName = nil;
 
-    for(NSString* cand in @[
-        [[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:testLibName],
-        @"/usr/lib/libshdwtestlib.dylib",
-        @"/var/jb/usr/lib/libshdwtestlib.dylib"
+    // Bundle copy source first (app bundle, then runtime lib dirs — on
+    // rootless the install lands under /var/jb/usr/lib), both spellings.
+    for(NSString* dir in @[
+        [[NSBundle mainBundle] bundlePath],
+        @"/usr/lib",
+        @"/var/jb/usr/lib"
     ]) {
-        if([fm fileExistsAtPath:cand]) {
-            installedLib = cand;
+        for(NSString* name in testLibNames) {
+            NSString* cand = [dir stringByAppendingPathComponent:name];
+
+            if([fm fileExistsAtPath:cand]) {
+                installedLib = cand;
+                foundLibName = name;
+                break;
+            }
+        }
+
+        if(installedLib) {
             break;
         }
     }
@@ -183,14 +200,18 @@ static NSString* ProbeReport(void) {
     NSString* stressPath = nil;
 
     if(installedLib) {
+        [out appendFormat:@"  stress dylib source: %@ (spelling: %@)\n", installedLib, foundLibName];
         NSString* docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-        stressPath = [docs stringByAppendingPathComponent:testLibName];
+        stressPath = [docs stringByAppendingPathComponent:foundLibName];
         [fm removeItemAtPath:stressPath error:nil];
 
         NSError* copyErr = nil;
 
         if(![fm copyItemAtPath:installedLib toPath:stressPath error:&copyErr]) {
-            [out appendFormat:@"  copy %@ -> %@ failed: %@\n", installedLib, stressPath, copyErr];
+            // Rootless: the bundle copy source can sit under /var/jb and be
+            // hidden before the copy runs. Log clearly and fall through to
+            // the runtime scan below — never abort the stress section.
+            [out appendFormat:@"  copy %@ -> %@ FAILED (%@); falling back to runtime scan\n", installedLib, stressPath, copyErr];
             stressPath = nil;
         } else {
             [out appendFormat:@"  stress dylib staged at %@\n", stressPath];
@@ -262,14 +283,14 @@ static NSString* ProbeReport(void) {
         // Concurrent direct-memory reader: continuously walks the infoArray
         // while the stress runs, counting torn reads (a mid-walk NULL/NULL
         // entry) and reporting the max entries walked vs the expected range.
-        __block volatile BOOL readerStop = NO;
+        __block _Atomic(BOOL) readerStop = NO;
         __block uint32_t readerRuns = 0;
         __block uint32_t readerTorn = 0;
         __block uint32_t readerMax = 0;
         dispatch_queue_t readerQueue = dispatch_queue_create("dyldprobe.reader", DISPATCH_QUEUE_SERIAL);
 
         dispatch_async(readerQueue, ^{
-            while(!readerStop) {
+            while(!atomic_load_explicit(&readerStop, memory_order_relaxed)) {
                 struct dyld_all_image_infos* infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
 
                 if(!infos || !infos->infoArray || infos->infoArrayCount == 0) {
@@ -307,13 +328,16 @@ static NSString* ProbeReport(void) {
         BOOL stressOK = YES;
         // The probe marker only exists in the shipped shdwtestlib; the
         // fallback dylib can't export it, so only require it there.
-        BOOL expectMarker = [stressPath hasSuffix:testLibName];
+        BOOL expectMarker = [stressPath hasSuffix:testLibNames[0]] || [stressPath hasSuffix:testLibNames[1]];
 
         for(int i = 0; i < 8; i++) {
             void* handle = dlopen([stressPath fileSystemRepresentation], RTLD_NOW);
 
             if(!handle) {
-                [out appendFormat:@"  iter %d: dlopen(%@) failed: %s\n", i, stressPath, dlerror() ? dlerror() : "?"];
+                // Capture dlerror() once: a second call clears the first
+                // result, so ?: on two calls can log NULL for a real error.
+                const char* dlErr = dlerror();
+                [out appendFormat:@"  iter %d: dlopen(%@) failed: %s\n", i, stressPath, dlErr ? dlErr : "?"];
                 stressOK = NO;
                 break;
             }
@@ -372,7 +396,7 @@ static NSString* ProbeReport(void) {
             }
         }
 
-        readerStop = YES;
+        atomic_store_explicit(&readerStop, YES, memory_order_relaxed);
         dispatch_sync(readerQueue, ^{});
         [out appendFormat:@"  concurrent reader: %u runs, max entries walked = %u (expected <= %u), torn reads = %u\n", readerRuns, readerMax, baseCount + 1, readerTorn];
 

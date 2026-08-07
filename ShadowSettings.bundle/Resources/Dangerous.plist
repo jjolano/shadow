@@ -7,8 +7,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>DNGR_HOOKS</string>
 			<key>footerText</key>
 			<string>DNGR_HOOKS_DESC</string>
 		</dict>

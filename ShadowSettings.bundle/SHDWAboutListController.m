@@ -63,15 +63,15 @@
 
 					if(tag_name && tag_name.length > 0) {
 						latestVersion = [tag_name hasPrefix:@"v"] ? [tag_name substringFromIndex:1] : tag_name;
-					} else {
-						latestVersion = @"unknown";
-					}
 				} else {
-					latestVersion = @"unknown";
+					latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
 				}
 			} else {
-				latestVersion = @"unknown";
+				latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
 			}
+		} else {
+			latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
+		}
 
 			[self reloadSpecifier:sender];
 		}];

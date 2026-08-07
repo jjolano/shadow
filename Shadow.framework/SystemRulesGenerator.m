@@ -224,7 +224,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     // fs_snapshot_list(2) is getattrlistbulk(2) with FSOPT_LIST_SNAPSHOTS:
     // the attrlist MUST request the name (RETURNED_ATTRS comes first in the
     // record), and the buffer holds variable-length records — uint32 length,
-    // attrgroup_t returned attrs, attrreference_t name — NOT the adjacent
+    // attribute_set_t returned attrs, attrreference_t name — NOT the adjacent
     // length/string pairs of a raw list.
     struct attrlist attrlist;
     memset(&attrlist, 0, sizeof(attrlist));
@@ -239,44 +239,80 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         return nil;
     }
 
-    // ret is the RECORD COUNT, not a byte count: never use it as a byte
-    // bound. The walk is bounded by the buffer itself plus an iteration
-    // cap, so a malformed length can neither overrun nor spin.
+    // ret is the NUMBER OF RECORDS returned (not a byte count); 0 = empty.
+    // Iterate exactly ret records (capped), keeping the physical buffer
+    // bound as a secondary guard; any anomaly fails soft (nil).
     NSMutableArray* names = [NSMutableArray new];
     uint32_t offset = 0;
     const uint32_t kMaxRecords = 4096;
 
-    for(uint32_t record = 0; record < kMaxRecords && (size_t)offset + sizeof(uint32_t) <= sizeof(buf); record++) {
+    // Record layout: uint32 length, then an attribute_set_t (the five-field
+    // returned-attrs bitmap), then the requested values in order — the name
+    // attrreference_t starts at 4 + sizeof(attribute_set_t) = 24.
+    const uint32_t kNameRefOffset = (uint32_t)(sizeof(uint32_t) + sizeof(attribute_set_t));
+    const uint32_t kMinRecord = kNameRefOffset + (uint32_t)sizeof(attrreference_t) + 1;
+
+    uint32_t recordCount = (ret < (int32_t)kMaxRecords) ? (uint32_t)ret : kMaxRecords;
+
+    for(uint32_t record = 0; record < recordCount; record++) {
+        // Secondary guard: the record header must fit in the buffer.
+        if((uint64_t)offset + sizeof(uint32_t) > sizeof(buf)) {
+            close(fd);
+            return nil;
+        }
+
         uint32_t recLen;
         memcpy(&recLen, buf + offset, sizeof(recLen));
 
-        // Minimum record: length + returned attrs + attrreference header.
-        if(recLen < 12 || (uint64_t)offset + recLen > sizeof(buf)) {
-            break;
+        // Minimum record: length + attribute_set_t + attrreference + NUL.
+        if(recLen < kMinRecord || (uint64_t)offset + recLen > sizeof(buf)) {
+            close(fd);
+            return nil;
         }
 
-        // nameRef sits at offset+8 (after the length and returned attrs);
+        // Trust the name reference only if the returned-attrs bitmap says
+        // the name attribute was actually returned.
+        attribute_set_t returned;
+        memcpy(&returned, buf + offset + sizeof(uint32_t), sizeof(returned));
+
+        if(!(returned.commonattr & ATTR_CMN_NAME)) {
+            close(fd);
+            return nil;
+        }
+
+        // nameRef follows the length and attribute_set_t; its
         // attr_dataoffset is relative to the START of the attrreference.
         attrreference_t nameRef;
-        memcpy(&nameRef, buf + offset + 8, sizeof(nameRef));
+        memcpy(&nameRef, buf + offset + kNameRefOffset, sizeof(nameRef));
 
         if(nameRef.attr_dataoffset < (int32_t)sizeof(nameRef)) {
-            break;
+            close(fd);
+            return nil;
         }
 
         // The NUL-terminated name string must fit inside the record.
         uint32_t nameOffset = (uint32_t)nameRef.attr_dataoffset;
 
-        if(nameOffset + 1 > recLen - 8) {
-            break;
+        if((uint64_t)nameOffset + 1 > (uint64_t)recLen - kNameRefOffset) {
+            close(fd);
+            return nil;
         }
 
-        const char* nameStr = buf + offset + 8 + nameOffset;
-        uint32_t strMax = recLen - 8 - nameOffset;
-        size_t nameLen = strnlen(nameStr, strMax);
+        const char* nameStr = buf + offset + kNameRefOffset + nameOffset;
 
-        if(nameLen == strMax) {
-            break; // no NUL within the record: malformed
+        // Bound the scan by the record tail AND the kernel-reported
+        // attribute length; the NUL must be found within the bound.
+        size_t avail = recLen - kNameRefOffset - nameOffset;
+
+        if(nameRef.attr_length < avail) {
+            avail = nameRef.attr_length;
+        }
+
+        size_t nameLen = strnlen(nameStr, avail);
+
+        if(nameLen == avail) {
+            close(fd);
+            return nil; // no NUL within the bounded name: malformed
         }
 
         // Reject non-UTF8 garbage instead of inserting it.
@@ -286,7 +322,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
             [names addObject:name];
         }
 
-        offset += recLen;
+        offset += recLen; // recLen >= kMinRecord: offset strictly advances
     }
 
     NSString* chosen = nil;

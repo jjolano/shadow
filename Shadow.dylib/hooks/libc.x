@@ -60,9 +60,20 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
         return original_readlink(pathname, buf, bufsize);
     }
 
-    if([_shadow isCPathRestricted:pathname]) {
+    NSString* path = [NSString stringWithUTF8String:pathname];
+
+    // NoFollow: this is a link-LOCATION check — Core's resolve-before-exempt
+    // must not realpath through the link, which would evaluate its target
+    // instead of the link path itself.
+    if([_shadow isPathRestricted:path options:@{kShadowRestrictionNoFollow : @YES}]) {
         errno = ENOENT;
         return -1;
+    }
+
+    // buf NULL or bufsize 0: stock readlink fails (EFAULT/EINVAL); the
+    // local-buffer path below must not turn those into a success.
+    if(buf == NULL || bufsize == 0) {
+        return original_readlink(pathname, buf, bufsize);
     }
 
     // Read into a temp buffer first: a link stored in a safe location can
@@ -218,7 +229,6 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
             if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
                 // Mark rootfs read-only
                 buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-                break;
             }
 
             buf_ptr++;
@@ -240,10 +250,22 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
         return result;
     }
 
-    // *mntbufp points at libc's static mount array: filter it in place (same
-    // pointer returned, entries mangled identically to the original hook).
-    struct statfs* buf_ptr = *mntbufp;
-    struct statfs* buf_end = *mntbufp + result;
+    // *mntbufp points at libc's static mount table: never mutate it in
+    // place — the mangled entries would leak to the next caller of libc's
+    // static getmntinfo. Copy, mutate the copy, and hand the caller the
+    // new buffer (callers that free() the result free our malloc block;
+    // callers that don't leak one buffer per call, same as getmntinfo_r).
+    size_t bytes = (size_t) result * sizeof(struct statfs);
+    struct statfs* copy = (struct statfs *) malloc(bytes);
+
+    if(copy == NULL) {
+        return result;
+    }
+
+    memcpy(copy, *mntbufp, bytes);
+
+    struct statfs* buf_ptr = copy;
+    struct statfs* buf_end = copy + result;
 
     while(buf_ptr < buf_end) {
         if([_shadow isCPathRestricted:buf_ptr->f_mntonname]) {
@@ -254,11 +276,12 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
         if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
             // Mark rootfs read-only
             buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-            break;
         }
 
         buf_ptr++;
     }
+
+    *mntbufp = copy;
 
     return result;
 }
@@ -361,9 +384,10 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
         }
         
         if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only (statvfs carries the flags in f_flag,
-            // not f_flags — only set bits that exist in this struct).
-            buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
+            // Mark rootfs read-only. statvfs.f_flag only supports the ST_*
+            // constants (ST_RDONLY/ST_NOSUID); the MNT_* bits belong to
+            // struct statfs and must not be OR'd in here.
+            buf->f_flag |= ST_RDONLY;
         }
     }
 
@@ -407,8 +431,9 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
         }
 
         if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only (statvfs carries the flags in f_flag)
-            buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
+            // Mark rootfs read-only (statvfs carries the flags in f_flag,
+            // which only supports the ST_* constants, not MNT_*).
+            buf->f_flag |= ST_RDONLY;
         }
     }
 
@@ -447,16 +472,28 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     if(result == 0) {
         NSString* path = [NSString stringWithUTF8String:pathname];
 
-        // Only use resolve flag if target is not a symlink.
-        if([_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode))}]) {
+        // Only use resolve flag if target is not a symlink. NoFollow keeps
+        // Core's resolve-before-exempt from realpath-ing through the link:
+        // this is a link-LOCATION check, not a target check.
+        if([_shadow isPathRestricted:path options:@{
+            kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode)),
+            kShadowRestrictionNoFollow : @YES
+        }]) {
             errno = ENOENT;
             return -1;
         }
 
-        // Only copy on success: on failure _buf is uninitialized stack.
-        if(buf) {
-            memcpy(buf, &_buf, sizeof(struct stat));
+        // A NULL caller buffer must keep stock semantics: lstat(path, NULL)
+        // fails with EFAULT. The local-buffer read above would otherwise
+        // turn it into a success, so replay the NULL through the original
+        // (only reached for non-restricted paths — restricted ones already
+        // returned ENOENT above).
+        if(buf == NULL) {
+            return original_lstat(pathname, NULL);
         }
+
+        // Only copy on success: on failure _buf is uninitialized stack.
+        memcpy(buf, &_buf, sizeof(struct stat));
     }
 
     return result;
@@ -1142,10 +1179,10 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
     return original_openat(dirfd, pathname, oflag);
 }
 
-static DIR* (*original___opendir2)(const char* pathname, size_t bufsize);
-static DIR* replaced___opendir2(const char* pathname, size_t bufsize) {
+static DIR* (*original___opendir2)(const char* pathname, int flags);
+static DIR* replaced___opendir2(const char* pathname, int flags) {
     if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
-        return original___opendir2(pathname, bufsize);
+        return original___opendir2(pathname, flags);
     }
 
     errno = ENOENT;

@@ -1,4 +1,3 @@
-"INTERNAL_SETTINGS" = "Internal Settings";
 "HK_LIB_DESC" = "Controls the methods used to intercept application code. Some hooking libraries may provide a bypass improvement, but may also affect app stability.";
 
 "HOOKING_LIBRARY" = "Hooking Library";
@@ -17,7 +16,6 @@
 "REC_HOOKS_DESC" = "Recommended hooks cover additional methods which may be used by jailbreak detection.";
 
 "HOOK_DETECTFMWK" = "Detection Frameworks";
-"HOOK_FILE_SYSTEM_EX" = "File System (Extra)";
 "HOOK_FOUNDATION" = "Foundation Framework"; /* Foundation is the name of Apple's framework. */
 "HOOK_MAC" = "M1 Mac Spoof (iOS 14+)";
 

@@ -264,10 +264,16 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
     // /usr/bin/ssh) is restricted exactly when the equivalent direct path
     // would be. A failed resolution (path does not exist) keeps the exemption
-    // — a non-existent path can't leak anything. No-follow (readlink/lstat
-    // link-location checks) and any other options-bearing queries skip
-    // resolution; cacheable queries fold the result into the bounded decision
-    // cache (same TTL), amortizing the realpath syscall. shdw_resolvingPath
+    // — a non-existent path can't leak anything. Only no-follow options
+    // (readlink/lstat link-location checks — the libc lane wires
+    // kShadowRestrictionNoFollow into those hooks) skip resolution: they
+    // request a location-only answer about the link itself, not its target.
+    // Every other options-bearing query resolves too — the options only
+    // contribute the working dir, relative-path handling and the
+    // file-extension suffix, all already applied to `path` above, so the
+    // resolved target is evaluated with the same options a direct path gets.
+    // Cacheable queries fold the result into the bounded decision cache
+    // (same TTL), amortizing the realpath syscall. shdw_resolvingPath
     // guards the realpath call: the libc realpath hook re-enters
     // isCPathRestricted from inside realpath, which would recurse forever
     // without the per-thread guard.
@@ -275,7 +281,6 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 
     if(!shouldCheckPath
         && !noFollow
-        && ((options == nil) || ([options count] == 0))
         && !shdw_resolvingPath) {
         shdw_resolvingPath = YES;
 

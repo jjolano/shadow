@@ -1,10 +1,5 @@
 "ABOUT_TITLE" = "关于";
-"BYPASS_VERSION" = "屏蔽版本";
-"SERVICE_VERSION" = "服务版本";
-"BUILD_DATE" = "构建日期";
-"SOFTWARE_LICENSE" = "软件许可";
 "UPDATES_HDR" = "更新";
-"PACKAGE_VERSION" = "安装包版本";
 "INSTALLED_VERSION" = "已安装版本";
 "LATEST_VERSION" = "最新版本";
 "CREDITS_HDR" = "致谢";
@@ -16,3 +11,4 @@
 
 /* your name here! */
 "TRANSLATOR" = "nehyci";
+"UNKNOWN" = "未知";

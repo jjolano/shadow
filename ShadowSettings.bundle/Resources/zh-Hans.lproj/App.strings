@@ -2,5 +2,5 @@
 "APP_SETTINGS_DESC" = "对此应用启用屏蔽设置。未单独设置的项目将继承全局设置。";
 
 "ENABLE_SHADOW" = "启用Shadow";
-"ENABLED" = "Enabled";
+"ENABLED" = "已启用";
 "ENABLED_GLOBAL" = "已启用（全局）";
