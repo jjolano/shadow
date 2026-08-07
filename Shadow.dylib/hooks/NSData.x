@@ -13,7 +13,7 @@
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *errorPtr = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -33,7 +33,7 @@
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *errorPtr = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return nil;
@@ -53,7 +53,7 @@
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *errorPtr = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -73,7 +73,7 @@
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *errorPtr = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return nil;
@@ -109,7 +109,7 @@
 - (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
+            *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:path url:nil];
         }
 
         return NO;
@@ -129,7 +129,7 @@
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
-            *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil];
+            *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
         }
 
         return NO;
