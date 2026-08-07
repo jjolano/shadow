@@ -31,12 +31,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
-        return %orig;
-    }
-
+    // C0-2: filter unconditionally — app, detector, and system-framework
+    // callers (Foundation forwarding, for-in mediation) all get the same
+    // filtered stream; only Shadow-internal scopes see truth, and Shadow
+    // does not enumerate through NSDirectoryEnumerator.
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
     if(!base) {
@@ -58,12 +56,6 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 }
 
 - (id)nextObject {
-    BOOL isTweak = isCallerExternal();
-
-    if(isTweak) {
-        return %orig;
-    }
-
     NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
 
     if(!base) {
@@ -106,6 +98,78 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
     }
 
     return result;
+}
+
+// Fast enumeration (for…in) bypasses nextObject, so it needs its own filter.
+// ABI notes: the runtime zeroes the NSFastEnumerationState before the first
+// call and reads itemsPtr/mutationsPtr after each call; %orig advances
+// state->state (an opaque cursor) with every batch. We reuse the caller's
+// buffer in place (fetch into stackbuf via %orig, compact out restricted
+// entries, point itemsPtr at the compacted head). A batch that filters to
+// zero must NOT return 0 (that terminates enumeration), so we loop: fetch
+// again — %orig continues from the cursor it just advanced — until we have
+// at least one item or %orig reports end-of-stream.
+// The buffer type mirrors the SDK's NSFastEnumeration declaration
+// (id __unsafe_unretained): the enumerator's objects are borrowed, not
+// owned, and __unsafe_unenumerated is not a keyword in this toolchain.
+- (NSUInteger)countByEnumeratingWithState:(NSFastEnumerationState *)state objects:(id __unsafe_unretained *)stackbuf count:(NSUInteger)len {
+    NSString* base = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_key);
+
+    if(!base) {
+        NSLog(@"NSDirectoryEnumerator base not found");
+        base = @"";
+    }
+
+    NSDictionary* childOptions = objc_getAssociatedObject(self, _NSDirectoryEnumerator_shdw_state_key);
+
+    if(!childOptions) {
+        childOptions = @{kShadowRestrictionWorkingDir : base};
+        objc_setAssociatedObject(self, _NSDirectoryEnumerator_shdw_state_key, childOptions, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    if([_shadow isPathRestricted:base]) {
+        return 0;
+    }
+
+    NSUInteger filteredCount = 0;
+
+    while(filteredCount == 0) {
+        NSUInteger fetched = %orig(state, stackbuf, len);
+
+        if(fetched == 0) {
+            return 0;
+        }
+
+        NSUInteger kept = 0;
+
+        for(NSUInteger i = 0; i < fetched; i++) {
+            id obj = stackbuf[i];
+
+            if(!obj) {
+                continue;
+            }
+
+            NSString* path = nil;
+
+            if([obj isKindOfClass:[NSURL class]]) {
+                path = [obj path];
+            } else if([obj isKindOfClass:[NSString class]]) {
+                path = obj;
+            }
+
+            if(path && [_shadow isPathRestricted:path options:childOptions]) {
+                continue;
+            }
+
+            stackbuf[kept++] = obj;
+        }
+
+        filteredCount = kept;
+    }
+
+    state->itemsPtr = stackbuf;
+
+    return filteredCount;
 }
 %end
 
@@ -237,7 +301,23 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 }
 
 - (NSDirectoryEnumerator<NSURL *> *)enumeratorAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask errorHandler:(BOOL (^)(NSURL *url, NSError *error))handler {
-    NSDirectoryEnumerator* result = %orig;
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+        return nil;
+    }
+
+    NSDirectoryEnumerator* result = %orig(url, keys, mask, ^BOOL(NSURL *childURL, NSError *childError) {
+        // Suppress errors for restricted entries: the app handler must not
+        // learn about (or be able to react to) hidden subtrees.
+        if([_shadow isURLRestricted:childURL options:nil]) {
+            return NO;  // continue enumeration, do not call the app handler
+        }
+
+        if(handler) {
+            return handler(childURL, childError);
+        }
+
+        return NO;
+    });
     
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -248,6 +328,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 }
 
 - (NSDirectoryEnumerator<NSString *> *)enumeratorAtPath:(NSString *)path {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+        return nil;
+    }
+
     NSDirectoryEnumerator* result = %orig;
 
     if(result) {
