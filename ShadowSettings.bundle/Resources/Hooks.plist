@@ -215,82 +215,18 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>DNGR_HOOKS</string>
 			<key>footerText</key>
 			<string>DNGR_HOOKS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_Sandbox</string>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>SHDWDangerousListController</string>
+			<key>isController</key>
+			<true/>
 			<key>label</key>
-			<string>HOOK_SANDBOX</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_LowLevelC</string>
-			<key>label</key>
-			<string>HOOK_LLC</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_Memory</string>
-			<key>label</key>
-			<string>HOOK_MEM</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>MemoryLevelHiding</string>
-			<key>label</key>
-			<string>MEM_LEVEL_HIDING</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_TweakClasses</string>
-			<key>label</key>
-			<string>HOOK_TWEAKCLASS</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_DynamicLibrariesExtra</string>
-			<key>label</key>
-			<string>HOOK_DYLD</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
+			<string>DNGR_HOOKS</string>
 		</dict>
 	</array>
 </dict>

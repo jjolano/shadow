@@ -86,17 +86,18 @@ extern kern_return_t bootstrap_check_in(mach_port_t bootstrap_port, const char *
 #define OFF_VNODE_V_IOCOUNT  0x64   // read-only validation only — never edited
 #define OFF_VNODE_V_TYPE     0x70   // uint16; jelbrekLib offsetof.c
 #define OFF_VNODE_V_ID       0x74   // uint32; jelbrekLib offsetof.c
-// fileglob/fileops offsets (XNU layout: f_data at 0x38 ⇒ f_ops at 0x30;
-// fileops = 8 fn pointers + int fo_type at 0x40; DTYPE_VNODE == 1).
-#define OFF_FG_OPS     0x30
-#define OFF_FO_TYPE    0x40
+// fileglob/fileops offsets (review-corrected): struct fileglob has f_ops at
+// 0x28 (0x30 is fg_offset) and f_data at 0x38; struct fileops has fo_type as
+// its FIRST member (offset 0x0).  DTYPE_VNODE == 1.
+#define OFF_FG_OPS     0x28
+#define OFF_FO_TYPE    0x0
 #define DTYPE_VNODE    1
 
 // Vnode types (vnode.h)
 #define VNON 0
 #define VREG 1
 #define VDIR 2
-#define VLNK 10
+#define VLNK 5    // 10 is VCPLX, not VLNK
 
 #ifndef kCFCoreFoundationVersionNumber_iOS_12_0
 #define kCFCoreFoundationVersionNumber_iOS_12_0 (1535.12)
@@ -168,6 +169,7 @@ static const NSUInteger kAllowlistCount = sizeof(kAllowlist) / sizeof(kAllowlist
 #define KRW_RETRY_INTERVAL 2
 #define KRW_RETRY_MAX      15   // 2s * 15 = 30s
 #define POLL_INTERVAL      10   // seconds, owner-death fallback + release retry
+#define SHUTDOWN_MAX_ATTEMPTS 30   // 30 * 2s of retries before exiting non-zero
 
 // ---------------------------------------------------------------------------
 // Logging (daemon needs REAL logging — NSLog is compiled out by common.h in
@@ -225,26 +227,35 @@ static bool gIsRootless = false;
 // Version gate (hard ceiling: iOS 15.0–16.6.1 ONLY)
 // ---------------------------------------------------------------------------
 
-// Parse "Darwin Kernel Version 22.6.0: ..." from kern.version.
-static bool darwin_version(int *major, int *minor) {
+// Parse "Darwin Kernel Version 22.6.0: ..." from kern.version.  The result is
+// cached in gDarwinMajor/gDarwinMinor — offset_init dispatches off the Darwin
+// major (A1), and version_gate FAILS CLOSED when it is unavailable (A4).
+static int gDarwinMajor = 0;
+static int gDarwinMinor = 0;
+
+static bool darwin_version(void) {
     char kern_version[512] = {};
     size_t size = sizeof(kern_version);
     if (sysctlbyname("kern.version", &kern_version, &size, NULL, 0) != 0) {
         return false;
     }
-    return sscanf(kern_version, "Darwin Kernel Version %d.%d", major, minor) == 2;
+    return sscanf(kern_version, "Darwin Kernel Version %d.%d", &gDarwinMajor, &gDarwinMinor) == 2;
 }
 
+// Hard ceiling gate: iOS 15.0–16.6.1 ONLY.  FAIL CLOSED: if Darwin/version
+// information is unavailable, the feature is DISABLED — no CF-only fallback
+// (A4).  Darwin 21 = iOS 15 (entire line supported); Darwin 22 = iOS 16, and
+// because Darwin 22.6 also covers 16.7.x, the exact ceiling is bound via
+// kern.osproductversion (≤ 16.6.1).
 static bool version_gate(void) {
     double cf = kCFCoreFoundationVersionNumber;
-    int dmaj = 0, dmin = 0;
-    bool haveDarwin = darwin_version(&dmaj, &dmin);
 
-    shdw_log("kCFCoreFoundationVersionNumber: %.3f%s", cf,
-             haveDarwin ? ", Darwin Kernel Version" : "");
-    if (haveDarwin) {
-        shdw_log("Darwin %d.%d", dmaj, dmin);
+    shdw_log("kCFCoreFoundationVersionNumber: %.3f", cf);
+    if (!darwin_version()) {
+        shdw_log("UNSUPPORTED: kern.version unavailable — FAIL CLOSED, feature disabled");
+        return false;
     }
+    shdw_log("Darwin %d.%d", gDarwinMajor, gDarwinMinor);
 
     if (cf < kCFCoreFoundationVersionNumber_iOS_15_0) {
         shdw_log("UNSUPPORTED: iOS < 15.0 (CF %.3f) — feature disabled", cf);
@@ -254,22 +265,32 @@ static bool version_gate(void) {
         shdw_log("UNSUPPORTED: iOS >= 17.0 (CF %.3f) — feature disabled", cf);
         return false;
     }
-    if (haveDarwin) {
-        // iOS 15.x = Darwin 21, iOS 16.0–16.6.x = Darwin 22.0–22.6.
-        // Darwin 22.7 = iOS 16.7+ → above the ceiling.
-        if (dmaj < 21 || dmaj > 22) {
-            shdw_log("UNSUPPORTED: Darwin %d.%d — feature disabled", dmaj, dmin);
-            return false;
-        }
-        if (dmaj == 22 && dmin > 6) {
-            shdw_log("UNSUPPORTED: Darwin 22.%d (iOS > 16.6.1) — feature disabled", dmin);
-            return false;
-        }
-    } else {
-        shdw_log("kern.version unavailable — relying on CF version floor/ceiling only");
+
+    if (gDarwinMajor == 21) {
+        // iOS 15.x — the whole line is inside the supported range.
+        shdw_log("version gate: supported (Darwin 21 = iOS 15.x)");
+        return true;
     }
-    shdw_log("version gate: supported (iOS 15.0–16.6.1)");
-    return true;
+    if (gDarwinMajor == 22) {
+        // iOS 16.x — must bound to 16.6.1 (Darwin 22.6 also covers 16.7.x).
+        char pv[64] = {0};
+        size_t pvsz = sizeof(pv);
+        if (sysctlbyname("kern.osproductversion", pv, &pvsz, NULL, 0) != 0 || pv[0] == '\0') {
+            shdw_log("UNSUPPORTED: Darwin 22 but kern.osproductversion unavailable — FAIL CLOSED");
+            return false;
+        }
+        int maj = 0, min = 0, pat = 0;
+        int n = sscanf(pv, "%d.%d.%d", &maj, &min, &pat);
+        if (n < 2 || maj != 16 || min > 6 || (min == 6 && n >= 3 && pat > 1)) {
+            shdw_log("UNSUPPORTED: iOS %s (need <= 16.6.1) — feature disabled", pv);
+            return false;
+        }
+        shdw_log("version gate: supported (Darwin 22 = iOS %s)", pv);
+        return true;
+    }
+
+    shdw_log("UNSUPPORTED: Darwin %d.%d — feature disabled", gDarwinMajor, gDarwinMinor);
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,9 +309,15 @@ static unsigned long long t1sz_boot = 0;
 static bool gFdTableInline = false;
 
 static bool is_arm64e(void) {
-    cpu_subtype_t subtype;
+    // A27: initialize to a known non-arm64e value and CHECK the sysctl result —
+    // an uninitialized subtype could coincidentally equal CPU_SUBTYPE_ARM64E
+    // and misclassify, selecting the PAC-unsafe tfp0 backend on arm64e.
+    cpu_subtype_t subtype = 0;
     size_t cpusz = sizeof(cpu_subtype_t);
-    sysctlbyname("hw.cpusubtype", &subtype, &cpusz, NULL, 0);
+    if (sysctlbyname("hw.cpusubtype", &subtype, &cpusz, NULL, 0) != 0) {
+        shdw_log("is_arm64e: hw.cpusubtype failed — assuming NOT arm64e");
+        return false;
+    }
     return (subtype == 2 /* CPU_SUBTYPE_ARM64E */);
 }
 
@@ -310,10 +337,23 @@ static int offset_init(void) {
 
     // Rows iOS 12/13/14 are unreachable at runtime (version gate is
     // 15.0-16.6.1) but implemented per the corrected spec table.
-    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_2) {
-        // ios 15.2 ~ 16.6.1 — p_pid 0x60 per Dopamine libjailbreak info.c
-        shdw_log("offsets: iOS 15.2+ (p_pid 0x60, p_pfd 0xf8)");
+    // iOS 15.2+ is split by Darwin major (A1): p_pid is 0x68 on iOS 15
+    // (Darwin 21) and 0x60 only on iOS 16 (Darwin 22).
+    if (gDarwinMajor == 22) {
+        // ios 16.x — p_pid 0x60 per Dopamine libjailbreak info.c
+        shdw_log("offsets: iOS 16 (p_pid 0x60, p_pfd 0xf8)");
         off_p_pid = 0x60;
+        off_p_pfd = 0xf8;
+        off_fd_ofiles = 0x0;
+        off_fp_fglob = 0x10;
+        off_fg_data = 0x38;
+        gFdTableInline = true;
+        return 0;
+    }
+    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_2) {
+        // ios 15.2 ~ 15.7.x — p_pid 0x68 (Darwin 21)
+        shdw_log("offsets: iOS 15.2+ (p_pid 0x68, p_pfd 0xf8)");
+        off_p_pid = 0x68;
         off_p_pfd = 0xf8;
         off_fd_ofiles = 0x0;
         off_fp_fglob = 0x10;
@@ -383,7 +423,6 @@ typedef enum {
 
 static krw_mode_t gKrwMode = KRW_NONE;
 static volatile krw_state_t gKrwState = KRW_INIT;
-static dispatch_semaphore_t gKrwReadySem;
 static uint64_t gOurProc = 0;   // tfp0 path: cached own-proc from allproc scan
 
 // ---- libjailbreak (Dopamine) ----
@@ -530,22 +569,22 @@ static uint64_t sextract64(uint64_t val, unsigned start, unsigned len) {
 
 static kern_return_t init_tfp0(void) {
     kern_return_t ret = task_for_pid(mach_task_self(), 0, &tfp0);
-    mach_port_t host;
-    pid_t pid;
-
     if (ret != KERN_SUCCESS) {
-        host = mach_host_self();
+        mach_port_t host = mach_host_self();
         if (MACH_PORT_VALID(host)) {
             shdw_log("tfp0: host special port path (unc0ver-style)");
             ret = host_get_special_port(host, HOST_LOCAL_NODE, 4, &tfp0);
-            return ret;
+            mach_port_deallocate(mach_task_self(), host);
         }
-        mach_port_deallocate(mach_task_self(), host);
     }
+    // A26: verify the port is really the kernel task (pid 0) on BOTH paths —
+    // the special-port path previously returned without checking.
     if (ret == KERN_SUCCESS && MACH_PORT_VALID(tfp0)) {
+        pid_t pid = -1;
         if (pid_for_task(tfp0, &pid) == KERN_SUCCESS && pid == 0) {
             return ret;
         }
+        shdw_log("tfp0: port is not the kernel task (pid %d) — rejecting", pid);
         mach_port_deallocate(mach_task_self(), tfp0);
     }
     shdw_log("tfp0: failed to init");
@@ -864,17 +903,13 @@ static bool krw_write32(uint64_t addr, uint32_t val) {
     return krw_write(addr, &val, sizeof(val));
 }
 
-// Pointer read with PAC stripping.  Prefer libjailbreak's kread_ptr when
-// available (spec); otherwise status-returning kreadbuf + t1sz unsign.
+// Pointer read with PAC stripping.  A23: scalar libjb kread_ptr does not
+// expose read failures, so ALL pointer reads go through the status-returning
+// kreadbuf/kwritebuf primitive + t1sz unsign.
 static bool krw_read_ptr(uint64_t addr, uint64_t *out) {
     uint64_t v = 0;
-    if (gKrwMode == KRW_LIBJB && libjb_kread_ptr) {
-        v = libjb_kread_ptr(addr);
-        v = unsign_kptr(v);
-    } else {
-        if (!krw_read(addr, &v, sizeof(v))) return false;
-        v = unsign_kptr(v);
-    }
+    if (!krw_read(addr, &v, sizeof(v))) return false;
+    v = unsign_kptr(v);
     if (!kptr_plausible(v)) return false;
     *out = v;
     return true;
@@ -898,31 +933,47 @@ static void proc_rele_self(uint64_t proc) {
 // Vnode flag ops + validation
 // ---------------------------------------------------------------------------
 
+// Outcome of a vnode flag operation (A5): callers MUST distinguish "failed
+// before any write" (safe to close the fd / drop the WAL record) from "write
+// attempted, outcome unknown" (the vnode may carry VISSHADOW — retain the fd
+// and the WAL record until a VERIFIED clear; never close such an fd).
+typedef enum {
+    VFLAG_OK = 0,        // desired state verified by readback
+    VFLAG_FAILED_PRE,    // failed before any write was attempted
+    VFLAG_MAYBE,         // write attempted, state unverified — may be hidden
+} vflag_result_t;
+
 // Set/clear VISSHADOW and READ BACK to verify (spec: read back after writing).
-static bool vnode_set_flag(uint64_t vnode, bool set) {
+// A28: readback must show the FULL expected value (original with only the
+// VISSHADOW bit changed), not just the bit.  Note: this read-modify-write is
+// not atomic against a concurrent kernel flag update without the vnode lock;
+// the retained fd prevents vnode UAF, and a concurrent flag change would
+// surface as a readback mismatch → VFLAG_MAYBE → retained fd + WAL record.
+static vflag_result_t vnode_set_flag(uint64_t vnode, bool set) {
     uint32_t flags = 0;
     if (!krw_read32(vnode + OFF_VNODE_V_FLAGS, &flags)) {
         shdw_log("vnode_set_flag: read failed at 0x%llx", vnode);
-        return false;
+        return VFLAG_FAILED_PRE;
     }
     uint32_t nf = set ? (flags | VISSHADOW) : (flags & ~VISSHADOW);
     if (nf == flags) {
-        return true;   // already in the desired state
+        return VFLAG_OK;   // already in the desired state (verified by the read)
     }
     if (!krw_write32(vnode + OFF_VNODE_V_FLAGS, nf)) {
         shdw_log("vnode_set_flag: write failed at 0x%llx", vnode);
-        return false;
+        return VFLAG_MAYBE;
     }
     uint32_t check = 0;
     if (!krw_read32(vnode + OFF_VNODE_V_FLAGS, &check)) {
         shdw_log("vnode_set_flag: readback failed at 0x%llx", vnode);
-        return false;
+        return VFLAG_MAYBE;
     }
-    if (((check & VISSHADOW) != 0) != set) {
-        shdw_log("vnode_set_flag: readback mismatch at 0x%llx (0x%x)", vnode, check);
-        return false;
+    if (check != nf) {
+        shdw_log("vnode_set_flag: readback mismatch at 0x%llx (got 0x%x, expected 0x%x)",
+                 vnode, check, nf);
+        return VFLAG_MAYBE;
     }
-    return true;
+    return VFLAG_OK;
 }
 
 // Runtime validation of a resolved vnode (spec section 2): flag readable,
@@ -981,7 +1032,8 @@ static bool read_fd_entry(uint64_t filedesc, int fd, uint64_t *out) {
 
 // Walk: proc → p_fd → fd_ofiles[fd] → f_fglob → fg_data.  Validates every
 // step (spec section 2).  The open fd is retained by the caller; this only
-// resolves the vnode and captures v_id (if reachable).
+// resolves the vnode and captures v_id (required — A24: a failed v_id read
+// fails the resolution; vId == 0 must never pass validation).
 static bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId) {
     uint64_t proc = proc_find_self();
     if (proc == 0) {
@@ -997,17 +1049,28 @@ static bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId) {
         return false;
     }
 
-    uint64_t filedesc = 0;
-    if (!krw_read_ptr(proc + off_p_pfd, &filedesc)) {
-        shdw_log("resolve: p_pfd read failed");
-        proc_rele_self(proc);
-        return false;
-    }
-
     // fd within table bounds: the entry itself is re-read and validated
     // (canonical, nonzero) — an out-of-bounds read yields garbage and is
     // rejected; our fd is in-bounds by construction (open() succeeded).
     for (int attempt = 0; attempt < 3; attempt++) {
+        // A25: re-read proc's p_fd on EVERY attempt and verify it did not
+        // change between two consecutive reads — the fd table (or the proc
+        // itself) may have relocated; only then walk the entries.
+        uint64_t fa = 0, fb = 0;
+        if (!krw_read_ptr(proc + off_p_pfd, &fa)) {
+            shdw_log("resolve: p_pfd read failed");
+            break;
+        }
+        if (!krw_read_ptr(proc + off_p_pfd, &fb)) {
+            shdw_log("resolve: p_pfd read failed (2nd)");
+            break;
+        }
+        if (fa != fb) {
+            shdw_log("resolve: p_fd relocated between reads — retrying");
+            continue;
+        }
+        uint64_t filedesc = fa;
+
         uint64_t openedfile = 0;
         if (!read_fd_entry(filedesc, fd, &openedfile)) {
             continue;   // table relocated — retry
@@ -1041,15 +1104,15 @@ static bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId) {
             shdw_log("resolve: vnode validation failed at 0x%llx", vnode);
             break;
         }
-        // Capture v_id if reachable (spec).
-        uint64_t vId = 0;
+        // Capture v_id — REQUIRED (A24): a failed read fails the resolution.
         uint32_t vid32 = 0;
-        if (krw_read32(vnode + OFF_VNODE_V_ID, &vid32)) {
-            vId = vid32;
+        if (!krw_read32(vnode + OFF_VNODE_V_ID, &vid32)) {
+            shdw_log("resolve: v_id read failed at 0x%llx", vnode);
+            break;
         }
         proc_rele_self(proc);
         *outVnode = vnode;
-        *outVId = vId;
+        *outVId = vid32;
         return true;
     }
     proc_rele_self(proc);
@@ -1070,6 +1133,8 @@ static bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId) {
 // resource and the client re-releases).
 
 static NSString *gBootUUID = nil;   // current boot session (ledger key)
+
+static bool ledger_wipe(void);   // used by ledger_read's bad-header path
 
 static NSString *ledger_dir(void) {
     static NSString *dir = nil;
@@ -1146,7 +1211,12 @@ static bool ledger_write_lines(NSString *bootUUID, NSArray<NSString *> *records)
         shdw_log("ledger: rename failed (%s)", strerror(errno));
         return false;
     }
-    fsync_dir(dir);
+    // A12: the directory fsync is part of the durability contract — a failed
+    // dir fsync must make the write fail (the rename may not be durable).
+    if (!fsync_dir(dir)) {
+        shdw_log("ledger: dir fsync failed");
+        return false;
+    }
     return true;
 }
 
@@ -1167,7 +1237,15 @@ static NSArray<NSString *> *ledger_read(NSString **outBootUUID) {
     for (NSUInteger i = 0; i < lines.count; i++) {
         NSString *line = lines[i];
         if (line.length == 0) continue;
-        if (i == 0) continue;          // header
+        if (i == 0) {
+            // A14: validate the magic header — anything else is not our ledger.
+            if (![line isEqualToString:@"SHADOWLEDGER1"]) {
+                shdw_log("ledger: bad header (%s) — discarding", line.UTF8String);
+                ledger_wipe();
+                return @[];
+            }
+            continue;
+        }
         if (i == 1) { boot = line; continue; }
         [records addObject:line];
     }
@@ -1175,11 +1253,19 @@ static NSArray<NSString *> *ledger_read(NSString **outBootUUID) {
     return records;
 }
 
-static void ledger_wipe(void) {
+// A12: wipe reports failure — callers must know whether the removal is durable.
+static bool ledger_wipe(void) {
     NSString *path = ledger_file_path();
-    if (unlink(path.UTF8String) == 0) {
-        fsync_dir(ledger_dir());
+    if (unlink(path.UTF8String) != 0) {
+        if (errno == ENOENT) return true;   // already gone — durable by definition
+        shdw_log("ledger: unlink failed (%s)", strerror(errno));
+        return false;
     }
+    if (!fsync_dir(ledger_dir())) {
+        shdw_log("ledger: dir fsync failed after unlink");
+        return false;
+    }
+    return true;
 }
 
 static bool ledger_add_record(const char *path, const char *ownerKey, uint64_t vnode, uint64_t vId, int state) {
@@ -1221,8 +1307,7 @@ static bool ledger_remove_path_records(const char *path) {
     }
     if (kept.count == records.count) return true;   // nothing to remove
     if (kept.count == 0) {
-        ledger_wipe();
-        return true;
+        return ledger_wipe();   // A12: propagate durability failure
     }
     return ledger_write_lines(boot, kept);
 }
@@ -1284,6 +1369,7 @@ static bool owner_start_time(pid_t pid, uint64_t *sec, uint64_t *usec) {
 @property (nonatomic) uint64_t vnode;            // resolved vnode
 @property (nonatomic) uint64_t vId;              // captured v_id (identity check)
 @property (nonatomic) BOOL flagSet;              // VISSHADOW currently set
+@property (nonatomic) BOOL verified;             // hide verified by readback (A5)
 @property (nonatomic, strong) NSMutableSet<NSString *> *owners;  // owner keys
 @end
 
@@ -1293,58 +1379,121 @@ static bool owner_start_time(pid_t pid, uint64_t *sec, uint64_t *usec) {
 // All resource/ledger/kernel activity: ONE serial queue (spec: single serial
 // daemon writer).
 static dispatch_queue_t gKernelQueue;
+static dispatch_queue_t gServerQueue;   // mach server queue (created in setup_ipc_server)
 
 static NSMutableDictionary<NSString *, ShadowResource *> *gResources;
 static NSMutableSet<NSString *> *gPendingReleases;   // release retries
 
-// May we write to this vnode?  A retained fd pins the vnode — always safe.
-// A restart-adopted resource (fd == -1, path was already hidden when we came
-// up) has no fresh anchor: re-verify vnode identity (v_id) before ANY write
-// — never write through a stale saved address blindly (spec).
-static bool vnode_writeable(ShadowResource *res) {
-    if (res.fd >= 0) {
-        return true;
+// Lease bookkeeping (declared here so owner_gone can clean up; populated in
+// setup_ipc_server): reply port → owner key, and owner key → live port count
+// (A17: an owner is gone only when ALL of its reply ports are dead).
+static NSMutableDictionary<NSNumber *, NSString *> *gLeases;
+static NSMutableDictionary<NSString *, NSNumber *> *gOwnerPortCounts;
+
+static void owner_gone(NSString *ownerKey);
+
+// Drop every lease/port-count entry belonging to an owner (dead-name or
+// polling detected death).  A18: also deallocate any notification right the
+// kernel may still hold for those ports.
+static void drop_owner_leases(NSString *ownerKey) {
+    NSMutableArray<NSNumber *> *deadPorts = [NSMutableArray array];
+    for (NSNumber *port in [gLeases allKeys]) {
+        if ([gLeases[port] isEqualToString:ownerKey]) {
+            [deadPorts addObject:port];
+        }
     }
-    if (res.vId == 0) {
-        shdw_log("vnode_writeable: no identity recorded for 0x%llx — refusing write", res.vnode);
+    for (NSNumber *port in deadPorts) {
+        mach_port_deallocate(mach_task_self(), (mach_port_name_t)port.unsignedIntValue);
+        [gLeases removeObjectForKey:port];
+    }
+    [gOwnerPortCounts removeObjectForKey:ownerKey];
+}
+
+// A8: restart-adopted resources (fd == -1) are READ-ONLY — the saved vnode
+// address may be reclaimed between any check and write (TOCTOU), so VISSHADOW
+// is NEVER written through it.  Clearing an adopted resource goes through a
+// FRESH open: if it opens, it's visible — re-resolve from the fresh fd and
+// clear if flagged; if ENOENT, leave it hidden (mark degraded), and retry
+// later — a kernel reboot/reclaim clears it naturally.
+static bool adopted_clear(ShadowResource *res, NSString *path) {
+    int fd2 = open(path.UTF8String, O_RDONLY);
+    if (fd2 < 0) {
+        if (errno == ENOENT) {
+            shdw_log("adopted_clear %s: still hidden (ENOENT) — degraded, retrying later", path.UTF8String);
+        } else {
+            shdw_log("adopted_clear %s: open failed (%s) — retrying later", path.UTF8String, strerror(errno));
+        }
         return false;
     }
-    uint32_t vid = 0;
-    if (!krw_read32(res.vnode + OFF_VNODE_V_ID, &vid) || vid != (uint32_t)res.vId) {
-        shdw_log("vnode_writeable: identity mismatch at 0x%llx (0x%x != 0x%llx) — refusing write",
-                 res.vnode, vid, res.vId);
+    uint64_t vnode = 0, vId = 0;
+    if (!resolve_vnode_for_fd(fd2, &vnode, &vId)) {
+        shdw_log("adopted_clear %s: re-resolve failed", path.UTF8String);
+        close(fd2);
         return false;
     }
+    uint32_t flags = 0;
+    bool flagged = krw_read32(vnode + OFF_VNODE_V_FLAGS, &flags) && (flags & VISSHADOW) != 0;
+    if (flagged) {
+        if (vnode_set_flag(vnode, false) != VFLAG_OK) {
+            shdw_log("adopted_clear %s: clear unverified — retaining", path.UTF8String);
+            close(fd2);
+            return false;
+        }
+    }
+    close(fd2);
     return true;
 }
 
-// Teardown a resource: clear VISSHADOW (fd held), verify, close fd, THEN
-// durably remove the ledger record.  Returns false if the clear failed — the
-// caller retains fd + record and retries later.
+// Teardown a resource: clear VISSHADOW (fd held), verify, THEN durably remove
+// the ledger record (A6: teardown does NOT complete — fd + resource are kept —
+// if the durable removal failed), then close the fd.  Returns false when the
+// caller must retain fd + record and retry later.
 static bool resource_teardown(ShadowResource *res, NSString *path) {
-    if (res.flagSet) {
-        if (!vnode_writeable(res)) {
-            shdw_log("teardown %s: vnode not writeable — retaining fd + record", path.UTF8String);
+    if (res.fd < 0) {
+        // Restart-adopted: read-only saved vnode — fresh-open path only (A8).
+        if (!adopted_clear(res, path)) {
             return false;
         }
-        if (!vnode_set_flag(res.vnode, false)) {
-            shdw_log("teardown %s: clear VISSHADOW failed — retaining fd + record", path.UTF8String);
+        res.flagSet = NO;
+        if (!ledger_remove_path_records(path.UTF8String)) {
+            shdw_log("teardown %s: ledger removal failed — keeping resource", path.UTF8String);
+            return false;
+        }
+        [gResources removeObjectForKey:path];
+        shdw_log("released: %s", path.UTF8String);
+        return true;
+    }
+
+    if (res.flagSet) {
+        if (vnode_set_flag(res.vnode, false) != VFLAG_OK) {
+            shdw_log("teardown %s: clear VISSHADOW unverified — retaining fd + record", path.UTF8String);
             return false;
         }
         res.flagSet = NO;
     }
-    if (res.fd >= 0) {
-        close(res.fd);
-        res.fd = -1;
+    // A6: durable record removal BEFORE closing — if it fails, keep the fd
+    // and the resource so a later attempt can complete.
+    if (!ledger_remove_path_records(path.UTF8String)) {
+        shdw_log("teardown %s: ledger removal failed — keeping fd + resource", path.UTF8String);
+        return false;
     }
-    ledger_remove_path_records(path.UTF8String);
+    close(res.fd);
+    res.fd = -1;
     [gResources removeObjectForKey:path];
     shdw_log("released: %s", path.UTF8String);
     return true;
 }
 
 // Remove one owner everywhere; tear down resources with no owners left.
+// gLeases/gOwnerPortCounts are only ever touched on the SERVER queue
+// (install_lease, dead-name handler), so the lease cleanup is dispatched
+// there — owner_gone itself runs on the kernel queue.
 static void owner_gone(NSString *ownerKey) {
+    if (gServerQueue) {
+        dispatch_async(gServerQueue, ^{
+            drop_owner_leases(ownerKey);
+        });
+    }
     for (NSString *path in [gResources allKeys]) {
         ShadowResource *res = gResources[path];
         if (![res.owners containsObject:ownerKey]) continue;
@@ -1358,39 +1507,52 @@ static void owner_gone(NSString *ownerKey) {
     }
 }
 
-// Polling fallback owner-death detection: kill(pid, 0) + start-time check
-// (survives PID reuse).  Also retries pending releases.
+// Owner-death check: kill(pid, 0) + start-time comparison (survives PID reuse).
+static bool owner_dead(NSString *ownerKey) {
+    pid_t pid; uint64_t sec, usec;
+    parse_owner_key(ownerKey, &pid, &sec, &usec);
+    if (pid <= 0) return true;
+    bool alive = (kill(pid, 0) == 0) || (errno != ESRCH);
+    if (alive && (sec != 0 || usec != 0)) {
+        uint64_t cs = 0, cu = 0;
+        if (!owner_start_time(pid, &cs, &cu)) {
+            alive = false;
+        } else if (cs != sec || cu != usec) {
+            shdw_log("sweep: pid %d reused (start time mismatch)", pid);
+            alive = false;
+        }
+    }
+    return !alive;
+}
+
+// Polling fallback owner-death detection + repair pass for unverified hides
+// (A5: a hide whose write outcome was unknown is re-attempted until verified)
+// + pending release retries.
 static void sweep_owners(void) {
+    NSMutableSet<NSString *> *deadOwners = [NSMutableSet set];
     for (NSString *path in [gResources allKeys]) {
         ShadowResource *res = gResources[path];
-        NSMutableSet<NSString *> *dead = [NSMutableSet set];
         for (NSString *ownerKey in res.owners) {
-            pid_t pid; uint64_t sec, usec;
-            parse_owner_key(ownerKey, &pid, &sec, &usec);
-            if (pid <= 0) { [dead addObject:ownerKey]; continue; }
-            bool alive = (kill(pid, 0) == 0) || (errno != ESRCH);
-            if (alive && (sec != 0 || usec != 0)) {
-                uint64_t cs = 0, cu = 0;
-                if (!owner_start_time(pid, &cs, &cu)) {
-                    alive = false;
-                } else if (cs != sec || cu != usec) {
-                    shdw_log("sweep: pid %d reused (start time mismatch)", pid);
-                    alive = false;
-                }
-            }
-            if (!alive) {
+            if (owner_dead(ownerKey)) {
                 shdw_log("sweep: owner %s dead", ownerKey.UTF8String);
-                [dead addObject:ownerKey];
+                [deadOwners addObject:ownerKey];
             }
         }
-        for (NSString *k in dead) {
-            [res.owners removeObject:k];
-        }
-        if (res.owners.count == 0 && res.flagSet) {
-            if (!resource_teardown(res, path)) {
-                [gPendingReleases addObject:path];
+        // Repair pass: an unverified hide may actually be visible — re-attempt
+        // the set until it verifies (or the resource is torn down).
+        if (res.flagSet && !res.verified) {
+            vflag_result_t r = vnode_set_flag(res.vnode, true);
+            if (r == VFLAG_OK) {
+                res.verified = YES;
+                for (NSString *k in res.owners) {
+                    ledger_update_record(path.UTF8String, k.UTF8String, res.vnode, res.vId, 1 /*hidden*/);
+                }
+                shdw_log("sweep: verified hide for %s", path.UTF8String);
             }
         }
+    }
+    for (NSString *k in deadOwners) {
+        owner_gone(k);
     }
     for (NSString *path in [gPendingReleases copy]) {
         ShadowResource *res = gResources[path];
@@ -1415,11 +1577,13 @@ static bool allowlisted(const char *path) {
     return false;
 }
 
-// Wait for krw init to resolve (bounded).  Returns ENOTSUP when disabled.
+// A22: requests arriving while krw init is still running return EBUSY
+// IMMEDIATELY — no long wait.  The client times out after ~2s and destroys
+// its reply port; hiding on its behalf with no lease must not happen.  A
+// permanently disabled krw backend answers ENOTSUP.
 static uint32_t acquire_status_if_ready(void) {
     if (gKrwState == KRW_INIT) {
-        dispatch_semaphore_wait(gKrwReadySem,
-                                dispatch_time(DISPATCH_TIME_NOW, 35 * NSEC_PER_SEC));
+        return SHADOWD_STATUS_EBUSY;
     }
     if (gKrwState != KRW_READY) {
         return SHADOWD_STATUS_ENOTSUP;
@@ -1427,9 +1591,12 @@ static uint32_t acquire_status_if_ready(void) {
     return SHADOWD_STATUS_OK;
 }
 
+static uint32_t release_for_owner(NSString *ownerKey);   // rollback helper (A21)
+
 // Hide every allowlisted path for one owner.  Dedup by resource: a second
 // acquire of an already-hidden path only adds the owner — it does NOT
-// reopen/rehide (spec).
+// reopen/rehide (spec).  A21: if ANY path fails, everything this acquire
+// did for this owner is rolled back before returning EBUSY.
 static uint32_t acquire_for_owner(NSString *ownerKey) {
     uint32_t gated = acquire_status_if_ready();
     if (gated != SHADOWD_STATUS_OK) return gated;
@@ -1439,10 +1606,24 @@ static uint32_t acquire_for_owner(NSString *ownerKey) {
         NSString *path = kAllowlist[i];
         ShadowResource *res = gResources[path];
         if (res) {
+            // An unverified hide (A5) may actually be visible — re-attempt
+            // the set before adding the owner.
+            if (!res.verified) {
+                if (vnode_set_flag(res.vnode, true) == VFLAG_OK) {
+                    res.verified = YES;
+                    shdw_log("acquire %s: hide re-verified", path.UTF8String);
+                }
+            }
             if (![res.owners containsObject:ownerKey]) {
+                // A16: the WAL write is part of the acquire — fail it if the
+                // durable per-owner record cannot be written.
+                if (!ledger_add_record(path.UTF8String, ownerKey.UTF8String, res.vnode, res.vId,
+                                       res.verified ? 1 : 0 /*hidden/mayBeHidden*/)) {
+                    shdw_log("acquire %s: ledger write failed (dedup)", path.UTF8String);
+                    status = SHADOWD_STATUS_EBUSY;
+                    continue;
+                }
                 [res.owners addObject:ownerKey];
-                // Durable per-owner record so a crash keeps owner identity.
-                ledger_add_record(path.UTF8String, ownerKey.UTF8String, res.vnode, res.vId, 1 /*hidden*/);
                 shdw_log("acquire %s: added owner %s", path.UTF8String, ownerKey.UTF8String);
             }
             continue;
@@ -1470,11 +1651,30 @@ static uint32_t acquire_for_owner(NSString *ownerKey) {
             continue;
         }
 
-        // Set VISSHADOW and verify by reread.
-        if (!vnode_set_flag(vnode, true)) {
-            shdw_log("acquire %s: hide failed at 0x%llx", path.UTF8String, vnode);
-            ledger_remove_path_records(path.UTF8String);   // roll back record
+        // Set VISSHADOW and verify by reread (A5): a failure AFTER the write
+        // attempt may mean the vnode IS hidden — retain the fd and the WAL
+        // record until a verified clear; never close an fd whose vnode may
+        // carry VISSHADOW.
+        vflag_result_t vr = vnode_set_flag(vnode, true);
+        if (vr == VFLAG_FAILED_PRE) {
+            // No write was attempted — safe to roll back.
+            shdw_log("acquire %s: hide failed before write at 0x%llx", path.UTF8String, vnode);
+            ledger_remove_path_records(path.UTF8String);
             close(fd);
+            status = SHADOWD_STATUS_EBUSY;
+            continue;
+        }
+        if (vr == VFLAG_MAYBE) {
+            // Outcome unknown — keep fd + record, adopt as unverified.
+            shdw_log("acquire %s: hide UNVERIFIED at 0x%llx — retaining fd + record", path.UTF8String, vnode);
+            ShadowResource *nr = [ShadowResource new];
+            nr.fd = fd;
+            nr.vnode = vnode;
+            nr.vId = vId;
+            nr.flagSet = YES;
+            nr.verified = NO;
+            nr.owners = [NSMutableSet setWithObject:ownerKey];
+            gResources[path] = nr;
             status = SHADOWD_STATUS_EBUSY;
             continue;
         }
@@ -1489,9 +1689,18 @@ static uint32_t acquire_for_owner(NSString *ownerKey) {
         nr.vnode = vnode;
         nr.vId = vId;
         nr.flagSet = YES;
+        nr.verified = YES;
         nr.owners = [NSMutableSet setWithObject:ownerKey];
         gResources[path] = nr;
         shdw_log("hidden: %s (vnode 0x%llx v_id %llu)", path.UTF8String, vnode, vId);
+    }
+
+    // A21: partial acquisition — roll back everything this owner acquired in
+    // this call (clear verified flags, close fds, remove records) before the
+    // handler replies EBUSY with no lease.
+    if (status != SHADOWD_STATUS_OK) {
+        shdw_log("acquire: rolling back owner %s after partial failure", ownerKey.UTF8String);
+        release_for_owner(ownerKey);
     }
     return status;
 }
@@ -1531,7 +1740,9 @@ static void recover_from_ledger(void) {
         // Fresh kernel — vnodes were destroyed by the reboot.  Discard all
         // records WITHOUT any kernel writes (spec).
         shdw_log("ledger: boot session mismatch — discarding %lu records without kernel writes", (unsigned long)records.count);
-        ledger_wipe();
+        if (!ledger_wipe()) {
+            shdw_log("ledger: wipe after boot mismatch failed");
+        }
         return;
     }
     shdw_log("ledger: boot session matches — reconciling %lu records", (unsigned long)records.count);
@@ -1544,6 +1755,11 @@ static void recover_from_ledger(void) {
             continue;
         }
         int state = [f[0] intValue];
+        if (state != 0 && state != 1) {
+            // A14: state must be mayBeHidden(0) or hidden(1).
+            shdw_log("ledger: invalid state %d dropped: %s", state, rec.UTF8String);
+            continue;
+        }
         NSString *path = f[1];
         NSString *ownerKey = f[2];
         uint64_t savedVnode = 0, savedVId = 0;
@@ -1554,8 +1770,9 @@ static void recover_from_ledger(void) {
             shdw_log("ledger: non-allowlisted path dropped: %s", path.UTF8String);
             continue;
         }
-        if (savedVnode == 0) {
-            shdw_log("ledger: zero vnode dropped: %s", path.UTF8String);
+        // A14: canonical-pointer check BEFORE reading a saved address.
+        if (savedVnode == 0 || !kptr_plausible(savedVnode)) {
+            shdw_log("ledger: implausible saved vnode dropped: %s", path.UTF8String);
             continue;
         }
 
@@ -1586,10 +1803,21 @@ static void recover_from_ledger(void) {
                 [kept addObject:rec];   // keep for a future retry
                 continue;
             }
-            if (!vnode_set_flag(vnode, true)) {
-                shdw_log("ledger: re-hide failed for %s", path.UTF8String);
+            // A10: persist the WAL record with the FRESH vnode BEFORE setting
+            // VISSHADOW on it — otherwise a crash between the write and the
+            // ledger update leaves the new hidden vnode referenced only by a
+            // stale ledger entry.
+            if (!ledger_update_record(path.UTF8String, ownerKey.UTF8String, vnode, vId, 1 /*hidden*/)) {
+                shdw_log("ledger: WAL update to fresh vnode failed for %s — not hiding", path.UTF8String);
                 close(fd);
                 [kept addObject:rec];
+                continue;
+            }
+            vflag_result_t vr = vnode_set_flag(vnode, true);
+            if (vr == VFLAG_FAILED_PRE) {
+                shdw_log("ledger: re-hide failed before write for %s", path.UTF8String);
+                close(fd);
+                [kept addObject:[NSString stringWithFormat:@"1|%@|%@|0x%llx|0x%llx", path, ownerKey, vnode, vId]];
                 continue;
             }
             ShadowResource *nr = [ShadowResource new];
@@ -1597,31 +1825,45 @@ static void recover_from_ledger(void) {
             nr.vnode = vnode;
             nr.vId = vId;
             nr.flagSet = YES;
+            nr.verified = (vr == VFLAG_OK);
             nr.owners = [NSMutableSet setWithObject:ownerKey];
             gResources[path] = nr;
-            // Fix up the record with the fresh vnode identity.
             [kept addObject:[NSString stringWithFormat:@"1|%@|%@|0x%llx|0x%llx", path, ownerKey, vnode, vId]];
-            shdw_log("ledger: re-hidden %s via fresh fd (vnode 0x%llx)", path.UTF8String, vnode);
+            if (vr == VFLAG_OK) {
+                shdw_log("ledger: re-hidden %s via fresh fd (vnode 0x%llx)", path.UTF8String, vnode);
+            } else {
+                // A11: write outcome unknown — retain fd + record, adopt as
+                // unverified (sweep repairs).
+                shdw_log("ledger: re-hide UNVERIFIED for %s — retained fd + record (vnode 0x%llx)", path.UTF8String, vnode);
+            }
         } else {
-            // open failed (ENOENT): the file is genuinely hidden (vnode
-            // still flagged) — or it was deleted.  Verify the saved vnode
-            // READ-ONLY (flag set + v_id identity) before adopting.
+            // A9: ONLY ENOENT is evidence of hiding — EMFILE/EIO/EACCES/...
+            // prove nothing, so the record is kept without adopting.
+            if (errno != ENOENT) {
+                shdw_log("ledger: open(%s) failed with %s — not evidence of hiding, record kept", path.UTF8String, strerror(errno));
+                [kept addObject:rec];
+                continue;
+            }
+            // ENOENT: the file is genuinely hidden (vnode still flagged) — or
+            // it was deleted.  Verify the saved vnode READ-ONLY (flag set +
+            // v_id identity) before adopting.
             uint32_t flags = 0, vid = 0;
             if (!krw_read32(savedVnode + OFF_VNODE_V_FLAGS, &flags) || (flags & VISSHADOW) == 0) {
                 shdw_log("ledger: saved vnode 0x%llx not flagged — dropped: %s", savedVnode, path.UTF8String);
                 continue;
             }
-            if (savedVId != 0 &&
+            // A14: a saved v_id of 0 cannot be identity-checked — refuse.
+            if (savedVId == 0 ||
                 (!krw_read32(savedVnode + OFF_VNODE_V_ID, &vid) || vid != (uint32_t)savedVId)) {
                 shdw_log("ledger: saved vnode 0x%llx identity mismatch — dropped: %s", savedVnode, path.UTF8String);
                 continue;
             }
             ShadowResource *nr = [ShadowResource new];
-            nr.fd = -1;   // no fd obtainable while hidden — anchor is the
-                          // identity-verified saved vnode
+            nr.fd = -1;   // no fd obtainable while hidden; READ-ONLY anchor (A8)
             nr.vnode = savedVnode;
             nr.vId = savedVId;
             nr.flagSet = YES;
+            nr.verified = YES;
             nr.owners = [NSMutableSet setWithObject:ownerKey];
             gResources[path] = nr;
             [kept addObject:rec];
@@ -1629,10 +1871,13 @@ static void recover_from_ledger(void) {
         }
     }
 
+    // A12: the final rewrite must succeed to be durable; report failures.
     if (kept.count == 0) {
-        ledger_wipe();
-    } else {
-        ledger_write_lines(gBootUUID, kept);
+        if (!ledger_wipe()) {
+            shdw_log("ledger: final wipe failed");
+        }
+    } else if (!ledger_write_lines(gBootUUID, kept)) {
+        shdw_log("ledger: final rewrite failed");
     }
 }
 
@@ -1641,30 +1886,40 @@ static void recover_from_ledger(void) {
 // ---------------------------------------------------------------------------
 
 static mach_port_t gServerPort = MACH_PORT_NULL;
-static dispatch_queue_t gServerQueue;
 static mach_port_t gNotifyPort = MACH_PORT_NULL;
-static NSMutableDictionary<NSNumber *, NSString *> *gLeases;   // reply port → owner key
+// gServerQueue, gLeases / gOwnerPortCounts are declared with the resource
+// model (owner_gone needs them); populated in setup_ipc_server.
 
 // Keep a send right to the client's reply port as the lease; install a
 // dead-name notification; on the client's death the kernel notifies us and
-// the owner's leases are released.
+// the owner's leases are released.  A17: leases are REFERENCE-COUNTED per
+// owner — the owner is only removed when ALL of its reply ports are dead
+// (a client timeout/retry can leave multiple live ports for one owner).
+// A18: the previous notification right returned by the kernel is dropped.
 static void install_lease(mach_port_name_t replyPort, NSString *ownerKey) {
+    if (gLeases[@(replyPort)] != nil) {
+        shdw_log("lease: port 0x%x already leased — skipping", replyPort);
+        return;
+    }
     mach_port_name_t previous = MACH_PORT_NULL;
     kern_return_t kr = mach_port_request_notification(mach_task_self(), replyPort,
                                                       MACH_NOTIFY_DEAD_NAME, 0,
                                                       gNotifyPort, MACH_MSG_TYPE_MAKE_SEND_ONCE,
                                                       &previous);
+    if (previous != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), previous);
+    }
     if (kr != KERN_SUCCESS) {
         // The lease is already dead (client gone before we could arm the
-        // notification) — treat the owner as dead.
+        // notification) — this port contributes nothing; the polling
+        // fallback will reap the owner if no other lease survives.
         shdw_log("lease: dead-name request failed (0x%x) for owner %s", kr, ownerKey.UTF8String);
-        dispatch_async(gKernelQueue, ^{
-            owner_gone(ownerKey);
-        });
         return;
     }
     gLeases[@(replyPort)] = ownerKey;
-    shdw_log("lease: installed for owner %s (reply port 0x%x)", ownerKey.UTF8String, replyPort);
+    gOwnerPortCounts[ownerKey] = @([gOwnerPortCounts[ownerKey] intValue] + 1);
+    shdw_log("lease: installed for owner %s (reply port 0x%x, count %d)",
+             ownerKey.UTF8String, replyPort, [gOwnerPortCounts[ownerKey] intValue]);
 }
 
 static void send_reply(shadowd_request_t *req, uint32_t status) {
@@ -1679,8 +1934,10 @@ static void send_reply(shadowd_request_t *req, uint32_t status) {
     reply.requestId = req->requestId;
     reply.status = status;
 
-    kern_return_t kr = mach_msg(&reply.header, MACH_SEND_MSG, reply.header.msgh_size,
-                                0, MACH_PORT_NULL, 0, MACH_PORT_NULL);
+    // A19: bounded send — a malicious or full client reply queue must not be
+    // able to block the server queue indefinitely.
+    kern_return_t kr = mach_msg(&reply.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT,
+                                reply.header.msgh_size, 0, MACH_PORT_NULL, 5000, MACH_PORT_NULL);
     if (kr != KERN_SUCCESS) {
         shdw_log("reply: mach_msg failed (0x%x)", kr);
     }
@@ -1689,11 +1946,13 @@ static void send_reply(shadowd_request_t *req, uint32_t status) {
 static void handle_request(shadowd_request_t *req) {
     if (req->magic != SHADOWD_MAGIC) {
         shdw_log("request: bad magic 0x%x", req->magic);
+        mach_msg_destroy(&req->header);
         return;
     }
     if (req->version != SHADOWD_VERSION) {
         shdw_log("request: unsupported version %u", req->version);
         send_reply(req, SHADOWD_STATUS_ENOTSUP);
+        mach_port_deallocate(mach_task_self(), req->replyPort.name);
         return;
     }
     if (req->op == SHADOWD_OP_PING) {
@@ -1711,12 +1970,19 @@ static void handle_request(shadowd_request_t *req) {
     if (euid == 0 || pid <= 0) {
         shdw_log("request: rejected (pid %d, euid %u)", pid, euid);
         send_reply(req, SHADOWD_STATUS_EPERM);
+        mach_port_deallocate(mach_task_self(), req->replyPort.name);
         return;
     }
 
+    // A15: the owner identity REQUIRES the process start time — without it
+    // the owner key degrades to pid-0-0 and PID reuse defeats the lease.
+    // Reject the request rather than weaken identity.
     uint64_t sec = 0, usec = 0;
     if (!owner_start_time(pid, &sec, &usec)) {
-        shdw_log("request: owner start time unavailable for pid %d (identity weakened)", pid);
+        shdw_log("request: owner start time unavailable for pid %d — rejecting", pid);
+        send_reply(req, SHADOWD_STATUS_EBUSY);
+        mach_port_deallocate(mach_task_self(), req->replyPort.name);
+        return;
     }
     NSString *ownerKey = owner_key(pid, sec, usec);
 
@@ -1746,6 +2012,7 @@ static void handle_request(shadowd_request_t *req) {
     }
     shdw_log("request: unknown op %u", req->op);
     send_reply(req, SHADOWD_STATUS_ENOTSUP);
+    mach_port_deallocate(mach_task_self(), req->replyPort.name);
 }
 
 static void server_receive(void) {
@@ -1765,7 +2032,35 @@ static void server_receive(void) {
         shdw_log("server: receive failed (0x%x)", kr);
         return;
     }
-    if (req->header.msgh_size < sizeof(mach_msg_base_t)) {
+
+    // A20: strict message validation.  Anything malformed is destroyed
+    // (mach_msg_destroy drops the reply-port send right) and dropped —
+    // never parsed, never replied to.
+    if (req->header.msgh_size != sizeof(shadowd_request_t)) {
+        shdw_log("server: bad message size %u (expected %zu)", req->header.msgh_size, sizeof(shadowd_request_t));
+        if (req->header.msgh_bits & MACH_MSGH_BITS_COMPLEX) mach_msg_destroy(&req->header);
+        return;
+    }
+    if (!(req->header.msgh_bits & MACH_MSGH_BITS_COMPLEX)) {
+        shdw_log("server: message is not complex (no reply port)");
+        return;
+    }
+    if (req->msgh_body.msgh_descriptor_count != 1) {
+        shdw_log("server: descriptor count %u (expected 1)", req->msgh_body.msgh_descriptor_count);
+        mach_msg_destroy(&req->header);
+        return;
+    }
+    if (req->replyPort.type != MACH_MSG_PORT_DESCRIPTOR ||
+        req->replyPort.disposition != MACH_MSG_TYPE_MAKE_SEND) {
+        shdw_log("server: bad reply port descriptor (type %u, disposition %u)",
+                 req->replyPort.type, req->replyPort.disposition);
+        mach_msg_destroy(&req->header);
+        return;
+    }
+    // The audit trailer must actually fit in the receive buffer.
+    if (round_msg(req->header.msgh_size) + sizeof(mach_msg_audit_trailer_t) > sizeof(gRecvBuf)) {
+        shdw_log("server: audit trailer out of bounds");
+        mach_msg_destroy(&req->header);
         return;
     }
     handle_request(req);
@@ -1774,6 +2069,7 @@ static void server_receive(void) {
 static void setup_ipc_server(void) {
     gServerQueue = dispatch_queue_create("me.jjolano.shadowd.server", NULL);
     gLeases = [NSMutableDictionary dictionary];
+    gOwnerPortCounts = [NSMutableDictionary dictionary];
 
     kern_return_t kr = bootstrap_check_in(bootstrap_port, MACH_SERVICE_NAME, &gServerPort);
     if (kr != KERN_SUCCESS) {
@@ -1811,10 +2107,18 @@ static void setup_ipc_server(void) {
             return;
         }
         [gLeases removeObjectForKey:@(deadName)];
-        shdw_log("dead-name: lease for owner %s died", ownerKey.UTF8String);
-        dispatch_async(gKernelQueue, ^{
-            owner_gone(ownerKey);
-        });
+        // A17: reference-counted leases — the owner is removed only when ALL
+        // of its reply ports are dead.
+        int remaining = [gOwnerPortCounts[ownerKey] intValue] - 1;
+        shdw_log("dead-name: lease for owner %s died (%d remaining)", ownerKey.UTF8String, remaining);
+        if (remaining <= 0) {
+            [gOwnerPortCounts removeObjectForKey:ownerKey];
+            dispatch_async(gKernelQueue, ^{
+                owner_gone(ownerKey);
+            });
+        } else {
+            gOwnerPortCounts[ownerKey] = @(remaining);
+        }
     });
     dispatch_resume(notifySrc);
 }
@@ -1835,27 +2139,59 @@ static void setup_poll_timer(void) {
 // Shutdown (SIGTERM/SIGINT)
 // ---------------------------------------------------------------------------
 
+// A7: SIGTERM/SIGINT shutdown.  A failed/ambiguous clear must prevent fd
+// close, ledger wipe and a SUCCESSFUL exit — retry until every clear is
+// verified; only exit(0) when all clears verified AND the ledger removal is
+// durable.  After the retry budget is exhausted, exit non-zero with fds and
+// the ledger retained (restart recovery reconciles; a reboot reclaims).
 static void shutdown_daemon(void) {
     shdw_log("shutdown: clearing all VISSHADOW flags");
-    for (NSString *path in [gResources allKeys]) {
-        ShadowResource *res = gResources[path];
-        if (res.flagSet) {
-            // Same identity rule as release: never write through a stale
-            // saved address blindly (applies to restart-adopted resources).
-            if (vnode_writeable(res) && vnode_set_flag(res.vnode, false)) {
-                res.flagSet = NO;
-                shdw_log("shutdown: cleared %s", path.UTF8String);
+    for (int attempt = 1; attempt <= SHUTDOWN_MAX_ATTEMPTS; attempt++) {
+        bool allVerified = true;
+        for (NSString *path in [gResources allKeys]) {
+            ShadowResource *res = gResources[path];
+            if (!res.flagSet) continue;
+            if (res.fd >= 0) {
+                if (vnode_set_flag(res.vnode, false) == VFLAG_OK) {
+                    res.flagSet = NO;
+                    shdw_log("shutdown: cleared %s", path.UTF8String);
+                } else {
+                    shdw_log("shutdown: clear UNVERIFIED for %s — retaining", path.UTF8String);
+                    allVerified = false;
+                }
             } else {
-                shdw_log("shutdown: FAILED to clear %s — flag may remain set", path.UTF8String);
+                // Restart-adopted: read-only saved vnode — fresh-open only (A8).
+                if (adopted_clear(res, path)) {
+                    res.flagSet = NO;
+                    shdw_log("shutdown: cleared (adopted, fresh fd) %s", path.UTF8String);
+                } else {
+                    shdw_log("shutdown: adopted resource %s not clearable — retaining", path.UTF8String);
+                    allVerified = false;
+                }
             }
         }
-        if (res.fd >= 0) {
-            close(res.fd);
+        if (!allVerified) {
+            shdw_log("shutdown: %d/%d — not all clears verified, retrying in 2s", attempt, SHUTDOWN_MAX_ATTEMPTS);
+            sleep(2);
+            continue;
         }
+        for (NSString *path in [gResources allKeys]) {
+            ShadowResource *res = gResources[path];
+            if (res.fd >= 0) {
+                close(res.fd);
+                res.fd = -1;
+            }
+        }
+        if (ledger_wipe()) {
+            shdw_log("shadowd exiting");
+            exit(0);
+        }
+        shdw_log("shutdown: ledger wipe failed — retrying in 2s");
+        sleep(2);
     }
-    ledger_wipe();
-    shdw_log("shadowd exiting");
-    exit(0);
+    shdw_log("shutdown: could not verify all clears after %d attempts — exiting non-zero (fds + ledger retained)",
+             SHUTDOWN_MAX_ATTEMPTS);
+    exit(1);
 }
 
 static void setup_signal_handlers(void) {
@@ -1889,7 +2225,6 @@ static void krw_init_background(void) {
         if (offset_init() != 0) {
             shdw_log("krw: offset_init failed — feature disabled");
             gKrwState = KRW_DISABLED;
-            dispatch_semaphore_signal(gKrwReadySem);
             return;
         }
 
@@ -1925,20 +2260,19 @@ static void krw_init_background(void) {
         }
 
         if (ok) {
-            gKrwState = KRW_READY;
-            shdw_log("krw: ready (mode %s)", gKrwMode == KRW_LIBJB ? "libjailbreak" : "tfp0");
-            // Recovery and acquires both run on the SAME serial kernel queue,
-            // so enqueue recovery first and it will run before any later
-            // acquire.  Signal the gate semaphore BEFORE enqueueing: an
-            // acquire may already be blocked on it while occupying the
-            // kernel queue — dispatch_sync from here would deadlock.
-            dispatch_async(gKernelQueue, ^{
+            // A13: publish READY only AFTER ledger recovery has COMPLETED —
+            // recovery runs synchronously on the kernel queue first.  This is
+            // deadlock-safe because acquires no longer block during init:
+            // they return EBUSY immediately (A22), so the kernel queue is
+            // never occupied by a waiter.
+            dispatch_sync(gKernelQueue, ^{
                 recover_from_ledger();
             });
+            gKrwState = KRW_READY;
+            shdw_log("krw: ready (mode %s)", gKrwMode == KRW_LIBJB ? "libjailbreak" : "tfp0");
         } else {
             gKrwState = KRW_DISABLED;
         }
-        dispatch_semaphore_signal(gKrwReadySem);
     }
 }
 
@@ -1959,20 +2293,17 @@ int main(int argc, char **argv) {
         gKernelQueue = dispatch_queue_create("me.jjolano.shadowd.kernel", NULL);
         gResources = [NSMutableDictionary dictionary];
         gPendingReleases = [NSMutableSet set];
-        gKrwReadySem = dispatch_semaphore_create(0);
 
         if (!version_gate()) {
             // Hard ceiling: feature disabled for this run; the daemon stays
             // alive but idles (IPC still answers ENOTSUP).
             gKrwState = KRW_DISABLED;
-            dispatch_semaphore_signal(gKrwReadySem);
         } else {
             char uuid[128] = {0};
             if (!get_boot_uuid(uuid, sizeof(uuid))) {
                 // Spec: boot UUID unavailable/empty → disable the feature.
                 shdw_log("kern.bootsessionuuid unavailable — feature disabled");
                 gKrwState = KRW_DISABLED;
-                dispatch_semaphore_signal(gKrwReadySem);
             } else {
                 gBootUUID = [NSString stringWithUTF8String:uuid];
                 shdw_log("boot session: %s", uuid);

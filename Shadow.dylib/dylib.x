@@ -177,15 +177,10 @@ void shdw_detector_detected(const char* reason) {
     // Determine the application we're injected into.
     NSString* bundleIdentifier = [Shadow getBundleIdentifier];
 
-    // Injected into SpringBoard: acquire the vnode lease like any app —
-    // SpringBoard is a hide target too (its prefs bundle lives here), and
-    // the daemon allows non-root euids (SB runs as mobile). The old
-    // system-wide janitor is gone: the daemon owns recovery now. The client
-    // is pure IPC, so it works without hook substitution; the
-    // hook_springboard group was removed in v5, so there is nothing to
-    // %init here.
+    // Injected into SpringBoard: nothing to do — the hook_springboard group
+    // was removed in v5, and vnode hiding is per-app only (SB holds no lease;
+    // the daemon owns recovery).
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-        shadowhook_vnode(NULL);
         return;
     }
 

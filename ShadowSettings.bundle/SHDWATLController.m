@@ -16,6 +16,11 @@
         }
     }
 
+    // the app is covered by the global setting
+    if([prefs boolForKey:@"Global_Enabled"]) {
+        return [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"ENABLED_GLOBAL" value:@"Enabled (Global)" table:@"App"];
+    }
+
     return @"";
 }
 

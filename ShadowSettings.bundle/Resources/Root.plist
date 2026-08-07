@@ -92,6 +92,8 @@
 			<string>reset:</string>
 			<key>label</key>
 			<string>RESET</string>
+			<key>destructive</key>
+			<true/>
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>

@@ -1,7 +1,7 @@
 #import "SHDWHooksListController.h"
+#import "SHDWHookLibs.h"
 
 #import <Shadow/Settings.h>
-#import <HookKit.h>
 
 @implementation SHDWHooksListController {
 	NSUserDefaults* prefs;
@@ -13,7 +13,7 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
-		[self setTitle:@"Bypass Settings"];
+		[self setTitle:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"BYPASS_SETTINGS" value:@"Bypass Settings" table:@"Root"]];
 	}
 
 	return _specifiers;
@@ -43,22 +43,11 @@
 		hk_lib_values = [NSMutableArray new];
 		hk_lib_titles = [NSMutableArray new];
 
-		hookkit_lib_t hooklibs = [HKSubstitutor getAvailableSubstitutorTypes];
-		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
-
 		[hk_lib_values addObject:@"auto"];
 		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Automatic" table:@"Hooks"]];
 
-        for(NSDictionary* hooklib_info in hooklibs_info) {
-            // Substitute/Substrate are obsolete swizzling backends — not
-            // offered in the picker (auto/ElleKit/fishhook only).
-            NSString* hooklib_id = hooklib_info[@"id"];
-
-            if([hooklib_id isEqualToString:@"substrate"] || [hooklib_id isEqualToString:@"substitute"]) {
-                continue;
-            }
-
-			[hk_lib_values addObject:hooklib_id];
+        for(NSDictionary* hooklib_info in SHDWAvailableHookLibs()) {
+			[hk_lib_values addObject:hooklib_info[@"id"]];
 			[hk_lib_titles addObject:hooklib_info[@"name"]];
         }
 	}
