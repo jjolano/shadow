@@ -446,44 +446,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 %end
 %end
 
-%group shadowhook_NSURLRequest
-%hook NSURLRequest
-+ (instancetype)requestWithURL:(NSURL *)URL {
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithURL:(NSURL *)URL {
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-+ (instancetype)requestWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
-        return nil;
-    }
-
-    return %orig;
-}
-
-- (instancetype)initWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
-        return nil;
-    }
-
-    return %orig;
-}
-%end
-%end
-
 void shadowhook_NSURL(HKSubstitutor* hooks) {
     %init(shadowhook_NSURL);
-    %init(shadowhook_NSURLRequest);
     %init(shadowhook_NSURLSession);
 }
