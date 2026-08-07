@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RulesetInfo</key>
+	<dict>
+		<key>Name</key>
+		<string>Test Structure</string>
+		<key>Author</key>
+		<string>harness</string>
+	</dict>
+	<key>FileSystemStructure</key>
+	<dict>
+		<key>/</key>
+		<array>
+			<string>Applications</string>
+			<string>Library</string>
+			<string>System</string>
+			<string>bin</string>
+			<string>cores</string>
+			<string>dev</string>
+			<string>etc</string>
+			<string>private</string>
+			<string>sbin</string>
+			<string>tmp</string>
+			<string>usr</string>
+			<string>var</string>
+		</array>
+		<key>/var/mobile</key>
+		<array>
+			<string>Applications</string>
+			<string>Backups</string>
+			<string>Containers</string>
+			<string>Documents</string>
+			<string>Downloads</string>
+			<string>Library</string>
+			<string>Media</string>
+		</array>
+		<key>/var/mobile/Media</key>
+		<array>
+			<string>DCIM</string>
+			<string>EvilDir</string>
+			<string>Photos</string>
+			<string>Recordings</string>
+		</array>
+	</dict>
+</dict>
+</plist>

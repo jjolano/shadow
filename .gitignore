@@ -4,3 +4,5 @@ build/
 .DS_Store
 .vscode
 .slim/deepwork/
+tests/harness
+tests/harness.d

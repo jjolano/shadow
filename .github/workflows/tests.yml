@@ -1,0 +1,38 @@
+name: harness
+
+# Decision-engine test harness (no device): unit assertions in rooted and
+# rootless modes, the detector-probe battery, and the adversary evasion
+# battery. Runs in the GNUstep container built by tests/Dockerfile.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-gnustep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit assertions (rooted + rootless)
+        run: make -C tests test
+
+      - name: Detector battery (shipped rulesets)
+        run: make -C tests detect
+
+      - name: Adversary evasion battery
+        run: make -C tests adversary
+
+      - name: Real-detector vs Shadow (IOSSecuritySuite-style)
+        run: make -C tests detector
+
+  macos-foundation:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit assertions (rooted + rootless)
+        run: make -C tests test
+
+      - name: Adversary evasion battery
+        run: make -C tests adversary
