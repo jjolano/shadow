@@ -2,6 +2,11 @@
 
 #import "hooks.h"
 
+// Shared bootstrap-service matcher defined in mach.x (see there); used by
+// the mach-lookup denial below. Deliberately not in hooks.h — only the
+// bootstrap hooks and this file consume it.
+extern BOOL shdw_bootstrap_service_restricted(const char* name);
+
 // Apple's real sandbox.h defines SANDBOX_CHECK_NO_REPORT as (1 << 16), a
 // high-bit flag OR'd over the filter type; the vendored header declares it
 // as an extern const instead, so use the stable value directly. Masking it
@@ -38,48 +43,79 @@
 
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
-    if(!isCallerExternal()) {
-        NSLog(@"%@: %d", @"task_for_pid", pid);
+    if(isCallerExternal()) {
+        return original_task_for_pid(task, pid, target);
+    }
+
+    kern_return_t result = original_task_for_pid(task, pid, target);
+
+    // Hide only the unexpected elevation: a SUCCESS for a process other than
+    // self — stock iOS only grants task_for_pid to entitled processes, so a
+    // non-self success is jailbreak-acquired. Deallocate the obtained right,
+    // clear the output port, report the stock failure. Self task_for_pid is
+    // a legitimate app pattern and passes through.
+    if(result == KERN_SUCCESS && pid != getpid()) {
+        if(target && *target != MACH_PORT_NULL) {
+            mach_port_deallocate(mach_task_self(), *target);
+            *target = MACH_PORT_NULL;
+        }
+
         return KERN_FAILURE;
     }
-    
-    return original_task_for_pid(task, pid, target);
+
+    return result;
 }
 
 static kern_return_t (*original_host_get_special_port)(host_priv_t host_priv, int node, int which, mach_port_t* port);
 static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int node, int which, mach_port_t* port) {
-    if(!isCallerExternal()) {
-        NSLog(@"%@: %d", @"host_get_special_port", which);
+    if(isCallerExternal()) {
+        return original_host_get_special_port(host_priv, node, which, port);
+    }
 
-        if(port) {
+    kern_return_t result = original_host_get_special_port(host_priv, node, which, port);
+
+    // HOST_PRIV_PORT is the jailbreak elevation: stock iOS denies it to
+    // unentitled processes, so a SUCCESS is the anomaly. Every other special
+    // port (HOST_PORT, HOST_BOOTSTRAP_PORT, ...) is stock-expected and
+    // passes through.
+    if(result == KERN_SUCCESS && which == HOST_PRIV_PORT) {
+        if(port && *port != MACH_PORT_NULL) {
+            mach_port_deallocate(mach_task_self(), *port);
             *port = MACH_PORT_NULL;
         }
 
         return KERN_FAILURE;
     }
 
-    return original_host_get_special_port(host_priv, node, which, port);
+    return result;
 }
 
 static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int which_port, mach_port_t *special_port);
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
-    if(!isCallerExternal()) {
-        NSLog(@"%@: %d", @"task_get_special_port", which_port);
+    if(isCallerExternal()) {
+        return original_task_get_special_port(task, which_port, special_port);
+    }
 
-        if(special_port) {
+    kern_return_t result = original_task_get_special_port(task, which_port, special_port);
+
+    // TASK_BOOTSTRAP_PORT (and TASK_ACCESS_PORT, which XPC reads on stock)
+    // are stock-expected and pass through. A SUCCESS for any other special
+    // port (TASK_KERNEL_PORT/TASK_DEBUG_PORT/...) is the jailbreak
+    // elevation: deallocate the right, clear the output, report the stock
+    // failure.
+    if(result == KERN_SUCCESS
+    && which_port != TASK_BOOTSTRAP_PORT
+    && which_port != TASK_ACCESS_PORT) {
+        if(special_port && *special_port != MACH_PORT_NULL) {
+            mach_port_deallocate(mach_task_self(), *special_port);
             *special_port = MACH_PORT_NULL;
         }
-        
+
         return KERN_FAILURE;
     }
 
-    return original_task_get_special_port(task, which_port, special_port);
+    return result;
 }
-
-// static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
-// static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
-//     return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
-// }
 
 static int (*original_sigaction)(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact);
 static int replaced_sigaction(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact) {
@@ -127,14 +163,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
             return 0;
         }
 
-        if(!isCallerExternal() && name
-        && (strstr(name, "cy:") == name
-        || strstr(name, "lh:") == name
-        || strstr(name, "rbs:") == name
-        || strstr(name, "jailbreakd") == name
-        || strstr(name, "org.coolstar") == name
-        || strstr(name, "com.ex") == name
-        || strstr(name, "org.saurik") == name)) {
+        if(!isCallerExternal() && name && shdw_bootstrap_service_restricted(name)) {
             va_end(args);
             return -1;
         }
