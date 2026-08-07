@@ -212,8 +212,13 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
     [self _checkRulesetChanges];
 
+    // C0-3: compare case-insensitively — detectors probe case variants
+    // ("Cydia", "SILEO") to dodge exact matches. Rulesets additionally
+    // normalize their entries to lowercase at load (Ruleset.m _compile).
+    NSString* scheme_lower = [scheme lowercaseString];
+
     // Add some exceptions (direct compares: no per-call array allocation).
-    if([scheme isEqualToString:@"file"] || [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
+    if([scheme_lower isEqualToString:@"file"] || [scheme_lower isEqualToString:@"http"] || [scheme_lower isEqualToString:@"https"]) {
         return NO;
     }
 
@@ -221,7 +226,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
     // Check rulesets
     for(RulesetEngine* ruleset in rulesets) {
-        if([ruleset isSchemeRestricted:scheme]) {
+        if([ruleset isSchemeRestricted:scheme_lower]) {
             restricted = YES;
             break;
         }
