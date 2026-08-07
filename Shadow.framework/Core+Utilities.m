@@ -78,6 +78,11 @@ extern char*** _NSGetArgv();
 }
 
 + (NSDictionary *)generateDatabase {
+    // C0-2: this is Shadow's own dpkg-database read (dir listing, file
+    // contents, bundle plists) — the internal scope keeps the tweak's own
+    // hooks from filtering it, exactly like Backend's ruleset loads.
+    SHADOW_INTERNAL_SCOPE;
+
     // Determine dpkg info database path.
     NSArray* dpkgInfoPaths = @[
         @"/Library/dpkg/info",
