@@ -19,6 +19,8 @@ make -C tests adversary   # adversarial evasion battery (rooted + rootless)
 make -C tests detector    # real-detector vs Shadow: raw vs filtered passes
 make -C tests benign      # benign app session: filter OFF vs ON must match
 make -C tests coverage    # gcov report: engine methods vs hooked API groups
+make -C tests fuzz        # edge-case fuzzer (invariants, seeded, reproducible)
+make -C tests fuzz-smoke  # CI fuzz: known D4 transient allowed (reported)
 ```
 
 **CI:** `.github/workflows/tests.yml` runs all three on every push/PR
@@ -138,6 +140,33 @@ mode) and each child execs itself from the staged `.app` dir.
   divergence is reported as AFFECTED. Also guards the subtle false
   positive: an app file *named* like a JB artifact (e.g. `ssh`) inside its
   own container stays readable.
+
+## Fuzzing
+
+`make -C tests fuzz` probes the engine with structured mutations of a
+jailbreak/legit-path corpus plus random inputs (unicode, control chars,
+percent-encoding, path-traversal tokens) and asserts invariants instead of
+specific verdicts: determinism, C0-1 write monotonicity, standardization
+closure, file-URL/path closure, scheme case-closure, and standardization
+idempotence. Every probe is exception-wrapped, the PRNG is seeded
+(`SHADW_FUZZ_SEED`, `SHADW_FUZZ_ITERS`) so findings reproduce exactly, and
+a hard crash leaves the last printed seed+iteration as the repro.
+
+Track record so far — the fuzzer found and led to fixes for:
+- a GNUstep `stringByStandardizingPath` crash on single-component root
+  paths (`/private`): the `/private` prefix strip fired for the bare path,
+  deleted the whole string, and underflowed into an NSRangeException —
+  the engine's resolve re-check standardizes every queried path, so any
+  such query threw on this stack. Patched in the container image (Cocoa
+  only strips `/private/` with the slash).
+- invariant over-reach in the fuzzer itself (scheme strings and
+  percent-encoded inputs are outside the engine's path contract).
+- a **known, under-investigation finding class** (D4): the path and URL
+  lanes transiently disagree on the same absolute path (~1 in 2000 probes,
+  deterministic per seed, stable ruleset generation — the backend's own
+  fresh verdict flips between calls, a cache-layer consistency wrinkle on
+  the GNUstep stack). `make fuzz` fails on it (strict, local);
+  `make fuzz-smoke`/CI report it as allowed until root-caused.
 
 ## Hooked-API coverage
 
