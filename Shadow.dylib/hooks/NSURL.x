@@ -277,9 +277,34 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 %group shadowhook_NSURLSession
 %hook NSURLSession
+// Blocked-task helper (C0-3): create a REAL suspended task via %orig, wrap
+// its completion so the caller gets exactly one asynchronous
+// NSURLErrorFileDoesNotExist delivery, cancel the task before any I/O, and
+// return the native task — never nil, per the NSURLSession nonnull contract.
+// The wrapper swallows whatever the session later reports (cancellation) so
+// the caller's handler fires exactly once, from our dispatch. Non-completion
+// variants return the cancelled task: its failure surfaces through the
+// delegate callbacks per the NSURLSession contract.
+static NSError* _shdw_sessionBlockedError(void) {
+    return [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+}
+
+static BOOL _shdw_requestRestricted(NSURLRequest* request) {
+    return request && [_shadow isURLRestricted:[request URL]];
+}
+
+static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
+    if(completionHandler) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), completionHandler);
+    }
+}
+
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
+        NSURLSessionDataTask* task = %orig;
+        [task cancel];
+
+        return task;
     }
 
     return %orig;
@@ -287,7 +312,17 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
+        NSURLSessionDataTask* task = %orig(url, ^(NSData *data, NSURLResponse *response, NSError *error) {
+            // swallow — the blocked completion below is the only one delivered
+        });
+
+        [task cancel];
+
+        _shdw_deliverBlockedCompletion(^{
+            completionHandler(nil, nil, _shdw_sessionBlockedError());
+        });
+
+        return task;
     }
 
     return %orig;
@@ -295,7 +330,10 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
+        NSURLSessionDownloadTask* task = %orig;
+        [task cancel];
+
+        return task;
     }
 
     return %orig;
@@ -303,23 +341,104 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
+        NSURLSessionDownloadTask* task = %orig(url, ^(NSURL *location, NSURLResponse *response, NSError *error) {
+            // swallow
+        });
+
+        [task cancel];
+
+        _shdw_deliverBlockedCompletion(^{
+            completionHandler(nil, nil, _shdw_sessionBlockedError());
+        });
+
+        return task;
     }
 
     return %orig;
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL {
-    if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
-        return nil;
+    if(!isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
+        NSURLSessionUploadTask* task = %orig;
+        [task cancel];
+
+        return task;
     }
 
     return %orig;
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
-        return nil;
+    if(!isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
+        NSURLSessionUploadTask* task = %orig(request, fileURL, ^(NSData *data, NSURLResponse *response, NSError *error) {
+            // swallow
+        });
+
+        [task cancel];
+
+        _shdw_deliverBlockedCompletion(^{
+            completionHandler(nil, nil, _shdw_sessionBlockedError());
+        });
+
+        return task;
+    }
+
+    return %orig;
+}
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
+    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+        NSURLSessionDataTask* task = %orig;
+        [task cancel];
+
+        return task;
+    }
+
+    return %orig;
+}
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+        NSURLSessionDataTask* task = %orig(request, ^(NSData *data, NSURLResponse *response, NSError *error) {
+            // swallow
+        });
+
+        [task cancel];
+
+        _shdw_deliverBlockedCompletion(^{
+            completionHandler(nil, nil, _shdw_sessionBlockedError());
+        });
+
+        return task;
+    }
+
+    return %orig;
+}
+
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
+    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+        NSURLSessionDownloadTask* task = %orig;
+        [task cancel];
+
+        return task;
+    }
+
+    return %orig;
+}
+
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
+    if(!isCallerExternal() && _shdw_requestRestricted(request)) {
+        NSURLSessionDownloadTask* task = %orig(request, ^(NSURL *location, NSURLResponse *response, NSError *error) {
+            // swallow
+        });
+
+        [task cancel];
+
+        _shdw_deliverBlockedCompletion(^{
+            completionHandler(nil, nil, _shdw_sessionBlockedError());
+        });
+
+        return task;
     }
 
     return %orig;
