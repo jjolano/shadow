@@ -2,96 +2,110 @@
 #import <mach/mach_error.h>
 #import <bootstrap.h>
 
-// ---------------------------------------------------------------------------
-// Vnode-layer file hiding — thin Mach IPC client.
-//
-// All kernel-touching work (krw init, vnode lookup/pinning, VISSHADOW, state
-// file) lives in the privileged daemon (shadowd, parallel lane). This file is
-// the strictly-unprivileged client: it looks up the daemon's Mach service,
-// sends an acquire request, and keeps the service-port send right + reply
-// port for the process lifetime — the open connection is the ownership lease
-// (the daemon watches for our death via the port). The daemon derives the
-// hidden paths from its own allowlist; the client sends no paths, no pid,
-// and touches no kernel state.
-//
-// Fail-open by design: any error (lookup failure, timeout, rejection) is
-// logged and returns — the app is never blocked and no other hooking is
-// affected. Pure userspace IPC: no arch guards, no hook substitution needed.
-// ---------------------------------------------------------------------------
+// Vnode-layer file hiding — thin Mach IPC client. All kernel-touching work
+// (krw init, vnode pinning, VISSHADOW, state file) lives in the privileged
+// daemon (shadowd); this strictly-unprivileged client sends acquire/release
+// over the daemon's Mach service. The daemon derives hidden paths from its
+// own allowlist — the client sends no paths, no pid, touches no kernel
+// state. The daemon keeps a send right to our reply port and arms a
+// dead-name notification on it: the lease dies with us, no client-side
+// cleanup needed. Fail-open: any error logs and returns; the app is never
+// blocked, no hooking is affected. Pure userspace IPC: no arch guards, no
+// hook substitution needed.
 
-#define SHADOWD_MAGIC    0x53484457  // "SHDW"
+// Protocol (shadowd/main.m verbatim): request is a complex message carrying
+// the reply port as a MACH_MSG_TYPE_MAKE_SEND descriptor; reply is a plain
+// message. Status is an errno value (0 ok | EPERM | ENOTSUP | EBUSY).
+#define SHADOWD_MAGIC    0x53484457  // 'SHDW'
 #define SHADOWD_VERSION  1
 
-enum {
-    SHADOWD_OP_ACQUIRE = 1,
-    SHADOWD_OP_RELEASE = 2,
-    SHADOWD_OP_PING    = 3,
-};
+typedef enum {
+    SHADOWD_OP_PING    = 1,
+    SHADOWD_OP_ACQUIRE = 2,
+    SHADOWD_OP_RELEASE = 3,
+} shadowd_op_t;
 
-// Request payload: {magic, version, op, requestId}. Reply payload: {magic,
-// version, requestId, status}. One shared layout keeps the send/receive
-// buffer simple (op is client-set, status is daemon-set, both unused halves
-// read as zero).
 typedef struct {
     mach_msg_header_t header;
+    mach_msg_body_t msgh_body;
+    mach_msg_port_descriptor_t replyPort;   // MACH_MSG_TYPE_MAKE_SEND
     uint32_t magic;
     uint32_t version;
     uint32_t op;
     uint32_t requestId;
-    int32_t status;
-} shdw_vnode_msg_t;
+} shadowd_request_t;
+
+typedef struct {
+    mach_msg_header_t header;
+    uint32_t magic;
+    uint32_t version;
+    uint32_t requestId;
+    uint32_t status;
+} shadowd_reply_t;
 
 #define SHADOWD_REPLY_TIMEOUT_MS 2000
 
-// Owner lease: retained for the process lifetime once acquire succeeds.
+// Kept for the process lifetime once acquire succeeds: the service-port send
+// right (our connection) and the reply-port receive right (the daemon's
+// lease is a send right to it, dead-name notified on our death).
 static mach_port_t shdw_service_port = MACH_PORT_NULL;
 static mach_port_t shdw_reply_port = MACH_PORT_NULL;
 static uint32_t shdw_request_id = 0;
 
-// Send one request on the retained connection; when waitForReply, block up
-// to SHADOWD_REPLY_TIMEOUT_MS for the daemon's reply and validate it.
+// Send one request on the retained connection; when waitForReply, block up to
+// SHADOWD_REPLY_TIMEOUT_MS for the daemon's reply and validate it.
 static kern_return_t
 shdw_transact(uint32_t op, BOOL waitForReply, int* status) {
-    shdw_vnode_msg_t msg;
-    memset(&msg, 0, sizeof(msg));
+    shadowd_request_t req;
+    memset(&req, 0, sizeof(req));
 
     uint32_t requestId = ++shdw_request_id;
 
-    msg.header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND_ONCE);
-    msg.header.msgh_remote_port = shdw_service_port;
-    msg.header.msgh_local_port = shdw_reply_port;
-    msg.header.msgh_voucher_port = MACH_PORT_NULL;
-    msg.header.msgh_size = sizeof(msg.header) + 4 * sizeof(uint32_t);  // magic/version/op/requestId
+    req.header.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0);
+    req.header.msgh_remote_port = shdw_service_port;
+    req.header.msgh_local_port = MACH_PORT_NULL;
+    req.header.msgh_voucher_port = MACH_PORT_NULL;
+    req.header.msgh_size = sizeof(req);
 
-    msg.magic = SHADOWD_MAGIC;
-    msg.version = SHADOWD_VERSION;
-    msg.op = op;
-    msg.requestId = requestId;
+    req.msgh_body.msgh_descriptor_count = 1;
+    req.replyPort.name = shdw_reply_port;
+    req.replyPort.disposition = MACH_MSG_TYPE_MAKE_SEND;
+    req.replyPort.type = MACH_MSG_PORT_DESCRIPTOR;
 
-    mach_msg_option_t options = MACH_SEND_MSG;
-    mach_msg_size_t rcv_size = 0;
-    mach_msg_timeout_t timeout = MACH_MSG_TIMEOUT_NONE;
+    req.magic = SHADOWD_MAGIC;
+    req.version = SHADOWD_VERSION;
+    req.op = op;
+    req.requestId = requestId;
 
-    if(waitForReply) {
-        options |= MACH_RCV_MSG | MACH_RCV_TIMEOUT;
-        rcv_size = sizeof(msg);
-        timeout = SHADOWD_REPLY_TIMEOUT_MS;
-    }
-
-    kern_return_t kr = mach_msg(&msg.header, options, msg.header.msgh_size, rcv_size, shdw_reply_port, timeout, MACH_PORT_NULL);
+    kern_return_t kr = mach_msg(&req.header, MACH_SEND_MSG, sizeof(req), 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
     if(kr != KERN_SUCCESS) {
         return kr;
     }
 
-    if(waitForReply) {
-        if(msg.magic != SHADOWD_MAGIC || msg.version != SHADOWD_VERSION || msg.requestId != requestId) {
-            NSLog(@"[Shadow] vnode: invalid reply (magic/version/requestId mismatch)");
-            return KERN_FAILURE;
-        }
+    if(!waitForReply) {
+        return KERN_SUCCESS;
+    }
 
-        if(status) {
-            *status = msg.status;
-        }
+    shadowd_reply_t reply;
+    memset(&reply, 0, sizeof(reply));
+    kr = mach_msg(&reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(reply) + 64, shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
+    if(kr != KERN_SUCCESS) {
+        return kr;
+    }
+
+    // The daemon replies with a COPY_SEND of the reply-port send right it
+    // holds — drop our copy so it doesn't leak per transaction.
+    if(MACH_PORT_VALID(reply.header.msgh_remote_port)) {
+        mach_port_deallocate(mach_task_self(), reply.header.msgh_remote_port);
+    }
+
+    if(reply.magic != SHADOWD_MAGIC || reply.version != SHADOWD_VERSION || reply.requestId != requestId) {
+        NSLog(@"[Shadow] vnode: invalid reply (magic/version/requestId mismatch)");
+        return KERN_FAILURE;
+    }
+
+    if(status) {
+        *status = (int)reply.status;
     }
 
     return KERN_SUCCESS;
@@ -124,7 +138,7 @@ shdw_acquire(void) {
     if(kr != KERN_SUCCESS) {
         NSLog(@"[Shadow] vnode: acquire failed: %s", mach_error_string(kr));
         // mach_port_destruct: non-deprecated equivalent of mach_port_destroy
-        // (also discards a reply that may still be queued after a timeout).
+        // (also discards a reply still queued after a timeout).
         mach_port_destruct(mach_task_self(), shdw_reply_port, 0, 0);
         mach_port_deallocate(mach_task_self(), shdw_service_port);
         shdw_reply_port = MACH_PORT_NULL;
@@ -167,7 +181,8 @@ void shadowhook_vnode(HKSubstitutor* hooks) {
 
 void shadowhook_vnode_release(void) {
     // Best-effort, no wait: used at deinit. The daemon also notices our
-    // death via the service-port send right, so this is courtesy only.
+    // death via its dead-name notification on the reply port, so this is
+    // courtesy only.
     if(!MACH_PORT_VALID(shdw_service_port)) {
         return;
     }

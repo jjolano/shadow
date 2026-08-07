@@ -10,6 +10,8 @@
 #import <HookKit.h>
 #import <RootBridge.h>
 
+#import "../vendor/apple/dyld_priv.h"   // dyld_image_path_containing_address
+
 // Set when a known detection library is loaded (see %ctor); consumed by
 // dyld.x (memory-hiding escalation) and by the hook-backend routing below.
 BOOL shdw_detector_present = NO;
@@ -25,6 +27,7 @@ BOOL shdw_detector_present = NO;
 // ---------------------------------------------------------------------------
 #ifdef hookkit_h
 static BOOL _shdw_watcher_enabled = NO;      // ctor passed all gates + prefs on
+static BOOL _shdw_watcher_started = NO;      // single-shot replay guard
 static BOOL _shdw_objc_backend = NO;         // ElleKit/Substrate/Substitute available
 static BOOL _shdw_pref_urlscheme = NO;
 static BOOL _shdw_pref_foundation = NO;
@@ -37,11 +40,16 @@ static HKSubstitutor* _shdw_watcher_main = nil;   // subMain
 static HKSubstitutor* _shdw_watcher_cfunc = nil;  // subCFunc
 static HKSubstitutor* _shdw_watcher_inline = nil; // subInline (inline escalation)
 
-// Private dyld4 export (iOS 15+): image path read directly from dyld — never
-// routed through our own filtered dladdr/_dyld_get_image_name (hooked once
-// the dyld groups install, and the mirror lags a new image by one callback).
-extern const char* _dyld_image_header_file_path(const struct mach_header* mh);
-
+// shdw_early_image_add resolves the image header to its path via the PUBLIC
+// dyld_image_path_containing_address (declared in vendor/apple/dyld_priv.h,
+// present on every supported OS) — not the private dyld4
+// _dyld_image_header_file_path, which doesn't exist on rooted iOS 12-14 and
+// would risk a load failure there. Once the dyld groups install, this call
+// routes through their hook: visible images (UIKit etc.) resolve to their
+// real path, restricted images resolve to the executable path (masked) — a
+// masked detector image can't be classified by name here, but the dyld
+// groups are installed by then and the behavioral tripwires (dlopen/dlsym/
+// dladdr probes) cover that escalation.
 static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_slide) {
     (void) vmaddr_slide;
 
@@ -50,7 +58,7 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
     }
 
     @autoreleasepool {
-        const char* path = _dyld_image_header_file_path(mh);
+        const char* path = dyld_image_path_containing_address(mh);
 
         if(!path || !path[0]) {
             return;  // fail soft: no name to classify
@@ -157,7 +165,11 @@ void shdw_detector_detected(const char* reason) {
     // ctor runs at spawn, before app-linked detectors and UIKit exist): late
     // detector arrivals escalate the dyld surface, and the UIKit-class hook
     // groups install once UIKit is actually loaded. Registered before any
-    // hooking, so the callback stays on dyld's real list.
+    // hooking, so the callback stays on dyld's real list. dyld replays the
+    // already-loaded images at registration — while the watcher is still
+    // disabled (prefs not yet read), so every one of them is discarded; the
+    // ctor re-delivers them once the watcher is enabled (replay below the
+    // group installs).
     #ifdef hookkit_h
     _dyld_register_func_for_add_image(shdw_early_image_add);
     #endif
@@ -336,10 +348,17 @@ void shdw_detector_detected(const char* reason) {
     // on dyld's loader thread for images loaded after this ctor and needs the
     // substitutors/prefs without touching ctor locals.
     #ifdef hookkit_h
-    _shdw_watcher_enabled = YES;
     _shdw_objc_backend = objcBackendAvailable;
     _shdw_pref_urlscheme = [prefs_load[@"Hook_URLScheme"] boolValue];
     _shdw_pref_foundation = [prefs_load[@"Hook_Foundation"] boolValue];
+
+    // The watcher only runs when a hook group needs it: the UIKit-class
+    // groups (urlscheme/foundation prefs + an ObjC backend) or late-detector
+    // escalation (no detector at spawn — the ctor handles spawn-time
+    // detectors itself and marks the escalation installed below, so a watcher
+    // with nothing left to do stays disabled).
+    _shdw_watcher_enabled = !shdw_detector_present
+        || (objcBackendAvailable && (_shdw_pref_urlscheme || _shdw_pref_foundation));
     _shdw_watcher_main = subMain;
     _shdw_watcher_cfunc = subCFunc;
     _shdw_watcher_inline = subInline;
@@ -549,6 +568,26 @@ void shdw_detector_detected(const char* reason) {
     }
 
     #ifdef hookkit_h
+    // Replay the already-loaded images into the watcher. The add-image
+    // callback was registered at the top of this ctor — before any hooking,
+    // so it sits on dyld's real list — and dyld's registration-time replay
+    // ran while _shdw_watcher_enabled was still NO, discarding every
+    // already-loaded image (UIKit among them). Deliver them now that the
+    // flag is on. No image is delivered twice: the registration-time replay
+    // ran while the flag was NO, dyld never re-replays, and the per-group
+    // guards inside the callback (_shdw_uikit_installed,
+    // _shdw_escalation_installed) make any duplicate delivery a no-op;
+    // _shdw_watcher_started keeps this single-shot regardless.
+    if(_shdw_watcher_enabled && !_shdw_watcher_started) {
+        _shdw_watcher_started = YES;
+
+        uint32_t replay_count = _dyld_image_count();
+
+        for(uint32_t i = 0; i < replay_count; i++) {
+            shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
+        }
+    }
+
     [subFish executeHooks];
     [subFish setBatching:NO];
     [subInline executeHooks];

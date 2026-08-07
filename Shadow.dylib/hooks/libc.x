@@ -56,13 +56,44 @@ static int replaced_access(const char* pathname, int mode) {
 
 static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize) {
-    ssize_t result = original_readlink(pathname, buf, bufsize);
+    if(isCallerTweak()) {
+        return original_readlink(pathname, buf, bufsize);
+    }
 
-    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+    if([_shadow isCPathRestricted:pathname]) {
         errno = ENOENT;
         return -1;
     }
 
+    // Read into a temp buffer first: a link stored in a safe location can
+    // still name a restricted path in its CONTENT, and on denial the
+    // caller's buffer must be left untouched.
+    char content[PATH_MAX];
+    ssize_t result = original_readlink(pathname, content, sizeof(content));
+
+    if(result != -1 && result < (ssize_t) sizeof(content)) {
+        content[result] = '\0';
+
+        if([_shadow isCPathRestricted:content]) {
+            errno = EACCES;
+            return -1;
+        }
+
+        size_t copy_len = (size_t) result;
+
+        if(copy_len > bufsize) {
+            copy_len = bufsize;
+        }
+
+        if(buf && copy_len > 0) {
+            memcpy(buf, content, copy_len);
+        }
+
+        return (ssize_t) copy_len;
+    }
+
+    // ponytail: a link longer than PATH_MAX can't be validated as a string;
+    // it can't be a JB indicator path either (those are short), so forward.
     return result;
 }
 
@@ -316,21 +347,22 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
     // restriction checks run once here instead of via the hooked statfs
     struct statfs st;
     if(original_statfs(pathname, &st) == -1) {
-        memset(buf, 0, sizeof(struct statvfs));
-        errno = ENOENT;
+        // Failure path: return -1 without touching the output buffer or
+        // clobbering errno (the failed original already set it).
         return -1;
     }
 
     int result = original_statvfs(pathname, buf);
 
-    if(result == 0) {
+    if(result == 0 && buf) {
         if([_shadow isCPathRestricted:st.f_mntonname]) {
             // handle bindfs/chroot
             strcpy(st.f_mntonname, "/");
         }
         
         if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only
+            // Mark rootfs read-only (statvfs carries the flags in f_flag,
+            // not f_flags — only set bits that exist in this struct).
             buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
         }
     }
@@ -355,28 +387,27 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
         char pathname[PATH_MAX];
 
         if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            memset(buf, 0, sizeof(struct statvfs));
             errno = EBADF;
             return -1;
         }
     }
 
     if(original_fstatfs(fd, &st) == -1) {
-        memset(buf, 0, sizeof(struct statvfs));
-        errno = EBADF;
+        // Failure path: return -1 without touching the output buffer or
+        // clobbering errno (the failed original already set it).
         return -1;
     }
 
     int result = original_fstatvfs(fd, buf);
 
-    if(result == 0) {
+    if(result == 0 && buf) {
         if([_shadow isCPathRestricted:st.f_mntonname]) {
             // handle bindfs/chroot
             strcpy(st.f_mntonname, "/");
         }
 
         if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only
+            // Mark rootfs read-only (statvfs carries the flags in f_flag)
             buf->f_flag |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
         }
     }
@@ -417,14 +448,15 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         NSString* path = [NSString stringWithUTF8String:pathname];
 
         // Only use resolve flag if target is not a symlink.
-        if([_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(!(_buf.st_mode & S_IFLNK))}]) {
+        if([_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode))}]) {
             errno = ENOENT;
             return -1;
         }
-    }
 
-    if(buf) {
-        memcpy(buf, &_buf, sizeof(struct stat));
+        // Only copy on success: on failure _buf is uninitialized stack.
+        if(buf) {
+            memcpy(buf, &_buf, sizeof(struct stat));
+        }
     }
 
     return result;
@@ -738,14 +770,40 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
 static int (*original_symlink)(const char* path1, const char* path2);
 static int replaced_symlink(const char* path1, const char* path2) {
-    // Check both the link location (path2) and the link TARGET (path1):
-    // detection code can create a symlink pointing at a restricted path.
-    if(isCallerTweak() || !([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
+    if(isCallerTweak()) {
         return original_symlink(path1, path2);
     }
 
-    errno = EACCES;
-    return -1;
+    // Check both the link location (path2) and the link TARGET (path1):
+    // detection code can create a symlink pointing at a restricted path.
+    if([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2]) {
+        errno = EACCES;
+        return -1;
+    }
+
+    // A RELATIVE target is interpreted by the filesystem relative to the
+    // directory CONTAINING THE LINK, so the joined path is what actually
+    // resolves when the link is used — check that instead of the raw
+    // relative string (which the restriction check can't judge).
+    if(path1 && path1[0] != '/') {
+        NSString* target = [NSString stringWithUTF8String:path1];
+        NSString* linkDir = path2 ? [[NSString stringWithUTF8String:path2] stringByDeletingLastPathComponent] : nil;
+
+        if(!linkDir || linkDir.length == 0 || [linkDir isEqualToString:@"."]) {
+            linkDir = [[NSFileManager defaultManager] currentDirectoryPath];
+        } else if(![linkDir hasPrefix:@"/"]) {
+            linkDir = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:linkDir];
+        }
+
+        NSString* joined = [[linkDir stringByAppendingPathComponent:target] stringByStandardizingPath];
+
+        if([_shadow isCPathRestricted:[joined fileSystemRepresentation]]) {
+            errno = EACCES;
+            return -1;
+        }
+    }
+
+    return original_symlink(path1, path2);
 }
 
 static int (*original_link)(const char* path1, const char* path2);
