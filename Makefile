@@ -49,7 +49,7 @@ endif
 # exercises instruction decode/re-encode, which is where the crashes come from.
 .PHONY: test-reloc
 test-reloc:
-	$(ECHO_NOTHING)clang -Wall -Wextra -O2 -o $(THEOS_OBJ_DIR)/test_arm64_reloc tests/test_arm64_reloc.c native/hk_arm64.c && $(THEOS_OBJ_DIR)/test_arm64_reloc$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -o $(THEOS_OBJ_DIR)/test_arm64_reloc tests/test_arm64_reloc.c native/hk_arm64.c && $(THEOS_OBJ_DIR)/test_arm64_reloc$(ECHO_END)
 
 # Host-side Swift vtable engine test. The test includes native/hk_swift.c
 # itself so it can inject a simulated pointer-authentication scheme (the host
@@ -59,4 +59,4 @@ test-reloc:
 # is what lets the name-matching paths run on the host.
 .PHONY: test-swift-abi
 test-swift-abi:
-	$(ECHO_NOTHING)clang -Wall -Wextra -O2 -rdynamic -o $(THEOS_OBJ_DIR)/test_swift_abi tests/test_swift_abi.c && $(THEOS_OBJ_DIR)/test_swift_abi$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -rdynamic -o $(THEOS_OBJ_DIR)/test_swift_abi tests/test_swift_abi.c && $(THEOS_OBJ_DIR)/test_swift_abi$(ECHO_END)

@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
-PWD=$(dirname -- "$0")
-cd $PWD
+cd -- "$(dirname -- "$0")"
 
 # create fresh build directory
-rm -rf $PWD/build
-mkdir -p $PWD/build
+rm -rf build
+mkdir -p build
 
 # build main project (rootless ver., iOS 12+)
 build_rootless() {
     make clean &&
     THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
+    # theos records the deb it just built here; the name derives from control,
+    # so version and arch never have to be repeated in this script
+    cp -p "$(cat .theos/last_package)" build/
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
@@ -21,7 +22,7 @@ build_rootless() {
 build_rooted() {
     make clean &&
     ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
+    cp -p "$(cat .theos/last_package)" build/
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
@@ -32,13 +33,15 @@ build_legacy() {
     # /tmp path collides when two builds run in parallel (CI + local, or two
     # sessions). Restore on exit so a failed pass never leaves control dirty.
     local BAK=/tmp/hookkit-control.bak.$$
-    trap "mv $BAK control 2>/dev/null || true" EXIT
+    trap "mv '$BAK' control 2>/dev/null || true" EXIT
     cp control "$BAK"
     sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
 
     make clean &&
     ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.fmwk.hookkit_2.1.0-1_iphoneos-arm-legacy.deb
+    local deb &&
+    deb=$(cat .theos/last_package) &&
+    cp -p "$deb" "build/$(basename "$deb" .deb)-legacy.deb"
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
