@@ -28,11 +28,28 @@ static BOOL shdw_imageNameProtected(NSString* name) {
         ]];
     });
 
-    if([protectedNames containsObject:[name lowercaseString]]) {
-        return YES;
+    // No-allocation matching (the old code built lowercaseString /
+    // stringByDeletingPathExtension copies per call): an anchored,
+    // pattern-length-bounded range search is exact case-insensitive
+    // equality, and the extension-stripped variant is name == pattern + "."
+    // + extension where the pattern is the LAST dot's prefix — no further
+    // dots in the tail and at least one char after the dot (a trailing dot
+    // is not an extension, matching stringByDeletingPathExtension).
+    for(NSString* protectedName in protectedNames) {
+        if(name.length == protectedName.length
+        && [name rangeOfString:protectedName options:NSCaseInsensitiveSearch|NSAnchoredSearch].location == 0) {
+            return YES;
+        }
+
+        if(name.length >= protectedName.length + 2
+        && [name rangeOfString:protectedName options:NSCaseInsensitiveSearch|NSAnchoredSearch range:NSMakeRange(0, protectedName.length)].location == 0
+        && [name characterAtIndex:protectedName.length] == '.'
+        && [name rangeOfString:@"." options:NSLiteralSearch range:NSMakeRange(protectedName.length + 1, name.length - protectedName.length - 1)].location == NSNotFound) {
+            return YES;
+        }
     }
 
-    return [protectedNames containsObject:[[name stringByDeletingPathExtension] lowercaseString]];
+    return NO;
 }
 
 static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
