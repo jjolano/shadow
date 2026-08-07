@@ -397,6 +397,15 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
 }
 
 static int (*original_getmntinfo)(struct statfs** mntbufp, int flags);
+
+// Process-wide filter buffer for getmntinfo. The API's storage is static
+// (stock libc keeps a static mount table that the next call may overwrite),
+// so one realloc'd buffer matches that contract with zero per-call leaks —
+// stock callers never free the returned table. Like stock getmntinfo, this
+// is intentionally not thread-safe (same overwrite-on-next-call semantics).
+static struct statfs* shdw_getmntinfo_buf = NULL;
+static size_t shdw_getmntinfo_cap = 0;
+
 static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
     if(!isCallerExternal()) {
         return original_getmntinfo(mntbufp, flags);
@@ -410,20 +419,24 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
 
     // *mntbufp points at libc's static mount table: never mutate it in
     // place — the mangled entries would leak to the next caller of libc's
-    // static getmntinfo. Copy, filter the copy, and hand the caller the
-    // new buffer (callers that free() the result free our malloc block;
-    // callers that don't leak one buffer per call, same as getmntinfo_r).
+    // static getmntinfo. Filter into our own static buffer instead.
     size_t bytes = (size_t) result * sizeof(struct statfs);
-    struct statfs* copy = (struct statfs *) malloc(bytes);
 
-    if(copy == NULL) {
-        return result;
+    if(bytes > shdw_getmntinfo_cap) {
+        struct statfs* grown = (struct statfs *) realloc(shdw_getmntinfo_buf, bytes);
+
+        if(grown == NULL) {
+            return result;  // OOM: hand back the unfiltered stock table
+        }
+
+        shdw_getmntinfo_buf = grown;
+        shdw_getmntinfo_cap = bytes;
     }
 
-    memcpy(copy, *mntbufp, bytes);
+    memcpy(shdw_getmntinfo_buf, *mntbufp, bytes);
 
-    result = shdw_filter_mounts(copy, result, YES);
-    *mntbufp = copy;
+    result = shdw_filter_mounts(shdw_getmntinfo_buf, result, YES);
+    *mntbufp = shdw_getmntinfo_buf;
 
     return result;
 }
@@ -822,11 +835,16 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
     if(result == 0 && *oresult) {
         if(options) {
             do {
-                if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]) {
-                    // call readdir again to skip ahead
-                    result = original_readdir_r(dirp, entry, oresult);
-                } else {
-                    break;
+                // Per-entry pool: @(d_name) and the restriction check
+                // autorelease per entry; without it raw-pthread callers
+                // (no pool) leak every skipped name.
+                @autoreleasepool {
+                    if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]) {
+                        // call readdir again to skip ahead
+                        result = original_readdir_r(dirp, entry, oresult);
+                    } else {
+                        break;
+                    }
                 }
             } while(result == 0 && *oresult);
 
@@ -855,11 +873,16 @@ static struct dirent* replaced_readdir(DIR* dirp) {
     
     if(result && options) {
         do {
-            if([_shadow isPathRestricted:@(result->d_name) options:options]) {
-                // call readdir again to skip ahead
-                result = original_readdir(dirp);
-            } else {
-                break;
+            // Per-entry pool: @(d_name) and the restriction check autorelease
+            // per entry; without it raw-pthread callers (no pool) leak every
+            // skipped name.
+            @autoreleasepool {
+                if([_shadow isPathRestricted:@(result->d_name) options:options]) {
+                    // call readdir again to skip ahead
+                    result = original_readdir(dirp);
+                } else {
+                    break;
+                }
             }
         } while(result);
 
