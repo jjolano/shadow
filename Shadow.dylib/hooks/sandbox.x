@@ -362,23 +362,188 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     return original_fcntl(fd, cmd);
 }
 
-static int fn_enosys() {
-    errno = ENOSYS;
-    return -1;
+// --- exec family: typed wrappers (no more blanket ENOSYS anywhere) ---
+
+extern char** environ;
+
+static int (*original_execve)(const char* path, char* const argv[], char* const envp[]);
+static int (*original_execvp)(const char* file, char* const argv[]);
+
+// exec policy: a hidden executable path answers ENOENT (the tweak's hidden-
+// path denial style); benign paths go to the original. Only app-origin
+// callers are filtered.
+static BOOL shdw_exec_path_denied(const char* path) {
+    return !isCallerExternal() && path && [_shadow isCPathRestricted:path];
 }
 
-static int fn_posix_spawn_enosys() {
-    // posix_spawn(2) reports failure as a POSITIVE errno-number return
-    // value and does not set errno — returning -1 would violate the
-    // contract. ENOENT matches the tweak's hidden-path denial style.
-    return ENOENT;
+// Collects the NULL-terminated variadic argv of an execl* call into a
+// malloc'd array (the varargs live in the caller's stack and are not
+// contiguous). Returns NULL on allocation failure. The result converts
+// implicitly to the char* const* the execve/execvp originals take.
+static char** shdw_execl_collect_argv(va_list args) {
+    int count = 0;
+
+    va_list count_args;
+    va_copy(count_args, args);
+
+    while(va_arg(count_args, const char *) != NULL) {
+        count++;
+    }
+
+    va_end(count_args);
+
+    char** argv = calloc((size_t) count + 1, sizeof(char *));
+
+    if(!argv) {
+        return NULL;
+    }
+
+    for(int i = 0; i < count; i++) {
+        argv[i] = (char *) va_arg(args, const char *);
+    }
+
+    argv[count] = NULL;
+
+    return argv;
 }
 
-// static int replaced_system(const char* command) {
-//     if(command == NULL) return 0;
-//     errno = ENOSYS;
-//     return -1;
-// }
+static int replaced_execl(const char* path, const char* arg0, ...) {
+    if(shdw_exec_path_denied(path)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    va_list args;
+    va_start(args, arg0);
+    char** argv = shdw_execl_collect_argv(args);
+    va_end(args);
+
+    if(!argv) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    // execl does not search PATH: dispatch through execve with the current
+    // environment.
+    int result = original_execve(path, argv, environ);
+    free(argv);
+    return result;
+}
+
+static int replaced_execlp(const char* file, const char* arg0, ...) {
+    if(shdw_exec_path_denied(file)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    va_list args;
+    va_start(args, arg0);
+    char** argv = shdw_execl_collect_argv(args);
+    va_end(args);
+
+    if(!argv) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    // execlp searches PATH: dispatch through execvp.
+    int result = original_execvp(file, argv);
+    free(argv);
+    return result;
+}
+
+static int replaced_execle(const char* path, const char* arg0, ...) {
+    if(shdw_exec_path_denied(path)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    va_list args;
+    va_start(args, arg0);
+    char** argv = shdw_execl_collect_argv(args);
+    // execle: the envp pointer follows the argv NULL terminator.
+    char* const* envp = argv ? (char* const*) va_arg(args, const char *) : NULL;
+    va_end(args);
+
+    if(!argv) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    int result = original_execve(path, argv, envp);
+    free(argv);
+    return result;
+}
+
+static int replaced_execv(const char* path, char* const argv[]) {
+    if(shdw_exec_path_denied(path)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_execve(path, argv, environ);
+}
+
+static int replaced_execvp(const char* file, char* const argv[]) {
+    if(shdw_exec_path_denied(file)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_execvp(file, argv);
+}
+
+static int replaced_execve(const char* path, char* const argv[], char* const envp[]) {
+    if(shdw_exec_path_denied(path)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_execve(path, argv, envp);
+}
+
+static int (*original_posix_spawn)(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
+static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
+    if(!isCallerExternal() && path && [_shadow isCPathRestricted:path]) {
+        // posix_spawn(2) reports failure as a POSITIVE errno-number return
+        // value and does not set errno — returning -1 would violate the
+        // contract. ENOENT matches the tweak's hidden-path denial style.
+        return ENOENT;
+    }
+
+    return original_posix_spawn(pid, path, file_actions, attrp, argv, envp);
+}
+
+static int (*original_posix_spawnp)(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
+static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
+    if(!isCallerExternal() && file && [_shadow isCPathRestricted:file]) {
+        return ENOENT;
+    }
+
+    return original_posix_spawnp(pid, file, file_actions, attrp, argv, envp);
+}
+
+static pid_t (*original_fork)(void);
+static pid_t replaced_fork(void) {
+    if(!isCallerExternal()) {
+        // Stock-like denial for app-origin callers: the app sandbox refuses
+        // fork with EPERM on stock iOS.
+        errno = EPERM;
+        return -1;
+    }
+
+    return original_fork();
+}
+
+static pid_t (*original_vfork)(void);
+static pid_t replaced_vfork(void) {
+    if(!isCallerExternal()) {
+        errno = EPERM;
+        return -1;
+    }
+
+    return original_vfork();
+}
 
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
@@ -392,20 +557,14 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
     // MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
 
-    MSHookFunction(execle, fn_enosys, NULL);
-    MSHookFunction(execlp, fn_enosys, NULL);
-    MSHookFunction(execl, fn_enosys, NULL);
-    MSHookFunction(execve, fn_enosys, NULL);
-    MSHookFunction(execvp, fn_enosys, NULL);
-    MSHookFunction(execv, fn_enosys, NULL);
-    MSHookFunction(posix_spawn, fn_posix_spawn_enosys, NULL);
-    MSHookFunction(posix_spawnp, fn_posix_spawn_enosys, NULL);
-    MSHookFunction(fork, fn_enosys, NULL);
-    MSHookFunction(vfork, fn_enosys, NULL);
-
-    // void* sym_system = MSFindSymbol(NULL, "_system");
-
-    // if(sym_system) {
-    //     MSHookFunction(sym_system, replaced_system, NULL);
-    // }
+    MSHookFunction(execle, replaced_execle, NULL);
+    MSHookFunction(execlp, replaced_execlp, NULL);
+    MSHookFunction(execl, replaced_execl, NULL);
+    MSHookFunction(execve, replaced_execve, (void **) &original_execve);
+    MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
+    MSHookFunction(execv, replaced_execv, NULL);
+    MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
+    MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
+    MSHookFunction(fork, replaced_fork, (void **) &original_fork);
+    MSHookFunction(vfork, replaced_vfork, (void **) &original_vfork);
 }
