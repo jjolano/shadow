@@ -6,7 +6,11 @@
 static NSMutableArray<NSDictionary *>* _shdw_dyld_collection = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_add_image = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_remove_image = nil;
-static BOOL _shdw_dyld_error = NO;
+// TLS loader-error state (plan Wave 1c): cleared at the start of each loader
+// operation (dlopen/dlsym/dladdr/...), set on a Shadow denial, consumed by
+// dlerror on the same thread. The old global let one thread's denial poison
+// another thread's dlerror.
+static _Thread_local const char* _shdw_dyld_error_tls = NULL;
 // static NSOperationQueue* _shdw_dyld_queue = nil;
 // NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
@@ -378,6 +382,9 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
+    // Each loader operation clears the thread's error state up front.
+    _shdw_dyld_error_tls = NULL;
+
     if(isCallerExternal() || !path) {
         return original_dlopen(path, mode);
     }
@@ -398,12 +405,14 @@ static void* replaced_dlopen(const char* path, int mode) {
     // A non-tweak caller trying to dlopen a jailbreak dylib is a probe.
     shdw_detector_detected("dlopen");
 
-    _shdw_dyld_error = YES;
+    _shdw_dyld_error_tls = "library not found";
     return NULL;
 }
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
+    _shdw_dyld_error_tls = NULL;
+
     if(isCallerExternal() || !path) {
         return original_dlopen_internal(path, mode, caller);
     }
@@ -423,12 +432,14 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
 
     shdw_detector_detected("dlopen");
 
-    _shdw_dyld_error = YES;
+    _shdw_dyld_error_tls = "library not found";
     return NULL;
 }
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
+    _shdw_dyld_error_tls = NULL;
+
     if(isCallerExternal() || !path) {
         return original_dlopen_preflight(path);
     }
@@ -569,35 +580,173 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
 static char* (*original_dlerror)(void);
 static char* replaced_dlerror(void) {
-    if(isCallerExternal() || !_shdw_dyld_error) {
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
         return original_dlerror();
     }
 
-    _shdw_dyld_error = NO;
-    return "library not found";
+    // Consume the thread's Shadow-denial error; otherwise report libdyld's
+    // own (real) error state.
+    if(_shdw_dyld_error_tls) {
+        const char* message = _shdw_dyld_error_tls;
+        _shdw_dyld_error_tls = NULL;
+        return (char *)message;
+    }
+
+    return original_dlerror();
 }
 
+// Symbol policy table (plan Wave 1c): hooked system APIs resolve to Shadow's
+// REPLACEMENT for external callers — never the un-hooked original — so the
+// fishhook rebind bypass (dlsym of a rebindable export, explicit libdyld
+// handles, RTLD_NEXT end-runs) dies here. Keyed by exported symbol name;
+// matched before any handle-based resolution, for every handle kind.
+typedef struct {
+    const char* name;
+    void* replacement;
+} shdw_sym_policy_entry_t;
+
+// Forward decls for the table entries defined below.
+static void replaced_dyld_images_for_addresses(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]);
+static void replaced_dyld_register_for_image_loads(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
+static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
+static void* replaced_dlsym(void* handle, const char* symbol);
+static int replaced_dladdr(const void* addr, Dl_info* info);
+
+static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
+    { "_dyld_image_count", (void *)&replaced_dyld_image_count },
+    { "_dyld_get_image_name", (void *)&replaced_dyld_get_image_name },
+    { "_dyld_get_image_header", (void *)&replaced_dyld_get_image_header },
+    { "_dyld_get_image_vmaddr_slide", (void *)&replaced_dyld_get_image_vmaddr_slide },
+    { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
+    { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
+    { "_dyld_register_func_for_add_image", (void *)&replaced_dyld_register_func_for_add_image },
+    { "_dyld_register_func_for_remove_image", (void *)&replaced_dyld_register_func_for_remove_image },
+    { "_dyld_images_for_addresses", (void *)&replaced_dyld_images_for_addresses },
+    { "_dyld_register_for_image_loads", (void *)&replaced_dyld_register_for_image_loads },
+    { "_dyld_register_for_bulk_image_loads", (void *)&replaced_dyld_register_for_bulk_image_loads },
+    { "dlopen", (void *)&replaced_dlopen },
+    { "dlopen_preflight", (void *)&replaced_dlopen_preflight },
+    { "dlerror", (void *)&replaced_dlerror },
+    { "dlsym", (void *)&replaced_dlsym },
+    { "dladdr", (void *)&replaced_dladdr },
+};
+#define SHADOW_SYM_POLICY_COUNT (sizeof(shdw_sym_policy_table) / sizeof(shdw_sym_policy_table[0]))
+
+// Index of the image containing `addr` in dyld's load order, or -1.
+static int shdw_image_index_of(const void* addr) {
+    const struct mach_header* mh = dyld_image_header_containing_address(addr);
+
+    if(!mh) {
+        return -1;
+    }
+
+    uint32_t count = _dyld_image_count();
+
+    for(uint32_t i = 0; i < count; i++) {
+        if(_dyld_get_image_header(i) == mh) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+// RTLD_NEXT / RTLD_SELF emulation: resolve from the TRUE caller's image
+// position (per-image handles in real load order, RTLD_FIRST scoped) instead
+// of calling original dlsym with Shadow as the caller — original dlsym would
+// resolve RTLD_NEXT relative to the hook's own frame, which is wrong unless
+// Shadow happens to sit at the caller's load position.
 static void* (*original_dlsym)(void* handle, const char* symbol);
+
+static void* shdw_dlsym_caller_relative(int callerIdx, void* handle, const char* symbol) {
+    uint32_t count = _dyld_image_count();
+    uint32_t start = (handle == RTLD_NEXT) ? (uint32_t)(callerIdx + 1) : (uint32_t)callerIdx;
+
+    for(uint32_t i = start; i < count; i++) {
+        const char* name = _dyld_get_image_name(i);
+
+        if(!name || !name[0]) {
+            continue;
+        }
+
+        void* imgHandle = dlopen(name, RTLD_NOLOAD | RTLD_FIRST);
+
+        if(!imgHandle) {
+            continue;
+        }
+
+        void* addr = original_dlsym(imgHandle, symbol);
+
+        if(addr) {
+            return addr;
+        }
+    }
+
+    return NULL;
+}
+
 static void* replaced_dlsym(void* handle, const char* symbol) {
-    if(isCallerExternal()) {
+    // Each loader operation clears the thread's error state up front.
+    _shdw_dyld_error_tls = NULL;
+
+    if(!isCallerExternal()) {
         return original_dlsym(handle, symbol);
     }
 
-    void* addr = original_dlsym(handle, symbol);
-
-    if(![_shadow isAddrRestricted:addr]) {
-        return addr;
-    }
-
+    // Hooked system APIs resolve to their replacement regardless of handle —
+    // a specific libdyld handle is a dlsym bypass exactly like RTLD_NEXT.
     if(symbol) {
-        NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
+        for(size_t i = 0; i < SHADOW_SYM_POLICY_COUNT; i++) {
+            if(strcmp(symbol, shdw_sym_policy_table[i].name) == 0) {
+                return shdw_sym_policy_table[i].replacement;
+            }
+        }
     }
 
-    // A non-tweak caller resolving a jailbreak symbol is a probe.
-    shdw_detector_detected("dlsym");
+    void* addr = NULL;
 
-    _shdw_dyld_error = YES;
-    return NULL;
+    if(handle == RTLD_NEXT || handle == RTLD_SELF) {
+        // Caller-relative resolution (see shdw_dlsym_caller_relative).
+        int callerIdx = shdw_image_index_of(__builtin_extract_return_addr(__builtin_return_address(0)));
+
+        if(callerIdx < 0) {
+            // Caller not in the image list (JIT etc.): degrade to Shadow-
+            // relative semantics rather than failing hard.
+            addr = original_dlsym(handle, symbol);
+        } else {
+            addr = shdw_dlsym_caller_relative(callerIdx, handle, symbol);
+
+            if(!addr) {
+                _shdw_dyld_error_tls = "symbol not found";
+                return NULL;
+            }
+        }
+    } else {
+        addr = original_dlsym(handle, symbol);
+
+        if(!addr) {
+            // Real failure: libdyld's own error state is set; keep the TLS
+            // error clear so dlerror reports the true cause.
+            return NULL;
+        }
+    }
+
+    // Shadow/JB-only symbols (or a handle that resolved into a protected
+    // image): deny with the TLS error, and trip the behavioral escalation.
+    if([_shadow isAddrRestricted:addr]) {
+        if(symbol) {
+            NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
+        }
+
+        // A non-tweak caller resolving a jailbreak symbol is a probe.
+        shdw_detector_detected("dlsym");
+
+        _shdw_dyld_error_tls = "library not found";
+        return NULL;
+    }
+
+    return addr;
 }
 
 static int (*original_dladdr)(const void* addr, Dl_info* info);
