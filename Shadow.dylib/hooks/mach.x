@@ -23,6 +23,11 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
+    // MACH_SERVICE_NAME ("me.jjolano.shadow.service") intentionally falls
+    // under the "me.jjolano" blocklist umbrella: detectors' lookups are
+    // denied, while the tweak's own lookups pass (isCallerTweak) through to
+    // the original — the vnode client relies on this for its
+    // bootstrap_look_up.
     if(!isCallerTweak() && service_name) {
         NSLog(@"%@: %s", @"bootstrap_look_up", service_name);
 

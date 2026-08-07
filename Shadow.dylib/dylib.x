@@ -14,6 +14,121 @@
 // dyld.x (memory-hiding escalation) and by the hook-backend routing below.
 BOOL shdw_detector_present = NO;
 
+// ---------------------------------------------------------------------------
+// Spawn-time image watcher (no-Filter loading: the tweak now loads at process
+// spawn instead of at UIKit load). An add-image callback is registered before
+// any hooking so that (a) app-linked detection libraries — which load after
+// this ctor — still trigger the AR4 escalation, and (b) the UIKit-class hook
+// groups (UIApplication, UIImage) install only once UIKit is actually loaded:
+// %init on a class that doesn't exist yet can crash Substrate-based backends
+// and silently kills the group on ElleKit.
+// ---------------------------------------------------------------------------
+#ifdef hookkit_h
+static BOOL _shdw_watcher_enabled = NO;      // ctor passed all gates + prefs on
+static BOOL _shdw_objc_backend = NO;         // ElleKit/Substrate/Substitute available
+static BOOL _shdw_pref_urlscheme = NO;
+static BOOL _shdw_pref_foundation = NO;
+static BOOL _shdw_dyld_installed = NO;       // set when the ctor installed the group
+static BOOL _shdw_symlookup_installed = NO;
+static BOOL _shdw_dyldextra_installed = NO;
+static BOOL _shdw_uikit_installed = NO;      // UIKit groups installed
+static BOOL _shdw_escalation_installed = NO; // detector escalation handled
+static HKSubstitutor* _shdw_watcher_main = nil;   // subMain
+static HKSubstitutor* _shdw_watcher_cfunc = nil;  // subCFunc
+static HKSubstitutor* _shdw_watcher_inline = nil; // subInline (inline escalation)
+
+// Private dyld4 export (iOS 15+): image path read directly from dyld — never
+// routed through our own filtered dladdr/_dyld_get_image_name (hooked once
+// the dyld groups install, and the mirror lags a new image by one callback).
+extern const char* _dyld_image_header_file_path(const struct mach_header* mh);
+
+static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_slide) {
+    (void) vmaddr_slide;
+
+    if(!_shdw_watcher_enabled) {
+        return;  // daemon / non-app / prefs-off: nothing to defer or escalate
+    }
+
+    @autoreleasepool {
+        const char* path = _dyld_image_header_file_path(mh);
+
+        if(!path || !path[0]) {
+            return;  // fail soft: no name to classify
+        }
+
+        NSString* image_lower = [[NSString stringWithUTF8String:path] lowercaseString];
+
+        // UIKit is loaded: the classes now exist. Install the two UIKit-class
+        // groups the ctor must not %init at spawn (class absent there).
+        if(!_shdw_uikit_installed && [image_lower containsString:@"uikit.framework"]) {
+            if(_shdw_objc_backend && (_shdw_pref_urlscheme || _shdw_pref_foundation)) {
+                NSLog(@"+ uikit classes (installed at UIKit load)");
+
+                if(_shdw_pref_urlscheme) {
+                    shadowhook_UIApplication(_shdw_watcher_main);
+                }
+
+                if(_shdw_pref_foundation) {
+                    shadowhook_UIImage(_shdw_watcher_main);
+                }
+
+                [_shdw_watcher_main executeHooks];
+            }
+
+            _shdw_uikit_installed = YES;
+        }
+
+        // Detector loaded after our ctor (app-linked or dlopen'd): escalate.
+        // shdw_detector_detected installs the gated groups the ctor skipped
+        // (idempotent — its guard covers the prefs-installed subset).
+        if([image_lower containsString:@"iossecuritysuite"]
+        || [image_lower containsString:@"freerasp"] || [image_lower containsString:@"talsec"]) {
+            shdw_detector_detected(path);
+        }
+    }
+}
+#endif
+
+// Detector escalation, shared by the image watcher and the behavioral
+// tripwires in the hook files (JB-indicator path/symbol/dylib probes by
+// non-tweak callers). Sets the flag, then installs whatever detector-gated
+// groups the ctor didn't (the ctor only skipped them when the flag was NO at
+// spawn — with the flag now YES, a second pass would double-hook, hence the
+// per-group guards). Re-entrancy: the escalation guard is marked before any
+// install, so a trip firing from inside a hook being installed no-ops.
+void shdw_detector_detected(const char* reason) {
+    #ifdef hookkit_h
+    if(_shdw_escalation_installed) {
+        return;
+    }
+
+    _shdw_escalation_installed = YES;
+
+    NSLog(@"[Shadow] detector probe: %s", reason ?: "unknown");
+
+    shdw_detector_present = YES;
+
+    if(!_shdw_dyld_installed) {
+        shadowhook_dyld(_shdw_watcher_cfunc);
+    }
+
+    if(!_shdw_symlookup_installed) {
+        HKSubstitutor* sub = _shdw_watcher_inline ?: _shdw_watcher_main;
+        shadowhook_dyld_symlookup(sub);
+        shadowhook_dyld_symaddrlookup(sub);
+    }
+
+    if(!_shdw_dyldextra_installed) {
+        shadowhook_dyld_extra(_shdw_watcher_inline ?: _shdw_watcher_main);
+    }
+
+    [_shdw_watcher_cfunc executeHooks];
+    [_shdw_watcher_main executeHooks];
+    #else
+    (void) reason;
+    #endif
+}
+
 %ctor {
     // Detector-presence detection, run before prefs loading and before any
     // hook installation: dyld APIs are still unhooked here, so the real
@@ -38,14 +153,27 @@ BOOL shdw_detector_present = NO;
         }
     }
 
+    // Watch for images that load after this ctor (no-Filter loading means the
+    // ctor runs at spawn, before app-linked detectors and UIKit exist): late
+    // detector arrivals escalate the dyld surface, and the UIKit-class hook
+    // groups install once UIKit is actually loaded. Registered before any
+    // hooking, so the callback stays on dyld's real list.
+    #ifdef hookkit_h
+    _dyld_register_func_for_add_image(shdw_early_image_add);
+    #endif
+
     // Determine the application we're injected into.
     NSString* bundleIdentifier = [Shadow getBundleIdentifier];
 
-    // Injected into SpringBoard: system-wide janitor — restore any leaked
-    // vnode state left by killed apps (leaked vnode refs panic the kernel at
-    // shutdown if never restored).
+    // Injected into SpringBoard: acquire the vnode lease like any app —
+    // SpringBoard is a hide target too (its prefs bundle lives here), and
+    // the daemon allows non-root euids (SB runs as mobile). The old
+    // system-wide janitor is gone: the daemon owns recovery now. The client
+    // is pure IPC, so it works without hook substitution; the
+    // hook_springboard group was removed in v5, so there is nothing to
+    // %init here.
     if([bundleIdentifier isEqualToString:@"com.apple.springboard"]) {
-        shadowhook_vnode_restore();
+        shadowhook_vnode(NULL);
         return;
     }
 
@@ -105,6 +233,14 @@ BOOL shdw_detector_present = NO;
 
     // Initialize Shadow instance.
     [Shadow sharedInstance];
+
+    // Vnode-layer hiding: acquire the daemon lease now — immediately after
+    // prefs/rulesets are read, before any hook group installs, so ctor-time
+    // probes see the hide from the start. The daemon derives the paths from
+    // its own allowlist; the client sends no paths and touches no kernel
+    // state. Pure IPC, sub-millisecond; whether hiding is enabled is
+    // enforced daemon-side.
+    shadowhook_vnode(NULL);
 
     // Initialize hooks.
     NSLog(@"starting hooks");
@@ -196,6 +332,26 @@ BOOL shdw_detector_present = NO;
     HKSubstitutor* subDyldExtra = NULL;
     #endif
 
+    // Stash state for the spawn-time watcher (shdw_early_image_add): it runs
+    // on dyld's loader thread for images loaded after this ctor and needs the
+    // substitutors/prefs without touching ctor locals.
+    #ifdef hookkit_h
+    _shdw_watcher_enabled = YES;
+    _shdw_objc_backend = objcBackendAvailable;
+    _shdw_pref_urlscheme = [prefs_load[@"Hook_URLScheme"] boolValue];
+    _shdw_pref_foundation = [prefs_load[@"Hook_Foundation"] boolValue];
+    _shdw_watcher_main = subMain;
+    _shdw_watcher_cfunc = subCFunc;
+    _shdw_watcher_inline = subInline;
+
+    // Detector present at spawn: the ctor's detector-gated installs below run
+    // (their conditions include shdw_detector_present); tell the watcher the
+    // escalation is already handled so it never double-installs.
+    if(shdw_detector_present) {
+        _shdw_escalation_installed = YES;
+    }
+    #endif
+
     // AR4 escalation: when a detection library is present these dyld hooks
     // install regardless of the corresponding prefs — a detector in the
     // process sees the jailbreak either way, so the prefs must not be able
@@ -204,6 +360,10 @@ BOOL shdw_detector_present = NO;
         NSLog(@"+ dylib");
         
         shadowhook_dyld(subCFunc);
+
+        #ifdef hookkit_h
+        _shdw_dyld_installed = YES;
+        #endif
     }
 
     if([prefs_load[@"Hook_Filesystem"] boolValue]) {
@@ -220,11 +380,10 @@ BOOL shdw_detector_present = NO;
     }
 
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
+        // Installed by shdw_early_image_add once UIKit is loaded: the class
+        // doesn't exist at spawn (no-Filter loading), where %init on it could
+        // crash Substrate-based backends.
         NSLog(@"+ urlscheme");
-
-        if(objcBackendAvailable) {
-            shadowhook_UIApplication(subMain);
-        }
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
@@ -279,7 +438,8 @@ BOOL shdw_detector_present = NO;
             shadowhook_NSString(subMain);
             shadowhook_NSURL(subMain);
             shadowhook_NSData(subMain);
-            shadowhook_UIImage(subMain);
+            // UIImage needs UIKit loaded; installed by shdw_early_image_add
+            // (see the Hook_URLScheme block above for why).
             shadowhook_NSThread(subMain);
         }
     }
@@ -370,6 +530,10 @@ BOOL shdw_detector_present = NO;
         // (denyFishHook-immune) when a detection library is present.
         shadowhook_dyld_symlookup(subSymLookup);
         shadowhook_dyld_symaddrlookup(subSymLookup);
+
+        #ifdef hookkit_h
+        _shdw_symlookup_installed = YES;
+        #endif
     }
 
     if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue] || shdw_detector_present) {
@@ -378,6 +542,10 @@ BOOL shdw_detector_present = NO;
         // dlopen_internal is a private libdyld symbol fishhook can't rebind —
         // inline only, always.
         shadowhook_dyld_extra(subDyldExtra);
+
+        #ifdef hookkit_h
+        _shdw_dyldextra_installed = YES;
+        #endif
     }
 
     #ifdef hookkit_h
@@ -389,10 +557,11 @@ BOOL shdw_detector_present = NO;
     HKDisableBatching();
     #endif
 
-    // Vnode-layer file hiding (KRW). Runs after prefs/rulesets have been
-    // read from disk and after all hooks are batch-executed, so our own
-    // reads are unaffected by the hiding.
-    shadowhook_vnode(subCFunc);
-
     NSLog(@"completed hooks");
+}
+
+%dtor {
+    // Best-effort lease release at process teardown. The daemon also watches
+    // the service-port send right, so this is courtesy only.
+    shadowhook_vnode_release();
 }

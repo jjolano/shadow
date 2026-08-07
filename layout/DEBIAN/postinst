@@ -23,6 +23,23 @@ case "$1" in
 
         # shdw runs as root from postinst/triggers, so it can still write.
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
+
+        # LaunchDaemon: rootful ships /Library/LaunchDaemons, rootless ships
+        # /var/jb/Library/LaunchDaemons (theos install-prefix); the legacy
+        # armv7 package omits the plist entirely and skips this.
+        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
+            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
+            chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
+            chown root:wheel "$DPKG_ROOT/usr/libexec/shadowd"
+            chmod 755 "$DPKG_ROOT/usr/libexec/shadowd"
+            mkdir -p "$DPKG_ROOT/var/log"
+            # Modern launchctl API; older iOS falls back to legacy load -w.
+            # (On upgrades bootstrap/load fail with "already loaded" — the
+            # running service is left alone and kickstart restarts it.)
+            launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null \
+                || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
+            launchctl kickstart -k system/me.jjolano.shadow 2> /dev/null || true
+        fi
     ;;
 
     triggered)

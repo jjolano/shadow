@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
+then
+    DPKG_ROOT="/var/jb"
+fi
+
+case "$1" in
+    remove|upgrade)
+        # SIGTERM first: the daemon unhides every VISSHADOW-hidden vnode on
+        # SIGTERM and exits 0 (KeepAlive SuccessfulExit=false won't respawn a
+        # clean exit), so nothing stays hidden when we boot it out. Leaked
+        # hidden vnodes panic the kernel at shutdown — never unload without
+        # the SIGTERM.
+        launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
+            || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+        sleep 1
+        launchctl bootout system/me.jjolano.shadow 2> /dev/null \
+            || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
+    ;;
+esac
+
+exit 0

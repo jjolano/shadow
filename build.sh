@@ -38,35 +38,49 @@ rm -rf $PWD/build
 mkdir -p $PWD/build
 
 # build main project (rootless ver., iOS 15+)
-stage_deps rootless
-make clean &&
-# The rootless scheme never installs Shadow.framework into $THEOS/lib/iphone/rootless
-# on this theos (rooted scheme installs to $THEOS/lib fine), so build the framework
-# first and stage it explicitly — otherwise the tweak links against a stale copy.
-THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make -C Shadow.framework &&
-rm -rf $THEOS/lib/iphone/rootless/Shadow.framework &&
-cp -R Shadow.framework/.theos/obj/debug/Shadow.framework $THEOS/lib/iphone/rootless/ &&
-THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make package FINALPACKAGE=1 &&
-cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
+build_rootless() {
+    stage_deps rootless
+    make clean &&
+    # The rootless scheme never installs Shadow.framework into $THEOS/lib/iphone/rootless
+    # on this theos (rooted scheme installs to $THEOS/lib fine), so build the framework
+    # first and stage it explicitly — otherwise the tweak links against a stale copy.
+    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make -C Shadow.framework &&
+    rm -rf $THEOS/lib/iphone/rootless/Shadow.framework &&
+    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework $THEOS/lib/iphone/rootless/ &&
+    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make package FINALPACKAGE=1 &&
+    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
 
-rm -rf $THEOS/lib/Shadow.framework
+    rm -rf $THEOS/lib/Shadow.framework
+}
 
 # build main project (rooted ver., iOS 12+; theos bumps the arm64e slice minos to 14.0)
-stage_deps rooted
-make clean &&
-ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
-cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
+build_rooted() {
+    stage_deps rooted
+    make clean &&
+    ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
+    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
 
-rm -rf $THEOS/lib/Shadow.framework
+    rm -rf $THEOS/lib/Shadow.framework
+}
 
 # build legacy ver. (armv7/armv7s, iOS 9+; 32-bit deps staged separately)
-stage_deps legacy
-cp control /tmp/shadow-control.bak
-sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
+build_legacy() {
+    stage_deps legacy
+    cp control /tmp/shadow-control.bak
+    sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
 
-make clean &&
-ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
-cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm-legacy.deb || true
+    make clean &&
+    ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
+    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm-legacy.deb
 
-mv /tmp/shadow-control.bak control
-rm -rf $THEOS/lib/Shadow.framework
+    mv /tmp/shadow-control.bak control
+    rm -rf $THEOS/lib/Shadow.framework
+}
+
+case ${1:-all} in
+    rootless) build_rootless ;;
+    rooted) build_rooted ;;
+    legacy) build_legacy ;;
+    all) build_rootless; build_rooted; build_legacy ;;
+    *) echo "usage: $0 [all|rootless|rooted|legacy]" >&2; exit 1 ;;
+esac

@@ -2,6 +2,16 @@
 
 #import "hooks.h"
 
+// The theos vendored sandbox.h truncates Apple's filter enum at
+// SANDBOX_FILTER_NOTIFICATION; the real header continues with MACH and PID.
+// Define them with the same values the runtime expects (enum order).
+#ifndef SANDBOX_FILTER_MACH
+#define SANDBOX_FILTER_MACH 10
+#endif
+#ifndef SANDBOX_FILTER_PID
+#define SANDBOX_FILTER_PID 11
+#endif
+
 // extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
 // extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
 
@@ -94,7 +104,7 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     va_list args;
     va_start(args, type);
 
-    if(!isCallerTweak() && operation && strcmp(operation, "mach-lookup") == 0 && type == SANDBOX_FILTER_MACH) {
+    if(operation && strcmp(operation, "mach-lookup") == 0 && type == SANDBOX_FILTER_MACH) {
         // Only the MACH filter's vararg is a name string (PATH/NAME filters
         // take pointers, PID/INDEX take ints, NONE takes nothing). Read it
         // from a COPY so the forward below still sees the full arg list.
@@ -103,7 +113,15 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
         const char* name = va_arg(inspect, const char *);
         va_end(inspect);
 
-        if(name
+        // The tweak's own mach-lookup of its daemon service is always
+        // allowed: the app sandbox would otherwise deny the vnode client's
+        // bootstrap_look_up (sandbox_check is called regardless of caller).
+        if(isCallerTweak() && name && strcmp(name, MACH_SERVICE_NAME) == 0) {
+            va_end(args);
+            return 0;
+        }
+
+        if(!isCallerTweak() && name
         && (strstr(name, "cy:") == name
         || strstr(name, "lh:") == name
         || strstr(name, "rbs:") == name
@@ -117,8 +135,10 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     }
 
     // Forward the exact varargs for the filter type: NONE takes none, PID
-    // takes an int, the rest take one string.
-    switch(type) {
+    // takes an int, the rest take one string. (Cast to int: the theos
+    // vendored header's enum stops before MACH/PID, so case values outside
+    // it would trip -Werror "case value not in enum".)
+    switch((int) type) {
         case SANDBOX_FILTER_NONE:
             va_end(args);
             return original_sandbox_check(pid, operation, type);

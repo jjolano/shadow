@@ -70,62 +70,62 @@ static inline Shadow* shdw_shadow_instance(void) {
 
 #define _shadow                 shdw_shadow_instance()
 
-// Per-return-address cache of isCallerTweak() classifications. A return
-// address's classification only changes when the image containing it loads or
-// unloads, so a small direct-mapped table keeps the hot path cheap. Each
-// entry is two words: the return address + flag (bit 0 = flag, 0 = empty)
-// and the dyld image-list generation it was computed at. Writers store
-// address+flag first, then the generation (release); readers load the
-// generation (acquire) and only trust the entry if it matches the current
-// generation — so a classification computed before an image-list change but
-// stored after the clear is caught on the next read. The table and
-// generation are owned by dyld.x and bumped/cleared on every image add/remove
-// callback; when the dyld hooks aren't installed no callbacks run, so the
-// cache is skipped entirely (`_shdw_dyld_hooks_active`).
-#define SHADOW_CALLER_CACHE_ENTRIES 128
+// Caller classification for isCallerTweak(): a return address belongs to the
+// app iff it falls inside the address range of an image whose path is under
+// the app bundle — the predicate -[Shadow isAddrExternal:] applied per call.
+// The app bundle's images (app executable + embedded frameworks) are few and
+// each span is fixed once its image is loaded, so dyld.x keeps a snapshot of
+// their spans instead of answering every call with a dyld image-list walk
+// (the old per-return-address table thrashed: ~260 distinct call sites vs
+// 128 direct-mapped slots, and every add/remove image forced a wave of
+// recomputes). Snapshot is double-buffered: the writer rebuilds the inactive
+// copy and publishes it with one release store; readers take one acquire
+// load and never see a torn buffer. No callbacks run until dyld.x installs
+// them, so before then the published set is empty and every caller
+// classifies as non-app (conservative: restrictions apply).
+#define SHADOW_OWN_IMAGE_MAX 16
 
 typedef struct {
-    uintptr_t gen;      // image-list generation this entry was computed at
-    uintptr_t ra_flag;  // return address | flag (bit 0); 0 = empty
-} shdw_caller_cache_entry_t;
+    uintptr_t base, end;
+} shdw_range_t;
 
-extern shdw_caller_cache_entry_t _shdw_caller_cache[SHADOW_CALLER_CACHE_ENTRIES];
-extern uintptr_t _shdw_caller_cache_generation;
-extern BOOL _shdw_dyld_hooks_active;
+typedef struct {
+    uint32_t count;
+    shdw_range_t range[SHADOW_OWN_IMAGE_MAX];
+} shdw_own_ranges_t;
+
+extern shdw_own_ranges_t _shdw_own_ranges_a;
+extern shdw_own_ranges_t _shdw_own_ranges_b;
+extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
 
 static inline BOOL shdw_caller_is_tweak(const void* ra) {
-    // Without the dyld add/remove callbacks the cache is never invalidated
-    // and could serve a stale classification after an unload/reload — always
-    // compute instead.
-    if(!_shdw_dyld_hooks_active) {
-        return [_shadow isAddrExternal:ra];
-    }
+    uintptr_t a = (uintptr_t) ra;
+    shdw_own_ranges_t* ranges = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
 
-    uintptr_t key = (uintptr_t) ra;
-    uintptr_t generation = __atomic_load_n(&_shdw_caller_cache_generation, __ATOMIC_ACQUIRE);
-    shdw_caller_cache_entry_t* slot = &_shdw_caller_cache[(key >> 2) & (SHADOW_CALLER_CACHE_ENTRIES - 1)];
-
-    if(__atomic_load_n(&slot->gen, __ATOMIC_ACQUIRE) == generation) {
-        uintptr_t ra_flag = __atomic_load_n(&slot->ra_flag, __ATOMIC_ACQUIRE);
-
-        if((ra_flag & ~(uintptr_t) 1) == key) {
-            return (BOOL) (ra_flag & 1);
+    for(uint32_t i = 0; i < ranges->count; i++) {
+        if(a >= ranges->range[i].base && a < ranges->range[i].end) {
+            return YES;
         }
     }
 
-    BOOL external = [_shadow isAddrExternal:ra];
-    __atomic_store_n(&slot->ra_flag, key | (external ? (uintptr_t) 1 : 0), __ATOMIC_RELEASE);
-    __atomic_store_n(&slot->gen, generation, __ATOMIC_RELEASE);
-    return external;
+    return NO;
 }
 
-void shdw_caller_cache_invalidate(void);
+// Rebuilds the app-bundle image spans from the current dyld image list.
+// Called by dyld.x at install and from its add/remove image callbacks.
+void shdw_own_ranges_refresh(void);
 
 #define isCallerTweak()         shdw_caller_is_tweak(__builtin_extract_return_addr(__builtin_return_address(0)))
 
 // Set by dylib.x when a known detection library (IOSSecuritySuite/freeRASP)
 // is loaded; read by dyld.x to escalate memory-level hiding.
 extern BOOL shdw_detector_present;
+
+// Behavioral tripwire escalation (dylib.x): called when a non-tweak caller
+// probes the jailbreak (JB-indicator path/symbol/dylib) or a known detector
+// loads post-spawn. Idempotent; installs the detector-gated hook groups the
+// ctor skipped. Safe to call from hooked functions and the image watcher.
+extern void shdw_detector_detected(const char* reason);
 
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);
@@ -159,4 +159,4 @@ extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
 extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
 extern void shadowhook_NSThread(HKSubstitutor* hooks);
 extern void shadowhook_vnode(HKSubstitutor* hooks);
-extern void shadowhook_vnode_restore(void);
+extern void shadowhook_vnode_release(void);

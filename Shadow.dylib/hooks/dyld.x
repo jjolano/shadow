@@ -40,25 +40,73 @@ static NSMutableArray* _shdw_dyld_path_pool = nil;
 static const struct dyld_uuid_info* _shdw_real_uuid_array = NULL;
 static uintptr_t _shdw_real_uuid_count = 0;
 
-// H1: caller-classification cache storage (see hooks.h). Shared (non-static)
-// so a single invalidate call from the image add/remove callbacks below
-// clears the cache for every file that uses isCallerTweak(). The generation
-// bumps on every invalidate; entries store the generation they were computed
-// at and readers reject mismatches, so a classification computed before an
-// image-list change but stored after the clear can never be trusted.
-shdw_caller_cache_entry_t _shdw_caller_cache[SHADOW_CALLER_CACHE_ENTRIES];
-uintptr_t _shdw_caller_cache_generation = 0;
+// App-bundle image spans for shdw_caller_is_tweak() (see hooks.h). Rebuilt
+// from the dyld image list whenever it changes and once at install; the
+// writer serializes on `_shdw_own_ranges_lock` and publishes with one
+// release store, so readers (no lock, one acquire load) never see a torn or
+// half-built snapshot.
+shdw_own_ranges_t _shdw_own_ranges_a;
+shdw_own_ranges_t _shdw_own_ranges_b;
+shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
+static os_unfair_lock _shdw_own_ranges_lock = OS_UNFAIR_LOCK_INIT;
 
-// Set once shadowhook_dyld has registered its add/remove callbacks: only
-// then is the cache invalidated on image-list changes, so only then is it
-// safe to consult (otherwise a stale entry could outlive an unload/reload).
-BOOL _shdw_dyld_hooks_active = NO;
+void shdw_own_ranges_refresh(void) {
+    os_unfair_lock_lock(&_shdw_own_ranges_lock);
 
-void shdw_caller_cache_invalidate(void) {
-    // Bump before clearing: a store racing in after the clear still carries
-    // the pre-bump generation and is rejected by readers.
-    __atomic_fetch_add(&_shdw_caller_cache_generation, 1, __ATOMIC_RELAXED);
-    memset(_shdw_caller_cache, 0, sizeof(_shdw_caller_cache));
+    shdw_own_ranges_t* published = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
+    shdw_own_ranges_t* other = (published == &_shdw_own_ranges_a) ? &_shdw_own_ranges_b : &_shdw_own_ranges_a;
+
+    shdw_own_ranges_t rebuilt = { .count = 0 };
+    const char* bundle = [[shdw_shadow_instance() bundlePath] fileSystemRepresentation];
+
+    uint32_t count = _dyld_image_count();
+
+    for(uint32_t i = 0; i < count && rebuilt.count < SHADOW_OWN_IMAGE_MAX; i++) {
+        const char* path = _dyld_get_image_name(i);
+
+        // Same substring predicate -[Shadow isAddrExternal:] applied per call.
+        if(!path || !strstr(path, bundle)) {
+            continue;
+        }
+
+        const struct mach_header* mh = _dyld_get_image_header(i);
+
+        if(!mh || mh->magic != MH_MAGIC_64) {
+            continue;
+        }
+
+        // Union span across all segments (return addresses only land in
+        // executable code, so the loose union is exact for our purposes).
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        uintptr_t base = UINTPTR_MAX, end = 0;
+        const struct load_command* lc = (const void *)((const struct mach_header_64 *)mh + 1);
+
+        for(uint32_t j = 0; j < mh->ncmds; j++) {
+            if(lc->cmd == LC_SEGMENT_64) {
+                const struct segment_command_64* seg = (const void *)lc;
+                uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
+
+                if(s < base) {
+                    base = s;
+                }
+
+                if(s + seg->vmsize > end) {
+                    end = s + seg->vmsize;
+                }
+            }
+
+            lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+        }
+
+        if(end > base) {
+            rebuilt.range[rebuilt.count++] = (shdw_range_t){ .base = base, .end = end };
+        }
+    }
+
+    *other = rebuilt;
+    __atomic_store_n(&_shdw_own_ranges_published, other, __ATOMIC_RELEASE);
+
+    os_unfair_lock_unlock(&_shdw_own_ranges_lock);
 }
 
 // C4: immutable snapshot of the collection for the hot dyld enumeration
@@ -209,11 +257,11 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
 // _dyld_image_path_containing_address is called directly by commercial
 // detection SDKs (bypasses dyld API filtering) AND by Shadow's own Core.m
-// (isAddrExternal/isAddrRestricted → isCallerTweak). Return truth to the
-// tweak's own callers, lie (executable path) to everyone else.
+// (isAddrExternal/isAddrRestricted). Return truth to the tweak's own callers,
+// lie (executable path) to everyone else.
 // The reentrancy flag is _Thread_local because the only recursion here is
-// same-thread (isCallerTweak → isAddrExternal → this hook, guarded by the
-// flag) — per-thread scope is exactly right and needs no lock.
+// same-thread (this hook → isCPathRestricted → isPathRestricted, guarded by
+// the flag) — per-thread scope is exactly right and needs no lock.
 static _Thread_local BOOL _shdw_dyipca_in_hook = NO;
 
 static const char* (*original_dyld_image_path_containing_address)(const void* addr);
@@ -296,6 +344,9 @@ static void* replaced_dlopen(const char* path, int mode) {
         }
     }
 
+    // A non-tweak caller trying to dlopen a jailbreak dylib is a probe.
+    shdw_detector_detected("dlopen");
+
     _shdw_dyld_error = YES;
     return NULL;
 }
@@ -319,6 +370,8 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
         }
     }
 
+    shdw_detector_detected("dlopen");
+
     _shdw_dyld_error = YES;
     return NULL;
 }
@@ -341,6 +394,8 @@ static bool replaced_dlopen_preflight(const char* path) {
             return original_dlopen_preflight(path);
         }
     }
+
+    shdw_detector_detected("dlopen");
 
     return false;
 }
@@ -378,8 +433,8 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         return;
     }
 
-    // The dyld image list changed: caller classifications may be stale.
-    shdw_caller_cache_invalidate();
+    // The dyld image list changed: refresh the app-bundle spans.
+    shdw_own_ranges_refresh();
 
     const char* image_path = dyld_image_path_containing_address(mh);
 
@@ -423,8 +478,8 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         return;
     }
 
-    // The dyld image list changed: caller classifications may be stale.
-    shdw_caller_cache_invalidate();
+    // The dyld image list changed: refresh the app-bundle spans.
+    shdw_own_ranges_refresh();
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSDictionary* dylibToRemove = nil;
@@ -484,6 +539,9 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
     if(symbol) {
         NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
     }
+
+    // A non-tweak caller resolving a jailbreak symbol is a probe.
+    shdw_detector_detected("dlsym");
 
     _shdw_dyld_error = YES;
     return NULL;
@@ -845,9 +903,10 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
     _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 
-    // The add/remove callbacks above drive caller-cache invalidation; only
-    // once they're registered is it safe for isCallerTweak() to use the cache.
-    _shdw_dyld_hooks_active = YES;
+    // Registration above replays the current image list through the
+    // callbacks, so the app-bundle spans are populated (and will be kept in
+    // sync on every add/remove) before any hook below can fire.
+    shdw_own_ranges_refresh();
 
     MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
     MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
