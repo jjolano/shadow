@@ -1,5 +1,6 @@
 #import "SHDWDangerousListController.h"
 #import "SHDWAppListController.h"
+#import "SHDWPrefs.h"
 
 #import <Shadow/Settings.h>
 
@@ -28,38 +29,11 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	NSString* applicationID = [self applicationIDInContext];
-
-	if(applicationID) {
-		NSDictionary* prefs_app = [prefs dictionaryForKey:applicationID];
-		NSString* key = [specifier identifier];
-
-		if(prefs_app && [prefs_app objectForKey:key]) {
-			return prefs_app[key];
-		}
-
-		// Options not overridden for this app inherit the global value.
-		return [prefs objectForKey:key];
-	}
-
-	return [prefs objectForKey:[specifier identifier]];
+	return SHDWReadAppPref(prefs, [self applicationIDInContext], [specifier identifier]);
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	NSString* applicationID = [self applicationIDInContext];
-
-	if(applicationID) {
-		NSDictionary* prefs_app = [prefs dictionaryForKey:applicationID];
-		NSMutableDictionary* prefs_app_m = prefs_app ? [prefs_app mutableCopy] : [NSMutableDictionary new];
-
-		prefs_app_m[[specifier identifier]] = value;
-
-		[prefs setObject:[prefs_app_m copy] forKey:applicationID];
-	} else {
-		[prefs setObject:value forKey:[specifier identifier]];
-	}
-
-	[prefs synchronize];
+	SHDWWriteAppPref(prefs, [self applicationIDInContext], [specifier identifier], value);
 }
 
 - (instancetype)init {
