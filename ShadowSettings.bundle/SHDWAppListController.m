@@ -1,5 +1,6 @@
 #import "SHDWAppListController.h"
 #import "SHDWHookLibs.h"
+#import "SHDWPrefs.h"
 
 #import <Shadow/Settings.h>
 
@@ -20,30 +21,19 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
 	NSString* key = [specifier identifier];
-
-	if(prefs_app && [prefs_app objectForKey:key]) {
-		return prefs_app[key];
-	}
+	id value = SHDWReadAppPref(prefs, [self applicationID], key);
 
 	// The master switch mirrors the global enable state until overridden.
-	if([key isEqualToString:@"App_Enabled"]) {
+	if([key isEqualToString:@"App_Enabled"] && !value) {
 		return [prefs objectForKey:@"Global_Enabled"];
 	}
 
-	// Options not overridden for this app inherit the global value.
-	return [prefs objectForKey:key];
+	return value;
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
-	NSMutableDictionary* prefs_app_m = prefs_app ? [prefs_app mutableCopy] : [NSMutableDictionary new];
-
-	prefs_app_m[[specifier identifier]] = value;
-
-	[prefs setObject:[prefs_app_m copy] forKey:[self applicationID]];
-	[prefs synchronize];
+	SHDWWriteAppPref(prefs, [self applicationID], [specifier identifier], value);
 }
 
 - (NSArray *)getValues:(PSSpecifier *)specifier {

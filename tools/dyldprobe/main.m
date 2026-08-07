@@ -32,11 +32,14 @@ static int dyldprobe_dummy_dladdr(const void* addr, Dl_info* info) {
     return 0;
 }
 
-static NSString* ProbeReport(void) {
-    NSMutableString* out = [NSMutableString string];
-    NSString* appPath = [[NSBundle mainBundle] bundlePath];
-    NSFileManager* fm = [NSFileManager defaultManager];
+// Forward decl: section 8 probes ProbeReport's own address.
+static NSString* ProbeReport(void);
 
+static BOOL probe_is_foreign_image(NSString* p, NSString* appPath) {
+    return ![p hasPrefix:@"/System"] && ![p hasPrefix:appPath];
+}
+
+static void probe_section_1(NSMutableString* out, NSString* appPath) {
     [out appendString:@"== 1. dyld_all_image_infos (direct memory read) ==\n"];
     struct dyld_all_image_infos* infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
 
@@ -49,14 +52,16 @@ static NSString* ProbeReport(void) {
             struct dyld_image_info info = infos->infoArray[i];
             NSString* p = info.imageFilePath ? @(info.imageFilePath) : @"?";
 
-            if(![p hasPrefix:@"/System"] && ![p hasPrefix:appPath]) {
+            if(!probe_is_foreign_image(p, appPath)) {
                 [out appendFormat:@"  %@\n", p];
             }
         }
     } else {
         [out appendString:@"  (dyld_all_image_infos unavailable)\n"];
     }
+}
 
+static void probe_section_2(NSMutableString* out, NSString* appPath) {
     [out appendString:@"\n== 2. dyld API view ==\n"];
     uint32_t count = _dyld_image_count();
     [out appendFormat:@"_dyld_image_count = %u\n", count];
@@ -65,11 +70,13 @@ static NSString* ProbeReport(void) {
         const char* n = _dyld_get_image_name(i);
         NSString* p = n ? @(n) : @"?";
 
-        if(![p hasPrefix:@"/System"] && ![p hasPrefix:appPath]) {
+        if(!probe_is_foreign_image(p, appPath)) {
             [out appendFormat:@"  %@\n", p];
         }
     }
+}
 
+static void probe_section_3(NSMutableString* out, NSFileManager* fm) {
     [out appendString:@"\n== 3. jailbreak path probes (fileExistsAtPath) ==\n"];
     NSArray* jbPaths = @[
         @"/var/jb",
@@ -106,21 +113,18 @@ static NSString* ProbeReport(void) {
     }
 
     [out appendFormat:@"  /private/preboot jailbreak dirs: %@\n", jbdirs];
+}
 
+static void probe_section_4(NSMutableString* out) {
     [out appendString:@"\n== 4. URL scheme probes ==\n"];
 
     for(NSString* s in @[@"cydia://", @"sileo://", @"zbra://", @"xina://", @"filza://"]) {
         BOOL openable = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:s]];
         [out appendFormat:@"  %-12@ %@\n", s, openable ? @"OPENABLE" : @"no"];
     }
+}
 
-    // Markers used to recognize jailbreak-path images in the direct reads
-    // (shared by sections 5 and 6).
-    NSArray* hiddenMarkers = @[
-        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
-        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
-    ];
-
+static NSMutableArray* probe_section_5(NSMutableString* out, NSArray* hiddenMarkers) {
     [out appendString:@"\n== 5. dladdr/dlsym on hidden images ==\n"];
     // Two independent probes:
     //  A. dladdr on addresses taken from the DIRECT memory read — the
@@ -174,6 +178,10 @@ static NSString* ProbeReport(void) {
         [out appendFormat:@"  %-20@ %p  dladdr: %@\n", symName, sym, gotInfo ? @(info.dli_fname) : @"?"];
     }
 
+    return hiddenAddrs;
+}
+
+static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hiddenMarkers) {
     [out appendString:@"\n== 6. add/remove image stress (unloadable test dylib) ==\n"];
     // The stress library must be a real ON-DISK dylib that dlclose can fully
     // unload: shared-cache images (e.g. /usr/lib/libxml2.dylib) may not be
@@ -426,7 +434,9 @@ static NSString* ProbeReport(void) {
 
         [out appendFormat:@"  stress result: %@\n", stressOK ? @"OK" : @"FAILED"];
     }
+}
 
+static void probe_section_7(NSMutableString* out) {
     [out appendString:@"\n== 7. uuid / infoArrayChangeTimestamp invariants ==\n"];
 
     struct dyld_all_image_infos* invariants = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
@@ -448,7 +458,9 @@ static NSString* ProbeReport(void) {
     } else {
         [out appendString:@"  (dyld_all_image_infos unavailable)\n"];
     }
+}
 
+static void probe_section_8(NSMutableString* out, NSArray* hiddenMarkers, NSMutableArray* hiddenAddrs) {
     [out appendString:@"\n== 8. denyFishHook(dladdr) revert resistance ==\n"];
     // IOSSecuritySuite's FishHookChecker builds a fishhook `rebinding` for
     // "dladdr" pointing at a dummy function and calls rebind_symbols() to
@@ -512,6 +524,29 @@ static NSString* ProbeReport(void) {
     } @catch(NSException* e) {
         [out appendFormat:@"  EXCEPTION in rebind probe: %@ — FAIL (rebind disturbed dladdr)\n", e];
     }
+}
+
+static NSString* ProbeReport(void) {
+    NSMutableString* out = [NSMutableString string];
+    NSString* appPath = [[NSBundle mainBundle] bundlePath];
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    probe_section_1(out, appPath);
+    probe_section_2(out, appPath);
+    probe_section_3(out, fm);
+    probe_section_4(out);
+
+    // Markers used to recognize jailbreak-path images in the direct reads
+    // (shared by sections 5 and 6).
+    NSArray* hiddenMarkers = @[
+        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
+        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
+    ];
+
+    NSMutableArray* hiddenAddrs = probe_section_5(out, hiddenMarkers);
+    probe_section_6(out, fm, hiddenMarkers);
+    probe_section_7(out);
+    probe_section_8(out, hiddenMarkers, hiddenAddrs);
 
     [out appendString:@"\n== done ==\n"];
     return out;

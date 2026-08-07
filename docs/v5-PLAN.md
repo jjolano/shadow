@@ -16,8 +16,8 @@ Next major version of Shadow. Rootless-first architecture with equal-weight dual
 1. **Dual support, equal weight**: rootless + rootful both fully supported, one codebase.
 2. **Rootless-first architecture**: every restriction decision flows through a canonical-path resolver that checks both rooted and `/var/jb`-expanded forms.
 3. **Dependency reduction (W0)**: RootBridge stays (38 lines, correct). HookKit collapsed to a slim direct-hooking layer (ElleKit + fishhook, no plugin system). Modulous deleted.
-4. ElleKit default backend, fishhook fallback, Substitute removed from options.
-5. Build floor iOS 15.0; archs arm64 + arm64e only.
+4. ElleKit default backend + fishhook fallback; Substrate/Substitute backends still compiled (availability-checked), removed only from the Settings picker (auto/ElleKit/fishhook).
+5. Build floors iOS 15.0 (rootless) / 12.0 (rooted) / 9.0 (legacy); three-pass packaging rootless → rooted → legacy. Legacy (armv7/armv7s) is a best-effort third pass.
 
 ## Architecture
 
@@ -55,7 +55,7 @@ rootful:   <path> as-is
 - Keep `shdw -g` regeneration (already rootless-aware via getJBPath).
 
 ### W2 — dyld layer
-- **Memory-level hiding**: patch `dyld_all_image_infos` so injected dylibs are invisible to direct memory reads. Feature-flagged, rootless-first, highest risk.
+- **Memory-level hiding**: patch `dyld_all_image_infos` so injected dylibs are invisible to direct memory reads. Unconditional when the struct exists (see AR2), rootless-first, highest risk.
 - Fix relative-`dlopen` resolution (dyld.x:61/84/107) to be rootless-aware.
 - Keep API-level hooks as cheap layer.
 
@@ -64,7 +64,7 @@ rootful:   <path> as-is
 - `HK_Library` default `auto` → ElleKit; drop Substitute from Settings options.
 
 ### W4 — Build system + settings
-- Keep dual build (build.sh both passes). `ARCHS = arm64 arm64e`, `TARGET ...:15.0`.
+- Keep 3-pass build (build.sh: rootless → rooted → legacy). `ARCHS = arm64 arm64e`, `TARGET ...:15.0` (rooted pass: 12.0; legacy: armv7/armv7s, 9.0).
 - Delete dead `ROOTLESS_MODE` localization strings (zh-Hans/zh-Hant Hooks.strings).
 - No rootless toggle — flavor auto-detected.
 
@@ -72,6 +72,47 @@ rootful:   <path> as-is
 - Devices: Dopamine rootless + palera1n (rootless and rootful).
 - Test apps: freeRASP, iOS Security Suite, custom dyld-all-image-infos probe.
 - Per-wave device tests; `.debs` produced by build.sh.
+
+## shadowd — root daemon (kernel vnode-layer hiding)
+
+Shipped with v5 but not part of the original W0–W5 workstreams. A root
+LaunchDaemon owning ALL kernel read/write (krw) for vnode-layer file hiding on
+behalf of the tweak. Kernel-touching code is copied verbatim from reviewed
+on-disk references (vnb-xfdxh, vnb-plus007, jelbrekLib); the old in-process
+vnode.x design was rejected in review and not reused.
+
+- **Deployment**: LaunchDaemon plists for both flavors — rootless
+  `/var/jb/usr/libexec/shadowd` (`me.jjolano.shadow.rootless.plist`) and rootful
+  `/usr/libexec/shadowd` (`me.jjolano.shadow.plist`); same label
+  `me.jjolano.shadow`, Mach service `me.jjolano.shadow.service`, RunAtLoad +
+  KeepAlive. arm64/arm64e only (excluded from the legacy armv7 pass). Hard
+  version gate iOS 15.0–16.6.1, fail closed.
+- **krw backends**: Dopamine (rootless arm64e) → dlopen
+  `/var/jb/basebin/libjailbreak.dylib`, `jbdInitPPLRW` + status-returning
+  `kreadbuf`/`kwritebuf` + `proc_find`/`proc_rele`; every krw call status-checked.
+  palera1n/legacy (arm64 A8–A11 only) → tfp0 (`task_for_pid(0)` +
+  `mach_vm_read_overwrite`/`mach_vm_write` + pfinder allproc scan). NEVER tfp0
+  on arm64e (PAC makes the allproc walk unsafe); arm64e without libjailbreak →
+  disabled. `jbdInitPPLRW` retried every 2s up to 30s; on failure the feature
+  disables for the run and the daemon idles — never crashes.
+- **Hiding model**: retained fds — the open fd IS the kernel-managed vnode
+  reference (VISSHADOW flag); no manual `v_usecount`/`v_iocount` edits.
+- **Lease model**: multi-owner; owners are (pid, proc start time) from the mach
+  audit trailer; the client reply port is the lease, with dead-name
+  notification + `kill(pid,0)`/start-time polling fallback.
+- **Ledger**: write-ahead (mayBeHidden semantics), bootUUID keyed, path-based
+  recovery — never writes through a stale vnode blindly. SIGTERM/SIGINT:
+  clear flags, close fds, durably remove ledger, exit.
+- **Protocol**: synchronous Mach IPC on MACH_SERVICE_NAME; no paths/pids in the
+  protocol — the daemon derives everything from its own fixed compiled
+  allowlist and the audit trailer. Client side: the vnode hide gate
+  (`shadowhook_vnode`) in dylib.x, checked at ctor and re-armed by detector
+  escalation; best-effort lease release at process teardown.
+
+Also shipped alongside (not in the original plan): libc/syscall xattr hooks
+(getxattr/listxattr/fgetxattr/flistxattr, path- and fd-based) and the
+"Dangerous" settings page (low-level bypass methods — Sandbox, LowLevelC,
+Memory, VnodeHiding, DynamicLibrariesExtra — flagged as crash-prone).
 
 ## AR — IOSSecuritySuite arms race (2026-08-06)
 
@@ -89,11 +130,15 @@ signature scan — only catches inline hooks, not fishhook GOT rebinding).
   zero hits for all five probe signatures. Only `Shadow`/`ShadowBackend` class names and
   `kShadowRestriction*` constants remain (not probed; renaming ShadowRuleset was the
   suite-tracked API, `Shadow` itself is not).
-- **AR2 — dyld memory hiding (DONE, feature-flagged)**: filtered `dyld_all_image_infos`
+- **AR2 — dyld memory hiding (DONE, unconditional)**: filtered `dyld_all_image_infos`
   mirror (vm_allocate'd `dyld_image_info[]` rebuilt on add/remove callbacks, os_unfair_lock,
-  live-struct patch via vm_protect with protection restore, fail-soft). Flag: `MemoryLevelHiding`
-  prefs key, default OFF; forced ON when a detector is present. task_info hack kept for
-  pre-modern iOS. Fix relative-`dlopen` rootless resolution still pending.
+  live-struct patch via vm_protect with protection restore, fail-soft). The patch is
+  **unconditional (unpref-gated)** — the old `MemoryLevelHiding` prefs key is a no-op by
+  design: untrusted callers reading the struct directly (`task_info` TASK_DYLD_INFO /
+  `_dyld_get_all_image_infos`) bypass the dyld API filter, so the filtered mirror must
+  always be published. Accepted tradeoff: no kill-switch — the pref cannot disable the
+  patch. task_info hack kept for pre-modern iOS. Relative-`dlopen` rootless resolution
+  shipped as part of W2.
 - **AR3 — Hook stealth (DONE)**: three substitutors — `subMain` (user pref), `subFish`
   (fishhook, C-function groups), `subInline` (ElleKit, pinned for dladdr/dlsym/dlopen_internal
   so `denyFishHook("dladdr")` can't revert them). C groups route to fishhook when available;
@@ -141,7 +186,7 @@ signature scan — only catches inline hooks, not fishhook GOT rebinding).
 
 ## Risks
 
-- W2 memory-level hiding: hard (arm64e PAC, per-jailbreak layout) — feature-flagged so failure doesn't sink release.
+- W2 memory-level hiding: hard (arm64e PAC, per-jailbreak layout) — fail-soft, but no pref kill-switch: the patch is unconditional by design (see AR2), because `task_info`/`_dyld_get_all_image_infos` read the raw struct, bypassing the API filter.
 - No A12+ iOS 17/18 jailbreak to test on — avoid version-specific assumptions where possible.
 - Device testing is the bottleneck; software builds verify locally via Linux theos, but nothing is verified until on-device.
 
@@ -153,10 +198,11 @@ signature scan — only catches inline hooks, not fishhook GOT rebinding).
 - [x] W2 dyld layer (dyld_all_image_infos memory-level hiding + rootless dlopen working-dir fix)
 - [ ] W3 crash fixes + hook lib (on-device diagnosis pending; detector-escalation routing landed as AR4)
 - [x] AR1 identity hygiene
-- [x] AR2 dyld memory hiding (feature-flagged, on-device verification pending)
+- [x] AR2 dyld memory hiding (unconditional, on-device verification pending)
 - [x] AR3 hook stealth backends
 - [x] AR4 detector escalation
 - [x] W4 build system (3-pass: rootless/rooted/legacy; floors 15/12/9; framework export list; all packages build green)
+- [x] shadowd root daemon (LaunchDaemon rootless + rootful; vnode-layer kernel hiding, ledger/lease model, libjb + tfp0 krw)
 - [ ] W5 device verification (kit ready: dyldprobe app + debug builds + matrix below)
 
 ## W5 — Device verification
