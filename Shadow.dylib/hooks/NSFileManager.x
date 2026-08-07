@@ -16,7 +16,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -43,7 +43,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (id)nextObject {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -98,7 +98,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)fileExistsAtPath:(NSString *)path {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -108,7 +108,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -118,7 +118,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)isReadableFileAtPath:(NSString *)path {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -128,7 +128,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)isWritableFileAtPath:(NSString *)path {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -138,7 +138,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)isDeletableFileAtPath:(NSString *)path {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -148,7 +148,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)isExecutableFileAtPath:(NSString *)path {
     BOOL result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -158,7 +158,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (NSData *)contentsAtPath:(NSString *)path {
     NSData* result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -166,7 +166,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)contentsEqualAtPath:(NSString *)path1 andPath:(NSString *)path2 {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [path1 isAbsolutePath] && [path2 isAbsolutePath]);
 
@@ -179,7 +179,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray<NSURL *> *)contentsOfDirectoryAtURL:(NSURL *)url includingPropertiesForKeys:(NSArray<NSURLResourceKey> *)keys options:(NSDirectoryEnumerationOptions)mask error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -203,7 +203,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray<NSString *> *)contentsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -249,7 +249,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray<NSString *> *)subpathsOfDirectoryAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -273,7 +273,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray<NSString *> *)subpathsAtPath:(NSString *)path {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -293,7 +293,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary *services, NSError *error))completionHandler {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(completionHandler) {
             completionHandler(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil]);
         }
@@ -305,7 +305,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -317,7 +317,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -327,7 +327,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (NSString *)displayNameAtPath:(NSString *)path {
     NSString* result = %orig;
 
-    if(result && !isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(result && !isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -335,7 +335,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -360,7 +360,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -385,7 +385,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -397,7 +397,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -411,7 +411,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
     NSLog(@"%@: %@", @"changeCurrentDirectoryPath", path);
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -419,7 +419,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSDictionary *)fileAttributesAtPath:(NSString *)path traverseLink:(BOOL)yorn {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -427,7 +427,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSDictionary *)fileSystemAttributesAtPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -448,7 +448,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
-    BOOL isTweak = isCallerTweak();
+    BOOL isTweak = isCallerExternal();
 
     if(isTweak) {
         return %orig;
@@ -468,7 +468,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSString *)pathContentOfSymbolicLinkAtPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return nil;
     }
 
@@ -476,7 +476,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:originalItemURL options:nil] || [_shadow isURLRestricted:newItemURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:nil] || [_shadow isURLRestricted:newItemURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -488,7 +488,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -500,7 +500,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
 
@@ -517,7 +517,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -529,7 +529,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
 
@@ -548,7 +548,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (BOOL)isUbiquitousItemAtURL:(NSURL *)url {
     BOOL result = %orig;
 
-    if(!isCallerTweak() && result && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && result && [_shadow isURLRestricted:url options:nil]) {
         return NO;
     }
 
@@ -556,7 +556,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:url options:nil] || [_shadow isURLRestricted:destinationURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:url options:nil] || [_shadow isURLRestricted:destinationURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -568,7 +568,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -580,7 +580,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -592,7 +592,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -604,7 +604,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -616,7 +616,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -628,7 +628,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -640,7 +640,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
 
@@ -657,7 +657,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
 
@@ -670,7 +670,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
 
@@ -683,7 +683,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -691,7 +691,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -699,7 +699,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         // One options object shared by both checks; cwd is only needed if an input is relative.
         NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
 
@@ -712,7 +712,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -724,7 +724,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -736,7 +736,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -744,7 +744,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:URL options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -756,7 +756,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -768,7 +768,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 }
 
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }

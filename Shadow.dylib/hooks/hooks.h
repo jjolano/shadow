@@ -70,7 +70,7 @@ static inline Shadow* shdw_shadow_instance(void) {
 
 #define _shadow                 shdw_shadow_instance()
 
-// Caller classification for isCallerTweak(): YES = the caller is OUTSIDE the
+// Caller classification for isCallerExternal(): YES = the caller is OUTSIDE the
 // app bundle (tweak dylib, system libraries); NO = the caller is app code
 // (app executable + embedded frameworks, including embedded detectors).
 // This is the predicate -[Shadow isAddrExternal:] applied per call — the
@@ -99,7 +99,7 @@ extern shdw_own_ranges_t _shdw_own_ranges_a;
 extern shdw_own_ranges_t _shdw_own_ranges_b;
 extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
 
-static inline BOOL shdw_caller_is_tweak(const void* ra) {
+static inline BOOL shdw_caller_is_external(const void* ra) {
     uintptr_t a = (uintptr_t) ra;
     shdw_own_ranges_t* ranges = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
 
@@ -116,7 +116,7 @@ static inline BOOL shdw_caller_is_tweak(const void* ra) {
 // Called by dyld.x at install and from its add/remove image callbacks.
 void shdw_own_ranges_refresh(void);
 
-#define isCallerTweak()         shdw_caller_is_tweak(__builtin_extract_return_addr(__builtin_return_address(0)))
+#define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
 
 // Set by dylib.x when a known detection library (IOSSecuritySuite/freeRASP)
 // is loaded; read by dyld.x to escalate memory-level hiding.

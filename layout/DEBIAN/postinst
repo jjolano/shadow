@@ -58,7 +58,11 @@ case "$1" in
             # (kickstart -k): killing mid-hide leaves VISSHADOW flags set.
             if pgrep -x shadowd > /dev/null 2>&1; then
                 if ! shadowd_stop; then
-                    echo "shadowd: old daemon did not exit; REBOOT REQUIRED to fully restore hidden state." >&2
+                    # Still alive: do not replace it while it holds flagged
+                    # vnodes. Abort the configure — dpkg leaves the package
+                    # unpacked and the old daemon keeps running.
+                    echo "shadowd: old daemon did not exit; ABORTING upgrade. REBOOT REQUIRED to fully restore hidden state." >&2
+                    exit 1
                 fi
             fi
 

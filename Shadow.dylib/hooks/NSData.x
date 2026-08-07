@@ -3,7 +3,7 @@
 %group shadowhook_NSData
 %hook NSData
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -23,7 +23,7 @@
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -31,7 +31,7 @@
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -43,7 +43,7 @@
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -51,7 +51,7 @@
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -63,7 +63,7 @@
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -71,7 +71,7 @@
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -83,7 +83,7 @@
 }
 
 - (id)initWithContentsOfMappedFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -91,7 +91,7 @@
 }
 
 + (id)dataWithContentsOfMappedFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -99,7 +99,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return NO;
     }
 
@@ -107,7 +107,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];
         }
@@ -119,7 +119,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return NO;
     }
 
@@ -127,7 +127,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
             *errorPtr = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil];
         }

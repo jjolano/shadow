@@ -87,26 +87,33 @@ shdw_transact(uint32_t op, BOOL waitForReply, int* status) {
         return KERN_SUCCESS;
     }
 
-    shadowd_reply_t reply;
-    memset(&reply, 0, sizeof(reply));
-    kr = mach_msg(&reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(reply), shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
+    // Reply buffer: message size + the kernel-appended trailer
+    // (MAX_TRAILER_SIZE). An undersized rcv_size makes mach_msg return
+    // MACH_RCV_TOO_LARGE and the reply is never delivered — the acquire
+    // would silently never succeed.
+    union {
+        shadowd_reply_t reply;
+        uint8_t buf[sizeof(shadowd_reply_t) + MAX_TRAILER_SIZE];
+    } replyBuf;
+    memset(&replyBuf, 0, sizeof(replyBuf));
+    kr = mach_msg(&replyBuf.reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(replyBuf.buf), shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
     if(kr != KERN_SUCCESS) {
         return kr;
     }
 
     // The daemon replies with a COPY_SEND of the reply-port send right it
     // holds — drop our copy so it doesn't leak per transaction.
-    if(MACH_PORT_VALID(reply.header.msgh_remote_port)) {
-        mach_port_deallocate(mach_task_self(), reply.header.msgh_remote_port);
+    if(MACH_PORT_VALID(replyBuf.reply.header.msgh_remote_port)) {
+        mach_port_deallocate(mach_task_self(), replyBuf.reply.header.msgh_remote_port);
     }
 
-    if(reply.magic != SHADOWD_MAGIC || reply.version != SHADOWD_VERSION || reply.requestId != requestId) {
+    if(replyBuf.reply.magic != SHADOWD_MAGIC || replyBuf.reply.version != SHADOWD_VERSION || replyBuf.reply.requestId != requestId) {
         NSLog(@"[Shadow] vnode: invalid reply (magic/version/requestId mismatch)");
         return KERN_FAILURE;
     }
 
     if(status) {
-        *status = (int)reply.status;
+        *status = (int)replyBuf.reply.status;
     }
 
     return KERN_SUCCESS;
@@ -161,61 +168,72 @@ shdw_acquire(void) {
     return KERN_SUCCESS;
 }
 
-// Feature flag: "VnodeHiding" in Shadow's prefs plist (default OFF) — same
+// Feature gate: "VnodeHiding" in Shadow's prefs plist (default OFF) — same
 // pattern as dyld.x's MemoryLevelHiding. SHADOW_PREFS_PLIST tracks the bundle
 // id (me.jjolano.shadow); on rootless the plist lives under /var/jb, so try
-// both paths. Escalation: when a detection library is present, hiding forces
-// on regardless of the prefs flag. The client decides; the daemon stays
-// permissive.
+// both paths. The pref is read ONCE (dispatch_once); the detector escalation
+// is re-evaluated per call so a detection library that loads after the first
+// evaluation still triggers acquisition.
+static BOOL shdw_vnode_pref_enabled(void) {
+    static BOOL enabled = NO;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSDictionary* prefs = nil;
+
+        for(NSString* path in @[
+            [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
+            @(SHADOW_PREFS_PLIST)
+        ]) {
+            prefs = [NSDictionary dictionaryWithContentsOfFile:path];
+
+            if(prefs) {
+                break;
+            }
+        }
+
+        if(!prefs) {
+            return;
+        }
+
+        // Per-app dict (when the app is enabled there) overrides the global key.
+        NSString* bundleIdentifier = [Shadow getBundleIdentifier];
+
+        if(bundleIdentifier) {
+            NSDictionary* appPrefs = prefs[bundleIdentifier];
+
+            if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
+                enabled = [appPrefs[@"VnodeHiding"] boolValue];
+                return;
+            }
+        }
+
+        enabled = [prefs[@"VnodeHiding"] boolValue];
+    });
+
+    return enabled;
+}
+
+// Re-evaluated on every call: shdw_detector_present flips via
+// shdw_detector_detected when a detection library is found post-spawn, so a
+// gate evaluated OFF at ctor time is revisited when the detector arrives.
 static BOOL shdw_vnode_hiding_enabled(void) {
-    if(shdw_detector_present) {
-        return YES;
-    }
-
-    NSDictionary* prefs = nil;
-
-    for(NSString* path in @[
-        [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
-        @(SHADOW_PREFS_PLIST)
-    ]) {
-        prefs = [NSDictionary dictionaryWithContentsOfFile:path];
-
-        if(prefs) {
-            break;
-        }
-    }
-
-    if(!prefs) {
-        return NO;
-    }
-
-    // Per-app dict (when the app is enabled there) overrides the global key.
-    NSString* bundleIdentifier = [Shadow getBundleIdentifier];
-
-    if(bundleIdentifier) {
-        NSDictionary* appPrefs = prefs[bundleIdentifier];
-
-        if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
-            return [appPrefs[@"VnodeHiding"] boolValue];
-        }
-    }
-
-    return [prefs[@"VnodeHiding"] boolValue];
+    return shdw_detector_present || shdw_vnode_pref_enabled();
 }
 
 void shadowhook_vnode(HKSubstitutor* hooks) {
     (void) hooks;  // pure IPC client — no hook substitution required
 
-    // One acquire per process, gated on the VnodeHiding pref (default OFF;
-    // forced on when a detection library is present). The retained
-    // connection is the owner lease.
+    // Gate first, re-evaluable: a late detector must still reach the acquire
+    // below (shdw_detector_detected re-invokes this entry).
+    if(!shdw_vnode_hiding_enabled()) {
+        NSLog(@"[Shadow] vnode: hiding disabled, skipping acquire");
+        return;
+    }
+
+    // One acquire per process (the once guard). The retained connection is
+    // the owner lease.
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        if(!shdw_vnode_hiding_enabled()) {
-            NSLog(@"[Shadow] vnode: hiding disabled, skipping acquire");
-            return;
-        }
-
         kern_return_t kr = shdw_acquire();
 
         // Connection interruption (daemon may have restarted): one reconnect

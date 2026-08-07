@@ -66,7 +66,7 @@ static BOOL _shdw_mirror_currently_patched = NO;
 static BOOL _shdw_mirror_protect_failed = NO;
 static vm_prot_t _shdw_mirror_original_protection = VM_PROT_READ | VM_PROT_WRITE;
 
-// App-bundle image spans for shdw_caller_is_tweak() (see hooks.h). Rebuilt
+// App-bundle image spans for shdw_caller_is_external() (see hooks.h). Rebuilt
 // from the dyld image list whenever it changes and once at install; the
 // writer serializes on `_shdw_own_ranges_lock` and publishes with one
 // release store, so readers (no lock, one acquire load) never see a torn or
@@ -223,7 +223,7 @@ static void shdw_dyld_snapshot_end(void) {
 
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dyld_image_count();
     }
 
@@ -242,7 +242,7 @@ static uint32_t replaced_dyld_image_count() {
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dyld_get_image_header(image_index);
     }
 
@@ -261,7 +261,7 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dyld_get_image_vmaddr_slide(image_index);
     }
 
@@ -280,7 +280,7 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dyld_get_image_name(image_index);
     }
 
@@ -315,7 +315,7 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
     _shdw_dyipca_in_hook = YES;
 
     // Is the CALLER of this hook inside the tweak? (not the addr arg)
-    BOOL caller_is_tweak = shdw_caller_is_tweak(__builtin_return_address(0));
+    BOOL caller_is_tweak = shdw_caller_is_external(__builtin_return_address(0));
 
     _shdw_dyipca_in_hook = NO;
 
@@ -351,7 +351,7 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
     // Is the CALLER of this hook inside the app bundle (app code or an
     // embedded detection framework)? Not the addr arg. Non-embedded callers
     // (the tweak itself, other injected dylibs) pass through untouched.
-    BOOL caller_outside_app = shdw_caller_is_tweak(__builtin_return_address(0));
+    BOOL caller_outside_app = shdw_caller_is_external(__builtin_return_address(0));
 
     _shdw_dyighca_in_hook = NO;
 
@@ -369,7 +369,7 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
 
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
-    if(isCallerTweak() || !path) {
+    if(isCallerExternal() || !path) {
         return original_dlopen(path, mode);
     }
 
@@ -395,7 +395,7 @@ static void* replaced_dlopen(const char* path, int mode) {
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
-    if(isCallerTweak() || !path) {
+    if(isCallerExternal() || !path) {
         return original_dlopen_internal(path, mode, caller);
     }
 
@@ -420,7 +420,7 @@ static void* replaced_dlopen_internal(const char* path, int mode, void* caller) 
 
 static bool (*original_dlopen_preflight)(const char* path);
 static bool replaced_dlopen_preflight(const char* path) {
-    if(isCallerTweak() || !path) {
+    if(isCallerExternal() || !path) {
         return original_dlopen_preflight(path);
     }
 
@@ -444,7 +444,7 @@ static bool replaced_dlopen_preflight(const char* path) {
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_add_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerTweak() || !func) {
+    if(isCallerExternal() || !func) {
         return original_dyld_register_func_for_add_image(func);
     }
 
@@ -463,7 +463,7 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
 static void (*original_dyld_register_func_for_remove_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_remove_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerTweak() || !func) {
+    if(isCallerExternal() || !func) {
         return original_dyld_register_func_for_remove_image(func);
     }
 
@@ -558,7 +558,7 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
 static char* (*original_dlerror)(void);
 static char* replaced_dlerror(void) {
-    if(isCallerTweak() || !_shdw_dyld_error) {
+    if(isCallerExternal() || !_shdw_dyld_error) {
         return original_dlerror();
     }
 
@@ -568,7 +568,7 @@ static char* replaced_dlerror(void) {
 
 static void* (*original_dlsym)(void* handle, const char* symbol);
 static void* replaced_dlsym(void* handle, const char* symbol) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dlsym(handle, symbol);
     }
 
@@ -591,7 +591,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
 static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dladdr(addr, info);
     }
 
@@ -655,7 +655,7 @@ static BOOL shdw_dyld_image_is_hidden(const struct mach_header* mh) {
 // symbolication can't walk past the dyld API filter.
 static void (*original_dyld_images_for_addresses)(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]);
 static void replaced_dyld_images_for_addresses(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_dyld_images_for_addresses(count, addresses, infos);
     }
 
@@ -692,7 +692,7 @@ static void shdw_image_load_handler(const struct mach_header* mh, const char* pa
 }
 static void (*original_dyld_register_for_image_loads)(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
 static void replaced_dyld_register_for_image_loads(void (*func)(const struct mach_header* mh, const char* path, bool unloadable)) {
-    if(isCallerTweak() || !func) {
+    if(isCallerExternal() || !func) {
         return original_dyld_register_for_image_loads(func);
     }
 
@@ -739,7 +739,7 @@ static void shdw_bulk_load_handler(unsigned imageCount, const struct mach_header
 }
 static void (*original_dyld_register_for_bulk_image_loads)(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
 static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[])) {
-    if(isCallerTweak() || !func) {
+    if(isCallerExternal() || !func) {
         return original_dyld_register_for_bulk_image_loads(func);
     }
 

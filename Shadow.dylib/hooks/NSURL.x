@@ -3,7 +3,7 @@
 %group shadowhook_NSURL
 %hook NSURL
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -15,7 +15,7 @@
 }
 
 - (BOOL)checkPromisedItemIsReachableAndReturnError:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -27,7 +27,7 @@
 }
 
 - (BOOL)getPromisedItemResourceValue:(id  _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -39,7 +39,7 @@
 }
 
 - (NSDictionary<NSURLResourceKey, id> *)promisedItemResourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -51,7 +51,7 @@
 }
 
 - (NSURL *)fileReferenceURL {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         return nil;
     }
 
@@ -59,7 +59,7 @@
 }
 
 - (NSURL *)filePathURL {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         return nil;
     }
 
@@ -67,7 +67,7 @@
 }
 
 - (NSURL *)URLByResolvingSymlinksInPath {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         return nil;
     }
 
@@ -75,7 +75,7 @@
 }
 
 - (NSURL *)URLByStandardizingPath {
-    if(!isCallerTweak() && [_shadow isURLRestricted:self]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:self]) {
         return nil;
     }
 
@@ -83,7 +83,7 @@
 }
 
 + (NSData *)bookmarkDataWithContentsOfURL:(NSURL *)bookmarkFileURL error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:bookmarkFileURL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:bookmarkFileURL]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -99,7 +99,7 @@
 %group shadowhook_NSURLSession
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -107,7 +107,7 @@
 }
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -115,7 +115,7 @@
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -123,7 +123,7 @@
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -131,7 +131,7 @@
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL {
-    if(!isCallerTweak() && [_shadow isURLRestricted:fileURL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
         return nil;
     }
 
@@ -139,7 +139,7 @@
 }
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    if(!isCallerTweak() && [_shadow isURLRestricted:fileURL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
         return nil;
     }
 
@@ -151,7 +151,7 @@
 %group shadowhook_NSURLRequest
 %hook NSURLRequest
 + (instancetype)requestWithURL:(NSURL *)URL {
-    if(!isCallerTweak() && [_shadow isURLRestricted:URL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
         return nil;
     }
 
@@ -159,7 +159,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)URL {
-    if(!isCallerTweak() && [_shadow isURLRestricted:URL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
         return nil;
     }
 
@@ -167,7 +167,7 @@
 }
 
 + (instancetype)requestWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if(!isCallerTweak() && [_shadow isURLRestricted:URL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
         return nil;
     }
 
@@ -175,7 +175,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)URL cachePolicy:(NSURLRequestCachePolicy)cachePolicy timeoutInterval:(NSTimeInterval)timeoutInterval {
-    if(!isCallerTweak() && [_shadow isURLRestricted:URL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL]) {
         return nil;
     }
 

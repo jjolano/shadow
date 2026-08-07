@@ -116,6 +116,11 @@ void shdw_detector_detected(const char* reason) {
 
     shdw_detector_present = YES;
 
+    // Detector escalation also arms the vnode client: its gate re-evaluates
+    // per call, so a detector that appeared after the ctor's gate check
+    // still triggers the (once-per-process) acquire.
+    shadowhook_vnode(NULL);
+
     if(!_shdw_dyld_installed) {
         shadowhook_dyld(_shdw_watcher_cfunc);
     }
@@ -241,12 +246,20 @@ void shdw_detector_detected(const char* reason) {
     // Initialize Shadow instance.
     [Shadow sharedInstance];
 
+    // Build the caller-classification ranges unconditionally — before any
+    // hook group installs — so isCallerExternal() is correct even when the
+    // Dynamic Libraries group is disabled (dyld.x otherwise only refreshes
+    // at its own install; with the group off the published set would stay
+    // empty and caller-gated hooks would classify every caller as external,
+    // bypassing the restrictions).
+    shdw_own_ranges_refresh();
+
     // Vnode-layer hiding: acquire the daemon lease now — immediately after
     // prefs/rulesets are read, before any hook group installs, so ctor-time
     // probes see the hide from the start. The daemon derives the paths from
     // its own allowlist; the client sends no paths and touches no kernel
-    // state. Pure IPC, sub-millisecond; whether hiding is enabled is
-    // enforced daemon-side.
+    // state. Pure IPC, sub-millisecond; the VnodeHiding pref gate
+    // (client-side, detector escalation) is checked inside.
     shadowhook_vnode(NULL);
 
     // Initialize hooks.
