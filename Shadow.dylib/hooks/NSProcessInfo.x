@@ -1,46 +1,100 @@
 #import "hooks.h"
 
-// %group shadowhook_NSProcessInfo
-// %hook NSProcessInfo
-// - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
-//     if(isCallerExternal()) {
-//         return %orig;
-//     }
+%group shadowhook_NSProcessInfo
+%hook NSProcessInfo
+- (NSDictionary *)environment {
+    NSDictionary* result = %orig;
 
-//     // Override version checks that use this method.
-//     return YES;
-// }
+    if(isCallerExternal() || !result) {
+        return result;
+    }
 
-// - (NSDictionary *)environment {
-// 	NSDictionary* result = %orig;
+    NSMutableDictionary* filtered_result = [result mutableCopy];
 
-    // if(!isCallerExternal() && result) {
-    //     NSMutableDictionary* filtered_result = [result mutableCopy];
+    // Stock iOS never has these set; their presence is the jailbreak signal
+    // a detector reads back from the cached environment. DYLD_* covers
+    // INSERT_LIBRARIES and every search-path knob; the safe-mode and
+    // JAILBREAKD_* variables come from jailbreakd/loader launch contexts.
+    for(NSString* key in [filtered_result allKeys]) {
+        if([key hasPrefix:@"DYLD_"]
+        || [key hasPrefix:@"JAILBREAKD_"]
+        || [key isEqualToString:@"_MSSafeMode"]
+        || [key isEqualToString:@"_SafeMode"]
+        || [key isEqualToString:@"_SubstituteSafeMode"]) {
+            [filtered_result removeObjectForKey:key];
+        }
+    }
 
-    //     [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
-    //     [filtered_result removeObjectForKey:@"_MSSafeMode"];
-    //     [filtered_result removeObjectForKey:@"_SafeMode"];
-    //     [filtered_result removeObjectForKey:@"_SubstituteSafeMode"];
+    // PATH: drop jailbreak components (/var/jb bootstrap and preboot roots —
+    // stock iOS PATH has neither), preserving everything else.
+    NSString* pathValue = filtered_result[@"PATH"];
 
-    //     if([result objectForKey:@"SHELL"]) {
-    //         [filtered_result setObject:@"/bin/sh" forKey:@"SHELL"];
-    //     }
+    if(pathValue && pathValue.length > 0) {
+        NSArray* parts = [pathValue componentsSeparatedByString:@":"];
+        NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
-    //     // struct utsname systemInfo;
-    //     // uname(&systemInfo);
-    //     // [filtered_result setObject:@(systemInfo.machine) forKey:@"SIMULATOR_DEVICE_NAME"];
+        for(NSString* part in parts) {
+            if([part hasPrefix:@"/var/jb"]
+            || [part hasPrefix:@"/private/preboot"]
+            || [part hasPrefix:@"/preboot"]) {
+                continue;
+            }
 
-    //     result = [filtered_result copy];
-    // }
+            [kept addObject:part];
+        }
 
-//     return result;
-// }
-// %end
-// %end
+        if(kept.count != parts.count) {
+            filtered_result[@"PATH"] = [kept componentsJoinedByString:@":"];
+        }
+    }
+
+    return filtered_result;
+}
+
+- (NSArray<NSString *> *)arguments {
+    NSArray<NSString *>* result = %orig;
+
+    if(isCallerExternal() || !result || result.count == 0) {
+        return result;
+    }
+
+    NSMutableArray<NSString *>* filtered_result = [NSMutableArray arrayWithCapacity:result.count];
+
+    // argv[0] and ordering are preserved; only injection flags (with their
+    // path value) and restricted-path arguments are removed.
+    [filtered_result addObject:result[0]];
+
+    for(NSUInteger i = 1; i < result.count; i++) {
+        NSString* arg = result[i];
+
+        if([_shadow isPathRestricted:arg]) {
+            continue;
+        }
+
+        if([arg isEqualToString:@"-dylib"]
+        || [arg isEqualToString:@"-insert"]
+        || [arg isEqualToString:@"-load"]
+        || [arg isEqualToString:@"-bundle"]
+        || [arg isEqualToString:@"-init"]) {
+            // Injection flag: drop the flag and its following path value.
+            if(i + 1 < result.count) {
+                i++;
+            }
+
+            continue;
+        }
+
+        [filtered_result addObject:arg];
+    }
+
+    return filtered_result;
+}
+%end
+%end
 
 %group shadowhook_NSProcessInfo_fakemac
 %hook NSProcessInfo
-- (BOOL)macCatalystApp {
+- (BOOL)isMacCatalystApp {
     if(isCallerExternal()) {
         return %orig;
     }
@@ -61,7 +115,7 @@
 %end
 
 void shadowhook_NSProcessInfo(HKSubstitutor* hooks) {
-    // %init(shadowhook_NSProcessInfo);
+    %init(shadowhook_NSProcessInfo);
 }
 
 void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks) {
