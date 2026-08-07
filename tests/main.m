@@ -1,0 +1,880 @@
+// Shadow decision-engine test harness (host, no device).
+//
+// Builds the real Shadow.framework decision sources (Core, Backend, Ruleset,
+// Core+Utilities) against the host Foundation with a stubbed RootBridge, then
+// stages itself into a temp dir shaped like an app on a jailbroken device:
+//
+//   <work>/Harness.app/harness          the running binary (bundlePath ends
+//                                       in .app, so hasAppSandbox is YES and
+//                                       the resolve-before-exempt branch of
+//                                       isPathRestricted: is exercised)
+//   <work>/fs/jb/...                    fixture jbroot tree backing the
+//                                       virtual filesystem (see fsinterpose.c)
+//   <work>/<jb|root>/Library/Shadow/Rulesets/   staged rulesets
+//   <work>/shdw-app/restricted-target   real file the rooted sandbox symlink
+//                                       resolves to
+//
+// Run modes: no args runs both rooted and rootless modes; --rooted/--rootless
+// pick one; --detect runs the detector-probe battery instead of the unit
+// assertions. Every decision is made by the real engine — this file only
+// stages fixtures and checks verdicts.
+//
+// Virtual filesystem: on Linux the harness links with -Wl,--wrap=access
+// -Wl,--wrap=realpath and installs the fixture jbroot (shdw_fs_set_jbroot),
+// so the engine's literal "/var/jb"-prefixed access()/realpath() gate calls
+// resolve into the fixture tree — rootless mode behaves exactly as on a
+// device (file present → gate passes → engine decides; absent → gate
+// blocks). The single irreducible host limitation: rooted-mode /usr/lib
+// read gates probe the real host /usr/lib, which never holds jailbreak
+// files — those assertions use C0-1 write probes (gate-skipping,
+// device-accurate) and rootless read probes instead.
+
+#import <Foundation/Foundation.h>
+#import <Shadow.h>
+#import <RootBridge.h>
+#import "RootBridgeStub.h"
+#import "fsinterpose.h"
+
+#import <unistd.h>
+#import <stdlib.h>
+#import <string.h>
+#import <sys/wait.h>
+
+static BOOL gRootless = NO;
+static BOOL gDetect = NO;
+static BOOL gAdversary = NO;
+static BOOL gDetector = NO;
+static int gPass = 0;
+static int gFail = 0;
+
+#define CHECK(_cond, _name) do { \
+    if(_cond) { gPass++; } else { gFail++; printf("FAIL: %s\n", _name); } \
+} while(0)
+
+static NSDictionary* writeOptions(void) {
+    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+}
+
+static NSString* harnessWorkDir(void) {
+    NSString* exe = [[[NSProcessInfo processInfo] arguments] objectAtIndex:0];
+    NSString* appDir = [exe stringByDeletingLastPathComponent];
+    return [appDir stringByDeletingLastPathComponent];
+}
+
+static Shadow* shdw(void) {
+    return [Shadow sharedInstance];
+}
+
+static void expectRestricted(NSString* name, NSString* path) {
+    BOOL r = [shdw() isPathRestricted:path];
+
+    if(r) {
+        gPass++;
+    } else {
+        gFail++;
+        printf("FAIL: %s (expected restricted, got allowed: %s)\n", [name UTF8String], [path UTF8String]);
+    }
+}
+
+static void expectAllowed(NSString* name, NSString* path) {
+    BOOL r = [shdw() isPathRestricted:path];
+
+    if(!r) {
+        gPass++;
+    } else {
+        gFail++;
+        printf("FAIL: %s (expected allowed, got restricted: %s)\n", [name UTF8String], [path UTF8String]);
+    }
+}
+
+static void expectRestrictedWrite(NSString* name, NSString* path) {
+    BOOL r = [shdw() isPathRestricted:path options:writeOptions()];
+
+    if(r) {
+        gPass++;
+    } else {
+        gFail++;
+        printf("FAIL: %s (expected write-denied, got allowed: %s)\n", [name UTF8String], [path UTF8String]);
+    }
+}
+
+static void expectAllowedOpts(NSString* name, NSString* path, NSDictionary* options) {
+    BOOL r = [shdw() isPathRestricted:path options:options];
+
+    if(!r) {
+        gPass++;
+    } else {
+        gFail++;
+        printf("FAIL: %s (expected allowed, got restricted: %s)\n", [name UTF8String], [path UTF8String]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Staging (parent process): build <work> and re-exec into Harness.app.
+// ---------------------------------------------------------------------------
+
+static BOOL copyTree(NSString* src, NSString* dst) {
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    if(![fm createDirectoryAtPath:dst withIntermediateDirectories:YES attributes:nil error:nil]) {
+        return NO;
+    }
+
+    NSArray* items = [fm contentsOfDirectoryAtPath:src error:nil];
+
+    for(NSString* item in items) {
+        NSString* s = [src stringByAppendingPathComponent:item];
+        NSString* d = [dst stringByAppendingPathComponent:item];
+        BOOL isDir = NO;
+
+        [fm fileExistsAtPath:s isDirectory:&isDir];
+
+        if(isDir) {
+            if(!copyTree(s, d)) {
+                return NO;
+            }
+        } else if(![fm copyItemAtPath:s toPath:d error:nil]) {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
+static BOOL copyPlistFiles(NSString* srcDir, NSString* dstDir) {
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    if(![fm createDirectoryAtPath:dstDir withIntermediateDirectories:YES attributes:nil error:nil]) {
+        return NO;
+    }
+
+    NSArray* items = [fm contentsOfDirectoryAtPath:srcDir error:nil];
+
+    for(NSString* item in items) {
+        if(![[item pathExtension] isEqualToString:@"plist"]) {
+            continue;
+        }
+
+        if(![fm copyItemAtPath:[srcDir stringByAppendingPathComponent:item]
+                        toPath:[dstDir stringByAppendingPathComponent:item]
+                         error:nil]) {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
+// The parent stages <work> and execs itself (as <work>/Harness.app/harness)
+// once per mode. The child skips staging entirely (SHADW_HARNESS_STAGED).
+// Mode comes from the ARGV (the fork child inherits the parent's globals,
+// which reflect the parent's own invocation — not the mode being staged).
+static int stageAndExec(int argc, const char** argv) {
+    for(int i = 1; i < argc && argv[i]; i++) {
+        if(strcmp(argv[i], "--rootless") == 0) {
+            gRootless = YES;
+        } else if(strcmp(argv[i], "--detect") == 0) {
+            gDetect = YES;
+        } else if(strcmp(argv[i], "--adversary") == 0) {
+            gAdversary = YES;
+        } else if(strcmp(argv[i], "--detector") == 0) {
+            gDetector = YES;
+        }
+    }
+
+    // The detector battery simulates a rootless jailbreak (virtual FS).
+    if(gDetector) {
+        gRootless = YES;
+    }
+
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    NSString* srcDir = [NSString stringWithUTF8String:argv[0]];
+
+    if(![srcDir isAbsolutePath]) {
+        srcDir = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:srcDir];
+    }
+
+    srcDir = [[srcDir stringByResolvingSymlinksInPath] stringByDeletingLastPathComponent];
+
+    NSString* work = [NSTemporaryDirectory() stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"shdw-harness-%d-%s", getpid(), gRootless ? "rootless" : "rooted"]];
+
+    NSString* rulesetsSrc = (gDetect || gDetector)
+        ? [srcDir stringByAppendingPathComponent:@"../Shadow.framework/layout/Library/Shadow/Rulesets"]
+        : [srcDir stringByAppendingPathComponent:@"fixtures/rulesets"];
+    NSString* rulesetsDst = [work stringByAppendingPathComponent:
+        (gRootless ? @"jb/Library/Shadow/Rulesets" : @"root/Library/Shadow/Rulesets")];
+
+    if(!copyTree([srcDir stringByAppendingPathComponent:@"fixtures/fs"], [work stringByAppendingPathComponent:@"fs"])
+        || !copyPlistFiles(rulesetsSrc, rulesetsDst)) {
+        fprintf(stderr, "harness: staging failed\n");
+        return 1;
+    }
+
+    if(!gDetect) {
+        // Real file the sandbox symlink resolves to; the staged ruleset
+        // blacklists this exact path so the resolve-before-exempt branch can
+        // be asserted against a target that really exists on the host.
+        NSString* target = [work stringByAppendingPathComponent:@"shdw-app/restricted-target"];
+
+        if(![fm createDirectoryAtPath:[target stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil]
+            || ![[NSData data] writeToFile:target atomically:YES]) {
+            fprintf(stderr, "harness: sandbox target staging failed\n");
+            return 1;
+        }
+
+        NSDictionary* sandboxRules = @{
+            @"RulesetInfo" : @{@"Name" : @"Test Sandbox", @"Author" : @"harness"},
+            @"BlacklistExactPaths" : @[target]
+        };
+
+        if(![sandboxRules writeToFile:[rulesetsDst stringByAppendingPathComponent:@"006-Sandbox.plist"] atomically:YES]) {
+            fprintf(stderr, "harness: sandbox ruleset staging failed\n");
+            return 1;
+        }
+    }
+
+    NSString* appDir = [work stringByAppendingPathComponent:@"Harness.app"];
+    NSString* exePath = [appDir stringByAppendingPathComponent:@"harness"];
+
+    // Absolute destination: the symlink is resolved relative to the temp
+    // app dir, so a relative argv[0] ("tests/harness") would dangle.
+    NSString* absExe = [srcDir stringByAppendingPathComponent:[[NSString stringWithUTF8String:argv[0]] lastPathComponent]];
+
+    if(![fm createDirectoryAtPath:appDir withIntermediateDirectories:YES attributes:nil error:nil]
+        || ![fm createSymbolicLinkAtPath:exePath withDestinationPath:absExe error:nil]) {
+        fprintf(stderr, "harness: app staging failed\n");
+        return 1;
+    }
+
+    setenv("SHADW_HARNESS_STAGED", "1", 1);
+
+    char* newargv[8];
+    int n = 0;
+    newargv[n++] = (char*)[exePath UTF8String];
+
+    if(gRootless) {
+        newargv[n++] = (char*)"--rootless";
+    } else {
+        newargv[n++] = (char*)"--rooted";
+    }
+
+    if(gDetect) {
+        newargv[n++] = (char*)"--detect";
+    } else if(gAdversary) {
+        newargv[n++] = (char*)"--adversary";
+    } else if(gDetector) {
+        newargv[n++] = (char*)"--detector";
+    }
+
+    newargv[n] = NULL;
+    execv([exePath UTF8String], newargv);
+    perror("harness: execv");
+    return 1;
+}
+
+// ---------------------------------------------------------------------------
+// Unit test groups
+// ---------------------------------------------------------------------------
+
+static void testBasics(void) {
+    printf("[tests] basics\n");
+    CHECK(![shdw() isPathRestricted:nil], "nil path allowed");
+    CHECK(![shdw() isPathRestricted:@""], "empty path allowed");
+    CHECK(![shdw() isPathRestricted:@"/"], "root path allowed");
+    CHECK(![shdw() isPathRestricted:@"~definitely-not-a-user/foo"], "unresolvable tilde allowed");
+
+    // relative-path resolution via workingDir (assert via /var paths, which
+    // reach the engine in both modes)
+    CHECK(![shdw() isPathRestricted:@"Library/Preferences/x" options:@{kShadowRestrictionWorkingDir : @"/var/mobile"}], "relative path resolved via workingDir");
+    CHECK(![shdw() isPathRestricted:@"../usr/bin/ssh" options:@{kShadowRestrictionWorkingDir : @"/"}], "dot-dot path standardized, whitelisted");
+
+    if(!gRootless) {
+        CHECK([shdw() isPathRestricted:@"fstab" options:@{kShadowRestrictionWorkingDir : @"/usr/sbin"}], "relative fstab resolved via workingDir (rooted)");
+    }
+}
+
+static void testRulesets(void) {
+    printf("[tests] ruleset decisions\n");
+
+    // exact blacklist / whitelist precedence. Engine semantics: whitelist
+    // beats an exact blacklist on the path itself, and prefix rules cover
+    // the prefix plus its direct children; parent-dir recursion restricts a
+    // path under a blacklisted (and unwhitelisted) parent regardless.
+    expectRestricted(@"exact blacklist", @"/Applications/Cydia.app");
+    expectAllowed(@"unblacklisted sibling", @"/usr/sbin/sshd");
+    expectRestricted(@"blacklisted sibling not whitelisted", @"/usr/sbin/fstab");
+    expectAllowed(@"whitelist exact overrides blacklist exact", @"/usr/bin/ssh");
+    expectAllowed(@"whitelist mid-filename prefix", @"/usr/sbin/sshd_config");
+
+    // predicate rules (/var paths reach the engine in both modes; /tmp only
+    // in rooted — rootless gates on the fixture jbroot, which has no /tmp,
+    // exactly like a real rootless device)
+    expectRestricted(@"predicate blacklist", @"/var/mobile/jailbreak-files");
+
+    if(!gRootless) {
+        expectRestricted(@"predicate blacklist (rooted)", @"/tmp/jailbreak-detector");
+    }
+
+    // structure compliance vetoes
+    expectRestricted(@"structure veto under /var/mobile", @"/var/mobile/evil/foo");
+
+    if(!gRootless) {
+        expectRestricted(@"structure veto at root (rooted)", @"/opt/jb-tool");
+    }
+
+    // whitelisted parent, unwhitelisted child (prefix rules match the
+    // prefix itself and its direct children — a deeper child is merely
+    // unblacklisted, not whitelisted)
+    expectAllowed(@"whitelisted Media direct child", @"/var/mobile/Media/DCIM");
+    expectAllowed(@"unblacklisted Media grandchild", @"/var/mobile/Media/DCIM/1.jpg");
+    expectRestricted(@"blacklist deeper than whitelisted parent", @"/var/mobile/Media/EvilDir/x");
+
+    // restricted roots and recursion
+    expectRestricted(@"/var/jb descendant (recursion/fast-path)", @"/var/jb/usr/bin/ssh");
+    expectRestricted(@"restricted root /private/preboot", @"/private/preboot/xyz");
+    expectRestricted(@"restricted root /cores", @"/cores/crash");
+
+    // /Applications has no existence gate in rooted mode, so the exact
+    // blacklist applies; rootless gates on the fixture jbroot (file absent
+    // → read allowed), and the C0-1 write probe denies in both modes.
+    if(gRootless) {
+        expectAllowed(@"exact blacklist, file absent from jbroot", @"/Applications/Evil.app");
+    } else {
+        expectRestricted(@"exact blacklist outside gates", @"/Applications/Evil.app");
+    }
+
+    expectRestrictedWrite(@"write probe: absent blacklisted app denied", @"/Applications/Evil.app");
+}
+
+static void testExistenceGates(void) {
+    printf("[tests] existence gates + C0-1 write probes\n");
+
+    if(gRootless) {
+        // Rootless: /var/jb/usr/lib/libjailbreak.dylib exists in the fixture
+        // tree → gate passes → ruleset decides.
+        expectRestricted(@"rootless: jbroot file present, ruleset decides", @"/usr/lib/libjailbreak.dylib");
+    } else {
+        // Rooted: the gate probes the real host /usr/lib, which never holds
+        // jailbreak files (irreducible host limitation; see file header).
+        expectAllowed(@"rooted: /usr/lib read gate blocks absent host file", @"/usr/lib/libjailbreak.dylib");
+    }
+
+    // absent file: read allowed by gate, write denied (C0-1)
+    expectAllowed(@"read probe: absent /usr/lib allowed by existence gate", @"/usr/lib/libghost.dylib");
+    expectRestrictedWrite(@"write probe: absent /usr/lib denied", @"/usr/lib/libghost.dylib");
+}
+
+static void testSchemesAndIDs(void) {
+    printf("[tests] schemes, bundle IDs, URLs\n");
+
+    CHECK([shdw() isSchemeRestricted:@"cydia"], "scheme cydia restricted");
+    CHECK([shdw() isSchemeRestricted:@"CYDIA"], "scheme case-variant restricted");
+    CHECK([shdw() isSchemeRestricted:@"zbra"], "scheme zbra restricted");
+    CHECK(![shdw() isSchemeRestricted:@"http"], "scheme http allowed");
+    CHECK(![shdw() isSchemeRestricted:@"file"], "scheme file allowed");
+    CHECK(![shdw() isSchemeRestricted:@"unknown"], "unknown scheme allowed");
+    CHECK(![shdw() isSchemeRestricted:nil], "nil scheme allowed");
+
+    CHECK([shdw() isBundleIDRestricted:@"com.saurik.Cydia"], "bundle ID static list restricted");
+    CHECK([shdw() isBundleIDRestricted:@"COM.SAURIK.CYDIA"], "bundle ID case-variant restricted");
+    CHECK([shdw() isBundleIDRestricted:@"com.example.tracker"], "bundle ID ruleset restricted");
+    CHECK([shdw() isBundleIDRestricted:@"Com.Example.Tracker"], "bundle ID ruleset case-variant restricted");
+    CHECK(![shdw() isBundleIDRestricted:@"com.apple.mobilesafari"], "app bundle ID allowed");
+    CHECK(![shdw() isBundleIDRestricted:@""], "empty bundle ID allowed");
+
+    CHECK([shdw() isURLRestricted:[NSURL URLWithString:@"cydia://package"]], "URL scheme restricted");
+    CHECK(![shdw() isURLRestricted:[NSURL URLWithString:@"http://example.com"]], "URL http allowed");
+    CHECK([shdw() isURLRestricted:[NSURL fileURLWithPath:@"/var/jb/usr/bin/ssh"]], "file URL restricted");
+}
+
+static void testProtectedNames(void) {
+    printf("[tests] protected image names\n");
+
+    CHECK([shdw() isProtectedImagePath:@"/var/jb/usr/lib/libSandy.dylib"], "libSandy protected");
+    CHECK([shdw() isProtectedImagePath:@"/var/jb/Library/MobileSubstrate/MobileSubstrate.dylib"], "substrate name protected");
+    CHECK([shdw() isProtectedImagePath:@"/usr/lib/libsubstrate.dylib"], "libsubstrate protected");
+    CHECK([shdw() isProtectedImagePath:@"/usr/lib/libsubstitute.0.dylib"], "libsubstitute protected");
+    CHECK([shdw() isProtectedImagePath:@"/var/jb/usr/lib/shadow.dylib"], "shadow artifact protected");
+    CHECK(![shdw() isProtectedImagePath:@"/usr/lib/libsystem_kernel.dylib"], "stock dylib not protected");
+    CHECK(![shdw() isProtectedImagePath:@"/System/Library/Frameworks/UIKit.framework"], "stock framework not protected");
+    CHECK(![shdw() isProtectedImagePath:nil], "nil path not protected");
+}
+
+// Resolve-before-exempt: the harness binary lives in a .app dir, so bundle
+// paths are sandbox-exempt; a symlink inside the bundle pointing at a
+// restricted target must be caught by the realpath re-check. Runs in both
+// modes: rooted resolves to a real host file (staged restricted-target,
+// blacklisted by 006-Sandbox.plist); rootless resolves into the fixture
+// jbroot tree — the destination must be a REAL path (the kernel resolves
+// symlink targets; the virtual filesystem only rewrites access()/realpath()
+// inputs), landing in jbrootTarget's prefix range exactly like /var/jb on a
+// device.
+static void testSandbox(void) {
+    printf("[tests] sandbox exemption + resolve-before-exempt\n");
+
+    Shadow* shadow = shdw();
+    NSString* evil = [[shadow bundlePath] stringByAppendingPathComponent:@"evil-symlink"];
+    NSString* target = gRootless
+        ? [[[harnessWorkDir() stringByAppendingPathComponent:@"fs/jb"] stringByAppendingPathComponent:@"usr/sbin"] stringByAppendingPathComponent:@"sshd"]
+        : [[harnessWorkDir() stringByAppendingPathComponent:@"shdw-app"] stringByAppendingPathComponent:@"restricted-target"];
+
+    [[NSFileManager defaultManager] createSymbolicLinkAtPath:evil withDestinationPath:target error:nil];
+
+    expectRestricted(@"symlink inside bundle resolving to restricted target", evil);
+    expectAllowedOpts(@"noFollow link-location query exempt", evil, @{kShadowRestrictionNoFollow : @YES});
+    expectAllowed(@"bundle dir itself exempt", [shadow bundlePath]);
+    CHECK([shdw() isURLRestricted:[NSURL fileURLWithPath:evil]], "file URL through bundle symlink");
+}
+
+static void testUtilities(void) {
+    printf("[tests] utilities\n");
+
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin//ssh"] isEqualToString:@"/usr/bin/ssh"], "standardize double slash");
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin/./ssh"] isEqualToString:@"/usr/bin/ssh"], "standardize dot component");
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin/ssh/"] isEqualToString:@"/usr/bin/ssh"], "standardize trailing slash");
+    CHECK([[Shadow getStandardizedPath:@"/private/var/mobile/x"] isEqualToString:@"/var/mobile/x"], "standardize /private/var");
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin/ssh"] isEqualToString:@"/usr/bin/ssh"], "standardize passthrough");
+
+    NSArray* paths = @[@"/usr/bin/ssh", @"/var/mobile/evil/foo", @"/var/mobile/Media/DCIM/1.jpg"];
+    NSArray* restricted = [Shadow filterPathArray:paths restricted:YES options:nil];
+
+    CHECK([restricted count] == 1 && [[restricted objectAtIndex:0] isEqualToString:@"/var/mobile/evil/foo"], "filterPathArray restricted");
+
+    NSArray* urls = @[[NSURL fileURLWithPath:@"/var/mobile/evil/foo"], [NSURL fileURLWithPath:@"/var/mobile/Documents/x"]];
+    NSArray* restrictedURLs = [Shadow filterPathArray:urls restricted:YES options:nil];
+
+    CHECK([restrictedURLs count] == 1 && [[restrictedURLs objectAtIndex:0] isEqual:[NSURL fileURLWithPath:@"/var/mobile/evil/foo"]], "filterPathArray URLs restricted");
+
+    NSError* err = [Shadow fileNoSuchFileErrorForPath:@"/var/x"];
+
+    CHECK([err domain] == NSCocoaErrorDomain && [err code] == NSFileNoSuchFileError, "file error factory");
+}
+
+// Ruleset reload via mtime + generation invalidation + last-known-good.
+// Rooted mode only to keep runtime down; logic is mode-independent.
+static void testReload(void) {
+    printf("[tests] ruleset reload + last-known-good\n");
+
+    if(gRootless) {
+        printf("  (rooted mode only)\n");
+        return;
+    }
+
+    NSString* ruleset = [[harnessWorkDir() stringByAppendingPathComponent:@"root/Library/Shadow/Rulesets"]
+        stringByAppendingPathComponent:@"005-Reload.plist"];
+    NSString* probe = @"/usr/lib/libreloadtest.dylib";
+    NSString* minimal = @"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+        "<plist version=\"1.0\"><dict><key>RulesetInfo</key><dict><key>Name</key><string>Reload</string><key>Author</key><string>harness</string></dict></dict></plist>";
+
+    // staged 005-Reload.plist blacklists the probe path (see below)
+    expectRestrictedWrite(@"reload: baseline restricted", probe);
+
+    [minimal writeToFile:ruleset atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [NSThread sleepForTimeInterval:1.3];
+    expectAllowedOpts(@"reload: rule removal observed (generation invalidation)", probe, writeOptions());
+
+    [@"not a plist at all {{{" writeToFile:ruleset atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [NSThread sleepForTimeInterval:1.3];
+    expectAllowedOpts(@"reload: last-known-good served after malformed rewrite", probe, writeOptions());
+    expectRestricted(@"reload: other rulesets unaffected", @"/usr/sbin/fstab");
+}
+
+// ---------------------------------------------------------------------------
+// Adversary battery (fixture rulesets): probes that try to DODGE the engine
+// — normalization attacks, case variants, alias paths, creatable-file
+// probes, mode-divergent paths — plus a report-only mutation sweep.
+//
+// Expectations encode the ENGINE's true semantics per mode (the same code
+// runs on device): a deviation from expectation is a LEAK and fails the
+// run. An "allowed" expectation is correct engine behavior (e.g. a
+// case-variant of a case-sensitive rule points at a file that cannot exist
+// on a device), always annotated.
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    const char* name;
+    const char* path;      // query path, or a file:// URL when url=YES
+    BOOL url;              // query via isURLRestricted
+    BOOL write;            // C0-1 write probe (skips existence gates)
+    BOOL expRooted;        // expected verdict in rooted mode
+    BOOL expRootless;      // expected verdict in rootless mode
+    const char* note;      // why the expectation (esp. allowed cases)
+} AdvProbe;
+
+static const AdvProbe kAdvProbes[] = {
+    // Normalization attacks: standardization must collapse these onto the
+    // restricted canonical path (/var/jb fast-path in rootless; exact
+    // blacklist + recursion in rooted).
+    { "double slash /var//jb/usr/bin/ssh", "/var//jb/usr/bin/ssh", NO, NO, YES, YES,
+      "standardization collapses //" },
+    { "dot component /var/jb/./usr/bin/ssh", "/var/jb/./usr/bin/ssh", NO, NO, YES, YES,
+      "standardization collapses /./" },
+    { "trailing slash /var/jb/usr/bin/ssh/", "/var/jb/usr/bin/ssh/", NO, NO, YES, YES,
+      "standardization strips trailing slash" },
+    { "dot-dot /var/./jb/../jb/usr/bin/ssh", "/var/./jb/../jb/usr/bin/ssh", NO, NO, YES, YES,
+      "standardization collapses dot-dot" },
+    { "dot-dot prefix /../var/jb/usr/bin/ssh", "/../var/jb/usr/bin/ssh", NO, NO, YES, YES,
+      "standardization collapses leading dot-dot" },
+    { "tilde escape ~/../var/jb/usr/bin/ssh", "~/../var/jb/usr/bin/ssh", NO, NO, YES, YES,
+      "tilde expands to home, dot-dot collapses onto /var/jb" },
+    { "file URL /var/jb/usr/bin/ssh", "file:///var/jb/usr/bin/ssh", YES, NO, YES, YES,
+      "file URL takes the path" },
+    { "private-var URL file:///private/var/jb/...", "file:///private/var/jb/usr/bin/ssh", YES, NO, YES, YES,
+      "/private/var standardizes to /var" },
+
+    // Case variants: only the case-insensitive predicate (SELF LIKE[c]
+    // '*/Cydia.app*') covers them; exact/prefix rules are case-sensitive.
+    { "case variant /Applications/CYDIA.APP", "/Applications/CYDIA.APP", NO, NO, YES, NO,
+      "rooted: LIKE[c] Cydia rule; rootless: existence gate blocks (no such file in jbroot)" },
+    { "case variant /usr/sbin/FSTAB", "/usr/sbin/FSTAB", NO, NO, NO, NO,
+      "exact blacklist is case-sensitive; no such file exists on a device" },
+    { "case variant /var/mobile/JAILBREAK-FILES", "/var/mobile/JAILBREAK-FILES", NO, NO, YES, YES,
+      "GNUstep evaluates CONTAINS case-insensitively (Cocoa is case-sensitive: on-device this variant is allowed — documented divergence)" },
+
+    // Mode-divergent paths (fast-path prefix semantics differ).
+    { "jbroot sibling /var/jb-backup", "/var/jb-backup", NO, NO, NO, YES,
+      "rootless fast-path is a /var/jb string prefix; rooted has no rule for the sibling" },
+    { "jbroot sibling child /var/jb2/foo", "/var/jb2/foo", NO, NO, NO, YES,
+      "same /var/jb prefix semantics (rootless); nothing there on device (rooted)" },
+
+    // Fast paths and prefixes.
+    { "preboot prefix /private/preboot/jb-abc", "/private/preboot/jb-abc", NO, NO, YES, YES,
+      "001 prefix rule (rooted) / restricted-root fast path (rootless)" },
+    { "cores prefix /cores/crash", "/cores/crash", NO, NO, YES, YES,
+      "001 prefix rule (rooted) / restricted-root fast path (rootless)" },
+
+    // Creatable-file probes (C0-1): a detector probing a restricted path it
+    // could create must get a denial even though reads are gate-allowed.
+    { "write probe /usr/lib/libghost.dylib", "/usr/lib/libghost.dylib", NO, YES, YES, YES,
+      "C0-1: write probes skip existence gates in both modes" },
+
+    // False positives: normalization of legit paths must stay allowed.
+    { "legit /var/mobile/Media/./DCIM/1.jpg", "/var/mobile/Media/./DCIM/1.jpg", NO, NO, NO, NO,
+      "collapses to the whitelisted/unblacklisted Media path" },
+    { "legit /var/mobile//Media/DCIM/1.jpg", "/var/mobile//Media/DCIM/1.jpg", NO, NO, NO, NO,
+      "collapses to the whitelisted/unblacklisted Media path" },
+    { "legit /usr/bin/true", "/usr/bin/true", NO, NO, NO, NO,
+      "no rule matches" },
+    { "legit /var/mobile/Library/Preferences/x", "/var/mobile/Library/Preferences/x", NO, NO, NO, NO,
+      "no rule matches" },
+};
+
+static void runAdversary(void) {
+    printf("[adversary] evasion battery (rootless=%d)\n", gRootless);
+
+    for(NSUInteger i = 0; i < sizeof(kAdvProbes) / sizeof(kAdvProbes[0]); i++) {
+        AdvProbe p = kAdvProbes[i];
+        NSString* path = [NSString stringWithUTF8String:p.path];
+        BOOL got;
+        BOOL expected = gRootless ? p.expRootless : p.expRooted;
+
+        if(p.url) {
+            got = [shdw() isURLRestricted:[NSURL URLWithString:path]];
+        } else if(p.write) {
+            got = [shdw() isPathRestricted:path options:writeOptions()];
+        } else {
+            got = [shdw() isPathRestricted:path];
+        }
+
+        if(got == expected) {
+            gPass++;
+            printf("  %-42s → %s\n", p.name, got ? "RESTRICTED" : "allowed");
+        } else {
+            gFail++;
+            printf("LEAK: %s (expected %s, got %s) — %s\n", p.name,
+                expected ? "restricted" : "allowed",
+                got ? "restricted" : "allowed", p.note);
+        }
+    }
+
+    // Report-only mutation sweep: every mangled probe, classified. No hard
+    // assertions — verdicts are rule-dependent; the classification is the
+    // point (a detector that can dodge a rule via normalization is visible
+    // here as "allowed").
+    const char* bases[] = {
+        "/Applications/Cydia.app",
+        "/var/jb/usr/bin/ssh",
+        "/usr/sbin/fstab",
+        "/var/mobile/evil/foo",
+    };
+
+    printf("[adversary] mutation sweep (report only)\n");
+
+    for(NSUInteger i = 0; i < sizeof(bases) / sizeof(bases[0]); i++) {
+        NSString* base = [NSString stringWithUTF8String:bases[i]];
+        NSString* last = [base lastPathComponent];
+        NSString* parent = [base stringByDeletingLastPathComponent];
+        NSString* upperLast = [last uppercaseString];
+        NSString* upperAll = [base uppercaseString];
+
+        NSString* mutants[] = {
+            [parent stringByAppendingPathComponent:upperLast],                 // last-component case
+            upperAll,                                                          // full case
+            [base stringByReplacingOccurrencesOfString:@"/" withString:@"//"], // double slashes
+            [base stringByAppendingString:@"/"],                               // trailing slash
+            [@"/.." stringByAppendingString:base],                             // dot-dot prefix
+            [@"~/.." stringByAppendingString:base],                            // tilde escape
+        };
+        const char* labels[] = { "case-last", "case-all", "//-dup", "trail-/", "..-prefix", "~-escape" };
+
+        for(NSUInteger m = 0; m < sizeof(mutants) / sizeof(mutants[0]); m++) {
+            BOOL got = [shdw() isPathRestricted:mutants[m]];
+            printf("  %-12s %-30s → %s\n", labels[m], [mutants[m] UTF8String],
+                got ? "RESTRICTED" : "allowed");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Detector battery (real detector vs Shadow on/off, rootless virtual FS)
+// ---------------------------------------------------------------------------
+
+#import "detectors/ShadowDetector.h"
+
+// Moves every ruleset plist aside (or back), then sleeps past the engine's
+// 1s change-scan gate so the next engine query reloads. Linux-only (used by
+// the virtual-FS detector battery).
+#if defined(__linux__)
+static void setRulesetsEnabled(BOOL enabled, NSString* rulesetsDir) {
+    NSFileManager* fm = [NSFileManager defaultManager];
+    NSArray* items = [fm contentsOfDirectoryAtPath:rulesetsDir error:nil];
+
+    for(NSString* item in items) {
+        if(enabled) {
+            if(![item hasSuffix:@".plist.off"]) {
+                continue;
+            }
+
+            NSString* dst = [item substringToIndex:[item length] - 4]; // strip ".off"
+            [fm moveItemAtPath:[rulesetsDir stringByAppendingPathComponent:item]
+                        toPath:[rulesetsDir stringByAppendingPathComponent:dst]
+                         error:nil];
+        } else if([[item pathExtension] isEqualToString:@"plist"]) {
+            [fm moveItemAtPath:[rulesetsDir stringByAppendingPathComponent:item]
+                        toPath:[rulesetsDir stringByAppendingPathComponent:[item stringByAppendingString:@".off"]]
+                         error:nil];
+        }
+    }
+
+    [NSThread sleepForTimeInterval:1.3];
+}
+#endif // __linux__
+
+// Runs the ported detector twice against the engine:
+//   raw pass    — Shadow OFF (rulesets emptied, filter disabled): the
+//                 detector must find the simulated jailbreak.
+//   shadow pass — Shadow ON (shipped rulesets restored, filter enabled):
+//                 the engine must hide everything the detector probes.
+static void runDetectorBattery(void) {
+#if !defined(__linux__)
+    printf("[detector] skipped: virtual-FS interposition is Linux-only\n");
+    return;
+#else
+    NSString* rulesetsDir = [[harnessWorkDir() stringByAppendingPathComponent:@"jb/Library/Shadow"]
+        stringByAppendingPathComponent:@"Rulesets"];
+
+    printf("[detector] IOSSecuritySuite-style detector vs Shadow (rootless)\n");
+
+    // RAW: Shadow off.
+    setRulesetsEnabled(NO, rulesetsDir);
+    shdw_shadow_filter_set_enabled(0);
+
+    ShdwDetectorResult raw = ShdwDetectorRun();
+
+    printf("  raw (no Shadow)      → %s%s\n", raw.jailbroken ? "JAILBROKEN" : "clean",
+        raw.jailbroken ? "" : "  ← detector failed to find the simulated jailbreak");
+
+    CHECK(raw.jailbroken, "detector detects the simulated jailbreak without Shadow");
+
+    // SHADOW: rulesets restored + filter on.
+    setRulesetsEnabled(YES, rulesetsDir);
+    shdw_shadow_filter_set_enabled(1);
+
+    ShdwDetectorResult shadow = ShdwDetectorRun();
+
+    if(shadow.jailbroken) {
+        gFail++;
+        printf("LEAK: detector found jailbreak with Shadow active — %s\n", shadow.reason);
+    } else {
+        gPass++;
+        printf("  shadow (Shadow on)   → clean (all probes hidden)\n");
+    }
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Detector-probe battery (real shipped rulesets)
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    const char* name;
+    const char* path;
+    BOOL write;   // C0-1 write probe (skips existence gates; the only way
+                  // /usr/lib probes get device-accurate verdicts on a host)
+} Probe;
+
+static const Probe kProbes[] = {
+    { "fopen /Applications/Cydia.app", "/Applications/Cydia.app", NO },
+    { "access /var/jb/Applications/Cydia.app", "/var/jb/Applications/Cydia.app", NO },
+    { "access /var/jb/usr/bin/ssh", "/var/jb/usr/bin/ssh", NO },
+    { "access /cores/crash.dump", "/cores/crash.dump", NO },
+    { "access /private/preboot/jb-abc", "/private/preboot/jb-abc", NO },
+    { "access /private/preboot/jb-abc/usr/bin/sshd", "/private/preboot/jb-abc/usr/bin/sshd", NO },
+    { "dlopen /usr/lib/libsubstrate.dylib", "/usr/lib/libsubstrate.dylib", YES },
+    { "dlopen /usr/lib/libsubstitute.0.dylib", "/usr/lib/libsubstitute.0.dylib", YES },
+    { "dlopen /usr/lib/libjailbreak.dylib", "/usr/lib/libjailbreak.dylib", YES },
+    { "dlopen /usr/lib/libsystem_kernel.dylib", "/usr/lib/libsystem_kernel.dylib", YES },
+    { "fopen /tmp/randomfile", "/tmp/randomfile", NO },
+    { "fopen /tmp/com.apple.installer", "/tmp/com.apple.installer", NO },
+    { "access /var/root/.ssh/authorized_keys", "/var/root/.ssh/authorized_keys", NO },
+    { "fopen /var/mobile/Documents/notes.txt", "/var/mobile/Documents/notes.txt", NO },
+    { "access /var/mobile/evil", "/var/mobile/evil", NO },
+    { "access /opt/jb/optool", "/opt/jb/optool", NO },
+    { "fopen /var/containers/Bundle/Application/ABCDEF/App.app/App", "/var/containers/Bundle/Application/ABCDEF/App.app/App", NO },
+    { "access /Library/MobileSubstrate/MobileSubstrate.dylib", "/Library/MobileSubstrate/MobileSubstrate.dylib", NO },
+};
+
+static void runDetect(void) {
+    printf("[detect] probe battery against shipped rulesets (rootless=%d)\n", gRootless);
+
+    for(NSUInteger i = 0; i < sizeof(kProbes) / sizeof(kProbes[0]); i++) {
+        Probe p = kProbes[i];
+        NSString* path = [NSString stringWithUTF8String:p.path];
+        BOOL got = p.write
+            ? [shdw() isPathRestricted:path options:writeOptions()]
+            : [shdw() isPathRestricted:path];
+
+        printf("  %-52s → %s\n", p.name, got ? "RESTRICTED" : "allowed");
+    }
+
+    // schemes / bundle IDs / protected names
+    printf("  %-52s → %s\n", "openURL cydia://", [shdw() isSchemeRestricted:@"cydia"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "openURL Cydia:// (case variant)", [shdw() isSchemeRestricted:@"Cydia"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "openURL http://", [shdw() isSchemeRestricted:@"http"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "LSApplicationWorkspace com.saurik.Cydia", [shdw() isBundleIDRestricted:@"com.saurik.Cydia"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "LSApplicationWorkspace COM.SAURIK.CYDIA", [shdw() isBundleIDRestricted:@"COM.SAURIK.CYDIA"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "LSApplicationWorkspace com.apple.mobilesafari", [shdw() isBundleIDRestricted:@"com.apple.mobilesafari"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "image name /usr/lib/libSandy.dylib", [shdw() isProtectedImagePath:@"/usr/lib/libSandy.dylib"] ? "RESTRICTED" : "allowed");
+    printf("  %-52s → %s\n", "image name /System/Library/Frameworks/UIKit.framework", [shdw() isProtectedImagePath:@"/System/Library/Frameworks/UIKit.framework"] ? "RESTRICTED" : "allowed");
+}
+
+// ---------------------------------------------------------------------------
+
+int main(int argc, const char** argv) {
+    @autoreleasepool {
+        for(int i = 1; i < argc; i++) {
+            if(strcmp(argv[i], "--rootless") == 0) {
+                gRootless = YES;
+            } else if(strcmp(argv[i], "--detect") == 0) {
+                gDetect = YES;
+            } else if(strcmp(argv[i], "--adversary") == 0) {
+                gAdversary = YES;
+            } else if(strcmp(argv[i], "--detector") == 0) {
+                gDetector = YES;
+            }
+        }
+
+        // The detector battery simulates a rootless jailbreak (virtual FS).
+        if(gDetector) {
+            gRootless = YES;
+        }
+
+        if(!getenv("SHADW_HARNESS_STAGED")) {
+            // Parent: run every requested mode as a fresh process (fresh
+            // singleton/backend per mode). fork+waitpid: stageAndExec
+            // execv's (which never returns), so each mode must run in its
+            // own child; forked children also get distinct pids, keeping
+            // work-dir names collision-free.
+            int rc = 0;
+            const char* modes[][1] = { {"--rootless"}, {"--rooted"} };
+            int modeCount = (!gRootless && argc == 1) ? 2 : 1;
+
+            for(int i = 0; i < modeCount; i++) {
+                char* argv2[5];
+                argv2[0] = (char*)argv[0];
+                argv2[1] = modeCount == 2 ? (char*)modes[i][0] : (char*)(gRootless ? "--rootless" : "--rooted");
+
+                if(gDetect) {
+                    argv2[2] = (char*)"--detect";
+                    argv2[3] = NULL;
+                } else if(gAdversary) {
+                    argv2[2] = (char*)"--adversary";
+                    argv2[3] = NULL;
+                } else if(gDetector) {
+                    argv2[2] = (char*)"--detector";
+                    argv2[3] = NULL;
+                } else {
+                    argv2[2] = NULL;
+                }
+
+                pid_t pid = fork();
+
+                if(pid == 0) {
+                    exit(stageAndExec(3, (const char**)argv2));
+                }
+
+                int status = 0;
+                waitpid(pid, &status, 0);
+                rc |= WEXITSTATUS(status);
+            }
+
+            return rc;
+        }
+
+        // Child: staged, one mode.
+        NSString* work = harnessWorkDir();
+        NSString* jbPath = gRootless ? [work stringByAppendingPathComponent:@"fs/jb"] : nil;
+        NSString* rulesetsDir = [work stringByAppendingPathComponent:
+            (gRootless ? @"jb/Library/Shadow/Rulesets" : @"root/Library/Shadow/Rulesets")];
+
+        // Order matters: the engine reads argv via _NSGetArgv at first
+        // sharedInstance init (provided by fsinterpose.c), and the virtual
+        // filesystem must be armed before any gate call.
+        shdw_fs_set_argv((char**)argv);
+        shdw_fs_set_jbroot([jbPath UTF8String]);
+        [RootBridge shdwHarnessSetJBPath:jbPath rulesetsDir:rulesetsDir];
+
+        printf("=== Shadow harness (%s, %s) work=%s\n",
+            gRootless ? "rootless" : "rooted",
+            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : "unit tests")),
+            [work UTF8String]);
+
+        if(gDetect) {
+            runDetect();
+            return 0;
+        }
+
+        if(gAdversary) {
+            runAdversary();
+            printf("=== %d passed, %d failed\n", gPass, gFail);
+            return gFail ? 1 : 0;
+        }
+
+        if(gDetector) {
+            runDetectorBattery();
+            printf("=== %d passed, %d failed\n", gPass, gFail);
+            return gFail ? 1 : 0;
+        }
+
+        // testReload is rooted-mode only: the ruleset-mutation timing is
+        // mode-independent, so one run keeps the sleeps (3s) out of the
+        // rootless pass.
+        testBasics();
+        testRulesets();
+        testExistenceGates();
+        testSchemesAndIDs();
+        testProtectedNames();
+        testSandbox();
+        testUtilities();
+
+        if(!gRootless) {
+            testReload();
+        }
+
+        printf("=== %d passed, %d failed\n", gPass, gFail);
+        return gFail ? 1 : 0;
+    }
+}
