@@ -43,10 +43,44 @@ case "$1" in
         # shdw runs as root from postinst/triggers, so it can still write.
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
 
+        # Fat package (armv7/armv7s + arm64/arm64e in one deb): shadowd is
+        # arm64-only and the rooted dep slices (libsandy/HookKit/AltList)
+        # floor at iOS 12.0.
+        #  - 32-bit devices: drop the daemon + plist so launchd never tries
+        #    to exec an arm64-only binary (exec-fail respawn loop).
+        #  - 64-bit on iOS < 12: the injected dylib chain can't load (deps
+        #    are minos 12.0) — dyld would abort every app launch; drop the
+        #    daemon and the injection files, leaving an inert install.
+        DAEMON_ARCH_OK=1
+        case "$(uname -m)" in
+            armv7|armv7s)
+                DAEMON_ARCH_OK=0
+                rm -f "$DPKG_ROOT/usr/libexec/shadowd" \
+                      "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" \
+                      "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null
+                ;;
+            arm64|arm64e)
+                OS_MAJOR=$(sw_vers -productVersion | cut -d. -f1)
+                if [ "${OS_MAJOR:-0}" -lt 12 ]; then
+                    DAEMON_ARCH_OK=0
+                    rm -f "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib" \
+                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/Shadow.plist" \
+                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib" \
+                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.plist" \
+                          "$DPKG_ROOT/Library/Frameworks/Shadow.framework" \
+                          "$DPKG_ROOT/usr/libexec/shadowd" \
+                          "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" \
+                          "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null
+                    rm -rf "$DPKG_ROOT/Library/Frameworks/Shadow.framework"
+                fi
+                ;;
+        esac
+
         # LaunchDaemon: rootful ships /Library/LaunchDaemons, rootless ships
-        # /var/jb/Library/LaunchDaemons (theos install-prefix); the legacy
-        # armv7 package omits the plist entirely and skips this.
-        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
+        # /var/jb/Library/LaunchDaemons (theos install-prefix); the fat
+        # package ships it but the arch guards above strip it where shadowd
+        # can't run.
+        if [ "$DAEMON_ARCH_OK" = "1" ] && [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
             chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
             chown root:wheel "$DPKG_ROOT/usr/libexec/shadowd"
@@ -71,6 +105,16 @@ case "$1" in
             # old service is still registered — harmless, the service is kept.)
             launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null \
                 || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
+
+            # Ruleset watcher: shdw -d regenerates the installed-apps ruleset
+            # on app install/uninstall (stateless, no shutdown dance needed —
+            # unlike shadowd it holds no kernel state).
+            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
+            chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
+            chown root:wheel "$DPKG_ROOT/usr/local/bin/shdw"
+            chmod 755 "$DPKG_ROOT/usr/local/bin/shdw"
+            launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null \
+                || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null || true
         fi
     ;;
 

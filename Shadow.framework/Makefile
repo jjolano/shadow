@@ -4,6 +4,7 @@ FRAMEWORK_NAME = Shadow
 
 Shadow_FILES = Core.m Core+Utilities.m Backend.m Ruleset.m Settings.m SystemRulesGenerator.m
 Shadow_FRAMEWORKS = Foundation CoreFoundation
+Shadow_PRIVATE_FRAMEWORKS = MobileCoreServices
 Shadow_EXTRA_FRAMEWORKS = RootBridge
 Shadow_INSTALL_PATH = /Library/Frameworks
 Shadow_CFLAGS = -fobjc-arc -fvisibility=hidden -IHeaders -I../vendor/RootBridge.framework/Headers
