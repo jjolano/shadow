@@ -40,6 +40,8 @@ static BOOL _shdw_dyldextra_installed = NO;
 static BOOL _shdw_uikit_installed = NO;      // UIKit groups installed
 static BOOL _shdw_escalation_installed = NO; // detector escalation handled
 static BOOL _shdw_tier2_installed = NO;      // ObjC groups installed on first probe
+static BOOL _shdw_objc_installed = NO;       // C0-4: shadowhook_objc group installed
+static BOOL _shdw_tweakclasses_installed = NO; // C0-4: hidetweakclasses group installed
 static HKSubstitutor* _shdw_watcher_main = nil;   // subMain
 static HKSubstitutor* _shdw_watcher_cfunc = nil;  // subCFunc
 static HKSubstitutor* _shdw_watcher_inline = nil; // subInline (inline escalation)
@@ -95,8 +97,16 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
         // Detector loaded after our ctor (app-linked or dlopen'd): escalate.
         // shdw_detector_detected installs the gated groups the ctor skipped
         // (idempotent — its guard covers the prefs-installed subset).
+        // C0-4: name matching extended beyond the curated iossecuritysuite /
+        // freerasp / talsec list to "jailbreak" and "antipiracy" substrings.
+        // Deliberately broad: matching a jailbreak-named image (libjailbreak,
+        // jailbreak.app loader) escalates conservative groups that are safe
+        // (dyld routing, class hiding); a false positive costs stealth, not
+        // correctness — and a detector that renamed itself still trips the
+        // behavioral tripwires (path/symbol probes) in libc.x.
         if([image_lower containsString:@"iossecuritysuite"]
-        || [image_lower containsString:@"freerasp"] || [image_lower containsString:@"talsec"]) {
+        || [image_lower containsString:@"freerasp"] || [image_lower containsString:@"talsec"]
+        || [image_lower containsString:@"jailbreak"] || [image_lower containsString:@"antipiracy"]) {
             shdw_detector_detected(path);
         }
     }
@@ -139,6 +149,26 @@ void shdw_detector_detected(const char* reason) {
 
     if(!_shdw_dyldextra_installed) {
         shadowhook_dyld_extra(_shdw_watcher_inline ?: _shdw_watcher_main);
+    }
+
+    // C0-4: detector presence must not leave the class-hiding surface
+    // pref-gated. The ObjC runtime / tweak-class groups are safe (no blanket
+    // denial semantics) and only need a method-capable backend — force them
+    // in on detector evidence exactly like the dyld surface above, with the
+    // same per-group guards against double installs. (Their default
+    // enablement is tracked via Settings.m defaults — see item C0-4/C0-5.)
+    if(_shdw_objc_backend && _shdw_watcher_main) {
+        if(!_shdw_objc_installed) {
+            NSLog(@"+ objc (installed on detector evidence)");
+            shadowhook_objc(_shdw_watcher_main);
+            _shdw_objc_installed = YES;
+        }
+
+        if(!_shdw_tweakclasses_installed) {
+            NSLog(@"+ classes (installed on detector evidence)");
+            shadowhook_objc_hidetweakclasses(_shdw_watcher_main);
+            _shdw_tweakclasses_installed = YES;
+        }
     }
 
     // Tier-2: the ObjC-method swizzle groups install on detector evidence,
@@ -208,7 +238,9 @@ static void shdw_install_tier2(void) {
     // "iossecuritysuite") or freeRASP (ships as TalsecRuntime.xcframework,
     // binary "TalsecRuntime" → matched via "talsec"; legacy "freerasp" kept
     // for older builds) is loaded we escalate (stealth routing + memory
-    // hiding) regardless of preferences.
+    // hiding) regardless of preferences. C0-4: also match "jailbreak" /
+    // "antipiracy" substrings (see the comment at the watcher match site —
+    // deliberately broad, escalation groups are safe).
     uint32_t image_count = _dyld_image_count();
 
     for(uint32_t i = 0; i < image_count; i++) {
@@ -217,7 +249,8 @@ static void shdw_install_tier2(void) {
         if(image_name) {
             NSString* image_lower = [[NSString stringWithUTF8String:image_name] lowercaseString];
 
-            if([image_lower containsString:@"iossecuritysuite"] || [image_lower containsString:@"freerasp"] || [image_lower containsString:@"talsec"]) {
+            if([image_lower containsString:@"iossecuritysuite"] || [image_lower containsString:@"freerasp"] || [image_lower containsString:@"talsec"]
+            || [image_lower containsString:@"jailbreak"] || [image_lower containsString:@"antipiracy"]) {
                 shdw_detector_present = YES;
                 NSLog(@"[Shadow] detection library present: %s", image_name);
                 break;
@@ -509,7 +542,11 @@ static void shdw_install_tier2(void) {
 
         setenv("SHELL", "/bin/sh", 1);
 
-        // shadowhook_libc_envvar(subMain);
+        // C0-4: activate the envvar group. The filtering body is implemented
+        // by the libc lane; until then the group installs no hooks and is a
+        // safe no-op. subCFunc: fishhook by default (clean prologues — the
+        // envvar getter must stay indistinguishable from stock).
+        shadowhook_libc_envvar(subCFunc);
         // shadowhook_NSProcessInfo(substitutor);
     }
 
@@ -552,6 +589,10 @@ static void shdw_install_tier2(void) {
             // fishhook could rebind, but the runtime calls some of them directly
             // in hot paths — keep them inline via subMain to be safe.
             shadowhook_objc(subMain);
+
+            #ifdef hookkit_h
+            _shdw_objc_installed = YES;
+            #endif
         }
     }
 
@@ -590,6 +631,10 @@ static void shdw_install_tier2(void) {
             // Same reasoning as shadowhook_objc above: C-function hooks in the
             // runtime path stay on subMain.
             shadowhook_objc_hidetweakclasses(subMain);
+
+            #ifdef hookkit_h
+            _shdw_tweakclasses_installed = YES;
+            #endif
         }
     }
 
