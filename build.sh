@@ -147,7 +147,8 @@ build_quick() {
     # `make -C` defaults to including armv7, which cannot link against the
     # rooted 2-slice deps. arm64/arm64e = the rooted flavor's slices.
     make -C Shadow.framework ARCHS="arm64 arm64e" &&
-    make -C Shadow.dylib ARCHS="arm64 arm64e"
+    make -C Shadow.dylib ARCHS="arm64 arm64e" &&
+    make -C ShadowCore.dylib ARCHS="arm64 arm64e"
 }
 
 case ${1:-all} in

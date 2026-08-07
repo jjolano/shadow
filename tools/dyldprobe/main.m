@@ -18,6 +18,20 @@
 // Run it with Shadow disabled for this app (baseline), then with Shadow
 // enabled and all hooks on — the two reports are the test.
 
+// Section 8 helpers: the fishhook rebinding shape IOSSecuritySuite's
+// denyFishHook uses, and the dummy replacement it points "dladdr" at.
+// A successful revert makes every later dladdr call hit this dummy's 0
+// ("no info"), which is exactly what the section detects.
+struct rebinding {
+    char* name;
+    void* replacement;
+    void** replaced;
+};
+
+static int dyldprobe_dummy_dladdr(const void* addr, Dl_info* info) {
+    return 0;
+}
+
 static NSString* ProbeReport(void) {
     NSMutableString* out = [NSMutableString string];
     NSString* appPath = [[NSBundle mainBundle] bundlePath];
@@ -433,6 +447,70 @@ static NSString* ProbeReport(void) {
         }
     } else {
         [out appendString:@"  (dyld_all_image_infos unavailable)\n"];
+    }
+
+    [out appendString:@"\n== 8. denyFishHook(dladdr) revert resistance ==\n"];
+    // IOSSecuritySuite's FishHookChecker builds a fishhook `rebinding` for
+    // "dladdr" pointing at a dummy function and calls rebind_symbols() to
+    // revert the symbol. Shadow hooks dladdr/dlsym with INLINE (ElleKit)
+    // trampolines, which fishhook-style pointer rebinding cannot undo.
+    // Replicate that exact revert, then verify dladdr still resolves
+    // coherently. Deliberately LAST so a revert-induced failure can never
+    // suppress sections 1-7, and fail-soft throughout: an unavailable
+    // rebind_symbols skips the section, and nothing here can abort.
+    @try {
+        void (*rebindSymbols)(struct rebinding*, int) = (void (*)(struct rebinding*, int))dlsym(RTLD_DEFAULT, "rebind_symbols");
+
+        if(!rebindSymbols) {
+            [out appendString:@"  rebind_symbols unavailable — section skipped (no fishhook-linked image in process)\n"];
+        } else {
+            void* replaced = NULL;
+            struct rebinding r = {"dladdr", (void*)dyldprobe_dummy_dladdr, &replaced};
+            rebindSymbols(&r, 1);
+            [out appendFormat:@"  rebind_symbols({\"dladdr\" -> dummy}) called; replaced = %p %@\n", replaced, replaced ? @"(a binding was patched — the revert really ran)" : @"(no binding patched)"];
+
+            // Targets: ProbeReport itself (a benign app-binary address —
+            // Shadow answers it with the app path), plus any jailbreak-path
+            // addresses section 5's direct read found — the strongest
+            // adjudication: a hidden image leaking out of dladdr after the
+            // rebind means the inline hook was reverted.
+            NSMutableArray* targets = [NSMutableArray arrayWithObject:[NSValue valueWithPointer:(void*)ProbeReport]];
+            [targets addObjectsFromArray:hiddenAddrs];
+            BOOL sectionOK = YES;
+
+            for(NSValue* v in targets) {
+                void* addr = [v pointerValue];
+                Dl_info info;
+                BOOL got = dladdr(addr, &info);
+
+                if(!got) {
+                    [out appendFormat:@"    %p -> no info (dummy took over — rebind succeeded; expected when no inline hook is active)\n", addr];
+                    sectionOK = NO;
+                    continue;
+                }
+
+                NSString* name = info.dli_fname ? @(info.dli_fname) : @"(null)";
+                BOOL jbPath = NO;
+
+                for(NSString* marker in hiddenMarkers) {
+                    if([name containsString:marker]) {
+                        jbPath = YES;
+                        break;
+                    }
+                }
+
+                if(jbPath) {
+                    [out appendFormat:@"    %p -> %@ — JAILBREAK PATH LEAKED through dladdr (revert succeeded)\n", addr, name];
+                    sectionOK = NO;
+                } else {
+                    [out appendFormat:@"    %p -> %@ — resolves; mask/benign answer intact\n", addr, name];
+                }
+            }
+
+            [out appendFormat:@"  result: %@\n", sectionOK ? @"PASS — dladdr survived the rebind attempt (no crash, coherent Dl_info, hide holds)" : @"FAIL — the rebind disturbed dladdr (inline hook reverted, or no Shadow active)"];
+        }
+    } @catch(NSException* e) {
+        [out appendFormat:@"  EXCEPTION in rebind probe: %@ — FAIL (rebind disturbed dladdr)\n", e];
     }
 
     [out appendString:@"\n== done ==\n"];

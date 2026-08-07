@@ -62,18 +62,6 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_TweakClasses</string>
-			<key>label</key>
-			<string>HOOK_TWEAKCLASS</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
 			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
 			<string>HOOK_DYLD</string>

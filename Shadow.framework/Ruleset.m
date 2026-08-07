@@ -22,21 +22,6 @@
 @implementation RulesetEngine
 @synthesize payloadDictionary;
 
-- (instancetype)init {
-    if((self = [super init])) {
-        set_urlschemes = nil;
-        set_whitelist = nil;
-        set_blacklist = nil;
-        array_whitelist = nil;
-        array_blacklist = nil;
-
-        pred_whitelist = nil;
-        pred_blacklist = nil;
-    }
-
-    return self;
-}
-
 + (instancetype)rulesetWithURL:(NSURL *)url {
     @synchronized([RulesetEngine class]) {
         // Last-known-good per URL: if a later reload fails, keep serving the
@@ -81,11 +66,6 @@
     }
 
     return nil;
-}
-
-+ (instancetype)rulesetWithPath:(NSString *)path {
-    NSURL* file_url = [NSURL fileURLWithPath:path isDirectory:NO];
-    return [self rulesetWithURL:file_url];
 }
 
 // Filters a payload value to an NSArray of NSStrings; non-array values and
@@ -155,73 +135,58 @@
 }
 
 - (void)_compile {
-    NSOperationQueue* queue = [NSOperationQueue new];
-    [queue setQualityOfService:NSOperationQualityOfServiceUserInteractive];
-
     // Type-validate entries before compiling; malformed values are logged and
     // skipped, never fatal.
     NSArray* urlschemes = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistURLSchemes"] forKey:@"BlacklistURLSchemes"];
 
     if(urlschemes) {
-        [queue addOperationWithBlock:^{
-            // C0-3: normalize schemes to lowercase at load (match time also
-            // lowercases the query — see isSchemeRestricted:) so a
-            // case-variant probe ("Cydia" vs "cydia") can never bypass a
-            // scheme rule.
-            NSMutableSet* lower = [NSMutableSet setWithCapacity:[urlschemes count]];
+        // C0-3: normalize schemes to lowercase at load (match time also
+        // lowercases the query — see isSchemeRestricted:) so a
+        // case-variant probe ("Cydia" vs "cydia") can never bypass a
+        // scheme rule.
+        NSMutableSet* lower = [NSMutableSet setWithCapacity:[urlschemes count]];
 
-            for(NSString* scheme in urlschemes) {
-                [lower addObject:[scheme lowercaseString]];
-            }
+        for(NSString* scheme in urlschemes) {
+            [lower addObject:[scheme lowercaseString]];
+        }
 
-            set_urlschemes = [lower copy];
-        }];
+        set_urlschemes = [lower copy];
     }
 
     NSArray* whitelist_paths = [self _validatedStringArray:[payloadDictionary objectForKey:@"WhitelistExactPaths"] forKey:@"WhitelistExactPaths"];
 
     if(whitelist_paths) {
-        [queue addOperationWithBlock:^{
-            set_whitelist = [NSSet setWithArray:whitelist_paths];
-        }];
+        set_whitelist = [NSSet setWithArray:whitelist_paths];
     }
 
     NSArray* blacklist_paths = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistExactPaths"] forKey:@"BlacklistExactPaths"];
 
     if(blacklist_paths) {
-        [queue addOperationWithBlock:^{
-            set_blacklist = [NSSet setWithArray:blacklist_paths];
-        }];
+        set_blacklist = [NSSet setWithArray:blacklist_paths];
     }
 
     NSArray* whitelist_prefixes = [self _validatedStringArray:[payloadDictionary objectForKey:@"WhitelistPaths"] forKey:@"WhitelistPaths"];
 
     if(whitelist_prefixes) {
-        [queue addOperationWithBlock:^{
-            dict_whitelist = [self _compilePrefixDict:whitelist_prefixes matchAll:&whitelist_match_all];
-        }];
+        dict_whitelist = [self _compilePrefixDict:whitelist_prefixes matchAll:&whitelist_match_all];
     }
 
     NSArray* blacklist_prefixes = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistPaths"] forKey:@"BlacklistPaths"];
 
     if(blacklist_prefixes) {
-        [queue addOperationWithBlock:^{
-            dict_blacklist = [self _compilePrefixDict:blacklist_prefixes matchAll:&blacklist_match_all];
-        }];
+        dict_blacklist = [self _compilePrefixDict:blacklist_prefixes matchAll:&blacklist_match_all];
     }
 
     NSDictionary* structure = [self _validatedStructure:[payloadDictionary objectForKey:@"FileSystemStructure"]];
 
     if(structure) {
-        [queue addOperationWithBlock:^{
-            NSMutableDictionary* compiled = [NSMutableDictionary dictionaryWithCapacity:[structure count]];
+        NSMutableDictionary* compiled = [NSMutableDictionary dictionaryWithCapacity:[structure count]];
 
-            for(NSString* key in structure) {
-                [compiled setObject:[NSSet setWithArray:[structure objectForKey:key]] forKey:key];
-            }
+        for(NSString* key in structure) {
+            [compiled setObject:[NSSet setWithArray:[structure objectForKey:key]] forKey:key];
+        }
 
-            dict_structure = [compiled copy];
-        }];
+        dict_structure = [compiled copy];
     }
 
     // C0-3: bundle-ID blacklist, normalized to lowercase at load (matches the
@@ -230,58 +195,50 @@
     NSArray* bundleids = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistBundleIDs"] forKey:@"BlacklistBundleIDs"];
 
     if(bundleids) {
-        [queue addOperationWithBlock:^{
-            NSMutableSet* lower = [NSMutableSet setWithCapacity:[bundleids count]];
+        NSMutableSet* lower = [NSMutableSet setWithCapacity:[bundleids count]];
 
-            for(NSString* bundleID in bundleids) {
-                [lower addObject:[bundleID lowercaseString]];
-            }
+        for(NSString* bundleID in bundleids) {
+            [lower addObject:[bundleID lowercaseString]];
+        }
 
-            set_bundleids = [lower copy];
-        }];
+        set_bundleids = [lower copy];
     }
 
     NSArray* whitelist_preds = [self _validatedStringArray:[payloadDictionary objectForKey:@"WhitelistPredicates"] forKey:@"WhitelistPredicates"];
 
     if(whitelist_preds) {
-        [queue addOperationWithBlock:^{
-            NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
+        NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
 
-            for(NSString* pred_str in whitelist_preds) {
-                @try {
-                    [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
-                } @catch(NSException* exception) {
-                    NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
-                }
+        for(NSString* pred_str in whitelist_preds) {
+            @try {
+                [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
+            } @catch(NSException* exception) {
+                NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
             }
+        }
 
-            if([preds count] > 0) {
-                pred_whitelist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
-            }
-        }];
+        if([preds count] > 0) {
+            pred_whitelist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
+        }
     }
 
     NSArray* blacklist_preds = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistPredicates"] forKey:@"BlacklistPredicates"];
 
     if(blacklist_preds) {
-        [queue addOperationWithBlock:^{
-            NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
+        NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
 
-            for(NSString* pred_str in blacklist_preds) {
-                @try {
-                    [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
-                } @catch(NSException* exception) {
-                    NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
-                }
+        for(NSString* pred_str in blacklist_preds) {
+            @try {
+                [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
+            } @catch(NSException* exception) {
+                NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
             }
+        }
 
-            if([preds count] > 0) {
-                pred_blacklist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
-            }
-        }];
+        if([preds count] > 0) {
+            pred_blacklist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
+        }
     }
-
-    [queue waitUntilAllOperationsAreFinished];
 }
 
 - (BOOL)path:(NSString *)path hasFilenamePrefix:(NSString *)prefix {

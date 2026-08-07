@@ -30,6 +30,7 @@ extern char*** _NSGetArgv();
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
     }
 
+    // ponytail: /./ and // collapse are kept — NSURL standardizedURL preserves empty path segments.
     while([path containsString:@"//"]) {
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
     }
@@ -37,15 +38,6 @@ extern char*** _NSGetArgv();
     if([path length] > 1) {
         if([path hasSuffix:@"/"]) {
             path = [path substringToIndex:[path length] - 1];
-        }
-
-        while([path hasSuffix:@"/."]) {
-            path = [path stringByDeletingLastPathComponent];
-        }
-        
-        while([path hasSuffix:@"/.."]) {
-            path = [path stringByDeletingLastPathComponent];
-            path = [path stringByDeletingLastPathComponent];
         }
     }
 
@@ -104,10 +96,6 @@ extern char*** _NSGetArgv();
         return nil;
     }
 
-    // // Load standard (built-in) ruleset.
-    // NSString* ruleset_path = [@SHADOW_RULESETS stringByAppendingPathComponent:@"StandardRules.plist"];
-    // RulesetEngine* ruleset = [RulesetEngine rulesetWithPath:[RootBridge getJBPath:ruleset_path]];
-
     NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
 
     NSMutableSet* db_installed = [NSMutableSet new];
@@ -151,10 +139,6 @@ extern char*** _NSGetArgv();
                         }
                     }
 
-                    // if(ruleset && ![ruleset isPathCompliant:path]) {
-                    //     continue;
-                    // }
-                    
                     if([db_list_skip containsObject:[db_file lastPathComponent]]) {
                         [db_exception addObject:path];
                     } else {
