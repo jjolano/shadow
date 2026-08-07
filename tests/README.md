@@ -17,6 +17,7 @@ make -C tests test        # unit assertions, rooted + rootless modes
 make -C tests detect      # detector-probe battery against the shipped rulesets
 make -C tests adversary   # adversarial evasion battery (rooted + rootless)
 make -C tests detector    # real-detector vs Shadow: raw vs filtered passes
+make -C tests coverage    # gcov report: engine methods vs hooked API groups
 ```
 
 **CI:** `.github/workflows/tests.yml` runs all three on every push/PR
@@ -126,6 +127,32 @@ mode) and each child execs itself from the staged `.app` dir.
   (Cocoa is case-sensitive — documented divergence), and a leading `//`
   parses as a protocol-relative URL (faithful to the engine's
   standardization on any platform).
+
+## Hooked-API coverage
+
+The hook layer itself (HookKit interposition in `ShadowCore.dylib`) is
+device-only, but every hooked API funnels into a small set of engine entry
+points — that surface is what the harness covers. `make -C tests coverage`
+builds the harness with gcov instrumentation, runs every battery, and
+reports per-method line coverage of each entry point cross-referenced with
+the hooked-API groups that dispatch into it (from the actual call sites in
+`ShadowCore.dylib/hooks/*.x`):
+
+```
+isPathRestricted:options: 89.61%  [libc, dyld, sandbox, syscall, NSFileManager, ...]
+isURLRestricted:options:  64.71%  [NSFileManager, NSURL, NSString, ...]
+isCPathRestricted:       100.00%  [libc, dyld, sandbox, syscall]
+isSchemeRestricted:      100.00%  [LSApplicationWorkspace]
+isBundleIDRestricted:    100.00%  [LSApplicationWorkspace]
+isProtectedImagePath:    100.00%  [dyld, objc, NSBundle, UIImage]
+isAddrRestricted:        100.00%  [dyld, objc, mem, sandbox, NSThread, NSBundle]
+filterPathArray:         100.00%  [NSFileManager]
+generateDatabase:         98.33%  [SystemRules/shadowd]
+...
+```
+
+A method listed as `unexecuted` would mean the engine behavior behind some
+hooked API group is never exercised by any battery — a gap to fill.
 
 ## Known host limitations (deliberate)
 
