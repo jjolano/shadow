@@ -44,10 +44,13 @@ static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCou
 
     // Always resolve through a local count (the original rejects
     // outCount == NULL), then build a malloc'd NULL-terminated filtered copy
-    // with strdup'd names (the originals are owned by the original array) and
-    // free the original. outCount == NULL still gets the FILTERED array, and
-    // *outCount is only written when non-NULL. The old truncate-at-exec
-    // heuristic is gone (plan Wave 1c).
+    // and free the original. The name strings are BORROWED, not strdup'd:
+    // objc_copyImageNames copies only the pointer array — the strings live in
+    // the runtime's per-image storage and outlive the array, the same
+    // lifetime stock callers rely on (they free() only the array, so strdup'd
+    // strings would leak on every call). outCount == NULL still gets the
+    // FILTERED array, and *outCount is only written when non-NULL. The old
+    // truncate-at-exec heuristic is gone (plan Wave 1c).
     unsigned int localCount = 0;
     const char **result = original_objc_copyImageNames(&localCount);
 
@@ -79,7 +82,7 @@ static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCou
             continue;
         }
 
-        filtered[n] = strdup(name);
+        filtered[n] = name;
         n++;
     }
 
