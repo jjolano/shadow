@@ -69,6 +69,9 @@ detect: harness
 adversary: harness
 	$(RUN) tests/harness --adversary
 
+coverage: image
+	$(RUN) sh /src/tests/coverage-report.sh
+
 clean:
 	rm -f harness harness.d
 

@@ -26,6 +26,9 @@ jobs:
       - name: Real-detector vs Shadow (IOSSecuritySuite-style)
         run: make -C tests detector
 
+      - name: Engine coverage (gcov) vs hooked API groups
+        run: make -C tests coverage
+
   macos-foundation:
     runs-on: macos-latest
     steps:

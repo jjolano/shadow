@@ -42,8 +42,10 @@ static NSString* gRulesetsDir; // staged rulesets dir (both modes)
         return gRulesetsDir;
     }
 
+    // Mirrors the real RootBridge: /Library, /usr and /Applications live
+    // under the jbroot on rootless jailbreaks.
     if(gJBPath && path
-        && ([path hasPrefix:@"/Library/"] || [path hasPrefix:@"/usr/"])) {
+        && ([path hasPrefix:@"/Library/"] || [path hasPrefix:@"/usr/"] || [path hasPrefix:@"/Applications/"])) {
         return [gJBPath stringByAppendingString:path];
     }
 

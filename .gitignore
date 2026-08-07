@@ -6,3 +6,6 @@ build/
 .slim/deepwork/
 tests/harness
 tests/harness.d
+tests/*.gcno
+tests/*.gcda
+tests/*.gcov
