@@ -387,7 +387,7 @@ static bool replaced_dyld_get_image_uuid(const struct mach_header* mh, uuid_t uu
     return original_dyld_get_image_uuid(mh, uuid);
 }
 
-// Private libdyld export (dyld3/dyld4); resolved at install via MSFindSymbol.
+// Private libdyld export (dyld3/dyld4); resolved at install via findSymbolInImage:
 extern const char* dyld_image_get_installname(const struct mach_header* mh);
 static const char* (*original_dyld_image_get_installname)(const struct mach_header* mh);
 static const char* replaced_dyld_image_get_installname(const struct mach_header* mh) {
@@ -1155,7 +1155,7 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
 // Real dyld function pointers for the modern load/bulk-registration SPIs,
 // resolved by name from libdyld in shadowhook_dyld. The internal handlers
 // (shdw_image_load_handler / shdw_bulk_load_handler) MUST be registered with
-// real dyld through these raw pointers, not through the MSHookFunction
+// real dyld through these raw pointers, not through the hooked variants
 // out-params (original_dyld_register_*): those are only filled when the hook
 // batch executes (dylib.x queues first), so calling them at install time
 // would call NULL and crash.
@@ -1440,22 +1440,22 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // sync on every add/remove) before any hook below can fire.
     shdw_own_ranges_refresh();
 
-    MSHookFunction(_dyld_get_image_name, replaced_dyld_get_image_name, (void **) &original_dyld_get_image_name);
-    MSHookFunction(_dyld_image_count, replaced_dyld_image_count, (void **) &original_dyld_image_count);
-    MSHookFunction(_dyld_get_image_header, replaced_dyld_get_image_header, (void **) &original_dyld_get_image_header);
-    MSHookFunction(_dyld_get_image_vmaddr_slide, replaced_dyld_get_image_vmaddr_slide, (void **) &original_dyld_get_image_vmaddr_slide);
-    MSHookFunction(_dyld_register_func_for_add_image, replaced_dyld_register_func_for_add_image, (void **) &original_dyld_register_func_for_add_image);
-    MSHookFunction(_dyld_register_func_for_remove_image, replaced_dyld_register_func_for_remove_image, (void **) &original_dyld_register_func_for_remove_image);
+    [hooks hookFunction:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
+    [hooks hookFunction:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
+    [hooks hookFunction:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
+    [hooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
+    [hooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
+    [hooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
 
     // Resolve the exported dyld_all_image_infos global so we can patch its
     // arrays directly.
     _shdw_all_image_infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
 
     if(!_shdw_all_image_infos) {
-        MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+        HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
 
         if(libdyldImage) {
-            _shdw_all_image_infos = MSFindSymbol(libdyldImage, "dyld_all_image_infos");
+            _shdw_all_image_infos = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_all_image_infos"];
         }
     }
 
@@ -1470,9 +1470,9 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     }
 
     // Directly linkable — declared in vendor/apple/dyld_priv.h (Core.m calls
-    // it the same way); no MSFindSymbol needed.
-    MSHookFunction(dyld_image_path_containing_address, replaced_dyld_image_path_containing_address, (void **) &original_dyld_image_path_containing_address);
-    MSHookFunction(dyld_image_header_containing_address, replaced_dyld_image_header_containing_address, (void **) &original_dyld_image_header_containing_address);
+    // it the same way); no findSymbolInImage needed.
+    [hooks hookFunction:dyld_image_path_containing_address withReplacement:replaced_dyld_image_path_containing_address outOldPtr:(void **) &original_dyld_image_path_containing_address];
+    [hooks hookFunction:dyld_image_header_containing_address withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_image_header_containing_address];
 
     // Address-attribution siblings (plan Wave 1c): the slide pair is ancient
     // and directly linkable; _dyld_find_unwind_sections is SJLJ-guarded (not
@@ -1480,48 +1480,48 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // alias (dyld4, iOS 15+), _dyld_get_image_uuid (iOS 10+) and
     // dyld_image_get_installname (dyld3/4) are resolved by name below so the
     // legacy (iOS 9) build doesn't link against symbols it lacks.
-    MSHookFunction(_dyld_get_image_slide, replaced_dyld_get_image_slide, (void **) &original_dyld_get_image_slide);
+    [hooks hookFunction:_dyld_get_image_slide withReplacement:replaced_dyld_get_image_slide outOldPtr:(void **) &original_dyld_get_image_slide];
 
-    MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
+    [hooks hookFunction:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
 
-    MSHookFunction(dlerror, replaced_dlerror, (void **) &original_dlerror);
+    [hooks hookFunction:dlerror withReplacement:replaced_dlerror outOldPtr:(void **) &original_dlerror];
 
-    // Modern dyld SPIs (iOS 12+/13+). Resolved by name via MSFindSymbol so the
+    // Modern dyld SPIs (iOS 12+/13+). Resolved by name via findSymbolInImage: so the
     // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
     // silently on OSes without them.
-    MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+    HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
 
-    void* findUnwindSectionsPtr = MSFindSymbol(libdyldImage, "_dyld_find_unwind_sections");
+    void* findUnwindSectionsPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_find_unwind_sections"];
 
     if(findUnwindSectionsPtr) {
-        MSHookFunction(findUnwindSectionsPtr, replaced_dyld_find_unwind_sections, (void **) &original_dyld_find_unwind_sections);
+        [hooks hookFunction:findUnwindSectionsPtr withReplacement:replaced_dyld_find_unwind_sections outOldPtr:(void **) &original_dyld_find_unwind_sections];
     }
 
-    void* getImageHeaderContainingAddressPtr = MSFindSymbol(libdyldImage, "_dyld_get_image_header_containing_address");
+    void* getImageHeaderContainingAddressPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_get_image_header_containing_address"];
 
     if(getImageHeaderContainingAddressPtr) {
-        MSHookFunction(getImageHeaderContainingAddressPtr, replaced_dyld_image_header_containing_address, (void **) &original_dyld_get_image_header_containing_address);
+        [hooks hookFunction:getImageHeaderContainingAddressPtr withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_get_image_header_containing_address];
     }
 
-    void* getImageUuidPtr = MSFindSymbol(libdyldImage, "_dyld_get_image_uuid");
+    void* getImageUuidPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_get_image_uuid"];
 
     if(getImageUuidPtr) {
-        MSHookFunction(getImageUuidPtr, replaced_dyld_get_image_uuid, (void **) &original_dyld_get_image_uuid);
+        [hooks hookFunction:getImageUuidPtr withReplacement:replaced_dyld_get_image_uuid outOldPtr:(void **) &original_dyld_get_image_uuid];
     }
 
-    void* getInstallnamePtr = MSFindSymbol(libdyldImage, "dyld_image_get_installname");
+    void* getInstallnamePtr = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_image_get_installname"];
 
     if(getInstallnamePtr) {
-        MSHookFunction(getInstallnamePtr, replaced_dyld_image_get_installname, (void **) &original_dyld_image_get_installname);
+        [hooks hookFunction:getInstallnamePtr withReplacement:replaced_dyld_image_get_installname outOldPtr:(void **) &original_dyld_image_get_installname];
     }
 
-    void* images_for_addresses_ptr = MSFindSymbol(libdyldImage, "_dyld_images_for_addresses");
+    void* images_for_addresses_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_images_for_addresses"];
 
     if(images_for_addresses_ptr) {
-        MSHookFunction(images_for_addresses_ptr, replaced_dyld_images_for_addresses, (void **) &original_dyld_images_for_addresses);
+        [hooks hookFunction:images_for_addresses_ptr withReplacement:replaced_dyld_images_for_addresses outOldPtr:(void **) &original_dyld_images_for_addresses];
     }
 
-    void* register_for_image_loads_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_image_loads");
+    void* register_for_image_loads_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_register_for_image_loads"];
 
     if(register_for_image_loads_ptr) {
         shdw_real_register_for_image_loads = (void (*)(void (*)(const struct mach_header* mh, const char* path, bool unloadable))) register_for_image_loads_ptr;
@@ -1540,10 +1540,10 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
             shdw_real_register_for_image_loads(shdw_image_load_handler);
         }
 
-        MSHookFunction(register_for_image_loads_ptr, replaced_dyld_register_for_image_loads, (void **) &original_dyld_register_for_image_loads);
+        [hooks hookFunction:register_for_image_loads_ptr withReplacement:replaced_dyld_register_for_image_loads outOldPtr:(void **) &original_dyld_register_for_image_loads];
     }
 
-    void* register_for_bulk_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_bulk_image_loads");
+    void* register_for_bulk_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_register_for_bulk_image_loads"];
 
     if(register_for_bulk_ptr) {
         shdw_real_register_for_bulk_image_loads = (void (*)(void (*)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]))) register_for_bulk_ptr;
@@ -1557,46 +1557,46 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
             shdw_real_register_for_bulk_image_loads(shdw_bulk_load_handler);
         }
 
-        MSHookFunction(register_for_bulk_ptr, replaced_dyld_register_for_bulk_image_loads, (void **) &original_dyld_register_for_bulk_image_loads);
+        [hooks hookFunction:register_for_bulk_ptr withReplacement:replaced_dyld_register_for_bulk_image_loads outOldPtr:(void **) &original_dyld_register_for_bulk_image_loads];
     }
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // dlopen hook code from Choicy
-    MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+    HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
     void* libdyldHandle = dlopen("/usr/lib/system/libdyld.dylib", RTLD_NOW);
 
-    void* dlopen_global_var_ptr = MSFindSymbol(libdyldImage, "__ZN5dyld45gDyldE");
+    void* dlopen_global_var_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZN5dyld45gDyldE"];
 
-    MSHookFunction(dlopen, replaced_dlopen, (void **) &original_dlopen);
+    [hooks hookFunction:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
 
     if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1 && !dlopen_global_var_ptr) {
-        void* dlopen_internal_ptr = MSFindSymbol(libdyldImage, "__ZL15dlopen_internalPKciPv");
+        void* dlopen_internal_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZL15dlopen_internalPKciPv"];
 
         if(dlopen_internal_ptr) {
-            MSHookFunction(dlopen_internal_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
+            [hooks hookFunction:dlopen_internal_ptr withReplacement:replaced_dlopen_internal outOldPtr:(void **) &original_dlopen_internal];
         }
     } else {
         void* dlopen_from_ptr = dlsym(libdyldHandle, "dlopen_from");
 
         if(dlopen_from_ptr) {
-            MSHookFunction(dlopen_from_ptr, replaced_dlopen_internal, (void **) &original_dlopen_internal);
+            [hooks hookFunction:dlopen_from_ptr withReplacement:replaced_dlopen_internal outOldPtr:(void **) &original_dlopen_internal];
         }
     }
 
-    // MSCloseImage(libdyldImage);
+    // [hooks closeImage:libdyldImage];
 }
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
-    MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
+    [hooks hookFunction:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
 
     // CFBundle symbol-resolution wrappers (plan Wave 3): same bypass surface
     // as dlsym, reached through CoreFoundation.
-    MSHookFunction(CFBundleGetFunctionPointerForName, replaced_CFBundleGetFunctionPointerForName, (void **) &original_CFBundleGetFunctionPointerForName);
-    MSHookFunction(CFBundleGetFunctionPointersForNames, replaced_CFBundleGetFunctionPointersForNames, (void **) &original_CFBundleGetFunctionPointersForNames);
-    MSHookFunction(CFBundleGetDataPointerForName, replaced_CFBundleGetDataPointerForName, (void **) &original_CFBundleGetDataPointerForName);
+    [hooks hookFunction:CFBundleGetFunctionPointerForName withReplacement:replaced_CFBundleGetFunctionPointerForName outOldPtr:(void **) &original_CFBundleGetFunctionPointerForName];
+    [hooks hookFunction:CFBundleGetFunctionPointersForNames withReplacement:replaced_CFBundleGetFunctionPointersForNames outOldPtr:(void **) &original_CFBundleGetFunctionPointersForNames];
+    [hooks hookFunction:CFBundleGetDataPointerForName withReplacement:replaced_CFBundleGetDataPointerForName outOldPtr:(void **) &original_CFBundleGetDataPointerForName];
 }
 
 void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks) {
-    MSHookFunction(dladdr, replaced_dladdr, (void **) &original_dladdr);
+    [hooks hookFunction:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
 }

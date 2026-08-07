@@ -783,34 +783,34 @@ static char*** replaced_NSGetEnviron(void) {
 
 // todo: research on "supervised syscalls"
 void shadowhook_syscall(HKSubstitutor* hooks) {
-    MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
-    MSHookFunction(csops, replaced_csops, (void **) &original_csops);
+    [hooks hookFunction:syscall withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
+    [hooks hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
-    void* sym___syscall = MSFindSymbol(NULL, "___syscall");
+    void* sym___syscall = [hooks findSymbolInImage:NULL symbolName:@"___syscall"];
     if(sym___syscall) {
-        MSHookFunction(sym___syscall, replaced___syscall, (void **) &original___syscall);
+        [hooks hookFunction:sym___syscall withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    void* sym_misc = MSFindSymbol(NULL, "_sysctlbyname");
+    void* sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sysctlbyname"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_sysctlbyname, (void **) &original_sysctlbyname);
+        [hooks hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
     }
 
-    sym_misc = MSFindSymbol(NULL, "___sysctlbyname");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"___sysctlbyname"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced___sysctlbyname, (void **) &original___sysctlbyname);
+        [hooks hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
     }
 
-    sym_misc = MSFindSymbol(NULL, "_csops_audittoken");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_csops_audittoken"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_csops_audittoken, (void **) &original_csops_audittoken);
+        [hooks hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
     }
 
-    sym_misc = MSFindSymbol(NULL, "_NSGetEnviron");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_NSGetEnviron"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_NSGetEnviron, (void **) &original_NSGetEnviron);
+        [hooks hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
 
     // d4001001

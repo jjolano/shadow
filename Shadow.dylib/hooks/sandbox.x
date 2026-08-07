@@ -711,65 +711,65 @@ static kern_return_t replaced_task_get_exception_ports(task_t task, exception_ma
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
-    MSHookFunction(sandbox_check, replaced_sandbox_check, (void **) &original_sandbox_check);
-    MSHookFunction(fcntl, replaced_fcntl, (void **) &original_fcntl);
-    MSHookFunction(host_get_special_port, replaced_host_get_special_port, (void **) &original_host_get_special_port);
-    MSHookFunction(task_get_special_port, replaced_task_get_special_port, (void **) &original_task_get_special_port);
-    // MSHookFunction(task_get_exception_ports, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
-    MSHookFunction(task_for_pid, replaced_task_for_pid, (void **) &original_task_for_pid);
-    MSHookFunction(sigaction, replaced_sigaction, (void **) &original_sigaction);
-    // MSHookFunction(MISValidateSignatureAndCopyInfo, replaced_MISValidateSignatureAndCopyInfo, (void **) &original_MISValidateSignatureAndCopyInfo);
+    [hooks hookFunction:sandbox_check withReplacement:replaced_sandbox_check outOldPtr:(void **) &original_sandbox_check];
+    [hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
+    [hooks hookFunction:host_get_special_port withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
+    [hooks hookFunction:task_get_special_port withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
+    // [hooks hookFunction:task_get_exception_ports withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
+    [hooks hookFunction:task_for_pid withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
+    [hooks hookFunction:sigaction withReplacement:replaced_sigaction outOldPtr:(void **) &original_sigaction];
+    // [hooks hookFunction:MISValidateSignatureAndCopyInfo withReplacement:replaced_MISValidateSignatureAndCopyInfo outOldPtr:(void **) &original_MISValidateSignatureAndCopyInfo];
 
-    MSHookFunction(execle, replaced_execle, NULL);
-    MSHookFunction(execlp, replaced_execlp, NULL);
-    MSHookFunction(execl, replaced_execl, NULL);
-    MSHookFunction(execve, replaced_execve, (void **) &original_execve);
-    MSHookFunction(execvp, replaced_execvp, (void **) &original_execvp);
-    MSHookFunction(execv, replaced_execv, NULL);
-    MSHookFunction(posix_spawn, replaced_posix_spawn, (void **) &original_posix_spawn);
-    MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
-    MSHookFunction(fork, replaced_fork, (void **) &original_fork);
-    MSHookFunction(vfork, replaced_vfork, (void **) &original_vfork);
+    [hooks hookFunction:execle withReplacement:replaced_execle outOldPtr:NULL];
+    [hooks hookFunction:execlp withReplacement:replaced_execlp outOldPtr:NULL];
+    [hooks hookFunction:execl withReplacement:replaced_execl outOldPtr:NULL];
+    [hooks hookFunction:execve withReplacement:replaced_execve outOldPtr:(void **) &original_execve];
+    [hooks hookFunction:execvp withReplacement:replaced_execvp outOldPtr:(void **) &original_execvp];
+    [hooks hookFunction:execv withReplacement:replaced_execv outOldPtr:NULL];
+    [hooks hookFunction:posix_spawn withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn];
+    [hooks hookFunction:posix_spawnp withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp];
+    [hooks hookFunction:fork withReplacement:replaced_fork outOldPtr:(void **) &original_fork];
+    [hooks hookFunction:vfork withReplacement:replaced_vfork outOldPtr:(void **) &original_vfork];
 
     // Signal aliases: runtime-resolved, skipped cleanly when absent.
-    void* sym_signal = MSFindSymbol(NULL, "_signal");
+    void* sym_signal = [hooks findSymbolInImage:NULL symbolName:@"_signal"];
     if(sym_signal) {
-        MSHookFunction(sym_signal, replaced_signal, (void **) &original_signal);
+        [hooks hookFunction:sym_signal withReplacement:replaced_signal outOldPtr:(void **) &original_signal];
     }
 
-    sym_signal = MSFindSymbol(NULL, "_bsd_signal");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"_bsd_signal"];
     if(sym_signal) {
-        MSHookFunction(sym_signal, replaced_bsd_signal, (void **) &original_bsd_signal);
+        [hooks hookFunction:sym_signal withReplacement:replaced_bsd_signal outOldPtr:(void **) &original_bsd_signal];
     }
 
-    sym_signal = MSFindSymbol(NULL, "___signal_nobind");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"___signal_nobind"];
     if(sym_signal) {
-        MSHookFunction(sym_signal, replaced___signal_nobind, (void **) &original___signal_nobind);
+        [hooks hookFunction:sym_signal withReplacement:replaced___signal_nobind outOldPtr:(void **) &original___signal_nobind];
     }
 
-    sym_signal = MSFindSymbol(NULL, "___sigaction");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"___sigaction"];
     if(sym_signal) {
-        MSHookFunction(sym_signal, replaced___sigaction, (void **) &original___sigaction);
+        [hooks hookFunction:sym_signal withReplacement:replaced___sigaction outOldPtr:(void **) &original___sigaction];
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    void* sym_misc = MSFindSymbol(NULL, "_system");
+    void* sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_system"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_system, (void **) &original_system);
+        [hooks hookFunction:sym_misc withReplacement:replaced_system outOldPtr:(void **) &original_system];
     }
 
-    sym_misc = MSFindSymbol(NULL, "_popen");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_popen"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_popen, (void **) &original_popen);
+        [hooks hookFunction:sym_misc withReplacement:replaced_popen outOldPtr:(void **) &original_popen];
     }
 
-    sym_misc = MSFindSymbol(NULL, "_sandbox_check_by_audit_token");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sandbox_check_by_audit_token"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_sandbox_check_by_audit_token, (void **) &original_sandbox_check_by_audit_token);
+        [hooks hookFunction:sym_misc withReplacement:replaced_sandbox_check_by_audit_token outOldPtr:(void **) &original_sandbox_check_by_audit_token];
     }
 
-    sym_misc = MSFindSymbol(NULL, "_task_get_exception_ports");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_task_get_exception_ports"];
     if(sym_misc) {
-        MSHookFunction(sym_misc, replaced_task_get_exception_ports, (void **) &original_task_get_exception_ports);
+        [hooks hookFunction:sym_misc withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     }
 }
