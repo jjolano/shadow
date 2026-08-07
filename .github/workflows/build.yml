@@ -19,6 +19,23 @@ jobs:
       # are source repos, not built frameworks), so no submodule checkout here.
       - uses: actions/checkout@v4
 
+      - name: Verify dep pins track upstream master
+        run: |
+          set -euo pipefail
+          cd .github/scripts
+          for dep in HOOKKIT:jjolano/HookKit ROOTBRIDGE:jjolano/RootBridge \
+                     ALTLIST:opa334/AltList LIBSANDY:opa334/libSandy; do
+            var=${dep%%:*}; repo=${dep#*:}
+            pin=$(grep "^$var=" build-deps.sh | cut -d= -f2)
+            master=$(git ls-remote "https://github.com/$repo.git" HEAD | cut -f1)
+            if [[ "$pin" != "$master" ]]; then
+              echo "stale $var pin: pinned $pin, master $master"
+              echo "bump: sed -i 's/^$var=.*/$var=$master/' build-deps.sh + gitlink update"
+              exit 1
+            fi
+            echo "$var pin current"
+          done
+
       - name: Install Theos
         run: |
           sudo apt-get update
