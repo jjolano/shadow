@@ -44,7 +44,8 @@
 
 + (NSBundle *)bundleForClass:(Class)aClass {
     if(!isCallerExternal() && [_shadow isAddrRestricted:(void *)aClass]) {
-        return nil;
+        // Nonnull contract: report the main bundle, never nil.
+        return [NSBundle mainBundle];
     }
 
     return %orig;
@@ -282,6 +283,168 @@
     }
 
     return result;
+}
+
+// ponytail: restricted receivers are unreachable in practice — every bundle
+// creation path nils or filters them (bundleWithPath/URL, initWithPath/URL,
+// bundleWithIdentifier, allBundles/allFrameworks), and +bundleForClass:
+// redirects protected classes to the main bundle. These checks are
+// defense-in-depth for objects created before the hooks installed.
+
+- (NSDictionary<NSString *, id> *)infoDictionary {
+    NSDictionary* result = %orig;
+
+    if(!isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        NSMutableDictionary* filtered_result = [result mutableCopy];
+        [filtered_result removeObjectForKey:@"SignerIdentity"];
+        result = [filtered_result copy];
+    }
+
+    return result;
+}
+
+- (NSDictionary<NSString *, id> *)localizedInfoDictionary {
+    NSDictionary* result = %orig;
+
+    if(!isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        NSMutableDictionary* filtered_result = [result mutableCopy];
+        [filtered_result removeObjectForKey:@"SignerIdentity"];
+        result = [filtered_result copy];
+    }
+
+    return result;
+}
+
+// Path getters check the ORIGINAL result (no receiver-path circularity): a
+// protected path is replaced with the main-bundle equivalent for the
+// nonnull contracts (bundlePath/bundleURL) and nilled for the rest.
+- (NSString *)bundlePath {
+    NSString* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:result]) {
+        return [[NSBundle mainBundle] bundlePath];
+    }
+
+    return result;
+}
+
+- (NSURL *)bundleURL {
+    NSURL* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
+        return [[NSBundle mainBundle] bundleURL];
+    }
+
+    return result;
+}
+
+- (NSString *)resourcePath {
+    NSString* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:result]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSURL *)resourceURL {
+    NSURL* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSString *)executablePath {
+    NSString* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:result]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSURL *)executableURL {
+    NSURL* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSString *)pathForAuxiliaryExecutable:(NSString *)executableName {
+    NSString* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (NSURL *)URLForAuxiliaryExecutable:(NSString *)executableName {
+    NSURL* result = %orig;
+
+    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
+        return nil;
+    }
+
+    return result;
+}
+
+- (BOOL)isLoaded {
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)load {
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)loadAndReturnError:(NSError * _Nullable *)error {
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:[self bundlePath]];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)preflightAndReturnError:(NSError * _Nullable *)error {
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:[self bundlePath]];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)unload {
+    if(!isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        // No-op for restricted receivers.
+        return NO;
+    }
+
+    return %orig;
 }
 %end
 %end
