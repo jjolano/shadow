@@ -234,4 +234,25 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
     return restricted;
 }
+
+// C0-3: ruleset-driven bundle-ID check (the static well-known list lives in
+// -[Shadow isBundleIDRestricted:], which consults this for the user-extensible
+// half). Rulesets normalize their entries to lowercase at load.
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID {
+    if(!bundleID || [bundleID length] == 0) {
+        return NO;
+    }
+
+    [self _checkRulesetChanges];
+
+    NSString* bundleID_lower = [bundleID lowercaseString];
+
+    for(RulesetEngine* ruleset in rulesets) {
+        if([ruleset isBundleIDRestricted:bundleID_lower]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
 @end

@@ -15,5 +15,6 @@ __attribute__((visibility("default")))
 
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID;
 @end
 #endif

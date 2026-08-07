@@ -404,4 +404,39 @@ done:
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
     return [backend isSchemeRestricted:scheme];
 }
+
+// C0-3: hidden-app predicate. Static list of well-known package managers and
+// jailbreak loaders (case-insensitive; the app-facing surface — LSApplication
+// results, openURL, canOpenURL — filters these so a detector can't proxy
+// through them), OR any ruleset's BlacklistBundleIDs for user extension.
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID {
+    if(!bundleID || [bundleID length] == 0) {
+        return NO;
+    }
+
+    static NSSet* staticBundleIDs = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        staticBundleIDs = [NSSet setWithArray:@[
+            @"com.saurik.cydia",
+            @"org.coolstar.sileo",
+            @"xyz.willy.zebra",
+            @"com.opa334.jailbreak",       // Dopamine
+            @"science.xnu.underscore",     // palera1n
+            @"com.llsc12.palera1nloader",
+            @"com.samiiau.loader",         // jailbreak.app
+            @"jp.r333d.taurine",
+            @"com.undecimus.unc0ver",
+            @"eu.taurine.taurine",
+            @"com.apt.theos"
+        ]];
+    });
+
+    if([staticBundleIDs containsObject:[bundleID lowercaseString]]) {
+        return YES;
+    }
+
+    return [backend isBundleIDRestricted:bundleID];
+}
 @end

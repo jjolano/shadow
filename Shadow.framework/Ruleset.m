@@ -10,6 +10,7 @@
     BOOL whitelist_match_all; // a bare "/" prefix matches every path
     BOOL blacklist_match_all;
     NSDictionary<NSString *, NSSet<NSString *>*>* dict_structure;
+    NSSet<NSString *>* set_bundleids; // C0-3: BlacklistBundleIDs, lowercased at load
 }
 
 // Malformed-ruleset guards: validate/filter entries before compiling so a bad
@@ -223,6 +224,23 @@
         }];
     }
 
+    // C0-3: bundle-ID blacklist, normalized to lowercase at load (matches the
+    // scheme normalization above) so case-variant bundle-ID probes can never
+    // bypass a rule.
+    NSArray* bundleids = [self _validatedStringArray:[payloadDictionary objectForKey:@"BlacklistBundleIDs"] forKey:@"BlacklistBundleIDs"];
+
+    if(bundleids) {
+        [queue addOperationWithBlock:^{
+            NSMutableSet* lower = [NSMutableSet setWithCapacity:[bundleids count]];
+
+            for(NSString* bundleID in bundleids) {
+                [lower addObject:[bundleID lowercaseString]];
+            }
+
+            set_bundleids = [lower copy];
+        }];
+    }
+
     NSArray* whitelist_preds = [self _validatedStringArray:[payloadDictionary objectForKey:@"WhitelistPredicates"] forKey:@"WhitelistPredicates"];
 
     if(whitelist_preds) {
@@ -425,5 +443,15 @@
     // C0-3: schemes are normalized to lowercase at load (_compile); lowercase
     // the query here too so a case-variant probe can never bypass a rule.
     return [set_urlschemes containsObject:[scheme lowercaseString]];
+}
+
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID {
+    if(!bundleID || [bundleID length] == 0) {
+        return NO;
+    }
+
+    // C0-3: same normalization as the scheme set — lowercase at load,
+    // lowercase the query here.
+    return [set_bundleids containsObject:[bundleID lowercaseString]];
 }
 @end

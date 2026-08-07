@@ -24,5 +24,6 @@ __attribute__((visibility("default")))
 - (BOOL)isPathWhitelisted:(NSString *)path;
 - (BOOL)isPathBlacklisted:(NSString *)path;
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID;
 @end
 #endif

@@ -48,6 +48,11 @@ __attribute__((visibility("default")))
 - (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options;
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
+
+// C0-3: hidden-app predicate — case-insensitive match against the well-known
+// package-manager/loader bundle IDs (static list) or any ruleset's
+// BlacklistBundleIDs (user-extensible).
+- (BOOL)isBundleIDRestricted:(NSString *)bundleID;
 @end
 
 // C0-2 internal read scope (see the note above the interface). The cleanup
