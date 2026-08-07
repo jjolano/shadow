@@ -36,15 +36,16 @@ typedef const struct HKImage* HKImageRef;
  *   Dobby           no        yes***    yes       no
  *   Frida           no        yes****   no        yes
  *   fishhook        no        yes*      no        no
- *   Swift           no        no (new API only) no  no
- *     * exported symbols only, rebinding by symbol name (see fishhook caveat)
- *     ** arm64/arm64e only (see native caveat)
- *     *** arm64/arm64e only; inline patching needs relaxed codesigning (see Dobby caveat)
+ *   Swift           no        no*****   no        no
+ *     * exported symbols only, rebinding by symbol name
+ *     ** arm64/arm64e only
+ *     *** arm64/arm64e only; inline patching needs relaxed codesigning
  *     **** iOS 14+ and arm64/arm64e only; inline patching needs relaxed
- *          codesigning (see Frida caveat)
+ *          codesigning
  *     ***** Swift vtable hooking is a separate API
  *          (hookSwiftMethodInClass:withName:... / ...withIndex:...), not the
- *          message/function columns (see the Swift caveat below)
+ *          message/function columns
+ *   Each footnote is expanded in the per-backend caveats linked below.
  *
  * Symbol name convention: names passed to findSymbolInImage:/
  * findSymbolsInImage: are Substrate-style — C symbols carry no leading
@@ -52,62 +53,21 @@ typedef const struct HKImage* HKImageRef;
  * The Substrate/MS and fishhook backends pass names through unchanged;
  * ElleKit accepts both forms.
  *
- * Threading: hook calls are not thread-safe with respect to the batch queue
- * (enqueue and executeHooks must not race). The native Substitute API
- * additionally requires the main thread.
+ * Threading: the batch queue is thread-safe — enqueue may race executeHooks,
+ * which drains a snapshot under the same lock, so every queued hook runs
+ * exactly once. Not synchronized: last-error state (getLibErrno: reports the
+ * last hook call on that substitutor, from whichever thread made it) and
+ * backend selection — settle types / initLibraries before hooking starts. The
+ * native Substitute API additionally requires the main thread.
  *
  * Batch storage lifetime: while batching, the caller's old_ptr is only
  * written by executeHooks and is never retained past it.
  *
- * fishhook caveat: symbol-based rebinding only — private/interior addresses
- * are not rebindable, and old_ptr reflects the state at hook time (fishhook
- * retains the rebinding for all future image loads). arm64e PAC is handled:
- * __auth_got slots are resigned with the asia key and slot-address
- * discriminator, and old_ptr is resigned to the plain function-pointer
- * scheme. A hook whose symbol no loaded image references is refused
- * (HK_ERR_NOT_SUPPORTED) instead of silently succeeding. The rebinding list
- * is thread-safe.
- *
- * native caveat: HookKit's own engine, requiring no hooking library to be
- * installed. Never selected automatically — pass HK_LIB_NATIVE to
- * substitutorWithTypes: to opt in. arm64/arm64e only; on armv7 it reports
- * unavailable. Inline patching needs relaxed codesigning, which holds in a
- * tweak-injected process but not in an unmodified one, and function hooks are
- * refused on targets too short to patch without clobbering their neighbour.
- * Hooks must be installed at load time: patching is not atomic and so is not
- * safe against code already running on another thread.
- *
- * Dobby caveat: inline patching needs relaxed codesigning, which holds in a
- * tweak-injected process but not in an unmodified one — same constraint as
- * native. arm64/arm64e only (the vendored static lib has no armv7 slice);
- * on armv7 it reports unavailable. No ObjC message hooking.
- *
- * Frida caveat: hooks through the HKGum.dylib wrapper (frida-gum devkit,
- * LGPL-2.1 with wxWindows exception) dlopen'd at runtime; the framework never
- * links gum directly. The devkit's minos=14.0 means iOS 14+ only — on iOS
- * 12/13 dyld refuses to load the wrapper, so dlopen failure gates it. Opt-in
- * only (HK_LIB_FRIDA); never selected automatically. arm64/arm64e only (no
- * armv7 gum devkit) — on armv7 dlopen fails. Inline patching needs relaxed
- * codesigning, same as native/Dobby. Hooks must be installed at load time:
- * the prologue patch is not atomic and so is not safe against code already
- * running on another thread.
- *
- * Swift caveat: vtable hooking via the Swift backend (HK_LIB_SWIFT, opt-in,
- * never selected automatically). Rewrites the target slot in the class
- * metadata vtable, so it affects Swift callers of the method only. v1 scope:
- * the class's own methods (no inherited methods), non-generic classes, no
- * resilient superclass, no async methods, no class methods, no extensions;
- * @objc dynamic methods are hookable the same way (their Swift callers still
- * dispatch through the vtable). Devirtualization and inlining can silently
- * bypass vtable dispatch, and KVO-swizzled instances are unaffected. The slot
- * write is a single aligned pointer store (≈ atomic) with no code patching,
- * so no relaxed codesigning is required for the write itself. On arm64e the
- * engine validates its signing recipe against the live slot before writing
- * (PAC pre-write self-check): a mismatch fails the hook cleanly instead of
- * corrupting memory. Swift 5 ABI (iOS 12.2+) and arm64/arm64e only. The
- * replacement must be a raw function pointer with the Swift calling
- * convention (self in x20, heap context in x21 on arm64) — an
- * objc_msgSend-convention IMP will misbehave.
+ * Per-backend caveats — fishhook symbol-only rebinding; native/Dobby/Frida
+ * codesigning, arch and load-time constraints; Swift vtable scope and calling
+ * convention — live in the "Semantics" section of README.md, which is the
+ * canonical copy:
+ * https://github.com/jjolano/HookKit#semantics
  */
 
 @interface HKSubstitutor : NSObject
@@ -117,7 +77,9 @@ typedef const struct HKImage* HKImageRef;
 // The backend type actually in use (HK_LIB_NONE if no backend is available).
 @property (readonly, nonatomic) hookkit_lib_t activeType;
 
-// Internally loads selected hooking libraries and resolves symbols. Use if setting the types property manually after instance creation.
+// Resolves the backend from the types property. One-shot: the first call that
+// finds a backend wins and later calls are no-ops, so set types before calling.
+// The substitutorWith... constructors already do this for you.
 - (void)initLibraries;
 
 // Returns an integer representing available substitutor types on the system. Use getSubstitutorTypeInfo to receive an array for more details.
