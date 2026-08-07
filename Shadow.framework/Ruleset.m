@@ -1,5 +1,15 @@
 #import <Shadow/Ruleset.h>
 
+// Compiled-ruleset cache: the lookup tables _compile builds are archived next
+// to the ruleset plist and restored while the plist's mtime and size are
+// unchanged, so every injected process skips the plist parse and recompile of
+// MB-scale generated rulesets at spawn. The cache is a pure speedup: any
+// miss, mismatch, unreadable or corrupt cache falls back to the parse +
+// compile path, and every restore is type-validated so a bad cache can never
+// crash a lookup.
+NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
+static const NSInteger kShadowRulesetCacheVersion = 1;
+
 @interface RulesetEngine () {
     // Compiled lookup tables (built in _compile, mirroring set_whitelist etc.):
     // prefix rules grouped by parent directory so a path only compares the
@@ -17,6 +27,12 @@
 // ruleset is logged and skipped, never fatal.
 - (NSArray<NSString *>*)_validatedStringArray:(id)value forKey:(NSString *)key;
 - (NSDictionary*)_validatedStructure:(id)value;
+
+// Compiled-cache helpers (see rulesetWithURL:). Best-effort: a cache miss or
+// any failure returns/does nothing, never failing the compile path.
++ (RulesetEngine *)_rulesetFromCompiledCacheForURL:(NSURL *)url;
++ (void)_writeCompiledCacheForRuleset:(RulesetEngine *)ruleset url:(NSURL *)url;
+- (BOOL)_restoreFromCache:(NSDictionary *)cached;
 @end
 
 @implementation RulesetEngine
@@ -33,6 +49,16 @@
         }
 
         NSDictionary* ruleset_dict = nil;
+
+        // Try the compiled cache first: while the plist's mtime+size are
+        // unchanged, the archived lookup tables are exactly what _compile
+        // would build, so skip the plist parse and recompile entirely.
+        RulesetEngine* fromCache = [self _rulesetFromCompiledCacheForURL:url];
+
+        if(fromCache) {
+            [lastKnownGood setObject:fromCache forKey:[url path]];
+            return fromCache;
+        }
 
         @try {
             ruleset_dict = [NSDictionary dictionaryWithContentsOfURL:url];
@@ -52,6 +78,7 @@
             }
 
             if(ruleset) {
+                [self _writeCompiledCacheForRuleset:ruleset url:url];
                 [lastKnownGood setObject:ruleset forKey:[url path]];
                 return ruleset;
             }
@@ -66,6 +93,187 @@
     }
 
     return nil;
+}
+
+// NSNull is stored for nil fields so every cache entry has every key; this
+// unwraps it back to nil after validation.
+static id shdwCacheUnwrapNil(id value) {
+    return [value isKindOfClass:[NSNull class]] ? nil : value;
+}
+
+// Loads and validates the compiled cache for a ruleset URL. Returns nil on a
+// miss, an mtime/size mismatch, an unreadable/corrupt archive, or a
+// type-invalid payload — callers then fall back to parse + compile.
++ (RulesetEngine *)_rulesetFromCompiledCacheForURL:(NSURL *)url {
+    NSString* plistPath = [url path];
+    NSDictionary* plistAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:plistPath error:nil];
+
+    if(!plistAttrs) {
+        return nil;
+    }
+
+    NSDictionary* cached = nil;
+
+    // The modern NSKeyedUnarchiver entry points (initForReadingFromData:…,
+    // unarchivedObjectOfClass:…) require iOS 11; the deployment target is
+    // iOS 9, so the legacy API is the correct one here — deprecation
+    // suppression is deliberate, not debt.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    @try {
+        cached = [NSKeyedUnarchiver unarchiveObjectWithFile:[plistPath stringByAppendingString:kShadowRulesetCacheSuffix]];
+    } @catch(NSException* exception) {
+        // Corrupt archive: fall back to compiling from the plist.
+        cached = nil;
+    }
+#pragma clang diagnostic pop
+
+    // The cache is only reusable while the plist it was compiled from is
+    // byte-identical, as evidenced by an unchanged mtime and size.
+    if(![cached isKindOfClass:[NSDictionary class]]
+        || ![[cached objectForKey:@"version"] isEqualToNumber:@(kShadowRulesetCacheVersion)]
+        || ![[cached objectForKey:@"mtime"] isEqualToNumber:@([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate])]
+        || ![[cached objectForKey:@"size"] isEqualToNumber:@([plistAttrs fileSize])]) {
+        return nil;
+    }
+
+    RulesetEngine* ruleset = [self new];
+
+    if(![ruleset _restoreFromCache:cached]) {
+        return nil;
+    }
+
+    return ruleset;
+}
+
+// Type-validates and installs the cached compiled state. Returns NO on any
+// type mismatch so the caller falls back to _compile; the cache file is
+// Shadow's own artifact but a corrupt or stale-format file must never crash
+// a lookup.
+- (BOOL)_restoreFromCache:(NSDictionary *)cached {
+    if(![[cached objectForKey:@"payload"] isKindOfClass:[NSDictionary class]]) {
+        return NO;
+    }
+
+    for(NSString* key in @[@"schemes", @"whitelist", @"blacklist", @"bundleids"]) {
+        id value = [cached objectForKey:key];
+
+        if(![value isKindOfClass:[NSSet class]]) {
+            if([value isKindOfClass:[NSNull class]]) {
+                continue;
+            }
+
+            return NO;
+        }
+
+        for(id member in value) {
+            if(![member isKindOfClass:[NSString class]]) {
+                return NO;
+            }
+        }
+    }
+
+    for(NSString* key in @[@"whitelist_prefixes", @"blacklist_prefixes", @"structure"]) {
+        id value = [cached objectForKey:key];
+
+        if(![value isKindOfClass:[NSDictionary class]]) {
+            if([value isKindOfClass:[NSNull class]]) {
+                continue;
+            }
+
+            return NO;
+        }
+
+        for(id dictKey in value) {
+            if(![dictKey isKindOfClass:[NSString class]]) {
+                return NO;
+            }
+
+            id set = [value objectForKey:dictKey];
+
+            if(![set isKindOfClass:[NSSet class]]) {
+                return NO;
+            }
+
+            for(id member in set) {
+                if(![member isKindOfClass:[NSString class]]) {
+                    return NO;
+                }
+            }
+        }
+    }
+
+    for(NSString* key in @[@"pred_whitelist", @"pred_blacklist"]) {
+        id value = [cached objectForKey:key];
+
+        if(![value isKindOfClass:[NSPredicate class]] && ![value isKindOfClass:[NSNull class]]) {
+            return NO;
+        }
+    }
+
+    if(![[cached objectForKey:@"whitelist_match_all"] isKindOfClass:[NSNumber class]]
+        || ![[cached objectForKey:@"blacklist_match_all"] isKindOfClass:[NSNumber class]]) {
+        return NO;
+    }
+
+    payloadDictionary = [cached objectForKey:@"payload"];
+    set_urlschemes = shdwCacheUnwrapNil([cached objectForKey:@"schemes"]);
+    set_whitelist = shdwCacheUnwrapNil([cached objectForKey:@"whitelist"]);
+    set_blacklist = shdwCacheUnwrapNil([cached objectForKey:@"blacklist"]);
+    set_bundleids = shdwCacheUnwrapNil([cached objectForKey:@"bundleids"]);
+    dict_whitelist = shdwCacheUnwrapNil([cached objectForKey:@"whitelist_prefixes"]);
+    dict_blacklist = shdwCacheUnwrapNil([cached objectForKey:@"blacklist_prefixes"]);
+    dict_structure = shdwCacheUnwrapNil([cached objectForKey:@"structure"]);
+    pred_whitelist = shdwCacheUnwrapNil([cached objectForKey:@"pred_whitelist"]);
+    pred_blacklist = shdwCacheUnwrapNil([cached objectForKey:@"pred_blacklist"]);
+    whitelist_match_all = [[cached objectForKey:@"whitelist_match_all"] boolValue];
+    blacklist_match_all = [[cached objectForKey:@"blacklist_match_all"] boolValue];
+    return YES;
+}
+
+// Best-effort archive of the compiled state next to the plist, keyed by the
+// plist's mtime and size. Never fails the compile path: unreadable or
+// read-only rulesets dirs just skip caching.
++ (void)_writeCompiledCacheForRuleset:(RulesetEngine *)ruleset url:(NSURL *)url {
+    NSString* plistPath = [url path];
+    NSDictionary* plistAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:plistPath error:nil];
+
+    if(!plistAttrs) {
+        return;
+    }
+
+    NSDictionary* cached = @{
+        @"version" : @(kShadowRulesetCacheVersion),
+        @"mtime" : @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate]),
+        @"size" : @([plistAttrs fileSize]),
+        @"payload" : [ruleset payloadDictionary],
+        @"schemes" : ruleset->set_urlschemes ?: [NSNull null],
+        @"whitelist" : ruleset->set_whitelist ?: [NSNull null],
+        @"blacklist" : ruleset->set_blacklist ?: [NSNull null],
+        @"bundleids" : ruleset->set_bundleids ?: [NSNull null],
+        @"whitelist_prefixes" : ruleset->dict_whitelist ?: [NSNull null],
+        @"blacklist_prefixes" : ruleset->dict_blacklist ?: [NSNull null],
+        @"structure" : ruleset->dict_structure ?: [NSNull null],
+        @"pred_whitelist" : ruleset->pred_whitelist ?: [NSNull null],
+        @"pred_blacklist" : ruleset->pred_blacklist ?: [NSNull null],
+        @"whitelist_match_all" : @(ruleset->whitelist_match_all),
+        @"blacklist_match_all" : @(ruleset->blacklist_match_all)
+    };
+
+    // Legacy archiver: the modern entry points require iOS 11 and the
+    // deployment target is iOS 9 — see the unarchive side above.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    @try {
+        NSData* data = [NSKeyedArchiver archivedDataWithRootObject:cached];
+
+        if(data) {
+            [data writeToFile:[plistPath stringByAppendingString:kShadowRulesetCacheSuffix] atomically:YES];
+        }
+    } @catch(NSException* exception) {
+        // Best-effort only.
+    }
+#pragma clang diagnostic pop
 }
 
 // Filters a payload value to an NSArray of NSStrings; non-array values and

@@ -3,6 +3,7 @@
 #import "hooks.h"
 
 #import <unistd.h>
+#import <os/lock.h>
 
 // Forward declaration: shared post-success csops policy, defined in the
 // csops section below (used by the raw SYS_csops dispatch case).
@@ -270,14 +271,71 @@ extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 // path — mirrors libc.x's shdw_proc_is_restricted (static there). When
 // proc_pidpath fails the process cannot be classified and is kept: denying
 // legitimate processes would corrupt the process count on stock devices.
-static BOOL shdw_raw_proc_is_restricted(pid_t pid) {
-    char path[PATH_MAX];
+//
+// Verdicts are cached keyed on pid + process start time (PID reuse can't
+// inherit a stale verdict) with a short TTL (a process can exec a different
+// binary without changing its start time). Fixed-size, round-robin eviction —
+// a miss just re-classifies, results stay identical. The lock is never held
+// across classification: isCPathRestricted is an ObjC call that could
+// re-enter hooked code.
+#define SHADW_RAW_PROC_CACHE_SIZE 32
+#define SHADW_RAW_PROC_CACHE_TTL 5  // seconds
 
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        return [_shadow isCPathRestricted:path];
+typedef struct {
+    pid_t pid;
+    time_t start_sec;        // kp_proc.p_starttime
+    suseconds_t start_usec;
+    time_t stamp;            // time(NULL) at fill
+    BOOL restricted;
+} shdw_raw_proc_cache_entry_t;
+
+static shdw_raw_proc_cache_entry_t shdw_raw_proc_cache[SHADW_RAW_PROC_CACHE_SIZE];
+static NSUInteger shdw_raw_proc_cache_next = 0;
+static os_unfair_lock shdw_raw_proc_cache_lock = OS_UNFAIR_LOCK_INIT;
+
+static BOOL shdw_raw_proc_is_restricted(const struct kinfo_proc* p) {
+    pid_t pid = p->kp_proc.p_pid;
+    time_t start_sec = p->kp_proc.p_starttime.tv_sec;
+    suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
+    time_t now = time(NULL);
+
+    os_unfair_lock_lock(&shdw_raw_proc_cache_lock);
+
+    for(NSUInteger i = 0; i < SHADW_RAW_PROC_CACHE_SIZE; i++) {
+        const shdw_raw_proc_cache_entry_t* e = &shdw_raw_proc_cache[i];
+
+        if(e->pid == pid
+        && e->start_sec == start_sec
+        && e->start_usec == start_usec
+        && now - e->stamp < SHADW_RAW_PROC_CACHE_TTL) {
+            BOOL verdict = e->restricted;
+            os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
+            return verdict;
+        }
     }
 
-    return NO;
+    os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
+
+    char path[PATH_MAX];
+    BOOL restricted = NO;
+
+    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+        restricted = [_shadow isCPathRestricted:path];
+    }
+
+    os_unfair_lock_lock(&shdw_raw_proc_cache_lock);
+
+    NSUInteger slot = shdw_raw_proc_cache_next;
+    shdw_raw_proc_cache_next = (shdw_raw_proc_cache_next + 1) % SHADW_RAW_PROC_CACHE_SIZE;
+
+    shdw_raw_proc_cache[slot].pid = pid;
+    shdw_raw_proc_cache[slot].start_sec = start_sec;
+    shdw_raw_proc_cache[slot].start_usec = start_usec;
+    shdw_raw_proc_cache[slot].stamp = now;
+    shdw_raw_proc_cache[slot].restricted = restricted;
+
+    os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
+    return restricted;
 }
 
 // Filtered KERN_PROC_ALL enumeration for raw SYS_sysctl — mirrors libc.x's
@@ -347,7 +405,7 @@ static int shdw_raw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
             // Never report our own trace flags.
             p->kp_proc.p_flag &= ~P_TRACED;
             p->kp_proc.p_flag &= ~P_SELECT;
-        } else if(shdw_raw_proc_is_restricted(p->kp_proc.p_pid)) {
+        } else if(shdw_raw_proc_is_restricted(p)) {
             continue;  // jailbreak daemon: removed from the list
         }
 
@@ -451,10 +509,14 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     int gd_fd = -1;
     char* gd_buf = NULL;
 
+    // Caller classification hoisted: the return-address read happens once,
+    // inline, at this entry (same frame for both gates below).
+    BOOL ext = isCallerExternal();
+
     // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
     // inspected — its first argument is a binary entries buffer, not a C
     // string; it is still forwarded with its exact arity below.
-    if(isCallerExternal()) {
+    if(ext) {
         if(number == SYS_csops) {
             csops_pid = (pid_t) va_arg(inspect, intptr_t);
             csops_ops = (unsigned int) va_arg(inspect, intptr_t);
@@ -564,7 +626,7 @@ static long shdw_syscall_dispatch(int number, va_list args) {
 
     // After-success policies — same as the typed hooks, only on valid
     // success and only for app-origin callers.
-    if(isCallerExternal()) {
+    if(ext) {
         if(number == SYS_csops && result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
             return -1;
         }
@@ -754,7 +816,9 @@ static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, siz
 
 static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
-    if(isCallerExternal()) {
+    BOOL ext = isCallerExternal();
+
+    if(ext) {
         // CS_OPS_MARKKILL on a process other than self is jailbreak-style
         // marking (stock apps only ever mark THEMSELVES for kill). Reject
         // BEFORE the original runs — executing the mark and then failing
@@ -768,7 +832,7 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 
     int ret = original_csops(pid, ops, useraddr, usersize);
 
-    if(isCallerExternal() && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(ext && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
         return -1;
     }
 
@@ -781,14 +845,16 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 // kernel identifies the target.
 static int (*original_csops_audittoken)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token);
 static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token) {
-    if(isCallerExternal() && ops == CS_OPS_MARKKILL && pid != getpid()) {
+    BOOL ext = isCallerExternal();
+
+    if(ext && ops == CS_OPS_MARKKILL && pid != getpid()) {
         errno = EBADEXEC;
         return -1;
     }
 
     int ret = original_csops_audittoken(pid, ops, useraddr, usersize, token);
 
-    if(isCallerExternal() && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(ext && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
         return -1;
     }
 

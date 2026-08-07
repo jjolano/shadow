@@ -14,6 +14,31 @@ extern char*** _NSGetArgv();
         return path;
     }
 
+    // Fast path: an absolute path containing none of the sequences the
+    // standardization below transforms passes through the NSURL machinery
+    // byte-for-byte, so return it directly. Every transform the slow path
+    // can apply has a trigger here: "/." (dot components, incl. "/./" and
+    // "/../", which standardizedURL resolves), "//" (empty segments), a
+    // trailing slash, the query/fragment/parameter markers "?", "#" and ";"
+    // (URLWithString strips them from -path), percent-encoding ("%": %2e dot
+    // components, and %2f etc. that -path decodes), and the /private/var,
+    // /private/etc and /var/tmp prefixes the rewrites below target. Anything
+    // else — relative paths, tildes, scheme-like strings — also takes the
+    // slow path, which is the only code that may transform them.
+    if([path hasPrefix:@"/"]
+        && ![path hasSuffix:@"/"]
+        && ![path containsString:@"/."]
+        && ![path containsString:@"//"]
+        && ![path containsString:@"%"]
+        && ![path containsString:@"?"]
+        && ![path containsString:@"#"]
+        && ![path containsString:@";"]
+        && ![path hasPrefix:@"/private/var"]
+        && ![path hasPrefix:@"/private/etc"]
+        && ![path hasPrefix:@"/var/tmp"]) {
+        return path;
+    }
+
     NSURL* url = [NSURL URLWithString:path];
 
     if(!url) {

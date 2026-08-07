@@ -36,18 +36,19 @@ static BOOL shdw_is_jb_probe(const char* path) {
 // caller touching a JB indicator, independent of how the filter answers it.
 // isCallerExternal() reads the return address, so it must expand inline at the
 // hook site — never route it through a helper function.
-#define SHADOW_TRIP(pathname, kind) \
-    if(isCallerExternal() && shdw_is_jb_probe(pathname)) { \
+#define SHADOW_TRIP(pathname, kind, ext) \
+    if(ext && shdw_is_jb_probe(pathname)) { \
         shdw_detector_detected(kind); \
     }
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
-    SHADOW_TRIP(pathname, "access");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "access", ext);
 
     int result = original_access(pathname, mode);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
         errno = ENOENT;
         return -1;
     }
@@ -584,11 +585,12 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
 
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
-    SHADOW_TRIP(pathname, "stat");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "stat", ext);
 
     int result = original_stat(pathname, buf);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
@@ -602,9 +604,10 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
 
 static int (*original_lstat)(const char* pathname, struct stat* buf);
 static int replaced_lstat(const char* pathname, struct stat* buf) {
-    SHADOW_TRIP(pathname, "lstat");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "lstat", ext);
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         return original_lstat(pathname, buf);
     }
 
@@ -664,9 +667,10 @@ static int replaced_fstat(int fd, struct stat* buf) {
 
 static int (*original_fstatat)(int dirfd, const char* pathname, struct stat* buf, int flags);
 static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
-    SHADOW_TRIP(pathname, "fstatat");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "fstatat", ext);
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
@@ -679,9 +683,10 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
 
 static int (*original_faccessat)(int dirfd, const char* pathname, int mode, int flags);
 static int replaced_faccessat(int dirfd, const char* pathname, int mode, int flags) {
-    SHADOW_TRIP(pathname, "faccessat");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "faccessat", ext);
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
@@ -875,9 +880,10 @@ static int replaced_closedir(DIR* dirp) {
 
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
-    SHADOW_TRIP(pathname, "fopen");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "fopen", ext);
 
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
         return original_fopen(pathname, mode);
     }
 
@@ -931,11 +937,12 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
 
 static int (*original_getattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
 static int replaced_getattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
-    SHADOW_TRIP(path, "getattrlist");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "getattrlist", ext);
 
     int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:path]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
         errno = ENOENT;
         return -1;
     }
@@ -945,11 +952,12 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
 static ssize_t (*original_getxattr)(const char* path, const char* name, void* value, size_t size, u_int32_t position, int options);
 static ssize_t replaced_getxattr(const char* path, const char* name, void* value, size_t size, u_int32_t position, int options) {
-    SHADOW_TRIP(path, "getxattr");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "getxattr", ext);
 
     ssize_t result = original_getxattr(path, name, value, size, position, options);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:path]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
         errno = ENOENT;
         return -1;
     }
@@ -959,11 +967,12 @@ static ssize_t replaced_getxattr(const char* path, const char* name, void* value
 
 static ssize_t (*original_listxattr)(const char* path, char* namebuf, size_t size, int options);
 static ssize_t replaced_listxattr(const char* path, char* namebuf, size_t size, int options) {
-    SHADOW_TRIP(path, "listxattr");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "listxattr", ext);
 
     ssize_t result = original_listxattr(path, namebuf, size, options);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:path]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
         errno = ENOENT;
         return -1;
     }
@@ -1399,14 +1408,72 @@ static int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldl
 // path. proc_pidpath is visible for other pids on iOS; when it fails (EPERM)
 // the process can't be classified and is kept — denying legitimate processes
 // would corrupt the process count on stock devices.
-static BOOL shdw_proc_is_restricted(pid_t pid) {
-    char path[PATH_MAX];
+//
+// Verdicts are cached keyed on pid + process start time (the same identity
+// trick as shadowd's owner_dead, so a reused pid can't inherit a stale
+// verdict), with a short TTL because a process can exec a different binary
+// without changing its start time. Fixed-size table, round-robin eviction —
+// a miss just re-classifies, results stay identical. The lock is never held
+// across classification: isCPathRestricted is an ObjC call that could
+// re-enter hooked code.
+#define SHADW_PROC_CACHE_SIZE 32
+#define SHADW_PROC_CACHE_TTL 5  // seconds
 
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        return [_shadow isCPathRestricted:path];
+typedef struct {
+    pid_t pid;
+    time_t start_sec;        // kp_proc.p_starttime
+    suseconds_t start_usec;
+    time_t stamp;            // time(NULL) at fill
+    BOOL restricted;
+} shdw_proc_cache_entry_t;
+
+static shdw_proc_cache_entry_t shdw_proc_cache[SHADW_PROC_CACHE_SIZE];
+static NSUInteger shdw_proc_cache_next = 0;
+static os_unfair_lock shdw_proc_cache_lock = OS_UNFAIR_LOCK_INIT;
+
+static BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
+    pid_t pid = p->kp_proc.p_pid;
+    time_t start_sec = p->kp_proc.p_starttime.tv_sec;
+    suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
+    time_t now = time(NULL);
+
+    os_unfair_lock_lock(&shdw_proc_cache_lock);
+
+    for(NSUInteger i = 0; i < SHADW_PROC_CACHE_SIZE; i++) {
+        const shdw_proc_cache_entry_t* e = &shdw_proc_cache[i];
+
+        if(e->pid == pid
+        && e->start_sec == start_sec
+        && e->start_usec == start_usec
+        && now - e->stamp < SHADW_PROC_CACHE_TTL) {
+            BOOL verdict = e->restricted;
+            os_unfair_lock_unlock(&shdw_proc_cache_lock);
+            return verdict;
+        }
     }
 
-    return NO;
+    os_unfair_lock_unlock(&shdw_proc_cache_lock);
+
+    char path[PATH_MAX];
+    BOOL restricted = NO;
+
+    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+        restricted = [_shadow isCPathRestricted:path];
+    }
+
+    os_unfair_lock_lock(&shdw_proc_cache_lock);
+
+    NSUInteger slot = shdw_proc_cache_next;
+    shdw_proc_cache_next = (shdw_proc_cache_next + 1) % SHADW_PROC_CACHE_SIZE;
+
+    shdw_proc_cache[slot].pid = pid;
+    shdw_proc_cache[slot].start_sec = start_sec;
+    shdw_proc_cache[slot].start_usec = start_usec;
+    shdw_proc_cache[slot].stamp = now;
+    shdw_proc_cache[slot].restricted = restricted;
+
+    os_unfair_lock_unlock(&shdw_proc_cache_lock);
+    return restricted;
 }
 
 // KERN_PROC_ALL read: returns the process list with restricted processes
@@ -1467,7 +1534,7 @@ static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
             // Never report our own trace flags.
             p->kp_proc.p_flag &= ~P_TRACED;
             p->kp_proc.p_flag &= ~P_SELECT;
-        } else if(shdw_proc_is_restricted(p->kp_proc.p_pid)) {
+        } else if(shdw_proc_is_restricted(p)) {
             continue;  // jailbreak daemon: removed from the list
         }
 
@@ -1595,7 +1662,8 @@ static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
-    SHADOW_TRIP(pathname, "open");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "open", ext);
 
     mode_t mode = 0;
 
@@ -1611,14 +1679,14 @@ static int replaced_open(const char *pathname, int oflag, ...) {
         va_end(args);
     }
 
-    if(isCallerExternal() && shdw_is_jbroot_write_probe(pathname, oflag)) {
+    if(ext && shdw_is_jbroot_write_probe(pathname, oflag)) {
         // Stock fails with ENOENT since .jbroot doesn't exist there; must match
         // exactly so the probe can't distinguish us via a different errno.
         errno = ENOENT;
         return -1;
     }
 
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
         if(oflag & O_CREAT) {
             return original_open(pathname, oflag, mode);
         }
@@ -1632,7 +1700,8 @@ static int replaced_open(const char *pathname, int oflag, ...) {
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
-    SHADOW_TRIP(pathname, "openat");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "openat", ext);
 
     mode_t mode = 0;
 
@@ -1646,7 +1715,7 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         va_end(args);
     }
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         if(oflag & O_CREAT) {
             return original_openat(dirfd, pathname, oflag, mode);
         }
@@ -1724,11 +1793,12 @@ struct shdw_stat64 {
 
 static int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
 static int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
-    SHADOW_TRIP(pathname, "stat64");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "stat64", ext);
 
     int result = original_stat64(pathname, buf);
 
-    if(result != -1 && isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
         if(buf) {
             memset(buf, 0, sizeof(shdw_stat64_t));
         }
@@ -1742,9 +1812,10 @@ static int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
 
 static int (*original_lstat64)(const char* pathname, shdw_stat64_t* buf);
 static int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
-    SHADOW_TRIP(pathname, "lstat64");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "lstat64", ext);
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         return original_lstat64(pathname, buf);
     }
 
@@ -1799,9 +1870,10 @@ static int replaced_fstat64(int fd, shdw_stat64_t* buf) {
 
 static int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
 static int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags) {
-    SHADOW_TRIP(pathname, "fstatat64");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(pathname, "fstatat64", ext);
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         return original_fstatat64(dirfd, pathname, buf, flags);
     }
 
@@ -1814,7 +1886,8 @@ static int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* bu
 
 static int (*original_open_dprotected_np)(const char* path, int flags, int class, int dpflags, ...);
 static int replaced_open_dprotected_np(const char* path, int flags, int class, int dpflags, ...) {
-    SHADOW_TRIP(path, "open_dprotected_np");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "open_dprotected_np", ext);
 
     mode_t mode = 0;
 
@@ -1826,12 +1899,12 @@ static int replaced_open_dprotected_np(const char* path, int flags, int class, i
         va_end(args);
     }
 
-    if(isCallerExternal() && shdw_is_jbroot_write_probe(path, flags)) {
+    if(ext && shdw_is_jbroot_write_probe(path, flags)) {
         errno = ENOENT;
         return -1;
     }
 
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:path]) {
+    if(!ext || ![_shadow isCPathRestricted:path]) {
         if(flags & O_CREAT) {
             return original_open_dprotected_np(path, flags, class, dpflags, mode);
         }
@@ -1845,7 +1918,8 @@ static int replaced_open_dprotected_np(const char* path, int flags, int class, i
 
 static int (*original_openat_dprotected_np)(int dirfd, const char* path, int flags, int class, int dpflags, ...);
 static int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int class, int dpflags, ...) {
-    SHADOW_TRIP(path, "openat_dprotected_np");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "openat_dprotected_np", ext);
 
     mode_t mode = 0;
 
@@ -1856,7 +1930,7 @@ static int replaced_openat_dprotected_np(int dirfd, const char* path, int flags,
         va_end(args);
     }
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         if(flags & O_CREAT) {
             return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
         }
@@ -1882,7 +1956,8 @@ static int replaced_openat_dprotected_np(int dirfd, const char* path, int flags,
 
 static int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
 static int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...) {
-    SHADOW_TRIP(path, "openat_authenticated_np");
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "openat_authenticated_np", ext);
 
     mode_t mode = 0;
 
@@ -1893,7 +1968,7 @@ static int replaced_openat_authenticated_np(int dirfd, const char* path, struct 
         va_end(args);
     }
 
-    if(!isCallerExternal()) {
+    if(!ext) {
         if(flags & O_CREAT) {
             return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
         }

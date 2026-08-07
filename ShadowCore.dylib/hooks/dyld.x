@@ -75,6 +75,13 @@ static BOOL _shdw_mirror_currently_patched = NO;
 static BOOL _shdw_mirror_protect_failed = NO;
 static vm_prot_t _shdw_mirror_original_protection = VM_PROT_READ | VM_PROT_WRITE;
 
+// True while dyld replays the already-loaded image list through the add-image
+// callback at install (see shadowhook_dyld). Each replay call would otherwise
+// run a full mirror rebuild (O(N²·M) uuid compares + ~3 Mach traps per image);
+// the rebuild is deferred and the single final rebuild after registration
+// covers the whole collection at once.
+static BOOL _shdw_dyld_replay_in_progress = NO;
+
 // Shadow-owned image spans for shdw_caller_is_external() (see hooks.h).
 // C0-2: truth is granted ONLY to Shadow's own artifacts — Shadow.dylib,
 // Shadow.framework, libSandy.dylib, HookKit.framework, RootBridge.framework
@@ -602,6 +609,22 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
     [_shdw_dyld_remove_image addObject:[NSValue valueWithPointer:func]];
 }
 
+// Memoized dlopen handles per dyld image index (RTLD_NEXT resolution hot
+// path): a real dlopen takes the dyld lock + handle lookup per image per
+// lookup. A handle stays valid while its image is loaded; both callbacks
+// below invalidate the whole table because indices shift on any add/remove.
+static void* _shdw_dyld_handles[SHADOW_DYLD_MIRROR_CAPACITY];
+
+static void shdw_dyld_handles_invalidate(void) {
+    // Replay runs before any hook is installed — nothing can have written
+    // the table yet (the only writer is the dlsym replacement below).
+    if(_shdw_dyld_replay_in_progress) {
+        return;
+    }
+
+    memset(_shdw_dyld_handles, 0, sizeof(_shdw_dyld_handles));
+}
+
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(!mh) {
         return;
@@ -609,6 +632,9 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 
     // The dyld image list changed: refresh the app-bundle spans.
     shdw_own_ranges_refresh();
+
+    // ... and cached per-image dlopen handles are stale (indices shifted).
+    shdw_dyld_handles_invalidate();
 
     const char* image_path = dyld_image_path_containing_address(mh);
 
@@ -633,8 +659,12 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
             // collection may release it again on remove).
             [_shdw_dyld_path_pool addObject:path];
 
-            // Keep dyld_all_image_infos filtered arrays in sync.
-            shadowhook_dyld_rebuild_dyldinfo();
+            // Keep dyld_all_image_infos filtered arrays in sync. Deferred
+            // during the add-image replay at install — one rebuild after
+            // registration covers the whole collection.
+            if(!_shdw_dyld_replay_in_progress) {
+                shadowhook_dyld_rebuild_dyldinfo();
+            }
 
             // Call event handlers.
             NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
@@ -663,6 +693,9 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
     // The dyld image list changed: refresh the app-bundle spans.
     shdw_own_ranges_refresh();
+
+    // ... and cached per-image dlopen handles are stale (indices shifted).
+    shdw_dyld_handles_invalidate();
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSDictionary* dylibToRemove = nil;
@@ -737,30 +770,38 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
 static void* replaced_dlsym(void* handle, const char* symbol);
 static int replaced_dladdr(const void* addr, Dl_info* info);
 
+// Sorted by name (strcmp order) for bsearch — keep it sorted when adding
+// entries, or lookups silently miss.
 static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
-    { "_dyld_image_count", (void *)&replaced_dyld_image_count },
-    { "_dyld_get_image_name", (void *)&replaced_dyld_get_image_name },
+    { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
     { "_dyld_get_image_header", (void *)&replaced_dyld_get_image_header },
-    { "_dyld_get_image_vmaddr_slide", (void *)&replaced_dyld_get_image_vmaddr_slide },
-    { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
-    { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
-    { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
+    { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_get_image_header_containing_address },
+    { "_dyld_get_image_name", (void *)&replaced_dyld_get_image_name },
     { "_dyld_get_image_slide", (void *)&replaced_dyld_get_image_slide },
     { "_dyld_get_image_uuid", (void *)&replaced_dyld_get_image_uuid },
-    { "dyld_image_get_installname", (void *)&replaced_dyld_image_get_installname },
-    { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
+    { "_dyld_get_image_vmaddr_slide", (void *)&replaced_dyld_get_image_vmaddr_slide },
+    { "_dyld_image_count", (void *)&replaced_dyld_image_count },
+    { "_dyld_images_for_addresses", (void *)&replaced_dyld_images_for_addresses },
+    { "_dyld_register_for_bulk_image_loads", (void *)&replaced_dyld_register_for_bulk_image_loads },
+    { "_dyld_register_for_image_loads", (void *)&replaced_dyld_register_for_image_loads },
     { "_dyld_register_func_for_add_image", (void *)&replaced_dyld_register_func_for_add_image },
     { "_dyld_register_func_for_remove_image", (void *)&replaced_dyld_register_func_for_remove_image },
-    { "_dyld_images_for_addresses", (void *)&replaced_dyld_images_for_addresses },
-    { "_dyld_register_for_image_loads", (void *)&replaced_dyld_register_for_image_loads },
-    { "_dyld_register_for_bulk_image_loads", (void *)&replaced_dyld_register_for_bulk_image_loads },
+    { "dladdr", (void *)&replaced_dladdr },
+    { "dlerror", (void *)&replaced_dlerror },
     { "dlopen", (void *)&replaced_dlopen },
     { "dlopen_preflight", (void *)&replaced_dlopen_preflight },
-    { "dlerror", (void *)&replaced_dlerror },
     { "dlsym", (void *)&replaced_dlsym },
-    { "dladdr", (void *)&replaced_dladdr },
+    { "dyld_image_get_installname", (void *)&replaced_dyld_image_get_installname },
+    { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
+    { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
 };
 #define SHADOW_SYM_POLICY_COUNT (sizeof(shdw_sym_policy_table) / sizeof(shdw_sym_policy_table[0]))
+
+// bsearch comparator for the policy table above; the key's replacement
+// field is unused.
+static int shdw_sym_policy_compare(const void* a, const void* b) {
+    return strcmp(((const shdw_sym_policy_entry_t *)a)->name, ((const shdw_sym_policy_entry_t *)b)->name);
+}
 
 // Index of the image containing `addr` in dyld's load order, or -1.
 static int shdw_image_index_of(const void* addr) {
@@ -799,7 +840,23 @@ static void* shdw_dlsym_caller_relative(int callerIdx, void* handle, const char*
             continue;
         }
 
-        void* imgHandle = dlopen(name, RTLD_NOLOAD | RTLD_FIRST);
+        // Memoized per-index handle: dlopen takes the dyld lock + handle
+        // lookup on every call; RTLD_NEXT interposers pay it per image per
+        // lookup. The add/remove callbacks invalidate the table (indices
+        // shift); the over-capacity fallback keeps the unbounded path
+        // behavior-identical.
+        void* imgHandle = NULL;
+
+        if(i < SHADOW_DYLD_MIRROR_CAPACITY) {
+            imgHandle = _shdw_dyld_handles[i];
+
+            if(!imgHandle) {
+                imgHandle = dlopen(name, RTLD_NOLOAD | RTLD_FIRST);
+                _shdw_dyld_handles[i] = imgHandle;
+            }
+        } else {
+            imgHandle = dlopen(name, RTLD_NOLOAD | RTLD_FIRST);
+        }
 
         if(!imgHandle) {
             continue;
@@ -826,10 +883,11 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
     // Hooked system APIs resolve to their replacement regardless of handle —
     // a specific libdyld handle is a dlsym bypass exactly like RTLD_NEXT.
     if(symbol) {
-        for(size_t i = 0; i < SHADOW_SYM_POLICY_COUNT; i++) {
-            if(strcmp(symbol, shdw_sym_policy_table[i].name) == 0) {
-                return shdw_sym_policy_table[i].replacement;
-            }
+        shdw_sym_policy_entry_t key = { symbol, NULL };
+        shdw_sym_policy_entry_t* entry = bsearch(&key, shdw_sym_policy_table, SHADOW_SYM_POLICY_COUNT, sizeof(shdw_sym_policy_entry_t), shdw_sym_policy_compare);
+
+        if(entry) {
+            return entry->replacement;
         }
     }
 
@@ -1700,7 +1758,14 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     _shdw_dyld_remove_image = [NSMutableArray new];
     _shdw_dyld_path_pool = [NSMutableArray new];
 
+    // Defer per-image mirror rebuilds during the replay below (the collection
+    // grows by one per callback; a rebuild per image is O(N²·M) compares +
+    // ~3 Mach traps each). The final rebuild after registration covers the
+    // whole collection at once. Handles cache is empty at this point (no
+    // hooks installed yet), so invalidation is skipped via the same flag.
+    _shdw_dyld_replay_in_progress = YES;
     _dyld_register_func_for_add_image(shadowhook_dyld_updatelibs);
+    _shdw_dyld_replay_in_progress = NO;
     _dyld_register_func_for_remove_image(shadowhook_dyld_updatelibs_r);
 
     // Registration above replays the current image list through the
