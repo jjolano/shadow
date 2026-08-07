@@ -39,6 +39,9 @@ detector: harness
 detect: harness
 	./harness --detect
 
+benign: harness
+	./harness --benign
+
 adversary: harness
 	./harness --adversary
 
@@ -66,6 +69,9 @@ detector: harness
 detect: harness
 	$(RUN) tests/harness --detect
 
+benign: harness
+	$(RUN) tests/harness --benign
+
 adversary: harness
 	$(RUN) tests/harness --adversary
 
@@ -77,4 +83,4 @@ clean:
 
 endif
 
-.PHONY: test detect adversary detector clean
+.PHONY: test detect adversary detector benign coverage clean
