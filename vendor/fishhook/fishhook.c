@@ -24,6 +24,7 @@
 #include "fishhook.h"
 
 #include <dlfcn.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,10 @@
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
+
+#if __has_include(<ptrauth.h>)
+#include <ptrauth.h>
+#endif
 
 #ifdef __LP64__
 typedef struct mach_header_64 mach_header_t;
@@ -54,11 +59,31 @@ typedef struct nlist nlist_t;
 #define SEG_DATA_CONST  "__DATA_CONST"
 #endif
 
+// On iOS 14+ arm64e, authenticated pointer sections (__auth_got) live in the
+// __AUTH_CONST segment, which stock fishhook never scans — symbols there
+// silently never rebind. Scan it too; non-arm64e binaries simply have no such
+// segment.
+#ifndef SEG_AUTH_CONST
+#define SEG_AUTH_CONST  "__AUTH_CONST"
+#endif
+
 struct rebindings_entry {
   struct rebinding *rebindings;
   size_t rebindings_nel;
   struct rebindings_entry *next;
+  // Number of indirect symbol slots this entry actually rewrote across all
+  // images. Filled by rebind_symbols_checked() so callers can distinguish a
+  // real rebinding from a silent no-op (symbol referenced by no loaded
+  // image).
+  size_t matched;
 };
+
+// Serializes the global rebinding list against concurrent rebind_symbols
+// calls and dyld's _dyld_register_func_for_add_image callback, which walks
+// the same list on its own thread. Recursive: the first rebind_symbols call
+// registers the callback, which dyld fires synchronously for existing
+// images.
+static pthread_mutex_t rebindings_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 
 static struct rebindings_entry *_rebindings_head;
 
@@ -120,6 +145,18 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
   uint32_t *indirect_symbol_indices = indirect_symtab + section->reserved1;
   void **indirect_symbol_bindings = (void **)((uintptr_t)slide + section->addr);
 
+  // On arm64e, entries in __auth_got hold pointers signed with the asia key,
+  // discriminated by the address of the slot itself (addrDiv in the chained
+  // fixup encoding). dyld signs with ptrauth_sign_unauthenticated(ptr, asia,
+  // blend(&slot, 0)), and callers authenticate with the same discriminator.
+  // A raw write into an auth slot crashes at the caller's auth branch, so
+  // resign here; writing a signed pointer into a plain slot is harmless
+  // (plain br/blr ignores PAC bits). On non-arm64e the whole block compiles
+  // out and behavior is stock.
+#if __has_feature(ptrauth_calls)
+  bool section_needs_auth = strcmp(section->sectname, "__auth_got") == 0;
+#endif
+
   for (uint i = 0; i < section->size / sizeof(void *); i++) {
     uint32_t symtab_index = indirect_symbol_indices[i];
     if (symtab_index == INDIRECT_SYMBOL_ABS || symtab_index == INDIRECT_SYMBOL_LOCAL ||
@@ -135,8 +172,19 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
         if (symbol_name_longer_than_1 && strcmp(&symbol_name[1], cur->rebindings[j].name) == 0) {
           kern_return_t err;
 
-          if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement)
+          if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement) {
+#if __has_feature(ptrauth_calls)
+            // The slot holds a pointer signed with the slot address as
+            // discriminator — not directly callable as a plain C function
+            // pointer (the compiler emits blraaz, asia/div-0). Resign with
+            // diversity 0, the standard C function pointer scheme.
+            *(cur->rebindings[j].replaced) = ptrauth_sign_unauthenticated(
+                ptrauth_strip(indirect_symbol_bindings[i], ptrauth_key_asia),
+                ptrauth_key_asia, 0);
+#else
             *(cur->rebindings[j].replaced) = indirect_symbol_bindings[i];
+#endif
+          }
 
           /**
            * 1. Moved the vm protection modifying codes to here to reduce the
@@ -153,7 +201,20 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
              * iOS 15 has corrected the const segments prot.
              * -- Lionfore Hao Jun 11th, 2021
              **/
+#if __has_feature(ptrauth_calls)
+            void *replacement = cur->rebindings[j].replacement;
+            if (section_needs_auth && replacement != NULL) {
+              // Strip first: a caller may pass an already-signed pointer.
+              // Sign with the slot address as discriminator, as dyld does.
+              replacement = ptrauth_sign_unauthenticated(
+                  ptrauth_strip(replacement, ptrauth_key_asia),
+                  ptrauth_key_asia, (uintptr_t)&indirect_symbol_bindings[i]);
+            }
+            indirect_symbol_bindings[i] = replacement;
+#else
             indirect_symbol_bindings[i] = cur->rebindings[j].replacement;
+#endif
+            cur->matched += 1;
           }
           goto symbol_loop;
         }
@@ -209,7 +270,8 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
     cur_seg_cmd = (segment_command_t *)cur;
     if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
       if (strcmp(cur_seg_cmd->segname, SEG_DATA) != 0 &&
-          strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0) {
+          strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0 &&
+          strcmp(cur_seg_cmd->segname, SEG_AUTH_CONST) != 0) {
         continue;
       }
       for (uint j = 0; j < cur_seg_cmd->nsects; j++) {
@@ -228,7 +290,55 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
 
 static void _rebind_symbols_for_image(const struct mach_header *header,
                                       intptr_t slide) {
+    pthread_mutex_lock(&rebindings_lock);
     rebind_symbols_for_image(_rebindings_head, header, slide);
+    pthread_mutex_unlock(&rebindings_lock);
+}
+
+// Shared core of rebind_symbols / rebind_symbols_checked: prepends the
+// rebindings, applies them to every currently loaded image, and reports how
+// many indirect symbol slots were actually rewritten (0 = the names matched
+// no loaded reference — a silent no-op the caller can now detect).
+static int rebind_symbols_common(struct rebinding rebindings[],
+                                 size_t rebindings_nel,
+                                 size_t *outMatched) {
+  int retval;
+
+  pthread_mutex_lock(&rebindings_lock);
+
+  retval = prepend_rebindings(&_rebindings_head, rebindings, rebindings_nel);
+  if (retval < 0) {
+    pthread_mutex_unlock(&rebindings_lock);
+    return retval;
+  }
+
+  // If this was the first call, register callback for image additions (which is also invoked for
+  // existing images, otherwise, just run on existing images
+  if (!_rebindings_head->next) {
+    _dyld_register_func_for_add_image(_rebind_symbols_for_image);
+  } else {
+    uint32_t c = _dyld_image_count();
+    for (uint32_t i = 0; i < c; i++) {
+      _rebind_symbols_for_image(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
+    }
+  }
+
+  if (outMatched) {
+    *outMatched = _rebindings_head->matched;
+  }
+
+  pthread_mutex_unlock(&rebindings_lock);
+  return retval;
+}
+
+int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel) {
+  return rebind_symbols_common(rebindings, rebindings_nel, NULL);
+}
+
+int rebind_symbols_checked(struct rebinding rebindings[],
+                           size_t rebindings_nel,
+                           size_t *outMatched) {
+  return rebind_symbols_common(rebindings, rebindings_nel, outMatched);
 }
 
 int rebind_symbols_image(void *header,
@@ -243,22 +353,4 @@ int rebind_symbols_image(void *header,
     }
     free(rebindings_head);
     return retval;
-}
-
-int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel) {
-  int retval = prepend_rebindings(&_rebindings_head, rebindings, rebindings_nel);
-  if (retval < 0) {
-    return retval;
-  }
-  // If this was the first call, register callback for image additions (which is also invoked for
-  // existing images, otherwise, just run on existing images
-  if (!_rebindings_head->next) {
-    _dyld_register_func_for_add_image(_rebind_symbols_for_image);
-  } else {
-    uint32_t c = _dyld_image_count();
-    for (uint32_t i = 0; i < c; i++) {
-      _rebind_symbols_for_image(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
-    }
-  }
-  return retval;
 }

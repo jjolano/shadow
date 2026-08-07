@@ -16,7 +16,10 @@ typedef enum {
     HK_LIB_ELLEKIT = (1 << 0),
     HK_LIB_FISHHOOK = (1 << 1),
     HK_LIB_SUBSTRATE = (1 << 2),
-    HK_LIB_SUBSTITUTE = (1 << 3)
+    HK_LIB_SUBSTITUTE = (1 << 3),
+    HK_LIB_NATIVE = (1 << 4),
+    HK_LIB_DOBBY = (1 << 5),
+    HK_LIB_FRIDA = (1 << 6)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
@@ -28,8 +31,15 @@ typedef const struct HKImage* HKImageRef;
  *   ElleKit        yes        yes         yes       yes
  *   Cydia Substrate yes       yes         no        no
  *   Substitute      yes       yes         no        no
- *   fishhook        no        yes*        no        no
+ *   native          yes       yes**     yes       yes
+ *   Dobby           no        yes***    yes       no
+ *   Frida           no        yes****   no        yes
+ *   fishhook        no        yes*      no        no
  *     * exported symbols only, rebinding by symbol name (see fishhook caveat)
+ *     ** arm64/arm64e only (see native caveat)
+ *     *** arm64/arm64e only; inline patching needs relaxed codesigning (see Dobby caveat)
+ *     **** iOS 14+ and arm64/arm64e only; inline patching needs relaxed
+ *          codesigning (see Frida caveat)
  *
  * Symbol name convention: names passed to findSymbolInImage:/
  * findSymbolsInImage: are Substrate-style — C symbols carry no leading
@@ -45,9 +55,37 @@ typedef const struct HKImage* HKImageRef;
  * written by executeHooks and is never retained past it.
  *
  * fishhook caveat: symbol-based rebinding only — private/interior addresses
- * are not rebindable, there is no arm64e PAC handling, and old_ptr reflects
- * the state at hook time (fishhook retains the rebinding for all future
- * image loads).
+ * are not rebindable, and old_ptr reflects the state at hook time (fishhook
+ * retains the rebinding for all future image loads). arm64e PAC is handled:
+ * __auth_got slots are resigned with the asia key and slot-address
+ * discriminator, and old_ptr is resigned to the plain function-pointer
+ * scheme. A hook whose symbol no loaded image references is refused
+ * (HK_ERR_NOT_SUPPORTED) instead of silently succeeding. The rebinding list
+ * is thread-safe.
+ *
+ * native caveat: HookKit's own engine, requiring no hooking library to be
+ * installed. Never selected automatically — pass HK_LIB_NATIVE to
+ * substitutorWithTypes: to opt in. arm64/arm64e only; on armv7 it reports
+ * unavailable. Inline patching needs relaxed codesigning, which holds in a
+ * tweak-injected process but not in an unmodified one, and function hooks are
+ * refused on targets too short to patch without clobbering their neighbour.
+ * Hooks must be installed at load time: patching is not atomic and so is not
+ * safe against code already running on another thread.
+ *
+ * Dobby caveat: inline patching needs relaxed codesigning, which holds in a
+ * tweak-injected process but not in an unmodified one — same constraint as
+ * native. arm64/arm64e only (the vendored static lib has no armv7 slice);
+ * on armv7 it reports unavailable. No ObjC message hooking.
+ *
+ * Frida caveat: hooks through the HKGum.dylib wrapper (frida-gum devkit,
+ * LGPL-2.1 with wxWindows exception) dlopen'd at runtime; the framework never
+ * links gum directly. The devkit's minos=14.0 means iOS 14+ only — on iOS
+ * 12/13 dyld refuses to load the wrapper, so dlopen failure gates it. Opt-in
+ * only (HK_LIB_FRIDA); never selected automatically. arm64/arm64e only (no
+ * armv7 gum devkit) — on armv7 dlopen fails. Inline patching needs relaxed
+ * codesigning, same as native/Dobby. Hooks must be installed at load time:
+ * the prologue patch is not atomic and so is not safe against code already
+ * running on another thread.
  */
 
 @interface HKSubstitutor : NSObject
@@ -68,6 +106,12 @@ typedef const struct HKImage* HKImageRef;
 
 // Creates an instance of HKSubstitutor with given substitutor types.
 + (instancetype)substitutorWithTypes:(hookkit_lib_t)types;
+
+// Creates an instance of HKSubstitutor with the given substitutor types tried
+// in the given priority order — the first available entry wins, regardless of
+// the built-in table order. Each element is an NSNumber wrapping a
+// hookkit_lib_t. Unknown types are skipped; an empty array yields no backend.
++ (instancetype)substitutorWithOrderedTypes:(NSArray<NSNumber *> *)types;
 
 // Creates an instance of HKSubstitutor using the currently loaded substitutor.
 + (instancetype)defaultSubstitutor;

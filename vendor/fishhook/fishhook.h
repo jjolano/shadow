@@ -59,6 +59,18 @@ FISHHOOK_VISIBILITY
 int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel);
 
 /*
+ * Like rebind_symbols, but additionally reports in outMatched how many
+ * indirect symbol slots were actually rewritten in the currently loaded
+ * images. A count of 0 means the names matched no loaded reference, which
+ * lets callers distinguish a real rebinding from a silent no-op. outMatched
+ * may be NULL (then this behaves exactly like rebind_symbols).
+ */
+FISHHOOK_VISIBILITY
+int rebind_symbols_checked(struct rebinding rebindings[],
+                           size_t rebindings_nel,
+                           size_t *outMatched);
+
+/*
  * Rebinds as above, but only in the specified image. The header should point
  * to the mach-o header, the slide should be the slide offset. Others as above.
  */

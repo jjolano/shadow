@@ -11,8 +11,20 @@
 #import "vendor/libhooker/libhooker.h"
 #import "vendor/libhooker/libblackjack.h"
 #import "vendor/fishhook/fishhook.h"
+#if __has_include(<ptrauth.h>)
+#import <ptrauth.h>
+#endif
 #import "vendor/substrate/substrate.h"
 #import "vendor/substitute/substitute.h"
+
+// Dobby: vendored static lib with arm64/arm64e slices only; the header is
+// plain C and safe to include, but the backend class below is arch-gated too
+// so armv7 builds never reference DobbyHook/DobbyCodePatch at link time.
+#if defined(__arm64__) || defined(__arm64e__)
+#include "dobby/dobby.h"
+#endif
+
+#import "native/hk_native.h"
 
 #pragma mark - libhooker (ElleKit) runtime resolution
 
@@ -186,6 +198,39 @@ typedef NS_ENUM(int, HKHookKind) {
 @implementation HKHookOperation
 @end
 
+// Shared by every backend that scans for a symbol with no image specified.
+static void *hk_search_loaded_images(void *(^probe)(const char *imageName)) {
+    int count = _dyld_image_count();
+
+    for(int i = 0; i < count; i++) {
+        const char *image_name = _dyld_get_image_name(i);
+
+        if(!image_name) {
+            continue;
+        }
+
+        void *found = probe(image_name);
+
+        if(found) {
+            return found;
+        }
+    }
+
+    return NULL;
+}
+
+static hookkit_status_t hk_batch_status(int succeeded, int total) {
+    if(succeeded < total) {
+        NSLog(@"[HookKit] warning: successfully hooked less than expected (%d/%d)", succeeded, total);
+    }
+
+    if(succeeded == total) {
+        return HK_OK;
+    }
+
+    return succeeded > 0 ? HK_ERR_PARTIAL : HK_ERR;
+}
+
 #pragma mark - Backends
 
 @protocol HKSubstitutorBackend <NSObject>
@@ -323,15 +368,7 @@ typedef NS_ENUM(int, HKHookKind) {
         succeeded += result;
     }
 
-    if(succeeded < total) {
-        NSLog(@"[HookKit] warning: successfully hooked less than expected (%d/%lu)", succeeded, (unsigned long)total);
-    }
-
-    if(succeeded == total) {
-        return HK_OK;
-    }
-
-    return succeeded > 0 ? HK_ERR_PARTIAL : HK_ERR;
+    return hk_batch_status(succeeded, total);
 }
 
 - (HKImageRef)openImage:(NSString *)path {
@@ -382,29 +419,18 @@ typedef NS_ENUM(int, HKHookKind) {
     }
 
     // image == NULL: iterate all loaded dyld images
-    int count = _dyld_image_count();
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        struct libhooker_image *libhookerImage = fn_LHOpenImage(image_name);
 
-    for(int i = 0; i < count; i++) {
-        const char *image_name = _dyld_get_image_name(i);
-
-        if(image_name) {
-            struct libhooker_image *libhookerImage = fn_LHOpenImage(image_name);
-
-            if(!libhookerImage) {
-                // no handle, no symbol lookup: skip this image
-                continue;
-            }
-
-            void *result = [self findSymbol:symbol inImage:libhookerImage];
-            fn_LHCloseImage(libhookerImage);
-
-            if(result) {
-                return result;
-            }
+        if(!libhookerImage) {
+            // no handle, no symbol lookup: skip this image
+            return NULL;
         }
-    }
 
-    return NULL;
+        void *result = [self findSymbol:symbol inImage:libhookerImage];
+        fn_LHCloseImage(libhookerImage);
+        return result;
+    });
 }
 @end
 
@@ -499,25 +525,10 @@ typedef NS_ENUM(int, HKHookKind) {
     }
 
     // image == NULL: iterate all loaded dyld images
-    int count = _dyld_image_count();
-
-    for(int i = 0; i < count; i++) {
-        const char *image_name = _dyld_get_image_name(i);
-
-        if(image_name) {
-            void *imageHandle = msGetImageByName(image_name);
-
-            if(imageHandle) {
-                void *found = msFindSymbol(imageHandle, symbol);
-
-                if(found) {
-                    return found;
-                }
-            }
-        }
-    }
-
-    return NULL;
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        void *imageHandle = msGetImageByName(image_name);
+        return imageHandle ? msFindSymbol(imageHandle, symbol) : NULL;
+    });
 }
 @end
 
@@ -606,34 +617,25 @@ typedef NS_ENUM(int, HKHookKind) {
     }
 
     // image == NULL: iterate all loaded dyld images
-    int count = _dyld_image_count();
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        struct substitute_image *subImage = fn_substitute_open_image(image_name);
 
-    for(int i = 0; i < count; i++) {
-        const char *image_name = _dyld_get_image_name(i);
-
-        if(image_name) {
-            struct substitute_image *subImage = fn_substitute_open_image(image_name);
-
-            if(!subImage) {
-                continue;
-            }
-
-            void *sym = NULL;
-
-            if(fn_substitute_find_private_syms(subImage, &symbol, &sym, 1) == SUBSTITUTE_OK && sym) {
-                void *result = fn_substitute_sym_to_ptr(subImage, (substitute_sym *)sym);
-                fn_substitute_close_image(subImage);
-
-                if(result) {
-                    return result;
-                }
-            } else {
-                fn_substitute_close_image(subImage);
-            }
+        if(!subImage) {
+            return NULL;
         }
-    }
 
-    return NULL;
+        // the block captures `symbol` as const, so pass a mutable copy
+        const char *probe = symbol;
+        void *sym = NULL;
+        void *result = NULL;
+
+        if(fn_substitute_find_private_syms(subImage, &probe, &sym, 1) == SUBSTITUTE_OK && sym) {
+            result = fn_substitute_sym_to_ptr(subImage, (substitute_sym *)sym);
+        }
+
+        fn_substitute_close_image(subImage);
+        return result;
+    });
 }
 @end
 
@@ -647,7 +649,9 @@ typedef NS_ENUM(int, HKHookKind) {
 // struct rebinding for ALL future dlopen events, so they must outlive
 // hookFunction:. Each hook is therefore kept in a process-lifetime store
 // forever — per-hook, bounded. Deliberate: fishhook writes the original
-// through these cells on every future image load.
+// through these cells on every future image load. Guarded because
+// hookFunction: may be called from multiple threads (fishhook's own list is
+// locked internally; the ObjC store is not).
 @interface HKFishhookRebinding : NSObject {
 @public
     char *name;
@@ -689,6 +693,13 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 
     Dl_info info;
 
+#if __has_feature(ptrauth_calls)
+    // The caller may pass a signed function pointer (arm64e function
+    // pointers are signed with asia/div-0 by the ABI). dladdr and the
+    // dli_saddr comparison below work on the raw address, so strip first.
+    function = ptrauth_strip(function, ptrauth_key_asia);
+#endif
+
     if(!(dladdr(function, &info) && info.dli_sname && info.dli_saddr == function)) {
         // fishhook rebinds by exported symbol name; private/interior
         // addresses are not rebindable
@@ -703,12 +714,28 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
         owned->name, replacement, owned->origCell
     };
 
-    int result = rebind_symbols(&rebinding, 1);
+    size_t matched = 0;
+    int result = rebind_symbols_checked(&rebinding, 1, &matched);
 
     if(result != 0) {
         free(owned->name);
         free(owned->origCell);
         return HK_ERR;
+    }
+
+    if(matched == 0) {
+        // The symbol is exported (dladdr found it) but no loaded image
+        // references it through an indirect symbol pointer, so the rebinding
+        // is a silent no-op today. fishhook retains it for future image
+        // loads, so keep the cells alive in the store, but report the no-op
+        // honestly instead of pretending the hook took effect.
+        NSLog(@"[HookKit] fishhook: symbol '%s' is not referenced by any loaded image; hook is a no-op", owned->name);
+
+        @synchronized(fishhookRebindingStore()) {
+            [fishhookRebindingStore() addObject:owned];
+        }
+
+        return HK_ERR_NOT_SUPPORTED;
     }
 
     // Copy synchronously; the caller's pointer is used only here and never
@@ -717,7 +744,9 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
         *old_ptr = *(owned->origCell);
     }
 
-    [fishhookRebindingStore() addObject:owned];
+    @synchronized(fishhookRebindingStore()) {
+        [fishhookRebindingStore() addObject:owned];
+    }
 
     return HK_OK;
 }
@@ -757,28 +786,526 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
         return found;
     }
 
-    int count = _dyld_image_count();
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
 
-    for(int i = 0; i < count; i++) {
-        const char *image_name = _dyld_get_image_name(i);
+        if(!handle) {
+            return NULL;
+        }
 
-        if(image_name) {
-            void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
+        void *result = dlsym(handle, symbol);
+        dlclose(handle);
+        return result;
+    });
+}
+@end
 
-            if(handle) {
-                found = dlsym(handle, symbol);
-                dlclose(handle);
+// Native backend: HookKit's own engine, requiring no hooking library on the
+// device. Never selected automatically — callers opt in with HK_LIB_NATIVE.
+// See native/hk_native.h for the constraints.
+@interface HKNativeBackend : NSObject <HKSubstitutorBackend>
+@end
 
-                if(found) {
-                    return found;
-                }
-            }
+@implementation HKNativeBackend {
+    int _lastErrno;
+}
+
+- (BOOL)batchingSupported {
+    return YES;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+// Pure libobjc: no patching, no privileged memory, works wherever HookKit runs.
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+
+    Method method = class_getInstanceMethod(objcClass, selector);
+
+    if(!method) {
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    IMP inherited = method_getImplementation(method);
+
+    // class_getInstanceMethod walks superclasses, so the method may not belong
+    // to this class. Adding it here leaves the superclass untouched and chains
+    // to the implementation we would otherwise have inherited.
+    if(class_addMethod(objcClass, selector, (IMP)replacement, method_getTypeEncoding(method))) {
+        if(old_ptr) {
+            *old_ptr = (void *)inherited;
+        }
+
+        return HK_OK;
+    }
+
+    IMP previous = method_setImplementation(method, (IMP)replacement);
+
+    if(old_ptr) {
+        *old_ptr = (void *)previous;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    void *orig = NULL;
+
+    if(!hk_native_hook_function(function, replacement, &orig)) {
+        _lastErrno = hk_native_last_error();
+        return HK_ERR;
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(!hk_native_patch_memory(target, data, size)) {
+        _lastErrno = hk_native_last_error();
+        return HK_ERR;
+    }
+
+    _lastErrno = 0;
+    return HK_OK;
+}
+
+// No cross-hook batching to exploit — each patch is independent — but the
+// protocol's batch path is still honoured so callers get uniform semantics.
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    int total = (int)[hooks count];
+    int succeeded = 0;
+    int failureErrno = 0;
+
+    for(HKHookOperation *hook in hooks) {
+        hookkit_status_t result = HK_ERR;
+
+        switch(hook->kind) {
+            case HKHookKindMessage:
+                result = [self hookMessageInClass:hook->objcClass withSelector:hook->selector withReplacement:hook->replacement outOldPtr:&hook->origValue];
+                break;
+
+            case HKHookKindFunction:
+                result = [self hookFunction:hook->function withReplacement:hook->replacement outOldPtr:&hook->origValue];
+                break;
+
+            case HKHookKindMemory:
+                result = [self hookMemory:hook->target withData:[hook->data bytes] size:hook->size];
+                break;
+        }
+
+        if(result == HK_OK) {
+            hook->succeeded = YES;
+            succeeded += 1;
+        } else if(!failureErrno) {
+            failureErrno = _lastErrno;
         }
     }
 
+    _lastErrno = failureErrno;
+
+    return hk_batch_status(succeeded, total);
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return (HKImageRef)hk_native_open_image([path fileSystemRepresentation]);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(image) {
+        hk_native_close_image((hk_image *)image);
+    }
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return hk_native_find_symbol((hk_image *)image, symbol);
+    }
+
+    // image == NULL: search the default scope, then all loaded dyld images
+    void *found = dlsym(RTLD_DEFAULT, symbol);
+
+    if(found) {
+        return found;
+    }
+
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        hk_image *handle = hk_native_open_image(image_name);
+
+        if(!handle) {
+            return NULL;
+        }
+
+        void *result = hk_native_find_symbol(handle, symbol);
+        hk_native_close_image(handle);
+        return result;
+    });
+}
+@end
+
+// Dobby backend: inline hooking via the vendored Dobby static library
+// (vendor/dobby). Hooks by address, so interior/private C functions work
+// (unlike fishhook). No ObjC message hooking and no batching: function hooks
+// and memory patches apply immediately at hook time.
+// arm64/arm64e only — the static lib has no armv7 slice, so the @interface
+// stays visible for the registry but the @implementation is arch-gated and
+// dobby_available() reports NO on armv7.
+@interface HKDobbyBackend : NSObject <HKSubstitutorBackend> {
+    int _lastErrno;
+}
+@end
+
+#if defined(__arm64__) || defined(__arm64e__)
+@implementation HKDobbyBackend
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    // DobbyHook returns 0 on success; -1 on failure (null address, already
+    // hooked, or routing error). Hooks by address — no exported-symbol check.
+    void *orig = NULL;
+    int result = DobbyHook(function, replacement, &orig);
+    _lastErrno = result;
+
+    if(result != 0) {
+        return HK_ERR;
+    }
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    // DobbyCodePatch returns 0 on success; -1 on failure (invalid arguments
+    // or a mach vm_protect error).
+    int result = DobbyCodePatch(target, (uint8_t *)data, (uint32_t)size);
+    _lastErrno = result;
+    return result == 0 ? HK_OK : HK_ERR;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: function hooks and memory patches apply at hook time
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
+    // contract that openImage does not load images
+    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(image) {
+        dlclose((void *)image);
+    }
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return dlsym((void *)image, symbol);
+    }
+
+    // image == NULL: search the default scope, then all loaded dyld images
+    void *found = dlsym(RTLD_DEFAULT, symbol);
+
+    if(found) {
+        return found;
+    }
+
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
+
+        if(!handle) {
+            return NULL;
+        }
+
+        void *result = dlsym(handle, symbol);
+        dlclose(handle);
+        return result;
+    });
+}
+@end
+#else   // !arm64: stub — the class symbol must exist for the registry entry,
+        // but dobby_available() is NO on armv7 so this is never instantiated.
+@implementation HKDobbyBackend
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return NULL;
+}
+
+- (void)closeImage:(HKImageRef)image {
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
     return NULL;
 }
 @end
+#endif
+
+#pragma mark - Frida (HKGum) runtime resolution
+
+// Frida hooks through the HKGum.dylib wrapper, dlopen'd at runtime via
+// RootBridge (same pattern as libhooker/libsubstitute): the framework never
+// links frida-gum directly. No arch guard — everything is runtime dlopen, and
+// on armv7 dlopen simply fails (the wrapper product is arch-gated in the
+// Makefile). The devkit's minos=14.0 also gates older iOS: dyld refuses to
+// dlopen HKGum.dylib on iOS 12/13, so dlopen failure is the whole gate.
+static void *hkgum_handle = NULL;
+static int (*fn_hkgum_hook_function)(void *, void *, void **) = NULL;
+static int (*fn_hkgum_begin_transaction)(void) = NULL;
+static int (*fn_hkgum_end_transaction)(void) = NULL;
+
+// Frida backend: inline hooking via frida-gum, loaded at runtime through the
+// HKGum.dylib wrapper (vendor/gum/hkgum.c). No ObjC message hooking and no
+// memory patching; batching is supported via gum interceptor transactions.
+@interface HKFridaBackend : NSObject <HKSubstitutorBackend>
+@end
+
+@implementation HKFridaBackend {
+    int _lastErrno;
+}
+- (BOOL)batchingSupported {
+    return YES;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    void *orig = NULL;
+    int result = fn_hkgum_hook_function(function, replacement, &orig);
+    _lastErrno = result;
+
+    if(result != 0) {
+        return HK_ERR;
+    }
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+// One gum transaction around the whole batch: replacements inside a
+// transaction are only published at end_transaction, so the batch is applied
+// atomically. Message/memory hooks are not supported (succeeded stays NO).
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    int total = (int)[hooks count];
+    int succeeded = 0;
+    int failureErrno = 0;
+
+    fn_hkgum_begin_transaction();
+
+    for(HKHookOperation *hook in hooks) {
+        switch(hook->kind) {
+            case HKHookKindFunction: {
+                void *orig = NULL;
+                int result = fn_hkgum_hook_function(hook->function, hook->replacement, &orig);
+
+                if(result == 0) {
+                    hook->origValue = orig;
+                    hook->succeeded = YES;
+                    succeeded += 1;
+                } else if(!failureErrno) {
+                    failureErrno = result;
+                }
+
+                break;
+            }
+
+            case HKHookKindMessage:
+            case HKHookKindMemory:
+                // not supported: succeeded stays NO
+                break;
+        }
+    }
+
+    fn_hkgum_end_transaction();
+
+    _lastErrno = failureErrno;
+
+    return hk_batch_status(succeeded, total);
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    // RTLD_NOLOAD: inspect-only, never loads the dylib — matches the MS/ElleKit
+    // contract that openImage does not load images
+    return (HKImageRef)dlopen([path fileSystemRepresentation], RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(image) {
+        dlclose((void *)image);
+    }
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return dlsym((void *)image, symbol);
+    }
+
+    // image == NULL: search the default scope, then all loaded dyld images
+    void *found = dlsym(RTLD_DEFAULT, symbol);
+
+    if(found) {
+        return found;
+    }
+
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        void *handle = dlopen(image_name, RTLD_LAZY | RTLD_NOLOAD);
+
+        if(!handle) {
+            return NULL;
+        }
+
+        void *result = dlsym(handle, symbol);
+        dlclose(handle);
+        return result;
+    });
+}
+@end
+
+#pragma mark - Backend registry
+
+// One table drives selection, availability, type reporting and the info dicts,
+// so adding a backend is a single entry rather than four parallel cascades.
+// Order is priority order.
+typedef BOOL (*HKBackendAvailability)(void);
+
+typedef struct {
+    hookkit_lib_t type;
+    __unsafe_unretained Class backendClass;
+    __unsafe_unretained NSString *identifier;
+    __unsafe_unretained NSString *name;
+    HKBackendAvailability available;
+    BOOL automatic;     // eligible for +defaultBackend
+} HKBackendDescriptor;
+
+// fishhook is compiled in, so it is the floor that is always present.
+static BOOL fishhook_available(void) {
+    return YES;
+}
+
+static BOOL native_available(void) {
+    return hk_native_supported() ? YES : NO;
+}
+
+// Dobby is compiled in on arm64/arm64e only (the vendored static lib has no
+// armv7 slice); the table entry stays on every arch so the count is stable.
+static BOOL dobby_available(void) {
+#if defined(__arm64__) || defined(__arm64e__)
+    return YES;
+#else
+    return NO;
+#endif
+}
+
+// Frida is available when the HKGum.dylib wrapper dlopens (see the resolution
+// block above). Only successful probes are cached: if dlopen fails, a later
+// call retries.
+static BOOL frida_available(void) {
+    static BOOL cached = NO;
+    static BOOL available = NO;
+
+    if(cached) {
+        return available;
+    }
+
+    hkgum_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/HKGum.dylib"] fileSystemRepresentation], RTLD_LAZY);
+
+    if(!hkgum_handle) {
+        return NO;
+    }
+
+    fn_hkgum_hook_function = (int (*)(void *, void *, void **))dlsym(hkgum_handle, "hkgum_hook_function");
+    fn_hkgum_begin_transaction = (int (*)(void))dlsym(hkgum_handle, "hkgum_begin_transaction");
+    fn_hkgum_end_transaction = (int (*)(void))dlsym(hkgum_handle, "hkgum_end_transaction");
+
+    available = fn_hkgum_hook_function && fn_hkgum_begin_transaction && fn_hkgum_end_transaction;
+    cached = YES;
+
+    return available;
+}
+
+static const HKBackendDescriptor *hk_backends(size_t *outCount) {
+    static HKBackendDescriptor table[7];
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        table[0] = (HKBackendDescriptor){ HK_LIB_ELLEKIT, [HKElleKitBackend class], @"ellekit", @"ElleKit", libhooker_available, YES };
+        table[1] = (HKBackendDescriptor){ HK_LIB_SUBSTRATE, [HKSubstrateBackend class], @"substrate", @"Cydia Substrate", substrate_available, YES };
+        table[2] = (HKBackendDescriptor){ HK_LIB_SUBSTITUTE, [HKSubstituteBackend class], @"substitute", @"Substitute", substitute_available, YES };
+        // Never automatic: HookKit's own engine is opt-in so that devices with
+        // a battle-tested library installed keep using it.
+        table[3] = (HKBackendDescriptor){ HK_LIB_NATIVE, [HKNativeBackend class], @"native", @"HookKit", native_available, NO };
+        table[4] = (HKBackendDescriptor){ HK_LIB_DOBBY, [HKDobbyBackend class], @"dobby", @"Dobby", dobby_available, YES };
+        // Never automatic: Frida is opt-in — Dobby is compiled in and lighter;
+        // Frida is the premium arm64e-tested engine users request explicitly.
+        table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO };
+        table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES };
+    });
+
+    *outCount = sizeof(table) / sizeof(table[0]);
+    return table;
+}
 
 #pragma mark - HKSubstitutor
 
@@ -792,24 +1319,24 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
     NSMutableArray<HKHookOperation *> *batchHooks;
     int lastLibErrno;
     hookkit_lib_t lastLibErrnoType;
+    // Priority-ordered list of hookkit_lib_t (NSNumber), from substitutorWithOrderedTypes:.
+    // Overrides the fixed table priority when set.
+    NSArray<NSNumber *> *orderedTypes;
 }
 
 @synthesize types, batching, activeType;
 
 + (id<HKSubstitutorBackend>)defaultBackend {
-    if(libhooker_available()) {
-        return [HKElleKitBackend new];
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
+
+    for(size_t i = 0; i < count; i++) {
+        if(table[i].automatic && table[i].available()) {
+            return [table[i].backendClass new];
+        }
     }
 
-    if(substrate_available()) {
-        return [HKSubstrateBackend new];
-    }
-
-    if(substitute_available()) {
-        return [HKSubstituteBackend new];
-    }
-
-    return [HKFishhookBackend new];
+    return nil;
 }
 
 - (instancetype)init {
@@ -831,16 +1358,37 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
         return;
     }
 
-    if(types == HK_LIB_NONE) {
+    if(orderedTypes.count) {
+        size_t count = 0;
+        const HKBackendDescriptor *table = hk_backends(&count);
+
+        types = HK_LIB_NONE;
+
+        for(NSNumber *num in orderedTypes) {
+            for(size_t i = 0; i < count; i++) {
+                if(table[i].type == (hookkit_lib_t)num.unsignedIntegerValue && table[i].available()) {
+                    backend = [table[i].backendClass new];
+                    types |= table[i].type;
+                    break;
+                }
+            }
+
+            if(backend) {
+                break;
+            }
+        }
+    } else if(types == HK_LIB_NONE) {
         backend = [[self class] defaultBackend];
-    } else if((types & HK_LIB_ELLEKIT) && libhooker_available()) {
-        backend = [HKElleKitBackend new];
-    } else if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
-        backend = [HKSubstrateBackend new];
-    } else if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
-        backend = [HKSubstituteBackend new];
-    } else if(types & HK_LIB_FISHHOOK) {
-        backend = [HKFishhookBackend new];
+    } else {
+        size_t count = 0;
+        const HKBackendDescriptor *table = hk_backends(&count);
+
+        for(size_t i = 0; i < count; i++) {
+            if((types & table[i].type) && table[i].available()) {
+                backend = [table[i].backendClass new];
+                break;
+            }
+        }
     }
     // explicit types with none available: backend stays nil — the request is
     // honest; the consumer guards with getAvailableSubstitutorTypes
@@ -853,20 +1401,13 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 
 - (hookkit_lib_t)backendType {
-    if([backend isKindOfClass:[HKElleKitBackend class]]) {
-        return HK_LIB_ELLEKIT;
-    }
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
 
-    if([backend isKindOfClass:[HKSubstrateBackend class]]) {
-        return HK_LIB_SUBSTRATE;
-    }
-
-    if([backend isKindOfClass:[HKSubstituteBackend class]]) {
-        return HK_LIB_SUBSTITUTE;
-    }
-
-    if([backend isKindOfClass:[HKFishhookBackend class]]) {
-        return HK_LIB_FISHHOOK;
+    for(size_t i = 0; i < count; i++) {
+        if([backend isKindOfClass:table[i].backendClass]) {
+            return table[i].type;
+        }
     }
 
     return HK_LIB_NONE;
@@ -887,18 +1428,14 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 
 + (hookkit_lib_t)getAvailableSubstitutorTypes {
-    hookkit_lib_t types = HK_LIB_FISHHOOK;
+    hookkit_lib_t types = HK_LIB_NONE;
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
 
-    if(libhooker_available()) {
-        types |= HK_LIB_ELLEKIT;
-    }
-
-    if(substrate_available()) {
-        types |= HK_LIB_SUBSTRATE;
-    }
-
-    if(substitute_available()) {
-        types |= HK_LIB_SUBSTITUTE;
+    for(size_t i = 0; i < count; i++) {
+        if(table[i].available()) {
+            types |= table[i].type;
+        }
     }
 
     return types;
@@ -906,37 +1443,17 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 
 + (NSArray<NSDictionary *> *)getSubstitutorTypeInfo:(hookkit_lib_t)types {
     NSMutableArray *result = [NSMutableArray new];
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
 
-    if((types & HK_LIB_ELLEKIT) && libhooker_available()) {
-        [result addObject:@{
-            @"id" : @"ellekit",
-            @"name" : @"ElleKit",
-            @"type" : @(HK_LIB_ELLEKIT)
-        }];
-    }
-
-    if((types & HK_LIB_SUBSTRATE) && substrate_available()) {
-        [result addObject:@{
-            @"id" : @"substrate",
-            @"name" : @"Cydia Substrate",
-            @"type" : @(HK_LIB_SUBSTRATE)
-        }];
-    }
-
-    if((types & HK_LIB_SUBSTITUTE) && substitute_available()) {
-        [result addObject:@{
-            @"id" : @"substitute",
-            @"name" : @"Substitute",
-            @"type" : @(HK_LIB_SUBSTITUTE)
-        }];
-    }
-
-    if(types & HK_LIB_FISHHOOK) {
-        [result addObject:@{
-            @"id" : @"fishhook",
-            @"name" : @"fishhook",
-            @"type" : @(HK_LIB_FISHHOOK)
-        }];
+    for(size_t i = 0; i < count; i++) {
+        if((types & table[i].type) && table[i].available()) {
+            [result addObject:@{
+                @"id" : table[i].identifier,
+                @"name" : table[i].name,
+                @"type" : @(table[i].type)
+            }];
+        }
     }
 
     return [result copy];
@@ -945,6 +1462,13 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 + (instancetype)substitutorWithTypes:(hookkit_lib_t)types {
     HKSubstitutor *substitutor = [self new];
     [substitutor setTypes:types];
+    [substitutor initLibraries];
+    return substitutor;
+}
+
++ (instancetype)substitutorWithOrderedTypes:(NSArray<NSNumber *> *)types {
+    HKSubstitutor *substitutor = [self new];
+    substitutor->orderedTypes = [types copy];
     [substitutor initLibraries];
     return substitutor;
 }
