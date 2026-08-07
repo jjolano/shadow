@@ -16,5 +16,9 @@ __attribute__((visibility("default")))
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID;
+
+// C0-5: current ruleset generation (incremented on every reload), read
+// atomically; consumers use it to invalidate caches on ruleset reload.
+- (NSUInteger)rulesetGeneration;
 @end
 #endif

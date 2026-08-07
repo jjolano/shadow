@@ -17,17 +17,22 @@
             @"Hook_Foundation" : @(NO),
             @"Hook_DeviceCheck" : @(YES),
             @"Hook_MachBootstrap" : @(NO),
-            @"Hook_SymLookup" : @(NO),
-            @"Hook_LowLevelC" : @(NO),
+            // C0-4: safe groups on by default — off-by-default = that vector
+            // is 100% exposed on a default install (detectors enumerate the
+            // dyld/objc surface before any pref can be flipped). The blanket
+            // denial groups below (Sandbox, Memory, Syscall, AntiDebugging,
+            // FakeMac) stay opt-in: they break legitimate apps.
+            @"Hook_SymLookup" : @(YES),
+            @"Hook_LowLevelC" : @(YES),
             @"Hook_AntiDebugging" : @(NO),
             @"Hook_DynamicLibrariesExtra" : @(NO),
-            @"Hook_ObjCRuntime" : @(NO),
+            @"Hook_ObjCRuntime" : @(YES),
             @"Hook_FakeMac" : @(NO),
             @"Hook_Syscall" : @(NO),
             @"Hook_Sandbox" : @(NO),
             @"Hook_Memory" : @(NO),
-            @"Hook_TweakClasses" : @(NO),
-            @"Hook_HideApps" : @(NO),
+            @"Hook_TweakClasses" : @(YES),
+            @"Hook_HideApps" : @(YES),
             @"MemoryLevelHiding" : @(NO)
         };
 

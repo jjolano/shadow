@@ -99,8 +99,22 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
 - (void)_reloadRulesets {
     rulesets = [self _loadRulesets];
-    rulesetGeneration += 1;
+
+    // C0-5: atomic generation bump — decision caches keyed on it must see the
+    // new value immediately (plain ivar in the public header; __atomic on the
+    // plain integer, matching the toolchain workaround documented in
+    // hooks.h). Reloads are serialized by the 1s scan gate, so the
+    // read-modify-write is single-writer.
+    NSUInteger gen = __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
+    __atomic_store_n(&rulesetGeneration, gen + 1, __ATOMIC_RELEASE);
     [cache_restricted removeAllObjects];
+}
+
+// C0-5: current ruleset generation, read atomically. Consumers (Core.m's
+// bounded decision cache) use it to treat cached decisions as stale the
+// moment a ruleset reloads, instead of waiting out the TTL.
+- (NSUInteger)rulesetGeneration {
+    return __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
 }
 
 - (void)_checkRulesetChanges {
