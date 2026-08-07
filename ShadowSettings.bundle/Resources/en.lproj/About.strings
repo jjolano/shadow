@@ -5,6 +5,7 @@
 "SOFTWARE_LICENSE" = "Software License";
 "UPDATES_HDR" = "Updates";
 "PACKAGE_VERSION" = "Package Version";
+"INSTALLED_VERSION" = "Installed Version";
 "LATEST_VERSION" = "Latest Version";
 "CREDITS_HDR" = "Credits";
 "DEVELOPER" = "Developer";

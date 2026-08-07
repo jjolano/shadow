@@ -63,21 +63,16 @@
         // Use app overrides.
         [result setObject:@(YES) forKey:@"App_Enabled"];
 
-        for(NSString* key in defaultSettings) {
-            id value = [app_settings objectForKey:key];
+		for(NSString* key in defaultSettings) {
+			id value = [app_settings objectForKey:key];
 
-            if(!value) {
-                id defaultValue = @(NO);
-
-                if([[defaultSettings objectForKey:key] isKindOfClass:[NSString class]]) {
-                    defaultValue = [defaultSettings objectForKey:key];
-                }
-
-                value = defaultValue;
-            }
-            
-            [result setObject:value forKey:key];
-        }
+			if(!value) {
+				// Inherit the global value for options the app does not override.
+				value = [userDefaults objectForKey:key];
+			}
+			
+			[result setObject:value forKey:key];
+		}
     } else {
         // Use global defaults.
         if([userDefaults boolForKey:@"Global_Enabled"]) {

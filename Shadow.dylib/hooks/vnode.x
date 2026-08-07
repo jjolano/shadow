@@ -1,6 +1,7 @@
 #import "hooks.h"
 #import <mach/mach_error.h>
 #import <bootstrap.h>
+#import <RootBridge.h>
 
 // Vnode-layer file hiding — thin Mach IPC client. All kernel-touching work
 // (krw init, vnode pinning, VISSHADOW, state file) lives in the privileged
@@ -77,7 +78,7 @@ shdw_transact(uint32_t op, BOOL waitForReply, int* status) {
     req.op = op;
     req.requestId = requestId;
 
-    kern_return_t kr = mach_msg(&req.header, MACH_SEND_MSG, sizeof(req), 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+    kern_return_t kr = mach_msg(&req.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof(req), 0, MACH_PORT_NULL, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
     if(kr != KERN_SUCCESS) {
         return kr;
     }
@@ -88,7 +89,7 @@ shdw_transact(uint32_t op, BOOL waitForReply, int* status) {
 
     shadowd_reply_t reply;
     memset(&reply, 0, sizeof(reply));
-    kr = mach_msg(&reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(reply) + 64, shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
+    kr = mach_msg(&reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(reply), shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
     if(kr != KERN_SUCCESS) {
         return kr;
     }
@@ -160,13 +161,61 @@ shdw_acquire(void) {
     return KERN_SUCCESS;
 }
 
+// Feature flag: "VnodeHiding" in Shadow's prefs plist (default OFF) — same
+// pattern as dyld.x's MemoryLevelHiding. SHADOW_PREFS_PLIST tracks the bundle
+// id (me.jjolano.shadow); on rootless the plist lives under /var/jb, so try
+// both paths. Escalation: when a detection library is present, hiding forces
+// on regardless of the prefs flag. The client decides; the daemon stays
+// permissive.
+static BOOL shdw_vnode_hiding_enabled(void) {
+    if(shdw_detector_present) {
+        return YES;
+    }
+
+    NSDictionary* prefs = nil;
+
+    for(NSString* path in @[
+        [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
+        @(SHADOW_PREFS_PLIST)
+    ]) {
+        prefs = [NSDictionary dictionaryWithContentsOfFile:path];
+
+        if(prefs) {
+            break;
+        }
+    }
+
+    if(!prefs) {
+        return NO;
+    }
+
+    // Per-app dict (when the app is enabled there) overrides the global key.
+    NSString* bundleIdentifier = [Shadow getBundleIdentifier];
+
+    if(bundleIdentifier) {
+        NSDictionary* appPrefs = prefs[bundleIdentifier];
+
+        if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
+            return [appPrefs[@"VnodeHiding"] boolValue];
+        }
+    }
+
+    return [prefs[@"VnodeHiding"] boolValue];
+}
+
 void shadowhook_vnode(HKSubstitutor* hooks) {
     (void) hooks;  // pure IPC client — no hook substitution required
 
-    // One acquire per process (the SpringBoard early path and the app path
-    // both reach here; the retained connection is the owner lease).
+    // One acquire per process, gated on the VnodeHiding pref (default OFF;
+    // forced on when a detection library is present). The retained
+    // connection is the owner lease.
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        if(!shdw_vnode_hiding_enabled()) {
+            NSLog(@"[Shadow] vnode: hiding disabled, skipping acquire");
+            return;
+        }
+
         kern_return_t kr = shdw_acquire();
 
         // Connection interruption (daemon may have restarted): one reconnect

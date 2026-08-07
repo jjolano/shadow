@@ -14,6 +14,14 @@
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
 			<key>label</key>
+			<string>INSTALLED_VERSION</string>
+			<key>get</key>
+			<string>aboutInstalledVersion:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>label</key>
 			<string>LATEST_VERSION</string>
 			<key>get</key>
 			<string>aboutLatestVersion:</string>

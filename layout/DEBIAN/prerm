@@ -5,16 +5,37 @@ then
     DPKG_ROOT="/var/jb"
 fi
 
+# SIGTERM the daemon and wait for a verified exit so it can unhide every
+# VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
+# shutdown). Polls up to 10s at 0.5s intervals; returns 0 if the process is
+# gone, 1 if it is still alive.
+# Never SIGKILL: a force-kill drops the process with its flags still set —
+# exactly the restart hazard this architecture exists to avoid (launchd
+# respawns a half-cleaned daemon, or the vnodes stay hidden until reboot).
+shadowd_stop() {
+    # Send SIGTERM via launchd when the service exists; fall back to a raw
+    # kill for the rare already-booted-out orphan.
+    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
+        || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+    for _ in $(seq 1 20); do
+        pgrep -x shadowd > /dev/null 2>&1 || return 0
+        sleep 0.5
+    done
+    return 1
+}
+
 case "$1" in
     remove|upgrade)
-        # SIGTERM first: the daemon unhides every VISSHADOW-hidden vnode on
-        # SIGTERM and exits 0 (KeepAlive SuccessfulExit=false won't respawn a
-        # clean exit), so nothing stays hidden when we boot it out. Leaked
-        # hidden vnodes panic the kernel at shutdown — never unload without
-        # the SIGTERM.
-        launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
-            || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
-        sleep 1
+        if ! shadowd_stop; then
+            # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL:
+            # that recreates the hazard the graceful shutdown exists to
+            # prevent. Continue the removal anyway — leaving the package
+            # half-removed is worse than risking a stale flag that a reboot
+            # clears. bootout below still removes the job (launchd will kill
+            # the process as part of job removal); the warning demands the
+            # reboot that actually restores hidden state.
+            echo "shadowd: did not exit after SIGTERM; unloading anyway. REBOOT REQUIRED to fully restore hidden state." >&2
+        fi
         launchctl bootout system/me.jjolano.shadow 2> /dev/null \
             || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
     ;;

@@ -1,7 +1,7 @@
 #import "SHDWAppListController.h"
+#import "SHDWHookLibs.h"
 
 #import <Shadow/Settings.h>
-#import <HookKit.h>
 
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
@@ -21,17 +21,14 @@
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	NSDictionary* prefs_app = [prefs dictionaryForKey:[self applicationID]];
+	NSString* key = [specifier identifier];
 
-	if(prefs_app) {
-		id value = prefs_app[[specifier identifier]];
-		if(value) return value;
+	if(prefs_app && [prefs_app objectForKey:key]) {
+		return prefs_app[key];
 	}
 
-	if([[specifier identifier] isEqualToString:@"HK_Library"]) {
-		return [[[ShadowSettings sharedInstance] defaultSettings] objectForKey:@"HK_Library"];
-	}
-
-	return nil;
+	// Options not overridden for this app inherit the global value.
+	return [prefs objectForKey:key];
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
@@ -59,13 +56,10 @@
 		hk_lib_values = [NSMutableArray new];
 		hk_lib_titles = [NSMutableArray new];
 
-		hookkit_lib_t hooklibs = [HKSubstitutor getAvailableSubstitutorTypes];
-		NSArray<NSDictionary *>* hooklibs_info = [HKSubstitutor getSubstitutorTypeInfo:hooklibs];
-
 		[hk_lib_values addObject:@"auto"];
 		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Automatic" table:@"Hooks"]];
 
-        for(NSDictionary* hooklib_info in hooklibs_info) {
+        for(NSDictionary* hooklib_info in SHDWAvailableHookLibs()) {
 			[hk_lib_values addObject:hooklib_info[@"id"]];
 			[hk_lib_titles addObject:hooklib_info[@"name"]];
         }

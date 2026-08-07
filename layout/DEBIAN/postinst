@@ -5,6 +5,25 @@ then
     DPKG_ROOT="/var/jb"
 fi
 
+# SIGTERM the daemon and wait for a verified exit so it can unhide every
+# VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
+# shutdown). Polls up to 10s at 0.5s intervals; returns 0 if the process is
+# gone, 1 if it is still alive.
+# Never SIGKILL: a force-kill drops the process with its flags still set —
+# exactly the restart hazard this architecture exists to avoid (launchd
+# respawns a half-cleaned daemon, or the vnodes stay hidden until reboot).
+shadowd_stop() {
+    # Send SIGTERM via launchd when the service exists; fall back to a raw
+    # kill for the rare already-booted-out orphan.
+    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
+        || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+    for _ in $(seq 1 20); do
+        pgrep -x shadowd > /dev/null 2>&1 || return 0
+        sleep 0.5
+    done
+    return 1
+}
+
 case "$1" in
     configure)
         # Prefs plist: root-owned 0644 so apps (running as mobile) cannot write
@@ -33,12 +52,21 @@ case "$1" in
             chown root:wheel "$DPKG_ROOT/usr/libexec/shadowd"
             chmod 755 "$DPKG_ROOT/usr/libexec/shadowd"
             mkdir -p "$DPKG_ROOT/var/log"
+
+            # On upgrade, prerm asked the old daemon to exit; a copy that
+            # survived that gets one more graceful stop here. Never SIGKILL
+            # (kickstart -k): killing mid-hide leaves VISSHADOW flags set.
+            if pgrep -x shadowd > /dev/null 2>&1; then
+                if ! shadowd_stop; then
+                    echo "shadowd: old daemon did not exit; REBOOT REQUIRED to fully restore hidden state." >&2
+                fi
+            fi
+
             # Modern launchctl API; older iOS falls back to legacy load -w.
-            # (On upgrades bootstrap/load fail with "already loaded" — the
-            # running service is left alone and kickstart restarts it.)
+            # (On upgrades bootstrap/load fail with "already loaded" when the
+            # old service is still registered — harmless, the service is kept.)
             launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null \
                 || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
-            launchctl kickstart -k system/me.jjolano.shadow 2> /dev/null || true
         fi
     ;;
 

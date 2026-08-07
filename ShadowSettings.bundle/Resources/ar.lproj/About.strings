@@ -6,6 +6,7 @@
 "SOFTWARE_LICENSE" = "ترخيص البرمجيات";
 "UPDATES_HDR" = "التحديثات";
 "PACKAGE_VERSION" = "إصدار الحزمة";
+"INSTALLED_VERSION" = "الإصدار المثبت";
 "LATEST_VERSION" = "أحدث إصدار";
 "CREDITS_HDR" = "الاعتمادات";
 "DEVELOPER" = "المطور";

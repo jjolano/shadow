@@ -70,19 +70,20 @@ static inline Shadow* shdw_shadow_instance(void) {
 
 #define _shadow                 shdw_shadow_instance()
 
-// Caller classification for isCallerTweak(): a return address belongs to the
-// app iff it falls inside the address range of an image whose path is under
-// the app bundle — the predicate -[Shadow isAddrExternal:] applied per call.
-// The app bundle's images (app executable + embedded frameworks) are few and
-// each span is fixed once its image is loaded, so dyld.x keeps a snapshot of
-// their spans instead of answering every call with a dyld image-list walk
-// (the old per-return-address table thrashed: ~260 distinct call sites vs
-// 128 direct-mapped slots, and every add/remove image forced a wave of
-// recomputes). Snapshot is double-buffered: the writer rebuilds the inactive
-// copy and publishes it with one release store; readers take one acquire
-// load and never see a torn buffer. No callbacks run until dyld.x installs
-// them, so before then the published set is empty and every caller
-// classifies as non-app (conservative: restrictions apply).
+// Caller classification for isCallerTweak(): YES = the caller is OUTSIDE the
+// app bundle (tweak dylib, system libraries); NO = the caller is app code
+// (app executable + embedded frameworks, including embedded detectors).
+// This is the predicate -[Shadow isAddrExternal:] applied per call — the
+// app-bundle images are few and each span is fixed once its image is loaded,
+// so dyld.x keeps a snapshot of their spans instead of answering every call
+// with a dyld image-list walk (the old per-return-address table thrashed:
+// ~260 distinct call sites vs 128 direct-mapped slots, and every add/remove
+// image forced a wave of recomputes). Snapshot is double-buffered: the
+// writer rebuilds the inactive copy and publishes it with one release store;
+// readers take one acquire load and never see a torn buffer. dyld.x
+// refreshes the snapshot at install — before any hook group installs — and
+// on every add/remove image callback, so the published set is never stale in
+// practice.
 #define SHADOW_OWN_IMAGE_MAX 16
 
 typedef struct {
@@ -104,11 +105,11 @@ static inline BOOL shdw_caller_is_tweak(const void* ra) {
 
     for(uint32_t i = 0; i < ranges->count; i++) {
         if(a >= ranges->range[i].base && a < ranges->range[i].end) {
-            return YES;
+            return NO;  // inside the app bundle: app code
         }
     }
 
-    return NO;
+    return YES;  // outside the app bundle: tweak/system
 }
 
 // Rebuilds the app-bundle image spans from the current dyld image list.
