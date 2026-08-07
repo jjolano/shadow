@@ -143,6 +143,12 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         path = [path stringByAppendingFormat:@".%@", file_ext];
     }
 
+    // C0-1: write/create/delete probes must not be let through by the
+    // existence gates — a detector probing a restricted-classified path it
+    // could create (e.g. /var/jb/usr/lib/libjailbreak.dylib before it
+    // exists) must get a denial, not an "allowed because absent".
+    BOOL isWrite = [[options objectForKey:kShadowRestrictionOperation] isEqualToString:kShadowRestrictionOpWrite];
+
     // Rootless optimization: skip rooted checks. Covers /var/jb, its
     // canonical preboot target and /cores/ via isPathInRestrictedRoot.
     if(rootless) {
@@ -159,13 +165,17 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
             // if it exists, lives under /var/jb + path. Only evaluate rulesets
             // (against the canonical rooted-flavored path, so existing ruleset
             // entries/predicates apply) if the concrete jbroot file exists.
-            NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
-            int errno_old = errno;
-            BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
-            errno = errno_old;
+            // Write probes skip the existence gate (C0-1): the ruleset decides
+            // even for a not-yet-created target.
+            if(!isWrite) {
+                NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
+                int errno_old = errno;
+                BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
+                errno = errno_old;
 
-            if(!exists) {
-                return NO;
+                if(!exists) {
+                    return NO;
+                }
             }
 
             if([backend isPathRestricted:path]) {
@@ -178,16 +188,21 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     }
 
     if([path hasPrefix:@"/usr/lib"]) {
-        // Skip checks if file doesn't exist
-        int errno_old = errno;
-        NSString* check_path = path;
-        if(rootless) {
-            check_path = [@"/var/jb" stringByAppendingString:path];
-        }
-        if(access([check_path fileSystemRepresentation], F_OK) != 0) {
-            // reset errno
-            errno = errno_old;
-            return NO;
+        // Skip checks if file doesn't exist. Write probes skip the gate
+        // (C0-1): a restricted-classified path is denied even when absent.
+        if(!isWrite) {
+            int errno_old = errno;
+            NSString* check_path = path;
+
+            if(rootless) {
+                check_path = [@"/var/jb" stringByAppendingString:path];
+            }
+
+            if(access([check_path fileSystemRepresentation], F_OK) != 0) {
+                // reset errno
+                errno = errno_old;
+                return NO;
+            }
         }
     }
 
