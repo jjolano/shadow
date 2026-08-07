@@ -74,30 +74,39 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
 
 static IMP (*original_method_getImplementation)(Method m);
 static IMP replaced_method_getImplementation(Method m) {
-    IMP result = original_method_getImplementation(m);
-
-    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)result]) {
-        return result;
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
+        return original_method_getImplementation(m);
     }
 
-    // The fake IMP is never called — detectors (IOSSecuritySuite amISwizzled)
-    // only classify the IMP's image via dladdr/dyld_image_path_containing_address.
-    // Pointing at the app's own mach_header (image index 0) makes a swizzled
-    // method's IMP look native. _dyld_get_image_header is hooked by dyld.x, but
-    // our call originates from the tweak, so it returns the true executable header.
-    return (IMP)_dyld_get_image_header(0);
+    IMP result = original_method_getImplementation(m);
+
+    // Classify the Method (its storage lives in the owning image's data) AND
+    // the returned IMP: a protected Method or IMP must never resolve. NULL,
+    // not a fabricated "native-looking" IMP — the header cast was a fake that
+    // detectors could still fingerprint (plan Wave 1b).
+    if([_shadow isAddrRestricted:(void *)m] || [_shadow isAddrRestricted:(void *)result]) {
+        return NULL;
+    }
+
+    return result;
 }
 
 static IMP (*original_class_getMethodImplementation)(Class cls, SEL name);
 static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
-    IMP result = original_class_getMethodImplementation(cls, name);
-
-    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)result]) {
-        return result;
+    if(!isCallerExternal()) {
+        return original_class_getMethodImplementation(cls, name);
     }
 
-    // Same rationale as replaced_method_getImplementation above.
-    return (IMP)_dyld_get_image_header(0);
+    IMP result = original_class_getMethodImplementation(cls, name);
+
+    // Same policy as replaced_method_getImplementation: the class, and the
+    // IMP it resolves to, must both be unprotected.
+    if([_shadow isAddrRestricted:(__bridge const void *)cls] || [_shadow isAddrRestricted:(void *)result]) {
+        return NULL;
+    }
+
+    return result;
 }
 
 // imp_getBlock is not a linkable symbol on all SDKs (added in iOS 16), so
