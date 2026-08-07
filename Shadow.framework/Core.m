@@ -439,4 +439,49 @@ done:
 
     return [backend isBundleIDRestricted:bundleID];
 }
+
+// C0-3: protected-name policy. A single exact-name predicate for the
+// dyld/objc/NSBundle/UIImage layers: restricted by ruleset, or one of
+// Shadow's own artifacts matched by case-insensitive basename prefix
+// (rootful /Library/Frameworks and rootless /var/jb prefixes both reduce to
+// the same basename). "substrate"/"substitute"/"ellekit" also match their
+// lib-prefixed dylibs (libsubstrate.dylib etc.).
+- (BOOL)isProtectedImagePath:(NSString *)path {
+    if(!path || [path length] == 0) {
+        return NO;
+    }
+
+    if([self isCPathRestricted:[path fileSystemRepresentation]]) {
+        return YES;
+    }
+
+    static NSSet* protectedNames = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        protectedNames = [NSSet setWithArray:@[
+            @"shadow.dylib",
+            @"shadow.framework",
+            @"libsandy.dylib",
+            @"hookkit.framework",
+            @"rootbridge.framework",
+            @"substrate",
+            @"libsubstrate",
+            @"substitute",
+            @"libsubstitute",
+            @"ellekit",
+            @"libellekit"
+        ]];
+    });
+
+    NSString* basename = [[path lastPathComponent] lowercaseString];
+
+    for(NSString* name in protectedNames) {
+        if([basename hasPrefix:name]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
 @end
