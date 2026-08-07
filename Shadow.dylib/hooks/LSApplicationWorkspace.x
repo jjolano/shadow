@@ -6,21 +6,28 @@
 
 // use of LSApplicationWorkspace seems to be known for getting App Store rejected, but you never know...
 
+// C0-3: hidden-app predicate — restricted bundle URL OR case-insensitive
+// restricted bundle ID. Applied to every proxy-returning surface so a proxy
+// can't leak through a variant that only checks one of the two signals.
+static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
+    NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:proxies.count];
+
+    for(LSApplicationProxy* ap in proxies) {
+        if(![_shadow isURLRestricted:[ap bundleURL]] && ![_shadow isBundleIDRestricted:[ap bundleIdentifier]]) {
+            [result_filtered addObject:ap];
+        }
+    }
+
+    return [result_filtered copy];
+}
+
 %group shadowhook_LSApplicationWorkspace
 %hook LSApplicationWorkspace
 - (NSArray<LSApplicationProxy *> *)allApplications {
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerExternal() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
-
-        for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
-            }
-        }
-
-        result = [result_filtered copy];
+        result = shdw_filter_application_proxies(result);
     }
 
     return result;
@@ -30,15 +37,7 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerExternal() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
-
-        for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
-            }
-        }
-
-        result = [result_filtered copy];
+        result = shdw_filter_application_proxies(result);
     }
 
     return result;
@@ -48,15 +47,7 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerExternal() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
-
-        for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
-            }
-        }
-
-        result = [result_filtered copy];
+        result = shdw_filter_application_proxies(result);
     }
 
     return result;
@@ -66,15 +57,7 @@
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(!isCallerExternal() && result) {
-        NSMutableArray<LSApplicationProxy *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
-
-        for(LSApplicationProxy* ap in result) {
-            if(![_shadow isURLRestricted:[ap bundleURL]]) {
-                [result_filtered addObject:ap];
-            }
-        }
-
-        result = [result_filtered copy];
+        result = shdw_filter_application_proxies(result);
     }
 
     return result;
@@ -87,6 +70,13 @@
         NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* app_bundleId in result) {
+            // The ID is checked directly (case-insensitive predicate); the
+            // resolved proxy URL is checked as well, and a nil proxy is
+            // dropped when the ID itself is restricted.
+            if([_shadow isBundleIDRestricted:app_bundleId]) {
+                continue;
+            }
+
             LSBundleProxy* app_bundle = [LSBundleProxy bundleProxyForIdentifier:app_bundleId];
             BOOL restricted = app_bundle && [_shadow isURLRestricted:[app_bundle bundleURL]];
 
@@ -106,7 +96,13 @@
         return @[];
     }
 
-    return %orig;
+    NSArray<LSApplicationProxy *>* result = %orig;
+
+    if(!isCallerExternal() && result) {
+        result = shdw_filter_application_proxies(result);
+    }
+
+    return result;
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url {
@@ -114,7 +110,13 @@
         return @[];
     }
 
-    return %orig;
+    NSArray<LSApplicationProxy *>* result = %orig;
+
+    if(!isCallerExternal() && result) {
+        result = shdw_filter_application_proxies(result);
+    }
+
+    return result;
 }
 
 - (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url legacySPI:(BOOL)legacySPI {
@@ -122,7 +124,13 @@
         return @[];
     }
 
-    return %orig;
+    NSArray<LSApplicationProxy *>* result = %orig;
+
+    if(!isCallerExternal() && result) {
+        result = shdw_filter_application_proxies(result);
+    }
+
+    return result;
 }
 
 - (NSArray<NSString *> *)publicURLSchemes {
