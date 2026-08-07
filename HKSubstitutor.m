@@ -1018,7 +1018,8 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 }
 
 - (BOOL)supportsHookKind:(HKHookKind)kind {
-    return kind == HKHookKindFunction;
+    // Swift vtable hooking is a separate API; none of the three kinds apply
+    return NO;
 }
 
 - (int)lastErrno {
@@ -1537,7 +1538,7 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     int lastLibErrno;
     hookkit_lib_t lastLibErrnoType;
     // Priority-ordered list of hookkit_lib_t (NSNumber), from substitutorWithOrderedTypes:.
-    // Overrides the fixed table priority when set.
+    // Overrides the fixed table priority when non-nil; non-nil-but-empty means no backend.
     NSArray<NSNumber *> *orderedTypes;
 }
 
@@ -1575,7 +1576,9 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
         return;
     }
 
-    if(orderedTypes.count) {
+    if(orderedTypes) {
+        // an explicitly-supplied list is honoured as given: empty yields no
+        // backend rather than falling through to the automatic pick
         size_t count = 0;
         const HKBackendDescriptor *table = hk_backends(&count);
 
@@ -1685,7 +1688,8 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
 
 + (instancetype)substitutorWithOrderedTypes:(NSArray<NSNumber *> *)types {
     HKSubstitutor *substitutor = [self new];
-    substitutor->orderedTypes = [types copy];
+    // nil is still an explicit ordered request: treat it as empty, never as unset
+    substitutor->orderedTypes = [types copy] ?: @[];
     [substitutor initLibraries];
     return substitutor;
 }
