@@ -338,8 +338,10 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
 
     const char* result = original_dyld_image_path_containing_address(addr);
 
-    if(result && [_shadow isCPathRestricted:result]) {
-        return [[Shadow getExecutablePath] fileSystemRepresentation];
+    // Restricted address: report "in no image" (NULL) — the executable-path
+    // fake was a contradiction a detector could fingerprint (plan Wave 1c).
+    if(result && [_shadow isProtectedImagePath:@(result)]) {
+        return NULL;
     }
 
     return result;
@@ -378,6 +380,78 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
     }
 
     return original_dyld_image_header_containing_address(addr);
+}
+
+// The exported _dyld_get_image_header_containing_address alias (dyld4,
+// iOS 15+) leaks exactly like dyld_image_header_containing_address; hook it
+// with the same replacement. Its own original slot is unused — the body
+// resolves through the direct-linked symbol's original.
+static const struct mach_header* (*original_dyld_get_image_header_containing_address)(const void* addr);
+
+// --- Address-attribution siblings (plan Wave 1c): every dyld SPI that maps
+// an address or header back to an image must answer "unknown" for protected
+// images — header, uuid, install name, unwind sections, slide.
+
+static intptr_t (*original_dyld_get_image_slide)(const struct mach_header* mh);
+static intptr_t replaced_dyld_get_image_slide(const struct mach_header* mh) {
+    if(!isCallerExternal()) {
+        return original_dyld_get_image_slide(mh);
+    }
+
+    if(!mh || [_shadow isAddrRestricted:mh]) {
+        return 0;
+    }
+
+    return original_dyld_get_image_slide(mh);
+}
+
+static bool (*original_dyld_get_image_uuid)(const struct mach_header* mh, uuid_t uuid);
+static bool replaced_dyld_get_image_uuid(const struct mach_header* mh, uuid_t uuid) {
+    if(!isCallerExternal()) {
+        return original_dyld_get_image_uuid(mh, uuid);
+    }
+
+    if(!mh || [_shadow isAddrRestricted:mh]) {
+        if(uuid) {
+            memset(uuid, 0, sizeof(uuid_t));
+        }
+
+        return false;
+    }
+
+    return original_dyld_get_image_uuid(mh, uuid);
+}
+
+// Private libdyld export (dyld3/dyld4); resolved at install via MSFindSymbol.
+extern const char* dyld_image_get_installname(const struct mach_header* mh);
+static const char* (*original_dyld_image_get_installname)(const struct mach_header* mh);
+static const char* replaced_dyld_image_get_installname(const struct mach_header* mh) {
+    if(!isCallerExternal()) {
+        return original_dyld_image_get_installname(mh);
+    }
+
+    if(!mh || [_shadow isAddrRestricted:mh]) {
+        return NULL;
+    }
+
+    return original_dyld_image_get_installname(mh);
+}
+
+static bool (*original_dyld_find_unwind_sections)(void* addr, struct dyld_unwind_sections* info);
+static bool replaced_dyld_find_unwind_sections(void* addr, struct dyld_unwind_sections* info) {
+    if(!isCallerExternal()) {
+        return original_dyld_find_unwind_sections(addr, info);
+    }
+
+    if(!addr || [_shadow isAddrRestricted:addr]) {
+        if(info) {
+            memset(info, 0, sizeof(struct dyld_unwind_sections));
+        }
+
+        return false;
+    }
+
+    return original_dyld_find_unwind_sections(addr, info);
 }
 
 static void* (*original_dlopen)(const char* path, int mode);
@@ -620,6 +694,11 @@ static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "_dyld_get_image_vmaddr_slide", (void *)&replaced_dyld_get_image_vmaddr_slide },
     { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
     { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
+    { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
+    { "_dyld_get_image_slide", (void *)&replaced_dyld_get_image_slide },
+    { "_dyld_get_image_uuid", (void *)&replaced_dyld_get_image_uuid },
+    { "dyld_image_get_installname", (void *)&replaced_dyld_image_get_installname },
+    { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
     { "_dyld_register_func_for_add_image", (void *)&replaced_dyld_register_func_for_add_image },
     { "_dyld_register_func_for_remove_image", (void *)&replaced_dyld_register_func_for_remove_image },
     { "_dyld_images_for_addresses", (void *)&replaced_dyld_images_for_addresses },
@@ -751,40 +830,26 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
 static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
-    if(isCallerExternal()) {
+    // Each loader operation clears the thread's error state up front.
+    _shdw_dyld_error_tls = NULL;
+
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
         return original_dladdr(addr, info);
     }
 
     int result = original_dladdr(addr, info);
 
+    // Restricted address (inside a Shadow-owned or JB image): report "not in
+    // any image" — zero the record and return 0, never a fabricated success
+    // with a fake executable path (plan Wave 1c; the RTLD_NEXT re-lookup loop
+    // is gone — the fallback it fabricated was a fingerprint).
     if(result && [_shadow isAddrRestricted:addr]) {
         if(info) {
-            // Capture the symbol name before zeroing: the re-lookup below
-            // needs it, but the record's fbase/saddr must not survive — they
-            // would leak the hidden image's load address to a detector
-            // reading the untouched fields.
-            const char* symbolName = info->dli_sname;
-
-            // Zero the whole record; the executable-path fallback below is
-            // the only thing a detector may read.
             memset(info, 0, sizeof(Dl_info));
-
-            // One lookup only: dlsym with identical args returns the same
-            // result every time, so if it resolves to a restricted address
-            // the old loop would spin forever — apply the executable-name
-            // fallback immediately instead. A NULL symbol name skips the
-            // lookup (goes straight to the fallback).
-            if(symbolName) {
-                void* sym = dlsym(RTLD_NEXT, symbolName);
-
-                if(sym && ![_shadow isAddrRestricted:sym]) {
-                    return original_dladdr(sym, info);
-                }
-            }
-
-            // as a fallback, we'll just say this addr is part of the executable itself
-            info->dli_fname = [[Shadow getExecutablePath] fileSystemRepresentation];
         }
+
+        return 0;
     }
 
     return result;
@@ -811,22 +876,22 @@ static BOOL shdw_dyld_image_is_hidden(const struct mach_header* mh) {
 
 // iOS 12+ SPI: resolves addresses to their containing image (uuid + offset).
 // dyld zero-fills entries for addresses it doesn't know; extend the same
-// "unknown" signal to addresses inside hidden images so stack-backtrace
-// symbolication can't walk past the dyld API filter.
+// "unknown" signal to PROTECTED addresses (inside Shadow-owned or JB images)
+// so stack-backtrace symbolication can't walk past the dyld API filter.
 static void (*original_dyld_images_for_addresses)(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]);
 static void replaced_dyld_images_for_addresses(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_dyld_images_for_addresses(count, addresses, infos);
     }
 
     original_dyld_images_for_addresses(count, addresses, infos);
 
-    if(!infos) {
+    if(!infos || !addresses) {
         return;
     }
 
     for(unsigned i = 0; i < count; i++) {
-        if(shdw_dyld_image_is_hidden(infos[i].image)) {
+        if([_shadow isAddrRestricted:addresses[i]]) {
             memset(&infos[i], 0, sizeof(infos[i]));
         }
     }
@@ -1251,6 +1316,14 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     MSHookFunction(dyld_image_path_containing_address, replaced_dyld_image_path_containing_address, (void **) &original_dyld_image_path_containing_address);
     MSHookFunction(dyld_image_header_containing_address, replaced_dyld_image_header_containing_address, (void **) &original_dyld_image_header_containing_address);
 
+    // Address-attribution siblings (plan Wave 1c): the slide/unwind pair is
+    // ancient and directly linkable; the _dyld_get_image_header_containing_address
+    // alias (dyld4, iOS 15+), _dyld_get_image_uuid (iOS 10+) and
+    // dyld_image_get_installname (dyld3/4) are resolved by name below so the
+    // legacy (iOS 9) build doesn't link against symbols it lacks.
+    MSHookFunction(_dyld_get_image_slide, replaced_dyld_get_image_slide, (void **) &original_dyld_get_image_slide);
+    MSHookFunction(_dyld_find_unwind_sections, replaced_dyld_find_unwind_sections, (void **) &original_dyld_find_unwind_sections);
+
     MSHookFunction(dlopen_preflight, replaced_dlopen_preflight, (void **) &original_dlopen_preflight);
 
     MSHookFunction(dlerror, replaced_dlerror, (void **) &original_dlerror);
@@ -1259,6 +1332,24 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
     // silently on OSes without them.
     MSImageRef libdyldImage = MSGetImageByName("/usr/lib/system/libdyld.dylib");
+
+    void* getImageHeaderContainingAddressPtr = MSFindSymbol(libdyldImage, "_dyld_get_image_header_containing_address");
+
+    if(getImageHeaderContainingAddressPtr) {
+        MSHookFunction(getImageHeaderContainingAddressPtr, replaced_dyld_image_header_containing_address, (void **) &original_dyld_get_image_header_containing_address);
+    }
+
+    void* getImageUuidPtr = MSFindSymbol(libdyldImage, "_dyld_get_image_uuid");
+
+    if(getImageUuidPtr) {
+        MSHookFunction(getImageUuidPtr, replaced_dyld_get_image_uuid, (void **) &original_dyld_get_image_uuid);
+    }
+
+    void* getInstallnamePtr = MSFindSymbol(libdyldImage, "dyld_image_get_installname");
+
+    if(getInstallnamePtr) {
+        MSHookFunction(getInstallnamePtr, replaced_dyld_image_get_installname, (void **) &original_dyld_image_get_installname);
+    }
 
     void* images_for_addresses_ptr = MSFindSymbol(libdyldImage, "_dyld_images_for_addresses");
 
