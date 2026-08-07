@@ -25,6 +25,7 @@
 		<string>/dev/mem</string>
 		<string>/dev/vn0</string>
 		<string>/dev/vn1</string>
+		<string>/jb</string>
 	</array>
 	<key>BlacklistPaths</key>
 	<array>
@@ -49,6 +50,8 @@
 		<string>/dev/dlci.</string>
 		<string>/private/preboot/jb-</string>
 		<string>/var/MobileSoftwareUpdate/mnt1</string>
+		<string>/Library/Shadow</string>
+		<string>/Library/ShadowSettings.bundle</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
@@ -61,6 +64,18 @@
 		<string>SELF LIKE[c] '/usr/lib/*substitute*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*substrate*'</string>
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
+		<string>SELF LIKE '*/libShadow*'</string>
+		<string>SELF LIKE '/var/jb/usr/lib/*libShadow*'</string>
+		<string>SELF LIKE '/usr/lib/libSandy*'</string>
+		<string>SELF LIKE '/var/jb/usr/lib/libSandy*'</string>
+		<string>SELF LIKE '*/Cydia.app*'</string>
+		<string>SELF LIKE '*/Sileo.app*'</string>
+		<string>SELF LIKE '*/Zebra.app*'</string>
+		<string>SELF LIKE '*/Dopamine.app*'</string>
+		<string>SELF LIKE '*/TrollStore.app*'</string>
+		<string>SELF LIKE '*/dyldprobe.app*'</string>
+		<string>SELF LIKE '/usr/bin/shdw*'</string>
+		<string>SELF LIKE '/var/jb/usr/bin/shdw*'</string>
 	</array>
 	<key>BlacklistURLSchemes</key>
 	<array>
