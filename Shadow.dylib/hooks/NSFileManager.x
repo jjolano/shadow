@@ -28,6 +28,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
     return options;
 }
 
+static NSDictionary* _shdw_urlWriteOptions(void) {
+    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+}
+
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
@@ -261,7 +265,7 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 
     if([_shadow isURLRestricted:url options:nil]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return nil;
@@ -285,7 +289,7 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 
     if([_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -351,7 +355,7 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 
     if([_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -389,7 +393,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 - (void)getFileProviderServicesForItemAtURL:(NSURL *)url completionHandler:(void (^)(NSDictionary *services, NSError *error))completionHandler {
     if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(completionHandler) {
-            completionHandler(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil]);
+            // Async contract: never invoke a blocked-path completion inline.
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                completionHandler(nil, [Shadow fileNoSuchFileErrorForURL:url]);
+            });
         }
 
         return;
@@ -486,7 +493,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:directoryURL];
         }
         
         return NO;
@@ -498,7 +505,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectory:(NSSearchPathDirectory)directory inDomain:(NSSearchPathDomainMask)domainMask toItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -572,9 +579,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:nil] || [_shadow isURLRestricted:newItemURL options:nil])) {
+    // TODO(plan-wave-C): subtree preflight — replacing a directory with a
+    // restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:newItemURL options:_shdw_urlWriteOptions()])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
 
         return NO;
@@ -584,9 +593,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    // TODO(plan-wave-C): subtree preflight — copying a directory that
+    // contains a restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
 
         return NO;
@@ -596,13 +607,13 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    // TODO(plan-wave-C): subtree preflight — copying a directory that
+    // contains a restricted descendant requires an unhooked subtree walk.
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
-
-        if([_shadow isPathRestricted:srcPath options:options] || [_shadow isPathRestricted:dstPath options:options]) {
+        if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
+            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
-                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+                *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
 
             return NO;
@@ -613,9 +624,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    // TODO(plan-wave-C): subtree preflight — moving a directory with a
+    // restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
 
         return NO;
@@ -625,13 +638,13 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
+    // TODO(plan-wave-C): subtree preflight — moving a directory with a
+    // restricted descendant requires an unhooked subtree walk.
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
-
-        if([_shadow isPathRestricted:srcPath options:options] || [_shadow isPathRestricted:dstPath options:options]) {
+        if([_shadow isPathRestricted:srcPath options:_shdw_writeOptions(self, [srcPath isAbsolutePath])]
+            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
-                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+                *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
 
             return NO;
@@ -652,9 +665,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:url options:nil] || [_shadow isURLRestricted:destinationURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:url options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:destinationURL options:_shdw_urlWriteOptions()])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -664,9 +677,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -676,9 +689,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -688,9 +701,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return nil;
@@ -761,9 +774,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:nil])) {
+    if(!isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
 
         return NO;
@@ -774,12 +787,10 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath] && [dstPath isAbsolutePath]);
-
-        if([_shadow isPathRestricted:srcPath options:options] || [_shadow isPathRestricted:dstPath options:options]) {
+        if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
+            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
             if(error) {
-                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+                *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
 
             return NO;
@@ -791,10 +802,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
-
-        if([_shadow isPathRestricted:src options:options] || [_shadow isPathRestricted:dest options:options]) {
+        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
         }
     }
@@ -804,10 +813,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
-
-        if([_shadow isPathRestricted:src options:options] || [_shadow isPathRestricted:dest options:options]) {
+        if([_shadow isPathRestricted:src options:_shdw_writeOptions(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
         }
     }
@@ -816,7 +823,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -824,7 +831,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -833,10 +840,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
     if(!isCallerExternal()) {
-        // One options object shared by both checks; cwd is only needed if an input is relative.
-        NSDictionary* options = _shdw_optionsForAbsolute(self, [src isAbsolutePath] && [dest isAbsolutePath]);
-
-        if([_shadow isPathRestricted:src options:options] || [_shadow isPathRestricted:dest options:options]) {
+        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
             return NO;
         }
     }
@@ -845,9 +850,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -857,9 +862,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return NO;
@@ -869,7 +874,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createFileAtPath:(NSString *)path contents:(NSData *)data attributes:(NSDictionary<NSFileAttributeKey, id> *)attr {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }
 
@@ -877,9 +882,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:URL options:nil]) {
+    // TODO(plan-wave-C): subtree preflight — removing a directory with a
+    // restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && [_shadow isURLRestricted:URL options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
 
         return NO;
@@ -889,9 +896,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    // TODO(plan-wave-C): subtree preflight — removing a directory with a
+    // restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return NO;
@@ -901,9 +910,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
+    // TODO(plan-wave-C): subtree preflight — trashing a directory with a
+    // restricted descendant requires an unhooked subtree walk.
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;

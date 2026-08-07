@@ -2,10 +2,14 @@
 
 %group shadowhook_NSFileWrapper
 %hook NSFileWrapper
+// TODO(plan-wave-C): NSFileWrapper containment — fileWrappers,
+// regularFileContents, symbolicLinkDestinationURL, serializedRepresentation
+// and writeToURL:originalContentsURL: tree containment need an associated
+// source URL, out of scope for this wave.
 - (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
-            *outError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return 0;
@@ -33,7 +37,7 @@
 - (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
-            *outError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
@@ -43,9 +47,11 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:writeOptions]) {
         if(outError) {
-            *outError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *outError = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return NO;
