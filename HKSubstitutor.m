@@ -25,6 +25,7 @@
 #endif
 
 #import "native/hk_native.h"
+#import "native/hk_swift.h"
 
 #pragma mark - libhooker (ElleKit) runtime resolution
 
@@ -245,6 +246,12 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 - (HKImageRef)openImage:(NSString *)path;
 - (void)closeImage:(HKImageRef)image;
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName;
+
+// Swift vtable hooking. Optional: only the Swift backend implements these,
+// so every other backend inherits HK_ERR_NOT_SUPPORTED through the forwarder.
+@optional
+- (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
+- (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 @end
 
 // ElleKit backend: libhooker API, resolved at runtime via dlopen/dlsym.
@@ -952,6 +959,118 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 @end
 
+// Swift backend: rewrites Swift class metadata vtable slots via HookKit's own
+// engine (native/hk_swift.c). No arch gate — availability is runtime
+// (hk_swift_supported() + the Swift 5 runtime check in swift_available()).
+// Hooks the class's own methods only, by name or by declaration-order index;
+// see native/hk_swift.h for the ABI contract and v1 scope.
+@interface HKSwiftBackend : NSObject <HKSubstitutorBackend>
+@end
+
+// Owned here (resolved by swift_available() via dlsym); consumed by the
+// engine's name-based lookup (declared in native/hk_swift.h).
+hk_swift_demangle_fn hk_swift_demangle = NULL;
+
+@implementation HKSwiftBackend {
+    int _lastErrno;
+}
+
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: Swift hooks apply at hook time (batchingSupported NO)
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return NULL;
+}
+
+- (void)closeImage:(HKImageRef)image {
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    return NULL;
+}
+
+// Engine errors fall into two buckets: class-shape problems mean the target
+// is outside v1 scope (NOT_SUPPORTED); lookup/signing/write problems are
+// hard errors (HK_ERR).
+- (hookkit_status_t)mapEngineError:(int)code {
+    switch(code) {
+        case HK_SWIFT_ERR_UNSUPPORTED:
+        case HK_SWIFT_ERR_NOT_SWIFT:
+        case HK_SWIFT_ERR_NOT_CLASS_DESCRIPTOR:
+        case HK_SWIFT_ERR_NO_VTABLE:
+        case HK_SWIFT_ERR_UNSUPPORTED_LAYOUT:
+            return HK_ERR_NOT_SUPPORTED;
+
+        case HK_SWIFT_ERR_NOT_FOUND:
+        case HK_SWIFT_ERR_AMBIGUOUS:
+        case HK_SWIFT_ERR_PAC_MISMATCH:
+        case HK_SWIFT_ERR_INVALID_INDEX:
+        case HK_SWIFT_ERR_ARG:
+        case HK_SWIFT_ERR_WRITE:
+            return HK_ERR;
+    }
+
+    return HK_ERR;
+}
+
+- (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    // owned cell: the engine never touches the caller's pointer directly
+    void *orig = NULL;
+
+    if(!hk_swift_hook_method(objcClass, [name UTF8String], replacement, &orig)) {
+        _lastErrno = hk_swift_last_error();
+        return [self mapEngineError:_lastErrno];
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    void *orig = NULL;
+
+    if(!hk_swift_hook_vtable_slot(objcClass, (uint32_t)index, replacement, &orig)) {
+        _lastErrno = hk_swift_last_error();
+        return [self mapEngineError:_lastErrno];
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+@end
+
 // Dobby backend: inline hooking via the vendored Dobby static library
 // (vendor/dobby). Hooks by address, so interior/private C functions work
 // (unlike fishhook). No ObjC message hooking and no batching: function hooks
@@ -1248,6 +1367,40 @@ static BOOL native_available(void) {
     return hk_native_supported() ? YES : NO;
 }
 
+// Swift vtables: available when the arch supports the engine (arm64/arm64e),
+// the Swift 5 ABI runtime is present (iOS 12.2+), and swift_demangle
+// resolves. libswiftCore is a plain system dylib — never a jailbreak path,
+// so no RootBridge. Only successful probes are cached (the runtime could
+// appear after HookKit loads).
+static BOOL swift_available(void) {
+    static BOOL cached = NO;
+    static BOOL available = NO;
+
+    if(cached) {
+        return available;
+    }
+
+    if(hk_swift_supported()) {
+        if(@available(iOS 12.2, *)) {
+            hk_swift_demangle = (hk_swift_demangle_fn)dlsym(RTLD_DEFAULT, "swift_demangle");
+
+            if(!hk_swift_demangle) {
+                void *core = dlopen("/usr/lib/swift/libswiftCore.dylib", RTLD_LAZY);
+
+                if(core) {
+                    hk_swift_demangle = (hk_swift_demangle_fn)dlsym(core, "swift_demangle");
+                }
+            }
+
+            available = hk_swift_demangle != NULL;
+        }
+    }
+
+    cached = YES;
+
+    return available;
+}
+
 // Dobby is compiled in on arm64/arm64e only (the vendored static lib has no
 // armv7 slice); the table entry stays on every arch so the count is stable.
 static BOOL dobby_available(void) {
@@ -1286,7 +1439,7 @@ static BOOL frida_available(void) {
 }
 
 static const HKBackendDescriptor *hk_backends(size_t *outCount) {
-    static HKBackendDescriptor table[7];
+    static HKBackendDescriptor table[8];
     static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
@@ -1301,6 +1454,10 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
         // Frida is the premium arm64e-tested engine users request explicitly.
         table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO };
         table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES };
+        // Never automatic: Swift vtable hooks are a separate API (no
+        // message/function overlap) and only make sense when the caller has a
+        // Swift class in hand, so this backend is opt-in.
+        table[7] = (HKBackendDescriptor){ HK_LIB_SWIFT, [HKSwiftBackend class], @"swift", @"Swift vtables", swift_available, NO };
     });
 
     *outCount = sizeof(table) / sizeof(table[0]);
@@ -1590,6 +1747,62 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     }
 
     hookkit_status_t result = [backend hookMemory:target withData:data size:size];
+    [self noteHookResult:result];
+    return result;
+}
+
+- (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!objcClass || !name || ![name length] || !replacement) {
+        [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
+    if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(![backend respondsToSelector:@selector(hookSwiftMethodInClass:withName:withReplacement:outOldPtr:)]) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    // owned cell: the backend never touches the caller's pointer directly
+    void *cell = NULL;
+    hookkit_status_t result = [backend hookSwiftMethodInClass:objcClass withName:name withReplacement:replacement outOldPtr:&cell];
+
+    if(result == HK_OK && old_ptr) {
+        *old_ptr = cell;
+    }
+
+    [self noteHookResult:result];
+    return result;
+}
+
+- (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!objcClass || index > UINT32_MAX || !replacement) {
+        [self noteHookResult:HK_ERR_INVALID_ARGUMENT];
+        return HK_ERR_INVALID_ARGUMENT;
+    }
+
+    if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(![backend respondsToSelector:@selector(hookSwiftVtableSlotInClass:withIndex:withReplacement:outOldPtr:)]) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    // owned cell: the backend never touches the caller's pointer directly
+    void *cell = NULL;
+    hookkit_status_t result = [backend hookSwiftVtableSlotInClass:objcClass withIndex:index withReplacement:replacement outOldPtr:&cell];
+
+    if(result == HK_OK && old_ptr) {
+        *old_ptr = cell;
+    }
+
     [self noteHookResult:result];
     return result;
 }

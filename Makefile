@@ -11,6 +11,9 @@ FRAMEWORK_NAME = HookKit
 HookKit_FILES = HKSubstitutor.m vendor/fishhook/fishhook.c
 # Native backend: arm64/arm64e only, stubbed out by #if on armv7.
 HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
+# Swift vtable backend: arm64/arm64e only (entry points report unsupported on
+# armv7 via hk_swift_supported()).
+HookKit_FILES += native/hk_swift.c
 HookKit_FRAMEWORKS = Foundation
 HookKit_EXTRA_FRAMEWORKS = RootBridge
 HookKit_INSTALL_PATH = /Library/Frameworks
@@ -47,3 +50,13 @@ endif
 .PHONY: test-reloc
 test-reloc:
 	$(ECHO_NOTHING)clang -Wall -Wextra -O2 -o $(THEOS_OBJ_DIR)/test_arm64_reloc tests/test_arm64_reloc.c native/hk_arm64.c && $(THEOS_OBJ_DIR)/test_arm64_reloc$(ECHO_END)
+
+# Host-side Swift vtable engine test. The test includes native/hk_swift.c
+# itself so it can inject a simulated pointer-authentication scheme (the host
+# has no PAC hardware) and a fake hk_native_patch_memory, then drives the
+# engine's core against a hand-built fake class metadata blob. -rdynamic puts
+# the test's fake method symbols into .dynsym so dladdr resolves them, which
+# is what lets the name-matching paths run on the host.
+.PHONY: test-swift-abi
+test-swift-abi:
+	$(ECHO_NOTHING)clang -Wall -Wextra -O2 -rdynamic -o $(THEOS_OBJ_DIR)/test_swift_abi tests/test_swift_abi.c && $(THEOS_OBJ_DIR)/test_swift_abi$(ECHO_END)
