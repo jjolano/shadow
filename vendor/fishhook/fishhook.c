@@ -172,20 +172,6 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
         if (symbol_name_longer_than_1 && strcmp(&symbol_name[1], cur->rebindings[j].name) == 0) {
           kern_return_t err;
 
-          if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement) {
-#if __has_feature(ptrauth_calls)
-            // The slot holds a pointer signed with the slot address as
-            // discriminator — not directly callable as a plain C function
-            // pointer (the compiler emits blraaz, asia/div-0). Resign with
-            // diversity 0, the standard C function pointer scheme.
-            *(cur->rebindings[j].replaced) = ptrauth_sign_unauthenticated(
-                ptrauth_strip(indirect_symbol_bindings[i], ptrauth_key_asia),
-                ptrauth_key_asia, 0);
-#else
-            *(cur->rebindings[j].replaced) = indirect_symbol_bindings[i];
-#endif
-          }
-
           /**
            * 1. Moved the vm protection modifying codes to here to reduce the
            *    changing scope.
@@ -201,6 +187,19 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
              * iOS 15 has corrected the const segments prot.
              * -- Lionfore Hao Jun 11th, 2021
              **/
+            if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement) {
+#if __has_feature(ptrauth_calls)
+              // The slot holds a pointer signed with the slot address as
+              // discriminator — not directly callable as a plain C function
+              // pointer (the compiler emits blraaz, asia/div-0). Resign with
+              // diversity 0, the standard C function pointer scheme.
+              *(cur->rebindings[j].replaced) = ptrauth_sign_unauthenticated(
+                  ptrauth_strip(indirect_symbol_bindings[i], ptrauth_key_asia),
+                  ptrauth_key_asia, 0);
+#else
+              *(cur->rebindings[j].replaced) = indirect_symbol_bindings[i];
+#endif
+            }
 #if __has_feature(ptrauth_calls)
             void *replacement = cur->rebindings[j].replacement;
             if (section_needs_auth && replacement != NULL) {

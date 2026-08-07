@@ -49,7 +49,13 @@ static BOOL libhooker_available(void) {
         return available;
     }
 
-    libhooker_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libhooker.dylib"] fileSystemRepresentation], RTLD_LAZY);
+    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/libhooker.dylib"];
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    libhooker_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
     if(!libhooker_handle) {
         return NO;
@@ -88,7 +94,13 @@ static BOOL substrate_available(void) {
         return available;
     }
 
-    substrate_handle = dlopen([[RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"] fileSystemRepresentation], RTLD_LAZY);
+    NSString *jbPath = [RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"];
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    substrate_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
     if(!substrate_handle) {
         return NO;
@@ -139,7 +151,13 @@ static BOOL substitute_available(void) {
         return available;
     }
 
-    libsubstitute_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"] fileSystemRepresentation], RTLD_LAZY);
+    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"];
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    libsubstitute_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
     if(!libsubstitute_handle) {
         return NO;
@@ -149,9 +167,6 @@ static BOOL substitute_available(void) {
     substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
     substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
     substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
-
-    available = substitute_hookFunction && substitute_hookMessageEx
-        && substitute_getImageByName && substitute_findSymbol;
 
     fn_substitute_hook_functions = (int (*)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int))dlsym(libsubstitute_handle, "substitute_hook_functions");
     fn_substitute_hook_objc_message = (int (*)(Class, SEL, void *, void *, bool *))dlsym(libsubstitute_handle, "substitute_hook_objc_message");
@@ -163,6 +178,10 @@ static BOOL substitute_available(void) {
     substitute_native_available = fn_substitute_hook_functions && fn_substitute_hook_objc_message
         && fn_substitute_open_image && fn_substitute_close_image
         && fn_substitute_find_private_syms && fn_substitute_sym_to_ptr;
+
+    available = (substitute_hookFunction && substitute_hookMessageEx
+        && substitute_getImageByName && substitute_findSymbol)
+        || substitute_native_available;
 
     cached = YES;
 
@@ -242,6 +261,7 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size;
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks;
+- (BOOL)supportsHookKind:(HKHookKind)kind;
 
 - (HKImageRef)openImage:(NSString *)path;
 - (void)closeImage:(HKImageRef)image;
@@ -262,6 +282,10 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 
 @implementation HKElleKitBackend
 - (BOOL)batchingSupported {
+    return YES;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
     return YES;
 }
 
@@ -479,6 +503,10 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
     return NO;
 }
 
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindMessage || kind == HKHookKindFunction;
+}
+
 - (int)lastErrno {
     return _lastErrno;
 }
@@ -687,6 +715,10 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
     return NO;
 }
 
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction;
+}
+
 - (int)lastErrno {
     return _lastErrno;
 }
@@ -714,7 +746,9 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
     }
 
     HKFishhookRebinding *owned = [HKFishhookRebinding new];
-    owned->name = strdup(info.dli_sname);
+    const char *name = info.dli_sname;
+    if (name && name[0] == '_') name++;
+    owned->name = strdup(name);
     owned->origCell = calloc(1, sizeof(void *));
 
     struct rebinding rebinding = {
@@ -818,6 +852,10 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 
 - (BOOL)batchingSupported {
+    return YES;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
     return YES;
 }
 
@@ -979,6 +1017,10 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
     return NO;
 }
 
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction;
+}
+
 - (int)lastErrno {
     return _lastErrno;
 }
@@ -1089,6 +1131,10 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
     return NO;
 }
 
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction || kind == HKHookKindMemory;
+}
+
 - (int)lastErrno {
     return _lastErrno;
 }
@@ -1174,6 +1220,10 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
     return NO;
 }
 
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction || kind == HKHookKindMemory;
+}
+
 - (int)lastErrno {
     return _lastErrno;
 }
@@ -1231,6 +1281,10 @@ static int (*fn_hkgum_end_transaction)(void) = NULL;
 }
 - (BOOL)batchingSupported {
     return YES;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction;
 }
 
 - (int)lastErrno {
@@ -1422,7 +1476,13 @@ static BOOL frida_available(void) {
         return available;
     }
 
-    hkgum_handle = dlopen([[RootBridge getJBPath:@"/usr/lib/HKGum.dylib"] fileSystemRepresentation], RTLD_LAZY);
+    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/HKGum.dylib"];
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    hkgum_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
     if(!hkgum_handle) {
         return NO;
@@ -1654,6 +1714,11 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     }
 
     if(batching && [backend batchingSupported]) {
+        if(![backend supportsHookKind:HKHookKindMessage]) {
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+            return HK_ERR_NOT_SUPPORTED;
+        }
+
         HKHookOperation *hook = [HKHookOperation new];
         hook->kind = HKHookKindMessage;
         hook->objcClass = objcClass;
@@ -1693,6 +1758,11 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     }
 
     if(batching && [backend batchingSupported]) {
+        if(![backend supportsHookKind:HKHookKindFunction]) {
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+            return HK_ERR_NOT_SUPPORTED;
+        }
+
         HKHookOperation *hook = [HKHookOperation new];
         hook->kind = HKHookKindFunction;
         hook->function = function;
@@ -1731,6 +1801,11 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     }
 
     if(batching && [backend batchingSupported]) {
+        if(![backend supportsHookKind:HKHookKindMemory]) {
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+            return HK_ERR_NOT_SUPPORTED;
+        }
+
         HKHookOperation *hook = [HKHookOperation new];
         hook->kind = HKHookKindMemory;
         hook->target = target;

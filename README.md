@@ -54,7 +54,7 @@ HookKit's own Swift vtable engine, sharing the native backend's memory-patching 
 ```objc
 HKSubstitutor *sub = [HKSubstitutor defaultSubstitutor]; // or substitutorWithTypes:
 
-// Batching defers all hooks until executeHooks.
+// Batching defers hooks until executeHooks (batching-capable backends only; others execute immediately).
 HKEnableBatching();
 
 void (*orig_malloc)(void *);
