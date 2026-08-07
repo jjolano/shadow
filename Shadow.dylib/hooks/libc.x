@@ -702,14 +702,20 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
 // and build the options dictionary for every entry. Cache both per DIR* so
 // only the per-entry child check runs; invalidated on closedir because DIR*
 // pointers get reused. Fixed-size table, round-robin eviction on overflow
-// (a miss just re-resolves — results stay identical). F_GETPATH failure is
-// cached too: the original code then skips filtering entirely.
+// (a miss just re-resolves — results stay identical). A valid directory
+// vnode whose path can't be resolved is cached as DENIED: entries are hidden
+// (fail closed) rather than exposed unfiltered — the old code cached the
+// F_GETPATH failure as "allowed".
+// TODO(plan-wave-A): invalidate on ruleset generation.
 #define SHADW_READDIR_CACHE_SIZE 16
 
-static struct {
+typedef struct {
     DIR* dirp;
-    CFDictionaryRef options; // retained; NULL when F_GETPATH failed (no filtering)
-} shdw_readdir_cache[SHADW_READDIR_CACHE_SIZE];
+    CFDictionaryRef options; // retained; NULL when no filtering applies
+    BOOL denied;             // valid dir vnode, path unresolvable: hide entries
+} shdw_readdir_cache_entry_t;
+
+static shdw_readdir_cache_entry_t shdw_readdir_cache[SHADW_READDIR_CACHE_SIZE];
 
 static NSUInteger shdw_readdir_cache_next = 0;
 static os_unfair_lock shdw_readdir_cache_lock = OS_UNFAIR_LOCK_INIT;
@@ -723,16 +729,21 @@ static void shdw_readdir_cache_clear_locked(DIR* dirp) {
 
             shdw_readdir_cache[i].dirp = NULL;
             shdw_readdir_cache[i].options = NULL;
+            shdw_readdir_cache[i].denied = NO;
             break;
         }
     }
 }
 
 // Returns a retained options dict for the DIR*'s parent path (caller must
-// CFRelease), or NULL when no filtering applies / the parent can't be resolved.
-static NSDictionary* shdw_readdir_cache_options(DIR* dirp) {
+// CFRelease), or NULL when no filtering applies. Sets *denied when the DIR*
+// is a valid directory vnode whose path can't be resolved: entries must be
+// hidden (fail closed). *denied is never set for an invalid DIR* — the
+// original readdir fails on its own with the genuine EBADF.
+static NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied) {
     os_unfair_lock_lock(&shdw_readdir_cache_lock);
 
+    *denied = NO;
     NSDictionary* result = nil;
     BOOL cached = NO;
 
@@ -744,6 +755,7 @@ static NSDictionary* shdw_readdir_cache_options(DIR* dirp) {
                 result = (__bridge NSDictionary*)CFRetain(shdw_readdir_cache[i].options);
             }
 
+            *denied = shdw_readdir_cache[i].denied;
             break;
         }
     }
@@ -751,11 +763,18 @@ static NSDictionary* shdw_readdir_cache_options(DIR* dirp) {
     if(!cached) {
         char pathname[PATH_MAX];
         NSDictionary* options = nil;
+        BOOL deniedEntry = NO;
 
         if(fcntl(dirfd(dirp), F_GETPATH, pathname) != -1) {
             options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
             result = (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);
+        } else if(errno != EBADF) {
+            // Valid vnode whose path can't be named: fail closed.
+            deniedEntry = YES;
+            *denied = YES;
         }
+
+        // errno == EBADF: invalid DIR*; the original readdir fails on its own.
 
         // Evict the next slot (may drop a live DIR*'s entry; a miss just re-resolves).
         NSUInteger slot = shdw_readdir_cache_next;
@@ -767,6 +786,7 @@ static NSDictionary* shdw_readdir_cache_options(DIR* dirp) {
 
         shdw_readdir_cache[slot].dirp = dirp;
         shdw_readdir_cache[slot].options = options ? CFRetain((__bridge CFDictionaryRef)options) : NULL;
+        shdw_readdir_cache[slot].denied = deniedEntry;
     }
 
     os_unfair_lock_unlock(&shdw_readdir_cache_lock);
@@ -779,11 +799,21 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
         return original_readdir_r(dirp, entry, oresult);
     }
 
+    BOOL denied = NO;
+    NSDictionary* options = shdw_readdir_cache_options(dirp, &denied);
+
+    if(denied) {
+        // Fail closed: an unresolvable directory exposes nothing.
+        if(oresult) {
+            *oresult = NULL;
+        }
+
+        return 0;
+    }
+
     int result = original_readdir_r(dirp, entry, oresult);
     
     if(result == 0 && *oresult) {
-        NSDictionary* options = shdw_readdir_cache_options(dirp);
-
         if(options) {
             do {
                 if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]) {
@@ -807,23 +837,27 @@ static struct dirent* replaced_readdir(DIR* dirp) {
         return original_readdir(dirp);
     }
 
+    BOOL denied = NO;
+    NSDictionary* options = shdw_readdir_cache_options(dirp, &denied);
+
+    if(denied) {
+        // Fail closed: an unresolvable directory exposes nothing.
+        return NULL;
+    }
+
     struct dirent* result = original_readdir(dirp);
     
-    if(result) {
-        NSDictionary* options = shdw_readdir_cache_options(dirp);
+    if(result && options) {
+        do {
+            if([_shadow isPathRestricted:@(result->d_name) options:options]) {
+                // call readdir again to skip ahead
+                result = original_readdir(dirp);
+            } else {
+                break;
+            }
+        } while(result);
 
-        if(options) {
-            do {
-                if([_shadow isPathRestricted:@(result->d_name) options:options]) {
-                    // call readdir again to skip ahead
-                    result = original_readdir(dirp);
-                } else {
-                    break;
-                }
-            } while(result);
-
-            CFRelease((__bridge CFDictionaryRef)options);
-        }
+        CFRelease((__bridge CFDictionaryRef)options);
     }
 
     return result;
