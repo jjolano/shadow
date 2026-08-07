@@ -1,5 +1,6 @@
 #import "SHDWHooksListController.h"
 #import "SHDWHookLibs.h"
+#import "SHDWPrefs.h"
 
 #import <Shadow/Settings.h>
 
@@ -20,12 +21,11 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	return [prefs objectForKey:[specifier identifier]];
+	return SHDWReadAppPref(prefs, nil, [specifier identifier]);
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	[prefs setObject:value forKey:[specifier identifier]];
-	[prefs synchronize];
+	SHDWWriteAppPref(prefs, nil, [specifier identifier], value);
 }
 
 - (NSArray *)getValues:(PSSpecifier *)specifier {

@@ -17,7 +17,7 @@ include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = shadowd
 
-shadowd_FILES = main.m
+shadowd_FILES = main.m krw.m ledger.m
 shadowd_CFLAGS = -fobjc-arc
 shadowd_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 shadowd_INSTALL_PATH = /usr/libexec
