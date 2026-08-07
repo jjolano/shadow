@@ -2,13 +2,13 @@
 
 #import "hooks.h"
 
-// Forwards a syscall() call with exact arguments. There is no v-syscall, so
-// a va_list can't be forwarded through a variadic `...`: the trampoline
-// re-reads the argument list and re-passes it with explicit parameters.
-// Intercepted numbers get their real signatures (all of them take pointers
-// and/or ints — reading pointer-width slots preserves every value); other
-// numbers forward the 8-register window and surplus slots are ignored by
-// the callee.
+// Forwards an intercepted syscall() call with exact arguments. There is no
+// v-syscall, so a va_list can't be forwarded through a variadic `...`: the
+// trampoline re-reads the argument list and re-passes it with explicit
+// parameters. Only the intercepted numbers reach this function (all of
+// them take pointers and/or ints — reading pointer-width slots preserves
+// every value); unknown numbers pass through replaced_syscall without any
+// vararg read.
 static long (*original_syscall)(int number, ...);
 
 static long shdw_syscall_forward(int number, va_list args) {
@@ -73,12 +73,15 @@ static long shdw_syscall_forward(int number, va_list args) {
         }
 
         case SYS_access_extended: {
+            // Real signature: (entries, size_t, results, uid_t) — a binary
+            // buffer, NOT a path string. Forward the slots untouched; the
+            // inspection in replaced_syscall deliberately skips this number.
             intptr_t a1 = va_arg(args, intptr_t);
             intptr_t a2 = va_arg(args, intptr_t);
             intptr_t a3 = va_arg(args, intptr_t);
             intptr_t a4 = va_arg(args, intptr_t);
 
-            return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4);
+            return original_syscall(number, (void *) a1, (size_t) a2, (void *) a3, (uid_t) a4);
         }
 
         case SYS_ptrace: {
@@ -111,25 +114,50 @@ static long shdw_syscall_forward(int number, va_list args) {
             return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4, (int) a5, (void *) a6);
         }
 
-        default: {
-            // Not intercepted: forward the 8-register window (same coverage
-            // as the old memcpy of the save area, but ABI-portable). The
-            // callee reads only the args its number declares.
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-            intptr_t a6 = va_arg(args, intptr_t);
-            intptr_t a7 = va_arg(args, intptr_t);
-            intptr_t a8 = va_arg(args, intptr_t);
-
-            return original_syscall(number, a1, a2, a3, a4, a5, a6, a7, a8);
-        }
+        default:
+            // Unreachable: replaced_syscall only forwards the intercepted
+            // set (the OR-chain at its top). Keep this switch and that
+            // chain in sync — a mismatch drops the args of a forwarded
+            // syscall, so degrade to the register passthrough rather than
+            // reading unknown arities.
+            return original_syscall(number);
     }
 }
 
 static long replaced_syscall(int number, ...) {
+    // Non-intercepted numbers pass through WITHOUT reading any vararg
+    // (reading absent varargs is UB). Apple's syscall(2) is a
+    // register-passing wrapper: the caller's argument registers are still
+    // live at our entry and the trampoline leaves them untouched, so a
+    // zero-argument forward is exact. This requires the passthrough to be
+    // the first thing this function does — no calls (NSLog,
+    // isCallerTweak, ...) may run first, since they clobber x1-x7 — and
+    // the intercept test below must stay an OR-chain of compares on
+    // `number` (clang lowers it to cmp/branch only; do not turn it into a
+    // helper function or switch table).
+    if(number != SYS_ptrace
+    && number != SYS_open
+    && number != SYS_chdir
+    && number != SYS_access
+    && number != SYS_execve
+    && number != SYS_chroot
+    && number != SYS_rmdir
+    && number != SYS_stat
+    && number != SYS_lstat
+    && number != SYS_getattrlist
+    && number != SYS_open_extended
+    && number != SYS_stat_extended
+    && number != SYS_lstat_extended
+    && number != SYS_access_extended
+    && number != SYS_stat64
+    && number != SYS_lstat64
+    && number != SYS_stat64_extended
+    && number != SYS_lstat64_extended
+    && number != SYS_readlink
+    && number != SYS_pathconf) {
+        return original_syscall(number);
+    }
+
     NSLog(@"%@: %d", @"syscall", number);
 
     va_list args;
@@ -140,7 +168,9 @@ static long replaced_syscall(int number, ...) {
     va_list inspect;
     va_copy(inspect, args);
 
-    // Handle single pathname syscalls
+    // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
+    // inspected — its first argument is a binary entries buffer, not a C
+    // string; it is still forwarded with its exact arity below.
     if(!isCallerTweak()) {
         if(number == SYS_open
         || number == SYS_chdir
@@ -154,7 +184,6 @@ static long replaced_syscall(int number, ...) {
         || number == SYS_open_extended
         || number == SYS_stat_extended
         || number == SYS_lstat_extended
-        || number == SYS_access_extended
         || number == SYS_stat64
         || number == SYS_lstat64
         || number == SYS_stat64_extended
@@ -196,14 +225,19 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
     int ret = original_csops(pid, ops, useraddr, usersize);
 
     if(!isCallerTweak() && pid == getpid()) {
-        if(ops == CS_OPS_STATUS) {
-            // (Un)set some flags
-            ret &= ~CS_PLATFORM_BINARY;
-            ret &= ~CS_GET_TASK_ALLOW;
-            ret &= ~CS_INSTALLER;
-            ret &= ~CS_ENTITLEMENTS_VALIDATED;
-            ret |= 0x0000300; /* CS_JIT_ALLOW */
-            ret |= CS_REQUIRE_LV;
+        if(ops == CS_OPS_STATUS && ret == 0) {
+            // The status flags are written into the CALLER's buffer, not
+            // returned — the kernel fills *useraddr. Mask the hidden
+            // flags there; editing `ret` would corrupt the return value.
+            if(useraddr && usersize >= sizeof(uint32_t)) {
+                uint32_t* flags = (uint32_t *) useraddr;
+                *flags &= ~CS_PLATFORM_BINARY;
+                *flags &= ~CS_GET_TASK_ALLOW;
+                *flags &= ~CS_INSTALLER;
+                *flags &= ~CS_ENTITLEMENTS_VALIDATED;
+                *flags |= 0x0000300; /* CS_JIT_ALLOW */
+                *flags |= CS_REQUIRE_LV;
+            }
         }
 
         if(ops == CS_OPS_CDHASH) {

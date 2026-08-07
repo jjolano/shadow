@@ -16,6 +16,13 @@ static NSCache* decisionCache;
 // How long a cached decision is honored (see isPathRestricted:options:).
 static const NSTimeInterval kDecisionCacheTTL = 2.0;
 
+// Reentrancy guard for the resolve-before-exempt step: the libc realpath hook
+// (hooks/libc.x) re-enters isCPathRestricted from realpath — this code calls
+// realpath from inside isPathRestricted, so without a per-thread guard the
+// hook → isPathRestricted → realpath → hook cycle would recurse forever.
+// _Thread_local is exactly right: the only recursion is same-thread.
+static _Thread_local BOOL shdw_resolvingPath = NO;
+
 // Restricted roots that never hold legitimate app data: the rootless /var/jb
 // fast-path, its canonical target (/var/jb is a symlink to
 // /private/preboot/<hash>/jb on rootless) and rooted /cores crash dumps.
@@ -122,6 +129,76 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     return [self isPathRestricted:path options:nil];
 }
 
+// Evaluate an absolute, standardized path exactly as a non-exempt
+// (shouldCheckPath == YES) query would be: rootless fast-paths, existence
+// gates, then the backend ruleset. Shared by the direct check and the
+// resolve-before-exempt re-check so a resolved symlink target is restricted
+// exactly when the equivalent direct path would be. options only contributes
+// the file-extension suffix, same as the direct path.
+- (BOOL)evaluatePathRestriction:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
+    // Add file extension if needed.
+    NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
+
+    if(file_ext && ![[path pathExtension] isEqualToString:file_ext]) {
+        path = [path stringByAppendingFormat:@".%@", file_ext];
+    }
+
+    // Rootless optimization: skip rooted checks. Covers /var/jb, its
+    // canonical preboot target and /cores/ via isPathInRestrictedRoot.
+    if(rootless) {
+        if(isPathInRestrictedRoot(path)) {
+            return YES;
+        }
+
+        BOOL checkable = [path hasPrefix:@"/var"]
+            || [path hasPrefix:@"/private/preboot"]
+            || [path hasPrefix:@"/usr/lib"];
+
+        if(!checkable) {
+            // Rooted-flavored query on a rootless jailbreak: the jailbreak file,
+            // if it exists, lives under /var/jb + path. Only evaluate rulesets
+            // (against the canonical rooted-flavored path, so existing ruleset
+            // entries/predicates apply) if the concrete jbroot file exists.
+            NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
+            int errno_old = errno;
+            BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
+            errno = errno_old;
+
+            if(!exists) {
+                return NO;
+            }
+
+            if([backend isPathRestricted:path]) {
+                NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
+                return YES;
+            }
+
+            return NO;
+        }
+    }
+
+    if([path hasPrefix:@"/usr/lib"]) {
+        // Skip checks if file doesn't exist
+        int errno_old = errno;
+        NSString* check_path = path;
+        if(rootless) {
+            check_path = [@"/var/jb" stringByAppendingString:path];
+        }
+        if(access([check_path fileSystemRepresentation], F_OK) != 0) {
+            // reset errno
+            errno = errno_old;
+            return NO;
+        }
+    }
+
+    if([backend isPathRestricted:path]) {
+        NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
+        return YES;
+    }
+
+    return NO;
+}
+
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
     if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
         return NO;
@@ -181,87 +258,47 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     // Resolve-before-exempt: a symlink inside the sandbox (or bundle) can
     // point at jailbreak files outside it, so a lexical prefix match against
     // homePath/bundlePath is not a safe exemption. realpath() the exempted
-    // candidate and re-check the resolved target against the restricted
-    // roots. A failed resolution (path does not exist) keeps the exemption —
-    // a non-existent path can't leak anything. No-follow (readlink/lstat
+    // candidate and evaluate the resolved target: the restricted-root prefixes
+    // are a cheap early-out, but the target also runs through the same
+    // evaluation a non-exempt path would get, so a symlink at a ROOTFUL
+    // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
+    // /usr/bin/ssh) is restricted exactly when the equivalent direct path
+    // would be. A failed resolution (path does not exist) keeps the exemption
+    // — a non-existent path can't leak anything. No-follow (readlink/lstat
     // link-location checks) and any other options-bearing queries skip
     // resolution; cacheable queries fold the result into the bounded decision
-    // cache (same TTL), amortizing the realpath syscall.
+    // cache (same TTL), amortizing the realpath syscall. shdw_resolvingPath
+    // guards the realpath call: the libc realpath hook re-enters
+    // isCPathRestricted from inside realpath, which would recurse forever
+    // without the per-thread guard.
     BOOL noFollow = [[options objectForKey:kShadowRestrictionNoFollow] boolValue];
 
     if(!shouldCheckPath
         && !noFollow
-        && ((options == nil) || ([options count] == 0))) {
+        && ((options == nil) || ([options count] == 0))
+        && !shdw_resolvingPath) {
+        shdw_resolvingPath = YES;
+
         char resolved_path[PATH_MAX];
+        BOOL resolvedRestricted = NO;
 
         if(realpath([path fileSystemRepresentation], resolved_path)) {
-            if(isPathInRestrictedRoot([NSString stringWithUTF8String:resolved_path])) {
-                restricted = YES;
-                goto done;
-            }
+            NSString* resolved = [NSString stringWithUTF8String:resolved_path];
+
+            resolvedRestricted = isPathInRestrictedRoot(resolved)
+                || [self evaluatePathRestriction:resolved options:options];
+        }
+
+        shdw_resolvingPath = NO;
+
+        if(resolvedRestricted) {
+            restricted = YES;
+            goto done;
         }
     }
 
     if(shouldCheckPath) {
-        // Add file extension if needed.
-        NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
-
-        if(file_ext && ![[path pathExtension] isEqualToString:file_ext]) {
-            path = [path stringByAppendingFormat:@".%@", file_ext];
-        }
-
-        // Rootless optimization: skip rooted checks. Covers /var/jb, its
-        // canonical preboot target and /cores/ via isPathInRestrictedRoot.
-        if(rootless) {
-            if(isPathInRestrictedRoot(path)) {
-                restricted = YES;
-                goto done;
-            }
-
-            BOOL checkable = [path hasPrefix:@"/var"]
-                || [path hasPrefix:@"/private/preboot"]
-                || [path hasPrefix:@"/usr/lib"];
-
-            if(!checkable) {
-                // Rooted-flavored query on a rootless jailbreak: the jailbreak file,
-                // if it exists, lives under /var/jb + path. Only evaluate rulesets
-                // (against the canonical rooted-flavored path, so existing ruleset
-                // entries/predicates apply) if the concrete jbroot file exists.
-                NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
-                int errno_old = errno;
-                BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
-                errno = errno_old;
-
-                if(!exists) {
-                    goto done;
-                }
-
-                if([backend isPathRestricted:path]) {
-                    NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
-                    restricted = YES;
-                    goto done;
-                }
-
-                goto done;
-            }
-        }
-
-        if([path hasPrefix:@"/usr/lib"]) {
-            // Skip checks if file doesn't exist
-            int errno_old = errno;
-            NSString* check_path = path;
-            if(rootless) {
-                check_path = [@"/var/jb" stringByAppendingString:path];
-            }
-            if(access([check_path fileSystemRepresentation], F_OK) != 0) {
-                // reset errno
-                errno = errno_old;
-                goto done;
-            }
-        }
-
-        if([backend isPathRestricted:path]) {
-            NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
+        if([self evaluatePathRestriction:path options:options]) {
             restricted = YES;
             goto done;
         }

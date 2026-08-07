@@ -2,15 +2,12 @@
 
 #import "hooks.h"
 
-// The theos vendored sandbox.h truncates Apple's filter enum at
-// SANDBOX_FILTER_NOTIFICATION; the real header continues with MACH and PID.
-// Define them with the same values the runtime expects (enum order).
-#ifndef SANDBOX_FILTER_MACH
-#define SANDBOX_FILTER_MACH 10
-#endif
-#ifndef SANDBOX_FILTER_PID
-#define SANDBOX_FILTER_PID 11
-#endif
+// Apple's real sandbox.h defines SANDBOX_CHECK_NO_REPORT as (1 << 16), a
+// high-bit flag OR'd over the filter type; the vendored header declares it
+// as an extern const instead, so use the stable value directly. Masking it
+// off recovers the actual filter type (mach-lookup is called as
+// SANDBOX_FILTER_GLOBAL_NAME | SANDBOX_CHECK_NO_REPORT).
+#define SHADOW_SANDBOX_CHECK_NO_REPORT  (1 << 16)
 
 // extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
 // extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
@@ -104,10 +101,19 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
     va_list args;
     va_start(args, type);
 
-    if(operation && strcmp(operation, "mach-lookup") == 0 && type == SANDBOX_FILTER_MACH) {
-        // Only the MACH filter's vararg is a name string (PATH/NAME filters
-        // take pointers, PID/INDEX take ints, NONE takes nothing). Read it
-        // from a COPY so the forward below still sees the full arg list.
+    // The `type` argument carries flags (e.g. SANDBOX_CHECK_NO_REPORT) OR'd
+    // over the filter type; decode the low bits for the inspection and
+    // forward the ORIGINAL value unchanged.
+    int filter_type = (int) type & ~SHADOW_SANDBOX_CHECK_NO_REPORT;
+
+    // Key the inspection on the OPERATION string; only read the first
+    // vararg as a string when the filter type is one of the name-taking
+    // types (mach service lookups use GLOBAL_NAME | SANDBOX_CHECK_NO_REPORT;
+    // PATH/name filters likewise pass a string, PID/index-style types pass
+    // an int and are forwarded without inspection).
+    if(operation && strcmp(operation, "mach-lookup") == 0
+    && (filter_type == SANDBOX_FILTER_GLOBAL_NAME || filter_type == SANDBOX_FILTER_LOCAL_NAME)) {
+        // Read from a COPY so the forward below still sees the full list.
         va_list inspect;
         va_copy(inspect, args);
         const char* name = va_arg(inspect, const char *);
@@ -134,20 +140,14 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
         }
     }
 
-    // Forward the exact varargs for the filter type: NONE takes none, PID
-    // takes an int, the rest take one string. (Cast to int: the theos
-    // vendored header's enum stops before MACH/PID, so case values outside
-    // it would trip -Werror "case value not in enum".)
-    switch((int) type) {
+    // Forward the exact varargs for the filter type: NONE takes none, the
+    // path/name family takes one string. (Int-taking filters from newer
+    // runtimes fall into default: the slot round-trip preserves the value
+    // and no string inspection runs for them.)
+    switch(filter_type) {
         case SANDBOX_FILTER_NONE:
             va_end(args);
             return original_sandbox_check(pid, operation, type);
-
-        case SANDBOX_FILTER_PID: {
-            pid_t filter_pid = va_arg(args, pid_t);
-            va_end(args);
-            return original_sandbox_check(pid, operation, type, filter_pid);
-        }
 
         default: {
             const char* filter_name = va_arg(args, const char *);
@@ -159,15 +159,42 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
 
 static int (*original_fcntl)(int fd, int cmd, ...);
 static int replaced_fcntl(int fd, int cmd, ...) {
-    // The third argument's type is command-dependent: a pointer for
-    // F_GETPATH/F_CHECK_LV, an integer for F_SETFL/F_SETFD/... Read the
-    // full slot as intptr_t (pointer-width, the promoted form) and pass it
-    // through unchanged — narrowing to int would truncate pointers.
-    intptr_t arg;
-    va_list args;
-    va_start(args, cmd);
-    arg = va_arg(args, intptr_t);
-    va_end(args);
+    // Only commands that take a third argument get one read: the getters
+    // (F_GETFD/F_GETFL/F_GETOWN/...) take none and must not consume a
+    // vararg the caller never passed.
+    intptr_t arg = 0;
+    BOOL has_arg = YES;
+
+    switch(cmd) {
+        case F_GETFD:
+        case F_GETFL:
+        case F_GETOWN:
+        case F_FULLFSYNC:
+        case F_FLUSH_DATA:
+        case F_CHKCLEAN:
+        case F_FREEZE_FS:
+        case F_THAW_FS:
+        case F_BARRIERFSYNC:
+        case F_GETNOSIGPIPE:
+        case F_GETPROTECTIONLEVEL:
+            has_arg = NO;
+            break;
+
+        default:
+            break;
+    }
+
+    if(has_arg) {
+        // The third argument's type is command-dependent: a pointer for
+        // F_GETPATH/F_CHECK_LV, an int for F_SETFL/F_SETFD/..., a 64-bit
+        // offset for F_SETSIZE. Read the full pointer-width slot (ints are
+        // int-promoted into it on arm64) and pass it through unchanged —
+        // narrowing to int would truncate pointers and offsets.
+        va_list args;
+        va_start(args, cmd);
+        arg = va_arg(args, intptr_t);
+        va_end(args);
+    }
 
     if(!isCallerTweak()) {
         if(cmd == F_ADDSIGS) {
@@ -179,12 +206,16 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         if(cmd == F_CHECK_LV) {
             // Library Validation
             if(arg != 0) {
-                original_fcntl(fd, cmd, (void *) arg);
+                int result = original_fcntl(fd, cmd, (void *) arg);
 
-                fchecklv_t* checkInfo = (fchecklv_t *) arg;
-                ((char *) checkInfo->lv_error_message)[0] = '\0';
+                // Only interpret the caller's buffer after a SUCCESSFUL
+                // original call — a failed call leaves it untouched.
+                if(result == 0) {
+                    fchecklv_t* checkInfo = (fchecklv_t *) arg;
+                    ((char *) checkInfo->lv_error_message)[0] = '\0';
+                }
 
-                return 0;
+                return result;
             }
         }
 
@@ -193,7 +224,11 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         }
     }
 
-    return original_fcntl(fd, cmd, (void *) arg);
+    if(has_arg) {
+        return original_fcntl(fd, cmd, (void *) arg);
+    }
+
+    return original_fcntl(fd, cmd);
 }
 
 static int fn_enosys() {

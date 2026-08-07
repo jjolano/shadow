@@ -221,43 +221,72 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         return nil;
     }
 
+    // fs_snapshot_list(2) is getattrlistbulk(2) with FSOPT_LIST_SNAPSHOTS:
+    // the attrlist MUST request the name (RETURNED_ATTRS comes first in the
+    // record), and the buffer holds variable-length records — uint32 length,
+    // attrgroup_t returned attrs, attrreference_t name — NOT the adjacent
+    // length/string pairs of a raw list.
+    struct attrlist attrlist;
+    memset(&attrlist, 0, sizeof(attrlist));
+    attrlist.bitmapcount = ATTR_BIT_MAP_COUNT;
+    attrlist.commonattr = ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME;
+
     char buf[4096];
-    int ret = fs_snapshot_list(fd, NULL, buf, sizeof(buf), 0);
+    int ret = fs_snapshot_list(fd, &attrlist, buf, sizeof(buf), 0);
 
     if(ret < 0) {
         close(fd);
         return nil;
     }
 
-    // Some xnu versions return the byte count (positive) instead of 0.
-    size_t parseBound = (ret > 0) ? (size_t)ret : sizeof(buf);
+    // ret is the RECORD COUNT, not a byte count: never use it as a byte
+    // bound. The walk is bounded by the buffer itself plus an iteration
+    // cap, so a malformed length can neither overrun nor spin.
     NSMutableArray* names = [NSMutableArray new];
     uint32_t offset = 0;
+    const uint32_t kMaxRecords = 4096;
 
-    while(offset + sizeof(uint32_t) <= parseBound) {
-        uint32_t nameLength;
-        memcpy(&nameLength, buf + offset, sizeof(nameLength));
-        offset += sizeof(nameLength);
+    for(uint32_t record = 0; record < kMaxRecords && (size_t)offset + sizeof(uint32_t) <= sizeof(buf); record++) {
+        uint32_t recLen;
+        memcpy(&recLen, buf + offset, sizeof(recLen));
 
-        if(nameLength == 0) {
+        // Minimum record: length + returned attrs + attrreference header.
+        if(recLen < 12 || (uint64_t)offset + recLen > sizeof(buf)) {
             break;
         }
 
-        // Bounds in size_t: a garbage nameLength must never index past the
-        // returned bytes (or wrap around in uint32 arithmetic).
-        if((size_t)offset + nameLength > parseBound) {
+        // nameRef sits at offset+8 (after the length and returned attrs);
+        // attr_dataoffset is relative to the START of the attrreference.
+        attrreference_t nameRef;
+        memcpy(&nameRef, buf + offset + 8, sizeof(nameRef));
+
+        if(nameRef.attr_dataoffset < (int32_t)sizeof(nameRef)) {
             break;
+        }
+
+        // The NUL-terminated name string must fit inside the record.
+        uint32_t nameOffset = (uint32_t)nameRef.attr_dataoffset;
+
+        if(nameOffset + 1 > recLen - 8) {
+            break;
+        }
+
+        const char* nameStr = buf + offset + 8 + nameOffset;
+        uint32_t strMax = recLen - 8 - nameOffset;
+        size_t nameLen = strnlen(nameStr, strMax);
+
+        if(nameLen == strMax) {
+            break; // no NUL within the record: malformed
         }
 
         // Reject non-UTF8 garbage instead of inserting it.
-        NSString* name = [[NSString alloc] initWithBytes:buf + offset length:nameLength encoding:NSUTF8StringEncoding];
+        NSString* name = [[NSString alloc] initWithBytes:nameStr length:nameLen encoding:NSUTF8StringEncoding];
 
-        if(!name) {
-            break;
+        if(name && [name length] > 0) {
+            [names addObject:name];
         }
 
-        [names addObject:name];
-        offset += nameLength;
+        offset += recLen;
     }
 
     NSString* chosen = nil;

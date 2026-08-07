@@ -11,4 +11,16 @@ dyldprobe_FRAMEWORKS = UIKit Foundation
 dyldprobe_CFLAGS = -fobjc-arc
 dyldprobe_CODESIGN_FLAGS = -Sentitlements.plist
 
+# shdwtestlib: a tiny dedicated dylib for the add/remove-image stress
+# (main.m section 6). A shared-cache library (e.g. /usr/lib/libxml2.dylib)
+# may not be unloadable, so the stress needs a real on-disk image. Installed
+# inside the dyldprobe bundle; the probe copies it to a container path before
+# dlopen so the path is never in Shadow's restricted domain on rootful or
+# rootless (the /usr/lib and /var/jb/usr/lib copies also serve as fallback
+# copy sources).
+LIBRARY_NAME = shdwtestlib
+shdwtestlib_FILES = testlib.m
+shdwtestlib_INSTALL_PATH = /Applications/dyldprobe.app
+
 include $(THEOS_MAKE_PATH)/application.mk
+include $(THEOS_MAKE_PATH)/library.mk

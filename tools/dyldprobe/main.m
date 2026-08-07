@@ -9,9 +9,11 @@
 //   2. the dyld API view (_dyld_image_count / _dyld_get_image_name)
 //   3. file-existence probes of known jailbreak paths
 //   4. URL scheme probes (canOpenURL)
-// Plus W2-specific checks appended as sections 5-7: dlsym/dladdr on a
-// hidden image's symbol, add/remove-image stress against the direct
-// infoArray read, and uuid / infoArrayChangeTimestamp invariants.
+// Plus W2-specific checks appended as sections 5-7: dladdr on addresses
+// taken from the direct infoArray read + independent dlsym probes of hidden
+// images' symbols, add/remove-image stress against the direct infoArray
+// read using a dedicated unloadable on-disk dylib (with a concurrent direct-
+// memory reader thread), and uuid / infoArrayChangeTimestamp invariants.
 // Run it with Shadow disabled for this app (baseline), then with Shadow
 // enabled and all hooks on — the two reports are the test.
 
@@ -97,15 +99,58 @@ static NSString* ProbeReport(void) {
         [out appendFormat:@"  %-12@ %@\n", s, openable ? @"OPENABLE" : @"no"];
     }
 
-    [out appendString:@"\n== 5. dlsym/dladdr in hidden images ==\n"];
-    // Symbols exported by jailbreak dylibs (libhooker/ElleKit). If one
-    // resolves, its owning image must be absent from the direct infoArray
-    // read and dladdr must not reveal the jailbreak path.
+    // Markers used to recognize jailbreak-path images in the direct reads
+    // (shared by sections 5 and 6).
+    NSArray* hiddenMarkers = @[
+        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
+        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
+    ];
+
+    [out appendString:@"\n== 5. dladdr/dlsym on hidden images ==\n"];
+    // Two independent probes:
+    //  A. dladdr on addresses taken from the DIRECT memory read — the
+    //     imageLoadAddress (mach_header) of every jailbreak-path entry, plus
+    //     an offset into __TEXT — tested BEFORE the dlsym checks below, so a
+    //     hidden dlsym result (NULL) can never suppress the dladdr probe.
+    //  B. dlsym per candidate symbol, independently; a NULL result only
+    //     reports that symbol.
+    struct dyld_all_image_infos* infos5 = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    NSMutableArray* hiddenAddrs = [NSMutableArray new];
+
+    if(infos5 && infos5->infoArray) {
+        for(uint32_t i = 0; i < infos5->infoArrayCount; i++) {
+            struct dyld_image_info info = infos5->infoArray[i];
+            NSString* p = info.imageFilePath ? @(info.imageFilePath) : @"";
+
+            for(NSString* marker in hiddenMarkers) {
+                if([p containsString:marker]) {
+                    if(info.imageLoadAddress) {
+                        [hiddenAddrs addObject:[NSValue valueWithPointer:(void *)((uintptr_t)info.imageLoadAddress + 0x1000)]];
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if(![hiddenAddrs count]) {
+        [out appendString:@"  no jailbreak-path images visible in the direct read (memory hiding active, or none loaded) — dladdr probe skipped\n"];
+    } else {
+        [out appendString:@"  dladdr on hidden-image addresses (direct-read mach_header + __TEXT offset):\n"];
+
+        for(NSValue* v in hiddenAddrs) {
+            void* addr = [v pointerValue];
+            Dl_info info;
+            BOOL got = dladdr(addr, &info);
+            [out appendFormat:@"    %p -> %@\n", addr, (got && info.dli_fname) ? @(info.dli_fname) : @"(no info)"];
+        }
+    }
+
     for(NSString* symName in @[@"hookObjcMessage", @"MSHookFunction", @"MSHookMessageEx"]) {
         void* sym = dlsym(RTLD_DEFAULT, [symName UTF8String]);
 
         if(!sym) {
-            [out appendFormat:@"  %-20@ not resolvable\n", symName];
+            [out appendFormat:@"  %-20@ not resolvable (hidden or absent)\n", symName];
             continue;
         }
 
@@ -114,73 +159,235 @@ static NSString* ProbeReport(void) {
         [out appendFormat:@"  %-20@ %p  dladdr: %@\n", symName, sym, gotInfo ? @(info.dli_fname) : @"?"];
     }
 
-    [out appendString:@"\n== 6. add/remove image stress ==\n"];
-    // dlopen/dlclose a benign dylib repeatedly. The direct infoArray read
-    // must track the load state (present while loaded, gone after dlclose)
-    // and must never show a hidden (jailbreak-path) image on any iteration.
-    const char* stressPath = "/usr/lib/libxml2.dylib";
-    NSArray* hiddenMarkers = @[
-        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
-        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
-    ];
-    BOOL stressOK = YES;
+    [out appendString:@"\n== 6. add/remove image stress (unloadable test dylib) ==\n"];
+    // The stress library must be a real ON-DISK dylib that dlclose can fully
+    // unload: shared-cache images (e.g. /usr/lib/libxml2.dylib) may not be
+    // unloadable and behave differently in the infoArray. shdwtestlib ships
+    // with the app (second theos target) and is copied to a container path
+    // before dlopen, so the path is never in Shadow's restricted domain on
+    // either rootful or rootless.
+    NSString* testLibName = @"libshdwtestlib.dylib";
+    NSString* installedLib = nil;
 
-    for(int i = 0; i < 8; i++) {
-        void* handle = dlopen(stressPath, RTLD_NOW);
-
-        if(!handle) {
-            [out appendFormat:@"  iter %d: dlopen(%s) failed: %s\n", i, stressPath, dlerror() ? dlerror() : "?"];
-            stressOK = NO;
+    for(NSString* cand in @[
+        [[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:testLibName],
+        @"/usr/lib/libshdwtestlib.dylib",
+        @"/var/jb/usr/lib/libshdwtestlib.dylib"
+    ]) {
+        if([fm fileExistsAtPath:cand]) {
+            installedLib = cand;
             break;
-        }
-
-        struct dyld_all_image_infos* live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
-        BOOL seenLoaded = NO;
-
-        if(live && live->infoArray) {
-            for(uint32_t j = 0; j < live->infoArrayCount; j++) {
-                NSString* p = live->infoArray[j].imageFilePath ? @(live->infoArray[j].imageFilePath) : @"";
-
-                if([p isEqualToString:@(stressPath)]) {
-                    seenLoaded = YES;
-                }
-
-                for(NSString* marker in hiddenMarkers) {
-                    if([p containsString:marker]) {
-                        [out appendFormat:@"  iter %d: HIDDEN IMAGE LEAKED: %@\n", i, p];
-                        stressOK = NO;
-                    }
-                }
-            }
-        }
-
-        if(!seenLoaded) {
-            [out appendFormat:@"  iter %d: %s NOT visible in direct infoArray after dlopen\n", i, stressPath];
-            stressOK = NO;
-        }
-
-        dlclose(handle);
-
-        live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
-        BOOL stillLoaded = NO;
-
-        if(live && live->infoArray) {
-            for(uint32_t j = 0; j < live->infoArrayCount; j++) {
-                NSString* p = live->infoArray[j].imageFilePath ? @(live->infoArray[j].imageFilePath) : @"";
-
-                if([p isEqualToString:@(stressPath)]) {
-                    stillLoaded = YES;
-                }
-            }
-        }
-
-        if(stillLoaded) {
-            [out appendFormat:@"  iter %d: %s still visible in direct infoArray after dlclose\n", i, stressPath];
-            stressOK = NO;
         }
     }
 
-    [out appendFormat:@"  stress result: %@\n", stressOK ? @"OK" : @"FAILED"];
+    NSString* stressPath = nil;
+
+    if(installedLib) {
+        NSString* docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+        stressPath = [docs stringByAppendingPathComponent:testLibName];
+        [fm removeItemAtPath:stressPath error:nil];
+
+        NSError* copyErr = nil;
+
+        if(![fm copyItemAtPath:installedLib toPath:stressPath error:&copyErr]) {
+            [out appendFormat:@"  copy %@ -> %@ failed: %@\n", installedLib, stressPath, copyErr];
+            stressPath = nil;
+        } else {
+            [out appendFormat:@"  stress dylib staged at %@\n", stressPath];
+        }
+    }
+
+    if(!stressPath) {
+        // Fallback: find a non-shared-cache dylib already on disk. A shared-
+        // cache image is already in the image list at spawn, so "not in the
+        // pre-load infoArray and dlopen succeeds" selects a genuinely
+        // loadable/unloadable on-disk image. Hidden-domain paths (restricted
+        // by Shadow) are excluded — tracking can't be verified for them.
+        [out appendString:@"  shipped test dylib not found; probing for an on-disk dylib...\n"];
+        struct dyld_all_image_infos* pre = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        NSMutableSet* preloaded = [NSMutableSet set];
+
+        if(pre && pre->infoArray) {
+            for(uint32_t i = 0; i < pre->infoArrayCount; i++) {
+                if(pre->infoArray[i].imageFilePath) {
+                    [preloaded addObject:@(pre->infoArray[i].imageFilePath)];
+                }
+            }
+        }
+
+        for(NSString* dir in @[@"/usr/lib", @"/var/jb/usr/lib"]) {
+            for(NSString* e in [fm contentsOfDirectoryAtPath:dir error:nil]) {
+                if(![e hasSuffix:@".dylib"]) {
+                    continue;
+                }
+
+                NSString* full = [dir stringByAppendingPathComponent:e];
+                BOOL hiddenDomain = [full hasPrefix:@"/var/jb"] || [full hasPrefix:@"/Library/"];
+                BOOL jbName = NO;
+
+                for(NSString* marker in hiddenMarkers) {
+                    if([full containsString:marker]) {
+                        jbName = YES;
+                        break;
+                    }
+                }
+
+                if(hiddenDomain || jbName || [preloaded containsObject:full]) {
+                    continue;
+                }
+
+                void* h = dlopen([full fileSystemRepresentation], RTLD_NOW);
+
+                if(h) {
+                    stressPath = full;
+                    dlclose(h);
+                    [out appendFormat:@"  fallback stress dylib: %@\n", full];
+                    break;
+                }
+            }
+
+            if(stressPath) {
+                break;
+            }
+        }
+    }
+
+    if(!stressPath) {
+        [out appendString:@"  SKIPPED: no unloadable on-disk dylib found (install shdwtestlib with the app)\n"];
+    } else {
+        struct dyld_all_image_infos* base = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        uint32_t baseCount = (base && base->infoArray) ? base->infoArrayCount : 0;
+        [out appendFormat:@"  baseline infoArrayCount = %u (expected range [%u, %u] while stressing)\n", baseCount, baseCount, baseCount + 1];
+
+        // Concurrent direct-memory reader: continuously walks the infoArray
+        // while the stress runs, counting torn reads (a mid-walk NULL/NULL
+        // entry) and reporting the max entries walked vs the expected range.
+        __block volatile BOOL readerStop = NO;
+        __block uint32_t readerRuns = 0;
+        __block uint32_t readerTorn = 0;
+        __block uint32_t readerMax = 0;
+        dispatch_queue_t readerQueue = dispatch_queue_create("dyldprobe.reader", DISPATCH_QUEUE_SERIAL);
+
+        dispatch_async(readerQueue, ^{
+            while(!readerStop) {
+                struct dyld_all_image_infos* infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+
+                if(!infos || !infos->infoArray || infos->infoArrayCount == 0) {
+                    continue;
+                }
+
+                uint32_t count = infos->infoArrayCount;
+                uint32_t walked = 0;
+                BOOL torn = NO;
+                uint32_t cap = MIN(count, 8192u);
+
+                for(uint32_t i = 0; i < cap; i++) {
+                    struct dyld_image_info info = infos->infoArray[i];
+
+                    if(!info.imageLoadAddress && !info.imageFilePath) {
+                        torn = YES;
+                        break;
+                    }
+
+                    walked++;
+                }
+
+                if(torn) {
+                    readerTorn++;
+                }
+
+                if(walked > readerMax) {
+                    readerMax = walked;
+                }
+
+                readerRuns++;
+            }
+        });
+
+        BOOL stressOK = YES;
+        // The probe marker only exists in the shipped shdwtestlib; the
+        // fallback dylib can't export it, so only require it there.
+        BOOL expectMarker = [stressPath hasSuffix:testLibName];
+
+        for(int i = 0; i < 8; i++) {
+            void* handle = dlopen([stressPath fileSystemRepresentation], RTLD_NOW);
+
+            if(!handle) {
+                [out appendFormat:@"  iter %d: dlopen(%@) failed: %s\n", i, stressPath, dlerror() ? dlerror() : "?"];
+                stressOK = NO;
+                break;
+            }
+
+            // Confirm the handle really is OUR dylib, not a cached image.
+            void* marker = dlsym(handle, "shdwtestlib_probe_marker");
+            struct dyld_all_image_infos* live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+            BOOL seenLoaded = NO;
+
+            if(live && live->infoArray) {
+                for(uint32_t j = 0; j < live->infoArrayCount; j++) {
+                    NSString* p = live->infoArray[j].imageFilePath ? @(live->infoArray[j].imageFilePath) : @"";
+
+                    if([p isEqualToString:stressPath]) {
+                        seenLoaded = YES;
+                    }
+
+                    for(NSString* marker2 in hiddenMarkers) {
+                        if([p containsString:marker2]) {
+                            [out appendFormat:@"  iter %d: HIDDEN IMAGE LEAKED: %@\n", i, p];
+                            stressOK = NO;
+                        }
+                    }
+                }
+            }
+
+            // (a) loaded state: the direct read must show the image while
+            // loaded (its container path is never in the hidden domain —
+            // absent would mean tracking is broken).
+            if(!seenLoaded || (expectMarker && !marker)) {
+                [out appendFormat:@"  iter %d: FAILED — %@ not visible in direct infoArray while loaded (marker %@)\n", i, stressPath, marker ? @"OK" : @"MISSING"];
+                stressOK = NO;
+            }
+
+            dlclose(handle);
+
+            struct dyld_all_image_infos* after = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+            BOOL stillLoaded = NO;
+
+            if(after && after->infoArray) {
+                for(uint32_t j = 0; j < after->infoArrayCount; j++) {
+                    NSString* p = after->infoArray[j].imageFilePath ? @(after->infoArray[j].imageFilePath) : @"";
+
+                    if([p isEqualToString:stressPath]) {
+                        stillLoaded = YES;
+                    }
+                }
+            }
+
+            // (b) after dlclose: the image must be gone — a shared-cache
+            // image (the old libxml2 case) can survive dlclose and stay
+            // visible in the read.
+            if(stillLoaded) {
+                [out appendFormat:@"  iter %d: FAILED — %@ still visible in direct infoArray after dlclose (not unloadable or stale read)\n", i, stressPath];
+                stressOK = NO;
+            }
+        }
+
+        readerStop = YES;
+        dispatch_sync(readerQueue, ^{});
+        [out appendFormat:@"  concurrent reader: %u runs, max entries walked = %u (expected <= %u), torn reads = %u\n", readerRuns, readerMax, baseCount + 1, readerTorn];
+
+        if(readerTorn > 0) {
+            [out appendString:@"  concurrent reader: TORN reads observed — mirror/read published inconsistently\n"];
+            stressOK = NO;
+        }
+
+        if(readerMax > baseCount + 1) {
+            [out appendString:@"  concurrent reader: max exceeded expected range — over-read (count/array mismatch)\n"];
+            stressOK = NO;
+        }
+
+        [out appendFormat:@"  stress result: %@\n", stressOK ? @"OK" : @"FAILED"];
+    }
 
     [out appendString:@"\n== 7. uuid / infoArrayChangeTimestamp invariants ==\n"];
 

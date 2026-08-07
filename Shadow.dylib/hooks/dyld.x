@@ -22,9 +22,11 @@ static struct dyld_all_image_infos* _shdw_all_image_infos = NULL;
 // count-first, pointer-last — a direct reader that catches a mid-swap read
 // sees the new count against the previous generation's entries, which are
 // stale-but-valid within the fixed capacity, never a torn or over-read
-// buffer. Path strings are retained in `_shdw_dyld_path_pool` for the
-// lifetime of the process so fileSystemRepresentation pointers never dangle
-// after a collection removal.
+// buffer. Two-generation publication: a reader holding a pointer across MORE
+// than one rebuild may observe that generation rewritten in place — bounded
+// by the fixed capacity, never an over-read. Path strings are retained in
+// `_shdw_dyld_path_pool` for the lifetime of the process so
+// fileSystemRepresentation pointers never dangle after a collection removal.
 #define SHADOW_DYLD_MIRROR_CAPACITY 4096   // beyond any real process's image count
 
 static os_unfair_lock _shdw_dyld_mirror_lock = OS_UNFAIR_LOCK_INIT;
@@ -132,6 +134,11 @@ static shdw_dyld_snapshot_t* _shdw_dyld_snapshot_buffers[2] = {NULL, NULL};
 // SHADOW_PREFS_PLIST tracks the bundle id (me.jjolano.shadow); on rootless the
 // plist lives under /var/jb, so try both paths. A missing/unreadable plist
 // simply means the flag is off — memory hiding must never break the hook.
+// Per-app settings win: the plist holds a per-app dict keyed by bundle id
+// (see ShadowSettings getPreferencesForIdentifier — App_Enabled plus the same
+// hook keys), falling back to the top-level key. Re-read per call so settings
+// changes apply without a respring; the plist read is cheap and the
+// detector-escalation check above already runs per call.
 static BOOL shdw_dyld_memory_hiding_enabled(void) {
     // Escalation: when a detection library is present, memory hiding forces
     // on regardless of the prefs flag (set by dylib.x before hooks install).
@@ -139,24 +146,35 @@ static BOOL shdw_dyld_memory_hiding_enabled(void) {
         return YES;
     }
 
-    static BOOL enabled = NO;
-    static dispatch_once_t onceToken;
+    NSDictionary* prefs = nil;
 
-    dispatch_once(&onceToken, ^{
-        for(NSString* path in @[
-            [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
-            @(SHADOW_PREFS_PLIST)
-        ]) {
-            NSDictionary* prefs = [NSDictionary dictionaryWithContentsOfFile:path];
+    for(NSString* path in @[
+        [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
+        @(SHADOW_PREFS_PLIST)
+    ]) {
+        prefs = [NSDictionary dictionaryWithContentsOfFile:path];
 
-            if(prefs) {
-                enabled = [prefs[@"MemoryLevelHiding"] boolValue];
-                break;
-            }
+        if(prefs) {
+            break;
         }
-    });
+    }
 
-    return enabled;
+    if(!prefs) {
+        return NO;
+    }
+
+    // Per-app dict (when the app is enabled there) overrides the global key.
+    NSString* bundleIdentifier = [Shadow getBundleIdentifier];
+
+    if(bundleIdentifier) {
+        NSDictionary* appPrefs = prefs[bundleIdentifier];
+
+        if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
+            return [appPrefs[@"MemoryLevelHiding"] boolValue];
+        }
+    }
+
+    return [prefs[@"MemoryLevelHiding"] boolValue];
 }
 
 static void shadowhook_dyld_rebuild_dyldinfo(void);
@@ -557,14 +575,27 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
     if(result && [_shadow isAddrRestricted:addr]) {
         if(info) {
+            // Capture the symbol name before zeroing: the re-lookup below
+            // needs it, but the record's fbase/saddr must not survive — they
+            // would leak the hidden image's load address to a detector
+            // reading the untouched fields.
+            const char* symbolName = info->dli_sname;
+
+            // Zero the whole record; the executable-path fallback below is
+            // the only thing a detector may read.
+            memset(info, 0, sizeof(Dl_info));
+
             // One lookup only: dlsym with identical args returns the same
             // result every time, so if it resolves to a restricted address
             // the old loop would spin forever — apply the executable-name
-            // fallback immediately instead.
-            void* sym = dlsym(RTLD_NEXT, info->dli_sname);
+            // fallback immediately instead. A NULL symbol name skips the
+            // lookup (goes straight to the fallback).
+            if(symbolName) {
+                void* sym = dlsym(RTLD_NEXT, symbolName);
 
-            if(sym && ![_shadow isAddrRestricted:sym]) {
-                return original_dladdr(sym, info);
+                if(sym && ![_shadow isAddrRestricted:sym]) {
+                    return original_dladdr(sym, info);
+                }
             }
 
             // as a fallback, we'll just say this addr is part of the executable itself
@@ -710,6 +741,16 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
     func((unsigned) count, mhs, paths);
 }
 
+// Real dyld function pointers for the modern load/bulk-registration SPIs,
+// resolved by name from libdyld in shadowhook_dyld. The internal handlers
+// (shdw_image_load_handler / shdw_bulk_load_handler) MUST be registered with
+// real dyld through these raw pointers, not through the MSHookFunction
+// out-params (original_dyld_register_*): those are only filled when the hook
+// batch executes (dylib.x queues first), so calling them at install time
+// would call NULL and crash.
+static void (*shdw_real_register_for_image_loads)(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
+static void (*shdw_real_register_for_bulk_image_loads)(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
+
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
     os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
 
@@ -768,7 +809,10 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     // Allocate the fixed-capacity generation buffers once (lazily).
     // vm_allocate'd, never freed or reallocated: the published pointers can't
     // dangle, and a reader holding the previous generation never sees it
-    // rewritten while the new one is being published.
+    // rewritten while the new one is being published. Two-generation
+    // publication: a reader holding a pointer across more than one rebuild
+    // may observe that generation rewritten in place — bounded by the fixed
+    // capacity, never an over-read.
     static BOOL mirrorAllocFailed = NO;
 
     if(!mirrorAllocFailed) {
@@ -960,20 +1004,40 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* register_for_image_loads_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_image_loads");
 
     if(register_for_image_loads_ptr) {
-        MSHookFunction(register_for_image_loads_ptr, replaced_dyld_register_for_image_loads, (void **) &original_dyld_register_for_image_loads);
+        shdw_real_register_for_image_loads = (void (*)(void (*)(const struct mach_header* mh, const char* path, bool unloadable))) register_for_image_loads_ptr;
 
-        // Our own handler, registered with real dyld once: it fans out only
-        // visible images to every app-registered callback (the hook above
-        // stores app callbacks instead of forwarding them).
-        original_dyld_register_for_image_loads(shdw_image_load_handler);
+        // Register our own handler with REAL dyld immediately, through the
+        // raw resolved pointer — NOT through original_dyld_register_for_image_loads,
+        // which is still NULL until the hook batch executes. The handler fans
+        // out only visible images to every app-registered callback (the hook
+        // below stores app callbacks instead of forwarding them). A static
+        // guard keeps a hypothetical second shadowhook_dyld call from
+        // double-registering.
+        static BOOL imageLoadsHandlerRegistered = NO;
+
+        if(!imageLoadsHandlerRegistered) {
+            imageLoadsHandlerRegistered = YES;
+            shdw_real_register_for_image_loads(shdw_image_load_handler);
+        }
+
+        MSHookFunction(register_for_image_loads_ptr, replaced_dyld_register_for_image_loads, (void **) &original_dyld_register_for_image_loads);
     }
 
     void* register_for_bulk_ptr = MSFindSymbol(libdyldImage, "_dyld_register_for_bulk_image_loads");
 
     if(register_for_bulk_ptr) {
-        MSHookFunction(register_for_bulk_ptr, replaced_dyld_register_for_bulk_image_loads, (void **) &original_dyld_register_for_bulk_image_loads);
+        shdw_real_register_for_bulk_image_loads = (void (*)(void (*)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]))) register_for_bulk_ptr;
 
-        original_dyld_register_for_bulk_image_loads(shdw_bulk_load_handler);
+        // Same as above: register the bulk handler with real dyld through the
+        // raw resolved pointer, once, before the hook is queued.
+        static BOOL bulkLoadsHandlerRegistered = NO;
+
+        if(!bulkLoadsHandlerRegistered) {
+            bulkLoadsHandlerRegistered = YES;
+            shdw_real_register_for_bulk_image_loads(shdw_bulk_load_handler);
+        }
+
+        MSHookFunction(register_for_bulk_ptr, replaced_dyld_register_for_bulk_image_loads, (void **) &original_dyld_register_for_bulk_image_loads);
     }
 }
 
