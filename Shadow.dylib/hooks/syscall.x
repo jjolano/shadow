@@ -153,6 +153,46 @@ static long shdw_syscall_forward(int number, va_list args) {
             return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4, (unsigned long) a5);
         }
 
+        case SYS_getxattr: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+            intptr_t a6 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
+        }
+
+        case SYS_fgetxattr: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+            intptr_t a6 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
+        }
+
+        case SYS_listxattr: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3, (int) a4);
+        }
+
+        case SYS_flistxattr: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int) a1, (char *) a2, (size_t) a3, (int) a4);
+        }
+
         case SYS_open_extended: {
             intptr_t a1 = va_arg(args, intptr_t);
             intptr_t a2 = va_arg(args, intptr_t);
@@ -465,6 +505,19 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             // the dir path is resolved (F_GETPATH) only if the call succeeds.
             gd_fd = (int) va_arg(inspect, intptr_t);
             gd_buf = (char *) va_arg(inspect, intptr_t);
+        } else if(number == SYS_fgetxattr
+        || number == SYS_flistxattr) {
+            int fd = (int) va_arg(inspect, intptr_t);
+            char pathname[PATH_MAX];
+
+            // Same fd policy as the libc.x fgetxattr/flistxattr hooks:
+            // resolve via F_GETPATH, fail open when the path can't be
+            // named (the descriptor is legitimate — tty/pipe/socket).
+            if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                errno = ENOENT;
+                va_end(inspect);
+                return -1;
+            }
         } else if(number == SYS_open
         || number == SYS_chdir
         || number == SYS_access
@@ -474,6 +527,8 @@ static long shdw_syscall_dispatch(int number, va_list args) {
         || number == SYS_stat
         || number == SYS_lstat
         || number == SYS_getattrlist
+        || number == SYS_getxattr
+        || number == SYS_listxattr
         || number == SYS_open_extended
         || number == SYS_stat_extended
         || number == SYS_lstat_extended
@@ -569,6 +624,10 @@ static long replaced_syscall(int number, ...) {
     && number != SYS_stat
     && number != SYS_lstat
     && number != SYS_getattrlist
+    && number != SYS_getxattr
+    && number != SYS_fgetxattr
+    && number != SYS_listxattr
+    && number != SYS_flistxattr
     && number != SYS_open_extended
     && number != SYS_stat_extended
     && number != SYS_lstat_extended
@@ -613,6 +672,10 @@ static long replaced___syscall(int number, ...) {
     && number != SYS_stat
     && number != SYS_lstat
     && number != SYS_getattrlist
+    && number != SYS_getxattr
+    && number != SYS_fgetxattr
+    && number != SYS_listxattr
+    && number != SYS_flistxattr
     && number != SYS_open_extended
     && number != SYS_stat_extended
     && number != SYS_lstat_extended
