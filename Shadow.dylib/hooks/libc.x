@@ -1464,7 +1464,15 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
     return ret;
 }
 
-static pid_t replaced_getppid() {
+static pid_t (*original_getppid)(void);
+static pid_t replaced_getppid(void) {
+    if(isCallerExternal()) {
+        // Tweak-internal callers get the real parent (cross-tweak
+        // regression); the app/detector sees the stock answer for a process
+        // without a debugger parent.
+        return original_getppid();
+    }
+
     return 1;
 }
 
@@ -1667,5 +1675,5 @@ void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
 void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     MSHookFunction(ptrace, replaced_ptrace, (void **) &original_ptrace);
     MSHookFunction(sysctl, replaced_sysctl, (void **) &original_sysctl);
-    MSHookFunction(getppid, replaced_getppid, NULL);
+    MSHookFunction(getppid, replaced_getppid, (void **) &original_getppid);
 }
