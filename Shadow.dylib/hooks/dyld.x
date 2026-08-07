@@ -2,6 +2,7 @@
 #import <RootBridge.h>
 #import <os/lock.h>
 #import <mach/vm_region.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 static NSMutableArray<NSDictionary *>* _shdw_dyld_collection = nil;
 static NSMutableArray<NSValue *>* _shdw_dyld_add_image = nil;
@@ -819,6 +820,110 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     return result;
 }
 
+// --- CFBundle symbol lookup (plan Wave 3): CFBundleGetFunctionPointerForName
+// & co. are GOT-style lookups a detector can use to obtain the un-hooked
+// original of a fishhook-rebound export — the same bypass the dlsym policy
+// table closes, reachable through CoreFoundation instead. Policy: a protected
+// bundle path denies outright; a returned address in a protected image is
+// NULL; a requested symbol name that matches a hooked system API resolves to
+// Shadow's replacement. Installed with the symbol-lookup group.
+
+static BOOL shdw_cfbundle_denied(CFBundleRef bundle) {
+    if(!bundle) {
+        return NO;
+    }
+
+    CFURLRef url = CFBundleCopyBundleURL(bundle);
+
+    if(!url) {
+        return NO;
+    }
+
+    char buf[PATH_MAX];
+    BOOL denied = NO;
+
+    if(CFURLGetFileSystemRepresentation(url, true, (UInt8 *)buf, sizeof(buf))) {
+        denied = [_shadow isProtectedImagePath:@(buf)];
+    }
+
+    CFRelease(url);
+    return denied;
+}
+
+static void* shdw_cfbundle_attributed(void* addr, CFStringRef symbolName) {
+    if(addr && [_shadow isAddrRestricted:addr]) {
+        return NULL;
+    }
+
+    if(symbolName) {
+        char name[256];
+
+        if(CFStringGetCString(symbolName, name, sizeof(name), kCFStringEncodingUTF8)) {
+            for(size_t i = 0; i < SHADOW_SYM_POLICY_COUNT; i++) {
+                if(strcmp(name, shdw_sym_policy_table[i].name) == 0) {
+                    return shdw_sym_policy_table[i].replacement;
+                }
+            }
+        }
+    }
+
+    return addr;
+}
+
+static void* (*original_CFBundleGetFunctionPointerForName)(CFBundleRef bundle, CFStringRef functionName);
+static void* replaced_CFBundleGetFunctionPointerForName(CFBundleRef bundle, CFStringRef functionName) {
+    if(!isCallerExternal()) {
+        return original_CFBundleGetFunctionPointerForName(bundle, functionName);
+    }
+
+    if(shdw_cfbundle_denied(bundle)) {
+        return NULL;
+    }
+
+    void* addr = original_CFBundleGetFunctionPointerForName(bundle, functionName);
+    return shdw_cfbundle_attributed(addr, functionName);
+}
+
+static void (*original_CFBundleGetFunctionPointersForNames)(CFBundleRef bundle, CFArrayRef functionNames, void* ftbl[]);
+static void replaced_CFBundleGetFunctionPointersForNames(CFBundleRef bundle, CFArrayRef functionNames, void* ftbl[]) {
+    if(!isCallerExternal()) {
+        return original_CFBundleGetFunctionPointersForNames(bundle, functionNames, ftbl);
+    }
+
+    original_CFBundleGetFunctionPointersForNames(bundle, functionNames, ftbl);
+
+    if(!ftbl || !functionNames) {
+        return;
+    }
+
+    BOOL denied = shdw_cfbundle_denied(bundle);
+    CFIndex count = CFArrayGetCount(functionNames);
+
+    for(CFIndex i = 0; i < count; i++) {
+        if(denied) {
+            ftbl[i] = NULL;
+            continue;
+        }
+
+        CFStringRef name = (CFStringRef)CFArrayGetValueAtIndex(functionNames, i);
+        ftbl[i] = shdw_cfbundle_attributed(ftbl[i], name);
+    }
+}
+
+static void* (*original_CFBundleGetDataPointerForName)(CFBundleRef bundle, CFStringRef symbolName);
+static void* replaced_CFBundleGetDataPointerForName(CFBundleRef bundle, CFStringRef symbolName) {
+    if(!isCallerExternal()) {
+        return original_CFBundleGetDataPointerForName(bundle, symbolName);
+    }
+
+    if(shdw_cfbundle_denied(bundle)) {
+        return NULL;
+    }
+
+    void* addr = original_CFBundleGetDataPointerForName(bundle, symbolName);
+    return shdw_cfbundle_attributed(addr, symbolName);
+}
+
 // A hidden image is one absent from the filtered collection: updatelibs only
 // ever adds safe (non-restricted) images, so anything not in the collection
 // is hidden. mh == NULL (unknown) is never "hidden".
@@ -1380,6 +1485,12 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
     MSHookFunction(dlsym, replaced_dlsym, (void **) &original_dlsym);
+
+    // CFBundle symbol-resolution wrappers (plan Wave 3): same bypass surface
+    // as dlsym, reached through CoreFoundation.
+    MSHookFunction(CFBundleGetFunctionPointerForName, replaced_CFBundleGetFunctionPointerForName, (void **) &original_CFBundleGetFunctionPointerForName);
+    MSHookFunction(CFBundleGetFunctionPointersForNames, replaced_CFBundleGetFunctionPointersForNames, (void **) &original_CFBundleGetFunctionPointersForNames);
+    MSHookFunction(CFBundleGetDataPointerForName, replaced_CFBundleGetDataPointerForName, (void **) &original_CFBundleGetDataPointerForName);
 }
 
 void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks) {
