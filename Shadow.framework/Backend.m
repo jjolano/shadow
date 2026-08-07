@@ -69,6 +69,13 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         rulesetURLs = ruleset_urls;
 
         for(NSURL* url in ruleset_urls) {
+            // RulesetEngine's own compiled caches live here too; they are not
+            // rulesets, so never track or load them (their rewrites are still
+            // caught by the dir-mtime check).
+            if([[url lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
+                continue;
+            }
+
             RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
 
             if(ruleset) {

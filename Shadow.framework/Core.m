@@ -227,14 +227,34 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     // restricted verdict; they are honored only within kDecisionCacheTTL AND
     // while the generation matches, so a changed file system (new/removed
     // jbroot files) is observed at most TTL later while a ruleset reload
-    // invalidates immediately. Options are never cached: they alter the
-    // decision (working dir, file extension, resolve re-check, symlink
-    // resolution).
+    // invalidates immediately. Options that alter the decision (file
+    // extension, resolve re-check, symlink resolution) are never cached; the
+    // single exception is the working-dir-only dict the readdir/enumerator
+    // hook lanes pass for every directory entry: with nothing but
+    // kShadowRestrictionWorkingDir in options, the decision depends solely
+    // on the joined workingDir+entry path, so it is cached under a composite
+    // (workingDir, entry) key — an array key, which can never collide with
+    // the string keys of plain absolute-path queries, nor between two
+    // different (workingDir, entry) pairs (identical pairs imply identical
+    // joined paths and therefore identical decisions). The working dir must
+    // be absolute (a relative one falls back to the process cwd, which is
+    // not a stable cache input) and the entry must not be tilde-prefixed
+    // (tilde expansion would make the decision depend on the process home).
     BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
+    id cacheKey = path;
+
+    if(!cacheable && [options count] == 1) {
+        NSString* workingDir = [options objectForKey:kShadowRestrictionWorkingDir];
+
+        if(workingDir && [workingDir isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
+            cacheKey = @[workingDir, path];
+            cacheable = YES;
+        }
+    }
 
     if(cacheable) {
         NSUInteger gen = [backend rulesetGeneration];
-        NSArray* cached = [decisionCache objectForKey:path];
+        NSArray* cached = [decisionCache objectForKey:cacheKey];
 
         if(cached) {
             double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
@@ -246,7 +266,8 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         }
     }
 
-    NSString* original_path = path;
+    // cacheKey (above) already holds the original query path/key, so the
+    // remaining pipeline mutates `path` freely.
     BOOL restricted = NO;
 
     // Resolve any tilde paths.
@@ -350,7 +371,7 @@ done:
     if(cacheable) {
         // C0-5: generation tag — a ruleset reload invalidates the entry at
         // the next query even inside the TTL window.
-        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([backend rulesetGeneration])] forKey:original_path];
+        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([backend rulesetGeneration])] forKey:cacheKey];
     }
 
     return restricted;

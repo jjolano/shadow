@@ -3,6 +3,11 @@
 
 #import <Foundation/Foundation.h>
 
+// Suffix of the compiled-ruleset cache files RulesetEngine writes next to
+// each ruleset plist (e.g. SystemRules.plist.shadowcache). Consumers that
+// enumerate the rulesets directory (ShadowBackend) skip these files.
+FOUNDATION_EXPORT NSString* const kShadowRulesetCacheSuffix;
+
 __attribute__((visibility("default")))
 @interface RulesetEngine : NSObject {
     NSSet<NSString *>* set_urlschemes;
