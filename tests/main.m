@@ -452,6 +452,51 @@ static void testUtilities(void) {
     CHECK([err domain] == NSCocoaErrorDomain && [err code] == NSFileNoSuchFileError, "file error factory");
 }
 
+// Hook entry points the unit groups don't reach directly: the const-char
+// path API (libc.x/syscall.x/sandbox.x/dyld.x), the address API
+// (objc.x/dyld.x/mem.x/sandbox.x/NSThread.x/NSBundle.x), and the
+// dpkg-database generator (shadowd/SystemRules side).
+static void testHookEntryPoints(void) {
+    printf("[tests] hook entry points\n");
+
+    // isCPathRestricted: const-char variant of the path decision.
+    CHECK([shdw() isCPathRestricted:"/Applications/Cydia.app"], "isCPathRestricted restricted");
+    CHECK(![shdw() isCPathRestricted:"/var/mobile/Media/DCIM/1.jpg"], "isCPathRestricted allowed");
+    CHECK(![shdw() isCPathRestricted:NULL], "isCPathRestricted NULL allowed");
+
+    // isAddrRestricted: the dyld-image stub resolves no image, so both the
+    // NULL and non-NULL address paths exercise the method body.
+    CHECK(![shdw() isAddrRestricted:NULL], "isAddrRestricted NULL allowed");
+    CHECK(![shdw() isAddrRestricted:(const void*)0x1234], "isAddrRestricted unresolvable address allowed");
+}
+
+// generateDatabase: builds a ruleset dict from the dpkg info database.
+// Rootless only — the stub maps /Library/dpkg/info into the fixture jbroot
+// tree (fixtures/fs/jb/Library/dpkg/info/*.list).
+static void testDatabase(void) {
+    printf("[tests] dpkg database generation\n");
+
+    if(!gRootless) {
+        printf("  (rootless mode only)\n");
+        return;
+    }
+
+    NSDictionary* db = [Shadow generateDatabase];
+
+    CHECK(db != nil, "generateDatabase produces a ruleset");
+
+    if(db) {
+        NSArray* blacklist = [db objectForKey:@"BlacklistExactPaths"];
+        NSArray* schemes = [db objectForKey:@"BlacklistURLSchemes"];
+
+        CHECK([blacklist containsObject:@"/usr/bin/sshd"], "db blacklist includes package file paths");
+        CHECK([blacklist containsObject:@"/Applications/FakeJB.app"], "db blacklist includes installed apps");
+        CHECK(![blacklist containsObject:@"/usr/bin/ssh"], "db blacklist skips base.list (system files)");
+        CHECK(![blacklist containsObject:@"/var/lib/apt/lists"], "db blacklist skips base.list entries");
+        CHECK([schemes containsObject:@"fakejb"], "db schemes harvested from installed app bundles");
+    }
+}
+
 // Ruleset reload via mtime + generation invalidation + last-known-good.
 // Rooted mode only to keep runtime down; logic is mode-independent.
 static void testReload(void) {
@@ -869,6 +914,8 @@ int main(int argc, const char** argv) {
         testProtectedNames();
         testSandbox();
         testUtilities();
+        testHookEntryPoints();
+        testDatabase();
 
         if(!gRootless) {
             testReload();

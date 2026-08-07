@@ -15,6 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential clang cmake ninja-build pkg-config git ca-certificates \
         libffi-dev libxml2-dev libgnutls28-dev libicu-dev zlib1g-dev uuid-dev \
+        libclang-rt-18-dev llvm-18 \
     && rm -rf /var/lib/apt/lists/*
 
 # GNUstep runtime (ARC-capable). Pinned to the v2.2.1 release (matches the
