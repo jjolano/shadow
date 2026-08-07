@@ -66,11 +66,16 @@ static BOOL _shdw_mirror_currently_patched = NO;
 static BOOL _shdw_mirror_protect_failed = NO;
 static vm_prot_t _shdw_mirror_original_protection = VM_PROT_READ | VM_PROT_WRITE;
 
-// App-bundle image spans for shdw_caller_is_external() (see hooks.h). Rebuilt
-// from the dyld image list whenever it changes and once at install; the
-// writer serializes on `_shdw_own_ranges_lock` and publishes with one
-// release store, so readers (no lock, one acquire load) never see a torn or
-// half-built snapshot.
+// Shadow-owned image spans for shdw_caller_is_external() (see hooks.h).
+// C0-2: truth is granted ONLY to Shadow's own artifacts — Shadow.dylib,
+// Shadow.framework, libSandy.dylib, HookKit.framework, RootBridge.framework
+// and the substrate/substitute/ellekit binaries — so the collector gathers
+// THOSE spans, not the app bundle's. isProtectedImagePath matches by
+// case-insensitive basename prefix, collapsing rootful and rootless
+// (/var/jb) prefixes. Rebuilt from the dyld image list whenever it changes
+// and once at install; the writer serializes on `_shdw_own_ranges_lock` and
+// publishes with one release store, so readers (no lock, one acquire load)
+// never see a torn or half-built snapshot.
 shdw_own_ranges_t _shdw_own_ranges_a;
 shdw_own_ranges_t _shdw_own_ranges_b;
 shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
@@ -83,15 +88,16 @@ void shdw_own_ranges_refresh(void) {
     shdw_own_ranges_t* other = (published == &_shdw_own_ranges_a) ? &_shdw_own_ranges_b : &_shdw_own_ranges_a;
 
     shdw_own_ranges_t rebuilt = { .count = 0 };
-    const char* bundle = [[shdw_shadow_instance() bundlePath] fileSystemRepresentation];
 
     uint32_t count = _dyld_image_count();
 
     for(uint32_t i = 0; i < count && rebuilt.count < SHADOW_OWN_IMAGE_MAX; i++) {
         const char* path = _dyld_get_image_name(i);
 
-        // Same substring predicate -[Shadow isAddrExternal:] applied per call.
-        if(!path || !strstr(path, bundle)) {
+        // C0-2: collect only Shadow-owned images (exact-name predicate; the
+        // own spans are few and fixed once loaded, so the loose union span is
+        // exact for return-address classification).
+        if(!path || ![_shadow isProtectedImagePath:@(path)]) {
             continue;
         }
 
@@ -223,7 +229,9 @@ static void shdw_dyld_snapshot_end(void) {
 
 static uint32_t (*original_dyld_image_count)();
 static uint32_t replaced_dyld_image_count() {
-    if(isCallerExternal()) {
+    // C0-2: Shadow's own code (and internal scopes) sees truth; every other
+    // caller — app, detector, system framework — sees the filtered snapshot.
+    if(!isCallerExternal()) {
         return original_dyld_image_count();
     }
 
@@ -242,7 +250,7 @@ static uint32_t replaced_dyld_image_count() {
 
 static const struct mach_header* (*original_dyld_get_image_header)(uint32_t image_index);
 static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_index) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_dyld_get_image_header(image_index);
     }
 
@@ -261,7 +269,7 @@ static const struct mach_header* replaced_dyld_get_image_header(uint32_t image_i
 
 static intptr_t (*original_dyld_get_image_vmaddr_slide)(uint32_t image_index);
 static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_dyld_get_image_vmaddr_slide(image_index);
     }
 
@@ -280,7 +288,7 @@ static intptr_t replaced_dyld_get_image_vmaddr_slide(uint32_t image_index) {
 
 static const char* (*original_dyld_get_image_name)(uint32_t image_index);
 static const char* replaced_dyld_get_image_name(uint32_t image_index) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_dyld_get_image_name(image_index);
     }
 
@@ -299,8 +307,9 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
 
 // _dyld_image_path_containing_address is called directly by commercial
 // detection SDKs (bypasses dyld API filtering) AND by Shadow's own Core.m
-// (isAddrExternal/isAddrRestricted). Return truth to the tweak's own callers,
-// lie (executable path) to everyone else.
+// (isAddrExternal/isAddrRestricted). Return truth to Shadow's own callers
+// (C0-2: only Shadow-owned images / internal scopes), lie (NULL for
+// restricted, see the item-7 refinement below) to everyone else.
 // The reentrancy flag is _Thread_local because the only recursion here is
 // same-thread (this hook → isCPathRestricted → isPathRestricted, guarded by
 // the flag) — per-thread scope is exactly right and needs no lock.
@@ -314,12 +323,12 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
 
     _shdw_dyipca_in_hook = YES;
 
-    // Is the CALLER of this hook inside the tweak? (not the addr arg)
-    BOOL caller_is_tweak = shdw_caller_is_external(__builtin_return_address(0));
+    // Is the CALLER of this hook inside Shadow? (not the addr arg)
+    BOOL caller_is_external = shdw_caller_is_external(__builtin_return_address(0));
 
     _shdw_dyipca_in_hook = NO;
 
-    if(caller_is_tweak) {
+    if(!caller_is_external) {
         return original_dyld_image_path_containing_address(addr);
     }
 
@@ -348,18 +357,18 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
 
     _shdw_dyighca_in_hook = YES;
 
-    // Is the CALLER of this hook inside the app bundle (app code or an
-    // embedded detection framework)? Not the addr arg. Non-embedded callers
-    // (the tweak itself, other injected dylibs) pass through untouched.
-    BOOL caller_outside_app = shdw_caller_is_external(__builtin_return_address(0));
+    // Is the CALLER of this hook inside Shadow (own code sees truth)? Not
+    // the addr arg. Every other caller — app code, embedded detectors,
+    // system frameworks — gets the filtered answer.
+    BOOL caller_is_external = shdw_caller_is_external(__builtin_return_address(0));
 
     _shdw_dyighca_in_hook = NO;
 
-    if(caller_outside_app) {
+    if(!caller_is_external) {
         return original_dyld_image_header_containing_address(addr);
     }
 
-    // Embedded caller probing a filtered image's address: report no image.
+    // External caller probing a filtered image's address: report no image.
     if([_shadow isAddrRestricted:addr]) {
         return NULL;
     }
@@ -444,7 +453,9 @@ static bool replaced_dlopen_preflight(const char* path) {
 
 static void (*original_dyld_register_func_for_add_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_add_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerExternal() || !func) {
+    // C0-2: Shadow's own registrations (none post-install today) pass
+    // through; everyone else registers with the filtered replay.
+    if(!isCallerExternal() || !func) {
         return original_dyld_register_func_for_add_image(func);
     }
 
@@ -463,7 +474,7 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
 
 static void (*original_dyld_register_func_for_remove_image)(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide));
 static void replaced_dyld_register_func_for_remove_image(void (*func)(const struct mach_header* mh, intptr_t vmaddr_slide)) {
-    if(isCallerExternal() || !func) {
+    if(!isCallerExternal() || !func) {
         return original_dyld_register_func_for_remove_image(func);
     }
 
