@@ -398,16 +398,49 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
     %orig;
 }
 
+// A symlink's destination is stored as written; a relative destination is
+// interpreted relative to the directory containing the link. Resolve it for
+// classification so a relative link pointing into a restricted tree is
+// caught. Returns the destination unchanged when it is absolute.
+static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* destPath) {
+    if(!destPath) {
+        return nil;
+    }
+
+    if([destPath isAbsolutePath]) {
+        return destPath;
+    }
+
+    return [[linkPath stringByDeletingLastPathComponent] stringByAppendingPathComponent:destPath];
+}
+
 - (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
         
         return nil;
     }
 
-    return %orig;
+    NSString* result = %orig;
+
+    // Both-sides validation: the link is allowed but its destination may
+    // point into a restricted tree. Error names the (caller-supplied) link
+    // path, never the resolved destination — that would leak it.
+    if(result && !isCallerExternal()) {
+        NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
+
+        if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:path];
+            }
+
+            return nil;
+        }
+    }
+
+    return result;
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
@@ -525,7 +558,17 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
         return nil;
     }
 
-    return %orig;
+    NSString* result = %orig;
+
+    if(result && !isCallerExternal()) {
+        NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
+
+        if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
+            return nil;
+        }
+    }
+
+    return result;
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
@@ -657,24 +700,61 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 }
 
 - (BOOL)createSymbolicLinkAtURL:(NSURL *)url withDestinationURL:(NSURL *)destURL error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url options:nil]) {
-        if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+    if(!isCallerExternal()) {
+        // Link location: write intent — a probe creating a link at a
+        // restricted path must be denied even when the target is absent.
+        NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+
+        if([_shadow isURLRestricted:url options:writeOptions]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForURL:url];
+            }
+
+            return NO;
         }
 
-        return NO;
+        // Destination: read intent. Relative destinations resolve against
+        // the directory containing the link (the link's parent).
+        if(destURL) {
+            NSURL* absDest = [destURL absoluteURL];
+            NSString* destPath = [absDest path];
+
+            if(![destPath isAbsolutePath]) {
+                destPath = [[[url path] stringByDeletingLastPathComponent] stringByAppendingPathComponent:destPath];
+            }
+
+            if(destPath && [_shadow isPathRestricted:destPath options:nil]) {
+                if(error) {
+                    *error = [Shadow fileNoSuchFileErrorForURL:destURL];
+                }
+
+                return NO;
+            }
+        }
     }
 
     return %orig;
 }
 
 - (BOOL)createSymbolicLinkAtPath:(NSString *)path withDestinationPath:(NSString *)destPath error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
-        if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+    if(!isCallerExternal()) {
+        if([_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:path];
+            }
+
+            return NO;
         }
 
-        return NO;
+        NSString* resolvedDest = _shdw_resolveLinkDestination(path, destPath);
+
+        if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:destPath];
+            }
+
+            return NO;
+        }
     }
 
     return %orig;
