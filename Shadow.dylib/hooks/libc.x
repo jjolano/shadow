@@ -1181,11 +1181,39 @@ static pid_t replaced_getppid() {
 
 // freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
 // jailbroken devices (symlink into writable bootstrap) and fails on stock.
-// Fail the same way stock does (ENOENT — the path doesn't resolve).
+// Fail the same way stock does (ENOENT — the path doesn't resolve). The
+// probe is matched as an exact path COMPONENT under the app's bundle
+// directory: a substring match would trip on benign names like
+// "notajbrootfile". Deny only when a path component equals ".jbroot" and the
+// components before it are exactly the app bundle dir.
 static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
-    return pathname
-        && (oflag & O_CREAT)
-        && (strstr(pathname, ".jbroot") != NULL);
+    if(!pathname || !(oflag & O_CREAT)) {
+        return NO;
+    }
+
+    NSString* bundlePath = [_shadow bundlePath];
+
+    if(!bundlePath || !bundlePath.length) {
+        return NO;
+    }
+
+    NSArray* components = [[NSString stringWithUTF8String:pathname] pathComponents];
+    NSUInteger count = components.count;
+
+    for(NSUInteger i = 0; i < count; i++) {
+        if(![components[i] isEqualToString:@".jbroot"]) {
+            continue;
+        }
+
+        // The ".jbroot" component's parent must be the app bundle directory.
+        NSString* parent = [[NSString pathWithComponents:[components subarrayWithRange:NSMakeRange(0, i)]] stringByStandardizingPath];
+
+        if([parent isEqualToString:bundlePath]) {
+            return YES;
+        }
+    }
+
+    return NO;
 }
 
 static int (*original_open)(const char *pathname, int oflag, ...);
