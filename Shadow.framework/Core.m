@@ -126,11 +126,16 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 }
 
 - (BOOL)isCPathRestricted:(const char *)path {
-    if(path) {
-        return [self isPathRestricted:[NSString stringWithUTF8String:path]];
-    }
+    // Pool-less pthread_create threads (see isPathRestricted:options:):
+    // [NSString stringWithUTF8String:] here is autoreleased, and the libc
+    // hooks call this for every open/stat/access/lstat/readdir entry.
+    @autoreleasepool {
+        if(path) {
+            return [self isPathRestricted:[NSString stringWithUTF8String:path]];
+        }
 
-    return NO;
+        return NO;
+    }
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
@@ -216,165 +221,174 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 }
 
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
-    if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
-        return NO;
-    }
-
-    // Bounded decision cache: repeat queries of the same absolute path with
-    // default options skip tilde expansion, NSURL canonicalization, the
-    // rootless access() probe and the backend lookup. Entries carry the time
-    // they were computed, the backend's ruleset generation (C0-5), and the
-    // restricted verdict; they are honored only within kDecisionCacheTTL AND
-    // while the generation matches, so a changed file system (new/removed
-    // jbroot files) is observed at most TTL later while a ruleset reload
-    // invalidates immediately. Options that alter the decision (file
-    // extension, resolve re-check, symlink resolution) are never cached; the
-    // single exception is the working-dir-only dict the readdir/enumerator
-    // hook lanes pass for every directory entry: with nothing but
-    // kShadowRestrictionWorkingDir in options, the decision depends solely
-    // on the joined workingDir+entry path, so it is cached under a composite
-    // (workingDir, entry) key — an array key, which can never collide with
-    // the string keys of plain absolute-path queries, nor between two
-    // different (workingDir, entry) pairs (identical pairs imply identical
-    // joined paths and therefore identical decisions). The working dir must
-    // be absolute (a relative one falls back to the process cwd, which is
-    // not a stable cache input) and the entry must not be tilde-prefixed
-    // (tilde expansion would make the decision depend on the process home).
-    BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
-    id cacheKey = path;
-
-    if(!cacheable && [options count] == 1) {
-        NSString* workingDir = [options objectForKey:kShadowRestrictionWorkingDir];
-
-        if(workingDir && [workingDir isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
-            cacheKey = @[workingDir, path];
-            cacheable = YES;
+    // Pool-less pthread_create threads (Unity/Unreal loading threads, Flutter
+    // engine threads, C++ std::thread file IO) have no autoreleasepool: every
+    // autoreleased object this method allocates — the composite cache key,
+    // joined/standardized/resolved path strings, the options copy — would log
+    // "autoreleased with no pool in place — just leaking" and never be
+    // released. The pool drains them all; the BOOL return survives, and cache
+    // entries (NSCache retains) and _Thread_local state outlive the pool.
+    @autoreleasepool {
+        if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
+            return NO;
         }
-    }
 
-    if(cacheable) {
-        NSUInteger gen = [backend rulesetGeneration];
-        NSArray* cached = [decisionCache objectForKey:cacheKey];
+        // Bounded decision cache: repeat queries of the same absolute path with
+        // default options skip tilde expansion, NSURL canonicalization, the
+        // rootless access() probe and the backend lookup. Entries carry the time
+        // they were computed, the backend's ruleset generation (C0-5), and the
+        // restricted verdict; they are honored only within kDecisionCacheTTL AND
+        // while the generation matches, so a changed file system (new/removed
+        // jbroot files) is observed at most TTL later while a ruleset reload
+        // invalidates immediately. Options that alter the decision (file
+        // extension, resolve re-check, symlink resolution) are never cached; the
+        // single exception is the working-dir-only dict the readdir/enumerator
+        // hook lanes pass for every directory entry: with nothing but
+        // kShadowRestrictionWorkingDir in options, the decision depends solely
+        // on the joined workingDir+entry path, so it is cached under a composite
+        // (workingDir, entry) key — an array key, which can never collide with
+        // the string keys of plain absolute-path queries, nor between two
+        // different (workingDir, entry) pairs (identical pairs imply identical
+        // joined paths and therefore identical decisions). The working dir must
+        // be absolute (a relative one falls back to the process cwd, which is
+        // not a stable cache input) and the entry must not be tilde-prefixed
+        // (tilde expansion would make the decision depend on the process home).
+        BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
+        id cacheKey = path;
 
-        if(cached) {
-            double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
+        if(!cacheable && [options count] == 1) {
+            NSString* workingDir = [options objectForKey:kShadowRestrictionWorkingDir];
 
-            if(age >= 0 && age <= kDecisionCacheTTL
-                && [[cached objectAtIndex:2] unsignedIntegerValue] == gen) {
-                return [[cached objectAtIndex:1] boolValue];
+            if(workingDir && [workingDir isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
+                cacheKey = @[workingDir, path];
+                cacheable = YES;
             }
         }
-    }
 
-    // cacheKey (above) already holds the original query path/key, so the
-    // remaining pipeline mutates `path` freely.
-    BOOL restricted = NO;
+        if(cacheable) {
+            NSUInteger gen = [backend rulesetGeneration];
+            NSArray* cached = [decisionCache objectForKey:cacheKey];
 
-    // Resolve any tilde paths.
-    path = [path stringByExpandingTildeInPath];
+            if(cached) {
+                double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
 
-    if([path characterAtIndex:0] == '~') {
-        return NO;
-    }
-
-    // Attempt to resolve any relative paths.
-    if(![path isAbsolutePath]) {
-        NSString* cwd = [options objectForKey:kShadowRestrictionWorkingDir];
-
-        if(!cwd || ![cwd isAbsolutePath]) {
-            cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+                if(age >= 0 && age <= kDecisionCacheTTL
+                    && [[cached objectAtIndex:2] unsignedIntegerValue] == gen) {
+                    return [[cached objectAtIndex:1] boolValue];
+                }
+            }
         }
 
-        path = [cwd stringByAppendingPathComponent:path];
-    }
+        // cacheKey (above) already holds the original query path/key, so the
+        // remaining pipeline mutates `path` freely.
+        BOOL restricted = NO;
 
-    // Standardize path string for our checks.
-    path = [[self class] getStandardizedPath:path];
+        // Resolve any tilde paths.
+        path = [path stringByExpandingTildeInPath];
 
-    // Run checks if path is outside the app sandbox.
-    BOOL shouldCheckPath = (!hasAppSandbox || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]));
-
-    // Resolve-before-exempt: a symlink inside the sandbox (or bundle) can
-    // point at jailbreak files outside it, so a lexical prefix match against
-    // homePath/bundlePath is not a safe exemption. realpath() the exempted
-    // candidate and evaluate the resolved target: the restricted-root prefixes
-    // are a cheap early-out, but the target also runs through the same
-    // evaluation a non-exempt path would get, so a symlink at a ROOTFUL
-    // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
-    // /usr/bin/ssh) is restricted exactly when the equivalent direct path
-    // would be. A failed resolution (path does not exist) keeps the exemption
-    // — a non-existent path can't leak anything. Only no-follow options
-    // (readlink/lstat link-location checks — the libc lane wires
-    // kShadowRestrictionNoFollow into those hooks) skip resolution: they
-    // request a location-only answer about the link itself, not its target.
-    // Every other options-bearing query resolves too — the options only
-    // contribute the working dir, relative-path handling and the
-    // file-extension suffix, all already applied to `path` above, so the
-    // resolved target is evaluated with the same options a direct path gets.
-    // Cacheable queries fold the result into the bounded decision cache
-    // (same TTL), amortizing the realpath syscall. shdw_resolvingPath
-    // guards the realpath call: the libc realpath hook re-enters
-    // isCPathRestricted from inside realpath, which would recurse forever
-    // without the per-thread guard.
-    BOOL noFollow = [[options objectForKey:kShadowRestrictionNoFollow] boolValue];
-
-    if(!shouldCheckPath
-        && !noFollow
-        && !shdw_resolvingPath) {
-        shdw_resolvingPath = YES;
-
-        char resolved_path[PATH_MAX];
-        BOOL resolvedRestricted = NO;
-
-        if(realpath([path fileSystemRepresentation], resolved_path)) {
-            NSString* resolved = [NSString stringWithUTF8String:resolved_path];
-
-            resolvedRestricted = isPathInRestrictedRoot(resolved)
-                || [self evaluatePathRestriction:resolved options:options];
+        if([path characterAtIndex:0] == '~') {
+            return NO;
         }
 
-        shdw_resolvingPath = NO;
+        // Attempt to resolve any relative paths.
+        if(![path isAbsolutePath]) {
+            NSString* cwd = [options objectForKey:kShadowRestrictionWorkingDir];
 
-        if(resolvedRestricted) {
-            restricted = YES;
-            goto done;
+            if(!cwd || ![cwd isAbsolutePath]) {
+                cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+            }
+
+            path = [cwd stringByAppendingPathComponent:path];
         }
-    }
 
-    if(shouldCheckPath) {
-        if([self evaluatePathRestriction:path options:options]) {
-            restricted = YES;
-            goto done;
-        }
-    }
+        // Standardize path string for our checks.
+        path = [[self class] getStandardizedPath:path];
 
-    // Resolve into full path and check again.
-    if(![options objectForKey:kShadowRestrictionEnableResolve] || [[options objectForKey:kShadowRestrictionEnableResolve] boolValue]) {
-        NSString* resolved_path = [path stringByStandardizingPath];
+        // Run checks if path is outside the app sandbox.
+        BOOL shouldCheckPath = (!hasAppSandbox || (![path hasPrefix:bundlePath] && ![path hasPrefix:homePath]));
 
-        if(![resolved_path isEqualToString:path]) {
-            NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
-            [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+        // Resolve-before-exempt: a symlink inside the sandbox (or bundle) can
+        // point at jailbreak files outside it, so a lexical prefix match against
+        // homePath/bundlePath is not a safe exemption. realpath() the exempted
+        // candidate and evaluate the resolved target: the restricted-root prefixes
+        // are a cheap early-out, but the target also runs through the same
+        // evaluation a non-exempt path would get, so a symlink at a ROOTFUL
+        // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
+        // /usr/bin/ssh) is restricted exactly when the equivalent direct path
+        // would be. A failed resolution (path does not exist) keeps the exemption
+        // — a non-existent path can't leak anything. Only no-follow options
+        // (readlink/lstat link-location checks — the libc lane wires
+        // kShadowRestrictionNoFollow into those hooks) skip resolution: they
+        // request a location-only answer about the link itself, not its target.
+        // Every other options-bearing query resolves too — the options only
+        // contribute the working dir, relative-path handling and the
+        // file-extension suffix, all already applied to `path` above, so the
+        // resolved target is evaluated with the same options a direct path gets.
+        // Cacheable queries fold the result into the bounded decision cache
+        // (same TTL), amortizing the realpath syscall. shdw_resolvingPath
+        // guards the realpath call: the libc realpath hook re-enters
+        // isCPathRestricted from inside realpath, which would recurse forever
+        // without the per-thread guard.
+        BOOL noFollow = [[options objectForKey:kShadowRestrictionNoFollow] boolValue];
 
-            if([self isPathRestricted:resolved_path options:[opt copy]]) {
+        if(!shouldCheckPath
+            && !noFollow
+            && !shdw_resolvingPath) {
+            shdw_resolvingPath = YES;
+
+            char resolved_path[PATH_MAX];
+            BOOL resolvedRestricted = NO;
+
+            if(realpath([path fileSystemRepresentation], resolved_path)) {
+                NSString* resolved = [NSString stringWithUTF8String:resolved_path];
+
+                resolvedRestricted = isPathInRestrictedRoot(resolved)
+                    || [self evaluatePathRestriction:resolved options:options];
+            }
+
+            shdw_resolvingPath = NO;
+
+            if(resolvedRestricted) {
                 restricted = YES;
                 goto done;
             }
         }
-    }
 
-    if(shouldCheckPath) {
-        NSLog(@"[Shadow] isPathRestricted: allowed path: %@", path);
-    }
+        if(shouldCheckPath) {
+            if([self evaluatePathRestriction:path options:options]) {
+                restricted = YES;
+                goto done;
+            }
+        }
 
-done:
-    if(cacheable) {
-        // C0-5: generation tag — a ruleset reload invalidates the entry at
-        // the next query even inside the TTL window.
-        [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([backend rulesetGeneration])] forKey:cacheKey];
-    }
+        // Resolve into full path and check again.
+        if(![options objectForKey:kShadowRestrictionEnableResolve] || [[options objectForKey:kShadowRestrictionEnableResolve] boolValue]) {
+            NSString* resolved_path = [path stringByStandardizingPath];
 
-    return restricted;
+            if(![resolved_path isEqualToString:path]) {
+                NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
+                [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+
+                if([self isPathRestricted:resolved_path options:[opt copy]]) {
+                    restricted = YES;
+                    goto done;
+                }
+            }
+        }
+
+        if(shouldCheckPath) {
+            NSLog(@"[Shadow] isPathRestricted: allowed path: %@", path);
+        }
+
+    done:
+        if(cacheable) {
+            // C0-5: generation tag — a ruleset reload invalidates the entry at
+            // the next query even inside the TTL window.
+            [decisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([backend rulesetGeneration])] forKey:cacheKey];
+        }
+
+        return restricted;
+    }
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {
@@ -382,29 +396,38 @@ done:
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options {
-    if(!url) {
-        return NO;
-    }
-
-    if([url isFileURL]) {
-        NSString *path = [url path];
-
-        if([url isFileReferenceURL]) {
-            NSURL *surl = [url filePathURL];
-
-            if(surl) {
-                path = [surl path];
-            }
+    // Pool-less pthread_create threads (see isPathRestricted:options:): the
+    // NSURL hooks (NSArray/NSBundle/LSApplicationWorkspace) call this
+    // directly and [url path]/[surl path]/[url scheme] are autoreleased.
+    @autoreleasepool {
+        if(!url) {
+            return NO;
         }
 
-        return [self isPathRestricted:path options:options];
-    }
+        if([url isFileURL]) {
+            NSString *path = [url path];
 
-    return [self isSchemeRestricted:[url scheme]];
+            if([url isFileReferenceURL]) {
+                NSURL *surl = [url filePathURL];
+
+                if(surl) {
+                    path = [surl path];
+                }
+            }
+
+            return [self isPathRestricted:path options:options];
+        }
+
+        return [self isSchemeRestricted:[url scheme]];
+    }
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
-    return [backend isSchemeRestricted:scheme];
+    // Backend's check allocates (lowercaseString) inside this call, and the
+    // URL-scheme hooks call this directly on possibly pool-less threads.
+    @autoreleasepool {
+        return [backend isSchemeRestricted:scheme];
+    }
 }
 
 // C0-3: hidden-app predicate. Static list of well-known package managers and
@@ -412,34 +435,39 @@ done:
 // results, openURL, canOpenURL — filters these so a detector can't proxy
 // through them), OR any ruleset's BlacklistBundleIDs for user extension.
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID {
-    if(!bundleID || [bundleID length] == 0) {
-        return NO;
+    // Same pool-less-thread guard as isCPathRestricted: (the LSApplication
+    // hooks call this per result and [bundleID lowercaseString] is
+    // autoreleased).
+    @autoreleasepool {
+        if(!bundleID || [bundleID length] == 0) {
+            return NO;
+        }
+
+        static NSSet* staticBundleIDs = nil;
+        static dispatch_once_t onceToken = 0;
+
+        dispatch_once(&onceToken, ^{
+            staticBundleIDs = [NSSet setWithArray:@[
+                @"com.saurik.cydia",
+                @"org.coolstar.sileo",
+                @"xyz.willy.zebra",
+                @"com.opa334.jailbreak",       // Dopamine
+                @"science.xnu.underscore",     // palera1n
+                @"com.llsc12.palera1nloader",
+                @"com.samiiau.loader",         // jailbreak.app
+                @"jp.r333d.taurine",
+                @"com.undecimus.unc0ver",
+                @"eu.taurine.taurine",
+                @"com.apt.theos"
+            ]];
+        });
+
+        if([staticBundleIDs containsObject:[bundleID lowercaseString]]) {
+            return YES;
+        }
+
+        return [backend isBundleIDRestricted:bundleID];
     }
-
-    static NSSet* staticBundleIDs = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        staticBundleIDs = [NSSet setWithArray:@[
-            @"com.saurik.cydia",
-            @"org.coolstar.sileo",
-            @"xyz.willy.zebra",
-            @"com.opa334.jailbreak",       // Dopamine
-            @"science.xnu.underscore",     // palera1n
-            @"com.llsc12.palera1nloader",
-            @"com.samiiau.loader",         // jailbreak.app
-            @"jp.r333d.taurine",
-            @"com.undecimus.unc0ver",
-            @"eu.taurine.taurine",
-            @"com.apt.theos"
-        ]];
-    });
-
-    if([staticBundleIDs containsObject:[bundleID lowercaseString]]) {
-        return YES;
-    }
-
-    return [backend isBundleIDRestricted:bundleID];
 }
 
 // C0-3: protected-name policy. A single exact-name predicate for the
@@ -449,42 +477,47 @@ done:
 // the same basename). "substrate"/"substitute"/"ellekit" also match their
 // lib-prefixed dylibs (libsubstrate.dylib etc.).
 - (BOOL)isProtectedImagePath:(NSString *)path {
-    if(!path || [path length] == 0) {
-        return NO;
-    }
+    // Same pool-less-thread guard as isCPathRestricted: (the dyld/objc
+    // image-load hooks call this per image; lastPathComponent/lowercaseString
+    // are autoreleased).
+    @autoreleasepool {
+        if(!path || [path length] == 0) {
+            return NO;
+        }
 
-    if([self isCPathRestricted:[path fileSystemRepresentation]]) {
-        return YES;
-    }
-
-    static NSSet* protectedNames = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        protectedNames = [NSSet setWithArray:@[
-            @"shadow.dylib",
-            @"shadowcore",
-            @"shadow.framework",
-            @"libsandy.dylib",
-            @"hookkit.framework",
-            @"rootbridge.framework",
-            @"substrate",
-            @"libsubstrate",
-            @"substitute",
-            @"libsubstitute",
-            @"ellekit",
-            @"libellekit"
-        ]];
-    });
-
-    NSString* basename = [[path lastPathComponent] lowercaseString];
-
-    for(NSString* name in protectedNames) {
-        if([basename hasPrefix:name]) {
+        if([self isCPathRestricted:[path fileSystemRepresentation]]) {
             return YES;
         }
-    }
 
-    return NO;
+        static NSSet* protectedNames = nil;
+        static dispatch_once_t onceToken = 0;
+
+        dispatch_once(&onceToken, ^{
+            protectedNames = [NSSet setWithArray:@[
+                @"shadow.dylib",
+                @"shadowcore",
+                @"shadow.framework",
+                @"libsandy.dylib",
+                @"hookkit.framework",
+                @"rootbridge.framework",
+                @"substrate",
+                @"libsubstrate",
+                @"substitute",
+                @"libsubstitute",
+                @"ellekit",
+                @"libellekit"
+            ]];
+        });
+
+        NSString* basename = [[path lastPathComponent] lowercaseString];
+
+        for(NSString* name in protectedNames) {
+            if([basename hasPrefix:name]) {
+                return YES;
+            }
+        }
+
+        return NO;
+    }
 }
 @end
