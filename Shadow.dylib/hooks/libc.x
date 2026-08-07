@@ -252,6 +252,45 @@ static int replaced_creat(const char* pathname, mode_t mode) {
     return -1;
 }
 
+// Shared mount sanitizer: iterates the first `count` records of `buf`,
+// REMOVES restricted mounts (f_mntonname or f_mntfromname classified via
+// isCPathRestricted), compacts the survivors in place and returns the
+// filtered count. The buffer is caller-owned — libc's static mount table is
+// never mutated. The stock-represented root record gets MNT_RDONLY in
+// f_flags only when `statfsFlags` is YES: statvfs-family f_flag carries only
+// ST_* bits (those hooks apply ST_RDONLY themselves). MNT_SNAPSHOT and
+// MNT_ROOTFS are preserved exactly as the kernel reported them — never OR'd
+// in synthetically (that combination is the jailbreak synthetic-snapshot
+// fingerprint).
+static int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
+    if(!buf || count <= 0) {
+        return count;
+    }
+
+    int out = 0;
+
+    for(int i = 0; i < count; i++) {
+        struct statfs* rec = &buf[i];
+
+        if([_shadow isCPathRestricted:rec->f_mntonname]
+        || [_shadow isCPathRestricted:rec->f_mntfromname]) {
+            continue;  // restricted mount: removed, compacted away below
+        }
+
+        if(out != i) {
+            buf[out] = buf[i];
+        }
+
+        if(statfsFlags && strcmp(buf[out].f_mntonname, "/") == 0) {
+            buf[out].f_flags |= MNT_RDONLY;
+        }
+
+        out++;
+    }
+
+    return out;
+}
+
 static int (*original_getfsstat)(struct statfs* buf, int bufsize, int flags);
 static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
     if(isCallerExternal()) {
@@ -260,33 +299,26 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
 
     int result = original_getfsstat(buf, bufsize, flags);
 
-    if(result > 0 && buf) {
+    if(result > 0 && buf && bufsize >= (int) sizeof(struct statfs)) {
         // getfsstat returns the TOTAL entry count; when the caller's buffer
         // is too small only bufsize/sizeof(struct statfs) entries were
-        // actually written, so walking buf + result would run past the end
-        // of the caller's buffer.
-        int count = result;
+        // actually written, so only walk the written ones.
+        int written = result;
         int capacity = bufsize / (int) sizeof(struct statfs);
 
-        if(capacity < count) {
-            count = capacity;
+        if(capacity < written) {
+            written = capacity;
         }
 
-        struct statfs* buf_ptr = buf;
-        struct statfs* buf_end = buf + count;
+        int filtered = shdw_filter_mounts(buf, written, YES);
 
-        while(buf_ptr < buf_end) {
-            if([_shadow isCPathRestricted:buf_ptr->f_mntonname]) {
-                // handle bindfs/chroot
-                strcpy(buf_ptr->f_mntonname, "/");
-            }
-
-            if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
-                // Mark rootfs read-only
-                buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-            }
-
-            buf_ptr++;
+        if(filtered != written) {
+            // Report the count that matches the returned records so the
+            // caller's resize loop stays consistent. Size-only queries
+            // (buf == NULL) keep the kernel's raw total: the records aren't
+            // visible to filter, and the full query that follows returns the
+            // filtered count, so the loop still terminates.
+            return filtered;
         }
     }
 
@@ -307,7 +339,7 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
 
     // *mntbufp points at libc's static mount table: never mutate it in
     // place — the mangled entries would leak to the next caller of libc's
-    // static getmntinfo. Copy, mutate the copy, and hand the caller the
+    // static getmntinfo. Copy, filter the copy, and hand the caller the
     // new buffer (callers that free() the result free our malloc block;
     // callers that don't leak one buffer per call, same as getmntinfo_r).
     size_t bytes = (size_t) result * sizeof(struct statfs);
@@ -319,24 +351,31 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
 
     memcpy(copy, *mntbufp, bytes);
 
-    struct statfs* buf_ptr = copy;
-    struct statfs* buf_end = copy + result;
+    result = shdw_filter_mounts(copy, result, YES);
+    *mntbufp = copy;
 
-    while(buf_ptr < buf_end) {
-        if([_shadow isCPathRestricted:buf_ptr->f_mntonname]) {
-            // handle bindfs/chroot
-            strcpy(buf_ptr->f_mntonname, "/");
-        }
+    return result;
+}
 
-        if(strcmp(buf_ptr->f_mntonname, "/") == 0) {
-            // Mark rootfs read-only
-            buf_ptr->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-        }
+// getmntinfo_r_np (iOS 16+) writes records into caller-provided storage
+// instead of libc's static table; the sanitizer runs in place (the caller's
+// buffer is ours to compact, same contract as getfsstat). The SDK's fcntl.h
+// carries a truncated 2-arg prototype for this symbol, so the real 4-arg
+// function is resolved at runtime and never referenced by name.
+typedef int (*shdw_getmntinfo_r_np_fn)(struct statfs** mntbufp, int flags, char* buf, int bufsize);
 
-        buf_ptr++;
+static shdw_getmntinfo_r_np_fn original_getmntinfo_r_np = NULL;
+
+static int shdw_replaced_getmntinfo_r_np(struct statfs** mntbufp, int flags, char* buf, int bufsize) {
+    if(isCallerExternal()) {
+        return original_getmntinfo_r_np(mntbufp, flags, buf, bufsize);
     }
 
-    *mntbufp = copy;
+    int result = original_getmntinfo_r_np(mntbufp, flags, buf, bufsize);
+
+    if(result > 0 && *mntbufp) {
+        result = shdw_filter_mounts(*mntbufp, result, YES);
+    }
 
     return result;
 }
@@ -354,19 +393,10 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
 
     int result = original_statfs(pathname, buf);
 
-    if(result == 0) {
-        // Modify flags
-        if(buf) {
-            if([_shadow isCPathRestricted:buf->f_mntonname]) {
-                // handle bindfs/chroot
-                strcpy(buf->f_mntonname, "/");
-            }
-
-            if(strcmp(buf->f_mntonname, "/") == 0) {
-                // Mark rootfs read-only
-                buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-            }
-        }
+    if(result == 0 && buf && shdw_filter_mounts(buf, 1, YES) == 0) {
+        // The mount record itself is restricted: deny rather than present it.
+        errno = ENOENT;
+        return -1;
     }
 
     return result;
@@ -392,19 +422,9 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
 
     int result = original_fstatfs(fd, buf);
 
-    if(result == 0) {
-        // Modify flags
-        if(buf) {
-            if([_shadow isCPathRestricted:buf->f_mntonname]) {
-                // handle bindfs/chroot
-                strcpy(buf->f_mntonname, "/");
-            }
-
-            if(strcmp(buf->f_mntonname, "/") == 0) {
-                // Mark rootfs read-only
-                buf->f_flags |= MNT_RDONLY | MNT_ROOTFS | MNT_SNAPSHOT;
-            }
-        }
+    if(result == 0 && buf && shdw_filter_mounts(buf, 1, YES) == 0) {
+        errno = ENOENT;
+        return -1;
     }
 
     return result;
@@ -430,20 +450,19 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
         return -1;
     }
 
+    if(shdw_filter_mounts(&st, 1, NO) == 0) {
+        // The mount record itself is restricted: deny the query.
+        errno = ENOENT;
+        return -1;
+    }
+
     int result = original_statvfs(pathname, buf);
 
-    if(result == 0 && buf) {
-        if([_shadow isCPathRestricted:st.f_mntonname]) {
-            // handle bindfs/chroot
-            strcpy(st.f_mntonname, "/");
-        }
-        
-        if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only. statvfs.f_flag only supports the ST_*
-            // constants (ST_RDONLY/ST_NOSUID); the MNT_* bits belong to
-            // struct statfs and must not be OR'd in here.
-            buf->f_flag |= ST_RDONLY;
-        }
+    if(result == 0 && buf && strcmp(st.f_mntonname, "/") == 0) {
+        // Mark rootfs read-only. statvfs.f_flag only supports the ST_*
+        // constants (ST_RDONLY/ST_NOSUID); the MNT_* bits belong to
+        // struct statfs and must not be OR'd in here.
+        buf->f_flag |= ST_RDONLY;
     }
 
     return result;
@@ -477,19 +496,17 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
         return -1;
     }
 
+    if(shdw_filter_mounts(&st, 1, NO) == 0) {
+        errno = ENOENT;
+        return -1;
+    }
+
     int result = original_fstatvfs(fd, buf);
 
-    if(result == 0 && buf) {
-        if([_shadow isCPathRestricted:st.f_mntonname]) {
-            // handle bindfs/chroot
-            strcpy(st.f_mntonname, "/");
-        }
-
-        if(strcmp(st.f_mntonname, "/") == 0) {
-            // Mark rootfs read-only (statvfs carries the flags in f_flag,
-            // which only supports the ST_* constants, not MNT_*).
-            buf->f_flag |= ST_RDONLY;
-        }
+    if(result == 0 && buf && strcmp(st.f_mntonname, "/") == 0) {
+        // Mark rootfs read-only (statvfs carries the flags in f_flag,
+        // which only supports the ST_* constants, not MNT_*).
+        buf->f_flag |= ST_RDONLY;
     }
 
     return result;
@@ -1283,6 +1300,15 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     MSHookFunction(link, replaced_link, (void **) &original_link);
     // MSHookFunction(scandir, replaced_scandir, (void **) &original_scandir);
     MSHookFunction(getmntinfo, replaced_getmntinfo, (void **) &original_getmntinfo);
+    {
+        // getmntinfo_r_np is an iOS 16+ export; resolve at runtime and skip
+        // cleanly on systems that don't provide it.
+        void* getmntinfo_r_np_sym = dlsym(RTLD_DEFAULT, "getmntinfo_r_np");
+
+        if(getmntinfo_r_np_sym) {
+            MSHookFunction(getmntinfo_r_np_sym, shdw_replaced_getmntinfo_r_np, (void **) &original_getmntinfo_r_np);
+        }
+    }
     MSHookFunction(getattrlist, replaced_getattrlist, (void **) &original_getattrlist);
     MSHookFunction(symlink, replaced_symlink, (void **) &original_symlink);
     MSHookFunction(rename, replaced_rename, (void **) &original_rename);
