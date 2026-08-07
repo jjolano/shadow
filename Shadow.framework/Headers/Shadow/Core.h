@@ -6,7 +6,6 @@
 
 #define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
-#define kShadowRestrictionFileExtension         @"kShadowRestrictionFileExtension"
 #define kShadowRestrictionNoFollow              @"kShadowRestrictionNoFollow"
 
 // Operation intent for write/create/delete probes. A WRITE probe to a
@@ -37,7 +36,6 @@ __attribute__((visibility("default")))
 + (void)shdwExitInternalRead;
 + (BOOL)shdwIsInternalRead;
 
-- (BOOL)isAddrExternal:(const void *)addr;
 - (BOOL)isAddrRestricted:(const void *)addr;
 
 - (BOOL)isCPathRestricted:(const char *)path;

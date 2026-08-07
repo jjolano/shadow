@@ -68,6 +68,7 @@
 #import <stdatomic.h>
 
 #include "../common.h"   // BUNDLE_ID, MACH_SERVICE_NAME, SHADOW_PREFS_PLIST
+#include "../protocol.h" // SHADOWD_MAGIC/VERSION, ops, request/reply structs
 
 // SDK 16.5's mach/bootstrap.h is a compatibility stub — declare the classic
 // prototype directly (name_t decays to const char *).
@@ -100,15 +101,6 @@ extern kern_return_t bootstrap_check_in(mach_port_t bootstrap_port, const char *
 #define VDIR 2
 #define VLNK 5    // 10 is VCPLX, not VLNK
 
-#ifndef kCFCoreFoundationVersionNumber_iOS_12_0
-#define kCFCoreFoundationVersionNumber_iOS_12_0 (1535.12)
-#endif
-#ifndef kCFCoreFoundationVersionNumber_iOS_13_0
-#define kCFCoreFoundationVersionNumber_iOS_13_0 (1656)
-#endif
-#ifndef kCFCoreFoundationVersionNumber_iOS_14_0
-#define kCFCoreFoundationVersionNumber_iOS_14_0 (1740)
-#endif
 #ifndef kCFCoreFoundationVersionNumber_iOS_15_0
 #define kCFCoreFoundationVersionNumber_iOS_15_0 (1854)
 #endif
@@ -119,46 +111,32 @@ extern kern_return_t bootstrap_check_in(mach_port_t bootstrap_port, const char *
 #define kCFCoreFoundationVersionNumber_iOS_17_0 (2050)
 #endif
 
-// IPC protocol (raw mach_msg, versioned).  Client → server carries a reply
-// port (MACH_MSG_TYPE_MAKE_SEND); server → client is a plain message to that
-// port.  NO paths, NO client-supplied pid.
-#define SHADOWD_MAGIC   0x53484457  // 'SHDW'
-#define SHADOWD_VERSION 1
-
-typedef enum {
-    SHADOWD_OP_PING    = 1,
-    SHADOWD_OP_ACQUIRE = 2,
-    SHADOWD_OP_RELEASE = 3,
-} shadowd_op_t;
-
 // Status codes (errno values): 0 ok | EPERM | ENOTSUP | EBUSY
 #define SHADOWD_STATUS_OK      0
 #define SHADOWD_STATUS_EPERM   EPERM
 #define SHADOWD_STATUS_ENOTSUP ENOTSUP
 #define SHADOWD_STATUS_EBUSY   EBUSY
 
-typedef struct {
-    mach_msg_header_t header;
-    mach_msg_body_t msgh_body;
-    mach_msg_port_descriptor_t replyPort;   // MACH_MSG_TYPE_MAKE_SEND
-    uint32_t magic;
-    uint32_t version;
-    uint32_t op;
-    uint32_t requestId;
-} shadowd_request_t;
-
-typedef struct {
-    mach_msg_header_t header;
-    uint32_t magic;
-    uint32_t version;
-    uint32_t requestId;
-    uint32_t status;
-} shadowd_reply_t;
-
 // Fixed compiled allowlist.  NOTE (review finding): Shadow.dylib itself,
 // shadowd, its plist and the ledger are deliberately NOT hidden — hiding the
 // recovery dylib creates a respring deadlock; dyld-level filtering already
 // covers the dylib name.
+//
+// KNOWN RESIDUAL (raw syscall probes): VISSHADOW is a kernel-global vnode
+// flag — there is no per-process visibility. Extending this list to
+// jailbreak indicator paths (/var/jb, /var/lib/dpkg, libhooker/libellekit,
+// /etc/apt, TrollStore markers) would hide them from EVERY process,
+// breaking the jailbreak itself (dpkg, Sileo/Zebra, launchd spawning,
+// tweak dlopen, and shadowd's own runtime — its log lives under /var/jb and
+// krw init dlopens /var/jb/basebin/libjailbreak.dylib). Per-process
+// concealment is userspace-only (isCallerExternal gating in the hooks),
+// which inline `svc #0x80` open/stat/access probes bypass; closing that gap
+// needs per-process kernel machinery (namei/proc-aware hiding) that XNU does
+// not expose. Accepted residual as of v5: no mainstream detector uses raw
+// syscalls (IOSSecuritySuite/DTTjailbreakDetection do not; the only users are
+// cloudphone-style anti-fraud kits and KSCrash crash metadata, which is not
+// anti-cheat). The userspace libc-vs-syscall mismatch this creates is the
+// standard tradeoff of every userspace-only bypass (Liberty-class).
 static NSString *const kAllowlist[] = {
     @(SHADOW_PREFS_PLIST),                                          // /var/mobile/... (rootful AND rootless)
     @"/var/jb/var/mobile/Library/Preferences/" BUNDLE_ID ".plist",  // rootless-prefixed variant
@@ -300,14 +278,9 @@ static bool version_gate(void) {
 
 static uint32_t off_p_pid = 0;
 static uint32_t off_p_pfd = 0;
-static uint32_t off_fd_ofiles = 0;
 static uint32_t off_fp_fglob = 0;
 static uint32_t off_fg_data = 0;
 static unsigned long long t1sz_boot = 0;
-
-// true when the fd table is inline in filedesc (iOS 15+), false for the
-// ptr-style walk (filedesc + off_fd_ofiles → array, iOS 12-14).
-static bool gFdTableInline = false;
 
 static bool is_arm64e(void) {
     // A27: FAIL CLOSED — initialize to a known non-arm64e value and CHECK the
@@ -337,8 +310,6 @@ static int offset_init(void) {
         t1sz_boot = 0;
     }
 
-    // Rows iOS 12/13/14 are unreachable at runtime (version gate is
-    // 15.0-16.6.1) but implemented per the corrected spec table.
     // iOS 15.2+ is split by Darwin major (A1): p_pid is 0x68 on iOS 15
     // (Darwin 21) and 0x60 only on iOS 16 (Darwin 22).
     if (gDarwinMajor == 22) {
@@ -346,10 +317,8 @@ static int offset_init(void) {
         shdw_log("offsets: iOS 16 (p_pid 0x60, p_pfd 0xf8)");
         off_p_pid = 0x60;
         off_p_pfd = 0xf8;
-        off_fd_ofiles = 0x0;
         off_fp_fglob = 0x10;
         off_fg_data = 0x38;
-        gFdTableInline = true;
         return 0;
     }
     if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_2) {
@@ -357,10 +326,8 @@ static int offset_init(void) {
         shdw_log("offsets: iOS 15.2+ (p_pid 0x68, p_pfd 0xf8)");
         off_p_pid = 0x68;
         off_p_pfd = 0xf8;
-        off_fd_ofiles = 0x0;
         off_fp_fglob = 0x10;
         off_fg_data = 0x38;
-        gFdTableInline = true;
         return 0;
     }
     if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
@@ -368,40 +335,8 @@ static int offset_init(void) {
         shdw_log("offsets: iOS 15.0-15.1.1 (p_pid 0x68, p_pfd 0x100)");
         off_p_pid = 0x68;
         off_p_pfd = 0x100;
-        off_fd_ofiles = 0x0;
         off_fp_fglob = 0x10;
         off_fg_data = 0x38;
-        gFdTableInline = true;
-        return 0;
-    }
-    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_0) {
-        // ios 14 (vnb-zero row)
-        off_p_pid = 0x68;
-        off_p_pfd = 0xf8;
-        off_fd_ofiles = 0x0;
-        off_fp_fglob = 0x10;
-        off_fg_data = 0x38;
-        gFdTableInline = false;
-        return 0;
-    }
-    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_13_0) {
-        // ios 13 (plus007 kstruct_offsets_13_0)
-        off_p_pid = 0x68;
-        off_p_pfd = 0x108;
-        off_fd_ofiles = 0x0;
-        off_fp_fglob = 0x10;
-        off_fg_data = 0x38;
-        gFdTableInline = false;
-        return 0;
-    }
-    if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
-        // ios 12 (plus007 kstruct_offsets_12_0 — f_fglob 0x8, ptr-style walk)
-        off_p_pid = 0x60;
-        off_p_pfd = 0x100;
-        off_fd_ofiles = 0x0;
-        off_fp_fglob = 0x8;
-        off_fg_data = 0x38;
-        gFdTableInline = false;
         return 0;
     }
     return -1;
@@ -432,17 +367,7 @@ static uint64_t gOurProc = 0;   // tfp0 path: cached own-proc from allproc scan
 // ---- libjailbreak (Dopamine) ----
 static void *gLibJB = NULL;
 static int (*libjb_jbdInitPPLRW)(void) = NULL;
-static uint64_t (*libjb_kread8)(uint64_t) = NULL;
-static uint16_t (*libjb_kread16)(uint64_t) = NULL;
-static uint32_t (*libjb_kread32)(uint64_t) = NULL;
-static uint64_t (*libjb_kread64)(uint64_t) = NULL;
-static uint64_t (*libjb_kread_ptr)(uint64_t) = NULL;
 static int (*libjb_kreadbuf)(uint64_t, void *, size_t) = NULL;
-static void (*libjb_kwrite8)(uint64_t, uint8_t) = NULL;
-static void (*libjb_kwrite16)(uint64_t, uint16_t) = NULL;
-static void (*libjb_kwrite32)(uint64_t, uint32_t) = NULL;
-static void (*libjb_kwrite64)(uint64_t, uint64_t) = NULL;
-static int (*libjb_kwrite_ptr)(uint64_t, uint64_t, uint16_t) = NULL;
 static int (*libjb_kwritebuf)(uint64_t, const void *, size_t) = NULL;
 static uint64_t (*libjb_proc_find)(pid_t) = NULL;
 static int (*libjb_proc_rele)(uint64_t) = NULL;
@@ -462,27 +387,16 @@ static int krw_init_libjb_once(void) {
         }
     }
     DL_SYM(libjb_jbdInitPPLRW, "jbdInitPPLRW");
-    DL_SYM(libjb_kread8, "kread8");
-    DL_SYM(libjb_kread16, "kread16");
-    DL_SYM(libjb_kread32, "kread32");
-    DL_SYM(libjb_kread64, "kread64");
-    DL_SYM(libjb_kread_ptr, "kread_ptr");
     DL_SYM(libjb_kreadbuf, "kreadbuf");
-    DL_SYM(libjb_kwrite8, "kwrite8");
-    DL_SYM(libjb_kwrite16, "kwrite16");
-    DL_SYM(libjb_kwrite32, "kwrite32");
-    DL_SYM(libjb_kwrite64, "kwrite64");
-    DL_SYM(libjb_kwrite_ptr, "kwrite_ptr");
     DL_SYM(libjb_kwritebuf, "kwritebuf");
     DL_SYM(libjb_proc_find, "proc_find");
     DL_SYM(libjb_proc_rele, "proc_rele");
 
     if (!libjb_jbdInitPPLRW || !libjb_kreadbuf || !libjb_kwritebuf ||
-        !libjb_kread32 || !libjb_kread64 || !libjb_kwrite32 || !libjb_kwrite64 ||
-        !libjb_kread_ptr || !libjb_kwrite_ptr || !libjb_proc_find) {
-        shdw_log("libjailbreak: missing symbols (jbdInitPPLRW=%p kreadbuf=%p kwritebuf=%p kread_ptr=%p kwrite_ptr=%p proc_find=%p)",
+        !libjb_proc_find) {
+        shdw_log("libjailbreak: missing symbols (jbdInitPPLRW=%p kreadbuf=%p kwritebuf=%p proc_find=%p)",
                  libjb_jbdInitPPLRW, libjb_kreadbuf, libjb_kwritebuf,
-                 libjb_kread_ptr, libjb_kwrite_ptr, libjb_proc_find);
+                 libjb_proc_find);
         return 1;
     }
 
@@ -907,8 +821,7 @@ static bool krw_write32(uint64_t addr, uint32_t val) {
     return krw_write(addr, &val, sizeof(val));
 }
 
-// Pointer read with PAC stripping.  A23: scalar libjb kread_ptr does not
-// expose read failures, so ALL pointer reads go through the status-returning
+// Pointer read with PAC stripping.
 // kreadbuf/kwritebuf primitive + t1sz unsign.
 static bool krw_read_ptr(uint64_t addr, uint64_t *out) {
     uint64_t v = 0;
@@ -1017,17 +930,11 @@ static bool vnode_plausible(uint64_t vnode) {
 
 static bool read_fd_entry(uint64_t filedesc, int fd, uint64_t *out) {
     // Re-read the fd-array entry; a mismatch means the table relocated —
-    // the caller retries the whole walk.
+    // the caller retries the whole walk.  The fd table is inline in
+    // filedesc (iOS 15+; the version gate is 15.0-16.6.1).
     uint64_t a = 0, b = 0;
-    if (gFdTableInline) {
-        if (!krw_read(filedesc + 8 * fd, &a, sizeof(a))) return false;
-        if (!krw_read(filedesc + 8 * fd, &b, sizeof(b))) return false;
-    } else {
-        uint64_t ofiles = 0;
-        if (!krw_read_ptr(filedesc + off_fd_ofiles, &ofiles)) return false;
-        if (!krw_read(ofiles + 8 * fd, &a, sizeof(a))) return false;
-        if (!krw_read(ofiles + 8 * fd, &b, sizeof(b))) return false;
-    }
+    if (!krw_read(filedesc + 8 * fd, &a, sizeof(a))) return false;
+    if (!krw_read(filedesc + 8 * fd, &b, sizeof(b))) return false;
     if (a != b) return false;   // relocated between reads
     if (!kptr_plausible(unsign_kptr(a))) return false;
     *out = unsign_kptr(a);

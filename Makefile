@@ -4,6 +4,7 @@ TARGET ?= iphone:clang:latest:12.0
 include $(THEOS)/makefiles/common.mk
 SUBPROJECTS += Shadow.framework
 SUBPROJECTS += Shadow.dylib
+SUBPROJECTS += ShadowCore.dylib
 SUBPROJECTS += ShadowSettings.bundle
 SUBPROJECTS += shdw
 # shadowd is arm64-only (iOS 15+); the legacy armv7/armv7s pass must not build it.

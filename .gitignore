@@ -3,3 +3,4 @@ packages/
 build/
 .DS_Store
 .vscode
+.slim/deepwork/

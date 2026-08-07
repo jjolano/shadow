@@ -54,18 +54,6 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_DynamicLibraries</string>
-			<key>label</key>
-			<string>HOOK_DYLIB</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
 			<string>Hook_URLScheme</string>
 			<key>label</key>
 			<string>HOOK_URLSCHEME</string>
@@ -133,30 +121,6 @@
 			<string>Hook_MachBootstrap</string>
 			<key>label</key>
 			<string>HOOK_MACH</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_SymLookup</string>
-			<key>label</key>
-			<string>HOOK_SYMLOOKUP</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_ObjCRuntime</string>
-			<key>label</key>
-			<string>HOOK_OBJC</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

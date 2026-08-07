@@ -79,29 +79,46 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     return YES;
 }
 
-// Walks all zones at their configured depth limit. Zones that do not exist are
-// skipped (not failures). Returns NO if any existing zone failed to enumerate;
-// the partial structure is kept for a live-filesystem fallback.
-+ (BOOL)_walkStructureZonesWithPrefix:(NSString*)fsPrefix into:(NSMutableDictionary*)structure {
-    NSFileManager* fm = [NSFileManager defaultManager];
-
+// One zone-iteration pass shared by the walk/collect/diff phases. cryptex:
+// live = cryptex zones always walk the live filesystem (they are never part
+// of the system snapshot); skip = cryptex zones are excluded entirely.
+// Returns NO (aborts the iteration) when a block returns NO.
++ (BOOL)_forEachSystemZone:(NSString*)fsPrefix cryptexLive:(BOOL)cryptexLive block:(BOOL (^)(NSString* zonePath, NSString* fsPath, const SystemZone* zone))block {
     for(NSUInteger i = 0; i < kSystemZoneCount; i++) {
         const SystemZone* zone = &kSystemZones[i];
         NSString* zonePath = @(zone->path);
-        // Cryptex zones are never part of the snapshot; always walk them live.
-        NSString* fsPath = (fsPrefix && !IsCryptexZone(zonePath)) ? [fsPrefix stringByAppendingPathComponent:zonePath] : zonePath;
+        BOOL isCryptex = IsCryptexZone(zonePath);
 
-        if(![fm fileExistsAtPath:fsPath]) {
+        if(isCryptex && !cryptexLive) {
             continue;
         }
 
-        if(![self _buildStructure:structure fsPath:fsPath canonPath:zonePath remaining:zone->depth]) {
-            fprintf(stderr, "warning: SystemRules: failed walking %s, keeping partial structure\n", zone->path);
+        NSString* fsPath = (fsPrefix && !isCryptex) ? [fsPrefix stringByAppendingPathComponent:zonePath] : zonePath;
+
+        if(![[NSFileManager defaultManager] fileExistsAtPath:fsPath]) {
+            continue;
+        }
+
+        if(!block(zonePath, fsPath, zone)) {
             return NO;
         }
     }
 
     return YES;
+}
+
+// Walks all zones at their configured depth limit. Zones that do not exist are
+// skipped (not failures). Returns NO if any existing zone failed to enumerate;
+// the partial structure is kept for a live-filesystem fallback.
++ (BOOL)_walkStructureZonesWithPrefix:(NSString*)fsPrefix into:(NSMutableDictionary*)structure {
+    return [self _forEachSystemZone:fsPrefix cryptexLive:YES block:^BOOL(NSString* zonePath, NSString* fsPath, const SystemZone* zone) {
+        if(![self _buildStructure:structure fsPath:fsPath canonPath:zonePath remaining:zone->depth]) {
+            fprintf(stderr, "warning: SystemRules: failed walking %s, keeping partial structure\n", zone->path);
+            return NO;
+        }
+
+        return YES;
+    }];
 }
 
 // Collects every entry (files, dirs, symlinks) under fsPath, canonicalized, full depth.
@@ -132,24 +149,11 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 + (void)_collectZonePathsWithPrefix:(NSString*)fsPrefix into:(NSMutableSet*)set {
-    NSFileManager* fm = [NSFileManager defaultManager];
-
-    for(NSUInteger i = 0; i < kSystemZoneCount; i++) {
-        const SystemZone* zone = &kSystemZones[i];
-        NSString* zonePath = @(zone->path);
-
-        if(IsCryptexZone(zonePath)) {
-            continue;
-        }
-
-        NSString* fsPath = fsPrefix ? [fsPrefix stringByAppendingPathComponent:zonePath] : zonePath;
-
-        if(![fm fileExistsAtPath:fsPath]) {
-            continue;
-        }
-
+    [self _forEachSystemZone:fsPrefix cryptexLive:NO block:^BOOL(NSString* zonePath, NSString* fsPath, const SystemZone* zone) {
+        (void) zone;
         [self _collectPaths:fsPath canonPath:zonePath into:set];
-    }
+        return YES;
+    }];
 }
 
 // Full-depth diff walk: entries absent from the snapshot set are classified as
@@ -188,24 +192,11 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 + (void)_diffZonesWithPrefix:(NSString*)fsPrefix snapshotSet:(NSSet*)snapshotSet exact:(NSMutableArray*)exact dirs:(NSMutableArray*)dirs {
-    NSFileManager* fm = [NSFileManager defaultManager];
-
-    for(NSUInteger i = 0; i < kSystemZoneCount; i++) {
-        const SystemZone* zone = &kSystemZones[i];
-        NSString* zonePath = @(zone->path);
-
-        if(IsCryptexZone(zonePath)) {
-            continue;
-        }
-
-        NSString* fsPath = fsPrefix ? [fsPrefix stringByAppendingPathComponent:zonePath] : zonePath;
-
-        if(![fm fileExistsAtPath:fsPath]) {
-            continue;
-        }
-
+    [self _forEachSystemZone:fsPrefix cryptexLive:NO block:^BOOL(NSString* zonePath, NSString* fsPath, const SystemZone* zone) {
+        (void) zone;
         [self _diffWalk:fsPath canonPath:zonePath snapshotSet:snapshotSet exact:exact dirs:dirs];
-    }
+        return YES;
+    }];
 }
 
 // Finds a system-volume snapshot name from the volume-root directory fd.

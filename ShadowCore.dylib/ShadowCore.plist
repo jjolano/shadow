@@ -1,0 +1,3 @@
+// Inert filter — the payload is dlopen'd by the stub, never by the loader;
+// this plist keeps both Substrate and ElleKit from injecting it directly.
+{ Filter = { Bundles = ("com.apple.Nonexistent") } }

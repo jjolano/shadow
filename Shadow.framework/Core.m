@@ -115,22 +115,6 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     return sharedInstance;
 }
 
-- (BOOL)isAddrExternal:(const void *)addr {
-    if(addr) {
-        const char* image_path = dyld_image_path_containing_address(addr);
-
-        if(image_path) {
-            if(strstr(image_path, [bundlePath fileSystemRepresentation]) != NULL) {
-                return NO;
-            }
-
-            return YES;
-        }
-    }
-
-    return NO;
-}
-
 - (BOOL)isAddrRestricted:(const void *)addr {
     if(addr) {
         // See if this address belongs to a restricted file.
@@ -158,15 +142,8 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 // gates, then the backend ruleset. Shared by the direct check and the
 // resolve-before-exempt re-check so a resolved symlink target is restricted
 // exactly when the equivalent direct path would be. options only contributes
-// the file-extension suffix, same as the direct path.
+// the operation intent, same as the direct path.
 - (BOOL)evaluatePathRestriction:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
-    // Add file extension if needed.
-    NSString* file_ext = [options objectForKey:kShadowRestrictionFileExtension];
-
-    if(file_ext && ![[path pathExtension] isEqualToString:file_ext]) {
-        path = [path stringByAppendingFormat:@".%@", file_ext];
-    }
-
     // C0-1: write/create/delete probes must not be let through by the
     // existence gates — a detector probing a restricted-classified path it
     // could create (e.g. /var/jb/usr/lib/libjailbreak.dylib before it
@@ -465,6 +442,7 @@ done:
     dispatch_once(&onceToken, ^{
         protectedNames = [NSSet setWithArray:@[
             @"shadow.dylib",
+            @"shadowcore",
             @"shadow.framework",
             @"libsandy.dylib",
             @"hookkit.framework",
