@@ -23,7 +23,6 @@
     "HOOK_MAC" = "M1 Mac Spoof (iOS 14+)";
     "HOOK_MACH" = "Mach Service Lookups";
     "HOOK_MEM" = "Hide Executable Memory";
-    "MEM_LEVEL_HIDING" = "Memory-Level Hiding";
     "VNODE_HIDING" = "Vnode-Level Hiding";
     "HOOK_OBJC" = "Objective-C Class Methods";
     "HOOK_SANDBOX" = "Enforce App Sandbox";
