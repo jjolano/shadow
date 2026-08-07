@@ -334,13 +334,39 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
 
 // imp_getBlock is not a linkable symbol on all SDKs (added in iOS 16), so
 // resolve it at runtime like dyld.x does for dlopen_internal, and guard NULL.
-static void* (*original_imp_getBlock)(IMP anImp);
-static void* replaced_imp_getBlock(IMP anImp) {
-    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)anImp]) {
+// Block ABI layout: isa, flags, reserved, invoke (offset 16).
+typedef struct {
+    void* isa;
+    int flags;
+    int reserved;
+    void* invoke;
+} shdw_block_layout_t;
+
+static id (*original_imp_getBlock)(IMP anImp);
+static id replaced_imp_getBlock(IMP anImp) {
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
         return original_imp_getBlock(anImp);
     }
 
-    return NULL;
+    // Call the original with the correct id signature, then classify the
+    // returned block's ABI invoke pointer (offset 16) — NOT the trampoline
+    // IMP: an IMP created from a protected block must not be revealed, and
+    // the trampoline's image says nothing about the block it dispatches to
+    // (plan Wave 2).
+    id block = original_imp_getBlock(anImp);
+
+    if(!block) {
+        return nil;
+    }
+
+    shdw_block_layout_t* layout = (__bridge shdw_block_layout_t *)block;
+
+    if([_shadow isAddrRestricted:layout->invoke]) {
+        return nil;
+    }
+
+    return block;
 }
 
 void shadowhook_objc(HKSubstitutor* hooks) {
