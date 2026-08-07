@@ -68,33 +68,9 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     return nil;
 }
 
-typedef struct _NXMapTable NXMapTable;
-typedef struct _NXHashTable NXHashTable;
-
-extern void* NXMapGet(NXMapTable *table, const char *name);
-extern void* NXHashGet(NXHashTable *table, const void *data);
-
-static void* (*original_NXMapGet)(NXMapTable *table, const char *name);
-static void* replaced_NXMapGet(NXMapTable *table, const char *name) {
-    void* result = original_NXMapGet(table, name);
-
-    if(isCallerExternal() || ![_shadow isAddrRestricted:result]) {
-        return result;
-    }
-
-    return nil;
-}
-
-static void* (*original_NXHashGet)(NXHashTable *table, const void *data);
-static void* replaced_NXHashGet(NXHashTable *table, const void *data) {
-    void* result = original_NXHashGet(table, data);
-
-    if(isCallerExternal() || ![_shadow isAddrRestricted:result]) {
-        return result;
-    }
-
-    return nil;
-}
+// NXMapGet/NXHashGet hooks removed (plan Wave 1a): dead class-hiding path —
+// internal runtime callers are exempt by C0-2 classification and the hooks
+// had broad runtime interference for no reachable detector surface.
 
 static IMP (*original_method_getImplementation)(Method m);
 static IMP replaced_method_getImplementation(Method m) {
@@ -151,6 +127,4 @@ void shadowhook_objc(HKSubstitutor* hooks) {
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
-    MSHookFunction(NXMapGet, replaced_NXMapGet, (void **) &original_NXMapGet);
-    MSHookFunction(NXHashGet, replaced_NXHashGet, (void **) &original_NXHashGet);
 }
