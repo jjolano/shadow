@@ -164,6 +164,15 @@ static long shdw_syscall_forward(int number, va_list args) {
             return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4, (int) a5, (void *) a6);
         }
 
+        case SYS_getdirentries64: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int) a1, (void *) a2, (size_t) a3, (off_t *) a4);
+        }
+
         default:
             // Unreachable: replaced_syscall only forwards the intercepted
             // set (the OR-chain at its top). Keep this switch and that
@@ -335,6 +344,47 @@ static int shdw_raw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
     return 0;
 }
 
+// Raw getdirentries64 result filter: compacts restricted entries out of the
+// caller's buffer. The kernel packs dirent64 records d_reclen-aligned
+// (struct dirent is the dirent64 layout on arm64), so removing an entry
+// memmoves the tail down by its d_reclen — record alignment and each
+// survivor's d_seekoff stay intact. Returns the adjusted byte count; a
+// fully-filtered batch reports 0 (the caller reads it as end-of-directory,
+// the same hiding the libc readdir hooks achieve per-entry). The caller's
+// *basep is left untouched: it records the offset where the batch STARTED,
+// and the next batch resumes where the kernel advanced to, so removed
+// entries are simply never revisited. Reachable only from the
+// external-caller-gated after-success path in shdw_syscall_dispatch — the
+// classification is decided there, never re-read here.
+static long shdw_dirents_filtered(char* buf, long count, const char* dir) {
+    char joined[PATH_MAX * 2];
+    long in = 0;
+    long out = 0;
+
+    while(in < count) {
+        struct dirent* de = (struct dirent *) (buf + in);
+
+        if(de->d_reclen == 0 || in + de->d_reclen > count) {
+            break;  // malformed tail: keep it rather than mis-walk
+        }
+
+        int n = snprintf(joined, sizeof(joined), "%s/%s", dir, de->d_name);
+        BOOL restricted = n > 0 && n < (int) sizeof(joined) && [_shadow isCPathRestricted:joined];
+
+        if(!restricted) {
+            if(out != in) {
+                memmove(buf + out, buf + in, de->d_reclen);
+            }
+
+            out += de->d_reclen;
+        }
+
+        in += de->d_reclen;
+    }
+
+    return out;
+}
+
 // Post-passthrough dispatch: inspection, policy, forwarding, and
 // after-success sanitization for the intercepted set. Shared by the syscall
 // and __syscall hooks; called only after the hook's own OR-chain passthrough
@@ -357,10 +407,14 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     void* sysctl_oldp = NULL;
     size_t* sysctl_oldlenp = NULL;
 
+    // Raw getdirentries64 policy args (hoisted; used after the forward).
+    int gd_fd = -1;
+    char* gd_buf = NULL;
+
     // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
     // inspected — its first argument is a binary entries buffer, not a C
     // string; it is still forwarded with its exact arity below.
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if(number == SYS_csops) {
             csops_pid = (pid_t) va_arg(inspect, intptr_t);
             csops_ops = (unsigned int) va_arg(inspect, intptr_t);
@@ -405,6 +459,12 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                     return proc_ret;
                 }
             }
+        } else if(number == SYS_getdirentries64) {
+            // Raw readdir-style enumeration bypasses the libc readdir hooks;
+            // the buffer is filtered after success instead. Hoist fd/buf;
+            // the dir path is resolved (F_GETPATH) only if the call succeeds.
+            gd_fd = (int) va_arg(inspect, intptr_t);
+            gd_buf = (char *) va_arg(inspect, intptr_t);
         } else if(number == SYS_open
         || number == SYS_chdir
         || number == SYS_access
@@ -449,7 +509,7 @@ static long shdw_syscall_dispatch(int number, va_list args) {
 
     // After-success policies — same as the typed hooks, only on valid
     // success and only for app-origin callers.
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         if(number == SYS_csops && result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
             return -1;
         }
@@ -469,6 +529,18 @@ static long shdw_syscall_dispatch(int number, va_list args) {
 
             if(p->kp_proc.p_flag & P_SELECT) {
                 p->kp_proc.p_flag &= ~P_SELECT;
+            }
+        }
+
+        // Raw getdirentries64: compact restricted entries out of the result
+        // buffer (after success, external callers only). An fd whose path
+        // cannot be resolved passes through unfiltered — fail-open, the
+        // libc readdir path still filters.
+        if(number == SYS_getdirentries64 && result > 0 && gd_buf) {
+            char dir[PATH_MAX];
+
+            if(fcntl(gd_fd, F_GETPATH, dir) != -1) {
+                result = shdw_dirents_filtered(gd_buf, result, dir);
             }
         }
     }
@@ -511,7 +583,8 @@ static long replaced_syscall(int number, ...) {
     && number != SYS_fstatat
     && number != SYS_fstatat64
     && number != SYS_csops
-    && number != SYS_sysctl) {
+    && number != SYS_sysctl
+    && number != SYS_getdirentries64) {
         return original_syscall(number);
     }
 
@@ -554,7 +627,8 @@ static long replaced___syscall(int number, ...) {
     && number != SYS_fstatat
     && number != SYS_fstatat64
     && number != SYS_csops
-    && number != SYS_sysctl) {
+    && number != SYS_sysctl
+    && number != SYS_getdirentries64) {
         return original___syscall(number);
     }
 
@@ -617,7 +691,7 @@ static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, siz
 
 static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
-    if(!isCallerExternal()) {
+    if(isCallerExternal()) {
         // CS_OPS_MARKKILL on a process other than self is jailbreak-style
         // marking (stock apps only ever mark THEMSELVES for kill). Reject
         // BEFORE the original runs — executing the mark and then failing
@@ -631,7 +705,7 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 
     int ret = original_csops(pid, ops, useraddr, usersize);
 
-    if(!isCallerExternal() && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(isCallerExternal() && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
         return -1;
     }
 
@@ -644,14 +718,14 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 // kernel identifies the target.
 static int (*original_csops_audittoken)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token);
 static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token) {
-    if(!isCallerExternal() && ops == CS_OPS_MARKKILL && pid != getpid()) {
+    if(isCallerExternal() && ops == CS_OPS_MARKKILL && pid != getpid()) {
         errno = EBADEXEC;
         return -1;
     }
 
     int ret = original_csops_audittoken(pid, ops, useraddr, usersize, token);
 
-    if(!isCallerExternal() && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(isCallerExternal() && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
         return -1;
     }
 
@@ -668,7 +742,7 @@ static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr
 // successful original call. ---
 
 static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen, int (*original)(const char*, void*, size_t*, void*, size_t)) {
-    if(!isCallerExternal() && name) {
+    if(isCallerExternal() && name) {
         if(strcmp(name, "kern.proc.all") == 0) {
             return shdw_raw_sysctl_proc_all(oldp, oldlenp);
         }
@@ -742,7 +816,7 @@ static BOOL shdw_environ_var_hidden(const char* var) {
 
 static char*** (*original_NSGetEnviron)(void);
 static char*** replaced_NSGetEnviron(void) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_NSGetEnviron();
     }
 

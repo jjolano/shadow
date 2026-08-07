@@ -89,11 +89,14 @@ static inline Shadow* shdw_shadow_instance(void) {
 // torn buffer. dyld.x refreshes the snapshot at install — before any hook
 // group installs — and on every add/remove image callback, so the published
 // set is never stale in practice.
-// NOTE (span-collection lag): the collector in dyld.x still gathers the app
-// bundle's image spans; another lane repoints it to the Shadow-owned images
-// above. Until then the published set contains none of Shadow's own images,
-// so the internal-read flag (SHADOW_INTERNAL_SCOPE) is the operative truth
-// signal for Shadow-owned code — empty spans classify everyone else as
+// NOTE: the collector in dyld.x gathers ONLY the Shadow-owned spans above —
+// Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, RootBridge, and
+// substrate/substitute/ellekit, matched by case-insensitive basename via
+// isProtectedImagePath — and rebuilds the snapshot at install and on every
+// add/remove image callback, so the published set tracks Shadow's loaded
+// images. The internal-read scope flag (SHADOW_INTERNAL_SCOPE) remains the
+// operative truth signal for Shadow-owned code whose images are not yet
+// loaded or refreshed; outside those spans and scopes everyone classifies as
 // external, which is the safe (fail-closed) direction.
 #define SHADOW_OWN_IMAGE_MAX 16
 
@@ -132,17 +135,15 @@ static inline BOOL shdw_caller_is_external(const void* ra) {
         }
     }
 
-    // Outside every Shadow-owned span. The span snapshot may lag the
-    // Shadow-owned set (see note above), so also grant truth to a thread in
-    // an internal read scope — that is what keeps the framework's own
-    // ruleset/database reads working while the dyld.x collector is repointed.
+    // Outside every Shadow-owned span. The snapshot may lag the loaded set
+    // (see note above), so also grant truth to a thread in an internal read
+    // scope — that keeps the framework's own ruleset/database reads working
+    // even before Shadow's images are loaded or the snapshot is refreshed.
     return ![Shadow shdwIsInternalRead];
 }
 
 // Rebuilds the Shadow-owned image spans from the current dyld image list.
 // Called by dyld.x at install and from its add/remove image callbacks.
-// (The collector currently still gathers app-bundle spans; a dyld.x lane
-// repoints it to the Shadow-owned set.)
 void shdw_own_ranges_refresh(void);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))

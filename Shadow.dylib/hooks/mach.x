@@ -6,7 +6,7 @@
 // VERIFIED jailbreak service names/prefixes match; the overbroad "com.ex"
 // prefix is gone. The tweak's own "me.jjolano" umbrella is included: a
 // detector's lookup of the daemon service is denied, while the tweak's own
-// lookups are exempt via isCallerExternal() at each hook site.
+// lookups are exempt via isCallerExternal() == NO at each hook site.
 BOOL shdw_bootstrap_service_restricted(const char* name) {
     if(!name) {
         return NO;
@@ -38,7 +38,7 @@ static kern_return_t shdw_bootstrap_hide_right(mach_port_t* sp) {
 
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_check_in(bp, service_name, sp);
     }
 
@@ -55,10 +55,10 @@ static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* s
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
     // MACH_SERVICE_NAME ("me.jjolano.shadow.service") falls under the
     // "me.jjolano" blocklist umbrella: detectors' lookups are hidden, while
-    // the tweak's own lookups pass (isCallerExternal) straight through to
-    // the original — the vnode client relies on this for its
+    // the tweak's own lookups pass (isCallerExternal() == NO) straight
+    // through to the original — the vnode client relies on this for its
     // bootstrap_look_up.
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_look_up(bp, service_name, sp);
     }
 
@@ -84,7 +84,7 @@ extern kern_return_t bootstrap_look_up_per_user(mach_port_t bp, const char* serv
 
 static kern_return_t (*original_bootstrap_check_in2)(mach_port_t bp, const char* service_name, uint64_t flags, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in2(mach_port_t bp, const char* service_name, uint64_t flags, mach_port_t* sp) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_check_in2(bp, service_name, flags, sp);
     }
 
@@ -99,7 +99,7 @@ static kern_return_t replaced_bootstrap_check_in2(mach_port_t bp, const char* se
 
 static kern_return_t (*original_bootstrap_check_in3)(mach_port_t bp, const char* service_name, uint64_t flags, mach_port_t* sp, uint64_t* flags_out);
 static kern_return_t replaced_bootstrap_check_in3(mach_port_t bp, const char* service_name, uint64_t flags, mach_port_t* sp, uint64_t* flags_out) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_check_in3(bp, service_name, flags, sp, flags_out);
     }
 
@@ -114,7 +114,7 @@ static kern_return_t replaced_bootstrap_check_in3(mach_port_t bp, const char* se
 
 static kern_return_t (*original_bootstrap_look_up2)(mach_port_t bp, const char* service_name, mach_port_t* sp, pid_t target_pid, uint64_t flags);
 static kern_return_t replaced_bootstrap_look_up2(mach_port_t bp, const char* service_name, mach_port_t* sp, pid_t target_pid, uint64_t flags) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_look_up2(bp, service_name, sp, target_pid, flags);
     }
 
@@ -129,7 +129,7 @@ static kern_return_t replaced_bootstrap_look_up2(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up3)(mach_port_t bp, const char* service_name, mach_port_t* sp, pid_t target_pid, uint64_t flags, uint64_t* flags_out);
 static kern_return_t replaced_bootstrap_look_up3(mach_port_t bp, const char* service_name, mach_port_t* sp, pid_t target_pid, uint64_t flags, uint64_t* flags_out) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_look_up3(bp, service_name, sp, target_pid, flags, flags_out);
     }
 
@@ -144,7 +144,7 @@ static kern_return_t replaced_bootstrap_look_up3(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up_per_user)(mach_port_t bp, const char* service_name, uid_t user_id, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up_per_user(mach_port_t bp, const char* service_name, uid_t user_id, mach_port_t* sp) {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return original_bootstrap_look_up_per_user(bp, service_name, user_id, sp);
     }
 
