@@ -164,52 +164,12 @@ typedef struct {
 static shdw_dyld_snapshot_t* _shdw_dyld_snapshot = NULL;
 static shdw_dyld_snapshot_t* _shdw_dyld_snapshot_buffers[2] = {NULL, NULL};
 
-// Feature flag: "MemoryLevelHiding" in Shadow's prefs plist (default OFF).
-// SHADOW_PREFS_PLIST tracks the bundle id (me.jjolano.shadow); on rootless the
-// plist lives under /var/jb, so try both paths. A missing/unreadable plist
-// simply means the flag is off — memory hiding must never break the hook.
-// Per-app settings win: the plist holds a per-app dict keyed by bundle id
-// (see ShadowSettings getPreferencesForIdentifier — App_Enabled plus the same
-// hook keys), falling back to the top-level key. Re-read per call so settings
-// changes apply without a respring; the plist read is cheap and the
-// detector-escalation check above already runs per call.
-static BOOL shdw_dyld_memory_hiding_enabled(void) {
-    // Escalation: when a detection library is present, memory hiding forces
-    // on regardless of the prefs flag (set by dylib.x before hooks install).
-    if(shdw_detector_present) {
-        return YES;
-    }
-
-    NSDictionary* prefs = nil;
-
-    for(NSString* path in @[
-        [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
-        @(SHADOW_PREFS_PLIST)
-    ]) {
-        prefs = [NSDictionary dictionaryWithContentsOfFile:path];
-
-        if(prefs) {
-            break;
-        }
-    }
-
-    if(!prefs) {
-        return NO;
-    }
-
-    // Per-app dict (when the app is enabled there) overrides the global key.
-    NSString* bundleIdentifier = [Shadow getBundleIdentifier];
-
-    if(bundleIdentifier) {
-        NSDictionary* appPrefs = prefs[bundleIdentifier];
-
-        if([appPrefs isKindOfClass:[NSDictionary class]] && [appPrefs[@"App_Enabled"] boolValue]) {
-            return [appPrefs[@"MemoryLevelHiding"] boolValue];
-        }
-    }
-
-    return [prefs[@"MemoryLevelHiding"] boolValue];
-}
+// The dyld_all_image_infos patch (plan Wave 1c) is UNCONDITIONAL when the
+// struct exists: the old "MemoryLevelHiding" pref gate left the real arrays
+// readable by any untrusted caller (task_info TASK_DYLD_INFO /
+// _dyld_get_all_image_infos read this struct directly, bypassing the dyld
+// API filter), so the filtered mirror must always be published. The pref is
+// now a no-op by design.
 
 static void shadowhook_dyld_rebuild_dyldinfo(void);
 
@@ -1010,6 +970,11 @@ static void (*shdw_real_register_for_bulk_image_loads)(void (*func)(unsigned ima
 // `_shdw_dyld_mirror_lock`; sets `_shdw_mirror_currently_patched = NO` only
 // on success — on vm_protect failure the mirror stays applied and
 // `_shdw_mirror_protect_failed` latches, disabling the patch path as well.
+// NOTE: with the pref gate removed (plan Wave 1c) the patch is unconditional
+// and this restore path is currently unreachable; kept (with the
+// originals-capture machinery) so a future ON→OFF toggle can restore dyld's
+// true struct. The VM_MAKE_TAG/VM_PROTECT dance is retained verbatim.
+__attribute__((unused))
 static void shdw_dyld_mirror_restore_originals(void) {
     if(!_shdw_originals_captured) {
         return;
@@ -1050,27 +1015,19 @@ static void shdw_dyld_mirror_restore_originals(void) {
 }
 
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
-    // Prefs I/O (plist read; may lazy-load CF/Foundation) must NOT run under
-    // the mirror lock: rebuild fires from dyld add/remove-image callbacks in
-    // loader context, and holding the unfair lock across it can deadlock or
-    // stall. Read the effective flag once, here, before the lock — the
-    // detector escalation (shdw_detector_present → YES) short-circuits before
-    // any plist read, and the per-app bundle-id override is part of the same
-    // read. No struct to patch (pre-modern iOS) skips the read entirely.
-    BOOL memoryHidingEnabled = _shdw_all_image_infos ? shdw_dyld_memory_hiding_enabled() : NO;
-
+    // No prefs I/O here (plan Wave 1c): the mirror patch is unconditional, so
+    // nothing runs before the lock except the collection copy itself.
     os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSUInteger count = MIN([_dyld_collection count], SHADOW_DYLD_MIRROR_CAPACITY);
 
-    // C4: refresh the hot-path snapshot (always, even when the memory-hiding
-    // mirrors below are disabled). Fill the inactive buffer, then publish it.
-    // On allocation failure nothing is published — the previously published
-    // snapshot (or none) stays in place, and the accessors fall back to the
-    // collection until the first successful publish. Readers take this lock
-    // (see the accessors), so the publish needs no atomics; kept as one
-    // anyway for clarity.
+    // C4: refresh the hot-path snapshot (always). Fill the inactive buffer,
+    // then publish it. On allocation failure nothing is published — the
+    // previously published snapshot (or none) stays in place, and the
+    // accessors fall back to the collection until the first successful
+    // publish. Readers take this lock (see the accessors), so the publish
+    // needs no atomics; kept as one anyway for clarity.
     static BOOL snapshotAllocFailed = NO;
 
     if(!snapshotAllocFailed) {
@@ -1100,26 +1057,20 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         __atomic_store_n(&_shdw_dyld_snapshot, snapshot, __ATOMIC_RELEASE);
     }
 
-    // No struct to patch (pre-modern iOS): memory hiding stays off (fail
-    // soft); the API-level enumeration hooks above still hide images.
+    // No struct to patch (pre-modern iOS): the API-level enumeration hooks
+    // above still hide images (fail soft).
     if(!_shdw_all_image_infos) {
         os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
 
-    // Disabled: if a previous rebuild left the filtered mirror patched in,
-    // restore dyld's original struct fields — the flag is read per rebuild,
-    // so a runtime ON→OFF pref change must actually undo the patch. Fail
-    // soft: on vm_protect failure the mirror stays applied (and
-    // `_shdw_mirror_protect_failed` latches, disabling the patch path too).
-    if(!memoryHidingEnabled) {
-        if(_shdw_mirror_currently_patched) {
-            shdw_dyld_mirror_restore_originals();
-        }
-
-        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
-        return;
-    }
+    // The patch is unconditional (no pref gate): untrusted callers reading
+    // dyld_all_image_infos directly — task_info TASK_DYLD_INFO /
+    // _dyld_get_all_image_infos — always see the filtered mirror. There is
+    // no task_info hook here: the mirror is the ONLY all-image surface, and
+    // no code in this file ever dereferences a remote task's
+    // all_image_info_addr (non-self tasks must be passed through untouched —
+    // device-test territory if a task_info hook is ever added).
 
     // Allocate the fixed-capacity generation buffers once (lazily).
     // vm_allocate'd, never freed or reallocated: the published pointers can't
