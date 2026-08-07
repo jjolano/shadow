@@ -1,0 +1,83 @@
+--- a/Source/NSPredicate.m
++++ b/Source/NSPredicate.m
+@@ -522,15 +522,21 @@
+ 
+ - (void) encodeWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
++  /* Shadow's compiled-cache archive must never contain live NSPredicate
++   * objects: GNUstep's NSKeyedArchiver is not exception-safe (a mid-encode
++   * throw corrupts its dealloc) and predicate round-trips are unreliable
++   * (expressionType misreports, format normalization). Encode a plain
++   * marker instead — the cache-restore type check rejects the entry and
++   * the caller recompiles; the cache is a pure speedup, so correctness
++   * wins over caching. */
++  [coder encodeObject: @"__shadow_cache_reject__" forKey: @"NSPredicateReject"];
+ }
+ 
+ - (id) initWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
+-  return self;
++  /* Never reached with the marker scheme (the archive holds a string, not
++   * a predicate); defensive reject. */
++  return @"__shadow_cache_reject__";
+ }
+ 
+ @end
+@@ -1140,15 +1146,21 @@
+ 
+ - (void) encodeWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
++  /* Shadow's compiled-cache archive must never contain live NSPredicate
++   * objects: GNUstep's NSKeyedArchiver is not exception-safe (a mid-encode
++   * throw corrupts its dealloc) and predicate round-trips are unreliable
++   * (expressionType misreports, format normalization). Encode a plain
++   * marker instead — the cache-restore type check rejects the entry and
++   * the caller recompiles; the cache is a pure speedup, so correctness
++   * wins over caching. */
++  [coder encodeObject: @"__shadow_cache_reject__" forKey: @"NSPredicateReject"];
+ }
+ 
+ - (id) initWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
+-  return self;
++  /* Never reached with the marker scheme (the archive holds a string, not
++   * a predicate); defensive reject. */
++  return @"__shadow_cache_reject__";
+ }
+ 
+ @end
+@@ -1318,15 +1330,21 @@
+ 
+ - (void) encodeWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
++  /* Shadow's compiled-cache archive must never contain live NSPredicate
++   * objects: GNUstep's NSKeyedArchiver is not exception-safe (a mid-encode
++   * throw corrupts its dealloc) and predicate round-trips are unreliable
++   * (expressionType misreports, format normalization). Encode a plain
++   * marker instead — the cache-restore type check rejects the entry and
++   * the caller recompiles; the cache is a pure speedup, so correctness
++   * wins over caching. */
++  [coder encodeObject: @"__shadow_cache_reject__" forKey: @"NSPredicateReject"];
+ }
+ 
+ - (id) initWithCoder: (NSCoder *)coder
+ {
+-  // FIXME
+-  [self subclassResponsibility: _cmd];
+-  return nil;
++  /* Never reached with the marker scheme (the archive holds a string, not
++   * a predicate); defensive reject. */
++  return @"__shadow_cache_reject__";
+ }
+ 
+ - (id) _expressionWithSubstitutionVariables: (NSDictionary *)variables
