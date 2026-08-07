@@ -74,5 +74,19 @@
 		<string>installer</string>
 		<string>santander</string>
 	</array>
+	<key>BlacklistBundleIDs</key>
+	<array>
+		<string>com.saurik.Cydia</string>
+		<string>org.coolstar.sileo</string>
+		<string>xyz.willy.Zebra</string>
+		<string>com.opa334.jailbreak</string>
+		<string>science.xnu.underscore</string>
+		<string>com.llsc12.palera1nLoader</string>
+		<string>com.samiiau.loader</string>
+		<string>jp.r333d.Taurine</string>
+		<string>com.undecimus.unc0ver</string>
+		<string>eu.taurine.taurine</string>
+		<string>com.apt.theos</string>
+	</array>
 </dict>
 </plist>
