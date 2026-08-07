@@ -3,7 +3,7 @@
 %group shadowhook_NSBundle
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
-    if(!isCallerTweak() && [key isEqualToString:@"SignerIdentity"]) {
+    if(!isCallerExternal() && [key isEqualToString:@"SignerIdentity"]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (instancetype)bundleWithURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
     
@@ -19,7 +19,7 @@
 }
 
 + (instancetype)bundleWithPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
     
@@ -27,7 +27,7 @@
 }
 
 - (instancetype)initWithURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
     
@@ -35,7 +35,7 @@
 }
 
 - (instancetype)initWithPath:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
     
@@ -43,7 +43,7 @@
 }
 
 + (NSBundle *)bundleForClass:(Class)aClass {
-    if(!isCallerTweak() && [_shadow isAddrRestricted:(void *)aClass]) {
+    if(!isCallerExternal() && [_shadow isAddrRestricted:(void *)aClass]) {
         return nil;
     }
 
@@ -53,7 +53,7 @@
 + (NSBundle *)bundleWithIdentifier:(NSString *)identifier {
     NSBundle* result = %orig;
 
-    if(!isCallerTweak() && result && [_shadow isPathRestricted:[result bundlePath]]) {
+    if(!isCallerExternal() && result && [_shadow isPathRestricted:[result bundlePath]]) {
         return nil;
     }
 
@@ -63,7 +63,7 @@
 - (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath {
     NSURL* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isURLRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 
@@ -73,7 +73,7 @@
 - (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext {
     NSURL* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isURLRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 
@@ -83,7 +83,7 @@
 - (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSURL* url in result) {
@@ -101,7 +101,7 @@
 - (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
     NSURL* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isURLRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 
@@ -111,7 +111,7 @@
 - (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSURL* url in result) {
@@ -129,7 +129,7 @@
 + (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
     NSURL* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isURLRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:result]) {
         return nil;
     }
 
@@ -139,7 +139,7 @@
 + (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSURL* url in result) {
@@ -157,7 +157,7 @@
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return nil;
     }
 
@@ -167,7 +167,7 @@
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return nil;
     }
 
@@ -177,7 +177,7 @@
 - (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return nil;
     }
 
@@ -187,7 +187,7 @@
 - (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* path in result) {
@@ -205,7 +205,7 @@
 - (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* path in result) {
@@ -223,7 +223,7 @@
 + (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)bundlePath {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return nil;
     }
 
@@ -233,7 +233,7 @@
 + (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)bundlePath {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* path in result) {
@@ -251,7 +251,7 @@
 + (NSArray<NSBundle *> *)allBundles {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSBundle* bundle in result) {
@@ -269,7 +269,7 @@
 + (NSArray<NSBundle *> *)allFrameworks {
     NSArray* result = %orig;
 
-    if(!isCallerTweak() && result) {
+    if(!isCallerExternal() && result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSBundle* bundle in result) {

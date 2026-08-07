@@ -5,7 +5,7 @@
 // + (Class)class {
 //     Class result = %orig;
 
-//     if(!isCallerTweak() && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+//     if(!isCallerExternal() && [_shadow isAddrRestricted:(__bridge const void *)result]) {
 //         return nil;
 //     }
 
@@ -18,7 +18,7 @@ static const char* (*original_class_getImageName)(Class cls);
 static const char* replaced_class_getImageName(Class cls) {
     const char* result = original_class_getImageName(cls);
 
-    if(isCallerTweak() || ![_shadow isCPathRestricted:result]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:result]) {
         return result;
     }
 
@@ -29,7 +29,7 @@ static const char * _Nonnull * (*original_objc_copyImageNames)(unsigned int *out
 static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCount) {
     const char * _Nonnull * result = original_objc_copyImageNames(outCount);
 
-    if(isCallerTweak() || !result || !outCount) {
+    if(isCallerExternal() || !result || !outCount) {
         return result;
     }
 
@@ -50,7 +50,7 @@ static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCou
 
 static const char * _Nonnull * (*original_objc_copyClassNamesForImage)(const char* image, unsigned int *outCount);
 static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* image, unsigned int *outCount) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:image]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:image]) {
         return original_objc_copyClassNamesForImage(image, outCount);
     }
 
@@ -61,7 +61,7 @@ static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
     Class result = original_NSClassFromString(aClassName);
 
-    if(isCallerTweak() || ![_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:(__bridge const void *)result]) {
         return result;
     }
 
@@ -78,7 +78,7 @@ static void* (*original_NXMapGet)(NXMapTable *table, const char *name);
 static void* replaced_NXMapGet(NXMapTable *table, const char *name) {
     void* result = original_NXMapGet(table, name);
 
-    if(isCallerTweak() || ![_shadow isAddrRestricted:result]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:result]) {
         return result;
     }
 
@@ -89,7 +89,7 @@ static void* (*original_NXHashGet)(NXHashTable *table, const void *data);
 static void* replaced_NXHashGet(NXHashTable *table, const void *data) {
     void* result = original_NXHashGet(table, data);
 
-    if(isCallerTweak() || ![_shadow isAddrRestricted:result]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:result]) {
         return result;
     }
 
@@ -100,7 +100,7 @@ static IMP (*original_method_getImplementation)(Method m);
 static IMP replaced_method_getImplementation(Method m) {
     IMP result = original_method_getImplementation(m);
 
-    if(isCallerTweak() || ![_shadow isAddrRestricted:(void *)result]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)result]) {
         return result;
     }
 
@@ -116,7 +116,7 @@ static IMP (*original_class_getMethodImplementation)(Class cls, SEL name);
 static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
     IMP result = original_class_getMethodImplementation(cls, name);
 
-    if(isCallerTweak() || ![_shadow isAddrRestricted:(void *)result]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)result]) {
         return result;
     }
 
@@ -128,7 +128,7 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
 // resolve it at runtime like dyld.x does for dlopen_internal, and guard NULL.
 static void* (*original_imp_getBlock)(IMP anImp);
 static void* replaced_imp_getBlock(IMP anImp) {
-    if(isCallerTweak() || ![_shadow isAddrRestricted:(void *)anImp]) {
+    if(isCallerExternal() || ![_shadow isAddrRestricted:(void *)anImp]) {
         return original_imp_getBlock(anImp);
     }
 

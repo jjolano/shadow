@@ -3,7 +3,7 @@
 %group shadowhook_UIImage
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 + (UIImage *)imageWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 

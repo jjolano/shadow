@@ -5,7 +5,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 %group shadowhook_NSString
 %hook NSString
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -17,7 +17,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -29,7 +29,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -41,7 +41,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
             *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
         }
@@ -53,7 +53,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 + (instancetype)stringWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -65,7 +65,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -77,7 +77,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 + (instancetype)stringWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -89,7 +89,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -101,7 +101,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
-    if(isCallerTweak() || ![_shadow isPathRestricted:self]) {
+    if(isCallerExternal() || ![_shadow isPathRestricted:self]) {
         return %orig;
     }
 
@@ -125,7 +125,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (NSString *)stringByResolvingSymlinksInPath {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return self;
     }
 
@@ -135,7 +135,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 // - (NSString *)stringByExpandingTildeInPath {
 //     NSString* result = %orig;
 
-//     if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+//     if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
 //         return self;
 //     }
 
@@ -145,7 +145,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (NSString *)stringByStandardizingPath {
     NSString* result = %orig;
 
-    if(!isCallerTweak() && [_shadow isPathRestricted:result]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:result]) {
         return self;
     }
 
@@ -155,7 +155,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 
 %hook NSAttributedString
 - (instancetype)initWithHTML:(NSData *)data baseURL:(NSURL *)base documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict {
-    if(!isCallerTweak() && [_shadow isURLRestricted:base]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:base]) {
         return nil;
     }
 
@@ -163,7 +163,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (instancetype)initWithURL:(NSURL *)url options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -175,7 +175,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 + (void)loadFromHTMLWithFileURL:(NSURL *)fileURL options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
-    if(!isCallerTweak() && [_shadow isURLRestricted:fileURL]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
         if(completionHandler) {
             completionHandler(nil, nil, nil);
         }
@@ -191,7 +191,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 %group shadowhook_NSCharacterSet
 %hook NSCharacterSet
 + (NSCharacterSet *)characterSetWithContentsOfFile:(NSString *)fName {
-    if(!isCallerTweak() && [_shadow isPathRestricted:fName]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:fName]) {
         return nil;
     }
 

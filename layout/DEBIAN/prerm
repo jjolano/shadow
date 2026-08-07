@@ -27,14 +27,13 @@ shadowd_stop() {
 case "$1" in
     remove|upgrade)
         if ! shadowd_stop; then
-            # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL:
-            # that recreates the hazard the graceful shutdown exists to
-            # prevent. Continue the removal anyway — leaving the package
-            # half-removed is worse than risking a stale flag that a reboot
-            # clears. bootout below still removes the job (launchd will kill
-            # the process as part of job removal); the warning demands the
-            # reboot that actually restores hidden state.
-            echo "shadowd: did not exit after SIGTERM; unloading anyway. REBOOT REQUIRED to fully restore hidden state." >&2
+            # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL
+            # and do NOT bootout: terminating a daemon that still holds
+            # VISSHADOW-flagged vnodes leaves them hidden until reboot.
+            # Abort the removal — dpkg keeps the package installed and the
+            # daemon running (non-zero prerm aborts remove/upgrade).
+            echo "shadowd: did not exit after SIGTERM; ABORTING removal. REBOOT REQUIRED to fully restore hidden state." >&2
+            exit 1
         fi
         launchctl bootout system/me.jjolano.shadow 2> /dev/null \
             || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true

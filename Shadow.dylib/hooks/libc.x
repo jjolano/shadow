@@ -33,10 +33,10 @@ static BOOL shdw_is_jb_probe(const char* path) {
 
 // Trip on the attempt, before any restricted-path filtering: the probe is the
 // caller touching a JB indicator, independent of how the filter answers it.
-// isCallerTweak() reads the return address, so it must expand inline at the
+// isCallerExternal() reads the return address, so it must expand inline at the
 // hook site — never route it through a helper function.
 #define SHADOW_TRIP(pathname, kind) \
-    if(!isCallerTweak() && shdw_is_jb_probe(pathname)) { \
+    if(!isCallerExternal() && shdw_is_jb_probe(pathname)) { \
         shdw_detector_detected(kind); \
     }
 
@@ -46,7 +46,7 @@ static int replaced_access(const char* pathname, int mode) {
 
     int result = original_access(pathname, mode);
 
-    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && !isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
         errno = ENOENT;
         return -1;
     }
@@ -56,7 +56,7 @@ static int replaced_access(const char* pathname, int mode) {
 
 static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_readlink(pathname, buf, bufsize);
     }
 
@@ -110,7 +110,7 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
 
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsize) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_readlinkat(dirfd, pathname, buf, bufsize);
     }
 
@@ -148,7 +148,7 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
 
 static int (*original_chdir)(const char* pathname);
 static int replaced_chdir(const char* pathname) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_chdir(pathname);
     }
 
@@ -158,7 +158,7 @@ static int replaced_chdir(const char* pathname) {
 
 static int (*original_fchdir)(int fd);
 static int replaced_fchdir(int fd) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fchdir(fd);
     }
 
@@ -179,7 +179,7 @@ static int replaced_fchdir(int fd) {
 
 static int (*original_chroot)(const char* pathname);
 static int replaced_chroot(const char* pathname) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_chroot(pathname);
     }
 
@@ -189,7 +189,7 @@ static int replaced_chroot(const char* pathname) {
 
 static int (*original_creat)(const char* pathname, mode_t mode);
 static int replaced_creat(const char* pathname, mode_t mode) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_creat(pathname, mode);
     }
 
@@ -199,7 +199,7 @@ static int replaced_creat(const char* pathname, mode_t mode) {
 
 static int (*original_getfsstat)(struct statfs* buf, int bufsize, int flags);
 static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_getfsstat(buf, bufsize, flags);
     }
 
@@ -240,7 +240,7 @@ static int replaced_getfsstat(struct statfs* buf, int bufsize, int flags) {
 
 static int (*original_getmntinfo)(struct statfs** mntbufp, int flags);
 static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_getmntinfo(mntbufp, flags);
     }
 
@@ -288,7 +288,7 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
 
 static int (*original_statfs)(const char* pathname, struct statfs* buf);
 static int replaced_statfs(const char* pathname, struct statfs* buf) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_statfs(pathname, buf);
     }
 
@@ -319,7 +319,7 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
 
 static int (*original_fstatfs)(int fd, struct statfs* buf);
 static int replaced_fstatfs(int fd, struct statfs* buf) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fstatfs(fd, buf);
     }
 
@@ -357,7 +357,7 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
 
 static int (*original_statvfs)(const char* pathname, struct statvfs* buf);
 static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_statvfs(pathname, buf);
     }
 
@@ -396,7 +396,7 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
 
 static int (*original_fstatvfs)(int fd, struct statvfs* buf);
 static int replaced_fstatvfs(int fd, struct statvfs* buf) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fstatvfs(fd, buf);
     }
 
@@ -446,7 +446,7 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
 
     int result = original_stat(pathname, buf);
 
-    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && !isCallerExternal() && [_shadow isCPathRestricted:pathname]) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
@@ -462,7 +462,7 @@ static int (*original_lstat)(const char* pathname, struct stat* buf);
 static int replaced_lstat(const char* pathname, struct stat* buf) {
     SHADOW_TRIP(pathname, "lstat");
 
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_lstat(pathname, buf);
     }
 
@@ -501,7 +501,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
 
 static int (*original_fstat)(int fd, struct stat* buf);
 static int replaced_fstat(int fd, struct stat* buf) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fstat(fd, buf);
     }
 
@@ -524,7 +524,7 @@ static int (*original_fstatat)(int dirfd, const char* pathname, struct stat* buf
 static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
     SHADOW_TRIP(pathname, "fstatat");
 
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
@@ -564,7 +564,7 @@ static int (*original_faccessat)(int dirfd, const char* pathname, int mode, int 
 static int replaced_faccessat(int dirfd, const char* pathname, int mode, int flags) {
     SHADOW_TRIP(pathname, "faccessat");
 
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
@@ -684,7 +684,7 @@ static NSDictionary* shdw_readdir_cache_options(DIR* dirp) {
 
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
 static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** oresult) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_readdir_r(dirp, entry, oresult);
     }
 
@@ -712,7 +712,7 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
 
 static struct dirent* (*original_readdir)(DIR* dirp);
 static struct dirent* replaced_readdir(DIR* dirp) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_readdir(dirp);
     }
 
@@ -751,7 +751,7 @@ static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
     SHADOW_TRIP(pathname, "fopen");
 
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_fopen(pathname, mode);
     }
 
@@ -761,7 +761,7 @@ static FILE* replaced_fopen(const char* pathname, const char* mode) {
 
 static FILE* (*original_freopen)(const char* pathname, const char* mode, FILE* stream);
 static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stream) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_freopen(pathname, mode, stream);
     }
 
@@ -773,7 +773,7 @@ static char* (*original_realpath)(const char* pathname, char* resolved_path);
 static char* replaced_realpath(const char* pathname, char* resolved_path) {
     char* result = original_realpath(pathname, resolved_path);
 
-    if(result && !isCallerTweak()) {
+    if(result && !isCallerExternal()) {
         if([_shadow isCPathRestricted:pathname]) {
             errno = ENOENT;
             return NULL;
@@ -797,7 +797,7 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
     int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 
-    if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:path]) {
+    if(result != -1 && !isCallerExternal() && [_shadow isCPathRestricted:path]) {
         errno = ENOENT;
         return -1;
     }
@@ -807,7 +807,7 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
 static int (*original_symlink)(const char* path1, const char* path2);
 static int replaced_symlink(const char* path1, const char* path2) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_symlink(path1, path2);
     }
 
@@ -845,7 +845,7 @@ static int replaced_symlink(const char* path1, const char* path2) {
 
 static int (*original_link)(const char* path1, const char* path2);
 static int replaced_link(const char* path1, const char* path2) {
-    if(isCallerTweak() || !([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
+    if(isCallerExternal() || !([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
         return original_link(path1, path2);
     }
 
@@ -855,7 +855,7 @@ static int replaced_link(const char* path1, const char* path2) {
 
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
-    if(isCallerTweak() || !([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
+    if(isCallerExternal() || !([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
         return original_rename(old, new);
     }
 
@@ -865,7 +865,7 @@ static int replaced_rename(const char* old, const char* new) {
 
 static int (*original_remove)(const char* pathname);
 static int replaced_remove(const char* pathname) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_remove(pathname);
     }
 
@@ -875,7 +875,7 @@ static int replaced_remove(const char* pathname) {
 
 static int (*original_unlink)(const char* pathname);
 static int replaced_unlink(const char* pathname) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_unlink(pathname);
     }
 
@@ -885,7 +885,7 @@ static int replaced_unlink(const char* pathname) {
 
 static int (*original_unlinkat)(int dirfd, const char* pathname, int flags);
 static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_unlinkat(dirfd, pathname, flags);
     }
 
@@ -923,7 +923,7 @@ static int replaced_unlinkat(int dirfd, const char* pathname, int flags) {
 
 static int (*original_rmdir)(const char* pathname);
 static int replaced_rmdir(const char* pathname) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_rmdir(pathname);
     }
 
@@ -933,7 +933,7 @@ static int replaced_rmdir(const char* pathname) {
 
 static long (*original_pathconf)(const char* pathname, int name);
 static long replaced_pathconf(const char* pathname, int name) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_pathconf(pathname, name);
     }
 
@@ -943,7 +943,7 @@ static long replaced_pathconf(const char* pathname, int name) {
 
 static long (*original_fpathconf)(int fd, int name);
 static long replaced_fpathconf(int fd, int name) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_fpathconf(fd, name);
     }
     
@@ -964,7 +964,7 @@ static long replaced_fpathconf(int fd, int name) {
 
 static int (*original_utimes)(const char* pathname, const struct timeval times[2]);
 static int replaced_utimes(const char* pathname, const struct timeval times[2]) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original_utimes(pathname, times);
     }
 
@@ -974,7 +974,7 @@ static int replaced_utimes(const char* pathname, const struct timeval times[2]) 
 
 static int (*original_futimes)(int fd, const struct timeval times[2]);
 static int replaced_futimes(int fd, const struct timeval times[2]) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_futimes(fd, times);
     }
     
@@ -995,7 +995,7 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
 
 static char* (*original_getenv)(const char* name);
 static char* replaced_getenv(const char* name) {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return original_getenv(name);
     }
 
@@ -1093,14 +1093,14 @@ static int replaced_open(const char *pathname, int oflag, ...) {
         va_end(args);
     }
 
-    if(!isCallerTweak() && shdw_is_jbroot_write_probe(pathname, oflag)) {
+    if(!isCallerExternal() && shdw_is_jbroot_write_probe(pathname, oflag)) {
         // Stock fails with ENOENT since .jbroot doesn't exist there; must match
         // exactly so the probe can't distinguish us via a different errno.
         errno = ENOENT;
         return -1;
     }
 
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         if(oflag & O_CREAT) {
             return original_open(pathname, oflag, mode);
         }
@@ -1128,7 +1128,7 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         va_end(args);
     }
 
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         if(oflag & O_CREAT) {
             return original_openat(dirfd, pathname, oflag, mode);
         }
@@ -1181,7 +1181,7 @@ static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
 static DIR* (*original___opendir2)(const char* pathname, int flags);
 static DIR* replaced___opendir2(const char* pathname, int flags) {
-    if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
+    if(isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
         return original___opendir2(pathname, flags);
     }
 

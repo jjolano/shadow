@@ -3,7 +3,7 @@
 %group shadowhook_UIApplication
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"%@: %@", @"canOpenURL restricted", url);
         return NO;
     }

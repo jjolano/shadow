@@ -38,7 +38,7 @@
 
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         NSLog(@"%@: %d", @"task_for_pid", pid);
         return KERN_FAILURE;
     }
@@ -48,7 +48,7 @@ static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_por
 
 static kern_return_t (*original_host_get_special_port)(host_priv_t host_priv, int node, int which, mach_port_t* port);
 static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int node, int which, mach_port_t* port) {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         NSLog(@"%@: %d", @"host_get_special_port", which);
 
         if(port) {
@@ -63,7 +63,7 @@ static kern_return_t replaced_host_get_special_port(host_priv_t host_priv, int n
 
 static kern_return_t (*original_task_get_special_port)(task_inspect_t task, int which_port, mach_port_t *special_port);
 static kern_return_t replaced_task_get_special_port(task_inspect_t task, int which_port, mach_port_t *special_port) {
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         NSLog(@"%@: %d", @"task_get_special_port", which_port);
 
         if(special_port) {
@@ -85,7 +85,7 @@ static int (*original_sigaction)(int sig, const struct sigaction *restrict act, 
 static int replaced_sigaction(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact) {
     int result = original_sigaction(sig, act, oact);
 
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         NSLog(@"%@: %d", @"sigaction", sig);
     
         if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
@@ -122,12 +122,12 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
         // The tweak's own mach-lookup of its daemon service is always
         // allowed: the app sandbox would otherwise deny the vnode client's
         // bootstrap_look_up (sandbox_check is called regardless of caller).
-        if(isCallerTweak() && name && strcmp(name, MACH_SERVICE_NAME) == 0) {
+        if(isCallerExternal() && name && strcmp(name, MACH_SERVICE_NAME) == 0) {
             va_end(args);
             return 0;
         }
 
-        if(!isCallerTweak() && name
+        if(!isCallerExternal() && name
         && (strstr(name, "cy:") == name
         || strstr(name, "lh:") == name
         || strstr(name, "rbs:") == name
@@ -215,7 +215,7 @@ static int replaced_fcntl(int fd, int cmd, ...) {
         va_end(args);
     }
 
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         if(cmd == F_ADDSIGS) {
             // Prevent adding invalid code signatures.
             errno = EINVAL;

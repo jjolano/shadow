@@ -138,7 +138,7 @@ static long replaced_syscall(int number, ...) {
     // live at our entry and the trampoline leaves them untouched, so a
     // zero-argument forward is exact. This requires the passthrough to be
     // the first thing this function does — no calls (NSLog,
-    // isCallerTweak, ...) may run first, since they clobber x1-x7 — and
+    // isCallerExternal, ...) may run first, since they clobber x1-x7 — and
     // the intercept test below must stay an OR-chain of compares on
     // `number` (clang lowers it to cmp/branch only; do not turn it into a
     // helper function or switch table).
@@ -178,7 +178,7 @@ static long replaced_syscall(int number, ...) {
     // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
     // inspected — its first argument is a binary entries buffer, not a C
     // string; it is still forwarded with its exact arity below.
-    if(!isCallerTweak()) {
+    if(!isCallerExternal()) {
         if(number == SYS_open
         || number == SYS_chdir
         || number == SYS_access
@@ -231,7 +231,7 @@ static int (*original_csops)(pid_t pid, unsigned int ops, void* useraddr, size_t
 static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize) {
     int ret = original_csops(pid, ops, useraddr, usersize);
 
-    if(!isCallerTweak() && pid == getpid()) {
+    if(!isCallerExternal() && pid == getpid()) {
         if(ops == CS_OPS_STATUS && ret == 0) {
             // The status flags are written into the CALLER's buffer, not
             // returned — the kernel fills *useraddr. Mask the hidden

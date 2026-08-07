@@ -3,7 +3,7 @@
 // %group shadowhook_NSProcessInfo
 // %hook NSProcessInfo
 // - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
-//     if(isCallerTweak()) {
+//     if(isCallerExternal()) {
 //         return %orig;
 //     }
 
@@ -14,7 +14,7 @@
 // - (NSDictionary *)environment {
 // 	NSDictionary* result = %orig;
 
-    // if(!isCallerTweak() && result) {
+    // if(!isCallerExternal() && result) {
     //     NSMutableDictionary* filtered_result = [result mutableCopy];
 
     //     [filtered_result removeObjectForKey:@"DYLD_INSERT_LIBRARIES"];
@@ -41,7 +41,7 @@
 %group shadowhook_NSProcessInfo_fakemac
 %hook NSProcessInfo
 - (BOOL)macCatalystApp {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return %orig;
     }
 
@@ -50,7 +50,7 @@
 }
 
 - (BOOL)isiOSAppOnMac {
-    if(isCallerTweak()) {
+    if(isCallerExternal()) {
         return %orig;
     }
 

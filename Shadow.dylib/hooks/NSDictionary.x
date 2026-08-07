@@ -3,7 +3,7 @@
 %group shadowhook_NSDictionary
 %hook NSDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -11,7 +11,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -19,7 +19,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -31,7 +31,7 @@
 }
 
 + (id)dictionaryWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -39,7 +39,7 @@
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
         }
@@ -51,7 +51,7 @@
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -59,7 +59,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return NO;
     }
 
@@ -67,7 +67,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return NO;
     }
 
@@ -75,7 +75,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil];
         }
@@ -89,7 +89,7 @@
 
 %hook NSMutableDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -97,7 +97,7 @@
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
@@ -105,7 +105,7 @@
 }
 
 + (NSMutableDictionary *)dictionaryWithContentsOfFile:(NSString *)path {
-    if(!isCallerTweak() && [_shadow isPathRestricted:path]) {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path]) {
         return nil;
     }
 
@@ -113,7 +113,7 @@
 }
 
 + (NSMutableDictionary *)dictionaryWithContentsOfURL:(NSURL *)url {
-    if(!isCallerTweak() && [_shadow isURLRestricted:url]) {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
 
