@@ -21,9 +21,9 @@
 - (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
-        
+
         return nil;
     }
 
@@ -41,7 +41,7 @@
 + (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
 
         return nil;
@@ -77,7 +77,7 @@
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil];
+            *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
         }
 
         return NO;

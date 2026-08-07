@@ -305,6 +305,16 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
     return %orig;
 }
 %end
+
+%hook NSMutableCharacterSet
++ (NSMutableCharacterSet *)characterSetWithContentsOfFile:(NSString *)fName {
+    if(!isCallerExternal() && [_shadow isPathRestricted:fName]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
 %end
 
 void shadowhook_NSString(HKSubstitutor* hooks) {
