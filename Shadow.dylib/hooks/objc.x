@@ -291,6 +291,250 @@ static void replaced_objc_enumerateClasses(const void* image, const char* namePr
     });
 }
 
+// --- Method metadata (plan Wave 3): class_copyMethodList,
+// class_getInstanceMethod/class_getClassMethod,
+// _method_getImplementationAndName, class_getMethodImplementation_stret and
+// the two objc_copy*ForImage[Header] SPIs must not surface protected
+// classes, Methods or IMPs.
+
+// Defined with the item-3 method_getImplementation hook below.
+static IMP (*original_method_getImplementation)(Method m);
+
+static Method* (*original_class_copyMethodList)(Class cls, unsigned int* outCount);
+static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) {
+    if(!isCallerExternal()) {
+        return original_class_copyMethodList(cls, outCount);
+    }
+
+    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    unsigned int localCount = 0;
+    Method* result = original_class_copyMethodList(cls, &localCount);
+
+    if(!result || localCount == 0) {
+        if(outCount) {
+            *outCount = localCount;
+        }
+
+        return result;
+    }
+
+    // Filter protected entries in place (the array is caller-freed): a benign
+    // class can carry Methods whose IMPs live in protected images (e.g.
+    // block-based methods backed by a protected library).
+    unsigned int n = 0;
+
+    for(unsigned int i = 0; i < localCount; i++) {
+        IMP imp = original_method_getImplementation(result[i]);
+
+        if([_shadow isAddrRestricted:(void *)result[i]] || [_shadow isAddrRestricted:(void *)imp]) {
+            continue;
+        }
+
+        result[n++] = result[i];
+    }
+
+    result[n] = NULL;
+
+    if(outCount) {
+        *outCount = n;
+    }
+
+    return result;
+}
+
+static Method (*original_class_getInstanceMethod)(Class cls, SEL name);
+static Method replaced_class_getInstanceMethod(Class cls, SEL name) {
+    if(!isCallerExternal()) {
+        return original_class_getInstanceMethod(cls, name);
+    }
+
+    Method result = original_class_getInstanceMethod(cls, name);
+
+    if([_shadow isAddrRestricted:(__bridge const void *)cls]
+    || [_shadow isAddrRestricted:(void *)result]
+    || [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)]) {
+        return NULL;
+    }
+
+    return result;
+}
+
+static Method (*original_class_getClassMethod)(Class cls, SEL name);
+static Method replaced_class_getClassMethod(Class cls, SEL name) {
+    if(!isCallerExternal()) {
+        return original_class_getClassMethod(cls, name);
+    }
+
+    Method result = original_class_getClassMethod(cls, name);
+
+    if([_shadow isAddrRestricted:(__bridge const void *)cls]
+    || [_shadow isAddrRestricted:(void *)result]
+    || [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)]) {
+        return NULL;
+    }
+
+    return result;
+}
+
+// Private libobjc export (Swift runtime); resolved at install.
+static IMP (*original_method_getImplementationAndName)(Method m, SEL* nameOut);
+static IMP replaced_method_getImplementationAndName(Method m, SEL* nameOut) {
+    if(!isCallerExternal()) {
+        return original_method_getImplementationAndName(m, nameOut);
+    }
+
+    IMP result = original_method_getImplementationAndName(m, nameOut);
+
+    if([_shadow isAddrRestricted:(void *)m] || [_shadow isAddrRestricted:(void *)result]) {
+        if(nameOut) {
+            *nameOut = NULL;
+        }
+
+        return NULL;
+    }
+
+    return result;
+}
+
+static IMP (*original_class_getMethodImplementation_stret)(Class cls, SEL name);
+static IMP replaced_class_getMethodImplementation_stret(Class cls, SEL name) {
+    if(!isCallerExternal()) {
+        return original_class_getMethodImplementation_stret(cls, name);
+    }
+
+    IMP result = original_class_getMethodImplementation_stret(cls, name);
+
+    if([_shadow isAddrRestricted:(__bridge const void *)cls] || [_shadow isAddrRestricted:(void *)result]) {
+        return NULL;
+    }
+
+    return result;
+}
+
+static Class* (*original_objc_copyClassesForImage)(const char* image, unsigned int* outCount);
+static Class* replaced_objc_copyClassesForImage(const char* image, unsigned int* outCount) {
+    if(!isCallerExternal()) {
+        return original_objc_copyClassesForImage(image, outCount);
+    }
+
+    if([_shadow isProtectedImagePath:@(image)]) {
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    return original_objc_copyClassesForImage(image, outCount);
+}
+
+static const char** (*original_objc_copyClassNamesForImageHeader)(const struct mach_header* mh, unsigned int* outCount);
+static const char** replaced_objc_copyClassNamesForImageHeader(const struct mach_header* mh, unsigned int* outCount) {
+    if(!isCallerExternal()) {
+        return original_objc_copyClassNamesForImageHeader(mh, outCount);
+    }
+
+    if(!mh || [_shadow isAddrRestricted:mh]) {
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    return original_objc_copyClassNamesForImageHeader(mh, outCount);
+}
+
+// --- objc_setHook_getImageName / objc_setHook_getClass (plan Wave 3): the
+// chained-hook SPIs hand out the PREVIOUS hook as outOldValue — a detector
+// chaining through it would reach the native implementation and observe true
+// image names/classes for protected images. Untrusted callers get a stable
+// filtered proxy instead (never the native predecessor); trusted
+// platform-runtime callers (libobjc/libSystem) pass through. The native
+// predecessors are captured at install through the original setters, which
+// are then restored as the current hooks so the class_getImageName /
+// objc_getClass hot paths stay on the native implementations until a
+// detector actually sets a hook.
+
+static BOOL (*shdw_native_getImageName)(Class cls, const char** outImageName);
+static BOOL (*shdw_native_getClass)(const char* name, Class* outClass);
+
+// True when the caller of the current hook is the platform runtime itself
+// (libobjc / libSystem) — those may chain their own hooks and must see the
+// real predecessor.
+static BOOL shdw_caller_is_platform_runtime(void) {
+    const char* callerPath = dyld_image_path_containing_address(__builtin_extract_return_addr(__builtin_return_address(0)));
+
+    if(!callerPath) {
+        return NO;
+    }
+
+    NSString* lower = [[NSString stringWithUTF8String:callerPath] lowercaseString];
+    return [lower containsString:@"libobjc"] || [lower containsString:@"libsystem"];
+}
+
+static BOOL shdw_getImageName_proxy(Class cls, const char** outImageName) {
+    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+        return NO;
+    }
+
+    return shdw_native_getImageName ? shdw_native_getImageName(cls, outImageName) : NO;
+}
+
+static BOOL shdw_getClass_proxy(const char* name, Class* outClass) {
+    Class result = Nil;
+
+    if(!shdw_native_getClass || !shdw_native_getClass(name, &result)) {
+        return NO;
+    }
+
+    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return NO;
+    }
+
+    if(outClass) {
+        *outClass = result;
+    }
+
+    return YES;
+}
+
+static void (*original_objc_setHook_getImageName)(objc_hook_getImageName newValue, objc_hook_getImageName* outOldValue);
+static void replaced_objc_setHook_getImageName(objc_hook_getImageName newValue, objc_hook_getImageName* outOldValue) {
+    if(!isCallerExternal() || shdw_caller_is_platform_runtime()) {
+        return original_objc_setHook_getImageName(newValue, outOldValue);
+    }
+
+    // Untrusted: install their hook (chain preserved), hand out the proxy.
+    objc_hook_getImageName previous = NULL;
+    original_objc_setHook_getImageName(newValue, &previous);
+
+    if(outOldValue) {
+        *outOldValue = shdw_getImageName_proxy;
+    }
+}
+
+static void (*original_objc_setHook_getClass)(objc_hook_getClass newValue, objc_hook_getClass* outOldValue);
+static void replaced_objc_setHook_getClass(objc_hook_getClass newValue, objc_hook_getClass* outOldValue) {
+    if(!isCallerExternal() || shdw_caller_is_platform_runtime()) {
+        return original_objc_setHook_getClass(newValue, outOldValue);
+    }
+
+    objc_hook_getClass previous = NULL;
+    original_objc_setHook_getClass(newValue, &previous);
+
+    if(outOldValue) {
+        *outOldValue = shdw_getClass_proxy;
+    }
+}
+
 // NXMapGet/NXHashGet hooks removed (plan Wave 1a): dead class-hiding path —
 // internal runtime callers are exempt by C0-2 classification and the hooks
 // had broad runtime interference for no reachable detector surface.
@@ -399,5 +643,63 @@ void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
 
     if(enumerateClassesPtr) {
         MSHookFunction(enumerateClassesPtr, replaced_objc_enumerateClasses, (void **) &original_objc_enumerateClasses);
+    }
+
+    // Method metadata (plan Wave 3).
+    MSHookFunction(class_copyMethodList, replaced_class_copyMethodList, (void **) &original_class_copyMethodList);
+    MSHookFunction(class_getInstanceMethod, replaced_class_getInstanceMethod, (void **) &original_class_getInstanceMethod);
+    MSHookFunction(class_getClassMethod, replaced_class_getClassMethod, (void **) &original_class_getClassMethod);
+
+    void* methodImplAndNamePtr = dlsym(RTLD_DEFAULT, "_method_getImplementationAndName");
+
+    if(methodImplAndNamePtr) {
+        MSHookFunction(methodImplAndNamePtr, replaced_method_getImplementationAndName, (void **) &original_method_getImplementationAndName);
+    }
+
+    void* stretPtr = dlsym(RTLD_DEFAULT, "class_getMethodImplementation_stret");
+
+    if(stretPtr) {
+        MSHookFunction(stretPtr, replaced_class_getMethodImplementation_stret, (void **) &original_class_getMethodImplementation_stret);
+    }
+
+    void* copyClassesForImagePtr = dlsym(RTLD_DEFAULT, "objc_copyClassesForImage");
+
+    if(copyClassesForImagePtr) {
+        MSHookFunction(copyClassesForImagePtr, replaced_objc_copyClassesForImage, (void **) &original_objc_copyClassesForImage);
+    }
+
+    void* copyClassNamesForImageHeaderPtr = dlsym(RTLD_DEFAULT, "objc_copyClassNamesForImageHeader");
+
+    if(copyClassNamesForImageHeaderPtr) {
+        MSHookFunction(copyClassNamesForImageHeaderPtr, replaced_objc_copyClassNamesForImageHeader, (void **) &original_objc_copyClassNamesForImageHeader);
+    }
+
+    // Chained-hook SPIs (plan Wave 3): capture the native predecessors and
+    // restore them as the current hooks (hot paths stay native); untrusted
+    // setters get the filtered proxies.
+    void* setHookGetImageNamePtr = dlsym(RTLD_DEFAULT, "objc_setHook_getImageName");
+
+    if(setHookGetImageNamePtr) {
+        MSHookFunction(setHookGetImageNamePtr, replaced_objc_setHook_getImageName, (void **) &original_objc_setHook_getImageName);
+
+        objc_hook_getImageName native = NULL;
+        objc_hook_getImageName restore = NULL;
+
+        original_objc_setHook_getImageName(shdw_getImageName_proxy, &native);
+        shdw_native_getImageName = native;
+        original_objc_setHook_getImageName(native, &restore);
+    }
+
+    void* setHookGetClassPtr = dlsym(RTLD_DEFAULT, "objc_setHook_getClass");
+
+    if(setHookGetClassPtr) {
+        MSHookFunction(setHookGetClassPtr, replaced_objc_setHook_getClass, (void **) &original_objc_setHook_getClass);
+
+        objc_hook_getClass native = NULL;
+        objc_hook_getClass restore = NULL;
+
+        original_objc_setHook_getClass(shdw_getClass_proxy, &native);
+        shdw_native_getClass = native;
+        original_objc_setHook_getClass(native, &restore);
     }
 }
