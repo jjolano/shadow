@@ -651,6 +651,11 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     }
 }
 
+// Forward decl: ObjC unmapped-notifier fan-out (defined with the notifier
+// machinery near the load-callback section); the remove-image handler drives
+// it for visible removals.
+static void shdw_objc_notify_unmapped(const char* path, const struct mach_header* mh);
+
 void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(!mh) {
         return;
@@ -689,6 +694,11 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
                 func(mh, vmaddr_slide);
             }
         }
+
+        // ObjC unmapped-notifier fan-out: the image was in the collection
+        // (visible), so its removal is reported — hidden images were never
+        // mapped to registrants and never reach this path.
+        shdw_objc_notify_unmapped([dylibToRemove[@"name"] fileSystemRepresentation], mh);
     }
 }
 
@@ -1043,27 +1053,163 @@ static void replaced_dyld_images_for_addresses(unsigned count, const void* addre
 
 // iOS 12+ SPI: register a per-load callback (replays currently-loaded images
 // at registration). Same fan-out pattern as the add_image registration above:
-// app callbacks are stored in slots, and our own handler — registered with
-// real dyld at hook-install time — delivers only visible images, so a hidden
-// image never reaches a detector's callback, even on later loads.
+// external (app/detector) callbacks are stored in slots, and our own handler —
+// registered with real dyld at hook-install time — delivers only visible
+// images, so a hidden image never reaches a detector's callback, even on
+// later loads. Shadow's own registrations pass through to real dyld (truth).
 //
 // TODO (device-test territory, NOT attempted): the fan-out below runs the
 // app's callbacks from Shadow's own handler frame — a detector can spot the
 // extra frame and, worse, Shadow is on the callback's stack while dyld holds
 // its load lock. The correct shape is authenticated tail-branch thunks that
 // jump into each app callback without an intervening Shadow frame. The same
-// applies to the bulk variant below. NOTE: these two hooks also keep their
-// pre-C0-2 caller gating (external → original) pending that rework; a
-// detector registering through them currently receives dyld's unfiltered
-// replay.
-// TODO (device-test territory, NOT attempted): _dyld_objc_notify_register /
-// objc_addLoadImageFunc — the objc-mapped notifier reaches every image; the
-// add-image registration surface above must be extended to it before those
-// SPIs can be considered hidden.
-// TODO (device-test territory, NOT attempted): _dyld_process_info_* /
-// process-snapshot APIs and NSAddImage / NSLookupSymbolInImage /
-// NSVersionOfRunTimeLibrary — direct image-list/symbol surfaces with no
-// prologue hook today; device prototypes required (private ABI).
+// applies to the bulk variant below and to the objc-notifier fan-out below.
+
+// --- ObjC-mapped notifiers (plan Wave 1c): _dyld_objc_notify_register
+// (vendored dyld_priv.h) and objc_addLoadImageFunc (iOS 15+, resolved by
+// name) deliver a callback for EVERY loaded image, including ones hidden
+// from the enumeration APIs. External registrants are stored in the slot
+// arrays below and driven from Shadow's own dyld-registered handlers, which
+// filter first — the same storage/fan-out shape as the register-for-image-
+// loads surface above. Shadow's own registrations pass through to the
+// originals (truth).
+//
+// NOTE: we deliberately do NOT register a handler with real
+// _dyld_objc_notify_register — dyld keeps a SINGLE objc-notifier slot and a
+// second registration would overwrite libobjc's, breaking the ObjC runtime.
+// The per-image fan-out is driven from the image-load handler (iOS 12+) and
+// the remove-image handler (unmapped) instead; on older OSes stored
+// callbacks still get the registration-time replay and later loads stay
+// invisible to them (fail soft). The ObjC runtime itself registered pre-hook
+// and keeps dyld's unfiltered notifier — only post-hook (detector)
+// registrants are captured, same limitation as the tail-branch thunk TODO
+// above.
+#define SHADOW_MAX_OBJC_NOTIFY_CBS 8
+static _dyld_objc_notify_mapped shdw_objc_mapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
+static _dyld_objc_notify_init shdw_objc_init_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
+static _dyld_objc_notify_unmapped shdw_objc_unmapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
+
+// objc_addLoadImageFunc (iOS 15+): function-pointer-only registration (no
+// context) — one flat callback list, mirroring the load-image slots above.
+typedef void (*shdw_objc_func_load_image)(const struct mach_header* mh);
+static shdw_objc_func_load_image shdw_objc_loadimage_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
+
+// Per-image fan-out for the objc notifier: mapped delivered as count=1 (the
+// callback contract is array-based; a one-element batch is valid), plus the
+// init and addLoadImageFunc callbacks. Driven from shdw_image_load_handler,
+// which already excluded hidden images.
+static void shdw_objc_notify_image(const struct mach_header* mh, const char* path) {
+    for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+        if(shdw_objc_mapped_cbs[i]) {
+            const struct mach_header* mhs[] = { mh };
+            const char* paths[] = { path };
+            shdw_objc_mapped_cbs[i](1, paths, mhs);
+        }
+
+        if(shdw_objc_init_cbs[i]) {
+            // ponytail: fires at load-notifier time, not at initializer-run
+            // time (dyld's real init notifier fires later); close enough for
+            // visibility purposes, device-test territory if ordering matters.
+            shdw_objc_init_cbs[i](path, mh);
+        }
+
+        if(shdw_objc_loadimage_cbs[i]) {
+            shdw_objc_loadimage_cbs[i](mh);
+        }
+    }
+}
+
+// Unmapped fan-out, driven from shadowhook_dyld_updatelibs_r — only ever
+// called for images being removed from the collection (visible ones), so
+// hidden images never reach the unmapped callbacks.
+static void shdw_objc_notify_unmapped(const char* path, const struct mach_header* mh) {
+    for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+        if(shdw_objc_unmapped_cbs[i]) {
+            shdw_objc_unmapped_cbs[i](path, mh);
+        }
+    }
+}
+
+static void (*original_dyld_objc_notify_register)(_dyld_objc_notify_mapped mapped, _dyld_objc_notify_init init, _dyld_objc_notify_unmapped unmapped);
+static void replaced_dyld_objc_notify_register(_dyld_objc_notify_mapped mapped, _dyld_objc_notify_init init, _dyld_objc_notify_unmapped unmapped) {
+    // C0-2: Shadow's own registrations pass through to real dyld (truth);
+    // every other caller registers with the filtered replay. (Not forwarding
+    // external registrations also protects dyld's single objc-notifier slot —
+    // an external all-NULL registration would otherwise clobber libobjc's.)
+    if(!isCallerExternal()) {
+        return original_dyld_objc_notify_register(mapped, init, unmapped);
+    }
+
+    if(mapped) {
+        for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+            if(!shdw_objc_mapped_cbs[i]) {
+                shdw_objc_mapped_cbs[i] = mapped;
+                break;
+            }
+        }
+    }
+
+    if(init) {
+        for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+            if(!shdw_objc_init_cbs[i]) {
+                shdw_objc_init_cbs[i] = init;
+                break;
+            }
+        }
+    }
+
+    if(unmapped) {
+        for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+            if(!shdw_objc_unmapped_cbs[i]) {
+                shdw_objc_unmapped_cbs[i] = unmapped;
+                break;
+            }
+        }
+    }
+
+    // Replay the visible images to `mapped` now, mirroring dyld's
+    // registration-time replay (dyld replays only the mapped callback). dyld
+    // would further filter to objc images; passing every visible image is
+    // harmless — the callbacks tolerate non-objc entries.
+    if(mapped) {
+        NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+        NSUInteger count = MIN([_dyld_collection count], (NSUInteger) SHADOW_DYLD_MIRROR_CAPACITY);
+        const char* paths[SHADOW_DYLD_MIRROR_CAPACITY];
+        const struct mach_header* mhs[SHADOW_DYLD_MIRROR_CAPACITY];
+
+        for(NSUInteger i = 0; i < count; i++) {
+            NSDictionary* dylib = _dyld_collection[i];
+            mhs[i] = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
+            paths[i] = [dylib[@"name"] fileSystemRepresentation];
+        }
+
+        mapped((unsigned) count, paths, mhs);
+    }
+}
+
+static void (*original_objc_addLoadImageFunc)(shdw_objc_func_load_image func);
+static void replaced_objc_addLoadImageFunc(shdw_objc_func_load_image func) {
+    if(!isCallerExternal() || !func) {
+        return original_objc_addLoadImageFunc(func);
+    }
+
+    for(int i = 0; i < SHADOW_MAX_OBJC_NOTIFY_CBS; i++) {
+        if(!shdw_objc_loadimage_cbs[i]) {
+            shdw_objc_loadimage_cbs[i] = func;
+            break;
+        }
+    }
+
+    // Replay the visible images now (libobjc itself does not replay, but the
+    // other registration surfaces here do — a registrant sees the same
+    // visible set through every API).
+    NSArray* _dyld_collection = [_shdw_dyld_collection copy];
+
+    for(NSDictionary* dylib in _dyld_collection) {
+        func((struct mach_header *)[dylib[@"mach_header"] pointerValue]);
+    }
+}
+
 #define SHADOW_MAX_IMAGE_LOAD_CBS 8
 static void (*shdw_image_load_cbs[SHADOW_MAX_IMAGE_LOAD_CBS])(const struct mach_header* mh, const char* path, bool unloadable);
 static void shdw_image_load_handler(const struct mach_header* mh, const char* path, bool unloadable) {
@@ -1076,10 +1222,16 @@ static void shdw_image_load_handler(const struct mach_header* mh, const char* pa
             shdw_image_load_cbs[i](mh, path, unloadable);
         }
     }
+
+    // ObjC-mapped notifier fan-out (visible images only — the hidden check
+    // above already excluded protected images).
+    shdw_objc_notify_image(mh, path);
 }
 static void (*original_dyld_register_for_image_loads)(void (*func)(const struct mach_header* mh, const char* path, bool unloadable));
 static void replaced_dyld_register_for_image_loads(void (*func)(const struct mach_header* mh, const char* path, bool unloadable)) {
-    if(isCallerExternal() || !func) {
+    // C0-2: Shadow's own registrations (and NULL funcs) pass through to real
+    // dyld (truth); every other caller registers with the filtered fan-out.
+    if(!isCallerExternal() || !func) {
         return original_dyld_register_for_image_loads(func);
     }
 
@@ -1126,7 +1278,9 @@ static void shdw_bulk_load_handler(unsigned imageCount, const struct mach_header
 }
 static void (*original_dyld_register_for_bulk_image_loads)(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[]));
 static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned imageCount, const struct mach_header* mhs[], const char* paths[])) {
-    if(isCallerExternal() || !func) {
+    // C0-2: same polarity as the per-image variant above — internal passes
+    // through (truth), external registers with the filtered fan-out.
+    if(!isCallerExternal() || !func) {
         return original_dyld_register_for_bulk_image_loads(func);
     }
 
@@ -1150,6 +1304,120 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
     }
 
     func((unsigned) count, mhs, paths);
+}
+
+// --- Process-snapshot SPI (plan Wave 1c): _dyld_process_info_create /
+// _dyld_process_info_get_images / _dyld_process_info_destroy hand out an
+// opaque snapshot of the task's image list. The struct layout is NOT in the
+// vendored dyld_priv.h (macOS-only dyld_process_info.h; absent from the iOS
+// SDKs here), so a filtered rebuild is impossible — external callers get
+// dyld's documented "no process info" state (NULL create + zero count), a
+// failure path every caller must handle anyway. Truth for Shadow's own code.
+typedef struct _dyld_process_info* shdw_dyld_process_info_t;
+
+struct shdw_dyld_process_info_image {
+    uuid_t imageUUID;
+    const char* imagePath;
+    const struct mach_header* imageLoadAddress;
+    bool inSharedCache;
+};
+
+static shdw_dyld_process_info_t (*original_dyld_process_info_create)(task_t task, uint64_t timestamp, uint32_t* returnCount);
+static shdw_dyld_process_info_t replaced_dyld_process_info_create(task_t task, uint64_t timestamp, uint32_t* returnCount) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_create(task, timestamp, returnCount);
+    }
+
+    if(returnCount) {
+        *returnCount = 0;
+    }
+
+    return NULL;
+}
+
+static void (*original_dyld_process_info_get_images)(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* images, uint32_t* infoCount);
+static void replaced_dyld_process_info_get_images(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* images, uint32_t* infoCount) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_get_images(info, images, infoCount);
+    }
+
+    // External callers can only ever hold NULL handles (create is filtered
+    // above); the original would crash dereferencing NULL.
+    if(!info) {
+        return;
+    }
+
+    original_dyld_process_info_get_images(info, images, infoCount);
+}
+
+static void (*original_dyld_process_info_destroy)(shdw_dyld_process_info_t info);
+static void replaced_dyld_process_info_destroy(shdw_dyld_process_info_t info) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_destroy(info);
+    }
+
+    if(!info) {
+        return;
+    }
+
+    original_dyld_process_info_destroy(info);
+}
+
+// --- Legacy NS* image/symbol lookup APIs (plan Wave 1c): declared in the
+// SDK's mach-o/dyld.h but __API_UNAVAILABLE(ios) — resolved by name at
+// install and skipped silently on OSes that never exported them (same
+// discipline as the SJLJ-guarded _dyld_find_unwind_sections above).
+// NSSymbol is a typedef of void*; the originals are typed accordingly.
+
+// Same path policy as the collection gate in updatelibs / the dlopen
+// resolver: restricted by the ruleset OR a protected image name.
+static BOOL shdw_dyld_path_restricted(const char* path) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    NSString* p = [NSString stringWithUTF8String:path];
+    return [_shadow isPathRestricted:p options:@{kShadowRestrictionEnableResolve : @(NO)}] || [_shadow isProtectedImagePath:p];
+}
+
+static const struct mach_header* (*original_NSAddImage)(const char* image_name, uint32_t options);
+static const struct mach_header* replaced_NSAddImage(const char* image_name, uint32_t options) {
+    if(!isCallerExternal()) {
+        return original_NSAddImage(image_name, options);
+    }
+
+    if(shdw_dyld_path_restricted(image_name)) {
+        return NULL;
+    }
+
+    return original_NSAddImage(image_name, options);
+}
+
+static void* (*original_NSLookupSymbolInImage)(const struct mach_header* image, const char* symbolName, uint32_t options);
+static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, const char* symbolName, uint32_t options) {
+    if(!isCallerExternal()) {
+        return original_NSLookupSymbolInImage(image, symbolName, options);
+    }
+
+    if(!image || [_shadow isAddrRestricted:image]) {
+        return NULL;
+    }
+
+    return original_NSLookupSymbolInImage(image, symbolName, options);
+}
+
+static int32_t (*original_NSVersionOfRunTimeLibrary)(const char* libraryName);
+static int32_t replaced_NSVersionOfRunTimeLibrary(const char* libraryName) {
+    if(!isCallerExternal()) {
+        return original_NSVersionOfRunTimeLibrary(libraryName);
+    }
+
+    // -1 is dyld's own "not found" signal for this API.
+    if(shdw_dyld_path_restricted(libraryName)) {
+        return -1;
+    }
+
+    return original_NSVersionOfRunTimeLibrary(libraryName);
 }
 
 // Real dyld function pointers for the modern load/bulk-registration SPIs,
@@ -1558,6 +1826,68 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
         }
 
         [hooks hookFunction:register_for_bulk_ptr withReplacement:replaced_dyld_register_for_bulk_image_loads outOldPtr:(void **) &original_dyld_register_for_bulk_image_loads];
+    }
+
+    // ObjC-mapped notifier SPIs (plan Wave 1c): _dyld_objc_notify_register
+    // (vendored dyld_priv.h; libdyld export on modern iOS) and
+    // objc_addLoadImageFunc (iOS 15+; resolved by name — not in the vendored
+    // headers). Hooked so external registrants receive the filtered fan-out
+    // only (see the replacement bodies). No handler is registered with real
+    // _dyld_objc_notify_register here — dyld keeps a single objc-notifier
+    // slot and would overwrite libobjc's registration; the fan-out is driven
+    // from the image-load/remove-image handlers instead.
+    void* objc_notify_register_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_objc_notify_register"];
+
+    if(objc_notify_register_ptr) {
+        [hooks hookFunction:objc_notify_register_ptr withReplacement:replaced_dyld_objc_notify_register outOldPtr:(void **) &original_dyld_objc_notify_register];
+    }
+
+    void* objc_add_load_image_ptr = dlsym(RTLD_DEFAULT, "objc_addLoadImageFunc");
+
+    if(objc_add_load_image_ptr) {
+        [hooks hookFunction:objc_add_load_image_ptr withReplacement:replaced_objc_addLoadImageFunc outOldPtr:(void **) &original_objc_addLoadImageFunc];
+    }
+
+    // Process-snapshot SPI (plan Wave 1c): opaque handles; external callers
+    // get the NULL "no process info" state (see the replacement bodies).
+    // Resolved by name; skipped silently on OSes lacking the exports.
+    void* process_info_create_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_create"];
+
+    if(process_info_create_ptr) {
+        [hooks hookFunction:process_info_create_ptr withReplacement:replaced_dyld_process_info_create outOldPtr:(void **) &original_dyld_process_info_create];
+    }
+
+    void* process_info_get_images_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_get_images"];
+
+    if(process_info_get_images_ptr) {
+        [hooks hookFunction:process_info_get_images_ptr withReplacement:replaced_dyld_process_info_get_images outOldPtr:(void **) &original_dyld_process_info_get_images];
+    }
+
+    void* process_info_destroy_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_destroy"];
+
+    if(process_info_destroy_ptr) {
+        [hooks hookFunction:process_info_destroy_ptr withReplacement:replaced_dyld_process_info_destroy outOldPtr:(void **) &original_dyld_process_info_destroy];
+    }
+
+    // Legacy NS* image/symbol lookup APIs (plan Wave 1c): __API_UNAVAILABLE
+    // on iOS in the SDK, resolved by name — skipped silently on OSes that
+    // never exported them (modern iOS).
+    void* nsaddimage_ptr = dlsym(RTLD_DEFAULT, "NSAddImage");
+
+    if(nsaddimage_ptr) {
+        [hooks hookFunction:nsaddimage_ptr withReplacement:replaced_NSAddImage outOldPtr:(void **) &original_NSAddImage];
+    }
+
+    void* nslookupsymbol_ptr = dlsym(RTLD_DEFAULT, "NSLookupSymbolInImage");
+
+    if(nslookupsymbol_ptr) {
+        [hooks hookFunction:nslookupsymbol_ptr withReplacement:replaced_NSLookupSymbolInImage outOldPtr:(void **) &original_NSLookupSymbolInImage];
+    }
+
+    void* nsversion_ptr = dlsym(RTLD_DEFAULT, "NSVersionOfRunTimeLibrary");
+
+    if(nsversion_ptr) {
+        [hooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
     }
 }
 

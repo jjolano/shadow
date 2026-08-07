@@ -3,7 +3,7 @@
 %group shadowhook_UIApplication
 %hook UIApplication
 - (BOOL)canOpenURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"%@: %@", @"canOpenURL restricted", url);
         return NO;
     }
@@ -12,7 +12,7 @@
 }
 
 - (BOOL)openURL:(NSURL *)url {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"%@: %@", @"openURL restricted", url);
         return NO;
     }
@@ -24,7 +24,7 @@
 // LaunchServices for a restricted URL; the completion is delivered
 // asynchronously with NO, matching the async contract of the real API.
 - (void)openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenExternalURLOptionsKey, id> *)options completionHandler:(void (^)(BOOL success))completion {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"%@: %@", @"openURL:options: restricted", url);
 
         if(completion) {

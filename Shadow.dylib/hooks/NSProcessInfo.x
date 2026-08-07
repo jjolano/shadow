@@ -5,7 +5,7 @@
 - (NSDictionary *)environment {
     NSDictionary* result = %orig;
 
-    if(isCallerExternal() || !result) {
+    if(!isCallerExternal() || !result) {
         return result;
     }
 
@@ -54,7 +54,7 @@
 - (NSArray<NSString *> *)arguments {
     NSArray<NSString *>* result = %orig;
 
-    if(isCallerExternal() || !result || result.count == 0) {
+    if(!isCallerExternal() || !result || result.count == 0) {
         return result;
     }
 
@@ -95,7 +95,7 @@
 %group shadowhook_NSProcessInfo_fakemac
 %hook NSProcessInfo
 - (BOOL)isMacCatalystApp {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
@@ -104,7 +104,7 @@
 }
 
 - (BOOL)isiOSAppOnMac {
-    if(isCallerExternal()) {
+    if(!isCallerExternal()) {
         return %orig;
     }
 
