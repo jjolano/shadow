@@ -2,6 +2,12 @@
 
 #import "hooks.h"
 
+#import <unistd.h>
+
+// Forward declaration: shared post-success csops policy, defined in the
+// csops section below (used by the raw SYS_csops dispatch case).
+static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize);
+
 // Forwards an intercepted syscall() call with exact arguments. There is no
 // v-syscall, so a va_list can't be forwarded through a variadic `...`: the
 // trampoline re-reads the argument list and re-passes it with explicit
@@ -58,6 +64,50 @@ static long shdw_syscall_forward(int number, va_list args) {
             }
 
             return original_syscall(number, (const char *) a1, (int) a2);
+        }
+
+        case SYS_openat: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+
+            // openat only takes a mode when O_CREAT is set.
+            if(((int) a2) & O_CREAT) {
+                intptr_t a3 = va_arg(args, intptr_t);
+
+                return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3);
+            }
+
+            return original_syscall(number, (int) a1, (const char *) a2);
+        }
+
+        case SYS_fstatat:
+        case SYS_fstatat64: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int) a1, (const char *) a2, (struct stat *) a3, (int) a4);
+        }
+
+        case SYS_csops: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (pid_t) a1, (unsigned int) a2, (void *) a3, (size_t) a4);
+        }
+
+        case SYS_sysctl: {
+            intptr_t a1 = va_arg(args, intptr_t);
+            intptr_t a2 = va_arg(args, intptr_t);
+            intptr_t a3 = va_arg(args, intptr_t);
+            intptr_t a4 = va_arg(args, intptr_t);
+            intptr_t a5 = va_arg(args, intptr_t);
+            intptr_t a6 = va_arg(args, intptr_t);
+
+            return original_syscall(number, (int *) a1, (u_int) a2, (void *) a3, (size_t *) a4, (void *) a5, (size_t) a6);
         }
 
         case SYS_stat_extended:
@@ -124,6 +174,308 @@ static long shdw_syscall_forward(int number, va_list args) {
     }
 }
 
+// Minimal dirfd resolution for the raw *at syscalls — mirrors libc.x's
+// shdw_resolve_dirfd_path (which is static to that file): absolute paths
+// ignore dirfd; AT_FDCWD resolves against the cwd; other dirfds resolve via
+// F_GETPATH. Returns YES when the query must be denied (errno = ENOENT
+// set). Unresolvable-but-valid dir vnodes fail closed; invalid descriptors
+// replay the original so the kernel reports the genuine error.
+static BOOL shdw_raw_at_path_denied(int dirfd, const char* pathname) {
+    if(pathname == NULL || pathname[0] == '\0') {
+        return NO;
+    }
+
+    if(pathname[0] == '/') {
+        return [_shadow isCPathRestricted:pathname];
+    }
+
+    char parent[PATH_MAX];
+
+    if(dirfd == AT_FDCWD) {
+        if(!getcwd(parent, sizeof(parent))) {
+            errno = ENOENT;
+            return YES;
+        }
+    } else if(fcntl(dirfd, F_GETPATH, parent) == -1) {
+        struct stat st;
+
+        if(fstat(dirfd, &st) == 0 && S_ISDIR(st.st_mode)) {
+            // Valid directory vnode that can't be named: fail closed.
+            errno = ENOENT;
+            return YES;
+        }
+
+        // Invalid or non-directory descriptor: the kernel reports the
+        // genuine error (EBADF/ENOTDIR) — never synthesize one here.
+        return NO;
+    }
+
+    return [_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]
+        options:@{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]}];
+}
+
+// proc_pidpath is a stable libSystem export; declared here as in libc.x.
+extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+
+// Classifies a process as restricted (jailbreak daemon) by its executable
+// path — mirrors libc.x's shdw_proc_is_restricted (static there). When
+// proc_pidpath fails the process cannot be classified and is kept: denying
+// legitimate processes would corrupt the process count on stock devices.
+static BOOL shdw_raw_proc_is_restricted(pid_t pid) {
+    char path[PATH_MAX];
+
+    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+        return [_shadow isCPathRestricted:path];
+    }
+
+    return NO;
+}
+
+// Filtered KERN_PROC_ALL enumeration for raw SYS_sysctl — mirrors libc.x's
+// shdw_sysctl_proc_all (static there): two-phase size/full query with one
+// churn retry, restricted processes removed, self trace flags cleared,
+// size-only and short-buffer semantics preserved. Reentrancy-guarded: the
+// original_syscall calls below re-enter the (possibly __syscall-delegating)
+// dispatch, which must not re-apply this policy.
+static _Thread_local BOOL shdw_raw_sysctl_proc_all_in_progress = NO;
+
+static int shdw_raw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
+    int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
+
+    shdw_raw_sysctl_proc_all_in_progress = YES;
+
+    size_t capacity = 0;
+    int ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, NULL, &capacity, NULL, (size_t) 0);
+
+    if(ret != 0) {
+        shdw_raw_sysctl_proc_all_in_progress = NO;
+        return ret;  // kernel owns the error and *oldlenp
+    }
+
+    // Slack for process churn between the size and full queries.
+    capacity += sizeof(struct kinfo_proc) * 8;
+
+    struct kinfo_proc* procs = malloc(capacity);
+
+    if(!procs) {
+        errno = ENOMEM;
+        shdw_raw_sysctl_proc_all_in_progress = NO;
+        return -1;
+    }
+
+    size_t actual = capacity;
+    ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, procs, &actual, NULL, (size_t) 0);
+
+    if(ret != 0 && errno == ENOMEM) {
+        // Churn outgrew the first buffer: retry once with the kernel's size.
+        free(procs);
+        capacity = actual;
+        procs = malloc(capacity);
+
+        if(!procs) {
+            errno = ENOMEM;
+            shdw_raw_sysctl_proc_all_in_progress = NO;
+            return -1;
+        }
+
+        actual = capacity;
+        ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, procs, &actual, NULL, (size_t) 0);
+    }
+
+    if(ret != 0) {
+        free(procs);
+        shdw_raw_sysctl_proc_all_in_progress = NO;
+        return ret;
+    }
+
+    int count = (int)(actual / sizeof(struct kinfo_proc));
+    int out = 0;
+
+    for(int i = 0; i < count; i++) {
+        struct kinfo_proc* p = &procs[i];
+
+        if(p->kp_proc.p_pid == getpid()) {
+            // Never report our own trace flags.
+            p->kp_proc.p_flag &= ~P_TRACED;
+            p->kp_proc.p_flag &= ~P_SELECT;
+        } else if(shdw_raw_proc_is_restricted(p->kp_proc.p_pid)) {
+            continue;  // jailbreak daemon: removed from the list
+        }
+
+        if(out != i) {
+            procs[out] = procs[i];
+        }
+
+        out++;
+    }
+
+    size_t needed = (size_t) out * sizeof(struct kinfo_proc);
+
+    if(oldp == NULL) {
+        // Size-only query: report the filtered byte count.
+        *oldlenp = needed;
+        free(procs);
+        shdw_raw_sysctl_proc_all_in_progress = NO;
+        return 0;
+    }
+
+    if(*oldlenp < needed) {
+        // Short buffer: stock sysctl semantics (ENOMEM + required size).
+        *oldlenp = needed;
+        free(procs);
+        errno = ENOMEM;
+        shdw_raw_sysctl_proc_all_in_progress = NO;
+        return -1;
+    }
+
+    memcpy(oldp, procs, needed);
+    *oldlenp = needed;
+    free(procs);
+    shdw_raw_sysctl_proc_all_in_progress = NO;
+    return 0;
+}
+
+// Post-passthrough dispatch: inspection, policy, forwarding, and
+// after-success sanitization for the intercepted set. Shared by the syscall
+// and __syscall hooks; called only after the hook's own OR-chain passthrough
+// has run.
+static long shdw_syscall_dispatch(int number, va_list args) {
+    // Read the decision args from a COPY so the forward trampoline below
+    // still sees the full, unadvanced argument list.
+    va_list inspect;
+    va_copy(inspect, args);
+
+    // Policy args hoisted here, re-used after the forward for after-success
+    // sanitization.
+    pid_t csops_pid = 0;
+    unsigned int csops_ops = 0;
+    void* csops_useraddr = NULL;
+    size_t csops_usersize = 0;
+
+    int* sysctl_mib = NULL;
+    u_int sysctl_miblen = 0;
+    void* sysctl_oldp = NULL;
+    size_t* sysctl_oldlenp = NULL;
+
+    // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
+    // inspected — its first argument is a binary entries buffer, not a C
+    // string; it is still forwarded with its exact arity below.
+    if(!isCallerExternal()) {
+        if(number == SYS_csops) {
+            csops_pid = (pid_t) va_arg(inspect, intptr_t);
+            csops_ops = (unsigned int) va_arg(inspect, intptr_t);
+            csops_useraddr = (void *) va_arg(inspect, intptr_t);
+            csops_usersize = (size_t) va_arg(inspect, intptr_t);
+
+            // CS_OPS_MARKKILL on a process other than self: same policy as
+            // the csops hook — reject BEFORE the original runs (never
+            // execute-then-fail).
+            if(csops_ops == CS_OPS_MARKKILL && csops_pid != getpid()) {
+                errno = EBADEXEC;
+                va_end(inspect);
+                return -1;
+            }
+        } else if(number == SYS_openat
+        || number == SYS_fstatat
+        || number == SYS_fstatat64) {
+            int dirfd = (int) va_arg(inspect, intptr_t);
+            const char* pathname = va_arg(inspect, const char *);
+
+            // Same dirfd-aware path policy as the libc.x *at hooks.
+            if(shdw_raw_at_path_denied(dirfd, pathname)) {
+                va_end(inspect);
+                return -1;  // errno set by the helper
+            }
+        } else if(number == SYS_sysctl) {
+            sysctl_mib = (int *) va_arg(inspect, intptr_t);
+            sysctl_miblen = (u_int) va_arg(inspect, intptr_t);
+            sysctl_oldp = (void *) va_arg(inspect, intptr_t);
+            sysctl_oldlenp = (size_t *) va_arg(inspect, intptr_t);
+
+            // KERN_PROC_ALL process enumeration: same filtered-list policy
+            // as the libc.x sysctl hook (static to that file).
+            if(sysctl_mib && sysctl_miblen >= 3
+            && sysctl_mib[0] == CTL_KERN
+            && sysctl_mib[1] == KERN_PROC
+            && sysctl_mib[2] == KERN_PROC_ALL
+            && (sysctl_miblen == 3 || (sysctl_miblen == 4 && sysctl_mib[3] == 0))) {
+                if(!shdw_raw_sysctl_proc_all_in_progress) {
+                    int proc_ret = shdw_raw_sysctl_proc_all(sysctl_oldp, sysctl_oldlenp);
+                    va_end(inspect);
+                    return proc_ret;
+                }
+            }
+        } else if(number == SYS_open
+        || number == SYS_chdir
+        || number == SYS_access
+        || number == SYS_execve
+        || number == SYS_chroot
+        || number == SYS_rmdir
+        || number == SYS_stat
+        || number == SYS_lstat
+        || number == SYS_getattrlist
+        || number == SYS_open_extended
+        || number == SYS_stat_extended
+        || number == SYS_lstat_extended
+        || number == SYS_stat64
+        || number == SYS_lstat64
+        || number == SYS_stat64_extended
+        || number == SYS_lstat64_extended
+        || number == SYS_readlink
+        || number == SYS_pathconf) {
+            const char* pathname = va_arg(inspect, const char *);
+
+            if([_shadow isCPathRestricted:pathname]) {
+                errno = ENOENT;
+                va_end(inspect);
+                return -1;
+            }
+        }
+    }
+
+    // Handle ptrace (anti debug)
+    if(number == SYS_ptrace) {
+        int _request = va_arg(inspect, int);
+
+        if(_request == PT_DENY_ATTACH) {
+            va_end(inspect);
+            return 0;
+        }
+    }
+
+    va_end(inspect);
+
+    long result = shdw_syscall_forward(number, args);
+
+    // After-success policies — same as the typed hooks, only on valid
+    // success and only for app-origin callers.
+    if(!isCallerExternal()) {
+        if(number == SYS_csops && result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
+            return -1;
+        }
+
+        if(number == SYS_sysctl && result == 0 && sysctl_mib && sysctl_miblen == 4
+        && sysctl_mib[0] == CTL_KERN
+        && sysctl_mib[1] == KERN_PROC
+        && sysctl_mib[2] == KERN_PROC_PID
+        && sysctl_mib[3] == getpid()
+        && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
+            // Remove trace flags from our own process record.
+            struct kinfo_proc* p = (struct kinfo_proc *) sysctl_oldp;
+
+            if(p->kp_proc.p_flag & P_TRACED) {
+                p->kp_proc.p_flag &= ~P_TRACED;
+            }
+
+            if(p->kp_proc.p_flag & P_SELECT) {
+                p->kp_proc.p_flag &= ~P_SELECT;
+            }
+        }
+    }
+
+    return result;
+}
+
 static long replaced_syscall(int number, ...) {
     // Non-intercepted numbers pass through WITHOUT reading any vararg
     // (reading absent varargs is UB). Apple's syscall(2) is a
@@ -154,7 +506,12 @@ static long replaced_syscall(int number, ...) {
     && number != SYS_stat64_extended
     && number != SYS_lstat64_extended
     && number != SYS_readlink
-    && number != SYS_pathconf) {
+    && number != SYS_pathconf
+    && number != SYS_openat
+    && number != SYS_fstatat
+    && number != SYS_fstatat64
+    && number != SYS_csops
+    && number != SYS_sysctl) {
         return original_syscall(number);
     }
 
@@ -162,59 +519,50 @@ static long replaced_syscall(int number, ...) {
 
     va_list args;
     va_start(args, number);
+    long result = shdw_syscall_dispatch(number, args);
+    va_end(args);
 
-    // Read the decision args from a COPY so the forward trampoline below
-    // still sees the full, unadvanced argument list.
-    va_list inspect;
-    va_copy(inspect, args);
+    return result;
+}
 
-    // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
-    // inspected — its first argument is a binary entries buffer, not a C
-    // string; it is still forwarded with its exact arity below.
-    if(!isCallerExternal()) {
-        if(number == SYS_open
-        || number == SYS_chdir
-        || number == SYS_access
-        || number == SYS_execve
-        || number == SYS_chroot
-        || number == SYS_rmdir
-        || number == SYS_stat
-        || number == SYS_lstat
-        || number == SYS_getattrlist
-        || number == SYS_open_extended
-        || number == SYS_stat_extended
-        || number == SYS_lstat_extended
-        || number == SYS_stat64
-        || number == SYS_lstat64
-        || number == SYS_stat64_extended
-        || number == SYS_lstat64_extended
-        || number == SYS_readlink
-        || number == SYS_pathconf) {
-            const char* pathname = va_arg(inspect, const char *);
-
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                va_end(inspect);
-                va_end(args);
-                return -1;
-            }
-        }
+// __syscall is libsystem_kernel's twin of syscall(2): same register-passing
+// convention and (number, ...) shape. Hooked with the same dispatcher.
+// Runtime-resolved; skipped cleanly when absent.
+static long (*original___syscall)(int number, ...);
+static long replaced___syscall(int number, ...) {
+    if(number != SYS_ptrace
+    && number != SYS_open
+    && number != SYS_chdir
+    && number != SYS_access
+    && number != SYS_execve
+    && number != SYS_chroot
+    && number != SYS_rmdir
+    && number != SYS_stat
+    && number != SYS_lstat
+    && number != SYS_getattrlist
+    && number != SYS_open_extended
+    && number != SYS_stat_extended
+    && number != SYS_lstat_extended
+    && number != SYS_access_extended
+    && number != SYS_stat64
+    && number != SYS_lstat64
+    && number != SYS_stat64_extended
+    && number != SYS_lstat64_extended
+    && number != SYS_readlink
+    && number != SYS_pathconf
+    && number != SYS_openat
+    && number != SYS_fstatat
+    && number != SYS_fstatat64
+    && number != SYS_csops
+    && number != SYS_sysctl) {
+        return original___syscall(number);
     }
 
-    // Handle ptrace (anti debug)
-    if(number == SYS_ptrace) {
-        int _request = va_arg(inspect, int);
+    NSLog(@"%@: %d", @"__syscall", number);
 
-        if(_request == PT_DENY_ATTACH) {
-            va_end(inspect);
-            va_end(args);
-            return 0;
-        }
-    }
-
-    va_end(inspect);
-
-    long result = shdw_syscall_forward(number, args);
+    va_list args;
+    va_start(args, number);
+    long result = shdw_syscall_dispatch(number, args);
     va_end(args);
 
     return result;
@@ -294,6 +642,12 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 void shadowhook_syscall(HKSubstitutor* hooks) {
     MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
     MSHookFunction(csops, replaced_csops, (void **) &original_csops);
+
+    // Runtime-resolve __syscall; skipped cleanly when absent.
+    void* sym___syscall = MSFindSymbol(NULL, "___syscall");
+    if(sym___syscall) {
+        MSHookFunction(sym___syscall, replaced___syscall, (void **) &original___syscall);
+    }
 
     // d4001001
     // const uint8_t bytes_svc80[] = {
