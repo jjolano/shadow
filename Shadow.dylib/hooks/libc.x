@@ -1308,36 +1308,156 @@ static int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
     return original_ptrace(_request, _pid, _addr, _data);
 }
 
+// libproc.h isn't shipped in the theos SDK; declare the one symbol we need
+// (proc_pidpath is a stable libSystem export).
+extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+
 static int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
-static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
-    if(namelen == 4
-    && name[0] == CTL_KERN
-    && name[1] == KERN_PROC
-    && name[2] == KERN_PROC_ALL
-    && name[3] == 0) {
-        // Running process check.
-        *oldlenp = 0;
+
+// Classifies a process as restricted (jailbreak daemon) by its executable
+// path. proc_pidpath is visible for other pids on iOS; when it fails (EPERM)
+// the process can't be classified and is kept — denying legitimate processes
+// would corrupt the process count on stock devices.
+static BOOL shdw_proc_is_restricted(pid_t pid) {
+    char path[PATH_MAX];
+
+    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+        return [_shadow isCPathRestricted:path];
+    }
+
+    return NO;
+}
+
+// KERN_PROC_ALL read: returns the process list with restricted processes
+// removed and the list compacted, using stock sysctl size semantics
+// (size-only query → filtered byte count in *oldlenp; short buffer → ENOMEM
+// with the required size in *oldlenp). The MIB is normalized to the canonical
+// 3 elements before touching the kernel.
+static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
+    int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
+
+    size_t capacity = 0;
+    int ret = original_sysctl(procMIB, 3, NULL, &capacity, NULL, 0);
+
+    if(ret != 0) {
+        return ret;  // kernel owns the error and *oldlenp
+    }
+
+    // Slack for process churn between the size and full queries.
+    capacity += sizeof(struct kinfo_proc) * 8;
+
+    struct kinfo_proc* procs = malloc(capacity);
+
+    if(!procs) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    size_t actual = capacity;
+    ret = original_sysctl(procMIB, 3, procs, &actual, NULL, 0);
+
+    if(ret != 0 && errno == ENOMEM) {
+        // Churn outgrew the first buffer: retry once with the kernel's size.
+        free(procs);
+        capacity = actual;
+        procs = malloc(capacity);
+
+        if(!procs) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        actual = capacity;
+        ret = original_sysctl(procMIB, 3, procs, &actual, NULL, 0);
+    }
+
+    if(ret != 0) {
+        free(procs);
+        return ret;
+    }
+
+    int count = (int)(actual / sizeof(struct kinfo_proc));
+    int out = 0;
+
+    for(int i = 0; i < count; i++) {
+        struct kinfo_proc* p = &procs[i];
+
+        if(p->kp_proc.p_pid == getpid()) {
+            // Never report our own trace flags.
+            p->kp_proc.p_flag &= ~P_TRACED;
+            p->kp_proc.p_flag &= ~P_SELECT;
+        } else if(shdw_proc_is_restricted(p->kp_proc.p_pid)) {
+            continue;  // jailbreak daemon: removed from the list
+        }
+
+        if(out != i) {
+            procs[out] = procs[i];
+        }
+
+        out++;
+    }
+
+    size_t needed = (size_t) out * sizeof(struct kinfo_proc);
+
+    if(oldp == NULL) {
+        // Size-only query: report the filtered byte count.
+        *oldlenp = needed;
+        free(procs);
         return 0;
     }
 
-    int ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
+    if(*oldlenp < needed) {
+        // Short buffer: stock sysctl semantics (ENOMEM + required size).
+        *oldlenp = needed;
+        free(procs);
+        errno = ENOMEM;
+        return -1;
+    }
 
-    if(ret == 0
-    && name[0] == CTL_KERN
-    && name[1] == KERN_PROC
-    && name[2] == KERN_PROC_PID
-    && name[3] == getpid()) {
-        // Remove trace flag.
-        if(oldp) {
-            struct kinfo_proc *p = ((struct kinfo_proc *) oldp);
+    memcpy(oldp, procs, needed);
+    *oldlenp = needed;
+    free(procs);
+    return 0;
+}
 
-            if(p->kp_proc.p_flag & P_TRACED) {
-                p->kp_proc.p_flag &= ~P_TRACED;
-            }
+static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    if(name == NULL || namelen == 0) {
+        return original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
+    }
 
-            if(p->kp_proc.p_flag & P_SELECT) {
-                p->kp_proc.p_flag &= ~P_SELECT;
-            }
+    // KERN_PROC_ALL is a 3-element MIB (some callers append a legacy 4th
+    // zero element). Every index into name[] is bounds-checked.
+    BOOL isProcAll = name[0] == CTL_KERN
+        && namelen >= 3
+        && name[1] == KERN_PROC
+        && name[2] == KERN_PROC_ALL
+        && (namelen == 3 || (namelen == 4 && name[3] == 0));
+
+    BOOL isOwnPid = name[0] == CTL_KERN
+        && namelen == 4
+        && name[1] == KERN_PROC
+        && name[2] == KERN_PROC_PID
+        && name[3] == getpid();
+
+    int ret;
+
+    if(isProcAll && newp == NULL && oldlenp != NULL) {
+        ret = shdw_sysctl_proc_all(oldp, oldlenp);
+    } else {
+        ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
+    }
+
+    // Remove trace flags from our own process record — only on valid success
+    // and only when the caller's buffer actually carries the record.
+    if(ret == 0 && isOwnPid && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
+        struct kinfo_proc* p = (struct kinfo_proc*) oldp;
+
+        if(p->kp_proc.p_flag & P_TRACED) {
+            p->kp_proc.p_flag &= ~P_TRACED;
+        }
+
+        if(p->kp_proc.p_flag & P_SELECT) {
+            p->kp_proc.p_flag &= ~P_SELECT;
         }
     }
 
