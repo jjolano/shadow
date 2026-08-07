@@ -163,7 +163,17 @@
 
     if(urlschemes) {
         [queue addOperationWithBlock:^{
-            set_urlschemes = [NSSet setWithArray:urlschemes];
+            // C0-3: normalize schemes to lowercase at load (match time also
+            // lowercases the query — see isSchemeRestricted:) so a
+            // case-variant probe ("Cydia" vs "cydia") can never bypass a
+            // scheme rule.
+            NSMutableSet* lower = [NSMutableSet setWithCapacity:[urlschemes count]];
+
+            for(NSString* scheme in urlschemes) {
+                [lower addObject:[scheme lowercaseString]];
+            }
+
+            set_urlschemes = [lower copy];
         }];
     }
 
@@ -408,6 +418,12 @@
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
-    return [set_urlschemes containsObject:scheme];
+    if(!scheme || [scheme length] == 0) {
+        return NO;
+    }
+
+    // C0-3: schemes are normalized to lowercase at load (_compile); lowercase
+    // the query here too so a case-variant probe can never bypass a rule.
+    return [set_urlschemes containsObject:[scheme lowercaseString]];
 }
 @end
