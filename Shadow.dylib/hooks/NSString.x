@@ -101,25 +101,83 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (NSUInteger)completePathIntoString:(NSString * _Nullable *)outputName caseSensitive:(BOOL)flag matchesIntoArray:(NSArray<NSString *> * _Nullable *)outputArray filterTypes:(NSArray<NSString *> *)filterTypes {
-    if(isCallerExternal() || ![_shadow isPathRestricted:self]) {
-        return %orig;
-    }
-
+    // Always consult the original — a partial-prefix probe can return
+    // restricted candidates even when the receiver itself is benign. The
+    // candidates are filtered afterwards and the common completion is
+    // recomputed from the survivors.
     NSUInteger result = %orig;
 
-    if(result && ([_shadow isPathRestricted:self] || (outputName && [_shadow isPathRestricted:*outputName]))) {
-        if(outputName) {
-            *outputName = nil;
+    if(isCallerExternal()) {
+        return result;
+    }
+
+    NSArray<NSString *>* matches = (outputArray && *outputArray) ? *outputArray : nil;
+
+    if(result > 0 && matches.count > 0) {
+        NSMutableArray<NSString *>* result_filtered = [NSMutableArray arrayWithCapacity:matches.count];
+
+        for(NSString* candidate in matches) {
+            if(![_shadow isPathRestricted:candidate]) {
+                [result_filtered addObject:candidate];
+            }
+        }
+
+        if(result_filtered.count == 0) {
+            if(outputArray) {
+                *outputArray = @[];
+            }
+
+            if(outputName) {
+                *outputName = nil;
+            }
+
+            return 0;
         }
 
         if(outputArray) {
-            *outputArray = nil;
+            *outputArray = result_filtered;
         }
-        
-        return 0;
+
+        if(outputName) {
+            // Recompute the safe common completion (longest common prefix,
+            // honoring the case-sensitivity flag) from the survivors.
+            NSString* prefix = result_filtered[0];
+
+            for(NSUInteger i = 1; i < result_filtered.count && prefix.length > 0; i++) {
+                prefix = [prefix commonPrefixWithString:result_filtered[i] options:(flag ? 0 : NSCaseInsensitiveSearch)];
+            }
+
+            *outputName = prefix;
+        }
+
+        return result_filtered.count;
     }
 
     return result;
+}
+
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if(!isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
+        if(error) {
+            *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:path url:nil];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
+    if(!isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
+        if(error) {
+            *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
+        }
+
+        return NO;
+    }
+
+    return %orig;
 }
 
 - (NSString *)stringByResolvingSymlinksInPath {
@@ -193,6 +251,43 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
         }
 
         return;
+    }
+
+    %orig;
+}
+
++ (void)loadFromHTMLWithRequest:(NSURLRequest *)request options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
+    if(!isCallerExternal() && request && [_shadow isURLRestricted:[request URL]]) {
+        if(completionHandler) {
+            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                completionHandler(nil, nil, error);
+            });
+        }
+
+        return;
+    }
+
+    %orig;
+}
+
++ (void)loadFromHTMLWithString:(NSString *)string options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
+    if(!isCallerExternal()) {
+        // String loads carry their base URL in the options dictionary;
+        // NSBaseURLDocumentOption isn't declared in the SDK stubs, so the
+        // runtime constant is used literally.
+        NSURL* baseURL = options[@"NSBaseURLDocumentOption"];
+
+        if(baseURL && [_shadow isURLRestricted:baseURL]) {
+            if(completionHandler) {
+                NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                    completionHandler(nil, nil, error);
+                });
+            }
+
+            return;
+        }
     }
 
     %orig;
