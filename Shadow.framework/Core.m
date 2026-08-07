@@ -23,6 +23,16 @@ static const NSTimeInterval kDecisionCacheTTL = 2.0;
 // _Thread_local is exactly right: the only recursion is same-thread.
 static _Thread_local BOOL shdw_resolvingPath = NO;
 
+// C0-2: Shadow-internal read scope flag. Shadow-owned code wraps its own
+// filesystem reads in SHADOW_INTERNAL_SCOPE (see Core.h) so the tweak's own
+// hooks never filter them. A depth counter (not a BOOL) so nested scopes —
+// e.g. Backend._checkRulesetChanges → _reloadRulesets → _loadRulesets —
+// stay busy until the outermost scope exits. Exposed to the dylib hook layer
+// through the exported class methods in @implementation Shadow below;
+// _Thread_local because scopes are strictly same-thread (the hook that reads
+// the flag runs on the thread that entered the scope).
+static _Thread_local NSUInteger shdw_internal_busy = 0;
+
 // Restricted roots that never hold legitimate app data: the rootless /var/jb
 // fast-path, its canonical target (/var/jb is a symlink to
 // /private/preboot/<hash>/jb on rootless) and rooted /cores crash dumps.
@@ -59,6 +69,20 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 + (void)load {
     decisionCache = [NSCache new];
     [decisionCache setCountLimit:512];
+}
+
++ (void)shdwEnterInternalRead {
+    shdw_internal_busy += 1;
+}
+
++ (void)shdwExitInternalRead {
+    if(shdw_internal_busy > 0) {
+        shdw_internal_busy -= 1;
+    }
+}
+
++ (BOOL)shdwIsInternalRead {
+    return shdw_internal_busy > 0;
 }
 
 - (instancetype)init {

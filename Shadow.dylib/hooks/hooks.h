@@ -70,20 +70,35 @@ static inline Shadow* shdw_shadow_instance(void) {
 
 #define _shadow                 shdw_shadow_instance()
 
-// Caller classification for isCallerExternal(): YES = the caller is OUTSIDE the
-// app bundle (tweak dylib, system libraries); NO = the caller is app code
-// (app executable + embedded frameworks, including embedded detectors).
-// This is the predicate -[Shadow isAddrExternal:] applied per call — the
-// app-bundle images are few and each span is fixed once its image is loaded,
-// so dyld.x keeps a snapshot of their spans instead of answering every call
-// with a dyld image-list walk (the old per-return-address table thrashed:
-// ~260 distinct call sites vs 128 direct-mapped slots, and every add/remove
-// image forced a wave of recomputes). Snapshot is double-buffered: the
-// writer rebuilds the inactive copy and publishes it with one release store;
-// readers take one acquire load and never see a torn buffer. dyld.x
-// refreshes the snapshot at install — before any hook group installs — and
-// on every add/remove image callback, so the published set is never stale in
-// practice.
+// C0-2 caller classification for isCallerExternal(): YES = this caller must
+// be shown FILTERED results (app code, embedded/static detectors, system
+// frameworks, Foundation forwarding acting on their behalf); NO = Shadow's
+// own code, which sees truth. The old model ("any image outside the app
+// bundle is a tweak → truth") let every system frame and embedded detector
+// bypass filtering; the new model grants truth ONLY to explicit Shadow
+// internals: a return address inside one of Shadow's own images
+// (Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, RootBridge,
+// substrate/substitute/ellekit) or a thread inside an internal read scope
+// (SHADOW_INTERNAL_SCOPE, which sets the +[Shadow shdwIsInternalRead] flag —
+// see Core.h; the flag lives in the framework because a C TLS symbol cannot
+// cross the framework's -exported_symbols_list).
+// This is the predicate -[Shadow isAddrExternal:] applied per call. The
+// Shadow-owned images are few and each span is fixed once its image is
+// loaded, so dyld.x keeps a snapshot of their spans instead of answering
+// every call with a dyld image-list walk (the old per-return-address table
+// thrashed: ~260 distinct call sites vs 128 direct-mapped slots, and every
+// add/remove image forced a wave of recomputes). Snapshot is
+// double-buffered: the writer rebuilds the inactive copy and publishes it
+// with one release store; readers take one acquire load and never see a
+// torn buffer. dyld.x refreshes the snapshot at install — before any hook
+// group installs — and on every add/remove image callback, so the published
+// set is never stale in practice.
+// NOTE (span-collection lag): the collector in dyld.x still gathers the app
+// bundle's image spans; another lane repoints it to the Shadow-owned images
+// above. Until then the published set contains none of Shadow's own images,
+// so the internal-read flag (SHADOW_INTERNAL_SCOPE) is the operative truth
+// signal for Shadow-owned code — empty spans classify everyone else as
+// external, which is the safe (fail-closed) direction.
 #define SHADOW_OWN_IMAGE_MAX 16
 
 typedef struct {
@@ -99,21 +114,39 @@ extern shdw_own_ranges_t _shdw_own_ranges_a;
 extern shdw_own_ranges_t _shdw_own_ranges_b;
 extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
 
+// C0-2 internal-scope primitives for dylib code that needs truth (jailbreakd
+// probes, own reads). SHADOW_INTERNAL_SCOPE itself is defined in Core.h and
+// works from either binary; these helpers are the dylib-side equivalents of
+// the macro's enter/exit halves for finer-grained control.
+static inline void shdw_enter_internal(void) {
+    [Shadow shdwEnterInternalRead];
+}
+
+static inline void shdw_exit_internal(void) {
+    [Shadow shdwExitInternalRead];
+}
+
 static inline BOOL shdw_caller_is_external(const void* ra) {
     uintptr_t a = (uintptr_t) ra;
     shdw_own_ranges_t* ranges = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
 
     for(uint32_t i = 0; i < ranges->count; i++) {
         if(a >= ranges->range[i].base && a < ranges->range[i].end) {
-            return NO;  // inside the app bundle: app code
+            return NO;  // inside a Shadow-owned image: Shadow's own code
         }
     }
 
-    return YES;  // outside the app bundle: tweak/system
+    // Outside every Shadow-owned span. The span snapshot may lag the
+    // Shadow-owned set (see note above), so also grant truth to a thread in
+    // an internal read scope — that is what keeps the framework's own
+    // ruleset/database reads working while the dyld.x collector is repointed.
+    return ![Shadow shdwIsInternalRead];
 }
 
-// Rebuilds the app-bundle image spans from the current dyld image list.
+// Rebuilds the Shadow-owned image spans from the current dyld image list.
 // Called by dyld.x at install and from its add/remove image callbacks.
+// (The collector currently still gathers app-bundle spans; a dyld.x lane
+// repoints it to the Shadow-owned set.)
 void shdw_own_ranges_refresh(void);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))

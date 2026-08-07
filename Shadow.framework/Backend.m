@@ -41,6 +41,15 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 }
 
 - (NSArray<RulesetEngine *>*)_loadRulesets {
+    // C0-2: these are Shadow's own file reads (dir listing, plist loads,
+    // mtime stats). Without the internal scope the tweak's own
+    // NSFileManager/NSDictionary hooks would filter them — and once
+    // /Library/Shadow is itself a restricted path (C0-5), Shadow would deny
+    // itself its own rulesets. The scope flag is read by the hook layer via
+    // +[Shadow shdwIsInternalRead]; nested scopes (via _reloadRulesets) are
+    // depth-counted in Core.m.
+    SHADOW_INTERNAL_SCOPE;
+
     NSMutableArray<RulesetEngine *>* result = [NSMutableArray new];
     NSMutableArray<NSNumber *>* mtimes = [NSMutableArray new];
 
@@ -95,6 +104,11 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 }
 
 - (void)_checkRulesetChanges {
+    // C0-2: the dir/file mtime stats are Shadow's own reads — see
+    // _loadRulesets. _reloadRulesets nests a _loadRulesets scope; the depth
+    // counter in Core.m keeps the scope busy until this one exits.
+    SHADOW_INTERNAL_SCOPE;
+
     double now = [NSDate timeIntervalSinceReferenceDate];
     double last = atomic_load_explicit(&lastRulesetCheck, memory_order_acquire);
 
