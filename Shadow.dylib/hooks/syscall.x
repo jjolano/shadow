@@ -638,6 +638,149 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
     return ret;
 }
 
+// csops_audittoken: same policy as csops (MARKKILL pre-reject, status
+// clear-only and CDHASH hiding after success). The audit token is passed
+// through untouched — the policy keys on the pid, and the token is how the
+// kernel identifies the target.
+static int (*original_csops_audittoken)(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token);
+static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr, size_t usersize, audit_token_t* token) {
+    if(!isCallerExternal() && ops == CS_OPS_MARKKILL && pid != getpid()) {
+        errno = EBADEXEC;
+        return -1;
+    }
+
+    int ret = original_csops_audittoken(pid, ops, useraddr, usersize, token);
+
+    if(!isCallerExternal() && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+        return -1;
+    }
+
+    return ret;
+}
+
+// --- sysctlbyname/__sysctlbyname: kern.proc.* routed through the same
+// filtering as the sysctl hook. The sysctl body lives in libc.x's
+// antidebugging group and is static to that file, so the minimal KERN_PROC
+// handling is re-implemented here (mirroring that group):
+// "kern.proc.all" answers the filtered process list (via
+// shdw_raw_sysctl_proc_all, same two-phase enumeration), and a
+// KERN_PROC_PID query for self has its tracing flags cleared after a
+// successful original call. ---
+
+static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen, int (*original)(const char*, void*, size_t*, void*, size_t)) {
+    if(!isCallerExternal() && name) {
+        if(strcmp(name, "kern.proc.all") == 0) {
+            return shdw_raw_sysctl_proc_all(oldp, oldlenp);
+        }
+
+        static const char procPidPrefix[] = "kern.proc.pid.";
+
+        if(strncmp(name, procPidPrefix, sizeof(procPidPrefix) - 1) == 0
+        && atoi(name + sizeof(procPidPrefix) - 1) == getpid()) {
+            int ret = original(name, oldp, oldlenp, newp, newlen);
+
+            // Remove trace flags from our own process record — only on
+            // valid success and only when the buffer carries the record.
+            if(ret == 0 && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
+                struct kinfo_proc* p = (struct kinfo_proc *) oldp;
+
+                if(p->kp_proc.p_flag & P_TRACED) {
+                    p->kp_proc.p_flag &= ~P_TRACED;
+                }
+
+                if(p->kp_proc.p_flag & P_SELECT) {
+                    p->kp_proc.p_flag &= ~P_SELECT;
+                }
+            }
+
+            return ret;
+        }
+    }
+
+    return original(name, oldp, oldlenp, newp, newlen);
+}
+
+static int (*original_sysctlbyname)(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+static int replaced_sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    return shdw_sysctlbyname_policy(name, oldp, oldlenp, newp, newlen, original_sysctlbyname);
+}
+
+static int (*original___sysctlbyname)(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+static int replaced___sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    return shdw_sysctlbyname_policy(name, oldp, oldlenp, newp, newlen, original___sysctlbyname);
+}
+
+// --- _NSGetEnviron: returns the ADDRESS of the caller's environ variable.
+// Hooked to return a pointer to OUR OWN filtered snapshot — libc's environ
+// pointer is never modified (callers may write through the returned
+// pointer; ours is private storage). The snapshot is rebuilt on every call
+// so variables added by setenv since the last call stay visible.
+// ponytail: the filter mirrors the libc.x envvar group's getenv policy
+// (DYLD_INSERT_LIBRARIES + safe-mode flags); full DYLD_*/PATH sanitization
+// lives in that group, and direct reads of the `environ` symbol are that
+// lane's surface, not covered here. ---
+
+extern char*** _NSGetEnviron(void);
+
+static BOOL shdw_environ_var_hidden(const char* var) {
+    static const char* hidden[] = {
+        "DYLD_INSERT_LIBRARIES=",
+        "_MSSafeMode=",
+        "_SafeMode=",
+        "_SubstituteSafeMode=",
+        NULL
+    };
+
+    for(int i = 0; hidden[i]; i++) {
+        if(strncmp(var, hidden[i], strlen(hidden[i])) == 0) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static char*** (*original_NSGetEnviron)(void);
+static char*** replaced_NSGetEnviron(void) {
+    if(isCallerExternal()) {
+        return original_NSGetEnviron();
+    }
+
+    size_t count = 0;
+
+    while(environ[count]) {
+        count++;
+    }
+
+    static char** filtered = NULL;
+    static size_t filtered_capacity = 0;
+
+    if(filtered_capacity < count + 1) {
+        char** grown = realloc(filtered, (count + 1) * sizeof(char *));
+
+        if(!grown) {
+            return original_NSGetEnviron();
+        }
+
+        filtered = grown;
+        filtered_capacity = count + 1;
+    }
+
+    size_t out = 0;
+
+    for(size_t i = 0; i < count; i++) {
+        if(shdw_environ_var_hidden(environ[i])) {
+            continue;
+        }
+
+        filtered[out++] = environ[i];
+    }
+
+    filtered[out] = NULL;
+
+    return &filtered;
+}
+
 // todo: research on "supervised syscalls"
 void shadowhook_syscall(HKSubstitutor* hooks) {
     MSHookFunction(syscall, replaced_syscall, (void **) &original_syscall);
@@ -647,6 +790,27 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     void* sym___syscall = MSFindSymbol(NULL, "___syscall");
     if(sym___syscall) {
         MSHookFunction(sym___syscall, replaced___syscall, (void **) &original___syscall);
+    }
+
+    // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
+    void* sym_misc = MSFindSymbol(NULL, "_sysctlbyname");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_sysctlbyname, (void **) &original_sysctlbyname);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "___sysctlbyname");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced___sysctlbyname, (void **) &original___sysctlbyname);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "_csops_audittoken");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_csops_audittoken, (void **) &original_csops_audittoken);
+    }
+
+    sym_misc = MSFindSymbol(NULL, "_NSGetEnviron");
+    if(sym_misc) {
+        MSHookFunction(sym_misc, replaced_NSGetEnviron, (void **) &original_NSGetEnviron);
     }
 
     // d4001001
