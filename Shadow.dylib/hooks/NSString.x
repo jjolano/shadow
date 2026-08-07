@@ -163,12 +163,18 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 }
 
 - (instancetype)initWithURL:(NSURL *)url options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict error:(NSError * _Nullable *)error {
-    if(!isCallerExternal() && [_shadow isURLRestricted:url]) {
-        if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
-        }
+    if(!isCallerExternal()) {
+        // NSReadAccessURLDocumentOption isn't declared in the SDK's UIKit
+        // stubs; the runtime constant is the literal string.
+        NSURL* readAccessURL = options[@"NSReadAccessURLDocumentOption"];
 
-        return nil;
+        if([_shadow isURLRestricted:url] || (readAccessURL && [_shadow isURLRestricted:readAccessURL])) {
+            if(error) {
+                *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            }
+
+            return nil;
+        }
     }
 
     return %orig;
@@ -177,7 +183,13 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (void)loadFromHTMLWithFileURL:(NSURL *)fileURL options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
     if(!isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
         if(completionHandler) {
-            completionHandler(nil, nil, nil);
+            // Async contract: blocked-path failures are never delivered
+            // inline — dispatch the (nil, nil, error) result to a background
+            // queue exactly like the WebKit loader would.
+            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                completionHandler(nil, nil, error);
+            });
         }
 
         return;
