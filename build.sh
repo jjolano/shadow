@@ -66,14 +66,18 @@ build_rooted() {
 # build legacy ver. (armv7/armv7s, iOS 9+; 32-bit deps staged separately)
 build_legacy() {
     stage_deps legacy
-    cp control /tmp/shadow-control.bak
+    # PID-unique backup: the legacy pass mutates control in place; a fixed
+    # /tmp path collides when two builds run in parallel (CI + local, or two
+    # sessions). Restore on exit so a failed pass never leaves control dirty.
+    local BAK=/tmp/shadow-control.bak.$$
+    trap "mv $BAK control 2>/dev/null || true" EXIT
+    cp control "$BAK"
     sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
 
     make clean &&
     ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
     cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm-legacy.deb
 
-    mv /tmp/shadow-control.bak control
     rm -rf $THEOS/lib/Shadow.framework
 }
 
