@@ -8,7 +8,10 @@
 // compile path, and every restore is type-validated so a bad cache can never
 // crash a lookup.
 NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
-static const NSInteger kShadowRulesetCacheVersion = 1;
+// Bumped to 2: v2 archives the reduced RulesetInfo-only payload instead of
+// the full payload graph (old v1 cache files are rejected by the version
+// check and rebuilt).
+static const NSInteger kShadowRulesetCacheVersion = 2;
 
 @interface RulesetEngine () {
     // Compiled lookup tables (built in _compile, mirroring set_whitelist etc.):
@@ -235,6 +238,21 @@ static id shdwCacheUnwrapNil(id value) {
 // plist's mtime and size. Never fails the compile path: unreadable or
 // read-only rulesets dirs just skip caching.
 + (void)_writeCompiledCacheForRuleset:(RulesetEngine *)ruleset url:(NSURL *)url {
+    // After _compile the full payload is dead weight: the compiled lookup
+    // tables are the working set (their strings are shared with the payload,
+    // so nothing is lost by releasing the container shells), and the only
+    // remaining consumer is Backend's load log, which reads the small
+    // RulesetInfo sub-dict. Archive that reduced payload — the old cache
+    // embedded the whole FileSystemStructure twice (raw + compiled) — and
+    // shrink the live ruleset's retained payload to match, releasing the
+    // MB-scale container shells of a generated SystemRules for the process
+    // lifetime. A ruleset without RulesetInfo keeps an empty payload, which
+    // Backend logs identically (its objectForKey: then returns nil, the same
+    // as before).
+    NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
+    NSDictionary* reducedPayload = info ? @{@"RulesetInfo" : info} : @{};
+    [ruleset setPayloadDictionary:reducedPayload];
+
     NSString* plistPath = [url path];
     NSDictionary* plistAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:plistPath error:nil];
 
@@ -246,7 +264,7 @@ static id shdwCacheUnwrapNil(id value) {
         @"version" : @(kShadowRulesetCacheVersion),
         @"mtime" : @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate]),
         @"size" : @([plistAttrs fileSize]),
-        @"payload" : [ruleset payloadDictionary],
+        @"payload" : reducedPayload,
         @"schemes" : ruleset->set_urlschemes ?: [NSNull null],
         @"whitelist" : ruleset->set_whitelist ?: [NSNull null],
         @"blacklist" : ruleset->set_blacklist ?: [NSNull null],

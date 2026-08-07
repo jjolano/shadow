@@ -613,7 +613,20 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
 // path): a real dlopen takes the dyld lock + handle lookup per image per
 // lookup. A handle stays valid while its image is loaded; both callbacks
 // below invalidate the whole table because indices shift on any add/remove.
+// The handles retain their images, so invalidation stashes them and defers
+// the dlclose to the next replaced_dlsym entry — dlclose inside the dyld
+// add/remove callback would re-enter dyld with its notifier lock held.
 static void* _shdw_dyld_handles[SHADOW_DYLD_MIRROR_CAPACITY];
+
+// Handles stashed by invalidation, awaiting dlclose. At most one table's
+// worth ever accumulates between drains: lookups (the only refillers of the
+// table) run inside replaced_dlsym, which drains the stash first.
+static void* _shdw_dyld_pending_handles[SHADOW_DYLD_MIRROR_CAPACITY];
+static uint32_t _shdw_dyld_pending_handles_count = 0;
+
+// Re-entrancy guard for the drain: a dlclose below can run image destructors
+// that call dlsym; a nested drain would double-dlclose the same handles.
+static BOOL _shdw_dyld_pending_draining = NO;
 
 static void shdw_dyld_handles_invalidate(void) {
     // Replay runs before any hook is installed — nothing can have written
@@ -622,7 +635,37 @@ static void shdw_dyld_handles_invalidate(void) {
         return;
     }
 
+    // Stash, don't dlclose: see the comment above. The table is zeroed here,
+    // so lookups re-dlopen on miss exactly as before.
+    for(uint32_t i = 0; i < SHADOW_DYLD_MIRROR_CAPACITY; i++) {
+        if(_shdw_dyld_handles[i]) {
+            if(_shdw_dyld_pending_handles_count < SHADOW_DYLD_MIRROR_CAPACITY) {
+                _shdw_dyld_pending_handles[_shdw_dyld_pending_handles_count++] = _shdw_dyld_handles[i];
+            }
+            // else: overflow guard — drop the handle (leaks the pin) rather
+            // than over-run the fixed-capacity stash.
+        }
+    }
+
     memset(_shdw_dyld_handles, 0, sizeof(_shdw_dyld_handles));
+}
+
+static void shdw_dyld_handles_drain_pending(void) {
+    if(_shdw_dyld_pending_draining || !_shdw_dyld_pending_handles_count) {
+        return;
+    }
+
+    _shdw_dyld_pending_draining = YES;
+
+    // Live count as loop terminator: a dlclose below can fire the
+    // remove-image callback, which stashes freshly-invalidated handles past
+    // the current index; the loop picks them up instead of stranding them.
+    for(uint32_t i = 0; i < _shdw_dyld_pending_handles_count; i++) {
+        dlclose(_shdw_dyld_pending_handles[i]);
+    }
+
+    _shdw_dyld_pending_handles_count = 0;
+    _shdw_dyld_pending_draining = NO;
 }
 
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
@@ -775,7 +818,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info);
 static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
     { "_dyld_get_image_header", (void *)&replaced_dyld_get_image_header },
-    { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_get_image_header_containing_address },
+    { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
     { "_dyld_get_image_name", (void *)&replaced_dyld_get_image_name },
     { "_dyld_get_image_slide", (void *)&replaced_dyld_get_image_slide },
     { "_dyld_get_image_uuid", (void *)&replaced_dyld_get_image_uuid },
@@ -873,6 +916,11 @@ static void* shdw_dlsym_caller_relative(int callerIdx, void* handle, const char*
 }
 
 static void* replaced_dlsym(void* handle, const char* symbol) {
+    // Deferred dlclose of stashed memoized handles (see
+    // shdw_dyld_handles_invalidate): this is outside the dyld add/remove
+    // callback, so dlclose can't re-enter dyld with its notifier lock held.
+    shdw_dyld_handles_drain_pending();
+
     // Each loader operation clears the thread's error state up front.
     _shdw_dyld_error_tls = NULL;
 
