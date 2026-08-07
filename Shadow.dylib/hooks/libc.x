@@ -4,8 +4,46 @@
 #import <stdlib.h>
 #import <os/lock.h>
 
+// Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
+// path is a detector, whatever it calls itself — renamed, obfuscated, or
+// statically linked into the app binary (which has no image name at all for
+// the watcher's name scan to see). High-signal set: stock devices never have
+// these paths and app code never touches them except to probe.
+static BOOL shdw_is_jb_probe(const char* path) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    return strstr(path, "/var/jb") != NULL
+        || strstr(path, "/var/binpack") != NULL
+        || strstr(path, "/jbroot") != NULL
+        || strstr(path, "/.installed_") != NULL
+        || strstr(path, "/.bootstrapped_") != NULL
+        || strstr(path, "/var/lib/dpkg") != NULL
+        || strstr(path, "/var/lib/apt") != NULL
+        || strstr(path, "/usr/lib/libhooker.dylib") != NULL
+        || strstr(path, "/usr/lib/libsubstrate.dylib") != NULL
+        || strstr(path, "/usr/lib/libsubstitute") != NULL
+        || strstr(path, "/usr/lib/libellekit.dylib") != NULL
+        || strstr(path, "/usr/lib/pspawn_payload") != NULL
+        || strstr(path, "/usr/lib/tweakloader.dylib") != NULL
+        || strstr(path, "/usr/lib/libjailbreak.dylib") != NULL
+        || strstr(path, "MobileSubstrate.dylib") != NULL;
+}
+
+// Trip on the attempt, before any restricted-path filtering: the probe is the
+// caller touching a JB indicator, independent of how the filter answers it.
+// isCallerTweak() reads the return address, so it must expand inline at the
+// hook site — never route it through a helper function.
+#define SHADOW_TRIP(pathname, kind) \
+    if(!isCallerTweak() && shdw_is_jb_probe(pathname)) { \
+        shdw_detector_detected(kind); \
+    }
+
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
+    SHADOW_TRIP(pathname, "access");
+
     int result = original_access(pathname, mode);
 
     if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
@@ -348,6 +386,8 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
 
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
+    SHADOW_TRIP(pathname, "stat");
+
     int result = original_stat(pathname, buf);
 
     if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:pathname]) {
@@ -364,6 +404,8 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
 
 static int (*original_lstat)(const char* pathname, struct stat* buf);
 static int replaced_lstat(const char* pathname, struct stat* buf) {
+    SHADOW_TRIP(pathname, "lstat");
+
     if(isCallerTweak()) {
         return original_lstat(pathname, buf);
     }
@@ -411,6 +453,8 @@ static int replaced_fstat(int fd, struct stat* buf) {
 
 static int (*original_fstatat)(int dirfd, const char* pathname, struct stat* buf, int flags);
 static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
+    SHADOW_TRIP(pathname, "fstatat");
+
     if(isCallerTweak()) {
         return original_fstatat(dirfd, pathname, buf, flags);
     }
@@ -449,6 +493,8 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
 
 static int (*original_faccessat)(int dirfd, const char* pathname, int mode, int flags);
 static int replaced_faccessat(int dirfd, const char* pathname, int mode, int flags) {
+    SHADOW_TRIP(pathname, "faccessat");
+
     if(isCallerTweak()) {
         return original_faccessat(dirfd, pathname, mode, flags);
     }
@@ -634,6 +680,8 @@ static int replaced_closedir(DIR* dirp) {
 
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
+    SHADOW_TRIP(pathname, "fopen");
+
     if(isCallerTweak() || ![_shadow isCPathRestricted:pathname]) {
         return original_fopen(pathname, mode);
     }
@@ -676,6 +724,8 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
 
 static int (*original_getattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
 static int replaced_getattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    SHADOW_TRIP(path, "getattrlist");
+
     int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 
     if(result != -1 && !isCallerTweak() && [_shadow isCPathRestricted:path]) {
@@ -932,6 +982,8 @@ static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
+    SHADOW_TRIP(pathname, "open");
+
     mode_t mode = 0;
 
     // open() only receives a mode argument when O_CREAT is set; reading the
@@ -940,7 +992,9 @@ static int replaced_open(const char *pathname, int oflag, ...) {
     if(oflag & O_CREAT) {
         va_list args;
         va_start(args, oflag);
-        mode = va_arg(args, mode_t);
+        // mode_t is unsigned short: through `...` it promotes to int, so read
+        // the promoted slot (va_arg on the un-promoted type is UB per clang).
+        mode = (mode_t) va_arg(args, int);
         va_end(args);
     }
 
@@ -965,13 +1019,17 @@ static int replaced_open(const char *pathname, int oflag, ...) {
 
 static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
+    SHADOW_TRIP(pathname, "openat");
+
     mode_t mode = 0;
 
     // openat() only receives a mode argument when O_CREAT is set (see open).
     if(oflag & O_CREAT) {
         va_list args;
         va_start(args, oflag);
-        mode = va_arg(args, mode_t);
+        // mode_t is unsigned short: through `...` it promotes to int, so read
+        // the promoted slot (va_arg on the un-promoted type is UB per clang).
+        mode = (mode_t) va_arg(args, int);
         va_end(args);
     }
 
