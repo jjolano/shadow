@@ -31,14 +31,20 @@ static BOOL _shdw_watcher_started = NO;      // single-shot replay guard
 static BOOL _shdw_objc_backend = NO;         // ElleKit/Substrate/Substitute available
 static BOOL _shdw_pref_urlscheme = NO;
 static BOOL _shdw_pref_foundation = NO;
+static BOOL _shdw_pref_filesystem = NO;
+static BOOL _shdw_pref_fakemac = NO;
+static BOOL _shdw_pref_hideapps = NO;
 static BOOL _shdw_dyld_installed = NO;       // set when the ctor installed the group
 static BOOL _shdw_symlookup_installed = NO;
 static BOOL _shdw_dyldextra_installed = NO;
 static BOOL _shdw_uikit_installed = NO;      // UIKit groups installed
 static BOOL _shdw_escalation_installed = NO; // detector escalation handled
+static BOOL _shdw_tier2_installed = NO;      // ObjC groups installed on first probe
 static HKSubstitutor* _shdw_watcher_main = nil;   // subMain
 static HKSubstitutor* _shdw_watcher_cfunc = nil;  // subCFunc
 static HKSubstitutor* _shdw_watcher_inline = nil; // subInline (inline escalation)
+
+static void shdw_install_tier2(void);  // defined with shdw_detector_detected
 
 // shdw_early_image_add resolves the image header to its path via the PUBLIC
 // dyld_image_path_containing_address (declared in vendor/apple/dyld_priv.h,
@@ -135,10 +141,63 @@ void shdw_detector_detected(const char* reason) {
         shadowhook_dyld_extra(_shdw_watcher_inline ?: _shdw_watcher_main);
     }
 
+    // Tier-2: the ObjC-method swizzle groups install on detector evidence,
+    // not at spawn — clean apps never pay their per-call cost or crash
+    // surface. The probe that triggered this was already answered by the
+    // tier-1 C groups (a detector's first check is a path probe), so hiding
+    // isn't delayed for the initiating check.
+    shdw_install_tier2();
+
     [_shdw_watcher_cfunc executeHooks];
     [_shdw_watcher_main executeHooks];
     #else
     (void) reason;
+    #endif
+}
+
+// Tier-2 lazy activation (see shdw_detector_detected). Prefs still gate which
+// groups install; only the timing moves. UIKit classes (UIApplication,
+// UIImage) stay gated on UIKit load via the watcher, not here.
+static void shdw_install_tier2(void) {
+    #ifdef hookkit_h
+    if(_shdw_tier2_installed || !_shdw_objc_backend) {
+        return;
+    }
+
+    _shdw_tier2_installed = YES;
+
+    if(_shdw_pref_filesystem) {
+        NSLog(@"+ filesystem (ObjC groups installed on probe)");
+
+        shadowhook_NSFileManager(_shdw_watcher_main);
+        shadowhook_NSFileHandle(_shdw_watcher_main);
+        shadowhook_NSFileVersion(_shdw_watcher_main);
+        shadowhook_NSFileWrapper(_shdw_watcher_main);
+    }
+
+    if(_shdw_pref_foundation) {
+        NSLog(@"+ foundation (ObjC groups installed on probe)");
+
+        shadowhook_NSArray(_shdw_watcher_main);
+        shadowhook_NSDictionary(_shdw_watcher_main);
+        shadowhook_NSBundle(_shdw_watcher_main);
+        shadowhook_NSString(_shdw_watcher_main);
+        shadowhook_NSURL(_shdw_watcher_main);
+        shadowhook_NSData(_shdw_watcher_main);
+        shadowhook_NSThread(_shdw_watcher_main);
+    }
+
+    if(_shdw_pref_fakemac) {
+        shadowhook_NSProcessInfo_fakemac(_shdw_watcher_main);
+    }
+
+    if(_shdw_pref_hideapps) {
+        shadowhook_LSApplicationWorkspace(_shdw_watcher_main);
+    }
+
+    [_shdw_watcher_main executeHooks];
+    #else
+    (void) 0;
     #endif
 }
 
@@ -359,6 +418,9 @@ void shdw_detector_detected(const char* reason) {
     _shdw_objc_backend = objcBackendAvailable;
     _shdw_pref_urlscheme = [prefs_load[@"Hook_URLScheme"] boolValue];
     _shdw_pref_foundation = [prefs_load[@"Hook_Foundation"] boolValue];
+    _shdw_pref_filesystem = [prefs_load[@"Hook_Filesystem"] boolValue];
+    _shdw_pref_fakemac = [prefs_load[@"Hook_FakeMac"] boolValue];
+    _shdw_pref_hideapps = [prefs_load[@"Hook_HideApps"] boolValue];
 
     // The watcher only runs when a hook group needs it: the UIKit-class
     // groups (urlscheme/foundation prefs + an ObjC backend) or late-detector
@@ -396,14 +458,10 @@ void shdw_detector_detected(const char* reason) {
     if([prefs_load[@"Hook_Filesystem"] boolValue]) {
         NSLog(@"+ filesystem");
 
+        // C-level file hooks are tier 1 (they are also the probe tripwire).
+        // The ObjC groups (NSFileManager etc.) install on detector evidence —
+        // see shdw_install_tier2.
         shadowhook_libc(subCFunc);
-
-        if(objcBackendAvailable) {
-            shadowhook_NSFileManager(subMain);
-            shadowhook_NSFileHandle(subMain);
-            shadowhook_NSFileVersion(subMain);
-            shadowhook_NSFileWrapper(subMain);
-        }
     }
 
     if([prefs_load[@"Hook_URLScheme"] boolValue]) {
@@ -456,19 +514,10 @@ void shdw_detector_detected(const char* reason) {
     }
 
     if([prefs_load[@"Hook_Foundation"] boolValue]) {
+        // Installed by shdw_install_tier2 on detector evidence (tier 2); the
+        // ObjC swizzles are the per-call cost we don't pay in clean apps.
+        // UIImage additionally needs UIKit loaded (watcher, at UIKit load).
         NSLog(@"+ foundation");
-
-        if(objcBackendAvailable) {
-            shadowhook_NSArray(subMain);
-            shadowhook_NSDictionary(subMain);
-            shadowhook_NSBundle(subMain);
-            shadowhook_NSString(subMain);
-            shadowhook_NSURL(subMain);
-            shadowhook_NSData(subMain);
-            // UIImage needs UIKit loaded; installed by shdw_early_image_add
-            // (see the Hook_URLScheme block above for why).
-            shadowhook_NSThread(subMain);
-        }
     }
 
     if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
@@ -507,11 +556,8 @@ void shdw_detector_detected(const char* reason) {
     }
 
     if([prefs_load[@"Hook_FakeMac"] boolValue]) {
+        // Installed by shdw_install_tier2 on detector evidence (tier 2).
         NSLog(@"+ m1");
-
-        if(objcBackendAvailable) {
-            shadowhook_NSProcessInfo_fakemac(subMain);
-        }
     }
 
     if([prefs_load[@"Hook_Syscall"] boolValue]) {
@@ -527,11 +573,8 @@ void shdw_detector_detected(const char* reason) {
     }
 
     if([prefs_load[@"Hook_HideApps"] boolValue]) {
+        // Installed by shdw_install_tier2 on detector evidence (tier 2).
         NSLog(@"+ apps");
-
-        if(objcBackendAvailable) {
-            shadowhook_LSApplicationWorkspace(subMain);
-        }
     }
 
     if([prefs_load[@"Hook_Sandbox"] boolValue]) {
