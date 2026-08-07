@@ -114,13 +114,181 @@ static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* 
 
 static Class (*original_NSClassFromString)(NSString* aClassName);
 static Class replaced_NSClassFromString(NSString* aClassName) {
-    Class result = original_NSClassFromString(aClassName);
-
-    if(isCallerExternal() || ![_shadow isAddrRestricted:(__bridge const void *)result]) {
-        return result;
+    // C0-2: Shadow's own code sees truth; every other caller is filtered.
+    if(!isCallerExternal()) {
+        return original_NSClassFromString(aClassName);
     }
 
-    return nil;
+    Class result = original_NSClassFromString(aClassName);
+
+    if([_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return nil;
+    }
+
+    return result;
+}
+
+// --- Class lookup / enumeration (plan Wave 1c): the result's image is
+// classified, so classes whose data lives in a protected image (Shadow,
+// HookKit, RootBridge, libSandy, substrate/substitute/ellekit) never resolve
+// for external callers. objc_getRequiredClass is deliberately NOT hooked: it
+// aborts the process when the class is missing, so a suppressed class would
+// turn a benign miss into a hard crash (its fatal contract) — and its abort
+// semantics make it a useless probe for a detector that wants a clean
+// yes/no signal.
+
+static Class (*original_objc_getClass)(const char* name);
+static Class replaced_objc_getClass(const char* name) {
+    if(!isCallerExternal()) {
+        return original_objc_getClass(name);
+    }
+
+    Class result = original_objc_getClass(name);
+
+    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return Nil;
+    }
+
+    return result;
+}
+
+static Class (*original_objc_lookUpClass)(const char* name);
+static Class replaced_objc_lookUpClass(const char* name) {
+    if(!isCallerExternal()) {
+        return original_objc_lookUpClass(name);
+    }
+
+    Class result = original_objc_lookUpClass(name);
+
+    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return Nil;
+    }
+
+    return result;
+}
+
+static Class (*original_objc_getMetaClass)(const char* name);
+static Class replaced_objc_getMetaClass(const char* name) {
+    if(!isCallerExternal()) {
+        return original_objc_getMetaClass(name);
+    }
+
+    Class result = original_objc_getMetaClass(name);
+
+    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+        return Nil;
+    }
+
+    return result;
+}
+
+static int (*original_objc_getClassList)(Class* buffer, int bufferCount);
+static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
+    if(!isCallerExternal()) {
+        return original_objc_getClassList(buffer, bufferCount);
+    }
+
+    // Two-phase: pull the full list through a scratch buffer, drop protected
+    // classes, fill at most bufferCount and return the FILTERED total.
+    int total = original_objc_getClassList(NULL, 0);
+
+    if(total <= 0) {
+        return 0;
+    }
+
+    Class* all = (Class *)malloc((size_t)total * sizeof(Class));
+
+    if(!all) {
+        // malloc failure: fail soft with the stock behavior.
+        return original_objc_getClassList(buffer, bufferCount);
+    }
+
+    int filled = original_objc_getClassList(all, total);
+    int n = 0;
+
+    for(int i = 0; i < filled; i++) {
+        if([_shadow isAddrRestricted:(__bridge const void *)all[i]]) {
+            continue;
+        }
+
+        all[n++] = all[i];
+    }
+
+    if(buffer && bufferCount > 0) {
+        memcpy(buffer, all, (size_t)MIN(n, bufferCount) * sizeof(Class));
+    }
+
+    free(all);
+    return n;
+}
+
+static Class* (*original_objc_copyClassList)(unsigned int* outCount);
+static Class* replaced_objc_copyClassList(unsigned int* outCount) {
+    if(!isCallerExternal()) {
+        return original_objc_copyClassList(outCount);
+    }
+
+    int total = original_objc_getClassList(NULL, 0);
+
+    if(total <= 0) {
+        if(outCount) {
+            *outCount = 0;
+        }
+
+        return NULL;
+    }
+
+    Class* all = (Class *)malloc((size_t)total * sizeof(Class));
+
+    if(!all) {
+        return original_objc_copyClassList(outCount);   // fail soft
+    }
+
+    int filled = original_objc_getClassList(all, total);
+    Class* filtered = (Class *)malloc(((size_t)total + 1) * sizeof(Class));
+
+    if(!filtered) {
+        free(all);
+        return original_objc_copyClassList(outCount);   // fail soft
+    }
+
+    unsigned int n = 0;
+
+    for(int i = 0; i < filled; i++) {
+        if([_shadow isAddrRestricted:(__bridge const void *)all[i]]) {
+            continue;
+        }
+
+        filtered[n++] = all[i];
+    }
+
+    filtered[n] = NULL;
+    free(all);
+
+    if(outCount) {
+        *outCount = n;
+    }
+
+    return filtered;
+}
+
+// iOS 16+ (resolved at install like imp_getBlock; older OSes skip it).
+static void (*original_objc_enumerateClasses)(const void* image, const char* namePrefix, Protocol* conformingTo, Class subclassing, void (^block)(Class aClass, BOOL* stop));
+static void replaced_objc_enumerateClasses(const void* image, const char* namePrefix, Protocol* conformingTo, Class subclassing, void (^block)(Class aClass, BOOL* stop)) {
+    if(!isCallerExternal() || !block) {
+        return original_objc_enumerateClasses(image, namePrefix, conformingTo, subclassing, block);
+    }
+
+    // Wrap the caller's block: suppress protected classes (without touching
+    // *stop) and forward everything else with the SAME stop pointer so the
+    // caller's stop=YES propagates to the runtime.
+    original_objc_enumerateClasses(image, namePrefix, conformingTo, subclassing, ^(Class aClass, BOOL* stop) {
+        if([_shadow isAddrRestricted:(__bridge const void *)aClass]) {
+            return;
+        }
+
+        block(aClass, stop);
+    });
 }
 
 // NXMapGet/NXHashGet hooks removed (plan Wave 1a): dead class-hiding path —
@@ -191,4 +359,19 @@ void shadowhook_objc(HKSubstitutor* hooks) {
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     MSHookFunction(NSClassFromString, replaced_NSClassFromString, (void **) &original_NSClassFromString);
+
+    // Class lookup / enumeration (plan Wave 1c). objc_getRequiredClass is
+    // skipped: its fatal contract (abort on missing class) makes a filtered
+    // miss a crash, and it is not a usable probe.
+    MSHookFunction(objc_getClass, replaced_objc_getClass, (void **) &original_objc_getClass);
+    MSHookFunction(objc_lookUpClass, replaced_objc_lookUpClass, (void **) &original_objc_lookUpClass);
+    MSHookFunction(objc_getMetaClass, replaced_objc_getMetaClass, (void **) &original_objc_getMetaClass);
+    MSHookFunction(objc_getClassList, replaced_objc_getClassList, (void **) &original_objc_getClassList);
+    MSHookFunction(objc_copyClassList, replaced_objc_copyClassList, (void **) &original_objc_copyClassList);
+
+    void* enumerateClassesPtr = dlsym(RTLD_DEFAULT, "objc_enumerateClasses");
+
+    if(enumerateClassesPtr) {
+        MSHookFunction(enumerateClassesPtr, replaced_objc_enumerateClasses, (void **) &original_objc_enumerateClasses);
+    }
 }
