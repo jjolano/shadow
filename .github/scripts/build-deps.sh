@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 # Build the prebuilt dependency variants (HookKit/AltList/libsandy) from pinned
 # upstream commits into ../prebuilt — the layout build.sh expects. Run from the
-# repo root: bash .github/scripts/build-deps.sh <rootless|rooted|legacy>
+# repo root: bash .github/scripts/build-deps.sh <rootless|rooted|legacy|fat>
 #
 # The pinned commits must match what the packaged debs (control Depends) ship;
 # bump deliberately. HookKit is jjolano's own fork (Substrate/Substitute
 # backends); AltList/libsandy are opa334's, pinned at upstream HEAD.
+# fat = rooted (arm64/arm64e) + legacy (armv7/armv7s) builds lipo-merged
+# into one 4-arch flavor (also merges vendor/RootBridge.framework).
 set -euo pipefail
 
-FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy>}
+FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy|fat>}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export THEOS=${THEOS:-/opt/theos}
 PB=$ROOT/../prebuilt
 WORK=${WORK:-/tmp/shadow-deps}
+LIPO=${LIPO:-$THEOS/toolchain/linux/iphone/bin/lipo}
 
-HOOKKIT=bb4e7773fcfbdcab033293c155158a7e26d409b8
+HOOKKIT=9de898f09ab5be364665336cd6bee10a32d4ad91
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
-ROOTBRIDGE=547cb23cfc3103e520168f5a57af2f45526147f0
-
-mkdir -p "$PB/hookkit/$FLAVOR" "$PB/altlist/$FLAVOR" "$PB/sandy/$FLAVOR"
+ROOTBRIDGE=2ba635ce088c0c3ded517b07b741c7351d20239e
 
 clone_pin() { # <repo> <sha> <dir>
     if [[ ! -d "$WORK/$3/.git" ]]; then
@@ -29,25 +30,30 @@ clone_pin() { # <repo> <sha> <dir>
     git -C "$WORK/$3" checkout --quiet --detach FETCH_HEAD
 }
 
-case "$FLAVOR" in
-    rootless) SCHEME=THEOS_PACKAGE_SCHEME=rootless; ARCHS="arm64 arm64e"; HK_TARGET= ;;
-    rooted)   SCHEME=; ARCHS="arm64 arm64e"; HK_TARGET= ;;
-    # HookKit's Makefile pins deployment 12.0, which clang rejects for 32-bit
-    # targets (max iOS 10); lower the floor for the armv7 pass only.
-    legacy)   SCHEME=; ARCHS="armv7 armv7s"; HK_TARGET=TARGET=iphone:clang:latest:9.0 ;;
-    *) echo "unknown flavor: $FLAVOR" >&2; exit 1 ;;
-esac
+build_variant() { # <rootless|rooted|legacy>
+    local FLAVOR=$1
 
-# Rootless scheme installs into $THEOS/lib/iphone/rootless, others into $THEOS/lib
-if [ "$FLAVOR" = rootless ]; then
-    LIBDIR=$THEOS/lib/iphone/rootless
-else
-    LIBDIR=$THEOS/lib
-fi
+    mkdir -p "$PB/hookkit/$FLAVOR" "$PB/altlist/$FLAVOR" "$PB/sandy/$FLAVOR"
 
-# --- RootBridge (jjolano; built FIRST — HookKit links the installed framework
-# from $THEOS/lib, so it must be the per-flavor build, not a stale one) ---
-clone_pin jjolano/RootBridge "$ROOTBRIDGE" rootbridge
+    case "$FLAVOR" in
+        rootless) SCHEME=THEOS_PACKAGE_SCHEME=rootless; ARCHS="arm64 arm64e"; HK_TARGET= ;;
+        rooted)   SCHEME=; ARCHS="arm64 arm64e"; HK_TARGET= ;;
+        # HookKit's Makefile pins deployment 12.0, which clang rejects for 32-bit
+        # targets (max iOS 10); lower the floor for the armv7 pass only.
+        legacy)   SCHEME=; ARCHS="armv7 armv7s"; HK_TARGET=TARGET=iphone:clang:latest:9.0 ;;
+        *) echo "unknown flavor: $FLAVOR" >&2; exit 1 ;;
+    esac
+
+    # Rootless scheme installs into $THEOS/lib/iphone/rootless, others into $THEOS/lib
+    if [ "$FLAVOR" = rootless ]; then
+        LIBDIR=$THEOS/lib/iphone/rootless
+    else
+        LIBDIR=$THEOS/lib
+    fi
+
+    # --- RootBridge (jjolano; built FIRST — HookKit links the installed framework
+    # from $THEOS/lib, so it must be the per-flavor build, not a stale one) ---
+    clone_pin jjolano/RootBridge "$ROOTBRIDGE" rootbridge
 (
     cd "$WORK/rootbridge"
     make clean >/dev/null 2>&1 || true
@@ -88,17 +94,51 @@ clone_pin opa334/AltList "$ALTLIST" altlist
     cp -R "$LIBDIR/AltList.framework" "$PB/altlist/$FLAVOR/"
 )
 
-# --- libsandy (opa334; library only — sandyd/SandyProxy subprojects skipped) ---
-clone_pin opa334/libSandy "$LIBSANDY" libsandy
-(
-    cd "$WORK/libsandy"
-    make clean >/dev/null 2>&1 || true
-    env $SCHEME ARCHS="$ARCHS" ONLY_LIBRARY=1 make package FINALPACKAGE=1
-    cp "$LIBDIR/libsandy.dylib" "$PB/sandy/$FLAVOR/libsandy.dylib"
-    # Public header: theos does not install it with `make package`; the tweak
-    # imports <libSandy.h>, which theos resolves from $THEOS/include.
-    mkdir -p "$THEOS/include"
-    cp libSandy.h "$THEOS/include/"
-)
+    # --- libsandy (opa334; library only — sandyd/SandyProxy subprojects skipped) ---
+    clone_pin opa334/libSandy "$LIBSANDY" libsandy
+    (
+        cd "$WORK/libsandy"
+        make clean >/dev/null 2>&1 || true
+        env $SCHEME ARCHS="$ARCHS" ONLY_LIBRARY=1 make package FINALPACKAGE=1
+        cp "$LIBDIR/libsandy.dylib" "$PB/sandy/$FLAVOR/libsandy.dylib"
+        # Public header: theos does not install it with `make package`; the tweak
+        # imports <libSandy.h>, which theos resolves from $THEOS/include.
+        mkdir -p "$THEOS/include"
+        cp libSandy.h "$THEOS/include/"
+    )
 
-echo "deps staged: $FLAVOR"
+    echo "deps staged: $FLAVOR"
+}
+
+merge_fat() { # lipo the rooted+legacy prebuilt flavors into .../fat/
+    for dep in hookkit altlist; do
+        rm -rf "$PB/$dep/fat"
+        mkdir -p "$PB/$dep/fat"
+        cp -R "$PB/$dep/rooted/." "$PB/$dep/fat/"
+    done
+    mkdir -p "$PB/sandy/fat"
+    "$LIPO" -create "$PB/hookkit/rooted/HookKit.framework/HookKit" "$PB/hookkit/legacy/HookKit.framework/HookKit" \
+        -output "$PB/hookkit/fat/HookKit.framework/HookKit"
+    "$LIPO" -create "$PB/altlist/rooted/AltList.framework/AltList" "$PB/altlist/legacy/AltList.framework/AltList" \
+        -output "$PB/altlist/fat/AltList.framework/AltList"
+    "$LIPO" -create "$PB/sandy/rooted/libsandy.dylib" "$PB/sandy/legacy/libsandy.dylib" \
+        -output "$PB/sandy/fat/libsandy.dylib"
+}
+
+case "$FLAVOR" in
+    fat)
+        # build_variant leaves its RootBridge build in vendor/; snapshot the
+        # rooted one before the legacy pass overwrites vendor/, then lipo the
+        # disjoint slice sets (rooted arm64/arm64e + legacy armv7/armv7s).
+        build_variant rooted
+        rm -rf "$WORK/rb-rooted"
+        mv "$ROOT/vendor/RootBridge.framework" "$WORK/rb-rooted"
+        build_variant legacy
+        "$LIPO" -create "$WORK/rb-rooted/RootBridge" "$ROOT/vendor/RootBridge.framework/RootBridge" \
+            -output "$WORK/rb-fat" &&
+        mv "$WORK/rb-fat" "$ROOT/vendor/RootBridge.framework/RootBridge"
+        rm -rf "$WORK/rb-rooted"
+        merge_fat
+        ;;
+    *) build_variant "$FLAVOR" ;;
+esac
