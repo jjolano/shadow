@@ -337,51 +337,25 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
     }
 
-    // Make sure rootfs is marked read-only
-    NSDictionary<NSFileAttributeKey, id>* result = %orig;
-
-    if(result && (
-        [path hasPrefix:@"/private/preboot"]
-        || [path hasPrefix:@"/private/var"]
-        || [path hasPrefix:@"/var"]
-    )) {
-        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
-        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
-        result = [result_filtered copy];
-    }
-
-    return result;
+    return %orig;
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error {
     if(!isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
     }
 
-    // Make sure rootfs is marked read-only
-    NSDictionary<NSFileAttributeKey, id>* result = %orig;
-
-    if(result && (
-        [path hasPrefix:@"/private/preboot"]
-        || [path hasPrefix:@"/private/var"]
-        || [path hasPrefix:@"/var"]
-    )) {
-        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
-        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
-        result = [result_filtered copy];
-    }
-
-    return result;
+    return %orig;
 }
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error {
@@ -431,20 +405,7 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
         return nil;
     }
 
-    // Make sure rootfs is marked read-only
-    NSDictionary<NSFileAttributeKey, id>* result = %orig;
-
-    if(result && (
-        [path hasPrefix:@"/private/preboot"]
-        || [path hasPrefix:@"/private/var"]
-        || [path hasPrefix:@"/var"]
-    )) {
-        NSMutableDictionary<NSFileAttributeKey, id>* result_filtered = [result mutableCopy];
-        [result_filtered setObject:@(YES) forKey:NSFileAppendOnly];
-        result = [result_filtered copy];
-    }
-
-    return result;
+    return %orig;
 }
 
 - (NSArray *)directoryContentsAtPath:(NSString *)path {
