@@ -37,5 +37,4 @@
 "HOOK_MEM" = "Hide Executable Memory";
 "HOOK_TWEAKCLASS" = "Hide Tweak Classes";
 "HOOK_DYLD" = "Dynamic Library Loader";
-"MEM_LEVEL_HIDING" = "Memory-Level Hiding";
 "VNODE_HIDING" = "Vnode-Level Hiding";
