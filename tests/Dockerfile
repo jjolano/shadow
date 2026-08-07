@@ -56,6 +56,13 @@ RUN git clone --depth 1 https://github.com/gnustep/tools-make.git /tmp/gnustep-m
 # ruleset URL was garbage in the harness). The engine relies on this method
 # to enumerate the rulesets dir.
 #
+# The second sed fixes stringByStandardizingPath: the /private prefix strip
+# (for /private/var -> /var) also fired for the bare path "/private",
+# deleting the whole string and underflowing the length bookkeeping into an
+# NSRangeException — the engine's resolve re-check (Core.m) standardizes
+# every queried path, so single-component root paths threw. Cocoa only
+# strips "/private/" (with the slash).
+#
 # The patch implements NSPredicate NSCoding (encodeWithCoder/initWithCoder
 # were subclassResponsibility FIXMEs): the archive format-string round-trip
 # is semantically equivalent, and without it Shadow's compiled-cache write
@@ -68,6 +75,7 @@ RUN git clone --depth 1 --branch base-1_29_0 https://github.com/gnustep/libs-bas
     && rm -f /usr/lib/gcc/x86_64-linux-gnu/*/libobjc.so /usr/lib/gcc/x86_64-linux-gnu/*/libobjc.a \
     && cd /tmp/gnustep-base \
     && sed -i 's|tempURL = \[NSURL fileURLWithPath: tempPath\];|tempURL = [NSURL fileURLWithPath: tempPath relativeToURL: url];|' Source/NSFileManager.m \
+    && sed -i 's|if (\[s hasPrefix: @"/private"\])|if ([s hasPrefix: @"/private/"])|' Source/NSString.m \
     && patch -p1 --ignore-whitespace < /tmp/gnustep-1.29-predicate-coding.patch \
     && ./configure --with-layout=fhs \
     && make -j"$(nproc)" \
