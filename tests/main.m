@@ -39,11 +39,14 @@
 #import <stdlib.h>
 #import <string.h>
 #import <sys/wait.h>
+#import <fcntl.h>
+#import <limits.h>
 
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
 static BOOL gAdversary = NO;
 static BOOL gDetector = NO;
+static BOOL gBenign = NO;
 static int gPass = 0;
 static int gFail = 0;
 
@@ -179,11 +182,14 @@ static int stageAndExec(int argc, const char** argv) {
             gAdversary = YES;
         } else if(strcmp(argv[i], "--detector") == 0) {
             gDetector = YES;
+        } else if(strcmp(argv[i], "--benign") == 0) {
+            gBenign = YES;
         }
     }
 
-    // The detector battery simulates a rootless jailbreak (virtual FS).
-    if(gDetector) {
+    // The detector/benign batteries simulate a rootless jailbreak
+    // (virtual FS + shadow filter).
+    if(gDetector || gBenign) {
         gRootless = YES;
     }
 
@@ -233,6 +239,26 @@ static int stageAndExec(int argc, const char** argv) {
             fprintf(stderr, "harness: sandbox ruleset staging failed\n");
             return 1;
         }
+
+        // Benign-app container: a normal app's files, used by the benign
+        // battery to verify Shadow leaves standard app usage untouched.
+        NSString* container = [work stringByAppendingPathComponent:@"app-container"];
+        NSString* cDocs = [container stringByAppendingPathComponent:@"Documents"];
+        NSString* cPrefs = [container stringByAppendingPathComponent:@"Library/Preferences"];
+        NSString* cTmp = [container stringByAppendingPathComponent:@"tmp"];
+
+        if(![fm createDirectoryAtPath:cDocs withIntermediateDirectories:YES attributes:nil error:nil]
+            || ![fm createDirectoryAtPath:cPrefs withIntermediateDirectories:YES attributes:nil error:nil]
+            || ![fm createDirectoryAtPath:cTmp withIntermediateDirectories:YES attributes:nil error:nil]
+            || ![[@"hello from the app" dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:[cDocs stringByAppendingPathComponent:@"notes.txt"] atomically:YES]
+            || ![[@"com.example.app" dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:[cPrefs stringByAppendingPathComponent:@"com.example.app.plist"] atomically:YES]
+            || ![[@"not a jailbreak artifact" dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:[container stringByAppendingPathComponent:@"ssh"] atomically:YES]) {
+            fprintf(stderr, "harness: app-container staging failed\n");
+            return 1;
+        }
     }
 
     NSString* appDir = [work stringByAppendingPathComponent:@"Harness.app"];
@@ -266,6 +292,8 @@ static int stageAndExec(int argc, const char** argv) {
         newargv[n++] = (char*)"--adversary";
     } else if(gDetector) {
         newargv[n++] = (char*)"--detector";
+    } else if(gBenign) {
+        newargv[n++] = (char*)"--benign";
     }
 
     newargv[n] = NULL;
@@ -674,10 +702,142 @@ static void runAdversary(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Detector battery (real detector vs Shadow on/off, rootless virtual FS)
+// Benign-app battery: a normal, detector-free app must be UNAFFECTED by
+// Shadow. Every operation below runs twice — shadow filter OFF (baseline)
+// and ON — and each outcome (success/failure AND errno) must be identical.
+// Any divergence means a hook changes standard app behavior = FAIL.
 // ---------------------------------------------------------------------------
 
+typedef struct {
+    const char* name;
+    BOOL (^op)(int*);        // returns YES on success; sets errno
+} BenignOp;
+
+#define B_ACCESS(_path, _mode) ^BOOL(int* e) { \
+    errno = 0; \
+    int r = access(_path, _mode); \
+    *e = errno; \
+    return r == 0; \
+}
+
+#define B_OPENREAD(_path, _expect) ^BOOL(int* e) { \
+    errno = 0; \
+    int fd = open(_path, O_RDONLY); \
+    if(fd < 0) { *e = errno; return NO; } \
+    char buf[64]; \
+    ssize_t n = read(fd, buf, sizeof(buf) - 1); \
+    close(fd); \
+    buf[n > 0 ? n : 0] = '\0'; \
+    *e = 0; \
+    return n > 0 && strncmp(buf, _expect, strlen(_expect)) == 0; \
+}
+
+#define B_WRITEUNLINK(_dir) ^BOOL(int* e) { \
+    errno = 0; \
+    char path[PATH_MAX]; \
+    snprintf(path, sizeof(path), "%s/scratch-%d", _dir, getpid()); \
+    int fd = open(path, O_CREAT | O_WRONLY | O_EXCL, 0644); \
+    if(fd < 0) { *e = errno; return NO; } \
+    if(write(fd, "x", 1) != 1) { *e = errno; close(fd); return NO; } \
+    close(fd); \
+    unlink(path); \
+    *e = 0; \
+    return YES; \
+}
+
+#define B_STAT(_path) ^BOOL(int* e) { \
+    errno = 0; \
+    NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:_path error:nil]; \
+    *e = errno; \
+    return attrs != nil; \
+}
+
+#define B_LISTDIR(_dir, _entry) ^BOOL(int* e) { \
+    errno = 0; \
+    NSArray* items = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:_dir error:nil]; \
+    *e = errno; \
+    return [items containsObject:_entry]; \
+}
+
+#define B_SCHEME(_scheme, _wantRestricted) ^BOOL(int* e) { \
+    *e = 0; \
+    return [shdw() isSchemeRestricted:_scheme] == _wantRestricted; \
+}
+
+#define B_BUNDLEID(_bid, _wantRestricted) ^BOOL(int* e) { \
+    *e = 0; \
+    return [shdw() isBundleIDRestricted:_bid] == _wantRestricted; \
+}
+
+#define B_PROTECTED(_path, _wantProtected) ^BOOL(int* e) { \
+    *e = 0; \
+    return [shdw() isProtectedImagePath:_path] == _wantProtected; \
+}
+
+static void runBenignBattery(void) {
+#if !defined(__linux__)
+    printf("[benign] skipped: shadow filter is Linux-only\n");
+    return;
+#else
+    printf("[benign] normal app session, filter OFF vs ON (rootless)\n");
+
+    NSString* container = [harnessWorkDir() stringByAppendingPathComponent:@"app-container"];    NSString* docs = [container stringByAppendingPathComponent:@"Documents"];
+    NSString* prefs = [container stringByAppendingPathComponent:@"Library/Preferences"];
+    NSString* tmp = [container stringByAppendingPathComponent:@"tmp"];
+
+    BenignOp ops[] = {
+        { "read own document", B_OPENREAD([[docs stringByAppendingPathComponent:@"notes.txt"] UTF8String], "hello from the app") },
+        { "stat own document", B_STAT([docs stringByAppendingPathComponent:@"notes.txt"]) },
+        { "list own Documents", B_LISTDIR(docs, @"notes.txt") },
+        { "write+unlink own tmp file", B_WRITEUNLINK([tmp UTF8String]) },
+        { "access own prefs (R_OK)", B_ACCESS([[prefs stringByAppendingPathComponent:@"com.example.app.plist"] UTF8String], R_OK) },
+        { "access own dir (W_OK)", B_ACCESS([tmp UTF8String], W_OK) },
+        { "own file named like JB artifact (ssh)", B_ACCESS([[container stringByAppendingPathComponent:@"ssh"] UTF8String], F_OK) },
+        { "absent own file → ENOENT preserved", B_ACCESS([[prefs stringByAppendingPathComponent:@"missing.plist"] UTF8String], F_OK) },
+        { "scheme http not restricted", B_SCHEME(@"http", NO) },
+        { "scheme cydia restricted (Shadow holds)", B_SCHEME(@"cydia", YES) },
+        { "stock bundle ID not restricted", B_BUNDLEID(@"com.apple.mobilesafari", NO) },
+        { "stock framework not protected", B_PROTECTED(@"/System/Library/Frameworks/UIKit.framework", NO) },
+        { "stock dylib not protected", B_PROTECTED(@"/usr/lib/libsystem_kernel.dylib", NO) },
+    };
+
+    NSUInteger count = sizeof(ops) / sizeof(ops[0]);
+    BOOL base[32];
+    int baseErrno[32];
+
+    // Pass 1: baseline — shadow filter OFF.
+    for(NSUInteger i = 0; i < count; i++) {
+        base[i] = ops[i].op(&baseErrno[i]);
+    }
+
+    // Pass 2: shadow filter ON — the hook layer's filtering is active.
+    shdw_shadow_filter_set_enabled(1);
+
+    for(NSUInteger i = 0; i < count; i++) {
+        int e = 0;
+        BOOL got = ops[i].op(&e);
+
+        if(got == base[i] && (!got || e == baseErrno[i])) {
+            gPass++;
+            printf("  %-44s → %s%s\n", ops[i].name, got ? "ok" : "ENOENT-like",
+                !got ? " (unchanged)" : "");
+        } else {
+            gFail++;
+            printf("AFFECTED: %s — baseline %s (errno %d), shadow %s (errno %d)\n",
+                ops[i].name, base[i] ? "ok" : "failed", baseErrno[i],
+                got ? "ok" : "failed", e);
+        }
+    }
+
+    shdw_shadow_filter_set_enabled(0);
+#endif
+}
+
 #import "detectors/ShadowDetector.h"
+
+// ---------------------------------------------------------------------------
+// Detector battery (real detector vs Shadow on/off, rootless virtual FS)
+// ---------------------------------------------------------------------------
 
 // Moves every ruleset plist aside (or back), then sleeps past the engine's
 // 1s change-scan gate so the next engine query reloads. Linux-only (used by
@@ -819,11 +979,14 @@ int main(int argc, const char** argv) {
                 gAdversary = YES;
             } else if(strcmp(argv[i], "--detector") == 0) {
                 gDetector = YES;
+            } else if(strcmp(argv[i], "--benign") == 0) {
+                gBenign = YES;
             }
         }
 
-        // The detector battery simulates a rootless jailbreak (virtual FS).
-        if(gDetector) {
+        // The detector/benign batteries simulate a rootless jailbreak
+        // (virtual FS + shadow filter).
+        if(gDetector || gBenign) {
             gRootless = YES;
         }
 
@@ -850,6 +1013,9 @@ int main(int argc, const char** argv) {
                     argv2[3] = NULL;
                 } else if(gDetector) {
                     argv2[2] = (char*)"--detector";
+                    argv2[3] = NULL;
+                } else if(gBenign) {
+                    argv2[2] = (char*)"--benign";
                     argv2[3] = NULL;
                 } else {
                     argv2[2] = NULL;
@@ -884,7 +1050,7 @@ int main(int argc, const char** argv) {
 
         printf("=== Shadow harness (%s, %s) work=%s\n",
             gRootless ? "rootless" : "rooted",
-            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : "unit tests")),
+            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : (gBenign ? "benign" : "unit tests"))),
             [work UTF8String]);
 
         if(gDetect) {
@@ -900,6 +1066,12 @@ int main(int argc, const char** argv) {
 
         if(gDetector) {
             runDetectorBattery();
+            printf("=== %d passed, %d failed\n", gPass, gFail);
+            return gFail ? 1 : 0;
+        }
+
+        if(gBenign) {
+            runBenignBattery();
             printf("=== %d passed, %d failed\n", gPass, gFail);
             return gFail ? 1 : 0;
         }
