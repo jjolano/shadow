@@ -37,6 +37,11 @@ case "$1" in
         fi
         launchctl bootout system/me.jjolano.shadow 2> /dev/null \
             || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
+
+        # The ruleset watcher is stateless (no kernel flags to clear) — plain
+        # bootout; failure to stop it must not abort the removal.
+        launchctl bootout system/me.jjolano.shadow.watcher 2> /dev/null \
+            || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null || true
     ;;
 esac
 

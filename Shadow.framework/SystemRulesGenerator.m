@@ -1,6 +1,10 @@
 #import <Shadow/SystemRulesGenerator.h>
 #import <Shadow/Core+Utilities.h>
+#import <Shadow/Ruleset.h>
 #import <RootBridge.h>
+
+#import <MobileCoreServices/LSApplicationWorkspace.h>
+#import <MobileCoreServices/LSApplicationProxy.h>
 
 #import <fcntl.h>
 #import <string.h>
@@ -521,6 +525,128 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         fprintf(stderr, "warning: SystemRules: no system snapshot available (previously '%s'); using live filesystem\n", [previousSnapshot UTF8String]);
     } else if(previousSnapshot && currentSnapshotUsed && ![previousSnapshot isEqualToString:currentSnapshotUsed]) {
         fprintf(stderr, "note: SystemRules: system snapshot changed '%s' -> '%s' (iOS update?); regenerated against the current snapshot\n", [previousSnapshot UTF8String], [currentSnapshotUsed UTF8String]);
+    }
+
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:NULL];
+
+    return [ruleset writeToFile:path atomically:YES] ? 1 : -1;
+}
+
+// Installed-apps ruleset (generated): harvests the URL schemes and bundle IDs
+// of every installed app that the CURATED rulesets (JailbreakMisc,
+// StandardRules, user-supplied) already restrict by path or bundle ID. The
+// engine hot-swaps this file like any other ruleset, so a newly installed
+// jailbreak app self-maintains its detection surface: path predicate matches
+// -> schemes/ID land in this ruleset -> canOpenURL:/openURL:/
+// applicationsAvailableForHandlingURLScheme: probes for them are denied.
+// Uninstall the app -> the next regeneration drops it.
++ (NSDictionary*)generateInstalledAppsRuleset {
+    NSString* dir = [RootBridge getJBPath:@SHADOW_RULESETS];
+    NSArray* urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dir isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
+
+    // The harvest signal is only the curated rulesets. Generated rulesets
+    // (SystemRules, dpkgInstalled, this file — Author "Shadow Service") are
+    // excluded: they are broad by design (every dpkg-installed path, every
+    // non-snapshot dir), so using them would mark legitimate apps restricted
+    // and break their real canOpenURL:/openURL: links.
+    NSMutableArray<RulesetEngine*>* curated = [NSMutableArray new];
+
+    for(NSURL* url in urls) {
+        if([[url lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
+            continue;
+        }
+
+        RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
+
+        if(!ruleset) {
+            continue;
+        }
+
+        NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
+
+        if([[[info objectForKey:@"Author"] lowercaseString] isEqualToString:@"shadow service"]) {
+            continue;
+        }
+
+        [curated addObject:ruleset];
+    }
+
+    NSMutableSet* schemes = [NSMutableSet new];
+    NSMutableSet* bundleids = [NSMutableSet new];
+
+    LSApplicationWorkspace* workspace = [LSApplicationWorkspace defaultWorkspace];
+
+    for(LSApplicationProxy* proxy in [workspace allInstalledApplications]) {
+        BOOL restricted = NO;
+
+        for(RulesetEngine* ruleset in curated) {
+            if([ruleset isPathBlacklisted:[[proxy bundleURL] path]]
+            || [ruleset isBundleIDRestricted:[proxy bundleIdentifier]]) {
+                restricted = YES;
+                break;
+            }
+        }
+
+        if(!restricted) {
+            continue;
+        }
+
+        NSString* bundleID = [proxy bundleIdentifier];
+
+        if([bundleID length] > 0) {
+            [bundleids addObject:[bundleID lowercaseString]];
+        }
+
+        NSDictionary* info = [[NSBundle bundleWithPath:[[proxy bundleURL] path]] infoDictionary];
+        NSArray* urltypes = [info objectForKey:@"CFBundleURLTypes"];
+
+        for(NSDictionary* type in urltypes) {
+            for(id scheme in [type objectForKey:@"CFBundleURLSchemes"]) {
+                if([scheme isKindOfClass:[NSString class]] && [scheme length] > 0) {
+                    [schemes addObject:[scheme lowercaseString]];
+                }
+            }
+        }
+    }
+
+    NSMutableDictionary* ruleset_dict = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"RulesetInfo" : @{
+            @"Name" : @"Installed Apps (generated)",
+            @"Author" : @"Shadow Service"
+        }
+    }];
+
+    if([schemes count] > 0) {
+        [ruleset_dict setObject:[[schemes allObjects] sortedArrayUsingSelector:@selector(compare:)] forKey:@"BlacklistURLSchemes"];
+    }
+
+    if([bundleids count] > 0) {
+        [ruleset_dict setObject:[[bundleids allObjects] sortedArrayUsingSelector:@selector(compare:)] forKey:@"BlacklistBundleIDs"];
+    }
+
+    return ruleset_dict;
+}
+
++ (NSInteger)writeInstalledAppsRuleset {
+    NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/InstalledApps.plist"];
+
+    NSDictionary* ruleset = [self generateInstalledAppsRuleset];
+
+    if(!ruleset) {
+        return -1;
+    }
+
+    // Skip the write when the content is unchanged: the engine reloads on any
+    // mtime change, so a no-op write would churn every process's decision
+    // caches for nothing. (Deliberately no GeneratedAt timestamp — the
+    // content IS the identity, and this equality gate depends on that.)
+    NSDictionary* previous = [NSDictionary dictionaryWithContentsOfFile:path];
+
+    if(previous && [previous isEqual:ruleset]) {
+        printf("installed-apps ruleset is current, skipping regeneration\n");
+        return 0;
     }
 
     NSFileManager* fm = [NSFileManager defaultManager];

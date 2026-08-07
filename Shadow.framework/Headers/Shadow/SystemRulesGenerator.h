@@ -8,5 +8,8 @@ __attribute__((visibility("default")))
 + (NSDictionary *)generateSystemRuleset;
 // 1 = regenerated/written, 0 = skipped (up to date), -1 = failure.
 + (NSInteger)writeSystemRuleset;
++ (NSDictionary *)generateInstalledAppsRuleset;
+// 1 = regenerated/written, 0 = skipped (content unchanged), -1 = failure.
++ (NSInteger)writeInstalledAppsRuleset;
 @end
 #endif
