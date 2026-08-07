@@ -79,6 +79,7 @@
 	</array>
 	<key>BlacklistURLSchemes</key>
 	<array>
+		<string>apple-magnifier</string>
 		<string>cydia</string>
 		<string>zbra</string>
 		<string>sileo</string>
@@ -95,6 +96,7 @@
 		<string>org.coolstar.sileo</string>
 		<string>xyz.willy.Zebra</string>
 		<string>com.opa334.jailbreak</string>
+		<string>com.opa334.TrollStore</string>
 		<string>science.xnu.underscore</string>
 		<string>com.llsc12.palera1nLoader</string>
 		<string>com.samiiau.loader</string>
