@@ -125,12 +125,62 @@ static int (*original_sigaction)(int sig, const struct sigaction *restrict act, 
 static int replaced_sigaction(int sig, const struct sigaction *restrict act, struct sigaction *restrict oact) {
     int result = original_sigaction(sig, act, oact);
 
-    if(!isCallerExternal()) {
+    // Sanitize the previous-handler output only after the original
+    // SUCCEEDED: a failed call leaves oact untouched, and zeroing it over a
+    // real error would deviate from stock.
+    if(!isCallerExternal() && result == 0) {
         NSLog(@"%@: %d", @"sigaction", sig);
-    
+
         if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
             memset(oact, 0, sizeof(struct sigaction));
         }
+    }
+
+    return result;
+}
+
+// --- signal family: previous-handler output sanitized only after the
+// original succeeds, mirroring replaced_sigaction. `filter` is the caller
+// classification evaluated at the hook site (isCallerExternal() must never
+// run inside a helper — its return-address read would classify the helper's
+// caller instead of signal's caller). ---
+
+typedef void (*shdw_sighandler_t)(int);
+
+// Returns the previous handler to report: SIG_DFL when the real handler
+// lives in a restricted image (a detector querying back a jailbreak-library
+// handler sees "no handler"). SIG_ERR (failure) is never an address and
+// passes through.
+static shdw_sighandler_t shdw_signal_sanitize_previous(shdw_sighandler_t previous, BOOL filter) {
+    if(filter && previous != SIG_ERR && [_shadow isAddrRestricted:(void *) previous]) {
+        return SIG_DFL;
+    }
+
+    return previous;
+}
+
+static shdw_sighandler_t (*original_signal)(int sig, shdw_sighandler_t handler);
+static shdw_sighandler_t replaced_signal(int sig, shdw_sighandler_t handler) {
+    return shdw_signal_sanitize_previous(original_signal(sig, handler), !isCallerExternal());
+}
+
+static shdw_sighandler_t (*original_bsd_signal)(int sig, shdw_sighandler_t handler);
+static shdw_sighandler_t replaced_bsd_signal(int sig, shdw_sighandler_t handler) {
+    return shdw_signal_sanitize_previous(original_bsd_signal(sig, handler), !isCallerExternal());
+}
+
+static shdw_sighandler_t (*original___signal_nobind)(int sig, shdw_sighandler_t handler);
+static shdw_sighandler_t replaced___signal_nobind(int sig, shdw_sighandler_t handler) {
+    return shdw_signal_sanitize_previous(original___signal_nobind(sig, handler), !isCallerExternal());
+}
+
+static int (*original___sigaction)(int sig, const struct sigaction* act, struct sigaction* oact);
+static int replaced___sigaction(int sig, const struct sigaction* act, struct sigaction* oact) {
+    int result = original___sigaction(sig, act, oact);
+
+    if(!isCallerExternal() && result == 0 && oact
+    && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
+        memset(oact, 0, sizeof(struct sigaction));
     }
 
     return result;
@@ -567,4 +617,25 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     MSHookFunction(posix_spawnp, replaced_posix_spawnp, (void **) &original_posix_spawnp);
     MSHookFunction(fork, replaced_fork, (void **) &original_fork);
     MSHookFunction(vfork, replaced_vfork, (void **) &original_vfork);
+
+    // Signal aliases: runtime-resolved, skipped cleanly when absent.
+    void* sym_signal = MSFindSymbol(NULL, "_signal");
+    if(sym_signal) {
+        MSHookFunction(sym_signal, replaced_signal, (void **) &original_signal);
+    }
+
+    sym_signal = MSFindSymbol(NULL, "_bsd_signal");
+    if(sym_signal) {
+        MSHookFunction(sym_signal, replaced_bsd_signal, (void **) &original_bsd_signal);
+    }
+
+    sym_signal = MSFindSymbol(NULL, "___signal_nobind");
+    if(sym_signal) {
+        MSHookFunction(sym_signal, replaced___signal_nobind, (void **) &original___signal_nobind);
+    }
+
+    sym_signal = MSFindSymbol(NULL, "___sigaction");
+    if(sym_signal) {
+        MSHookFunction(sym_signal, replaced___sigaction, (void **) &original___sigaction);
+    }
 }
