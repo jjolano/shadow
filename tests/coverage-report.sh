@@ -25,6 +25,7 @@ tests/harness --rooted > /dev/null
 tests/harness --rootless --adversary > /dev/null
 tests/harness --rooted --adversary > /dev/null
 tests/harness --rootless --detector > /dev/null
+tests/harness --rootless --benign > /dev/null
 
 echo
 echo "=== engine methods vs hooked API groups ==="

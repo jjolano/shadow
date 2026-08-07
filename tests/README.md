@@ -17,6 +17,7 @@ make -C tests test        # unit assertions, rooted + rootless modes
 make -C tests detect      # detector-probe battery against the shipped rulesets
 make -C tests adversary   # adversarial evasion battery (rooted + rootless)
 make -C tests detector    # real-detector vs Shadow: raw vs filtered passes
+make -C tests benign      # benign app session: filter OFF vs ON must match
 make -C tests coverage    # gcov report: engine methods vs hooked API groups
 ```
 
@@ -127,6 +128,16 @@ mode) and each child execs itself from the staged `.app` dir.
   (Cocoa is case-sensitive — documented divergence), and a leading `//`
   parses as a protocol-relative URL (faithful to the engine's
   standardization on any platform).
+
+- Benign-app battery (`--benign`): the other half of the contract — a
+  normal, detector-free app must be UNAFFECTED by Shadow. A scripted app
+  session (read/stat/list/write its own container files, access its
+  prefs/tmp dirs, hit an absent file, open http/cydia schemes, query stock
+  bundle IDs and frameworks) runs twice — shadow filter OFF (baseline) and
+  ON — and every outcome, including errno, must be identical; any
+  divergence is reported as AFFECTED. Also guards the subtle false
+  positive: an app file *named* like a JB artifact (e.g. `ssh`) inside its
+  own container stays readable.
 
 ## Hooked-API coverage
 

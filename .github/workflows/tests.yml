@@ -26,6 +26,9 @@ jobs:
       - name: Real-detector vs Shadow (IOSSecuritySuite-style)
         run: make -C tests detector
 
+      - name: Benign app unaffected by Shadow
+        run: make -C tests benign
+
       - name: Engine coverage (gcov) vs hooked API groups
         run: make -C tests coverage
 
