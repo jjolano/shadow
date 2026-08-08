@@ -602,7 +602,13 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         NSDictionary* info = [[NSBundle bundleWithPath:[[proxy bundleURL] path]] infoDictionary];
         NSArray* urltypes = [info objectForKey:@"CFBundleURLTypes"];
 
-        for(NSDictionary* type in urltypes) {
+        for(id type in urltypes) {
+            // A malicious/malformed app can put non-dictionary entries in
+            // CFBundleURLTypes; objectForKey: on them would raise.
+            if(![type isKindOfClass:[NSDictionary class]]) {
+                continue;
+            }
+
             for(id scheme in [type objectForKey:@"CFBundleURLSchemes"]) {
                 if([scheme isKindOfClass:[NSString class]] && [scheme length] > 0) {
                     [schemes addObject:[scheme lowercaseString]];

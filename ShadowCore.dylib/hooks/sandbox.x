@@ -776,3 +776,84 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
         [hooks hookFunction:sym_misc withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     }
 }
+
+void shadowhook_sandbox_verify(void) {
+    // execle/execlp/execl/execv hook with outOldPtr:NULL (no original_* to
+    // check); the runtime-resolved signal/system/popen aliases are excluded
+    // (NULL is expected when the symbol is absent).
+    shdw_hook_check_t checks[] = {
+        { "sandbox_check", original_sandbox_check },
+        { "fcntl", original_fcntl },
+        { "host_get_special_port", original_host_get_special_port },
+        { "task_get_special_port", original_task_get_special_port },
+        { "task_for_pid", original_task_for_pid },
+        { "sigaction", original_sigaction },
+        { "execve", original_execve },
+        { "execvp", original_execvp },
+        { "posix_spawn", original_posix_spawn },
+        { "posix_spawnp", original_posix_spawnp },
+        { "fork", original_fork },
+        { "vfork", original_vfork },
+    };
+
+    shdw_verify_hooks("sandbox", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+// Symbol policy for the sandbox C-function group (see dyld.x's
+// shdw_sym_policy_table): dlsym must resolve every fishhook-rebound sandbox
+// export to its replacement for external callers, so the GOT-vs-dlsym
+// comparison agrees. Guarded by the original pointer: runtime-resolved
+// aliases (signal family, system/popen, sandbox_check_by_audit_token,
+// task_get_exception_ports) only resolve to their replacement when actually
+// installed. The exec family hooks with outOldPtr:NULL (no original_* to
+// check) are unconditional — always resolve to their replacement.
+typedef struct {
+    const char* name;
+    void* replacement;
+    void* const* original;
+} shdw_sandbox_sym_policy_entry_t;
+
+static const shdw_sandbox_sym_policy_entry_t shdw_sandbox_sym_policy_table[] = {
+    { "bsd_signal", (void*)&replaced_bsd_signal, (void* const*)&original_bsd_signal },
+    { "execl", (void*)&replaced_execl, NULL },
+    { "execle", (void*)&replaced_execle, NULL },
+    { "execlp", (void*)&replaced_execlp, NULL },
+    { "execv", (void*)&replaced_execv, NULL },
+    { "execve", (void*)&replaced_execve, (void* const*)&original_execve },
+    { "execvp", (void*)&replaced_execvp, (void* const*)&original_execvp },
+    { "fcntl", (void*)&replaced_fcntl, (void* const*)&original_fcntl },
+    { "fork", (void*)&replaced_fork, (void* const*)&original_fork },
+    { "host_get_special_port", (void*)&replaced_host_get_special_port, (void* const*)&original_host_get_special_port },
+    { "popen", (void*)&replaced_popen, (void* const*)&original_popen },
+    { "posix_spawn", (void*)&replaced_posix_spawn, (void* const*)&original_posix_spawn },
+    { "posix_spawnp", (void*)&replaced_posix_spawnp, (void* const*)&original_posix_spawnp },
+    { "sandbox_check", (void*)&replaced_sandbox_check, (void* const*)&original_sandbox_check },
+    { "sandbox_check_by_audit_token", (void*)&replaced_sandbox_check_by_audit_token, (void* const*)&original_sandbox_check_by_audit_token },
+    { "sigaction", (void*)&replaced_sigaction, (void* const*)&original_sigaction },
+    { "signal", (void*)&replaced_signal, (void* const*)&original_signal },
+    { "system", (void*)&replaced_system, (void* const*)&original_system },
+    { "task_for_pid", (void*)&replaced_task_for_pid, (void* const*)&original_task_for_pid },
+    { "task_get_exception_ports", (void*)&replaced_task_get_exception_ports, (void* const*)&original_task_get_exception_ports },
+    { "task_get_special_port", (void*)&replaced_task_get_special_port, (void* const*)&original_task_get_special_port },
+    { "vfork", (void*)&replaced_vfork, (void* const*)&original_vfork },
+    { "__sigaction", (void*)&replaced___sigaction, (void* const*)&original___sigaction },
+    { "__signal_nobind", (void*)&replaced___signal_nobind, (void* const*)&original___signal_nobind },
+};
+
+void* shdw_sym_policy_lookup_sandbox(const char* name) {
+    if(!name) {
+        return NULL;
+    }
+
+    for(size_t i = 0; i < sizeof(shdw_sandbox_sym_policy_table) / sizeof(shdw_sandbox_sym_policy_table[0]); i++) {
+        if(strcmp(name, shdw_sandbox_sym_policy_table[i].name) == 0) {
+            if(shdw_sandbox_sym_policy_table[i].original && *shdw_sandbox_sym_policy_table[i].original == NULL) {
+                return NULL;  // runtime-resolved symbol not installed
+            }
+
+            return shdw_sandbox_sym_policy_table[i].replacement;
+        }
+    }
+
+    return NULL;
+}

@@ -412,6 +412,12 @@ static kaddr_t pfinder_xref_rd(pfinder_t pfinder, uint32_t rd, kaddr_t start, ka
     uint64_t x[32] = { 0 };
     uint32_t insn;
 
+    // A section smaller than one instruction would underflow the loop bound
+    // below and read past the malloc'd buffer.
+    if (pfinder.sec_text.s64.size < sizeof(insn)) {
+        return 0;
+    }
+
     for (; start >= pfinder.sec_text.s64.addr && start < pfinder.sec_text.s64.addr + (pfinder.sec_text.s64.size - sizeof(insn)); start += sizeof(insn)) {
         memcpy(&insn, pfinder.sec_text.data + (start - pfinder.sec_text.s64.addr), sizeof(insn));
         if (IS_LDR_X(insn)) {
@@ -445,7 +451,14 @@ static kaddr_t pfinder_xref_str(pfinder_t pfinder, const char *str, uint32_t rd)
     size_t len;
 
     for (p = pfinder.sec_cstring.data, e = p + pfinder.sec_cstring.s64.size; p < e; p += len) {
-        len = strlen(p) + 1;
+        // Bound the scan: a section without a trailing NUL would make strlen
+        // read past the malloc'd buffer.
+        size_t avail = (size_t)(e - p);
+        len = strnlen(p, avail);
+        if (len == avail) {
+            break;   // no NUL within the remaining buffer
+        }
+        len += 1;
         if (strncmp(str, p, len) == 0) {
             return pfinder_xref_rd(pfinder, rd, pfinder.sec_text.s64.addr, pfinder.sec_cstring.s64.addr + (kaddr_t)(p - pfinder.sec_cstring.data));
         }

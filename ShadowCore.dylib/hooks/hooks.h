@@ -158,6 +158,25 @@ extern BOOL shdw_detector_present;
 // ctor skipped. Safe to call from hooked functions and the image watcher.
 extern void shdw_detector_detected(const char* reason);
 
+// Post-install verification: a hook that failed to install (backend error,
+// symbol unresolvable) leaves its original_* NULL and the restriction
+// silently unenforced. The hook files expose shadowhook_*_verify functions
+// that check their group's required symbols; the ctor calls them after
+// executeHooks for the groups it installed. Runtime-resolved optional
+// symbols are excluded from the checks — NULL there is expected.
+typedef struct {
+    const char* name;
+    const void* ptr;
+} shdw_hook_check_t;
+
+static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t* checks, size_t count) {
+    for(size_t i = 0; i < count; i++) {
+        if(!checks[i].ptr) {
+            NSLog(@"[Shadow] %s hook not installed: %s", group, checks[i].name);
+        }
+    }
+}
+
 extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
 extern void shadowhook_dyld(HKSubstitutor* hooks);
 extern void shadowhook_libc(HKSubstitutor* hooks);
@@ -184,6 +203,17 @@ extern void shadowhook_libc_antidebugging(HKSubstitutor* hooks);
 extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symlookup(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
+
+// Symbol policy lookups for the C-function hook groups (libc/mach/sandbox/
+// mem). The dlsym hook in dyld.x consults these after its own table misses,
+// so every fishhook-rebound export resolves to its replacement for external
+// callers — the GOT-vs-dlsym comparison then agrees. Each returns the
+// replacement only when that hook actually installed (original != NULL), so
+// runtime-conditional symbols that are absent on a given OS stay absent.
+void* shdw_sym_policy_lookup_libc(const char* name);
+void* shdw_sym_policy_lookup_mach(const char* name);
+void* shdw_sym_policy_lookup_sandbox(const char* name);
+void* shdw_sym_policy_lookup_mem(const char* name);
 extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
@@ -191,3 +221,16 @@ extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
 extern void shadowhook_NSThread(HKSubstitutor* hooks);
 extern void shadowhook_vnode(HKSubstitutor* hooks);
 extern void shadowhook_vnode_release(void);
+
+extern void shadowhook_libc_verify(void);
+extern void shadowhook_libc_envvar_verify(void);
+extern void shadowhook_libc_lowlevel_verify(void);
+extern void shadowhook_libc_antidebugging_verify(void);
+extern void shadowhook_syscall_verify(void);
+extern void shadowhook_mem_verify(void);
+extern void shadowhook_mach_verify(void);
+extern void shadowhook_sandbox_verify(void);
+extern void shadowhook_dyld_verify(void);
+extern void shadowhook_dyld_extra_verify(void);
+extern void shadowhook_dyld_symlookup_verify(void);
+extern void shadowhook_dyld_symaddrlookup_verify(void);

@@ -102,3 +102,49 @@ void shadowhook_mem(HKSubstitutor* hooks) {
     [hooks hookFunction:mach_vm_region withReplacement:replaced_mach_vm_region outOldPtr:(void **) &original_mach_vm_region];
     [hooks hookFunction:mach_vm_region_recurse withReplacement:replaced_mach_vm_region_recurse outOldPtr:(void **) &original_mach_vm_region_recurse];
 }
+
+void shadowhook_mem_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "vm_region_64", original_vm_region_64 },
+        { "vm_region_recurse_64", original_vm_region_recurse_64 },
+        { "mach_vm_region", original_mach_vm_region },
+        { "mach_vm_region_recurse", original_mach_vm_region_recurse },
+    };
+
+    shdw_verify_hooks("mem", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+// Symbol policy for the mem C-function group (see dyld.x's
+// shdw_sym_policy_table): dlsym must resolve every fishhook-rebound mem
+// export to its replacement for external callers, so the GOT-vs-dlsym
+// comparison agrees.
+typedef struct {
+    const char* name;
+    void* replacement;
+    void* const* original;
+} shdw_mem_sym_policy_entry_t;
+
+static const shdw_mem_sym_policy_entry_t shdw_mem_sym_policy_table[] = {
+    { "mach_vm_region", (void*)&replaced_mach_vm_region, (void* const*)&original_mach_vm_region },
+    { "mach_vm_region_recurse", (void*)&replaced_mach_vm_region_recurse, (void* const*)&original_mach_vm_region_recurse },
+    { "vm_region_64", (void*)&replaced_vm_region_64, (void* const*)&original_vm_region_64 },
+    { "vm_region_recurse_64", (void*)&replaced_vm_region_recurse_64, (void* const*)&original_vm_region_recurse_64 },
+};
+
+void* shdw_sym_policy_lookup_mem(const char* name) {
+    if(!name) {
+        return NULL;
+    }
+
+    for(size_t i = 0; i < sizeof(shdw_mem_sym_policy_table) / sizeof(shdw_mem_sym_policy_table[0]); i++) {
+        if(strcmp(name, shdw_mem_sym_policy_table[i].name) == 0) {
+            if(shdw_mem_sym_policy_table[i].original && *shdw_mem_sym_policy_table[i].original == NULL) {
+                return NULL;  // symbol not installed
+            }
+
+            return shdw_mem_sym_policy_table[i].replacement;
+        }
+    }
+
+    return NULL;
+}
