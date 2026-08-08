@@ -1,6 +1,7 @@
 #import "SHDWDangerousListController.h"
 #import "SHDWAppListController.h"
 #import "SHDWPrefs.h"
+#import "SHDWCapabilities.h"
 
 #import <Shadow/Settings.h>
 
@@ -11,6 +12,11 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Dangerous" target:self];
+
+		// VnodeHiding needs the shadowd daemon with krw ready;
+		// Hook_DynamicLibrariesExtra needs ElleKit. Disable + explain when
+		// the runtime backend is missing.
+		SHDWApplyHookGroupGating(_specifiers);
 	}
 
 	return _specifiers;
