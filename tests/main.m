@@ -42,11 +42,18 @@
 #import <fcntl.h>
 #import <limits.h>
 
+// Edge-case fuzzer (Fuzz.m): probes the engine with mutated inputs and
+// asserts invariants; returns the number of findings (0 = clean).
+int shdw_fuzz_run(NSUInteger iters, unsigned seed);
+int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed);
+
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
 static BOOL gAdversary = NO;
 static BOOL gDetector = NO;
 static BOOL gBenign = NO;
+static BOOL gFuzz = NO;
+static BOOL gAFuzz = NO;
 static int gPass = 0;
 static int gFail = 0;
 
@@ -184,12 +191,16 @@ static int stageAndExec(int argc, const char** argv) {
             gDetector = YES;
         } else if(strcmp(argv[i], "--benign") == 0) {
             gBenign = YES;
+        } else if(strcmp(argv[i], "--fuzz") == 0) {
+            gFuzz = YES;
+        } else if(strcmp(argv[i], "--afuzz") == 0) {
+            gAFuzz = YES;
         }
     }
 
-    // The detector/benign batteries simulate a rootless jailbreak
-    // (virtual FS + shadow filter).
-    if(gDetector || gBenign) {
+    // The detector/benign/adversarial-fuzz batteries simulate a rootless
+    // jailbreak (virtual FS + shadow filter); the fuzzer runs both modes.
+    if(gDetector || gBenign || gAFuzz) {
         gRootless = YES;
     }
 
@@ -294,6 +305,10 @@ static int stageAndExec(int argc, const char** argv) {
         newargv[n++] = (char*)"--detector";
     } else if(gBenign) {
         newargv[n++] = (char*)"--benign";
+    } else if(gFuzz) {
+        newargv[n++] = (char*)"--fuzz";
+    } else if(gAFuzz) {
+        newargv[n++] = (char*)"--afuzz";
     }
 
     newargv[n] = NULL;
@@ -887,25 +902,44 @@ static void runDetectorBattery(void) {
     setRulesetsEnabled(NO, rulesetsDir);
     shdw_shadow_filter_set_enabled(0);
 
-    ShdwDetectorResult raw = ShdwDetectorRun();
+    NSArray* rawAudit = ShdwDetectorAudit();
+    NSUInteger rawFired = 0;
 
-    printf("  raw (no Shadow)      → %s%s\n", raw.jailbroken ? "JAILBROKEN" : "clean",
-        raw.jailbroken ? "" : "  ← detector failed to find the simulated jailbreak");
+    for(NSDictionary* entry in rawAudit) {
+        if([[entry objectForKey:@"fired"] boolValue]) {
+            rawFired++;
+            printf("  raw hit: %s\n", [[entry objectForKey:@"probe"] UTF8String]);
+        }
+    }
 
-    CHECK(raw.jailbroken, "detector detects the simulated jailbreak without Shadow");
+    printf("  raw (no Shadow)      → %s (%lu probes fired)\n",
+        rawFired > 0 ? "JAILBROKEN" : "clean", (unsigned long)rawFired);
 
-    // SHADOW: rulesets restored + filter on.
+    CHECK(rawFired > 0, "detector detects the simulated jailbreak without Shadow");
+
+    // SHADOW: rulesets restored + filter on. Every fired probe is a LEAK —
+    // a ruleset gap the detector can see through.
     setRulesetsEnabled(YES, rulesetsDir);
     shdw_shadow_filter_set_enabled(1);
 
-    ShdwDetectorResult shadow = ShdwDetectorRun();
+    NSArray* shadowAudit = ShdwDetectorAudit();
+    NSUInteger leaks = 0;
 
-    if(shadow.jailbroken) {
-        gFail++;
-        printf("LEAK: detector found jailbreak with Shadow active — %s\n", shadow.reason);
-    } else {
+    for(NSDictionary* entry in shadowAudit) {
+        if([[entry objectForKey:@"fired"] boolValue]) {
+            leaks++;
+            gFail++;
+            printf("LEAK: %s\n", [[entry objectForKey:@"probe"] UTF8String]);
+        }
+    }
+
+    if(leaks == 0) {
         gPass++;
-        printf("  shadow (Shadow on)   → clean (all probes hidden)\n");
+        printf("  shadow (Shadow on)   → clean (%lu probes, all hidden)\n",
+            (unsigned long)[shadowAudit count]);
+    } else {
+        printf("  shadow (Shadow on)   → %lu leaks of %lu probes\n",
+            (unsigned long)leaks, (unsigned long)[shadowAudit count]);
     }
 #endif
 }
@@ -981,12 +1015,16 @@ int main(int argc, const char** argv) {
                 gDetector = YES;
             } else if(strcmp(argv[i], "--benign") == 0) {
                 gBenign = YES;
+            } else if(strcmp(argv[i], "--fuzz") == 0) {
+                gFuzz = YES;
+            } else if(strcmp(argv[i], "--afuzz") == 0) {
+                gAFuzz = YES;
             }
         }
 
-        // The detector/benign batteries simulate a rootless jailbreak
-        // (virtual FS + shadow filter).
-        if(gDetector || gBenign) {
+        // The detector/benign/adversarial-fuzz batteries simulate a
+        // rootless jailbreak (virtual FS + shadow filter).
+        if(gDetector || gBenign || gAFuzz) {
             gRootless = YES;
         }
 
@@ -998,7 +1036,7 @@ int main(int argc, const char** argv) {
             // work-dir names collision-free.
             int rc = 0;
             const char* modes[][1] = { {"--rootless"}, {"--rooted"} };
-            int modeCount = (!gRootless && argc == 1) ? 2 : 1;
+            int modeCount = (!gRootless && (argc == 1 || gFuzz)) ? 2 : 1;
 
             for(int i = 0; i < modeCount; i++) {
                 char* argv2[5];
@@ -1016,6 +1054,12 @@ int main(int argc, const char** argv) {
                     argv2[3] = NULL;
                 } else if(gBenign) {
                     argv2[2] = (char*)"--benign";
+                    argv2[3] = NULL;
+                } else if(gFuzz) {
+                    argv2[2] = (char*)"--fuzz";
+                    argv2[3] = NULL;
+                } else if(gAFuzz) {
+                    argv2[2] = (char*)"--afuzz";
                     argv2[3] = NULL;
                 } else {
                     argv2[2] = NULL;
@@ -1050,7 +1094,7 @@ int main(int argc, const char** argv) {
 
         printf("=== Shadow harness (%s, %s) work=%s\n",
             gRootless ? "rootless" : "rooted",
-            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : (gBenign ? "benign" : "unit tests"))),
+            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : (gBenign ? "benign" : (gFuzz ? "fuzz" : (gAFuzz ? "afuzz" : "unit tests"))))),
             [work UTF8String]);
 
         if(gDetect) {
@@ -1074,6 +1118,36 @@ int main(int argc, const char** argv) {
             runBenignBattery();
             printf("=== %d passed, %d failed\n", gPass, gFail);
             return gFail ? 1 : 0;
+        }
+
+        if(gFuzz) {
+            NSUInteger iters = 20000;
+            unsigned seed = 0;
+
+            if(getenv("SHADW_FUZZ_ITERS")) {
+                iters = (NSUInteger)strtoul(getenv("SHADW_FUZZ_ITERS"), NULL, 10);
+            }
+
+            if(getenv("SHADW_FUZZ_SEED")) {
+                seed = (unsigned)strtoul(getenv("SHADW_FUZZ_SEED"), NULL, 10);
+            }
+
+            return shdw_fuzz_run(iters, seed);
+        }
+
+        if(gAFuzz) {
+            NSUInteger variants = 2000;
+            unsigned seed = 0;
+
+            if(getenv("SHADW_AFUZZ_ITERS")) {
+                variants = (NSUInteger)strtoul(getenv("SHADW_AFUZZ_ITERS"), NULL, 10);
+            }
+
+            if(getenv("SHADW_AFUZZ_SEED")) {
+                seed = (unsigned)strtoul(getenv("SHADW_AFUZZ_SEED"), NULL, 10);
+            }
+
+            return shdw_afuzz_run(variants, seed);
         }
 
         // testReload is rooted-mode only: the ruleset-mutation timing is
