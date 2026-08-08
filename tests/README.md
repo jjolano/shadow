@@ -199,6 +199,20 @@ the host, matching IOSSecuritySuite). It also surfaced a real ruleset gap:
 the shipped rulesets do not cover `/usr/sbin/sshd` — a simulated device
 whose jbroot contains it leaks it to detectors.
 
+## shadowd ledger battery
+
+`shadowd/ledger.m` (the daemon's write-ahead persistence) is Foundation-only
+and compiles straight into the harness. The unit run asserts the wire format
+contract — `%d|%s|%s|0x%llx|0x%llx`, a hard on-disk constraint — including
+the strict parse rejections (state coercion, field counts, vnode hex), the
+pipe-in-path unrepresentability edge case, and the full write-ahead file
+semantics (add/update/per-owner remove/path remove/wipe, bad-header
+discard-and-wipe) against the real container filesystem in rooted mode
+(gracefully skipped where `/var/mobile` isn't writable). The daemon's own
+DEBUG self-check constructor now runs at harness load too. The remaining
+daemon surface — `krw.m` (kernel primitives), the mach service loop, vnode
+resolution — is device-only.
+
 ## Hooked-API coverage
 
 The hook layer itself (HookKit interposition in `ShadowCore.dylib`) is
