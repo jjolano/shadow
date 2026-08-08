@@ -123,6 +123,28 @@ void shdw_detector_detected(const char* reason) {
 
     shdw_detector_present = YES;
 
+    // Detector activity log (diagnostic): append the probe to the prefs
+    // suite so the settings pane can show recent hits. Best-effort — a
+    // prefs failure must never break the escalation below. Capped at 100
+    // entries, newest last.
+    @try {
+        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        NSMutableArray* log = [[defaults arrayForKey:@"DetectorLog"] mutableCopy] ?: [NSMutableArray new];
+
+        NSDateFormatter* fmt = [NSDateFormatter new];
+        fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+        [log addObject:[NSString stringWithFormat:@"%@  %@  %@", [fmt stringFromDate:[NSDate date]], [NSString stringWithUTF8String:reason ?: "unknown"], [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"]];
+
+        if(log.count > 100) {
+            [log removeObjectsInRange:NSMakeRange(0, log.count - 100)];
+        }
+
+        [defaults setObject:log forKey:@"DetectorLog"];
+        [defaults synchronize];
+    } @catch (NSException* e) {
+        // Never let diagnostics break the bypass.
+    }
+
     // Detector escalation also arms the vnode client: its gate re-evaluates
     // per call, so a detector that appeared after the ctor's gate check
     // still triggers the (once-per-process) acquire.

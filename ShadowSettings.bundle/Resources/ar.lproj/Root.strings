@@ -13,3 +13,5 @@
 "RESET_CANCEL" = "إلغاء";
 "ROOT_ABOUT" = "حول";
 }
+
+"ROOT_DETECTOR_LOG" = "سجل كاشف الجيلبريك";
