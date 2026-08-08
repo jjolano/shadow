@@ -696,6 +696,162 @@ static void testShadowdLedger(void) {
     }
 }
 
+// shadowd recovery-decision battery: the daemon's crash-recovery logic
+// (the verbatim test double in shadowd/RecoveryHarness.m, drift-guarded by
+// verify-recovery-copy.sh) with configurable seams for the kernel-touching
+// helpers. Rooted mode only (real files + the real ledger writes).
+#import "shadowd/RecoveryHarness.h"
+
+static void testShadowdRecovery(void) {
+    printf("[tests] shadowd recovery decisions\n");
+
+    if(gRootless) {
+        printf("  (rooted mode only — real files + real ledger writes)\n");
+        return;
+    }
+
+    NSString* dir = [harnessWorkDir() stringByAppendingPathComponent:@"recov"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString* visible = [dir stringByAppendingPathComponent:@"visible.txt"];
+    NSString* gone = [dir stringByAppendingPathComponent:@"gone.txt"];
+    [@"x" writeToFile:visible atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:gone error:nil];
+
+    gIsRootless = false;
+    gBootUUID = @"harness-boot";
+
+    // WAL writability probe (mirrors testShadowdLedger): the re-hide cases
+    // must persist a fresh vnode through ledger_update_record, which needs
+    // a writable ledger dir. Skipped gracefully where it isn't (macOS CI).
+    bool walOK = ledger_add_record("/recovery-probe", "p:0:0", 0x1, 0x1, 1);
+    if(!walOK) {
+        printf("  (WAL-dependent re-hide cases skipped: ledger dir not writable)\n");
+    }
+
+    // The daemon's allowlist is an exact-path list — records are only
+    // admitted for paths the user actually asked to hide.
+    NSArray* allow = @[visible, gone, @"/etc/hosts", @"/etc/passwd"];
+    NSMutableArray* kept;
+
+    // Malformed → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(@"garbage", kept);
+    CHECK([kept count] == 0, "recovery: malformed record dropped");
+
+    // Non-allowlisted path → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(@"1|/tmp/evil|p:1:1|0x1000|0x2000", kept);
+    CHECK([kept count] == 0, "recovery: non-allowlisted path dropped");
+
+    // Implausible saved vnode (A14) → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_plausible_range(0x1000, 0xFFFF);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(@"1|/etc/passwd|p:1:1|0x1|0x2000", kept);
+    CHECK([kept count] == 0, "recovery: implausible saved vnode dropped");
+
+    // Existing leased resource → owner added, record kept.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    kept = [NSMutableArray new];
+    ShadowResource* res = [ShadowResource resourceWithFd:-1 vnode:0x1000 vId:0x2000 flagSet:YES verified:YES owner:@"p:9:9"];
+    [gResources setObject:res forKey:@"/etc/hosts"];
+    shdw_test_recover_one_record(@"1|/etc/hosts|p:1:1|0x1000|0x2000", kept);
+    CHECK([kept count] == 1, "recovery: leased resource record kept");
+    CHECK([res.owners containsObject:@"p:1:1"], "recovery: owner added to leased resource");
+
+    // Visible + mayBeHidden (state 0) → rolled back, no WAL write.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record([NSString stringWithFormat:@"0|%@|p:1:1|0x1000|0x2000", visible], kept);
+    CHECK([kept count] == 0, "recovery: mayBeHidden + visible rolled back");
+
+    if(walOK) {
+        // Visible + hidden (state 1): re-resolve → fresh-vnode WAL → re-hide.
+        shdw_recovery_reset();
+        shdw_recovery_set_allowlist(allow);
+        shdw_recovery_set_resolve(YES, 0xABCD, 0x1234);
+        kept = [NSMutableArray new];
+        shdw_test_recover_one_record([NSString stringWithFormat:@"1|%@|p:1:1|0x1000|0x2000", visible], kept);
+        NSString* expected = [NSString stringWithFormat:@"1|%@|p:1:1|0xabcd|0x1234", visible];
+        CHECK([kept count] == 1, "recovery: visible+hidden re-hidden (record kept)");
+        CHECK([[kept objectAtIndex:0] isEqualToString:expected], "recovery: fresh vnode persisted in WAL");
+        CHECK([gResources objectForKey:visible] != nil, "recovery: resource re-adopted");
+        CHECK([[gResources objectForKey:visible] verified], "recovery: VFLAG_OK verified");
+
+        // Re-resolve failure → record kept for a future retry.
+        shdw_recovery_reset();
+        shdw_recovery_set_allowlist(allow);
+        shdw_recovery_set_resolve(NO, 0, 0);
+        kept = [NSMutableArray new];
+        NSString* rec1 = [NSString stringWithFormat:@"1|%@|p:1:1|0x1000|0x2000", visible];
+        shdw_test_recover_one_record(rec1, kept);
+        CHECK([kept count] == 1 && [[kept objectAtIndex:0] isEqualToString:rec1],
+            "recovery: re-resolve failure keeps record");
+
+        // VFLAG_FAILED_PRE → fresh-vnode record kept, nothing adopted.
+        shdw_recovery_reset();
+        shdw_recovery_set_allowlist(allow);
+        shdw_recovery_set_resolve(YES, 0xABCD, 0x1234);
+        shdw_recovery_set_vflag(1 /* VFLAG_FAILED_PRE */);
+        kept = [NSMutableArray new];
+        shdw_test_recover_one_record([NSString stringWithFormat:@"1|%@|p:1:1|0x1000|0x2000", visible], kept);
+        CHECK([kept count] == 1 && [[kept objectAtIndex:0] isEqualToString:expected],
+            "recovery: failed-pre keeps fresh-vnode record");
+        CHECK([gResources objectForKey:visible] == nil, "recovery: failed-pre adopts nothing");
+    }
+
+    // ENOENT + saved vnode flagged + v_id match → adopted.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_krw(YES, 0x1000, VISSHADOW, 0x2000);
+    kept = [NSMutableArray new];
+    NSString* goneRec = [NSString stringWithFormat:@"1|%@|p:1:1|0x1000|0x2000", gone];
+    shdw_test_recover_one_record(goneRec, kept);
+    CHECK([kept count] == 1, "recovery: ENOENT + flagged adopted");
+    CHECK([gResources objectForKey:gone] != nil, "recovery: hidden resource adopted");
+
+    // ENOENT + not flagged → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_krw(YES, 0x1000, 0, 0x2000);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(goneRec, kept);
+    CHECK([kept count] == 0, "recovery: un-flagged saved vnode dropped");
+
+    // ENOENT + v_id mismatch → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_krw(YES, 0x1000, VISSHADOW, 0x9999);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(goneRec, kept);
+    CHECK([kept count] == 0, "recovery: v_id mismatch dropped");
+
+    // ENOENT + zero saved v_id → refused (flag is set, so only v_id==0 drops it).
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_krw(YES, 0x1000, VISSHADOW, 0);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record([NSString stringWithFormat:@"1|%@|p:1:1|0x1000|0x0", gone], kept);
+    CHECK([kept count] == 0, "recovery: zero saved v_id refused");
+
+    // krw read failure → dropped.
+    shdw_recovery_reset();
+    shdw_recovery_set_allowlist(allow);
+    shdw_recovery_set_krw(NO, 0, 0, 0);
+    kept = [NSMutableArray new];
+    shdw_test_recover_one_record(goneRec, kept);
+    CHECK([kept count] == 0, "recovery: krw read failure dropped");
+
+    ledger_wipe();
+}
+
 // Rootless only — the stub maps /Library/dpkg/info into the fixture jbroot
 // tree (fixtures/fs/jb/Library/dpkg/info/*.list).
 static void testDatabase(void) {
@@ -1450,6 +1606,7 @@ int main(int argc, const char** argv) {
         testDatabase();
         testCoverageGaps();
         testShadowdLedger();
+        testShadowdRecovery();
 
         if(!gRootless) {
             testReload();
