@@ -113,11 +113,9 @@ static const char* const kSuspiciousPaths[] = {
 
 // These paths exist legitimately on simulators and are SKIPPED by
 // IOSSecuritySuite there (EmulatorChecker.amIRunInEmulator). The harness
-// host is the emulator case, so they are never probed — probing them here
-// would also hit a real ruleset gap: the shipped rulesets do not cover
-// /usr/sbin/sshd etc., so a simulated device whose jbroot contains them
-// would legitimately "leak" them to this probe.
-/*
+// host is the emulator case, so the RUN omits them — but the AUDIT probes
+// them too, because they are classic detector paths and a real ruleset
+// gap would leak them on devices where they exist (e.g. /usr/sbin/sshd).
 static const char* const kEmulatorOnlyPaths[] = {
     "/bin/bash",
     "/usr/sbin/sshd",
@@ -127,7 +125,6 @@ static const char* const kEmulatorOnlyPaths[] = {
     "/usr/libexec/sftp-server",
     "/usr/bin/ssh",
 };
-*/
 
 // Check 2: suspicious files that can actually be opened (R_OK).
 static const char* const kReadablePaths[] = {
@@ -160,6 +157,55 @@ static void setResult(ShdwDetectorResult* r, const char* fmt, const char* arg) {
         r->jailbroken = YES;
         snprintf(r->reason, sizeof(r->reason), fmt, arg);
     }
+}
+
+// Appends one audit entry. `group` names the check; `detail` the probe.
+static void auditAdd(NSMutableArray* audit, NSString* group, NSString* detail, BOOL fired) {
+    [audit addObject:@{
+        @"probe" : [NSString stringWithFormat:@"%@ %@", group, detail],
+        @"fired" : @(fired),
+        @"detail" : detail,
+    }];
+}
+
+NSArray* ShdwDetectorAudit(void) {
+    NSMutableArray* audit = [NSMutableArray new];
+
+    for(NSUInteger i = 0; i < sizeof(kSuspiciousPaths) / sizeof(kSuspiciousPaths[0]); i++) {
+        auditAdd(audit, @"exists", [NSString stringWithUTF8String:kSuspiciousPaths[i]],
+            access(kSuspiciousPaths[i], F_OK) == 0);
+    }
+
+    for(NSUInteger i = 0; i < sizeof(kEmulatorOnlyPaths) / sizeof(kEmulatorOnlyPaths[0]); i++) {
+        auditAdd(audit, @"exists(emu)", [NSString stringWithUTF8String:kEmulatorOnlyPaths[i]],
+            access(kEmulatorOnlyPaths[i], F_OK) == 0);
+    }
+
+    for(NSUInteger i = 0; i < sizeof(kReadablePaths) / sizeof(kReadablePaths[0]); i++) {
+        auditAdd(audit, @"readable", [NSString stringWithUTF8String:kReadablePaths[i]],
+            access(kReadablePaths[i], R_OK) == 0);
+    }
+
+    for(NSUInteger i = 0; i < sizeof(kWritableDirs) / sizeof(kWritableDirs[0]); i++) {
+        NSString* random = [NSString stringWithFormat:@"%s/AmIJailbroken?%08x",
+            kWritableDirs[i], (unsigned)arc4random()];
+        int fd = open([random fileSystemRepresentation], O_CREAT | O_WRONLY | O_EXCL, 0644);
+
+        if(fd >= 0) {
+            close(fd);
+            unlink([random fileSystemRepresentation]);
+        }
+
+        auditAdd(audit, @"writable", [NSString stringWithUTF8String:kWritableDirs[i]], fd >= 0);
+    }
+
+    for(NSUInteger i = 0; i < sizeof(kSuspiciousSchemes) / sizeof(kSuspiciousSchemes[0]); i++) {
+        NSString* scheme = [NSString stringWithUTF8String:kSuspiciousSchemes[i]];
+        auditAdd(audit, @"scheme", scheme,
+            ![[Shadow sharedInstance] isSchemeRestricted:scheme]);
+    }
+
+    return audit;
 }
 
 ShdwDetectorResult ShdwDetectorRun(void) {
