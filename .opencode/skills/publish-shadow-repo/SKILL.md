@@ -17,20 +17,19 @@ description: Publish Shadow's built debs to the jjolano apt repo (../ios-repo). 
 | deb | dest |
 |---|---|
 | `me.jjolano.shadow_<ver>_iphoneos-arm64.deb` | `rootless/` |
-| `me.jjolano.shadow_<ver>_iphoneos-arm.deb` | `root/` |
-| `me.jjolano.shadow.legacy_<ver>_iphoneos-arm.deb` | `root/` |
+| `me.jjolano.shadow_<ver>_iphoneos-arm.deb` (fat: armv7/armv7s + arm64/arm64e) | `root/` |
 
 ## Gotchas
 
-- **One deb per package+version+arch.** The three flavors can't share one entry — apt keys on `name_version_arch`.
-- **Legacy is a separate package id** `me.jjolano.shadow.legacy` (matches upstream repo layout; `control` declares `Conflicts: me.jjolano.shadow.legacy`). `build.sh legacy` seds the Package line — never rename the legacy deb to the main id, or apt can't disambiguate two identical package+version+arch entries.
+- **One deb per package+version+arch.** The two flavors can't share one entry — apt keys on `name_version_arch`.
+- **The fat deb replaces both the old rooted and legacy packages.** `control` keeps `Conflicts: me.jjolano.shadow.legacy`, so installing it on a device with the old v2-era `me.jjolano.shadow.legacy` package auto-removes it (dpkg deinstalls conflicted packages). Never ship the old legacy id — the fat deb is the single `iphoneos-arm` entry.
 - **`update.sh` pushes to the LIVE repo.** Confirm with the user before running.
 - Multiversion: old versions stay in the index; the new version joins as an upgrade.
 
 ## Workflow
 
-1. Build: `./build.sh` → 3 debs in `build/`
+1. Build: `./build.sh` → 2 debs in `build/`
 2. Verify each deb's control: `dpkg-deb -f build/<deb> Package Version Architecture`
 3. Copy into `../ios-repo` per the table above
-4. Run `../ios-repo/update.sh` (regenerates index + commits + pushes)
+4. Run `../ios-repo/update.sh` (regenerates index + commits + pushes) — **only after explicit confirmation**
 5. Verify: `Packages` contains the new entries, `Release` regenerated
