@@ -514,10 +514,96 @@ static void testHookEntryPoints(void) {
 }
 
 // generateDatabase: builds a ruleset dict from the dpkg info database.
+// Coverage-gap tests: the branches the unit groups don't reach (from the
+// gcov report) — isURLRestricted's nil/reference-URL paths,
+// getStandardizedPath's slow-path triggers, the backend's reload gate and
+// dir-add detection, and RulesetEngine's cache-restore and exception paths.
+static void testCoverageGaps(void) {
+    printf("[tests] coverage gaps\n");
+
+    // isURLRestricted: nil branch.
+    CHECK(![shdw() isURLRestricted:nil], "isURLRestricted nil allowed");
+
+    // file-reference URL: GNUstep may or may not produce one; if it does,
+    // the verdict must match the path verdict.
+    NSURL* ref = [[NSURL fileURLWithPath:@"/var/jb/usr/bin/ssh"] fileReferenceURL];
+
+    if(ref) {
+        CHECK([shdw() isURLRestricted:ref], "isURLRestricted file-reference URL restricted");
+    }
+
+    // getStandardizedPath slow-path triggers: query/fragment markers strip
+    // to the path; /private/etc and /var/tmp rewrite.
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin/ssh?x=1"] isEqualToString:@"/usr/bin/ssh"], "standardize query marker");
+    CHECK([[Shadow getStandardizedPath:@"/usr/bin/ssh#frag"] isEqualToString:@"/usr/bin/ssh"], "standardize fragment marker");
+    CHECK([[Shadow getStandardizedPath:@"/private/etc/hosts"] isEqualToString:@"/etc/hosts"], "standardize /private/etc");
+    CHECK([[Shadow getStandardizedPath:@"/var/tmp/x"] isEqualToString:@"/tmp/x"], "standardize /var/tmp");
+    CHECK([[Shadow getStandardizedPath:@"/./usr/bin/ssh"] isEqualToString:@"/usr/bin/ssh"], "standardize leading dot component");
+
+    // Percent-encoding is non-idempotent on this stack (documented); the
+    // first-pass output must still be stable across a second pass.
+    NSString* pct = [Shadow getStandardizedPath:@"/usr/bin/%2e/ssh"];
+
+    CHECK([[Shadow getStandardizedPath:pct] isEqualToString:pct], "standardize stable after first pass");
+
+    // Backend reload gate: rapid repeat queries must NOT bump the ruleset
+    // generation (the 1s scan gate).
+    ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
+    NSUInteger genBefore = [backend rulesetGeneration];
+
+    (void)[shdw() isPathRestricted:@"/usr/sbin/fstab"];
+    (void)[shdw() isPathRestricted:@"/usr/sbin/fstab"];
+    CHECK([backend rulesetGeneration] == genBefore, "reload gate: no scan on rapid queries");
+
+    // Dir-add detection: a NEW ruleset file in the dir must be picked up
+    // (dir-mtime path of _checkRulesetChanges), bumping the generation.
+    if(!gRootless) {
+        NSString* rulesetsDir = [[harnessWorkDir() stringByAppendingPathComponent:@"root/Library/Shadow"]
+            stringByAppendingPathComponent:@"Rulesets"];
+        NSString* target = [[harnessWorkDir() stringByAppendingPathComponent:@"shdw-app"]
+            stringByAppendingPathComponent:@"restricted-target"];
+
+        NSDictionary* added = @{
+            @"RulesetInfo" : @{@"Name" : @"Test Added", @"Author" : @"harness"},
+            @"BlacklistExactPaths" : @[@"/usr/sbin/added-test"]
+        };
+
+        [added writeToFile:[rulesetsDir stringByAppendingPathComponent:@"007-Added.plist"] atomically:YES];
+        [NSThread sleepForTimeInterval:1.3];
+
+        // A cache-MISS query triggers the scan + reload (a cached path
+        // would skip the backend entirely); only then does the gen bump.
+        CHECK([shdw() isPathRestricted:@"/usr/sbin/added-test"], "added ruleset applies");
+        CHECK([backend rulesetGeneration] > genBefore, "dir-add reload bumps generation");
+
+        [[NSFileManager defaultManager] removeItemAtPath:[rulesetsDir stringByAppendingPathComponent:@"007-Added.plist"] error:nil];
+        [NSThread sleepForTimeInterval:1.3];
+    }
+
+    // RulesetEngine cache-restore path: a second load of an unchanged
+    // ruleset must restore from the compiled cache and behave identically.
+    NSString* rulesetsDir = [harnessWorkDir() stringByAppendingPathComponent:
+        (gRootless ? @"jb/Library/Shadow/Rulesets" : @"root/Library/Shadow/Rulesets")];
+    NSURL* overridesURL = [NSURL fileURLWithPath:[rulesetsDir stringByAppendingPathComponent:@"002-Overrides.plist"]];
+
+    RulesetEngine* first = [RulesetEngine rulesetWithURL:overridesURL];
+    RulesetEngine* second = [RulesetEngine rulesetWithURL:overridesURL];
+
+    CHECK(first != nil && second != nil, "ruleset double-load");
+    CHECK([first isPathWhitelisted:@"/usr/bin/ssh"] == [second isPathWhitelisted:@"/usr/bin/ssh"], "ruleset cache restore preserves semantics");
+
+    // Exception path: a ruleset whose predicate fails to parse is loaded
+    // with that rule SKIPPED (per-predicate @try in _compile), never fatal.
+    NSURL* badURL = [NSURL fileURLWithPath:[rulesetsDir stringByAppendingPathComponent:@"008-BadPredicate.plist"]];
+    RulesetEngine* bad = [RulesetEngine rulesetWithURL:badURL];
+
+    CHECK(bad != nil, "bad-predicate ruleset tolerated");
+    CHECK(![bad isPathBlacklisted:@"/var/mobile/bogus-operator-match"], "broken predicate rule skipped");
+}
+
 // Rootless only — the stub maps /Library/dpkg/info into the fixture jbroot
 // tree (fixtures/fs/jb/Library/dpkg/info/*.list).
-static void testDatabase(void) {
-    printf("[tests] dpkg database generation\n");
+static void testDatabase(void) {    printf("[tests] dpkg database generation\n");
 
     if(!gRootless) {
         printf("  (rootless mode only)\n");
@@ -1162,6 +1248,7 @@ int main(int argc, const char** argv) {
         testUtilities();
         testHookEntryPoints();
         testDatabase();
+        testCoverageGaps();
 
         if(!gRootless) {
             testReload();
