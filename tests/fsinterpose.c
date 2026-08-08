@@ -67,13 +67,15 @@ static const char* const kJBRootPrefixes[] = {
     "/private/", "/var/", "/jb",
 };
 
-static const char* map_jb(const char* path) {
+// Maps into the CALLER's buffer (never a shared static): the shadow
+// filter's engine call re-enters the wrapped functions (the engine's
+// existence gates), and a shared buffer would be clobbered by the nested
+// mapping — the outer wrap's real call would then run on the wrong path.
+static const char* map_jb_into(const char* path, char* buf) {
     if(gJBPath[0] && path && path[0] == '/') {
-        static __thread char buf[PATH_MAX];
-
         // "/var/jb" or "/var/jb/..." → gJBPath + suffix; "/var/jb2/x" stays put.
         if(strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) {
-            snprintf(buf, sizeof buf, "%s%s", gJBPath, path + 7);
+            snprintf(buf, PATH_MAX, "%s%s", gJBPath, path + 7);
             return buf;
         }
 
@@ -81,7 +83,7 @@ static const char* map_jb(const char* path) {
             const char* prefix = kJBRootPrefixes[i];
 
             if(strncmp(path, prefix, strlen(prefix)) == 0) {
-                snprintf(buf, sizeof buf, "%s%s", gJBPath, path);
+                snprintf(buf, PATH_MAX, "%s%s", gJBPath, path);
                 return buf;
             }
         }
@@ -118,25 +120,27 @@ static int filter_path(const char* path, int is_write) {
 }
 
 int __wrap_access(const char* path, int mode) {
-    const char* mapped = map_jb(path);
-
-    if(filter_path(mapped, 0)) {
+    // Filter on the RAW path: the engine must decide on the real device
+    // path. Filtering the mapped path would trip the restricted-root
+    // fast-path for every fixture-backed file (the mapped path IS the
+    // jbroot) — not device behavior.
+    if(filter_path(path, 0)) {
         errno = ENOENT;
         return -1;
     }
 
-    return __real_access(mapped, mode);
+    char mapped[PATH_MAX];
+    return __real_access(map_jb_into(path, mapped), mode);
 }
 
 char* __wrap_realpath(const char* path, char* resolved) {
-    const char* mapped = map_jb(path);
-
-    if(filter_path(mapped, 0)) {
+    if(filter_path(path, 0)) {
         errno = ENOENT;
         return NULL;
     }
 
-    return __real_realpath(mapped, resolved);
+    char mapped[PATH_MAX];
+    return __real_realpath(map_jb_into(path, mapped), resolved);
 }
 
 int __wrap_open(const char* path, int flags, ...) {
@@ -149,15 +153,15 @@ int __wrap_open(const char* path, int flags, ...) {
         va_end(ap);
     }
 
-    const char* mapped = map_jb(path);
     int is_write = (flags & (O_WRONLY | O_RDWR)) || (flags & O_CREAT);
 
-    if(filter_path(mapped, is_write)) {
+    if(filter_path(path, is_write)) {
         errno = EACCES;
         return -1;
     }
 
-    return __real_open(mapped, flags, mode);
+    char mapped[PATH_MAX];
+    return __real_open(map_jb_into(path, mapped), flags, mode);
 }
 
 // -- dyld symbol providers ------------------------------------------------
@@ -187,6 +191,11 @@ const char* dyld_image_path_containing_address(const void* addr) {
 // no libdispatch. A global mutex is plenty: the harness is effectively
 // single-threaded (no hooked hook threads), and correctness only requires
 // run-once.
+//
+// The block runs with the in-filter guard raised: engine critical sections
+// (e.g. isPathInRestrictedRoot's jbrootTarget computation, whose realpath
+// is wrapped) must not be re-filtered — the filter's engine call would
+// re-enter the same dispatch_once and self-deadlock on the mutex.
 
 #include <pthread.h>
 
@@ -199,7 +208,9 @@ void dispatch_once(dispatch_once_t* predicate, void (^block)(void)) {
     pthread_mutex_lock(&onceMutex);
 
     if(*predicate == 0) {
+        gInFilter++;
         block();
+        gInFilter--;
         __atomic_store_n(predicate, 1, __ATOMIC_RELEASE);
     }
 

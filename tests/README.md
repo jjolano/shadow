@@ -20,6 +20,7 @@ make -C tests detector    # real-detector vs Shadow: raw vs filtered passes
 make -C tests benign      # benign app session: filter OFF vs ON must match
 make -C tests coverage    # gcov report: engine methods vs hooked API groups
 make -C tests fuzz        # edge-case fuzzer (invariants, seeded, reproducible)
+make -C tests afuzz       # adversarial fuzzer (evasion oracle vs canonical verdicts)
 make -C tests fuzz-smoke  # CI fuzz: known D4 transient allowed (reported)
 ```
 
@@ -167,6 +168,35 @@ Track record so far — the fuzzer found and led to fixes for:
   fresh verdict flips between calls, a cache-layer consistency wrinkle on
   the GNUstep stack). `make fuzz` fails on it (strict, local);
   `make fuzz-smoke`/CI report it as allowed until root-caused.
+
+## Adversarial fuzzing
+
+`make -C tests afuzz` answers "can a detector dodge Shadow by path
+mangling?" with a semantic oracle: for each canonical seed (jailbreak
+artifacts + legit paths), every evasion mutation (separator/`..`/tilde
+escapes, unicode slash lookalikes, RTL overrides, token splices, case
+flips, truncation) that STANDARDIZES TO THE SAME PATH must receive the
+SAME verdict — read and write (C0-1). With the shadow filter armed, the
+same equivalence is asserted at the filesystem layer: restricted
+equivalents stay hidden (ENOENT), allowed seeds' real files stay visible.
+Mutations that standardize to a different path are different paths, not
+evasions — tallied per seed as the informational dodge surface.
+
+Finding classes: E1 (equivalent read verdict differs), E2 (write), E3
+(filter leak), E4 (filter false positive), each re-verified against the
+canonical to exclude the known D4 transient.
+
+Building the afuzz surfaced and fixed four harness bugs: a dispatch_once
+self-deadlock (the filter's engine call re-entered the shim's non-recursive
+mutex — once-blocks now run with the in-filter guard raised), the filter
+consulting the engine on MAPPED paths (fixture paths tripped the
+restricted-root fast-path — the filter now uses raw paths, matching device
+semantics), a shared-buffer clobber in the path mapper (nested mapping
+overwrote the outer wrap's pointer — per-call stack buffers), and a
+port-fidelity gap (the detector's emulator-only probes are now skipped on
+the host, matching IOSSecuritySuite). It also surfaced a real ruleset gap:
+the shipped rulesets do not cover `/usr/sbin/sshd` — a simulated device
+whose jbroot contains it leaks it to detectors.
 
 ## Hooked-API coverage
 

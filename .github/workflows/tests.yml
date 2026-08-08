@@ -35,6 +35,9 @@ jobs:
       - name: Fuzz smoke (pinned seed, below first known finding)
         run: make -C tests fuzz-smoke
 
+      - name: Adversarial fuzz (evasion oracle)
+        run: make -C tests afuzz
+
   macos-foundation:
     runs-on: macos-latest
     steps:
