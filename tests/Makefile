@@ -94,6 +94,9 @@ benign: harness
 fuzz: harness
 	$(RUN) tests/harness --fuzz
 
+shipped: harness
+	$(RUN) tests/harness --shipped
+
 afuzz: harness
 	$(RUN) tests/harness --afuzz
 
@@ -108,4 +111,4 @@ clean:
 
 endif
 
-.PHONY: test test-rooted detect adversary adversary-rooted detector benign fuzz afuzz coverage clean
+.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean

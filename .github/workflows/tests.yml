@@ -41,6 +41,9 @@ jobs:
       - name: Detector battery (shipped rulesets, full leak report)
         run: make -C tests detector
 
+      - name: Shipped rulesets battery (product rules)
+        run: make -C tests shipped
+
       - name: Benign app unaffected by Shadow
         run: make -C tests benign
 
