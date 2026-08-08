@@ -52,6 +52,7 @@ static BOOL gDetect = NO;
 static BOOL gAdversary = NO;
 static BOOL gDetector = NO;
 static BOOL gBenign = NO;
+static BOOL gShipped = NO;
 static BOOL gFuzz = NO;
 static BOOL gAFuzz = NO;
 static int gPass = 0;
@@ -191,6 +192,8 @@ static int stageAndExec(int argc, const char** argv) {
             gDetector = YES;
         } else if(strcmp(argv[i], "--benign") == 0) {
             gBenign = YES;
+        } else if(strcmp(argv[i], "--shipped") == 0) {
+            gShipped = YES;
         } else if(strcmp(argv[i], "--fuzz") == 0) {
             gFuzz = YES;
         } else if(strcmp(argv[i], "--afuzz") == 0) {
@@ -199,7 +202,8 @@ static int stageAndExec(int argc, const char** argv) {
     }
 
     // The detector/benign/adversarial-fuzz batteries simulate a rootless
-    // jailbreak (virtual FS + shadow filter); the fuzzer runs both modes.
+    // jailbreak (virtual FS + shadow filter); the fuzzer and the shipped
+    // ruleset battery run both modes.
     if(gDetector || gBenign || gAFuzz) {
         gRootless = YES;
     }
@@ -217,7 +221,7 @@ static int stageAndExec(int argc, const char** argv) {
     NSString* work = [NSTemporaryDirectory() stringByAppendingPathComponent:
         [NSString stringWithFormat:@"shdw-harness-%d-%s", getpid(), gRootless ? "rootless" : "rooted"]];
 
-    NSString* rulesetsSrc = (gDetect || gDetector)
+    NSString* rulesetsSrc = (gDetect || gDetector || gShipped)
         ? [srcDir stringByAppendingPathComponent:@"../Shadow.framework/layout/Library/Shadow/Rulesets"]
         : [srcDir stringByAppendingPathComponent:@"fixtures/rulesets"];
     NSString* rulesetsDst = [work stringByAppendingPathComponent:
@@ -305,6 +309,8 @@ static int stageAndExec(int argc, const char** argv) {
         newargv[n++] = (char*)"--detector";
     } else if(gBenign) {
         newargv[n++] = (char*)"--benign";
+    } else if(gShipped) {
+        newargv[n++] = (char*)"--shipped";
     } else if(gFuzz) {
         newargv[n++] = (char*)"--fuzz";
     } else if(gAFuzz) {
@@ -555,17 +561,27 @@ static void testCoverageGaps(void) {
     (void)[shdw() isPathRestricted:@"/usr/sbin/fstab"];
     CHECK([backend rulesetGeneration] == genBefore, "reload gate: no scan on rapid queries");
 
+    // Decision-cache TTL expiry: after the 2s TTL the entry is recomputed
+    // (the age>TTL branch) and must yield the same verdict.
+    CHECK([shdw() isPathRestricted:@"/var/jb/usr/bin/ssh"], "cache TTL baseline");
+    [NSThread sleepForTimeInterval:2.1];
+    CHECK([shdw() isPathRestricted:@"/var/jb/usr/bin/ssh"], "cache TTL expiry recomputes same verdict");
+
+    // Tilde expansion branch: a resolvable tilde escapes to the home dir,
+    // and the dot-dot collapses onto the restricted root.
+    CHECK([shdw() isPathRestricted:@"~/../var/jb/usr/bin/ssh"], "tilde expansion + dot-dot collapse restricted");
+
     // Dir-add detection: a NEW ruleset file in the dir must be picked up
     // (dir-mtime path of _checkRulesetChanges), bumping the generation.
-    if(!gRootless) {
-        NSString* rulesetsDir = [[harnessWorkDir() stringByAppendingPathComponent:@"root/Library/Shadow"]
-            stringByAppendingPathComponent:@"Rulesets"];
-        NSString* target = [[harnessWorkDir() stringByAppendingPathComponent:@"shdw-app"]
-            stringByAppendingPathComponent:@"restricted-target"];
+    // Runs in both modes (the added blacklist targets the fixture-backed
+    // dpkg-tool path so the rootless gate passes).
+    {
+        NSString* rulesetsDir = [harnessWorkDir() stringByAppendingPathComponent:
+            (gRootless ? @"jb/Library/Shadow/Rulesets" : @"root/Library/Shadow/Rulesets")];
 
         NSDictionary* added = @{
             @"RulesetInfo" : @{@"Name" : @"Test Added", @"Author" : @"harness"},
-            @"BlacklistExactPaths" : @[@"/usr/sbin/added-test"]
+            @"BlacklistExactPaths" : @[@"/usr/sbin/dpkg-tool"]
         };
 
         [added writeToFile:[rulesetsDir stringByAppendingPathComponent:@"007-Added.plist"] atomically:YES];
@@ -573,7 +589,7 @@ static void testCoverageGaps(void) {
 
         // A cache-MISS query triggers the scan + reload (a cached path
         // would skip the backend entirely); only then does the gen bump.
-        CHECK([shdw() isPathRestricted:@"/usr/sbin/added-test"], "added ruleset applies");
+        CHECK([shdw() isPathRestricted:@"/usr/sbin/dpkg-tool"], "added ruleset applies");
         CHECK([backend rulesetGeneration] > genBefore, "dir-add reload bumps generation");
 
         [[NSFileManager defaultManager] removeItemAtPath:[rulesetsDir stringByAppendingPathComponent:@"007-Added.plist"] error:nil];
@@ -603,13 +619,19 @@ static void testCoverageGaps(void) {
 
 // Rootless only — the stub maps /Library/dpkg/info into the fixture jbroot
 // tree (fixtures/fs/jb/Library/dpkg/info/*.list).
-static void testDatabase(void) {    printf("[tests] dpkg database generation\n");
+static void testDatabase(void) {
+    printf("[tests] dpkg database generation\n");
 
     if(!gRootless) {
         printf("  (rootless mode only)\n");
         return;
     }
 
+    NSString* dpkgProbe = @"/usr/sbin/dpkg-tool";
+
+    // NOTE: the probe path is deliberately NOT queried before the database
+    // ruleset is applied — a pre-reload verdict would sit in the decision
+    // cache under the same generation and be served after the reload.
     NSDictionary* db = [Shadow generateDatabase];
 
     CHECK(db != nil, "generateDatabase produces a ruleset");
@@ -620,9 +642,23 @@ static void testDatabase(void) {    printf("[tests] dpkg database generation\n")
 
         CHECK([blacklist containsObject:@"/usr/bin/sshd"], "db blacklist includes package file paths");
         CHECK([blacklist containsObject:@"/Applications/FakeJB.app"], "db blacklist includes installed apps");
+        CHECK([blacklist containsObject:dpkgProbe], "db blacklist includes the dpkg-tool probe");
         CHECK(![blacklist containsObject:@"/usr/bin/ssh"], "db blacklist skips base.list (system files)");
         CHECK(![blacklist containsObject:@"/var/lib/apt/lists"], "db blacklist skips base.list entries");
         CHECK([schemes containsObject:@"fakejb"], "db schemes harvested from installed app bundles");
+
+        // End-to-end: the generated database applied back through the
+        // engine (the shadowd flow) — write it as a ruleset, reload, and
+        // the dpkg-installed paths become restricted.
+        NSString* rulesetsDir = [[harnessWorkDir() stringByAppendingPathComponent:@"jb/Library/Shadow"]
+            stringByAppendingPathComponent:@"Rulesets"];
+
+        if([db writeToFile:[rulesetsDir stringByAppendingPathComponent:@"009-Database.plist"] atomically:YES]) {
+            [NSThread sleepForTimeInterval:1.3];
+            // Fresh cache-miss path triggers the scan + reload.
+            (void)[shdw() isPathRestricted:@"/tmp/fresh-trigger"];
+            CHECK([shdw() isPathRestricted:dpkgProbe], "generated database ruleset restricts dpkg paths");
+        }
     }
 }
 
@@ -937,6 +973,83 @@ static void runBenignBattery(void) {
 #import "detectors/ShadowDetector.h"
 
 // ---------------------------------------------------------------------------
+// Shipped-ruleset battery: the PRODUCT rulesets (StandardRules +
+// JailbreakMisc) are only exercised by the detector battery's shadow pass.
+// This battery runs the classic detector-path assertions plus the whitelist/
+// structure/prefix semantics directly against the shipped rulesets, in both
+// modes (the rootless gates via the virtual FS, the rooted via C0-1 write
+// probes where the host /usr/lib gate would interfere).
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    const char* path;
+    BOOL write;          // C0-1 write probe (rooted /usr/lib lanes)
+    BOOL rootedExp;
+    BOOL rootlessExp;
+    const char* note;
+} ShippedProbe;
+
+static const ShippedProbe kShippedProbes[] = {
+    { "/var/jb", NO, YES, YES, "JailbreakMisc /var/jb prefix (rootless fast-path)" },
+    { "/var/jb/usr/bin/ssh", NO, YES, YES, "/var/jb prefix + recursion" },
+    { "/usr/sbin/sshd", NO, YES, YES, "exact (added by the ruleset audit)" },
+    { "/usr/bin/ssh", NO, YES, YES, "exact (added by the ruleset audit)" },
+    { "/bin/bash", NO, YES, YES, "exact (added by the ruleset audit)" },
+    { "/etc/ssh/sshd_config", NO, YES, YES, "exact (added by the ruleset audit)" },
+    { "/usr/bin/sftp", NO, YES, YES, "exact (added by the ruleset audit)" },
+    { "/Applications/Cydia.app", NO, YES, YES, "LIKE[c] '*/Cydia.app*' predicate" },
+    { "/Applications/CYDIA.APP", NO, NO, NO, "shipped Cydia predicate is case-sensitive; the case-variant file doesn't exist on any device (real file is lowercase) — allowed is correct" },
+    { "/Applications/Dopamine.app", NO, YES, YES, "LIKE[c] '*/Dopamine.app*' predicate" },
+    { "/Library/MobileSubstrate/MobileSubstrate.dylib", NO, YES, YES, "MobileSubstrate prefix" },
+    { "/cores/crash", NO, YES, YES, "/cores prefix (rootless fast-path)" },
+    { "/private/preboot/jb-abc", NO, YES, YES, "jb- prefix + LIKE /private/preboot/*/jb*" },
+    { "/jb", NO, YES, YES, "exact" },
+    { "/var/binpack", NO, YES, YES, "binpack prefix" },
+    { "/usr/lib/libjailbreak.dylib", NO, NO, YES, "exact (rooted read is host-gated: use write probe)" },
+    { "/usr/lib/libjailbreak.dylib", YES, YES, YES, "C0-1 write probe (rooted)" },
+    { "/usr/lib/TweakInject", YES, YES, YES, "prefix, write probe (rooted)" },
+    { "/tmp/randomfile", NO, YES, NO, "/tmp/ prefix (rootless: gate blocks non-jbroot reads)" },
+    { "/tmp/com.apple.installer", NO, YES, NO, "whitelist /tmp/com.apple defeated by parent recursion — documented" },
+    { "/var/root/.ssh/authorized_keys", NO, YES, YES, "/var/root/ prefix" },
+    { "/opt/jb", NO, YES, YES, "structure veto: opt not in '/' set (rootless gate passes via fixture file)" },
+    { "/var/mobile/evil", NO, YES, YES, "structure veto: evil not in /var/mobile set" },
+    { "/var/mobile/Library/Preferences/com.apple.springboard.plist", NO, YES, YES, "compliance veto: plist not in the Preferences children set (whitelist can't rescue)" },
+    { "/var/mobile/Media/DCIM/1.jpg", NO, NO, NO, "structure-compliant, unblacklisted" },
+    { "/var/mobile/Documents/notes.txt", NO, NO, NO, "structure-compliant, unblacklisted" },
+    { "/var/containers/Bundle/Application/ABCDEF/App.app", NO, NO, NO, "app container, structure-compliant" },
+    { "/usr/lib/libsystem_kernel.dylib", YES, NO, NO, "stock dylib unblacklisted (write probe)" },
+};
+
+static void testShippedRulesets(void) {
+    printf("[shipped] product rulesets (rootless=%d)\n", gRootless);
+
+    for(NSUInteger i = 0; i < sizeof(kShippedProbes) / sizeof(kShippedProbes[0]); i++) {
+        ShippedProbe p = kShippedProbes[i];
+        NSString* path = [NSString stringWithUTF8String:p.path];
+        BOOL expected = gRootless ? p.rootlessExp : p.rootedExp;
+        BOOL got = p.write
+            ? [shdw() isPathRestricted:path options:writeOptions()]
+            : [shdw() isPathRestricted:path];
+
+        if(got == expected) {
+            gPass++;
+        } else {
+            gFail++;
+            printf("FAIL: shipped %s — expected %s, got %s (%s)\n",
+                p.path, expected ? "restricted" : "allowed",
+                got ? "restricted" : "allowed", p.note);
+        }
+    }
+
+    // Schemes and bundle IDs per the shipped rulesets.
+    CHECK([shdw() isSchemeRestricted:@"cydia"], "shipped scheme cydia restricted");
+    CHECK([shdw() isSchemeRestricted:@"undecimus"], "shipped scheme undecimus restricted");
+    CHECK(![shdw() isSchemeRestricted:@"http"], "shipped scheme http allowed");
+    CHECK([shdw() isBundleIDRestricted:@"com.saurik.Cydia"], "shipped bundle id restricted");
+    CHECK(![shdw() isBundleIDRestricted:@"com.apple.mobilesafari"], "shipped app bundle id allowed");
+}
+
+// ---------------------------------------------------------------------------
 // Detector battery (real detector vs Shadow on/off, rootless virtual FS)
 // ---------------------------------------------------------------------------
 
@@ -1101,6 +1214,8 @@ int main(int argc, const char** argv) {
                 gDetector = YES;
             } else if(strcmp(argv[i], "--benign") == 0) {
                 gBenign = YES;
+            } else if(strcmp(argv[i], "--shipped") == 0) {
+                gShipped = YES;
             } else if(strcmp(argv[i], "--fuzz") == 0) {
                 gFuzz = YES;
             } else if(strcmp(argv[i], "--afuzz") == 0) {
@@ -1122,7 +1237,7 @@ int main(int argc, const char** argv) {
             // work-dir names collision-free.
             int rc = 0;
             const char* modes[][1] = { {"--rootless"}, {"--rooted"} };
-            int modeCount = (!gRootless && (argc == 1 || gFuzz)) ? 2 : 1;
+            int modeCount = (!gRootless && (argc == 1 || gFuzz || gShipped)) ? 2 : 1;
 
             for(int i = 0; i < modeCount; i++) {
                 char* argv2[5];
@@ -1180,7 +1295,7 @@ int main(int argc, const char** argv) {
 
         printf("=== Shadow harness (%s, %s) work=%s\n",
             gRootless ? "rootless" : "rooted",
-            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : (gBenign ? "benign" : (gFuzz ? "fuzz" : (gAFuzz ? "afuzz" : "unit tests"))))),
+            gDetect ? "detect" : (gAdversary ? "adversary" : (gDetector ? "detector" : (gBenign ? "benign" : (gShipped ? "shipped" : (gFuzz ? "fuzz" : (gAFuzz ? "afuzz" : "unit tests")))))),
             [work UTF8String]);
 
         if(gDetect) {
@@ -1202,6 +1317,12 @@ int main(int argc, const char** argv) {
 
         if(gBenign) {
             runBenignBattery();
+            printf("=== %d passed, %d failed\n", gPass, gFail);
+            return gFail ? 1 : 0;
+        }
+
+        if(gShipped) {
+            testShippedRulesets();
             printf("=== %d passed, %d failed\n", gPass, gFail);
             return gFail ? 1 : 0;
         }
