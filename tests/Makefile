@@ -78,12 +78,8 @@ benign: harness
 fuzz: harness
 	$(RUN) tests/harness --fuzz
 
-# CI fuzz-smoke: known D4 transient class is allowed (reported, not fatal).
 afuzz: harness
 	$(RUN) tests/harness --afuzz
-
-fuzz-smoke: harness
-	$(RUN) env SHADW_FUZZ_ALLOW_D4=1 tests/harness --fuzz
 
 adversary: harness
 	$(RUN) tests/harness --adversary

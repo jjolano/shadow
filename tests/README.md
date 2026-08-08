@@ -160,14 +160,15 @@ Track record so far — the fuzzer found and led to fixes for:
   the engine's resolve re-check standardizes every queried path, so any
   such query threw on this stack. Patched in the container image (Cocoa
   only strips `/private/` with the slash).
-- invariant over-reach in the fuzzer itself (scheme strings and
-  percent-encoded inputs are outside the engine's path contract).
-- a **known, under-investigation finding class** (D4): the path and URL
-  lanes transiently disagree on the same absolute path (~1 in 2000 probes,
-  deterministic per seed, stable ruleset generation — the backend's own
-  fresh verdict flips between calls, a cache-layer consistency wrinkle on
-  the GNUstep stack). `make fuzz` fails on it (strict, local);
-  `make fuzz-smoke`/CI report it as allowed until root-caused.
+- invariant over-reach in the fuzzer itself: scheme strings,
+  percent-encoded inputs, and embedded-NUL paths are outside the engine's
+  path contract (kernel-delivered paths cannot contain NULs). The NUL case
+  was the earlier "D4 transient": the structure veto treats the NUL as
+  part of the component while the URL lane's C-string truncates at it —
+  a verdict divergence no device path can trigger, invisible in the
+  finding output until the inputs were hex-dumped. Excluding it from the
+  contract made the full 20k-iteration fuzz clean in both modes, and the
+  D4 allowlist was removed — `make fuzz` is strict again.
 
 ## Adversarial fuzzing
 
