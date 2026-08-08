@@ -33,4 +33,10 @@ typedef struct {
 // Returns jailbroken=YES if ANY check fired.
 ShdwDetectorResult ShdwDetectorRun(void);
 
+// Audit variant: runs EVERY probe (including the emulator-group paths, for
+// ruleset-gap detection) and returns one dictionary per probe:
+// { @"probe": <name>, @"fired": NSNumber(BOOL), @"detail": <path/scheme> }.
+// No early return — a ruleset-gap audit needs the full picture.
+NSArray* ShdwDetectorAudit(void);
+
 #endif

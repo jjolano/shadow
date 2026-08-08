@@ -20,6 +20,13 @@
 		<string>/usr/lib/libsubstitute.dylib</string>
 		<string>/usr/lib/libsubstitute.0.dylib</string>
 		<string>/usr/lib/libsubstrate.dylib</string>
+		<string>/usr/sbin/sshd</string>
+		<string>/usr/bin/ssh</string>
+		<string>/usr/bin/sftp</string>
+		<string>/bin/bash</string>
+		<string>/etc/ssh/sshd_config</string>
+		<string>/usr/libexec/ssh-keysign</string>
+		<string>/usr/libexec/sftp-server</string>
 		<string>/dev/ptmx</string>
 		<string>/dev/kmem</string>
 		<string>/dev/mem</string>
