@@ -1,4 +1,4 @@
-"HK_LIB_DESC" = "控制Hook方法。一些Hook库可能提供更好的屏蔽效果，但也可能影响应用的稳定性。";
+"HK_LIB_DESC" = "控制C函数Hook所使用的Hook库。Objective-C Hook始终使用运行时的默认库（ElleKit、Substrate 或 Substitute）。一些Hook库可能提供更好的屏蔽效果，但也可能影响应用的稳定性。";
 
 "HOOKING_LIBRARY" = "Hook库";
 "HK_LIB_SELECT" = "这是一个可以在您的设备上使用的Hook库列表。选择「自动」来允许HookKit为您的设备选择最合适的Hook库。";
@@ -44,3 +44,9 @@
 "HOOK_TWEAKCLASS" = "隐藏插件的Objective-C类";
 "HOOK_DYLD" = "动态库加载器";
 "VNODE_HIDING" = "Vnode 级隐藏";
+
+"VNODE_UNAVAILABLE_REASON" = "Vnode 隐藏需要具备内核读写能力的 shadowd 守护进程。";
+"VNODE_STARTING_REASON" = "shadowd 守护进程仍在启动，Vnode 隐藏暂不可用。";
+"UNSUPPORTED_ELLEKIT_REASON" = "需要 ElleKit 钩子库。";
+"UNSUPPORTED_MSG_REASON" = "需要支持 Objective-C 消息钩子的钩子库（ElleKit、Substrate 或 Substitute）。";
+"UNSUPPORTED_FUNC_REASON" = "需要支持 C 函数钩子的钩子库。";

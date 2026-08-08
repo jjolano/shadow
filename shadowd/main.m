@@ -942,6 +942,27 @@ static void handle_request(shadowd_request_t *req) {
         reply_and_release(req, SHADOWD_STATUS_OK);
         return;
     }
+    // Health query for the Settings bundle: reports krw readiness so the
+    // VnodeHiding toggle can be gated on real daemon capability instead of
+    // guessing from file presence. Status mapping: READY → OK (0),
+    // INIT → EBUSY (still starting), DISABLED → ENOTSUP (krw failed).
+    if (req->op == SHADOWD_OP_STATUS) {
+        krw_state_t st = atomic_load(&gKrwState);
+        uint32_t status;
+        switch (st) {
+            case KRW_READY:
+                status = SHADOWD_STATUS_OK;
+                break;
+            case KRW_INIT:
+                status = SHADOWD_STATUS_EBUSY;
+                break;
+            default:
+                status = SHADOWD_STATUS_ENOTSUP;
+                break;
+        }
+        reply_and_release(req, status);
+        return;
+    }
 
     // Identity comes ONLY from the kernel-provided audit trailer.
     mach_msg_audit_trailer_t *trailer =

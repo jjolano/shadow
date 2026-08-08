@@ -1,6 +1,7 @@
 #import "SHDWHooksListController.h"
 #import "SHDWHookLibs.h"
 #import "SHDWPrefs.h"
+#import "SHDWCapabilities.h"
 
 #import <Shadow/Settings.h>
 
@@ -15,6 +16,10 @@
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
 		[self setTitle:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"BYPASS_SETTINGS" value:@"Bypass Settings" table:@"Root"]];
+
+		// Disable hook groups whose backend capability is missing on this
+		// device (message/function/inline), with a footer note per group.
+		SHDWApplyHookGroupGating(_specifiers);
 	}
 
 	return _specifiers;

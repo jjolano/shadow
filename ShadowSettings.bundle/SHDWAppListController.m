@@ -1,6 +1,7 @@
 #import "SHDWAppListController.h"
 #import "SHDWHookLibs.h"
 #import "SHDWPrefs.h"
+#import "SHDWCapabilities.h"
 
 #import <Shadow/Settings.h>
 
@@ -15,6 +16,10 @@
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
 		[_specifiers addObjectsFromArray:[self loadSpecifiersFromPlistName:@"Hooks" target:self]];
+
+		// Same capability gating as the global Hooks page: per-app toggles
+		// can't run a group the device's backends don't support either.
+		SHDWApplyHookGroupGating(_specifiers);
 	}
 
 	return _specifiers;
