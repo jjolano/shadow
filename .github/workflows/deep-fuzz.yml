@@ -1,0 +1,39 @@
+name: harness-deep-fuzz
+
+# Nightly deep-fuzz: the full fuzzers at 10x iteration counts with fresh
+# random seeds — the rare findings (like the embedded-NUL divergence) live
+# at scale and off the default seed. Also runs on workflow_dispatch for
+# on-demand deep runs. Any finding fails the job.
+
+on:
+  schedule:
+    - cron: '23 3 * * *'   # daily 03:23 UTC
+  workflow_dispatch:
+
+jobs:
+  deep-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchain image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/shadow-harness.tar
+          key: harness-image-${{ hashFiles('tests/Dockerfile') }}
+
+      - name: Load or build toolchain image
+        run: |
+          if [ -f /tmp/shadow-harness.tar ]; then
+            docker load -i /tmp/shadow-harness.tar
+          else
+            make -C tests image
+            docker save shadow-harness:latest -o /tmp/shadow-harness.tar
+          fi
+
+      - name: Deep fuzz (random seeds, 10x iters)
+        run: |
+          SEED=$RANDOM
+          echo "fuzz seed: $SEED"
+          SHADW_FUZZ_SEED=$SEED SHADW_FUZZ_ITERS=200000 make -C tests fuzz
+          SHADW_AFUZZ_SEED=$SEED SHADW_AFUZZ_ITERS=20000 make -C tests afuzz
