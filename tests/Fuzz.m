@@ -20,15 +20,11 @@
 // pathological inputs, and an uncaught throw inside the engine is a real
 // finding (the device hooks would crash the app the same way). The PRNG is
 // seeded (fixed default, overridable) so any finding reproduces exactly.
-//
-// KNOWN FINDING CLASS (under investigation): D4 transiently reports the
-// path and URL lanes disagreeing on the same absolute path (~1 in 2000
-// probes, deterministic per seed, stable ruleset generation). The backend's
-// own fresh verdict flips between calls — a cache-layer consistency wrinkle
-// on the GNUstep stack whose root cause needs a debugger session; the
-// device (Cocoa) may behave differently. Local runs: SHADW_FUZZ_ITERS
-// (default 20000) + SHADW_FUZZ_SEED. CI runs a pinned smoke-fuzz below the
-// first known finding.
+// Invariant probes are restricted to the engine's path contract: absolute
+// paths without percent-encoding, scheme strings, or embedded NULs (the
+// latter made the earlier D4 findings look like a cache transient — the
+// structure veto sees the NUL in the component while the URL lane's
+// C-string truncates at it; kernel-delivered paths can never contain NULs).
 //
 // A hard crash (SEGV) kills the process — the last printed seed+iteration
 // is the repro; the parent's exit code reports the failure.
@@ -141,18 +137,6 @@ static NSString* fz_randomPath(void) {
 static NSUInteger gFindings = 0;
 static NSUInteger gIters = 0;
 
-// When SHADW_FUZZ_ALLOW_D4 is set, D4 findings are reported but do not
-// fail the run — CI uses this for the known transient class (see header).
-static int gAllowD4 = -1;
-
-static int fz_allowD4(void) {
-    if(gAllowD4 < 0) {
-        gAllowD4 = getenv("SHADW_FUZZ_ALLOW_D4") ? 1 : 0;
-    }
-
-    return gAllowD4;
-}
-
 // Rolling trace of recent probes (input + verdict) for finding forensics.
 static NSString* gTrace[64];
 static BOOL gTraceVerdict[64];
@@ -181,6 +165,18 @@ static void fz_finding(NSString* invariant, NSString* input, NSString* detail) {
         detail ? " " : "", detail ? [detail UTF8String] : "");
 }
 
+// Path-contract check for the invariant probes: absolute, no
+// percent-encoding, no scheme strings, NO EMBEDDED NUL. NUL-containing
+// inputs are out of contract (kernel-delivered paths cannot contain NULs):
+// the structure veto treats the NUL as part of the component while the
+// URL lane's C-string truncates at it — a real verdict divergence that no
+// device path can trigger (this was the D4 "transient": the NUL was
+// invisible in the finding output).
+static BOOL fz_inContract(NSString* p) {
+    return [p hasPrefix:@"/"] && ![p containsString:@"%"]
+        && ![p containsString:@":"] && ![p containsString:@"\x00"];
+}
+
 static void fz_probe(NSString* path) {
     Shadow* shadow = [Shadow sharedInstance];
 
@@ -207,7 +203,7 @@ static void fz_probe(NSString* path) {
         // %-encoded strings make getStandardizedPath non-idempotent —
         // neither form reaches the engine from the hooks, which deliver
         // decoded, real paths.)
-        if([path hasPrefix:@"/"] && ![path containsString:@"%"] && ![path containsString:@":"]) {
+        if(fz_inContract(path)) {
             NSString* std = [Shadow getStandardizedPath:path];
             BOOL stdVerdict = [shadow isPathRestricted:std];
 
@@ -219,38 +215,32 @@ static void fz_probe(NSString* path) {
             }
         }
 
-        // D4: file-URL closure (absolute paths only).
-        if([path hasPrefix:@"/"] && ![path containsString:@"%"]) {
+        // D4: file-URL closure (in-contract paths only).
+        if(fz_inContract(path)) {
             NSURL* url = [NSURL fileURLWithPath:path];
             NSString* urlPath = [url path];
             BOOL urlVerdict = [shadow isURLRestricted:url];
 
             if(urlVerdict != r1) {
-                if(fz_allowD4()) {
-                    // Known transient class (see header): report, don't fail.
-                    printf("FUZZ D4-ALLOWED [known transient] iter=%lu input=\"%s\" path=%d url=%d\n",
-                        (unsigned long)gIters, [path UTF8String], r1, urlVerdict);
-                } else {
-                    BOOL urlPathDirect = [shadow isPathRestricted:urlPath];
+                BOOL urlPathDirect = [shadow isPathRestricted:urlPath];
 
-                    fz_finding(@"D4 URL/path closure", path,
-                        [NSString stringWithFormat:@"path=%d urlPath=\"%@\" direct=%d viaURL=%d refURL=%d",
-                            r1, urlPath, urlPathDirect, urlVerdict, [url isFileReferenceURL]]);
+                fz_finding(@"D4 URL/path closure", path,
+                    [NSString stringWithFormat:@"path=%d urlPath=\"%@\" direct=%d viaURL=%d refURL=%d",
+                        r1, urlPath, urlPathDirect, urlVerdict, [url isFileReferenceURL]]);
 
-                    // Cache forensics: the backend's own verdict and generation at
-                    // finding time (the decision cache is a private ivar, not
-                    // KVC-accessible).
-                    ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
+                // Cache forensics: the backend's own verdict and generation at
+                // finding time (the decision cache is a private ivar, not
+                // KVC-accessible).
+                ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
 
-                    if(backend) {
-                        printf("    backend gen=%lu direct=%d\n",
-                            (unsigned long)[backend rulesetGeneration],
-                            [backend isPathRestricted:path]);
-                    }
-
-                    fz_dumpTrace();
-                    return;
+                if(backend) {
+                    printf("    backend gen=%lu direct=%d\n",
+                        (unsigned long)[backend rulesetGeneration],
+                        [backend isPathRestricted:path]);
                 }
+
+                fz_dumpTrace();
+                return;
             }
         }
 
@@ -260,10 +250,8 @@ static void fz_probe(NSString* path) {
             return;
         }
 
-        // D6: standardize idempotence (absolute, unencoded paths only —
-        // %-encoded inputs make GNUstep's standardization non-idempotent,
-        // which is out of the engine's path contract; see D3).
-        if([path hasPrefix:@"/"] && ![path containsString:@"%"]) {
+        // D6: standardize idempotence (in-contract paths only — see D3).
+        if(fz_inContract(path)) {
             NSString* std = [Shadow getStandardizedPath:path];
 
             if(![[Shadow getStandardizedPath:std] isEqualToString:std]) {
