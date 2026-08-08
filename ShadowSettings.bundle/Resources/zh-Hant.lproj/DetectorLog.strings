@@ -1,0 +1,9 @@
+"DETECTOR_LOG" = "偵測器日誌";
+"DETECTOR_LOG_DESC" = "Shadow 偵測到的近期越獄偵測嘗試。條目僅儲存在裝置本機。";
+"CLEAR_LOG" = "清除日誌";
+"NO_ACTIVITY" = "尚無偵測器活動紀錄";
+"SHARE_LOG" = "分享日誌";
+"CLEAR_CONFIRM_TITLE" = "清除偵測器日誌？";
+"CLEAR_CONFIRM_MSG" = "這將刪除所有已記錄的偵測器活動。此操作無法復原。";
+"CLEAR_CANCEL" = "取消";
+"CLEAR_CONFIRM" = "清除";

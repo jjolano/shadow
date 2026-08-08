@@ -1,0 +1,9 @@
+"DETECTOR_LOG" = "检测器日志";
+"DETECTOR_LOG_DESC" = "Shadow 检测到的近期越狱检测探测。条目仅存储在设备本地。";
+"CLEAR_LOG" = "清除日志";
+"NO_ACTIVITY" = "未记录到检测器活动";
+"SHARE_LOG" = "分享日志";
+"CLEAR_CONFIRM_TITLE" = "清除检测器日志？";
+"CLEAR_CONFIRM_MSG" = "这将删除所有已记录的检测器活动。此操作无法撤销。";
+"CLEAR_CANCEL" = "取消";
+"CLEAR_CONFIRM" = "清除";
