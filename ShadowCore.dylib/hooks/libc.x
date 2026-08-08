@@ -190,6 +190,89 @@ static BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     return NO;
 }
 
+// fd→path cache for the fd-based hooks (fstat/fstatfs/fstatvfs/fpathconf/
+// futimes/fchdir/fgetxattr/flistxattr/fgetattrlist): F_GETPATH is a syscall
+// per call, and the fstat family runs on every fd touch. The path is resolved
+// once per fd and cached; the close hook invalidates the entry, so a reused
+// fd can never inherit a stale path. Fixed-size table, round-robin eviction —
+// a miss just re-resolves. The lock is never held across isCPathRestricted
+// (an ObjC call that could re-enter hooked code); F_GETPATH itself runs under
+// the lock so a close+reuse race can't store a stale entry.
+#define SHADW_FD_CACHE_SIZE 16
+
+typedef struct {
+    int fd;
+    char path[PATH_MAX];
+    BOOL valid;  // F_GETPATH succeeded (fd has a nameable path)
+} shdw_fd_cache_entry_t;
+
+static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
+static NSUInteger shdw_fd_cache_next = 0;
+static os_unfair_lock shdw_fd_cache_lock = OS_UNFAIR_LOCK_INIT;
+
+// The close hook is installed by whichever group installs first (libc or
+// libc_lowlevel — both use the fd cache); the guard keeps the second group
+// from double-hooking close on the same substitutor.
+static BOOL shdw_close_hooked = NO;
+
+// Returns YES when the fd's path is restricted. stdio descriptors are exempt
+// (they never carry a restricted path and F_GETPATH on them is noise).
+static BOOL shdw_fd_path_restricted(int fd) {
+    if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) {
+        return NO;
+    }
+
+    char pathname[PATH_MAX];
+    BOOL valid = NO;
+
+    os_unfair_lock_lock(&shdw_fd_cache_lock);
+
+    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
+        if(shdw_fd_cache[i].fd == fd) {
+            valid = shdw_fd_cache[i].valid;
+
+            if(valid) {
+                strlcpy(pathname, shdw_fd_cache[i].path, sizeof(pathname));
+            }
+
+            os_unfair_lock_unlock(&shdw_fd_cache_lock);
+            return valid ? [_shadow isCPathRestricted:pathname] : NO;
+        }
+    }
+
+    valid = fcntl(fd, F_GETPATH, pathname) != -1;
+
+    NSUInteger slot = shdw_fd_cache_next;
+    shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
+
+    shdw_fd_cache[slot].fd = fd;
+    shdw_fd_cache[slot].valid = valid;
+
+    if(valid) {
+        strlcpy(shdw_fd_cache[slot].path, pathname, sizeof(shdw_fd_cache[slot].path));
+    }
+
+    os_unfair_lock_unlock(&shdw_fd_cache_lock);
+
+    return valid ? [_shadow isCPathRestricted:pathname] : NO;
+}
+
+static int (*original_close)(int fd);
+static int replaced_close(int fd) {
+    os_unfair_lock_lock(&shdw_fd_cache_lock);
+
+    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
+        if(shdw_fd_cache[i].fd == fd) {
+            shdw_fd_cache[i].fd = -1;
+            shdw_fd_cache[i].valid = NO;
+            break;
+        }
+    }
+
+    os_unfair_lock_unlock(&shdw_fd_cache_lock);
+    return original_close(fd);
+}
+
 // Classifies a readlink result: absolute targets are checked directly;
 // relative targets resolve against the directory CONTAINING the link (that's
 // where the kernel resolves them from). A target whose parent directory can't
@@ -288,16 +371,9 @@ static int replaced_fchdir(int fd) {
         return original_fchdir(fd);
     }
 
-    // Get file descriptor path.
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     return original_fchdir(fd);
@@ -492,16 +568,9 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
         return original_fstatfs(fd, buf);
     }
 
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     int result = original_fstatfs(fd, buf);
@@ -562,16 +631,9 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
     // restriction checks run once here instead of via the hooked fstatfs
     struct statfs st;
 
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     if(original_fstatfs(fd, &st) == -1) {
@@ -663,16 +725,9 @@ static int replaced_fstat(int fd, struct stat* buf) {
         return original_fstat(fd, buf);
     }
 
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     return original_fstat(fd, buf);
@@ -1013,9 +1068,7 @@ static ssize_t replaced_fgetxattr(int fd, const char* name, void* value, size_t 
         return original_fgetxattr(fd, name, value, size, position, options);
     }
 
-    char pathname[PATH_MAX];
-
-    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+    if(shdw_fd_path_restricted(fd)) {
         errno = ENOENT;
         return -1;
     }
@@ -1029,9 +1082,7 @@ static ssize_t replaced_flistxattr(int fd, char* namebuf, size_t size, int optio
         return original_flistxattr(fd, namebuf, size, options);
     }
 
-    char pathname[PATH_MAX];
-
-    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+    if(shdw_fd_path_restricted(fd)) {
         errno = ENOENT;
         return -1;
     }
@@ -1045,9 +1096,7 @@ static int replaced_fgetattrlist(int fd, struct attrlist* attrList, void* attrBu
         return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
     }
 
-    char pathname[PATH_MAX];
-
-    if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+    if(shdw_fd_path_restricted(fd)) {
         errno = ENOENT;
         return -1;
     }
@@ -1288,16 +1337,9 @@ static long replaced_fpathconf(int fd, int name) {
         return original_fpathconf(fd, name);
     }
     
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     return original_fpathconf(fd, name);
@@ -1319,16 +1361,9 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
         return original_futimes(fd, times);
     }
     
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     return original_futimes(fd, times);
@@ -1421,9 +1456,26 @@ static int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
     return original_ptrace(_request, _pid, _addr, _data);
 }
 
-// libproc.h isn't shipped in the theos SDK; declare the one symbol we need
-// (proc_pidpath is a stable libSystem export).
+// libproc.h isn't shipped in the theos SDK; declare the symbols we need
+// (all stable libSystem exports).
 extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+extern int proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
+extern int proc_listallpids(void* buffer, int buffersize);
+extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+
+// libproc.h isn't shipped in the theos SDK either, so declare the two pieces
+// of the PROC_PIDTBSDINFO query we mask. proc_bsdinfo is a stable public ABI;
+// the prefix layout matches it exactly (pbi_ppid at offset 0x10). Only that
+// field is ever written.
+#define SHADOW_PROC_PIDTBSDINFO 3
+
+struct shdw_proc_bsdinfo_prefix {
+    uint32_t pbi_flags;    /* 0x00 */
+    uint32_t pbi_status;   /* 0x04 */
+    uint32_t pbi_xstatus;  /* 0x08 */
+    uint32_t pbi_pid;      /* 0x0c */
+    uint32_t pbi_ppid;     /* 0x10 */
+};
 
 static int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
 
@@ -1557,6 +1609,10 @@ static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
             // Never report our own trace flags.
             p->kp_proc.p_flag &= ~P_TRACED;
             p->kp_proc.p_flag &= ~P_SELECT;
+
+            // Cross-API consistency: getppid() reports parent 1, so the
+            // own record must say the same (see replaced_sysctl).
+            p->kp_eproc.e_ppid = 1;
         } else if(shdw_proc_is_restricted(p)) {
             continue;  // jailbreak daemon: removed from the list
         }
@@ -1630,6 +1686,11 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
         if(p->kp_proc.p_flag & P_SELECT) {
             p->kp_proc.p_flag &= ~P_SELECT;
         }
+
+        // Cross-API consistency: getppid() reports parent 1, so the own
+        // record must say the same — a detector comparing getppid() against
+        // kp_eproc.e_ppid would otherwise see the real parent (debugger, host app).
+        p->kp_eproc.e_ppid = 1;
     }
 
     return ret;
@@ -1646,6 +1707,136 @@ static pid_t replaced_getppid(void) {
     return 1;
 }
 
+// libproc enumeration (proc_listpids/proc_listallpids/proc_pidinfo) is the
+// second process-list surface after sysctl KERN_PROC: detectors enumerate
+// pids and query per-pid details to find jailbreak daemons. The sysctl hook
+// filters the kinfo_proc list; these hooks filter the libproc views of the
+// same processes. Classification is pid-only (libproc hands us no start
+// time), so the cache keys on pid alone with a short TTL — a reused pid can
+// inherit a stale verdict for at most TTL seconds, and a miss just
+// re-classifies, so results stay identical. Same fail-open rule as the
+// sysctl path: an unclassifiable process (proc_pidpath EPERM) is kept —
+// denying legitimate processes would corrupt process counts on stock
+// devices. The lock is never held across classification (isCPathRestricted
+// is an ObjC call that could re-enter hooked code).
+#define SHADW_LIBPROC_CACHE_SIZE 32
+#define SHADW_LIBPROC_CACHE_TTL 5  // seconds
+
+typedef struct {
+    pid_t pid;
+    time_t stamp;
+    BOOL restricted;
+} shdw_libproc_cache_entry_t;
+
+static shdw_libproc_cache_entry_t shdw_libproc_cache[SHADW_LIBPROC_CACHE_SIZE];
+static NSUInteger shdw_libproc_cache_next = 0;
+static os_unfair_lock shdw_libproc_cache_lock = OS_UNFAIR_LOCK_INIT;
+
+static BOOL shdw_libproc_pid_is_restricted(pid_t pid) {
+    time_t now = time(NULL);
+
+    os_unfair_lock_lock(&shdw_libproc_cache_lock);
+
+    for(NSUInteger i = 0; i < SHADW_LIBPROC_CACHE_SIZE; i++) {
+        const shdw_libproc_cache_entry_t* e = &shdw_libproc_cache[i];
+
+        if(e->pid == pid && now - e->stamp < SHADW_LIBPROC_CACHE_TTL) {
+            BOOL verdict = e->restricted;
+            os_unfair_lock_unlock(&shdw_libproc_cache_lock);
+            return verdict;
+        }
+    }
+
+    os_unfair_lock_unlock(&shdw_libproc_cache_lock);
+
+    char path[PATH_MAX];
+    BOOL restricted = NO;
+
+    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+        restricted = [_shadow isCPathRestricted:path];
+    }
+
+    os_unfair_lock_lock(&shdw_libproc_cache_lock);
+
+    NSUInteger slot = shdw_libproc_cache_next;
+    shdw_libproc_cache_next = (shdw_libproc_cache_next + 1) % SHADW_LIBPROC_CACHE_SIZE;
+
+    shdw_libproc_cache[slot].pid = pid;
+    shdw_libproc_cache[slot].stamp = now;
+    shdw_libproc_cache[slot].restricted = restricted;
+
+    os_unfair_lock_unlock(&shdw_libproc_cache_lock);
+    return restricted;
+}
+
+// Compacts restricted pids out of a proc_listpids/proc_listallpids result
+// buffer in place. The buffer holds pid_t entries; the return value is the
+// pid count. Returns the filtered count (0 when everything was removed —
+// the caller reads that as "no processes", the same hiding the sysctl
+// filter achieves).
+static int shdw_libproc_pids_filtered(pid_t* pids, int count) {
+    int out = 0;
+
+    for(int i = 0; i < count; i++) {
+        if(shdw_libproc_pid_is_restricted(pids[i])) {
+            continue;  // jailbreak daemon: removed from the list
+        }
+
+        if(out != i) {
+            pids[out] = pids[i];
+        }
+
+        out++;
+    }
+
+    return out;
+}
+
+static int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
+static int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
+    int count = original_proc_listpids(type, typeinfo, buffer, buffersize);
+
+    if(count <= 0 || !buffer || !isCallerExternal()) {
+        return count;
+    }
+
+    return shdw_libproc_pids_filtered((pid_t*) buffer, count);
+}
+
+static int (*original_proc_listallpids)(void* buffer, int buffersize);
+static int replaced_proc_listallpids(void* buffer, int buffersize) {
+    int count = original_proc_listallpids(buffer, buffersize);
+
+    if(count <= 0 || !buffer || !isCallerExternal()) {
+        return count;
+    }
+
+    return shdw_libproc_pids_filtered((pid_t*) buffer, count);
+}
+
+static int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+static int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
+    if(isCallerExternal() && shdw_libproc_pid_is_restricted(pid)) {
+        // Jailbreak daemon: deny the per-pid query the same way the pid
+        // list filters deny enumeration. EPERM matches what an unprivileged
+        // caller sees for processes it may not inspect.
+        errno = EPERM;
+        return 0;
+    }
+
+    int ret = original_proc_pidinfo(pid, flavor, arg, buffer, buffersize);
+
+    // Cross-API consistency: getppid() reports parent 1, so the own
+    // process's BSD info must say the same — a detector comparing
+    // getppid() against pbi_ppid would otherwise see the real parent.
+    if(ret > 0 && isCallerExternal() && pid == getpid() && flavor == SHADOW_PROC_PIDTBSDINFO
+    && buffer && buffersize >= sizeof(struct shdw_proc_bsdinfo_prefix)) {
+        ((struct shdw_proc_bsdinfo_prefix*) buffer)->pbi_ppid = 1;
+    }
+
+    return ret;
+}
+
 // freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
 // jailbroken devices (symlink into writable bootstrap) and fails on stock.
 // Fail the same way stock does (ENOENT — the path doesn't resolve). The
@@ -1655,6 +1846,12 @@ static pid_t replaced_getppid(void) {
 // components before it are exactly the app bundle dir.
 static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
     if(!pathname || !(oflag & O_CREAT)) {
+        return NO;
+    }
+
+    // C fast-path: the probe matches a path COMPONENT equal to ".jbroot";
+    // if the string doesn't contain it at all, no NSString work is needed.
+    if(!strstr(pathname, ".jbroot")) {
         return NO;
     }
 
@@ -1876,16 +2073,9 @@ static int replaced_fstat64(int fd, shdw_stat64_t* buf) {
         return original_fstat64(fd, buf);
     }
 
-    if(fd != fileno(stderr)
-    && fd != fileno(stdout)
-    && fd != fileno(stdin)) {
-        // Get file descriptor path.
-        char pathname[PATH_MAX];
-
-        if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-            errno = EBADF;
-            return -1;
-        }
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
     }
 
     return original_fstat64(fd, buf);
@@ -2078,6 +2268,11 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     [hooks hookFunction:getfsstat withReplacement:replaced_getfsstat outOldPtr:(void **) &original_getfsstat];
     [hooks hookFunction:fstat withReplacement:replaced_fstat outOldPtr:(void **) &original_fstat];
     [hooks hookFunction:fstatat withReplacement:replaced_fstatat outOldPtr:(void **) &original_fstatat];
+
+    if(!shdw_close_hooked) {
+        [hooks hookFunction:close withReplacement:replaced_close outOldPtr:(void **) &original_close];
+        shdw_close_hooked = YES;
+    }
 }
 
 void shadowhook_libc_envvar(HKSubstitutor* hooks) {
@@ -2108,10 +2303,197 @@ void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
             [hooks hookFunction:target withReplacement:shdw_lowlevel_symbols[i].replacement outOldPtr:shdw_lowlevel_symbols[i].outOld];
         }
     }
+
+    if(!shdw_close_hooked) {
+        [hooks hookFunction:close withReplacement:replaced_close outOldPtr:(void **) &original_close];
+        shdw_close_hooked = YES;
+    }
 }
 
 void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     [hooks hookFunction:ptrace withReplacement:replaced_ptrace outOldPtr:(void **) &original_ptrace];
     [hooks hookFunction:sysctl withReplacement:replaced_sysctl outOldPtr:(void **) &original_sysctl];
     [hooks hookFunction:getppid withReplacement:replaced_getppid outOldPtr:(void **) &original_getppid];
+
+    // libproc enumeration: stable libSystem exports, resolved at runtime and
+    // skipped cleanly when absent (same pattern as getmntinfo_r_np above).
+    struct { const char* name; void* replacement; void** outOld; } shdw_libproc_symbols[] = {
+        { "proc_listpids",    (void*) replaced_proc_listpids,    (void**) &original_proc_listpids },
+        { "proc_listallpids", (void*) replaced_proc_listallpids, (void**) &original_proc_listallpids },
+        { "proc_pidinfo",     (void*) replaced_proc_pidinfo,     (void**) &original_proc_pidinfo },
+    };
+
+    for(size_t i = 0; i < sizeof(shdw_libproc_symbols) / sizeof(shdw_libproc_symbols[0]); i++) {
+        void* target = dlsym(RTLD_DEFAULT, shdw_libproc_symbols[i].name);
+
+        if(target) {
+            [hooks hookFunction:target withReplacement:shdw_libproc_symbols[i].replacement outOldPtr:shdw_libproc_symbols[i].outOld];
+        }
+    }
+}
+
+// Post-install verification: a hook that failed to install (backend error,
+// symbol unresolvable) leaves its original_* NULL and the restriction
+// silently unenforced. The ctor calls these after executeHooks for the groups
+// it installed; each logs any NULL among the group's required symbols so a
+// failed install surfaces instead of being invisible. Runtime-resolved
+// optional symbols (stat64 family, protected-open variants, getmntinfo_r_np)
+// and the iOS-11-gated utimensat are excluded — NULL there is expected.
+// (shdw_hook_check_t / shdw_verify_hooks live in hooks.h.)
+void shadowhook_libc_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "access", original_access }, { "chdir", original_chdir },
+        { "chroot", original_chroot }, { "creat", original_creat },
+        { "statfs", original_statfs }, { "fstatfs", original_fstatfs },
+        { "statvfs", original_statvfs }, { "fstatvfs", original_fstatvfs },
+        { "stat", original_stat }, { "lstat", original_lstat },
+        { "faccessat", original_faccessat }, { "readdir_r", original_readdir_r },
+        { "readdir", original_readdir }, { "closedir", original_closedir },
+        { "fopen", original_fopen }, { "freopen", original_freopen },
+        { "realpath", original_realpath }, { "readlink", original_readlink },
+        { "readlinkat", original_readlinkat }, { "link", original_link },
+        { "getmntinfo", original_getmntinfo }, { "getattrlist", original_getattrlist },
+        { "getxattr", original_getxattr }, { "listxattr", original_listxattr },
+        { "fgetxattr", original_fgetxattr }, { "flistxattr", original_flistxattr },
+        { "fgetattrlist", original_fgetattrlist }, { "symlink", original_symlink },
+        { "rename", original_rename }, { "remove", original_remove },
+        { "unlink", original_unlink }, { "unlinkat", original_unlinkat },
+        { "linkat", original_linkat }, { "symlinkat", original_symlinkat },
+        { "renameat", original_renameat }, { "mkdirat", original_mkdirat },
+        { "fchmodat", original_fchmodat }, { "rmdir", original_rmdir },
+        { "pathconf", original_pathconf }, { "fpathconf", original_fpathconf },
+        { "utimes", original_utimes }, { "futimes", original_futimes },
+        { "fchdir", original_fchdir }, { "getfsstat", original_getfsstat },
+        { "fstat", original_fstat }, { "fstatat", original_fstatat },
+    };
+
+    shdw_verify_hooks("libc", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_libc_envvar_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "getenv", original_getenv },
+    };
+
+    shdw_verify_hooks("libc_envvar", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_libc_lowlevel_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "open", original_open }, { "openat", original_openat },
+        { "__opendir2", original___opendir2 }, { "close", original_close },
+    };
+
+    shdw_verify_hooks("libc_lowlevel", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_libc_antidebugging_verify(void) {
+    // proc_listpids/proc_listallpids/proc_pidinfo are runtime-resolved:
+    // excluded (NULL is expected when absent).
+    shdw_hook_check_t checks[] = {
+        { "ptrace", original_ptrace }, { "sysctl", original_sysctl },
+        { "getppid", original_getppid },
+    };
+
+    shdw_verify_hooks("libc_antidebugging", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+// Symbol policy for the libc C-function groups (see dyld.x's
+// shdw_sym_policy_table): dlsym must resolve every fishhook-rebound libc
+// export to its replacement for external callers, so the GOT-vs-dlsym
+// comparison agrees. Guarded by the original pointer: a symbol only resolves
+// to its replacement when the hook actually installed (original != NULL), so
+// runtime-conditional symbols (stat64 family, libproc, getmntinfo_r_np) that
+// are absent on a given OS stay absent.
+typedef struct {
+    const char* name;
+    void* replacement;
+    void* const* original;
+} shdw_libc_sym_policy_entry_t;
+
+static const shdw_libc_sym_policy_entry_t shdw_libc_sym_policy_table[] = {
+    { "access", (void*)&replaced_access, (void* const*)&original_access },
+    { "chdir", (void*)&replaced_chdir, (void* const*)&original_chdir },
+    { "chroot", (void*)&replaced_chroot, (void* const*)&original_chroot },
+    { "close", (void*)&replaced_close, (void* const*)&original_close },
+    { "closedir", (void*)&replaced_closedir, (void* const*)&original_closedir },
+    { "creat", (void*)&replaced_creat, (void* const*)&original_creat },
+    { "faccessat", (void*)&replaced_faccessat, (void* const*)&original_faccessat },
+    { "fchdir", (void*)&replaced_fchdir, (void* const*)&original_fchdir },
+    { "fchmodat", (void*)&replaced_fchmodat, (void* const*)&original_fchmodat },
+    { "fgetattrlist", (void*)&replaced_fgetattrlist, (void* const*)&original_fgetattrlist },
+    { "fgetxattr", (void*)&replaced_fgetxattr, (void* const*)&original_fgetxattr },
+    { "flistxattr", (void*)&replaced_flistxattr, (void* const*)&original_flistxattr },
+    { "fopen", (void*)&replaced_fopen, (void* const*)&original_fopen },
+    { "fpathconf", (void*)&replaced_fpathconf, (void* const*)&original_fpathconf },
+    { "freopen", (void*)&replaced_freopen, (void* const*)&original_freopen },
+    { "fstat", (void*)&replaced_fstat, (void* const*)&original_fstat },
+    { "fstatat", (void*)&replaced_fstatat, (void* const*)&original_fstatat },
+    { "fstatfs", (void*)&replaced_fstatfs, (void* const*)&original_fstatfs },
+    { "fstatvfs", (void*)&replaced_fstatvfs, (void* const*)&original_fstatvfs },
+    { "futimes", (void*)&replaced_futimes, (void* const*)&original_futimes },
+    { "getattrlist", (void*)&replaced_getattrlist, (void* const*)&original_getattrlist },
+    { "getenv", (void*)&replaced_getenv, (void* const*)&original_getenv },
+    { "getfsstat", (void*)&replaced_getfsstat, (void* const*)&original_getfsstat },
+    { "getmntinfo", (void*)&replaced_getmntinfo, (void* const*)&original_getmntinfo },
+    { "getmntinfo_r_np", (void*)&shdw_replaced_getmntinfo_r_np, (void* const*)&original_getmntinfo_r_np },
+    { "getppid", (void*)&replaced_getppid, (void* const*)&original_getppid },
+    { "getxattr", (void*)&replaced_getxattr, (void* const*)&original_getxattr },
+    { "link", (void*)&replaced_link, (void* const*)&original_link },
+    { "linkat", (void*)&replaced_linkat, (void* const*)&original_linkat },
+    { "listxattr", (void*)&replaced_listxattr, (void* const*)&original_listxattr },
+    { "lstat", (void*)&replaced_lstat, (void* const*)&original_lstat },
+    { "mkdirat", (void*)&replaced_mkdirat, (void* const*)&original_mkdirat },
+    { "open", (void*)&replaced_open, (void* const*)&original_open },
+    { "openat", (void*)&replaced_openat, (void* const*)&original_openat },
+    { "pathconf", (void*)&replaced_pathconf, (void* const*)&original_pathconf },
+    { "proc_listallpids", (void*)&replaced_proc_listallpids, (void* const*)&original_proc_listallpids },
+    { "proc_listpids", (void*)&replaced_proc_listpids, (void* const*)&original_proc_listpids },
+    { "proc_pidinfo", (void*)&replaced_proc_pidinfo, (void* const*)&original_proc_pidinfo },
+    { "ptrace", (void*)&replaced_ptrace, (void* const*)&original_ptrace },
+    { "readdir", (void*)&replaced_readdir, (void* const*)&original_readdir },
+    { "readdir_r", (void*)&replaced_readdir_r, (void* const*)&original_readdir_r },
+    { "readlink", (void*)&replaced_readlink, (void* const*)&original_readlink },
+    { "readlinkat", (void*)&replaced_readlinkat, (void* const*)&original_readlinkat },
+    { "realpath", (void*)&replaced_realpath, (void* const*)&original_realpath },
+    { "remove", (void*)&replaced_remove, (void* const*)&original_remove },
+    { "rename", (void*)&replaced_rename, (void* const*)&original_rename },
+    { "renameat", (void*)&replaced_renameat, (void* const*)&original_renameat },
+    { "rmdir", (void*)&replaced_rmdir, (void* const*)&original_rmdir },
+    { "stat", (void*)&replaced_stat, (void* const*)&original_stat },
+    { "statfs", (void*)&replaced_statfs, (void* const*)&original_statfs },
+    { "statvfs", (void*)&replaced_statvfs, (void* const*)&original_statvfs },
+    { "symlink", (void*)&replaced_symlink, (void* const*)&original_symlink },
+    { "symlinkat", (void*)&replaced_symlinkat, (void* const*)&original_symlinkat },
+    { "sysctl", (void*)&replaced_sysctl, (void* const*)&original_sysctl },
+    { "unlink", (void*)&replaced_unlink, (void* const*)&original_unlink },
+    { "unlinkat", (void*)&replaced_unlinkat, (void* const*)&original_unlinkat },
+    { "utimensat", (void*)&replaced_utimensat, (void* const*)&original_utimensat },
+    { "utimes", (void*)&replaced_utimes, (void* const*)&original_utimes },
+    { "__opendir2", (void*)&replaced___opendir2, (void* const*)&original___opendir2 },
+    { "stat64", (void*)&replaced_stat64, (void* const*)&original_stat64 },
+    { "lstat64", (void*)&replaced_lstat64, (void* const*)&original_lstat64 },
+    { "fstat64", (void*)&replaced_fstat64, (void* const*)&original_fstat64 },
+    { "fstatat64", (void*)&replaced_fstatat64, (void* const*)&original_fstatat64 },
+    { "open_dprotected_np", (void*)&replaced_open_dprotected_np, (void* const*)&original_open_dprotected_np },
+    { "openat_dprotected_np", (void*)&replaced_openat_dprotected_np, (void* const*)&original_openat_dprotected_np },
+    { "openat_authenticated_np", (void*)&replaced_openat_authenticated_np, (void* const*)&original_openat_authenticated_np },
+};
+
+void* shdw_sym_policy_lookup_libc(const char* name) {
+    if(!name) {
+        return NULL;
+    }
+
+    for(size_t i = 0; i < sizeof(shdw_libc_sym_policy_table) / sizeof(shdw_libc_sym_policy_table[0]); i++) {
+        if(strcmp(name, shdw_libc_sym_policy_table[i].name) == 0) {
+            if(shdw_libc_sym_policy_table[i].original && *shdw_libc_sym_policy_table[i].original == NULL) {
+                return NULL;  // runtime-conditional symbol not installed
+            }
+
+            return shdw_libc_sym_policy_table[i].replacement;
+        }
+    }
+
+    return NULL;
 }

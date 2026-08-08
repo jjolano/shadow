@@ -105,16 +105,22 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 }
 
 - (void)_reloadRulesets {
-    rulesets = [self _loadRulesets];
+    // The ruleset state (rulesets, rulesetURLs, rulesetFileMtimes) is swapped
+    // as one unit under the lock: readers snapshot it under the same lock, so
+    // a reload can never free an array another thread is mid-iteration over
+    // (fast enumeration of a released array = UAF crash).
+    @synchronized(self) {
+        rulesets = [self _loadRulesets];
 
-    // C0-5: atomic generation bump — decision caches keyed on it must see the
-    // new value immediately (plain ivar in the public header; __atomic on the
-    // plain integer, matching the toolchain workaround documented in
-    // hooks.h). Reloads are serialized by the 1s scan gate, so the
-    // read-modify-write is single-writer.
-    NSUInteger gen = __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
-    __atomic_store_n(&rulesetGeneration, gen + 1, __ATOMIC_RELEASE);
-    [cache_restricted removeAllObjects];
+        // C0-5: atomic generation bump — decision caches keyed on it must see the
+        // new value immediately (plain ivar in the public header; __atomic on the
+        // plain integer, matching the toolchain workaround documented in
+        // hooks.h). Reloads are serialized by the 1s scan gate, so the
+        // read-modify-write is single-writer.
+        NSUInteger gen = __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
+        __atomic_store_n(&rulesetGeneration, gen + 1, __ATOMIC_RELEASE);
+        [cache_restricted removeAllObjects];
+    }
 }
 
 // C0-5: current ruleset generation, read atomically. Consumers (Core.m's
@@ -155,10 +161,19 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         return;
     }
 
-    NSArray<NSURL*>* urls = rulesetURLs;
+    // Snapshot the URL/mtime arrays under the lock: a concurrent reload
+    // (ruleset file changed) swaps both arrays as one unit, so the snapshot
+    // stays internally consistent and outlives the iteration.
+    NSArray<NSURL*>* urls;
+    NSArray<NSNumber*>* mtimes;
+
+    @synchronized(self) {
+        urls = rulesetURLs;
+        mtimes = rulesetFileMtimes;
+    }
 
     for(NSUInteger i = 0; i < [urls count]; i++) {
-        if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[rulesetFileMtimes objectAtIndex:i] doubleValue]) {
+        if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[mtimes objectAtIndex:i] doubleValue]) {
             [self _reloadRulesets];
             return;
         }
@@ -188,8 +203,16 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         }
     }
 
+    // Snapshot the ruleset list under the lock: a concurrent reload swaps the
+    // array, and iterating a released array (fast enumeration) is a UAF crash.
+    NSArray<RulesetEngine *>* snapshot;
+
+    @synchronized(self) {
+        snapshot = rulesets;
+    }
+
     // pass 1: compliance (hard veto)
-    for(RulesetEngine* ruleset in rulesets) {
+    for(RulesetEngine* ruleset in snapshot) {
         if(![ruleset isPathCompliant:path]) {
             [cache_restricted setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | 1) forKey:path];
             return YES;
@@ -199,7 +222,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // pass 2: whitelist
     BOOL whitelisted = NO;
 
-    for(RulesetEngine* ruleset in rulesets) {
+    for(RulesetEngine* ruleset in snapshot) {
         if([ruleset isPathWhitelisted:path]) {
             whitelisted = YES;
             break;
@@ -209,7 +232,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // pass 3: blacklist
     BOOL blacklisted = NO;
 
-    for(RulesetEngine* ruleset in rulesets) {
+    for(RulesetEngine* ruleset in snapshot) {
         if([ruleset isPathBlacklisted:path]) {
             blacklisted = YES;
             break;

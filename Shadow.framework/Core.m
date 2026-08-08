@@ -89,7 +89,12 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     if((self = [super init])) {
         bundlePath = [[[self class] getExecutablePath] stringByDeletingLastPathComponent];
         homePath = NSHomeDirectory();
-        realHomePath = @(getpwuid(getuid())->pw_dir);
+
+        // getpwuid can return NULL (no passwd entry / unreadable database in a
+        // sandboxed context); dereferencing it crashes every app that loads
+        // Shadow. Fall back to NSHomeDirectory().
+        struct passwd* pw = getpwuid(getuid());
+        realHomePath = (pw && pw->pw_dir) ? @(pw->pw_dir) : homePath;
 
         bundlePath = [[self class] getStandardizedPath:bundlePath];
         homePath = [[self class] getStandardizedPath:homePath];
@@ -126,15 +131,25 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 }
 
 - (BOOL)isCPathRestricted:(const char *)path {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    // C fast-path: the restricted roots are exact prefix checks (the
+    // /private/preboot prefix also covers the resolved rootless jbroot
+    // target). Every hooked open/stat/access hits this; detector probes of
+    // these roots skip the NSString alloc + full pipeline.
+    if(strncmp(path, "/var/jb", 7) == 0
+        || strncmp(path, "/cores/", 7) == 0
+        || strncmp(path, "/private/preboot", 16) == 0) {
+        return YES;
+    }
+
     // Pool-less pthread_create threads (see isPathRestricted:options:):
     // [NSString stringWithUTF8String:] here is autoreleased, and the libc
     // hooks call this for every open/stat/access/lstat/readdir entry.
     @autoreleasepool {
-        if(path) {
-            return [self isPathRestricted:[NSString stringWithUTF8String:path]];
-        }
-
-        return NO;
+        return [self isPathRestricted:[NSString stringWithUTF8String:path]];
     }
 }
 
@@ -376,11 +391,7 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
             }
         }
 
-        if(shouldCheckPath) {
-            NSLog(@"[Shadow] isPathRestricted: allowed path: %@", path);
-        }
-
-    done:
+        done:
         if(cacheable) {
             // C0-5: generation tag — a ruleset reload invalidates the entry at
             // the next query even inside the TTL window.

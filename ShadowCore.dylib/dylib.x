@@ -284,6 +284,10 @@ static void shdw_install_tier2(void) {
     // Initialize hooks.
     NSLog(@"starting hooks");
 
+    // Fail-soft: an unexpected NSException from the hooking library during
+    // install must not crash the app at spawn — log and continue unhooked
+    // (the verify functions below surface what failed to install).
+    @try {
     #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
     
@@ -611,7 +615,63 @@ static void shdw_install_tier2(void) {
     [subInline setBatching:NO];
     HKExecuteBatch();
     HKDisableBatching();
+
+    // Post-install verification: log any hook that failed to install (see
+    // the shadowhook_libc*_verify functions) so a silent no-op surfaces.
+    if([prefs_load[@"Hook_Filesystem"] boolValue]) {
+        shadowhook_libc_verify();
+    }
+
+    if([prefs_load[@"Hook_EnvVars"] boolValue]) {
+        shadowhook_libc_envvar_verify();
+    }
+
+    if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
+        shadowhook_libc_lowlevel_verify();
+    }
+
+    if([prefs_load[@"Hook_AntiDebugging"] boolValue]) {
+        shadowhook_libc_antidebugging_verify();
+    }
+
+    if([prefs_load[@"Hook_Syscall"] boolValue]) {
+        shadowhook_syscall_verify();
+    }
+
+    if([prefs_load[@"Hook_Memory"] boolValue]) {
+        shadowhook_mem_verify();
+    }
+
+    if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
+        shadowhook_mach_verify();
+    }
+
+    if([prefs_load[@"Hook_Sandbox"] boolValue]) {
+        shadowhook_sandbox_verify();
+    }
+
+    // The dyld groups install unconditionally (identity concealment).
+    shadowhook_dyld_verify();
+    shadowhook_dyld_symlookup_verify();
+    shadowhook_dyld_symaddrlookup_verify();
+
+    if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue] || shdw_detector_present) {
+        shadowhook_dyld_extra_verify();
+    }
     #endif
+    } @catch (NSException* e) {
+        NSLog(@"[Shadow] hook install failed: %@ — continuing unhooked", e);
+        return;
+    }
+
+    // Crash watchdog: the ctor completed — the payload loaded successfully.
+    // Clear the crash counter so the next launch starts fresh.
+    NSString* counterKey = shdw_crash_counter_key();
+    if(counterKey) {
+        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        [defaults removeObjectForKey:counterKey];
+        [defaults synchronize];
+    }
 
     NSLog(@"completed hooks");
 }

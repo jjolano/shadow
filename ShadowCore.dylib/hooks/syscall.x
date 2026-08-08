@@ -405,6 +405,10 @@ static int shdw_raw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
             // Never report our own trace flags.
             p->kp_proc.p_flag &= ~P_TRACED;
             p->kp_proc.p_flag &= ~P_SELECT;
+
+            // Cross-API consistency: getppid() reports parent 1, so the
+            // own record must say the same (see libc.x replaced_sysctl).
+            p->kp_eproc.e_ppid = 1;
         } else if(shdw_raw_proc_is_restricted(p)) {
             continue;  // jailbreak daemon: removed from the list
         }
@@ -894,6 +898,10 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
                 if(p->kp_proc.p_flag & P_SELECT) {
                     p->kp_proc.p_flag &= ~P_SELECT;
                 }
+
+                // Cross-API consistency: getppid() reports parent 1, so
+                // the own record must say the same (see libc.x).
+                p->kp_eproc.e_ppid = 1;
             }
 
             return ret;
@@ -955,8 +963,12 @@ static char*** replaced_NSGetEnviron(void) {
         count++;
     }
 
-    static char** filtered = NULL;
-    static size_t filtered_capacity = 0;
+    // Thread-local snapshot: concurrent realloc of a static buffer (two
+    // threads calling _NSGetEnviron at once) is a use-after-free. The
+    // returned pointer follows getenv-style per-thread lifetime semantics —
+    // valid until this thread's next call — which is what callers expect.
+    static _Thread_local char** filtered = NULL;
+    static _Thread_local size_t filtered_capacity = 0;
 
     if(filtered_capacity < count + 1) {
         char** grown = realloc(filtered, (count + 1) * sizeof(char *));
@@ -1015,13 +1027,15 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
+}
 
-    // d4001001
-    // const uint8_t bytes_svc80[] = {
-    //     0x01, 0x10, 0x00, 0xd4
-    // };
+void shadowhook_syscall_verify(void) {
+    // ___syscall/_sysctlbyname/___sysctlbyname/_csops_audittoken/_NSGetEnviron
+    // are runtime-resolved: excluded (NULL is expected when absent).
+    shdw_hook_check_t checks[] = {
+        { "syscall", original_syscall },
+        { "csops", original_csops },
+    };
 
-    // const uint8_t bytes_ret[] = {
-    //     0xc0, 0x03, 0x5f, 0xd6
-    // };
+    shdw_verify_hooks("syscall", checks, sizeof(checks) / sizeof(checks[0]));
 }
