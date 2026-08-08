@@ -18,6 +18,7 @@ typedef enum {
     SHADOWD_OP_PING    = 1,
     SHADOWD_OP_ACQUIRE = 2,
     SHADOWD_OP_RELEASE = 3,
+    SHADOWD_OP_STATUS  = 4,  // daemon health: 0 = krw ready, EBUSY = initializing, ENOTSUP = disabled
 } shadowd_op_t;
 
 typedef struct {

@@ -1,4 +1,4 @@
-"HK_LIB_DESC" = "Controls the methods used to intercept application code. Some hooking libraries may provide a bypass improvement, but may also affect app stability.";
+"HK_LIB_DESC" = "Controls the hooking library used for C-function hooks. Objective-C hooks always use the runtime's default library (ElleKit, Substrate or Substitute). Some hooking libraries may provide a bypass improvement, but may also affect app stability.";
 
 "HOOKING_LIBRARY" = "Hooking Library";
 "HK_LIB_SELECT" = "This is a list of hooking libraries available to use on your device. Select \"Automatic\" to allow HookKit to choose the best hooking library for your device.";
@@ -38,3 +38,9 @@
 "HOOK_TWEAKCLASS" = "Hide Tweak Classes";
 "HOOK_DYLD" = "Dynamic Library Loader";
 "VNODE_HIDING" = "Vnode-Level Hiding";
+
+"VNODE_UNAVAILABLE_REASON" = "Vnode hiding requires the shadowd daemon with kernel read/write access.";
+"VNODE_STARTING_REASON" = "Vnode hiding is unavailable while the shadowd daemon is still starting.";
+"UNSUPPORTED_ELLEKIT_REASON" = "Requires the ElleKit hooking library.";
+"UNSUPPORTED_MSG_REASON" = "Requires an Objective-C-capable hooking library (ElleKit, Substrate or Substitute).";
+"UNSUPPORTED_FUNC_REASON" = "Requires a C-function-capable hooking library.";
