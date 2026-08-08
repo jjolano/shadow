@@ -1,8 +1,11 @@
 name: harness
 
 # Decision-engine test harness (no device): unit assertions in rooted and
-# rootless modes, the detector-probe battery, and the adversary evasion
-# battery. Runs in the GNUstep container built by tests/Dockerfile.
+# rootless modes, the detector-probe battery, the adversary evasion battery,
+# the benign-app differential battery, both fuzzers, and a gcov coverage
+# report mapped to the hooked-API groups. Linux runs in the GNUstep
+# container built by tests/Dockerfile; macOS builds natively against the
+# system Foundation (rooted-only: the rootless virtual FS is Linux-only).
 
 on:
   push:
@@ -14,23 +17,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The toolchain image (~10 min to build) is cached as a docker-archive
+      # tarball keyed on the Dockerfile; a restore makes the subsequent
+      # `docker build` reuse the loaded layers.
+      - name: Cache toolchain image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/shadow-harness.tar
+          key: harness-image-${{ hashFiles('tests/Dockerfile') }}
+
+      - name: Load or build toolchain image
+        run: |
+          if [ -f /tmp/shadow-harness.tar ]; then
+            docker load -i /tmp/shadow-harness.tar
+          else
+            make -C tests image
+            docker save shadow-harness:latest -o /tmp/shadow-harness.tar
+          fi
+
       - name: Unit assertions (rooted + rootless)
         run: make -C tests test
 
-      - name: Detector battery (shipped rulesets)
-        run: make -C tests detect
-
-      - name: Adversary evasion battery
-        run: make -C tests adversary
-
-      - name: Real-detector vs Shadow (IOSSecuritySuite-style)
+      - name: Detector battery (shipped rulesets, full leak report)
         run: make -C tests detector
 
       - name: Benign app unaffected by Shadow
         run: make -C tests benign
 
-      - name: Engine coverage (gcov) vs hooked API groups
-        run: make -C tests coverage
+      - name: Adversary evasion battery
+        run: make -C tests adversary
 
       - name: Fuzz (invariant properties, seeded)
         run: make -C tests fuzz
@@ -38,13 +53,19 @@ jobs:
       - name: Adversarial fuzz (evasion oracle)
         run: make -C tests afuzz
 
+      - name: Engine coverage (gcov) vs hooked API groups
+        run: make -C tests coverage
+
   macos-foundation:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unit assertions (rooted + rootless)
-        run: make -C tests test
+      - name: Unit assertions (rooted)
+        run: make -C tests test-rooted
 
-      - name: Adversary evasion battery
-        run: make -C tests adversary
+      - name: Adversary evasion battery (rooted)
+        run: make -C tests adversary-rooted
+
+      - name: Fuzz (invariant properties, seeded)
+        run: make -C tests fuzz
