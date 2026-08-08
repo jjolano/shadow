@@ -6,7 +6,9 @@ cd $PWD
 
 # Local dev-only dependency variants (rootless/rooted/legacy flavors of
 # HookKit, AltList and the libsandy link stub). On a fresh machine, build
-# those repos first and populate ../prebuilt accordingly.
+# those repos first and populate ../prebuilt accordingly. The fat flavor
+# lipos the rooted (arm64/arm64e) and legacy (armv7/armv7s) slices into
+# one 4-arch dep set (see stage_deps).
 PB=../prebuilt
 
 # Dep slice validation. stage_deps overwrites the shared dep locations, so a
@@ -36,7 +38,7 @@ check_deps() { # flavor
     local archs
     case $flavor in
         rootless|rooted) archs="arm64 arm64e" ;;
-        legacy) archs="armv7 armv7s" ;;
+        fat) archs="armv7 armv7s arm64 arm64e" ;;
         *) echo "check_deps: unknown flavor $flavor" >&2; return 1 ;;
     esac
 
@@ -61,30 +63,65 @@ check_deps() { # flavor
             exit 1
         fi
     done
+
+    # RootBridge lives in vendor/ (built by build-deps.sh), not ../prebuilt.
+    if [ "$flavor" = "fat" ] && ! has_slices vendor/RootBridge.framework/RootBridge $archs; then
+        echo "deps: vendor/RootBridge.framework missing [$archs] — run build-deps.sh fat" >&2
+        exit 1
+    fi
 }
 
 stage_deps() {
     local flavor=$1
-    rm -rf vendor/HookKit.framework
-    mkdir -p vendor/HookKit.framework
-    cp -R $PB/hookkit/$flavor/HookKit.framework/* vendor/HookKit.framework/
-    # The rootless/legacy prebuilt HookKit flavors ship binary-only; the
-    # public headers are identical across flavors, so seed them from rooted.
-    if [ ! -f vendor/HookKit.framework/Headers/HookKit.h ]; then
-        cp -R $PB/hookkit/rooted/HookKit.framework/Headers vendor/HookKit.framework/
-    fi
-    mkdir -p $THEOS/lib
-    rm -rf $THEOS/lib/AltList.framework
-    cp -R $PB/altlist/$flavor/AltList.framework $THEOS/lib/
-    cp $PB/sandy/$flavor/libsandy.dylib $THEOS/lib/
-    # The rootless pass runs with THEOS_PACKAGE_SCHEME=rootless, which makes
-    # theos search only $THEOS/lib/iphone/rootless; mirror AltList/libsandy there.
-    if [ "$flavor" = "rootless" ]; then
-        mkdir -p $THEOS/lib/iphone/rootless
-        rm -rf $THEOS/lib/iphone/rootless/AltList.framework
-        cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/rootless/
-        cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/rootless/
-    fi
+    # lipo the disjoint rooted (arm64/arm64e) + legacy (armv7/armv7s)
+    # prebuilt slices into one 4-arch fat file.
+    lipo_fat() { "$LIPO" -create "$1" "$2" -output "$3"; }
+    case $flavor in
+        fat)
+            # Rooted flavor ships the public headers; legacy is binary-only.
+            rm -rf vendor/HookKit.framework
+            mkdir -p vendor/HookKit.framework
+            cp -R $PB/hookkit/rooted/HookKit.framework/* vendor/HookKit.framework/
+            lipo_fat $PB/hookkit/rooted/HookKit.framework/HookKit $PB/hookkit/legacy/HookKit.framework/HookKit vendor/HookKit.framework/HookKit
+            mkdir -p $THEOS/lib
+            rm -rf $THEOS/lib/AltList.framework
+            cp -R $PB/altlist/rooted/AltList.framework $THEOS/lib/
+            lipo_fat $PB/altlist/rooted/AltList.framework/AltList $PB/altlist/legacy/AltList.framework/AltList $THEOS/lib/AltList.framework/AltList
+            lipo_fat $PB/sandy/rooted/libsandy.dylib $PB/sandy/legacy/libsandy.dylib $THEOS/lib/libsandy.dylib
+            # Framework link order resolves $THEOS/lib before -F../vendor, so
+            # the 4-slice merge must also land there (per-flavor passes got
+            # this from build-deps installing the matching variant; the fat
+            # pass leaves the legacy one behind). HookKit/RootBridge merge
+            # lives in vendor/; AltList/libsandy are already fat above.
+            for fw in HookKit RootBridge; do
+                rm -rf $THEOS/lib/$fw.framework
+                cp -R vendor/$fw.framework $THEOS/lib/
+            done
+            ;;
+        rootless|rooted)
+            rm -rf vendor/HookKit.framework
+            mkdir -p vendor/HookKit.framework
+            cp -R $PB/hookkit/$flavor/HookKit.framework/* vendor/HookKit.framework/
+            # The rootless prebuilt HookKit flavor ships binary-only; the
+            # public headers are identical across flavors, so seed them from rooted.
+            if [ ! -f vendor/HookKit.framework/Headers/HookKit.h ]; then
+                cp -R $PB/hookkit/rooted/HookKit.framework/Headers vendor/HookKit.framework/
+            fi
+            mkdir -p $THEOS/lib
+            rm -rf $THEOS/lib/AltList.framework
+            cp -R $PB/altlist/$flavor/AltList.framework $THEOS/lib/
+            cp $PB/sandy/$flavor/libsandy.dylib $THEOS/lib/
+            # The rootless pass runs with THEOS_PACKAGE_SCHEME=rootless, which makes
+            # theos search only $THEOS/lib/iphone/rootless; mirror AltList/libsandy there.
+            if [ "$flavor" = "rootless" ]; then
+                mkdir -p $THEOS/lib/iphone/rootless
+                rm -rf $THEOS/lib/iphone/rootless/AltList.framework
+                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/rootless/
+                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/rootless/
+            fi
+            ;;
+        *) echo "stage_deps: unknown flavor $flavor" >&2; return 1 ;;
+    esac
 }
 
 # create fresh build directory
@@ -108,22 +145,15 @@ build_rootless() {
     rm -rf $THEOS/lib/Shadow.framework
 }
 
-# build main project (rooted ver., iOS 12+; theos bumps the arm64e slice minos to 14.0)
-build_rooted() {
-    stage_deps rooted
-    check_deps rooted
-    make clean &&
-    ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
-
-    rm -rf $THEOS/lib/Shadow.framework
-}
-
-# build legacy ver. (armv7/armv7s, iOS 9+; 32-bit deps staged separately)
-build_legacy() {
-    stage_deps legacy
-    check_deps legacy
-    # PID-unique backup: the legacy pass mutates control in place; a fixed
+# build fat ver. — one package, armv7/armv7s + arm64/arm64e, iOS 9+.
+# Replaces the old rooted + legacy debs: 32-bit devices get dylib-only
+# (postinst strips the arm64-only shadowd + its plist there), and on
+# 64-bit iOS < 12 the rooted dep slices (minos 12.0) can't load, so
+# postinst strips injection too — see layout/DEBIAN/postinst.
+build_fat() {
+    stage_deps fat
+    check_deps fat
+    # PID-unique backup: the fat pass mutates control in place; a fixed
     # /tmp path collides when two builds run in parallel (CI + local, or two
     # sessions). Restore on exit so a failed pass never leaves control dirty.
     local BAK=/tmp/shadow-control.bak.$$
@@ -132,8 +162,8 @@ build_legacy() {
     sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
 
     make clean &&
-    ARCHS="armv7 armv7s" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm-legacy.deb
+    ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
+    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm.deb
 
     rm -rf $THEOS/lib/Shadow.framework
 }
@@ -153,10 +183,9 @@ build_quick() {
 
 case ${1:-all} in
     rootless) build_rootless ;;
-    rooted) build_rooted ;;
-    legacy) build_legacy ;;
+    fat) build_fat ;;
     quick) build_quick ;;
     deps) check_deps "${2:-rooted}" ;;
-    all) build_rootless; build_rooted; build_legacy ;;
-    *) echo "usage: $0 [all|rootless|rooted|legacy|quick|deps <flavor>]" >&2; exit 1 ;;
+    all) build_rootless; build_fat ;;
+    *) echo "usage: $0 [all|rootless|fat|quick|deps <flavor>]" >&2; exit 1 ;;
 esac

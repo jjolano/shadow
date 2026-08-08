@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [rootless, rooted, legacy]
+        flavor: [rootless, fat]
     env:
       THEOS: /opt/theos
     steps:
