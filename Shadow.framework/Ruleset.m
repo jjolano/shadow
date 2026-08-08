@@ -118,8 +118,8 @@ static id shdwCacheUnwrapNil(id value) {
     NSDictionary* cached = nil;
 
     // The modern NSKeyedUnarchiver entry points (initForReadingFromData:…,
-    // unarchivedObjectOfClass:…) require iOS 11; the deployment target is
-    // iOS 9, so the legacy API is the correct one here — deprecation
+    // unarchivedObjectOfClass:…) require iOS 11; the deployment target (Makefile TARGET) is iOS 12, and the modern
+    // iOS 11 entry points are out of scope, so the legacy API is the correct one here — deprecation
     // suppression is deliberate, not debt.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -278,8 +278,8 @@ static id shdwCacheUnwrapNil(id value) {
         @"blacklist_match_all" : @(ruleset->blacklist_match_all)
     };
 
-    // Legacy archiver: the modern entry points require iOS 11 and the
-    // deployment target is iOS 9 — see the unarchive side above.
+    // Legacy archiver: iOS 11 entry points are out of scope and the
+    // deployment target is iOS 12 (Makefile TARGET) — see the unarchive side above.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     @try {
