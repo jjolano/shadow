@@ -33,6 +33,14 @@ harness: $(SRCS) Makefile
 test: harness
 	./harness
 
+# Rooted-only runs for platforms without the virtual FS (macOS): the
+# rootless assertions depend on the Linux interposer.
+test-rooted: harness
+	./harness --rooted
+
+adversary-rooted: harness
+	./harness --rooted --adversary
+
 detector: harness
 	./harness --detector
 
@@ -66,6 +74,14 @@ harness: image
 test: harness
 	$(RUN) tests/harness
 
+# Rooted-only runs for platforms without the virtual FS (macOS): the
+# rootless assertions depend on the Linux interposer.
+test-rooted: harness
+	$(RUN) tests/harness --rooted
+
+adversary-rooted: harness
+	$(RUN) tests/harness --rooted --adversary
+
 detector: harness
 	$(RUN) tests/harness --detector
 
@@ -92,4 +108,4 @@ clean:
 
 endif
 
-.PHONY: test detect adversary detector benign fuzz coverage clean
+.PHONY: test test-rooted detect adversary adversary-rooted detector benign fuzz afuzz coverage clean

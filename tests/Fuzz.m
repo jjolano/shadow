@@ -460,6 +460,11 @@ int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed) {
             @"/usr/sbin/fstab", @"/usr/sbin/sshd_config",
             @"/private/preboot/jb-abc", @"/cores/crash", @"/tmp/jailbreak-detector",
             @"/var/mobile/evil/foo", @"/var/binpack",
+            // Modern-era artifacts (Dopamine/palera1n/unc0ver)
+            @"/var/Liy/.procursus_strapped", @"/var/Liy",
+            @"/Applications/Dopamine.app", @"/Applications/palera1nLoader.app",
+            @"/usr/lib/ABDYLD.dylib", @"/usr/lib/frida", @"/jb/lzma",
+            @"/.installed_unc0ver", @"/var/lib/dpkg/info/mobilesubstrate.md5sums",
             // Legit paths (expected allowed)
             @"/var/mobile/Media/DCIM/1.jpg", @"/var/mobile/Media/DCIM",
             @"/var/mobile/Library/Preferences/x", @"/usr/bin/ssh",

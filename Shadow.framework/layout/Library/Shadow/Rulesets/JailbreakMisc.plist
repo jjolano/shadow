@@ -27,6 +27,11 @@
 		<string>/etc/ssh/sshd_config</string>
 		<string>/usr/libexec/ssh-keysign</string>
 		<string>/usr/libexec/sftp-server</string>
+		<string>/usr/lib/ABDYLD.dylib</string>
+		<string>/usr/lib/ABSubLoader.dylib</string>
+		<string>/Applications/palera1nLoader.app</string>
+		<string>/usr/sbin/frida-server</string>
+		<string>/usr/lib/frida</string>
 		<string>/dev/ptmx</string>
 		<string>/dev/kmem</string>
 		<string>/dev/mem</string>
