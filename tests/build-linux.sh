@@ -23,7 +23,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Ivendor/RootBridge.framework/Headers \
   tests/main.m tests/RootBridgeStub.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
-  tests/detectors/ShadowDetector.m tests/Fuzz.m \
+  tests/detectors/ShadowDetector.m tests/Fuzz.m tests/shadowd/RecoveryHarness.m \
   shadowd/ledger.m \
   Shadow.framework/Core.m Shadow.framework/Backend.m Shadow.framework/Ruleset.m \
   Shadow.framework/Core+Utilities.m \
@@ -31,3 +31,8 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   $BASE_LIBS -o tests/harness
 
 echo "built tests/harness"
+
+# Drift guard: the recovery test double (tests/shadowd/RecoveryHarness.m)
+# must stay byte-identical to shadowd/main.m's recover_one_record, or the
+# harness silently tests stale logic. Fail the build on drift.
+sh tests/verify-recovery-copy.sh
