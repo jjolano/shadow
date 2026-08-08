@@ -114,6 +114,16 @@
 			<key>cell</key>
 			<string>PSLinkCell</string>
 			<key>detail</key>
+			<string>SHDWDetectorLogListController</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>ROOT_DETECTOR_LOG</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
 			<string>SHDWAboutListController</string>
 			<key>isController</key>
 			<true/>

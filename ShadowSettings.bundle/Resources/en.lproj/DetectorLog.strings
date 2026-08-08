@@ -1,0 +1,9 @@
+"DETECTOR_LOG" = "Detector Log";
+"DETECTOR_LOG_DESC" = "Recent jailbreak detection probes Shadow has intercepted. Entries are stored on-device only.";
+"CLEAR_LOG" = "Clear Log";
+"NO_ACTIVITY" = "No detector activity recorded";
+"SHARE_LOG" = "Share Log";
+"CLEAR_CONFIRM_TITLE" = "Clear Detector Log?";
+"CLEAR_CONFIRM_MSG" = "This removes all recorded detector activity. This cannot be undone.";
+"CLEAR_CANCEL" = "Cancel";
+"CLEAR_CONFIRM" = "Clear";
