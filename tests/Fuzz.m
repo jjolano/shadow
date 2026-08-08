@@ -39,6 +39,11 @@
 #import <stdlib.h>
 #import <string.h>
 #import <limits.h>
+#import <unistd.h>
+
+// fsinterpose (shadow filter arm/disarm + engine consult).
+void shdw_shadow_filter_set_enabled(int enabled);
+int shdw_shadow_filter(const char* path, int is_write);
 
 // Deterministic PRNG (xorshift64*).
 static uint64_t gState;
@@ -360,6 +365,251 @@ int shdw_fuzz_run(NSUInteger iters, unsigned seed) {
                 (unsigned long)g1, (unsigned long)g2, g1 == g2 ? "stable" : "RELOAD CYCLE");
         }
     }
+
+    return gFindings ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Adversarial fuzzer: evasion-mutation property testing with a semantic
+// oracle. For each canonical seed path (from a jailbreak-artifact + legit
+// corpus), every evasion mutation that STANDARDIZES TO THE SAME PATH must
+// receive the SAME verdict — a detector cannot dodge the ruleset by path
+// mangling. With the shadow filter armed, restricted-equivalent variants
+// must stay hidden (ENOENT) while allowed seeds' real files stay visible.
+//
+//   E1 equivalent-variant read verdict differs from the canonical
+//   E2 equivalent-variant write verdict differs (C0-1)
+//   E3 filter failed to hide a restricted-equivalent variant
+//   E4 filter hid an allowed variant (false positive)
+//
+// Each E-finding is re-verified against the canonical verdict before being
+// counted; if the canonical itself flips, it is the known D4 transient and
+// is reported as TRANSIENT (not a finding). Mutations whose standardized
+// form differs from the seed (case flips, percent-encoding, token splices)
+// are different paths, not evasions — they are tallied per seed as the
+// "dodge surface" (informational).
+// ---------------------------------------------------------------------------
+
+static BOOL afz_inContract(NSString* p) {
+    return [p hasPrefix:@"/"] && ![p containsString:@"%"] && ![p containsString:@":"];
+}
+
+static NSString* afz_evade(NSString* input) {
+    static NSArray* tokens = nil;
+    static dispatch_once_t once = 0;
+
+    dispatch_once(&once, ^{
+        tokens = @[
+            @"jb", @"ssh", @"cydia", @"jailbreak", @"app", @"dylib", @"mobile",
+            @"..", @".", @"/", @"//", @"/./", @"~/..", @"%2f", @"%2e", @"%00",
+            @"\u202e", @"\uff0f", @"\u2215", @" ", @"\t", @"-", @"_", @"0",
+            @"com.apple", @"substrate",
+        ];
+    });
+
+    NSUInteger len = [input length];
+    NSUInteger op = fz_below(14);
+
+    switch(op) {
+        case 0: // insert a token mid-path
+            return [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len + 1), 0)
+                                                   withString:fz_pick(tokens)];
+        case 1: // replace one char with a token
+            return len ? [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len), 1)
+                                                       withString:fz_pick(tokens)] : input;
+        case 2: // duplicate a segment
+            return len ? [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len), 1)
+                                                        withString:[input substringWithRange:NSMakeRange(fz_below(len), 1)]] : input;
+        case 3: // trailing slash
+            return [input stringByAppendingString:@"/"];
+        case 4: // double a separator
+            return [input stringByReplacingOccurrencesOfString:@"/" withString:@"//"];
+        case 5: // dot-dot escape prefix
+            return [@"/.." stringByAppendingString:input];
+        case 6: // tilde escape prefix
+            return [@"~/.." stringByAppendingString:input];
+        case 7: // append a token
+            return [input stringByAppendingString:fz_pick(tokens)];
+        case 8: // trim a component
+            return len > 3 ? [input substringToIndex:fz_below(len - 1) + 1] : input;
+        case 9: // insert /./ mid-path
+            return [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len + 1), 0)
+                                                   withString:@"/./"];
+        case 10: // uppercase the last component
+        {
+            NSString* last = [input lastPathComponent];
+            return [[input substringToIndex:[input length] - [last length]]
+                stringByAppendingString:[last uppercaseString]];
+        }
+        case 11: // unicode slash splice
+            return [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len + 1), 0)
+                                                   withString:@"\uff0f"];
+        case 12: // RTL override splice
+            return [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len + 1), 0)
+                                                   withString:@"\u202e"];
+        default: // whitespace splice
+            return [input stringByReplacingCharactersInRange:NSMakeRange(fz_below(len + 1), 0)
+                                                   withString:@" "];
+    }
+}
+
+int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed) {
+    gState = seed ? seed : 0x9E3779B97F4A7C15ULL;
+    gFindings = 0;
+    gIters = 0;
+
+    static NSArray* corpus = nil;
+    static dispatch_once_t once = 0;
+
+    dispatch_once(&once, ^{
+        corpus = @[
+            // Jailbreak artifacts (expected restricted)
+            @"/var/jb", @"/var/jb/usr/bin/ssh", @"/var/jb/usr/bin",
+            @"/var/jb/Library/LaunchDaemons", @"/usr/lib/libjailbreak.dylib",
+            @"/usr/lib/libellekit.dylib", @"/usr/lib/libsubstrate.dylib",
+            @"/usr/lib/TweakInject", @"/Applications/Cydia.app",
+            @"/Applications/Sileo.app", @"/Library/MobileSubstrate/MobileSubstrate.dylib",
+            @"/usr/sbin/fstab", @"/usr/sbin/sshd_config",
+            @"/private/preboot/jb-abc", @"/cores/crash", @"/tmp/jailbreak-detector",
+            @"/var/mobile/evil/foo", @"/var/binpack",
+            // Legit paths (expected allowed)
+            @"/var/mobile/Media/DCIM/1.jpg", @"/var/mobile/Media/DCIM",
+            @"/var/mobile/Library/Preferences/x", @"/usr/bin/ssh",
+            @"/var/mobile/Documents/notes.txt", @"/var/jb2",
+        ];
+    });
+
+    printf("[afuzz] seed=%u variants/seed=%lu, filter armed (rootless)\n",
+        seed, (unsigned long)variantsPerSeed);
+    fflush(stdout);
+
+    // The engine is initialized with the filter DISARMED, and all direct
+    // engine calls below run disarmed: with the filter armed, the engine's
+    // own existence-gate accesses (mapped jbroot paths) would be filtered
+    // as "restricted" and the decisions would break. The filter is armed
+    // only around the E3/E4 visibility checks (its engine call is
+    // recursion-guarded via gInFilter).
+    Shadow* shadow = [Shadow sharedInstance];
+
+    NSUInteger total = 0;
+    NSUInteger equivalent = 0;
+    NSUInteger nonEquivalent = 0;
+    NSUInteger transients = 0;
+
+    for(NSString* seedPath in corpus) {
+        if(!afz_inContract(seedPath)) {
+            continue;
+        }
+
+        NSString* canon = [Shadow getStandardizedPath:seedPath];
+
+        if(!afz_inContract(canon) || ![canon isAbsolutePath]) {
+            continue;
+        }
+
+        BOOL canonV = [shadow isPathRestricted:canon];
+        fprintf(stderr, "DBG canonV done\n");
+        BOOL canonW = [shadow isPathRestricted:canon options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}];
+        fprintf(stderr, "DBG canonW done\n");
+        int baselineVisible = (access([canon fileSystemRepresentation], F_OK) == 0);
+        fprintf(stderr, "DBG baseline done (%d)\n", baselineVisible);
+
+        printf("  seed %-52s canon=%s verdict=%d\n",
+            [seedPath UTF8String], [canon UTF8String], canonV);
+        fflush(stdout);
+
+        for(NSUInteger v = 0; v < variantsPerSeed; v++) {
+            gIters = v;
+            NSString* variant = afz_evade(seedPath);
+            total++;
+
+            if(!afz_inContract(variant)) {
+                nonEquivalent++;
+                continue;
+            }
+
+            NSString* std = [Shadow getStandardizedPath:variant];
+
+            if(![std isEqualToString:canon]) {
+                nonEquivalent++;
+                continue;
+            }
+
+            equivalent++;
+
+            // E1: read verdict must match the canonical.
+            BOOL vv = [shadow isPathRestricted:variant];
+
+            if(vv != canonV) {
+                // Re-verify the canonical: a flip is the known D4 transient.
+                BOOL canonV2 = [shadow isPathRestricted:canon];
+
+                if(canonV2 != canonV) {
+                    transients++;
+                    printf("  TRANSIENT (D4 class) on seed %s variant %s\n",
+                        [seedPath UTF8String], [variant UTF8String]);
+                } else {
+                    gFindings++;
+                    printf("FUZZ FINDING [E1 evasion] seed=%s variant=\"%s\" canon=%d got=%d (std=\"%s\")\n",
+                        [seedPath UTF8String], [variant UTF8String], canonV, vv, [std UTF8String]);
+                }
+            }
+
+            // E2: write verdict must match the canonical write verdict.
+            BOOL vw = [shadow isPathRestricted:variant options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}];
+
+            if(vw != canonW) {
+                BOOL canonW2 = [shadow isPathRestricted:canon options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}];
+
+                if(canonW2 != canonW) {
+                    transients++;
+                } else {
+                    gFindings++;
+                    printf("FUZZ FINDING [E2 evasion write] seed=%s variant=\"%s\" canon=%d got=%d\n",
+                        [seedPath UTF8String], [variant UTF8String], canonW, vw);
+                }
+            }
+
+            // E3/E4: filter pass — restricted equivalents must be hidden;
+            // allowed seeds' real files must stay visible. The filter is
+            // armed ONLY around these checks, and the visibility is
+            // DIFFERENTIAL per variant (a variant can be invisible without
+            // the filter too — e.g. a trailing slash on a file — which is
+            // an FS artifact, not a filter false positive).
+            if(canonV) {
+                shdw_shadow_filter_set_enabled(1);
+                int visibleOn = (access([variant fileSystemRepresentation], F_OK) == 0);
+                shdw_shadow_filter_set_enabled(0);
+
+                if(visibleOn) {
+                    gFindings++;
+                    printf("FUZZ FINDING [E3 filter leak] seed=%s variant=\"%s\" visible despite restriction\n",
+                        [seedPath UTF8String], [variant UTF8String]);
+                }
+            } else if(baselineVisible) {
+                if(access([variant fileSystemRepresentation], F_OK) != 0) {
+                    continue;   // invisible without the filter too: FS artifact
+                }
+
+                shdw_shadow_filter_set_enabled(1);
+                int visibleOn = (access([variant fileSystemRepresentation], F_OK) == 0);
+                shdw_shadow_filter_set_enabled(0);
+
+                if(!visibleOn) {
+                    gFindings++;
+                    printf("FUZZ FINDING [E4 filter false positive] seed=%s variant=\"%s\" hidden\n",
+                        [seedPath UTF8String], [variant UTF8String]);
+                }
+            }
+        }
+    }
+
+    shdw_shadow_filter_set_enabled(0);
+
+    printf("[afuzz] done: %lu probes (%lu equivalent, %lu non-equivalent, %lu transient), %lu findings\n",
+        (unsigned long)total, (unsigned long)equivalent,
+        (unsigned long)nonEquivalent, (unsigned long)transients,
+        (unsigned long)gFindings);
 
     return gFindings ? 1 : 0;
 }

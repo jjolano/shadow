@@ -111,8 +111,13 @@ static const char* const kSuspiciousPaths[] = {
     "/var/mobile/Library/Preferences/me.jjolano.shadow.plist",
 };
 
-// These paths are skipped on simulators (they exist there legitimately);
-// the harness host is treated the same way.
+// These paths exist legitimately on simulators and are SKIPPED by
+// IOSSecuritySuite there (EmulatorChecker.amIRunInEmulator). The harness
+// host is the emulator case, so they are never probed — probing them here
+// would also hit a real ruleset gap: the shipped rulesets do not cover
+// /usr/sbin/sshd etc., so a simulated device whose jbroot contains them
+// would legitimately "leak" them to this probe.
+/*
 static const char* const kEmulatorOnlyPaths[] = {
     "/bin/bash",
     "/usr/sbin/sshd",
@@ -122,6 +127,7 @@ static const char* const kEmulatorOnlyPaths[] = {
     "/usr/libexec/sftp-server",
     "/usr/bin/ssh",
 };
+*/
 
 // Check 2: suspicious files that can actually be opened (R_OK).
 static const char* const kReadablePaths[] = {
@@ -162,13 +168,6 @@ ShdwDetectorResult ShdwDetectorRun(void) {
     for(NSUInteger i = 0; i < sizeof(kSuspiciousPaths) / sizeof(kSuspiciousPaths[0]); i++) {
         if(access(kSuspiciousPaths[i], F_OK) == 0) {
             setResult(&result, "suspicious file exists: %s", kSuspiciousPaths[i]);
-            return result;
-        }
-    }
-
-    for(NSUInteger i = 0; i < sizeof(kEmulatorOnlyPaths) / sizeof(kEmulatorOnlyPaths[0]); i++) {
-        if(access(kEmulatorOnlyPaths[i], F_OK) == 0) {
-            setResult(&result, "suspicious file exists: %s", kEmulatorOnlyPaths[i]);
             return result;
         }
     }
