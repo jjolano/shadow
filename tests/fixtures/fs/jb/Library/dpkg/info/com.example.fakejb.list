@@ -1,3 +1,4 @@
 /usr/bin/sshd
 /Applications/FakeJB.app
 /var/mobile/Media/evil
+/usr/sbin/dpkg-tool
