@@ -617,6 +617,85 @@ static void testCoverageGaps(void) {
     CHECK(![bad isPathBlacklisted:@"/var/mobile/bogus-operator-match"], "broken predicate rule skipped");
 }
 
+// shadowd ledger battery: the daemon's persistence contract — the wire
+// format ("%d|%s|%s|0x%llx|0x%llx", a HARD on-disk constraint) and the
+// write-ahead record semantics. The pure format/parse functions run in
+// both modes; the file-based functions run in rootless mode where the
+// virtual FS maps the ledger dir (/var/jb/var/mobile/...) into the fixture
+// tree. The DEBUG self-check constructor in ledger.m also runs at load.
+#import "../../shadowd/ledger.h"
+
+static void testShadowdLedger(void) {
+    printf("[tests] shadowd ledger\n");
+
+    // Pure wire format + strict parse.
+    NSString* literal = @"1|/x|p:1:2|0x3|0x4";
+
+    CHECK([ledger_format_record(1, "/x", "p:1:2", 0x3, 0x4) isEqualToString:literal], "ledger format literal");
+
+    int state = -1;
+    NSString* path = nil, *owner = nil;
+    uint64_t vnode = 0, vId = 0;
+
+    CHECK(ledger_parse_record(literal, &state, &path, &owner, &vnode, &vId), "ledger parse literal");
+    CHECK(state == 1 && [path isEqualToString:@"/x"] && [owner isEqualToString:@"p:1:2"]
+        && vnode == 0x3 && vId == 0x4, "ledger parse fields");
+
+    int s2 = -1;
+    NSString* p2 = nil, *o2 = nil;
+    uint64_t v2 = 0, i2 = 0;
+
+    CHECK(!ledger_parse_record(@"2|/x|o|0x3|0x4", &s2, &p2, &o2, &v2, &i2), "ledger state coercion rejected");
+    CHECK(!ledger_parse_record(@"1|/x|o|0x3", &s2, &p2, &o2, &v2, &i2), "ledger short record rejected");
+    CHECK(!ledger_parse_record(@"1|/x|o|3|0x4", &s2, &p2, &o2, &v2, &i2), "ledger vnode without 0x rejected");
+    CHECK(!ledger_parse_record(@"1|/x|o|0x3|0x4|extra", &s2, &p2, &o2, &v2, &i2), "ledger long record rejected");
+    CHECK(ledger_parse_record(@"1|/x||0x3|0x4", &s2, &p2, &o2, &v2, &i2) && [o2 isEqualToString:@""], "ledger empty owner ok");
+    CHECK(!ledger_parse_record(@"1|/x|o|y|0x3|0x4", &s2, &p2, &o2, &v2, &i2), "ledger pipe-in-path unrepresentable (rejected)");
+
+    // File semantics (rooted mode: the real container filesystem — the
+    // ledger's NSFileManager calls don't go through the virtual FS, which
+    // only interposes the libc access/open/realpath). Skips gracefully
+    // where /var/mobile is not writable (e.g. macOS CI runners).
+    if(!gRootless) {
+        gIsRootless = false;
+        gBootUUID = @"harness-boot";
+
+        if(!ledger_add_record("/hidden/a", "p:1:1", 0x1234, 0x5678, 1)) {
+            printf("  (ledger file tests skipped: ledger dir not writable)\n");
+            return;
+        }
+
+        NSString* boot = nil;
+        NSArray* recs = ledger_read(&boot);
+
+        CHECK([boot isEqualToString:@"harness-boot"] && [recs count] == 1, "ledger read back");
+        CHECK([[recs objectAtIndex:0] isEqualToString:@"1|/hidden/a|p:1:1|0x1234|0x5678"], "ledger record content");
+
+        CHECK(ledger_update_record("/hidden/a", "p:1:1", 0x9999, 0x8888, 0), "ledger update");
+        recs = ledger_read(&boot);
+        CHECK([[recs objectAtIndex:0] isEqualToString:@"0|/hidden/a|p:1:1|0x9999|0x8888"], "ledger update replaces record");
+
+        CHECK(ledger_add_record("/hidden/a", "p:1:2", 0x1111, 0x2222, 1), "ledger second owner");
+        CHECK([ledger_read(&boot) count] == 2, "ledger multi-owner");
+
+        CHECK(ledger_remove_owner_record("/hidden/a", "p:1:1"), "ledger remove owner");
+        recs = ledger_read(&boot);
+        CHECK([recs count] == 1 && [[recs objectAtIndex:0] hasSuffix:@"|p:1:2|0x1111|0x2222"], "ledger other owner intact");
+
+        CHECK(ledger_remove_path_records("/hidden/a"), "ledger remove path");
+        CHECK([ledger_read(&boot) count] == 0, "ledger path records gone");
+
+        // Bad header: discarded and the ledger wiped.
+        NSString* ledgerPath = @"/var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger";
+
+        [@"GARBAGE\nx\n" writeToFile:ledgerPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        CHECK([ledger_read(&boot) count] == 0, "ledger bad header discarded");
+        CHECK(![[NSFileManager defaultManager] fileExistsAtPath:ledgerPath], "ledger bad header wipe removed file");
+
+        gIsRootless = false;
+    }
+}
+
 // Rootless only — the stub maps /Library/dpkg/info into the fixture jbroot
 // tree (fixtures/fs/jb/Library/dpkg/info/*.list).
 static void testDatabase(void) {
@@ -1370,6 +1449,7 @@ int main(int argc, const char** argv) {
         testHookEntryPoints();
         testDatabase();
         testCoverageGaps();
+        testShadowdLedger();
 
         if(!gRootless) {
             testReload();

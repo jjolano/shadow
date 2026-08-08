@@ -21,7 +21,8 @@ VENDOR = ../vendor
 CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g
 INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I$(VENDOR)/RootBridge.framework/Headers
 
-SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
+SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m ShadowdShims.m detectors/ShadowDetector.m Fuzz.m \
+       shadowd/ledger.m \
        $(FRAMEWORK)/Core.m \
        $(FRAMEWORK)/Backend.m \
        $(FRAMEWORK)/Ruleset.m \
