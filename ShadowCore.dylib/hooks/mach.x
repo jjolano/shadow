@@ -205,3 +205,54 @@ void shadowhook_mach(HKSubstitutor* hooks) {
     sym = [hooks findSymbolInImage:NULL symbolName:@"_mach_port_names"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_mach_port_names outOldPtr:(void **) &original_mach_port_names];
 }
+
+void shadowhook_mach_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "bootstrap_check_in", original_bootstrap_check_in },
+        { "bootstrap_look_up", original_bootstrap_look_up },
+    };
+
+    shdw_verify_hooks("mach", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+// Symbol policy for the mach C-function group (see dyld.x's
+// shdw_sym_policy_table): dlsym must resolve every fishhook-rebound mach
+// export to its replacement for external callers, so the GOT-vs-dlsym
+// comparison agrees. Guarded by the original pointer: runtime-resolved
+// private siblings (bootstrap_*2/3, pid_for_task, mach_port_names) only
+// resolve to their replacement when actually installed.
+typedef struct {
+    const char* name;
+    void* replacement;
+    void* const* original;
+} shdw_mach_sym_policy_entry_t;
+
+static const shdw_mach_sym_policy_entry_t shdw_mach_sym_policy_table[] = {
+    { "bootstrap_check_in", (void*)&replaced_bootstrap_check_in, (void* const*)&original_bootstrap_check_in },
+    { "bootstrap_check_in2", (void*)&replaced_bootstrap_check_in2, (void* const*)&original_bootstrap_check_in2 },
+    { "bootstrap_check_in3", (void*)&replaced_bootstrap_check_in3, (void* const*)&original_bootstrap_check_in3 },
+    { "bootstrap_look_up", (void*)&replaced_bootstrap_look_up, (void* const*)&original_bootstrap_look_up },
+    { "bootstrap_look_up2", (void*)&replaced_bootstrap_look_up2, (void* const*)&original_bootstrap_look_up2 },
+    { "bootstrap_look_up3", (void*)&replaced_bootstrap_look_up3, (void* const*)&original_bootstrap_look_up3 },
+    { "bootstrap_look_up_per_user", (void*)&replaced_bootstrap_look_up_per_user, (void* const*)&original_bootstrap_look_up_per_user },
+    { "mach_port_names", (void*)&replaced_mach_port_names, (void* const*)&original_mach_port_names },
+    { "pid_for_task", (void*)&replaced_pid_for_task, (void* const*)&original_pid_for_task },
+};
+
+void* shdw_sym_policy_lookup_mach(const char* name) {
+    if(!name) {
+        return NULL;
+    }
+
+    for(size_t i = 0; i < sizeof(shdw_mach_sym_policy_table) / sizeof(shdw_mach_sym_policy_table[0]); i++) {
+        if(strcmp(name, shdw_mach_sym_policy_table[i].name) == 0) {
+            if(shdw_mach_sym_policy_table[i].original && *shdw_mach_sym_policy_table[i].original == NULL) {
+                return NULL;  // runtime-resolved symbol not installed
+            }
+
+            return shdw_mach_sym_policy_table[i].replacement;
+        }
+    }
+
+    return NULL;
+}

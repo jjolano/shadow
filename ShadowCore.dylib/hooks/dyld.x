@@ -273,7 +273,21 @@ static const char* replaced_dyld_get_image_name(uint32_t image_index) {
     if(!snapshot) {
         NSArray* collection = [_shdw_dyld_collection copy];
         shdw_dyld_snapshot_end();
-        return image_index < [collection count] ? [collection[image_index][@"name"] fileSystemRepresentation] : NULL;
+
+        if(image_index < [collection count]) {
+            const char* name = [collection[image_index][@"name"] fileSystemRepresentation];
+
+            if(name) {
+                // The pointer dangles once the pool drains; copy into
+                // thread-local storage (use-immediately contract, same as the
+                // getenv PATH sanitizer).
+                static _Thread_local char buf[PATH_MAX];
+                strlcpy(buf, name, sizeof(buf));
+                return buf;
+            }
+        }
+
+        return NULL;
     }
 
     const char* name = image_index < snapshot->count ? snapshot->entry[image_index].name : NULL;
@@ -937,6 +951,28 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         if(entry) {
             return entry->replacement;
         }
+
+        // The libc/mach/sandbox/mem C-function groups keep their own policy
+        // tables (replacements stay static to their files). Consult them so
+        // every fishhook-rebound export resolves to its replacement — the
+        // GOT-vs-dlsym comparison then agrees for those symbols too.
+        void* extra = shdw_sym_policy_lookup_libc(symbol);
+
+        if(!extra) {
+            extra = shdw_sym_policy_lookup_mach(symbol);
+        }
+
+        if(!extra) {
+            extra = shdw_sym_policy_lookup_sandbox(symbol);
+        }
+
+        if(!extra) {
+            extra = shdw_sym_policy_lookup_mem(symbol);
+        }
+
+        if(extra) {
+            return extra;
+        }
     }
 
     void* addr = NULL;
@@ -1054,6 +1090,26 @@ static void* shdw_cfbundle_attributed(void* addr, CFStringRef symbolName) {
                 if(strcmp(name, shdw_sym_policy_table[i].name) == 0) {
                     return shdw_sym_policy_table[i].replacement;
                 }
+            }
+
+            // Same per-file fallback as replaced_dlsym: fishhook-rebound
+            // libc/mach/sandbox/mem exports resolve to their replacements.
+            void* extra = shdw_sym_policy_lookup_libc(name);
+
+            if(!extra) {
+                extra = shdw_sym_policy_lookup_mach(name);
+            }
+
+            if(!extra) {
+                extra = shdw_sym_policy_lookup_sandbox(name);
+            }
+
+            if(!extra) {
+                extra = shdw_sym_policy_lookup_mem(name);
+            }
+
+            if(extra) {
+                return extra;
             }
         }
     }
@@ -2042,4 +2098,54 @@ void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
 
 void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks) {
     [hooks hookFunction:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
+}
+
+void shadowhook_dyld_verify(void) {
+    // The findSymbolInImage/dlsym-resolved SPIs (unwind sections, image
+    // uuid, process info, NS* lookups, register-for-image-loads) are
+    // excluded — NULL is expected when the OS lacks the export.
+    shdw_hook_check_t checks[] = {
+        { "_dyld_get_image_name", original_dyld_get_image_name },
+        { "_dyld_image_count", original_dyld_image_count },
+        { "_dyld_get_image_header", original_dyld_get_image_header },
+        { "_dyld_get_image_vmaddr_slide", original_dyld_get_image_vmaddr_slide },
+        { "_dyld_register_func_for_add_image", original_dyld_register_func_for_add_image },
+        { "_dyld_register_func_for_remove_image", original_dyld_register_func_for_remove_image },
+        { "dyld_image_path_containing_address", original_dyld_image_path_containing_address },
+        { "dyld_image_header_containing_address", original_dyld_image_header_containing_address },
+        { "_dyld_get_image_slide", original_dyld_get_image_slide },
+        { "dlopen_preflight", original_dlopen_preflight },
+        { "dlerror", original_dlerror },
+    };
+
+    shdw_verify_hooks("dyld", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_dyld_extra_verify(void) {
+    // dlopen_internal/dlopen_from resolve conditionally by OS version;
+    // excluded here.
+    shdw_hook_check_t checks[] = {
+        { "dlopen", original_dlopen },
+    };
+
+    shdw_verify_hooks("dyld_extra", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_dyld_symlookup_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "dlsym", original_dlsym },
+        { "CFBundleGetFunctionPointerForName", original_CFBundleGetFunctionPointerForName },
+        { "CFBundleGetFunctionPointersForNames", original_CFBundleGetFunctionPointersForNames },
+        { "CFBundleGetDataPointerForName", original_CFBundleGetDataPointerForName },
+    };
+
+    shdw_verify_hooks("dyld_symlookup", checks, sizeof(checks) / sizeof(checks[0]));
+}
+
+void shadowhook_dyld_symaddrlookup_verify(void) {
+    shdw_hook_check_t checks[] = {
+        { "dladdr", original_dladdr },
+    };
+
+    shdw_verify_hooks("dyld_symaddrlookup", checks, sizeof(checks) / sizeof(checks[0]));
 }
