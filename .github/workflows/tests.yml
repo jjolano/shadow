@@ -56,6 +56,9 @@ jobs:
       - name: Engine coverage (gcov) vs hooked API groups
         run: make -C tests coverage
 
+      - name: Hook→engine matrix drift check
+        run: sh tests/verify-hook-matrix.sh
+
   macos-foundation:
     runs-on: macos-latest
     steps:
