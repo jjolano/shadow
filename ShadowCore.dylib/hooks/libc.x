@@ -6,7 +6,6 @@
 
 #import <string.h>
 #import <stdlib.h>
-#import <os/lock.h>
 #import <sys/xattr.h>
 #import <sys/resource.h>
 #import <sys/attr.h>
@@ -1732,202 +1731,205 @@ static int replaced_openat_authenticated_np(int dirfd, const char* path, struct 
 
     return original_openat_authenticated_np(dirfd, path, auth, flags);
 }
+// One descriptor array is the SINGLE source of truth for every libc hook's
+// install (which group hooks it), post-install verification (which group
+// treats a NULL original as a failure) and the dlsym symbol policy (every
+// entry is exposed through shdw_sym_policy_lookup_libc, guarded by its
+// original pointer). Symbols are resolved with dlsym at install time:
+// required exports always resolve, and runtime-conditional symbols that are
+// absent on a given OS (stat64 family, protected-open variants, libproc,
+// getmntinfo_r_np, utimensat on < iOS 11) are skipped cleanly — NULL there
+// is expected and never a verify failure (verifyGroups = 0).
+//
+// Group semantics, byte-identical to the old per-group code:
+//   - close is installed by whichever of libc / libc_lowlevel runs first
+//     (the shdw_close_hooked guard still enforces single install), and is
+//     verified by libc_lowlevel only;
+//   - utimensat is installed but excluded from verify (it was iOS-11-gated
+//     with an @available check; dlsym is that check now);
+//   - the optional runtime-resolved families are installed, never verified.
+typedef enum {
+    SHADW_HOOK_GROUP_LIBC       = 1 << 0,
+    SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
+    SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
+    SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
+} shdw_hook_group_t;
 
-void shadowhook_libc(HKSubstitutor* hooks) {
-    [hooks hookFunction:access withReplacement:replaced_access outOldPtr:(void **) &original_access];
-    [hooks hookFunction:chdir withReplacement:replaced_chdir outOldPtr:(void **) &original_chdir];
-    [hooks hookFunction:chroot withReplacement:replaced_chroot outOldPtr:(void **) &original_chroot];
-    [hooks hookFunction:creat withReplacement:replaced_creat outOldPtr:(void **) &original_creat];
-    [hooks hookFunction:statfs withReplacement:replaced_statfs outOldPtr:(void **) &original_statfs];
-    [hooks hookFunction:fstatfs withReplacement:replaced_fstatfs outOldPtr:(void **) &original_fstatfs];
-    [hooks hookFunction:statvfs withReplacement:replaced_statvfs outOldPtr:(void **) &original_statvfs];
-    [hooks hookFunction:fstatvfs withReplacement:replaced_fstatvfs outOldPtr:(void **) &original_fstatvfs];
-    [hooks hookFunction:stat withReplacement:replaced_stat outOldPtr:(void **) &original_stat];
-    [hooks hookFunction:lstat withReplacement:replaced_lstat outOldPtr:(void **) &original_lstat];
-    [hooks hookFunction:faccessat withReplacement:replaced_faccessat outOldPtr:(void **) &original_faccessat];
-    [hooks hookFunction:readdir_r withReplacement:replaced_readdir_r outOldPtr:(void **) &original_readdir_r];
-    [hooks hookFunction:readdir withReplacement:replaced_readdir outOldPtr:(void **) &original_readdir];
-    [hooks hookFunction:closedir withReplacement:replaced_closedir outOldPtr:(void **) &original_closedir];
-    [hooks hookFunction:fopen withReplacement:replaced_fopen outOldPtr:(void **) &original_fopen];
-    [hooks hookFunction:freopen withReplacement:replaced_freopen outOldPtr:(void **) &original_freopen];
-    [hooks hookFunction:realpath withReplacement:replaced_realpath outOldPtr:(void **) &original_realpath];
-    [hooks hookFunction:readlink withReplacement:replaced_readlink outOldPtr:(void **) &original_readlink];
-    [hooks hookFunction:readlinkat withReplacement:replaced_readlinkat outOldPtr:(void **) &original_readlinkat];
-    [hooks hookFunction:link withReplacement:replaced_link outOldPtr:(void **) &original_link];
-    [hooks hookFunction:getmntinfo withReplacement:replaced_getmntinfo outOldPtr:(void **) &original_getmntinfo];
-    {
-        // getmntinfo_r_np is an iOS 16+ export; resolve at runtime and skip
-        // cleanly on systems that don't provide it.
-        void* getmntinfo_r_np_sym = dlsym(RTLD_DEFAULT, "getmntinfo_r_np");
+typedef struct {
+    const char* symbol;     // dlsym name (C identifier, unmangled)
+    void* replacement;      // the hook replacement
+    void** original;        // original-slot out pointer
+    uint32_t installGroups; // bitmask: hooked when one of these groups installs
+    uint32_t verifyGroups;  // bitmask: NULL original is a verify failure here (required)
+} shdw_hook_desc_t;
 
-        if(getmntinfo_r_np_sym) {
-            [hooks hookFunction:getmntinfo_r_np_sym withReplacement:shdw_replaced_getmntinfo_r_np outOldPtr:(void **) &original_getmntinfo_r_np];
+#define LIBC   SHADW_HOOK_GROUP_LIBC
+#define ENVVAR SHADW_HOOK_GROUP_ENVVAR
+#define LOW    SHADW_HOOK_GROUP_LOWLEVEL
+#define ANTIDBG SHADW_HOOK_GROUP_ANTIDEBUG
+
+static const shdw_hook_desc_t shdw_libc_hooks[] = {
+    // required libc group (installed + verified by libc)
+    { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   LIBC,   LIBC },
+    { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC },
+    { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
+    { "creat",                  (void*)&replaced_creat,                    (void**)&original_creat,                    LIBC,   LIBC },
+    { "statfs",                 (void*)&replaced_statfs,                   (void**)&original_statfs,                   LIBC,   LIBC },
+    { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC },
+    { "statvfs",                (void*)&replaced_statvfs,                  (void**)&original_statvfs,                  LIBC,   LIBC },
+    { "fstatvfs",               (void*)&replaced_fstatvfs,                 (void**)&original_fstatvfs,                 LIBC,   LIBC },
+    { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     LIBC,   LIBC },
+    { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    LIBC,   LIBC },
+    { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                LIBC,   LIBC },
+    { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC },
+    { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC },
+    { "closedir",               (void*)&replaced_closedir,                 (void**)&original_closedir,                 LIBC,   LIBC },
+    { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    LIBC,   LIBC },
+    { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
+    { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
+    { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 LIBC,   LIBC },
+    { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               LIBC,   LIBC },
+    { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC },
+    { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC },
+    { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC },
+    { "fs_snapshot_list",       (void*)&replaced_fs_snapshot_list,         (void**)&original_fs_snapshot_list,         LIBC,   LIBC },
+    { "getxattr",               (void*)&replaced_getxattr,                 (void**)&original_getxattr,                 LIBC,   LIBC },
+    { "listxattr",              (void*)&replaced_listxattr,                (void**)&original_listxattr,                LIBC,   LIBC },
+    { "fgetxattr",              (void*)&replaced_fgetxattr,                (void**)&original_fgetxattr,                LIBC,   LIBC },
+    { "flistxattr",             (void*)&replaced_flistxattr,               (void**)&original_flistxattr,               LIBC,   LIBC },
+    { "fgetattrlist",           (void*)&replaced_fgetattrlist,             (void**)&original_fgetattrlist,             LIBC,   LIBC },
+    { "symlink",                (void*)&replaced_symlink,                  (void**)&original_symlink,                  LIBC,   LIBC },
+    { "rename",                 (void*)&replaced_rename,                   (void**)&original_rename,                   LIBC,   LIBC },
+    { "remove",                 (void*)&replaced_remove,                   (void**)&original_remove,                   LIBC,   LIBC },
+    { "unlink",                 (void*)&replaced_unlink,                   (void**)&original_unlink,                   LIBC,   LIBC },
+    { "unlinkat",               (void*)&replaced_unlinkat,                 (void**)&original_unlinkat,                 LIBC,   LIBC },
+    { "linkat",                 (void*)&replaced_linkat,                   (void**)&original_linkat,                   LIBC,   LIBC },
+    { "symlinkat",              (void*)&replaced_symlinkat,                (void**)&original_symlinkat,                LIBC,   LIBC },
+    { "renameat",               (void*)&replaced_renameat,                 (void**)&original_renameat,                 LIBC,   LIBC },
+    { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC },
+    { "fchmodat",               (void*)&replaced_fchmodat,                 (void**)&original_fchmodat,                 LIBC,   LIBC },
+    { "rmdir",                  (void*)&replaced_rmdir,                    (void**)&original_rmdir,                    LIBC,   LIBC },
+    { "pathconf",               (void*)&replaced_pathconf,                 (void**)&original_pathconf,                 LIBC,   LIBC },
+    { "fpathconf",              (void*)&replaced_fpathconf,                (void**)&original_fpathconf,                LIBC,   LIBC },
+    { "utimes",                 (void*)&replaced_utimes,                   (void**)&original_utimes,                   LIBC,   LIBC },
+    { "futimes",                (void*)&replaced_futimes,                  (void**)&original_futimes,                  LIBC,   LIBC },
+    { "fchdir",                 (void*)&replaced_fchdir,                   (void**)&original_fchdir,                   LIBC,   LIBC },
+    { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC },
+    { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC },
+    { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC },
+
+    // installed-only (verification excluded, matching the old code's exempt lists)
+    { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0 },   // iOS 11+ gate: dlsym is the availability check
+    { "getmntinfo_r_np",        (void*)&shdw_replaced_getmntinfo_r_np,     (void**)&original_getmntinfo_r_np,          LIBC,   0 },   // iOS 16+ export
+
+    // envvar group
+    { "getenv",                 (void*)&replaced_getenv,                   (void**)&original_getenv,                   ENVVAR, ENVVAR },
+
+    // lowlevel group
+    { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW },
+    { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW },
+    { "__opendir2",             (void*)&replaced___opendir2,               (void**)&original___opendir2,               LOW,    LOW },
+    { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0 },
+    { "openat_dprotected_np",   (void*)&replaced_openat_dprotected_np,     (void**)&original_openat_dprotected_np,     LOW,    0 },
+    { "openat_authenticated_np",(void*)&replaced_openat_authenticated_np,  (void**)&original_openat_authenticated_np,  LOW,    0 },
+    { "stat64",                 (void*)&replaced_stat64,                   (void**)&original_stat64,                   LOW,    0 },
+    { "lstat64",                (void*)&replaced_lstat64,                  (void**)&original_lstat64,                  LOW,    0 },
+    { "fstat64",                (void*)&replaced_fstat64,                  (void**)&original_fstat64,                  LOW,    0 },
+    { "fstatat64",              (void*)&replaced_fstatat64,                (void**)&original_fstatat64,                LOW,    0 },
+
+    // close: installed by whichever of libc / lowlevel runs first
+    { "close",                  (void*)&replaced_close,                    (void**)&original_close,                    LIBC | LOW, LOW },
+
+    // antidebugging group
+    { "ptrace",                 (void*)&replaced_ptrace,                   (void**)&original_ptrace,                   ANTIDBG,  ANTIDBG },
+    { "sysctl",                 (void*)&replaced_sysctl,                   (void**)&original_sysctl,                   ANTIDBG,  ANTIDBG },
+    { "getppid",                (void*)&replaced_getppid,                  (void**)&original_getppid,                  ANTIDBG,  ANTIDBG },
+    { "getrusage",              (void*)&replaced_getrusage,                (void**)&original_getrusage,                ANTIDBG,  ANTIDBG },
+    { "getrlimit",              (void*)&replaced_getrlimit,                (void**)&original_getrlimit,                ANTIDBG,  ANTIDBG },
+    { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
+    { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
+    { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
+};
+
+#undef LIBC
+#undef ENVVAR
+#undef LOW
+#undef ANTIDBG
+
+static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
+    for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
+        const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
+
+        if(!(d->installGroups & group)) {
+            continue;
+        }
+
+        if(strcmp(d->symbol, "close") == 0 && shdw_close_hooked) {
+            continue;  // already installed by the other group
+        }
+
+        // Runtime-resolve; absent optional symbols skip cleanly, absent
+        // required ones surface in the group's verify pass.
+        void* target = dlsym(RTLD_DEFAULT, d->symbol);
+
+        if(!target) {
+            continue;
+        }
+
+        [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
+
+        if(strcmp(d->symbol, "close") == 0) {
+            shdw_close_hooked = YES;
         }
     }
-    [hooks hookFunction:getattrlist withReplacement:replaced_getattrlist outOldPtr:(void **) &original_getattrlist];
-    [hooks hookFunction:fs_snapshot_list withReplacement:replaced_fs_snapshot_list outOldPtr:(void **) &original_fs_snapshot_list];
-    [hooks hookFunction:getxattr withReplacement:replaced_getxattr outOldPtr:(void **) &original_getxattr];
-    [hooks hookFunction:listxattr withReplacement:replaced_listxattr outOldPtr:(void **) &original_listxattr];
-    [hooks hookFunction:fgetxattr withReplacement:replaced_fgetxattr outOldPtr:(void **) &original_fgetxattr];
-    [hooks hookFunction:flistxattr withReplacement:replaced_flistxattr outOldPtr:(void **) &original_flistxattr];
-    [hooks hookFunction:fgetattrlist withReplacement:replaced_fgetattrlist outOldPtr:(void **) &original_fgetattrlist];
-    [hooks hookFunction:symlink withReplacement:replaced_symlink outOldPtr:(void **) &original_symlink];
-    [hooks hookFunction:rename withReplacement:replaced_rename outOldPtr:(void **) &original_rename];
-    [hooks hookFunction:remove withReplacement:replaced_remove outOldPtr:(void **) &original_remove];
-    [hooks hookFunction:unlink withReplacement:replaced_unlink outOldPtr:(void **) &original_unlink];
-    [hooks hookFunction:unlinkat withReplacement:replaced_unlinkat outOldPtr:(void **) &original_unlinkat];
-    [hooks hookFunction:linkat withReplacement:replaced_linkat outOldPtr:(void **) &original_linkat];
-    [hooks hookFunction:symlinkat withReplacement:replaced_symlinkat outOldPtr:(void **) &original_symlinkat];
-    [hooks hookFunction:renameat withReplacement:replaced_renameat outOldPtr:(void **) &original_renameat];
-    [hooks hookFunction:mkdirat withReplacement:replaced_mkdirat outOldPtr:(void **) &original_mkdirat];
+}
 
-    if(@available(iOS 11, *)) {
-        // utimensat is iOS 11+; skip on older systems.
-        [hooks hookFunction:utimensat withReplacement:replaced_utimensat outOldPtr:(void **) &original_utimensat];
+static void shdw_libc_verify_group(const char* group, uint32_t mask) {
+    for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
+        const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
+
+        if((d->verifyGroups & mask) && d->original && *d->original == NULL) {
+            NSLog(@"[Shadow] %s hook not installed: %s", group, d->symbol);
+        }
     }
+}
 
-    [hooks hookFunction:fchmodat withReplacement:replaced_fchmodat outOldPtr:(void **) &original_fchmodat];
-    [hooks hookFunction:rmdir withReplacement:replaced_rmdir outOldPtr:(void **) &original_rmdir];
-    [hooks hookFunction:pathconf withReplacement:replaced_pathconf outOldPtr:(void **) &original_pathconf];
-    [hooks hookFunction:fpathconf withReplacement:replaced_fpathconf outOldPtr:(void **) &original_fpathconf];
-    [hooks hookFunction:utimes withReplacement:replaced_utimes outOldPtr:(void **) &original_utimes];
-    [hooks hookFunction:futimes withReplacement:replaced_futimes outOldPtr:(void **) &original_futimes];
-    [hooks hookFunction:fchdir withReplacement:replaced_fchdir outOldPtr:(void **) &original_fchdir];
-    [hooks hookFunction:getfsstat withReplacement:replaced_getfsstat outOldPtr:(void **) &original_getfsstat];
-    [hooks hookFunction:fstat withReplacement:replaced_fstat outOldPtr:(void **) &original_fstat];
-    [hooks hookFunction:fstatat withReplacement:replaced_fstatat outOldPtr:(void **) &original_fstatat];
-
-    if(!shdw_close_hooked) {
-        [hooks hookFunction:close withReplacement:replaced_close outOldPtr:(void **) &original_close];
-        shdw_close_hooked = YES;
-    }
+void shadowhook_libc(HKSubstitutor* hooks) {
+    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LIBC);
 }
 
 void shadowhook_libc_envvar(HKSubstitutor* hooks) {
-    [hooks hookFunction:getenv withReplacement:replaced_getenv outOldPtr:(void **) &original_getenv];
+    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ENVVAR);
 }
 
 void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
-    [hooks hookFunction:open withReplacement:replaced_open outOldPtr:(void **) &original_open];
-    [hooks hookFunction:openat withReplacement:replaced_openat outOldPtr:(void **) &original_openat];
-    [hooks hookFunction:__opendir2 withReplacement:replaced___opendir2 outOldPtr:(void **) &original___opendir2];
-
-    // The stat64 family and protected-open variants are not exported on
-    // modern iOS; resolve at runtime and skip cleanly when absent.
-    struct { const char* name; void* replacement; void** outOld; } shdw_lowlevel_symbols[] = {
-        { "stat64",                    (void*) replaced_stat64,                    (void**) &original_stat64 },
-        { "lstat64",                   (void*) replaced_lstat64,                   (void**) &original_lstat64 },
-        { "fstat64",                   (void*) replaced_fstat64,                   (void**) &original_fstat64 },
-        { "fstatat64",                 (void*) replaced_fstatat64,                 (void**) &original_fstatat64 },
-        { "open_dprotected_np",        (void*) replaced_open_dprotected_np,        (void**) &original_open_dprotected_np },
-        { "openat_dprotected_np",      (void*) replaced_openat_dprotected_np,      (void**) &original_openat_dprotected_np },
-        { "openat_authenticated_np",   (void*) replaced_openat_authenticated_np,   (void**) &original_openat_authenticated_np },
-    };
-
-    for(size_t i = 0; i < sizeof(shdw_lowlevel_symbols) / sizeof(shdw_lowlevel_symbols[0]); i++) {
-        void* target = dlsym(RTLD_DEFAULT, shdw_lowlevel_symbols[i].name);
-
-        if(target) {
-            [hooks hookFunction:target withReplacement:shdw_lowlevel_symbols[i].replacement outOldPtr:shdw_lowlevel_symbols[i].outOld];
-        }
-    }
-
-    if(!shdw_close_hooked) {
-        [hooks hookFunction:close withReplacement:replaced_close outOldPtr:(void **) &original_close];
-        shdw_close_hooked = YES;
-    }
+    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LOWLEVEL);
 }
 
 void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
-    [hooks hookFunction:ptrace withReplacement:replaced_ptrace outOldPtr:(void **) &original_ptrace];
-    [hooks hookFunction:sysctl withReplacement:replaced_sysctl outOldPtr:(void **) &original_sysctl];
-    [hooks hookFunction:getppid withReplacement:replaced_getppid outOldPtr:(void **) &original_getppid];
-    [hooks hookFunction:getrusage withReplacement:replaced_getrusage outOldPtr:(void **) &original_getrusage];
-    [hooks hookFunction:getrlimit withReplacement:replaced_getrlimit outOldPtr:(void **) &original_getrlimit];
-
-    // libproc enumeration: stable libSystem exports, resolved at runtime and
-    // skipped cleanly when absent (same pattern as getmntinfo_r_np above).
-    struct { const char* name; void* replacement; void** outOld; } shdw_libproc_symbols[] = {
-        { "proc_listpids",    (void*) replaced_proc_listpids,    (void**) &original_proc_listpids },
-        { "proc_listallpids", (void*) replaced_proc_listallpids, (void**) &original_proc_listallpids },
-        { "proc_pidinfo",     (void*) replaced_proc_pidinfo,     (void**) &original_proc_pidinfo },
-    };
-
-    for(size_t i = 0; i < sizeof(shdw_libproc_symbols) / sizeof(shdw_libproc_symbols[0]); i++) {
-        void* target = dlsym(RTLD_DEFAULT, shdw_libproc_symbols[i].name);
-
-        if(target) {
-            [hooks hookFunction:target withReplacement:shdw_libproc_symbols[i].replacement outOldPtr:shdw_libproc_symbols[i].outOld];
-        }
-    }
+    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ANTIDEBUG);
 }
 
 // Post-install verification: a hook that failed to install (backend error,
 // symbol unresolvable) leaves its original_* NULL and the restriction
 // silently unenforced. The ctor calls these after executeHooks for the groups
-// it installed; each logs any NULL among the group's required symbols so a
-// failed install surfaces instead of being invisible. Runtime-resolved
-// optional symbols (stat64 family, protected-open variants, getmntinfo_r_np)
-// and the iOS-11-gated utimensat are excluded — NULL there is expected.
-// (shdw_hook_check_t / shdw_verify_hooks live in hooks.h.)
+// it installed; each logs any NULL among the group's required symbols.
+// Runtime-resolved optional symbols (stat64 family, protected-open variants,
+// getmntinfo_r_np, libproc, utimensat) are excluded — NULL there is expected.
 void shadowhook_libc_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "access", original_access }, { "chdir", original_chdir },
-        { "chroot", original_chroot }, { "creat", original_creat },
-        { "statfs", original_statfs }, { "fstatfs", original_fstatfs },
-        { "statvfs", original_statvfs }, { "fstatvfs", original_fstatvfs },
-        { "stat", original_stat }, { "lstat", original_lstat },
-        { "faccessat", original_faccessat }, { "readdir_r", original_readdir_r },
-        { "readdir", original_readdir }, { "closedir", original_closedir },
-        { "fopen", original_fopen }, { "freopen", original_freopen },
-        { "realpath", original_realpath }, { "readlink", original_readlink },
-        { "readlinkat", original_readlinkat }, { "link", original_link },
-        { "getmntinfo", original_getmntinfo }, { "getattrlist", original_getattrlist },
-        { "fs_snapshot_list", original_fs_snapshot_list },
-        { "getxattr", original_getxattr }, { "listxattr", original_listxattr },
-        { "fgetxattr", original_fgetxattr }, { "flistxattr", original_flistxattr },
-        { "fgetattrlist", original_fgetattrlist }, { "symlink", original_symlink },
-        { "rename", original_rename }, { "remove", original_remove },
-        { "unlink", original_unlink }, { "unlinkat", original_unlinkat },
-        { "linkat", original_linkat }, { "symlinkat", original_symlinkat },
-        { "renameat", original_renameat }, { "mkdirat", original_mkdirat },
-        { "fchmodat", original_fchmodat }, { "rmdir", original_rmdir },
-        { "pathconf", original_pathconf }, { "fpathconf", original_fpathconf },
-        { "utimes", original_utimes }, { "futimes", original_futimes },
-        { "fchdir", original_fchdir }, { "getfsstat", original_getfsstat },
-        { "fstat", original_fstat }, { "fstatat", original_fstatat },
-    };
-
-    shdw_verify_hooks("libc", checks, sizeof(checks) / sizeof(checks[0]));
+    shdw_libc_verify_group("libc", SHADW_HOOK_GROUP_LIBC);
 }
 
 void shadowhook_libc_envvar_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "getenv", original_getenv },
-    };
-
-    shdw_verify_hooks("libc_envvar", checks, sizeof(checks) / sizeof(checks[0]));
+    shdw_libc_verify_group("libc_envvar", SHADW_HOOK_GROUP_ENVVAR);
 }
 
 void shadowhook_libc_lowlevel_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "open", original_open }, { "openat", original_openat },
-        { "__opendir2", original___opendir2 }, { "close", original_close },
-    };
-
-    shdw_verify_hooks("libc_lowlevel", checks, sizeof(checks) / sizeof(checks[0]));
+    shdw_libc_verify_group("libc_lowlevel", SHADW_HOOK_GROUP_LOWLEVEL);
 }
 
 void shadowhook_libc_antidebugging_verify(void) {
-    // proc_listpids/proc_listallpids/proc_pidinfo are runtime-resolved:
-    // excluded (NULL is expected when absent).
-    shdw_hook_check_t checks[] = {
-        { "ptrace", original_ptrace }, { "sysctl", original_sysctl },
-        { "getppid", original_getppid }, { "getrusage", original_getrusage },
-        { "getrlimit", original_getrlimit },
-    };
-
-    shdw_verify_hooks("libc_antidebugging", checks, sizeof(checks) / sizeof(checks[0]));
+    shdw_libc_verify_group("libc_antidebugging", SHADW_HOOK_GROUP_ANTIDEBUG);
 }
 
 // Symbol policy for the libc C-function groups (see dyld.x's
@@ -1935,98 +1937,21 @@ void shadowhook_libc_antidebugging_verify(void) {
 // export to its replacement for external callers, so the GOT-vs-dlsym
 // comparison agrees. Guarded by the original pointer: a symbol only resolves
 // to its replacement when the hook actually installed (original != NULL), so
-// runtime-conditional symbols (stat64 family, libproc, getmntinfo_r_np) that
-// are absent on a given OS stay absent.
-typedef struct {
-    const char* name;
-    void* replacement;
-    void* const* original;
-} shdw_libc_sym_policy_entry_t;
-
-static const shdw_libc_sym_policy_entry_t shdw_libc_sym_policy_table[] = {
-    { "access", (void*)&replaced_access, (void* const*)&original_access },
-    { "chdir", (void*)&replaced_chdir, (void* const*)&original_chdir },
-    { "chroot", (void*)&replaced_chroot, (void* const*)&original_chroot },
-    { "close", (void*)&replaced_close, (void* const*)&original_close },
-    { "closedir", (void*)&replaced_closedir, (void* const*)&original_closedir },
-    { "creat", (void*)&replaced_creat, (void* const*)&original_creat },
-    { "faccessat", (void*)&replaced_faccessat, (void* const*)&original_faccessat },
-    { "fchdir", (void*)&replaced_fchdir, (void* const*)&original_fchdir },
-    { "fchmodat", (void*)&replaced_fchmodat, (void* const*)&original_fchmodat },
-    { "fgetattrlist", (void*)&replaced_fgetattrlist, (void* const*)&original_fgetattrlist },
-    { "fgetxattr", (void*)&replaced_fgetxattr, (void* const*)&original_fgetxattr },
-    { "flistxattr", (void*)&replaced_flistxattr, (void* const*)&original_flistxattr },
-    { "fopen", (void*)&replaced_fopen, (void* const*)&original_fopen },
-    { "fpathconf", (void*)&replaced_fpathconf, (void* const*)&original_fpathconf },
-    { "freopen", (void*)&replaced_freopen, (void* const*)&original_freopen },
-    { "fstat", (void*)&replaced_fstat, (void* const*)&original_fstat },
-    { "fstatat", (void*)&replaced_fstatat, (void* const*)&original_fstatat },
-    { "fstatfs", (void*)&replaced_fstatfs, (void* const*)&original_fstatfs },
-    { "fstatvfs", (void*)&replaced_fstatvfs, (void* const*)&original_fstatvfs },
-    { "futimes", (void*)&replaced_futimes, (void* const*)&original_futimes },
-    { "getattrlist", (void*)&replaced_getattrlist, (void* const*)&original_getattrlist },
-    { "fs_snapshot_list", (void*)&replaced_fs_snapshot_list, (void* const*)&original_fs_snapshot_list },
-    { "getenv", (void*)&replaced_getenv, (void* const*)&original_getenv },
-    { "getfsstat", (void*)&replaced_getfsstat, (void* const*)&original_getfsstat },
-    { "getmntinfo", (void*)&replaced_getmntinfo, (void* const*)&original_getmntinfo },
-    { "getmntinfo_r_np", (void*)&shdw_replaced_getmntinfo_r_np, (void* const*)&original_getmntinfo_r_np },
-    { "getppid", (void*)&replaced_getppid, (void* const*)&original_getppid },
-    { "getrlimit", (void*)&replaced_getrlimit, (void* const*)&original_getrlimit },
-    { "getrusage", (void*)&replaced_getrusage, (void* const*)&original_getrusage },
-    { "getxattr", (void*)&replaced_getxattr, (void* const*)&original_getxattr },
-    { "link", (void*)&replaced_link, (void* const*)&original_link },
-    { "linkat", (void*)&replaced_linkat, (void* const*)&original_linkat },
-    { "listxattr", (void*)&replaced_listxattr, (void* const*)&original_listxattr },
-    { "lstat", (void*)&replaced_lstat, (void* const*)&original_lstat },
-    { "mkdirat", (void*)&replaced_mkdirat, (void* const*)&original_mkdirat },
-    { "open", (void*)&replaced_open, (void* const*)&original_open },
-    { "openat", (void*)&replaced_openat, (void* const*)&original_openat },
-    { "pathconf", (void*)&replaced_pathconf, (void* const*)&original_pathconf },
-    { "proc_listallpids", (void*)&replaced_proc_listallpids, (void* const*)&original_proc_listallpids },
-    { "proc_listpids", (void*)&replaced_proc_listpids, (void* const*)&original_proc_listpids },
-    { "proc_pidinfo", (void*)&replaced_proc_pidinfo, (void* const*)&original_proc_pidinfo },
-    { "ptrace", (void*)&replaced_ptrace, (void* const*)&original_ptrace },
-    { "readdir", (void*)&replaced_readdir, (void* const*)&original_readdir },
-    { "readdir_r", (void*)&replaced_readdir_r, (void* const*)&original_readdir_r },
-    { "readlink", (void*)&replaced_readlink, (void* const*)&original_readlink },
-    { "readlinkat", (void*)&replaced_readlinkat, (void* const*)&original_readlinkat },
-    { "realpath", (void*)&replaced_realpath, (void* const*)&original_realpath },
-    { "remove", (void*)&replaced_remove, (void* const*)&original_remove },
-    { "rename", (void*)&replaced_rename, (void* const*)&original_rename },
-    { "renameat", (void*)&replaced_renameat, (void* const*)&original_renameat },
-    { "rmdir", (void*)&replaced_rmdir, (void* const*)&original_rmdir },
-    { "stat", (void*)&replaced_stat, (void* const*)&original_stat },
-    { "statfs", (void*)&replaced_statfs, (void* const*)&original_statfs },
-    { "statvfs", (void*)&replaced_statvfs, (void* const*)&original_statvfs },
-    { "symlink", (void*)&replaced_symlink, (void* const*)&original_symlink },
-    { "symlinkat", (void*)&replaced_symlinkat, (void* const*)&original_symlinkat },
-    { "sysctl", (void*)&replaced_sysctl, (void* const*)&original_sysctl },
-    { "unlink", (void*)&replaced_unlink, (void* const*)&original_unlink },
-    { "unlinkat", (void*)&replaced_unlinkat, (void* const*)&original_unlinkat },
-    { "utimensat", (void*)&replaced_utimensat, (void* const*)&original_utimensat },
-    { "utimes", (void*)&replaced_utimes, (void* const*)&original_utimes },
-    { "__opendir2", (void*)&replaced___opendir2, (void* const*)&original___opendir2 },
-    { "stat64", (void*)&replaced_stat64, (void* const*)&original_stat64 },
-    { "lstat64", (void*)&replaced_lstat64, (void* const*)&original_lstat64 },
-    { "fstat64", (void*)&replaced_fstat64, (void* const*)&original_fstat64 },
-    { "fstatat64", (void*)&replaced_fstatat64, (void* const*)&original_fstatat64 },
-    { "open_dprotected_np", (void*)&replaced_open_dprotected_np, (void* const*)&original_open_dprotected_np },
-    { "openat_dprotected_np", (void*)&replaced_openat_dprotected_np, (void* const*)&original_openat_dprotected_np },
-    { "openat_authenticated_np", (void*)&replaced_openat_authenticated_np, (void* const*)&original_openat_authenticated_np },
-};
-
+// runtime-conditional symbols that are absent on a given OS stay absent.
 void* shdw_sym_policy_lookup_libc(const char* name) {
     if(!name) {
         return NULL;
     }
 
-    for(size_t i = 0; i < sizeof(shdw_libc_sym_policy_table) / sizeof(shdw_libc_sym_policy_table[0]); i++) {
-        if(strcmp(name, shdw_libc_sym_policy_table[i].name) == 0) {
-            if(shdw_libc_sym_policy_table[i].original && *shdw_libc_sym_policy_table[i].original == NULL) {
+    for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
+        const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
+
+        if(strcmp(name, d->symbol) == 0) {
+            if(d->original && *d->original == NULL) {
                 return NULL;  // runtime-conditional symbol not installed
             }
 
-            return shdw_libc_sym_policy_table[i].replacement;
+            return d->replacement;
         }
     }
 

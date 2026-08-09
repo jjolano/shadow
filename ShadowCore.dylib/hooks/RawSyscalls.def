@@ -1,0 +1,60 @@
+// Raw-syscall intercept registry — the SINGLE source of truth for the
+// syscall(2)/__syscall(2) interception surface (hooks/syscall.x). Every
+// intercepted number, its argument count, its policy category and its
+// forwarding shape live here; syscall.x includes this file with
+// SHADW_RAWSYSCALL redefined per use site to generate, from one list:
+//
+//   - the passthrough OR-chains of replaced_syscall / replaced___syscall
+//     (the trampoline test must stay a chain of compares on `number` — it
+//     lowers to cmp/branch only and clobbers nothing);
+//   - the forwarding switch (shdw_fwd_<FWD> bodies, one per shape);
+//   - the policy category switch the dispatch switches on.
+//
+// Fields:
+//   NUM    - SYS_* constant name (the intercepted syscall number)
+//   ARITY  - maximum argument slots the forwarder reads (the open-family
+//            entries read one fewer when O_CREAT is absent)
+//   CAT    - policy category, SHADW_RAW_CAT_<CAT> in syscall.x's dispatch
+//   FWD    - forwarding body, shdw_fwd_<FWD>(int, va_list) in syscall.x
+//
+// tests/verify-syscall-meta.sh asserts every entry's forwarder and category
+// exist in syscall.x; the build itself fails on a typo'd FWD (undefined
+// symbol) or CAT (unknown enumerator).
+
+#ifndef SHADW_RAWSYSCALL
+#error "RawSyscalls.def must be included with SHADW_RAWSYSCALL defined"
+#endif
+
+SHADW_RAWSYSCALL(SYS_ptrace,           4, PTRACE,     PTRACE)
+SHADW_RAWSYSCALL(SYS_open,             3, PATH,       OPEN)
+SHADW_RAWSYSCALL(SYS_chdir,            1, PATH,       P1)
+SHADW_RAWSYSCALL(SYS_access,           2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_execve,           3, PATH,       EXECVE)
+SHADW_RAWSYSCALL(SYS_chroot,           1, PATH,       P1)
+SHADW_RAWSYSCALL(SYS_rmdir,            1, PATH,       P1)
+SHADW_RAWSYSCALL(SYS_stat,             2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_lstat,            2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_getattrlist,      5, PATH,       GETATTRLIST)
+SHADW_RAWSYSCALL(SYS_getxattr,         6, PATH,       GETXATTR)
+SHADW_RAWSYSCALL(SYS_fgetxattr,        6, FDXATTR,    FGETXATTR)
+SHADW_RAWSYSCALL(SYS_listxattr,        4, PATH,       LISTXATTR)
+SHADW_RAWSYSCALL(SYS_flistxattr,       4, FDXATTR,    FLISTXATTR)
+SHADW_RAWSYSCALL(SYS_open_extended,    6, PATH,       OPENEXT)
+SHADW_RAWSYSCALL(SYS_stat_extended,    4, PATH,       XATTR4)
+SHADW_RAWSYSCALL(SYS_lstat_extended,   4, PATH,       XATTR4)
+// SYS_access_extended's first argument is a binary entries buffer, NOT a
+// path string: the dispatch deliberately never inspects it (CAT_NONE); it
+// is still forwarded with its exact arity.
+SHADW_RAWSYSCALL(SYS_access_extended,  4, NONE,       ACCESSEXT)
+SHADW_RAWSYSCALL(SYS_stat64,           2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_lstat64,          2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_stat64_extended,  4, PATH,       XATTR4)
+SHADW_RAWSYSCALL(SYS_lstat64_extended, 4, PATH,       XATTR4)
+SHADW_RAWSYSCALL(SYS_readlink,         3, PATH,       READLINK)
+SHADW_RAWSYSCALL(SYS_pathconf,         2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_openat,           4, AT,         OPENAT)
+SHADW_RAWSYSCALL(SYS_fstatat,          4, AT,         FSTATAT)
+SHADW_RAWSYSCALL(SYS_fstatat64,        4, AT,         FSTATAT)
+SHADW_RAWSYSCALL(SYS_csops,            4, CSOPS,      CSOPS)
+SHADW_RAWSYSCALL(SYS_sysctl,           6, SYSCTL,     SYSCTL)
+SHADW_RAWSYSCALL(SYS_getdirentries64,  4, DIRENT,     GETDIRENTRIES)
