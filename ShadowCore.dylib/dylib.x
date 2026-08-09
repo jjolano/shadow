@@ -224,6 +224,7 @@ static void shdw_install_tier2(void) {
         shadowhook_NSURL(_shdw_watcher_main);
         shadowhook_NSData(_shdw_watcher_main);
         shadowhook_NSThread(_shdw_watcher_main);
+        shadowhook_NSUserDefaults(_shdw_watcher_main);
     }
 
     if(_shdw_pref_fakemac) {
@@ -514,6 +515,12 @@ static void shdw_install_tier2(void) {
         shadowhook_mach(subCFunc);
     }
 
+    if([prefs_load[@"Hook_IOKit"] boolValue]) {
+        NSLog(@"+ iokit");
+
+        shadowhook_iokit(subCFunc);
+    }
+
     if([prefs_load[@"Hook_LowLevelC"] boolValue]) {
         NSLog(@"+ llc");
 
@@ -666,6 +673,10 @@ static void shdw_install_tier2(void) {
 
     if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
         shadowhook_mach_verify();
+    }
+
+    if([prefs_load[@"Hook_IOKit"] boolValue]) {
+        shadowhook_iokit_verify();
     }
 
     if([prefs_load[@"Hook_Sandbox"] boolValue]) {
