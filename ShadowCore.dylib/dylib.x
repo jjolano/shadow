@@ -58,6 +58,8 @@ static BOOL _shdw_symlookup_installed = NO;
 #endif
 static BOOL _shdw_dyldextra_installed = NO;
 static BOOL _shdw_uikit_installed = NO;      // UIKit groups installed
+// C1: _shdw_escalation_installed stays declared in BOTH paths — the legacy
+// body (including the coordinator-init-failed fall-through) reads/writes it.
 static BOOL _shdw_escalation_installed = NO; // detector escalation handled
 static BOOL _shdw_tier2_installed = NO;      // ObjC groups installed on first probe
 static BOOL _shdw_objc_installed = NO;       // C0-4: shadowhook_objc group installed
@@ -67,6 +69,13 @@ static HKSubstitutor* _shdw_watcher_cfunc = nil;  // subCFunc
 static HKSubstitutor* _shdw_watcher_inline = nil; // subInline (inline escalation)
 
 static void shdw_install_tier2(void);  // defined with shdw_detector_detected
+
+// C1: forward declaration — the coordinator instance is created by the ctor
+// dispatch (defined below with the installer table) and consumed by
+// shdw_detector_detected's escalation routing above.
+#ifdef SHADOW_LEGACY_COORDINATOR
+static SHDWHookCoordinator* shdw_coordinator_instance;
+#endif
 
 // shdw_early_image_add resolves the image header to its path via the PUBLIC
 // dyld_image_path_containing_address (declared in vendor/apple/dyld_priv.h,
@@ -131,6 +140,50 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
 // trip firing from inside a hook being installed no-ops.
 void shdw_detector_detected(const char* reason) {
     #ifdef hookkit_h
+    // C1: the coordinator path (SHADOW_LEGACY_COORDINATOR defined) routes the
+    // INSTALL response through the coordinator — planner-driven escalation
+    // install, idempotent via the coordinator's _escalated flag + installed-
+    // state bitset. Evidence bookkeeping (detector log, shdw_detector_present,
+    // vnode re-arm) is mirrored here verbatim so the coordinator path behaves
+    // identically. The legacy path compiles this block out entirely and runs
+    // the original body below byte-identical.
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    if(shdw_coordinator_instance) {
+        NSLog(@"[Shadow] detector probe: %s", reason ?: "unknown");
+
+        shdw_detector_present = YES;
+
+        // Detector activity log (diagnostic) — mirror of the legacy block.
+        @try {
+            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+            NSMutableArray* log = [[defaults arrayForKey:@"DetectorLog"] mutableCopy] ?: [NSMutableArray new];
+
+            NSDateFormatter* fmt = [NSDateFormatter new];
+            fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+            [log addObject:[NSString stringWithFormat:@"%@  %@  %@", [fmt stringFromDate:[NSDate date]], [NSString stringWithUTF8String:reason ?: "unknown"], [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"]];
+
+            if(log.count > 100) {
+                [log removeObjectsInRange:NSMakeRange(0, log.count - 100)];
+            }
+
+            [defaults setObject:log forKey:@"DetectorLog"];
+            [defaults synchronize];
+        } @catch (NSException* e) {
+            // Never let diagnostics break the bypass.
+        }
+
+        // Vnode client re-arm (same as legacy): a detector that appeared
+        // after the ctor's gate check still triggers the acquire.
+        shadowhook_vnode(NULL);
+
+        [shdw_coordinator_instance escalateWithReason:reason ? [NSString stringWithUTF8String:reason] : @"unknown"];
+        return;
+    }
+
+    // Coordinator init failed at ctor: fall through to the legacy body so
+    // the escalation still arms (fail-soft).
+    #endif
+
     if(_shdw_escalation_installed) {
         return;
     }
@@ -291,6 +344,12 @@ static void shdw_install_tier2(void) {
 
 #ifdef SHADOW_LEGACY_COORDINATOR
 
+// C1: the coordinator instance, shared between the ctor pass and the
+// detector-escalation path (shdw_detector_detected). Created once by
+// shdw_coordinator_ctor; retained for the process lifetime. (Forward
+// declared above for shdw_detector_detected.)
+static SHDWHookCoordinator* shdw_coordinator_instance = nil;
+
 static void shdw_coord_dyld(HKSubstitutor* hooks) {
     shadowhook_dyld(hooks);
 }
@@ -388,12 +447,14 @@ static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
 // Coordinator ctor dispatch: the flag-gated replacement for the legacy ctor
 // install/verify block. Runs the coordinator's planner-driven ctor pass.
 static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
-    SHDWHookCoordinator* coordinator =
-        [[SHDWHookCoordinator alloc] initWithInstallerTable:kSHDWCoordinatorInstallers
-                                                      count:sizeof(kSHDWCoordinatorInstallers) / sizeof(kSHDWCoordinatorInstallers[0])
-                                                      prefs:prefs_load];
+    if(!shdw_coordinator_instance) {
+        shdw_coordinator_instance =
+            [[SHDWHookCoordinator alloc] initWithInstallerTable:kSHDWCoordinatorInstallers
+                                                          count:sizeof(kSHDWCoordinatorInstallers) / sizeof(kSHDWCoordinatorInstallers[0])
+                                                          prefs:prefs_load];
+    }
 
-    if(!coordinator) {
+    if(!shdw_coordinator_instance) {
         NSLog(@"[Shadow][coordinator] init failed — running legacy ctor path");
         return;
     }
@@ -402,7 +463,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // the coordinator runs the planner pass, which installs every
     // ctorInstall unit in SHDWInstallUnits() order (including the identity
     // groups), one v2 batch at the end.
-    [coordinator installEvent:SHDWEventCtor];
+    [shdw_coordinator_instance installEvent:SHDWEventCtor];
 }
 
 #endif // SHADOW_LEGACY_COORDINATOR
