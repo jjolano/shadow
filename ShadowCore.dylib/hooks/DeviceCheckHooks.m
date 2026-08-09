@@ -87,6 +87,18 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "OneSignalJailbreakDetection", "isJailbroken",      DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "DigiPassHandler",          "rootedDeviceTestResult", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "AWMyDeviceGeneralInfo",    "isCompliant",          DCHMethodInstance, 'B', 0, DCHPolicyTrue },
+
+    // Step 2, batch 5: DTX/JailbreakDetection classes.
+    { "DTXSessionInfo",           "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "DTXDeviceInfo",            "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "JailbreakDetection",       "jailbroken",           DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "isJailBreak",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "isCydiaJailBreak",     DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "isApplicationsJailBreak", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "ischeckCydiaJailBreak", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "isPathJailBreak",      DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "jailBrokenJudge",          "boolIsjailbreak",      DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "FBAdBotDetector",          "isJailBrokenDevice",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { NULL, NULL, 0, 0, 0, 0 }
 };
 

@@ -24,58 +24,11 @@
 // Step 2, batch 4: v_VDMap, SDMUtils, OneSignalJailbreakDetection,
 // DigiPassHandler, AWMyDeviceGeneralInfo blocks migrated to DeviceCheckHooks.m
 // descriptor rows.
+// Step 2, batch 5: DTXSessionInfo, DTXDeviceInfo, JailbreakDetection,
+// jailBrokenJudge, FBAdBotDetector blocks migrated to DeviceCheckHooks.m
+// descriptor rows.
 
 // EnrollParameters -jailbroken: see the note at UBReportMetadataDevice.
-
-%hook DTXSessionInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook DTXDeviceInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook JailbreakDetection
-- (bool)jailbroken {
-    return false;
-}
-%end
-
-%hook jailBrokenJudge
-- (bool)isJailBreak {
-    return false;
-}
-
-- (bool)isCydiaJailBreak {
-    return false;
-}
-
-- (bool)isApplicationsJailBreak {
-    return false;
-}
-
-- (bool)ischeckCydiaJailBreak {
-    return false;
-}
-
-- (bool)isPathJailBreak {
-    return false;
-}
-
-- (bool)boolIsjailbreak {
-    return false;
-}
-%end
-
-%hook FBAdBotDetector
-- (bool)isJailBrokenDevice {
-    return false;
-}
-%end
 
 %hook TNGDeviceTool
 + (bool)isJailBreak {
