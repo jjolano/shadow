@@ -101,7 +101,10 @@ stage_deps() {
         rootless|rooted|roothide)
             rm -rf vendor/HookKit.framework
             mkdir -p vendor/HookKit.framework
-            cp -R $PB/hookkit/$flavor/HookKit.framework/* vendor/HookKit.framework/
+            # roothide shares the rootless arm64/arm64e HookKit slices; there is
+            # no roothide prebuilt flavor, so reuse the rootless one.
+            HKFLAVOR=$([ "$flavor" = "roothide" ] && echo rootless || echo $flavor)
+            cp -R $PB/hookkit/$HKFLAVOR/HookKit.framework/* vendor/HookKit.framework/
             # The rootless prebuilt HookKit flavor ships binary-only; the
             # public headers are identical across flavors, so seed them from rooted.
             if [ ! -f vendor/HookKit.framework/Headers/HookKit.h ]; then
@@ -109,21 +112,18 @@ stage_deps() {
             fi
             mkdir -p $THEOS/lib
             rm -rf $THEOS/lib/AltList.framework
-            cp -R $PB/altlist/$flavor/AltList.framework $THEOS/lib/
-            cp $PB/sandy/$flavor/libsandy.dylib $THEOS/lib/
+            cp -R $PB/altlist/$HKFLAVOR/AltList.framework $THEOS/lib/
+            cp $PB/sandy/$HKFLAVOR/libsandy.dylib $THEOS/lib/
             # The rootless/roothide schemes run with their own
             # THEOS_PACKAGE_SCHEME, which makes theos search only
             # $THEOS/lib/iphone/<scheme>; mirror AltList/libsandy there.
-            if [ "$flavor" = "rootless" ]; then
-                mkdir -p $THEOS/lib/iphone/rootless
-                rm -rf $THEOS/lib/iphone/rootless/AltList.framework
-                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/rootless/
-                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/rootless/
-            elif [ "$flavor" = "roothide" ]; then
-                mkdir -p $THEOS/lib/iphone/roothide
-                rm -rf $THEOS/lib/iphone/roothide/AltList.framework
-                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/roothide/
-                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/roothide/
+            if [ "$flavor" = "rootless" ] || [ "$flavor" = "roothide" ]; then
+                SCHEME=$flavor
+                rm -rf $THEOS/lib/iphone/$SCHEME
+                mkdir -p $THEOS/lib/iphone/$SCHEME
+                rm -rf $THEOS/lib/iphone/$SCHEME/AltList.framework
+                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/$SCHEME/
+                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/$SCHEME/
             fi
             ;;
         *) echo "stage_deps: unknown flavor $flavor" >&2; return 1 ;;
@@ -218,6 +218,6 @@ case ${1:-all} in
     roothide) build_roothide ;;
     quick) build_quick ;;
     deps) check_deps "${2:-rooted}" ;;
-    all) build_rootless; build_fat ;;
+    all) build_rootless; build_fat; build_roothide ;;
     *) echo "usage: $0 [all|rootless|fat|roothide|quick|deps <flavor>]" >&2; exit 1 ;;
 esac
