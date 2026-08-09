@@ -9,6 +9,8 @@
 #import "../../common.h"
 #import "../../protocol.h"
 
+#import <Shadow/HookConfiguration.h>
+
 // Daemon reply statuses (mirror shadowd/main.m's SHADOWD_STATUS_*).
 #ifndef SHADOWD_STATUS_OK
 #define SHADOWD_STATUS_OK      0
@@ -135,25 +137,22 @@ SHDWDaemonState SHDWQueryDaemonState(void) {
 // The Settings picker already filters substrate/substitute/swift out of
 // selection, and every remaining picker lib is C-function-capable, so
 // function groups only fail when NO backend exists at all.
+//
+// Capability kinds come from Shadow/HookConfiguration.h
+// (SHDWHookGroupCapabilityKind) — the metadata is the single source of truth
+// for which groups need a message/inline/daemon backend. The stale
+// Hook_FakeMac key maps to "none" there (removed as inert), so it never
+// reads as a message group and never grays out.
 // ---------------------------------------------------------------------------
 
 static hookkit_lib_t shdw_available_types(void) {
     return [HKSubstitutor getAvailableSubstitutorTypes];
 }
 
+// Message-backend requirement per group, from the canonical metadata
+// (SHDWHookGroupCapabilityKind): "message" = ObjC-method swizzle groups.
 static BOOL shdw_is_message_group(NSString* groupID) {
-    static NSSet* messageGroups = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        messageGroups = [NSSet setWithObjects:
-            @"Hook_URLScheme",
-            @"Hook_EnvVars",       // libc_envvar + NSProcessInfo (message)
-            @"Hook_Foundation",
-            @"Hook_HideApps",
-            @"Hook_FakeMac",
-            nil];
-    });
-    return [messageGroups containsObject:groupID];
+    return [SHDWHookGroupCapabilityKind(groupID) isEqualToString:@"message"];
 }
 
 BOOL SHDWHookGroupSupported(NSString* groupID) {
