@@ -21,6 +21,7 @@
     "HOOK_LLC" = "Low-Level File Handles";
     "HOOK_MAC" = "M1 Mac Spoof (iOS 14+)";
     "HOOK_MACH" = "Mach Service Lookups";
+    "HOOK_IOKIT" = "IOKit Service Probing";
     "HOOK_MEM" = "Hide Executable Memory";
     "VNODE_HIDING" = "Vnode-Level Hiding";
     "HOOK_OBJC" = "Objective-C Class Methods";
