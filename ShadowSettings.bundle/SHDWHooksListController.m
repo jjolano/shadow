@@ -4,6 +4,7 @@
 #import "SHDWCapabilities.h"
 
 #import <Shadow/Settings.h>
+#import <Shadow/HookConfiguration.h>
 
 @implementation SHDWHooksListController {
 	NSUserDefaults* prefs;
@@ -17,47 +18,10 @@
 
 // Preset profiles: batch values for every hook toggle. "standard" mirrors the
 // shipped defaults; "maximum" enables everything including dangerous hooks.
-static NSDictionary* PresetStandard() {
-	return @{
-		@"Hook_Filesystem" : @(YES),
-		@"Hook_URLScheme" : @(YES),
-		@"Hook_EnvVars" : @(YES),
-		@"Hook_DeviceCheck" : @(YES),
-		@"Hook_Foundation" : @(NO),
-		@"Hook_MachBootstrap" : @(NO),
-		@"Hook_IOKit" : @(NO),
-		@"Hook_LowLevelC" : @(YES),
-		@"Hook_AntiDebugging" : @(NO),
-		@"Hook_DynamicLibrariesExtra" : @(NO),
-		@"Hook_FakeMac" : @(NO),
-		@"Hook_Syscall" : @(NO),
-		@"Hook_Sandbox" : @(NO),
-		@"Hook_Memory" : @(NO),
-		@"Hook_HideApps" : @(YES),
-		@"VnodeHiding" : @(NO)
-	};
-}
-
-static NSDictionary* PresetMaximum() {
-	return @{
-		@"Hook_Filesystem" : @(YES),
-		@"Hook_URLScheme" : @(YES),
-		@"Hook_EnvVars" : @(YES),
-		@"Hook_DeviceCheck" : @(YES),
-		@"Hook_Foundation" : @(YES),
-		@"Hook_MachBootstrap" : @(YES),
-		@"Hook_IOKit" : @(YES),
-		@"Hook_LowLevelC" : @(YES),
-		@"Hook_AntiDebugging" : @(YES),
-		@"Hook_DynamicLibrariesExtra" : @(YES),
-		@"Hook_FakeMac" : @(YES),
-		@"Hook_Syscall" : @(YES),
-		@"Hook_Sandbox" : @(YES),
-		@"Hook_Memory" : @(YES),
-		@"Hook_HideApps" : @(YES),
-		@"VnodeHiding" : @(YES)
-	};
-}
+// Canonical values come from Shadow/HookConfiguration.h (SHDWPresetStandard /
+// SHDWPresetMaximum) — the metadata is the single source of truth. The stale
+// Hook_FakeMac key is absent from both, so a stored legacy value is simply
+// ignored by PrefsMatchPreset.
 
 static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	for(NSString* key in preset) {
@@ -84,11 +48,11 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	if([[specifier identifier] isEqualToString:@"BypassPreset"]) {
-		if(PrefsMatchPreset(prefs, PresetStandard())) {
+		if(PrefsMatchPreset(prefs, SHDWPresetStandard())) {
 			return @"standard";
 		}
 
-		if(PrefsMatchPreset(prefs, PresetMaximum())) {
+		if(PrefsMatchPreset(prefs, SHDWPresetMaximum())) {
 			return @"maximum";
 		}
 
@@ -106,7 +70,7 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 			return;
 		}
 
-		NSDictionary* preset = [value isEqualToString:@"maximum"] ? PresetMaximum() : PresetStandard();
+		NSDictionary* preset = [value isEqualToString:@"maximum"] ? SHDWPresetMaximum() : SHDWPresetStandard();
 
 		for(NSString* key in preset) {
 			SHDWWriteAppPref(prefs, nil, key, preset[key]);

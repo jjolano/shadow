@@ -202,18 +202,6 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>Hook_FakeMac</string>
-			<key>label</key>
-			<string>HOOK_MAC</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
 			<string>DNGR_HOOKS_DESC</string>
