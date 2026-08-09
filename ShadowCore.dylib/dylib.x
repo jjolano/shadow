@@ -492,6 +492,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // its own allowlist; the client sends no paths and touches no kernel
     // state. Pure IPC, sub-millisecond; the VnodeHiding pref gate
     // (client-side, detector escalation) is checked inside.
+    //
+    // B2c: pass the resolved effective preference (prefs_load already
+    // applies per-app override → global → shipped default, matching
+    // vnode.x's own plist resolution exactly) so vnode.x stops re-reading
+    // the plist. Identical in both flag states.
+    shdw_vnode_set_pref_enabled([prefs_load[@"VnodeHiding"] boolValue]);
     shadowhook_vnode(NULL);
 
     // Initialize hooks.
