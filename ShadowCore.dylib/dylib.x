@@ -104,6 +104,24 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
         // UIKit is loaded: the classes now exist. Install the two UIKit-class
         // groups the ctor must not %init at spawn (class absent there).
         if(!_shdw_uikit_installed && [image_lower containsString:@"uikit.framework"]) {
+            // C2: the coordinator path routes the UIKit-load INSTALL through
+            // the coordinator — record the event, then the planner's
+            // SHDWEventUIKitLoaded install (Hook_URLScheme +
+            // Hook_Foundation@uikit, pref-gated via prefKey, message-gated
+            // via SHDWCapMessage, idempotent via the bitset). The legacy
+            // body below stays byte-identical under #ifndef.
+            #ifdef SHADOW_LEGACY_COORDINATOR
+            if(shdw_coordinator_instance) {
+                [shdw_coordinator_instance recordUIKitImageLoad];
+                [shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];
+                _shdw_uikit_installed = YES;
+                return;
+            }
+
+            // Coordinator init failed at ctor: fall through to the legacy
+            // body (fail-soft).
+            #endif
+
             if(_shdw_objc_backend && (_shdw_pref_urlscheme || _shdw_pref_foundation)) {
                 NSLog(@"+ uikit classes (installed at UIKit load)");
 
@@ -709,6 +727,25 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // sets it, and no hook body can run before the installs below complete.
     // _shdw_escalation_installed therefore stays NO so the first behavioral
     // tripwire runs the full escalation (vnode re-arm, dyldextra, tier-2).
+    #endif
+
+    // C2: coordinator-path replay of already-loaded images. The legacy
+    // replay (below, #ifndef-guarded) delivers the ctor-time image list once
+    // the watcher is enabled; the coordinator path mirrors it so a UIKit
+    // already loaded at ctor time still reaches the coordinator's UIKit
+    // install (recordUIKitImageLoad + SHDWEventUIKitLoaded via
+    // shdw_early_image_add, which routes to the coordinator under the flag).
+    // Single-shot by construction (the ctor runs once); idempotence inside
+    // the callback (_shdw_uikit_installed / coordinator bitset) makes any
+    // duplicate delivery a no-op.
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    if(_shdw_watcher_enabled) {
+        uint32_t replay_count = _dyld_image_count();
+
+        for(uint32_t i = 0; i < replay_count; i++) {
+            shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
+        }
+    }
     #endif
 
     // B2b: the legacy install block below is dead in the coordinator path
