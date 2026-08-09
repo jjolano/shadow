@@ -1,9 +1,10 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Ruleset.h>
-#import <RootBridge.h>
+
 
 #import "../vendor/apple/dyld_priv.h"
 #import "../common.h"
+#import <Shadow/JBPath.h>
 
 extern char*** _NSGetArgv();
 
@@ -109,7 +110,7 @@ extern char*** _NSGetArgv();
     NSString* dpkgInfoPath = nil;
 
     for(NSString* path in dpkgInfoPaths) {
-        NSString* path_r = [RootBridge getJBPath:path];
+        NSString* path_r = JBPath(path);
 
         if([[NSFileManager defaultManager] fileExistsAtPath:path_r]) {
             dpkgInfoPath = path_r;
@@ -146,7 +147,7 @@ extern char*** _NSGetArgv();
                     }
 
                     if([[path pathExtension] isEqualToString:@"app"]) {
-                        NSBundle* appBundle = [NSBundle bundleWithPath:[RootBridge getJBPath:path]];
+                        NSBundle* appBundle = [NSBundle bundleWithPath:JBPath(path)];
 
                         if(appBundle) {
                             NSDictionary* plist = [appBundle infoDictionary];

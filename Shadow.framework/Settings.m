@@ -1,6 +1,7 @@
 #import <Shadow/Settings.h>
-#import <RootBridge.h>
+
 #import "../common.h"
+#import <Shadow/JBPath.h>
 
 @implementation ShadowSettings
 @synthesize defaultSettings, userDefaults;
@@ -31,7 +32,14 @@
             @"Hook_Sandbox" : @(NO),
             @"Hook_Memory" : @(NO),
             @"Hook_HideApps" : @(YES),
-            @"VnodeHiding" : @(NO)
+            @"VnodeHiding" : @(NO),
+            // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
+            // patch is unconditional by default (untrusted callers read the raw
+            // struct), but a misbehaving patch on a new iOS must be disableable
+            // without a reinstall. Default YES (patch on); flipping to NO
+            // restores dyld's original struct and stops the patch — detection
+            // exposure returns, crashes stop.
+            @"MemoryLevelHiding" : @(YES)
         };
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];

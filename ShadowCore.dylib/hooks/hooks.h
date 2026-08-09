@@ -152,6 +152,15 @@ void shdw_own_ranges_refresh(void);
 // is loaded; read by dyld.x to escalate memory-level hiding.
 extern BOOL shdw_detector_present;
 
+// Emergency kill-switch for the dyld_all_image_infos memory-hiding patch
+// (AR2). The patch is unconditional by default (untrusted callers read the
+// raw struct via task_info / _dyld_get_all_image_infos), but a misbehaving
+// patch on a new iOS must be disableable without a reinstall: set by dylib.x
+// from the MemoryLevelHiding pref (default YES). When NO, dyld.x restores
+// dyld's original struct fields and never re-patches — the direct-memory-read
+// surface is re-exposed (detection exposure returns) but the crash stops.
+extern BOOL shdw_memory_hiding_enabled;
+
 // Behavioral tripwire escalation (dylib.x): called when a non-tweak caller
 // probes the jailbreak (JB-indicator path/symbol/dylib) or a known detector
 // loads post-spawn. Idempotent; installs the detector-gated hook groups the

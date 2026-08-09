@@ -1,7 +1,7 @@
 #import <Shadow/SystemRulesGenerator.h>
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Ruleset.h>
-#import <RootBridge.h>
+
 
 #import <MobileCoreServices/LSApplicationWorkspace.h>
 #import <MobileCoreServices/LSApplicationProxy.h>
@@ -14,6 +14,7 @@
 #import <unistd.h>
 
 #import "../common.h"
+#import <Shadow/JBPath.h>
 
 #ifndef _SYS_SNAPSHOT_H_
 extern int fs_snapshot_list(int fd, struct attrlist* alist, void* buf, size_t bufsize, uint32_t flags);
@@ -355,7 +356,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 + (NSDictionary*)_currentRulesetIdentity {
     NSMutableDictionary* identity = [NSMutableDictionary dictionaryWithObject:[self _currentiOSVersion] forKey:@"iOSVersion"];
 
-    if(![RootBridge isJBRootless]) {
+    if(!JBIsRootless()) {
         int fd = -1;
         NSString* snapshotName = [self _findSnapshotNameWithFd:&fd];
 
@@ -381,12 +382,12 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     BOOL snapshotWalkOK = NO;
     NSString* snapshotNameUsed = nil;
 
-    if(![RootBridge isJBRootless]) {
+    if(!JBIsRootless()) {
         int fd = -1;
         NSString* snapshotName = [self _findSnapshotNameWithFd:&fd];
 
         if(snapshotName && fd >= 0) {
-            NSString* mountpoint = [RootBridge getJBPath:@"/tmp/ShadowSnapshot"];
+            NSString* mountpoint = JBPath(@"/tmp/ShadowSnapshot");
             [fm createDirectoryAtPath:mountpoint withIntermediateDirectories:YES attributes:nil error:NULL];
 
             BOOL mounted = (fs_snapshot_mount(fd, [mountpoint UTF8String], [snapshotName UTF8String], 0) == 0);
@@ -491,7 +492,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 + (NSInteger)writeSystemRuleset {
-    NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/SystemRules.plist"];
+    NSString* path = JBPath(@SHADOW_RULESETS "/SystemRules.plist");
 
     // Read the previous ruleset once: used for the up-to-date gate below and
     // for the snapshot-change/degradation warnings after regeneration.
@@ -543,7 +544,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 // applicationsAvailableForHandlingURLScheme: probes for them are denied.
 // Uninstall the app -> the next regeneration drops it.
 + (NSDictionary*)generateInstalledAppsRuleset {
-    NSString* dir = [RootBridge getJBPath:@SHADOW_RULESETS];
+    NSString* dir = JBPath(@SHADOW_RULESETS);
     NSArray* urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dir isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
 
     // The harvest signal is only the curated rulesets. Generated rulesets
@@ -636,7 +637,7 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 }
 
 + (NSInteger)writeInstalledAppsRuleset {
-    NSString* path = [RootBridge getJBPath:@SHADOW_RULESETS "/InstalledApps.plist"];
+    NSString* path = JBPath(@SHADOW_RULESETS "/InstalledApps.plist");
 
     NSDictionary* ruleset = [self generateInstalledAppsRuleset];
 

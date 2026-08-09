@@ -1606,11 +1606,10 @@ static void (*shdw_real_register_for_bulk_image_loads)(void (*func)(unsigned ima
 // `_shdw_dyld_mirror_lock`; sets `_shdw_mirror_currently_patched = NO` only
 // on success — on vm_protect failure the mirror stays applied and
 // `_shdw_mirror_protect_failed` latches, disabling the patch path as well.
-// NOTE: with the pref gate removed (plan Wave 1c) the patch is unconditional
-// and this restore path is currently unreachable; kept (with the
-// originals-capture machinery) so a future ON→OFF toggle can restore dyld's
+// Reachable via the AR2 emergency kill-switch (MemoryLevelHiding pref off):
+// the patch is unconditional by default, but a misbehaving patch on a new iOS
+// must be disableable without a reinstall — flipping the pref restores dyld's
 // true struct. The VM_MAKE_TAG/VM_PROTECT dance is retained verbatim.
-__attribute__((unused))
 static void shdw_dyld_mirror_restore_originals(void) {
     if(!_shdw_originals_captured) {
         return;
@@ -1701,6 +1700,21 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     // No struct to patch (pre-modern iOS): the API-level enumeration hooks
     // above still hide images (fail soft).
     if(!_shdw_all_image_infos) {
+        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+        return;
+    }
+
+    // AR2 emergency kill-switch (MemoryLevelHiding pref off): restore dyld's
+    // original struct (if we patched it) and never re-patch. The API-level
+    // enumeration hooks above still hide images; only the direct-memory-read
+    // surface (task_info / _dyld_get_all_image_infos) is re-exposed. This is
+    // the crash escape hatch — a misbehaving patch on a new iOS must be
+    // disableable without a reinstall.
+    if(!shdw_memory_hiding_enabled) {
+        if(_shdw_mirror_currently_patched) {
+            shdw_dyld_mirror_restore_originals();
+        }
+
         os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
         return;
     }

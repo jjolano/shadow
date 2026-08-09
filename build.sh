@@ -37,7 +37,7 @@ check_deps() { # flavor
     local flavor=$1
     local archs
     case $flavor in
-        rootless|rooted) archs="arm64 arm64e" ;;
+        rootless|rooted|roothide) archs="arm64 arm64e" ;;
         fat) archs="armv7 armv7s arm64 arm64e" ;;
         *) echo "check_deps: unknown flavor $flavor" >&2; return 1 ;;
     esac
@@ -98,7 +98,7 @@ stage_deps() {
                 cp -R vendor/$fw.framework $THEOS/lib/
             done
             ;;
-        rootless|rooted)
+        rootless|rooted|roothide)
             rm -rf vendor/HookKit.framework
             mkdir -p vendor/HookKit.framework
             cp -R $PB/hookkit/$flavor/HookKit.framework/* vendor/HookKit.framework/
@@ -111,13 +111,19 @@ stage_deps() {
             rm -rf $THEOS/lib/AltList.framework
             cp -R $PB/altlist/$flavor/AltList.framework $THEOS/lib/
             cp $PB/sandy/$flavor/libsandy.dylib $THEOS/lib/
-            # The rootless pass runs with THEOS_PACKAGE_SCHEME=rootless, which makes
-            # theos search only $THEOS/lib/iphone/rootless; mirror AltList/libsandy there.
+            # The rootless/roothide schemes run with their own
+            # THEOS_PACKAGE_SCHEME, which makes theos search only
+            # $THEOS/lib/iphone/<scheme>; mirror AltList/libsandy there.
             if [ "$flavor" = "rootless" ]; then
                 mkdir -p $THEOS/lib/iphone/rootless
                 rm -rf $THEOS/lib/iphone/rootless/AltList.framework
                 cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/rootless/
                 cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/rootless/
+            elif [ "$flavor" = "roothide" ]; then
+                mkdir -p $THEOS/lib/iphone/roothide
+                rm -rf $THEOS/lib/iphone/roothide/AltList.framework
+                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/roothide/
+                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/roothide/
             fi
             ;;
         *) echo "stage_deps: unknown flavor $flavor" >&2; return 1 ;;
@@ -181,11 +187,37 @@ build_quick() {
     make -C ShadowCore.dylib ARCHS="arm64 arm64e"
 }
 
+# roothide flavor — iOS 15-17, random-named jbroot (no /var/jb). Requires the
+# roothide theos fork (THEOS_PACKAGE_SCHEME=roothide) and libroothide; the
+# Makefiles drop RootBridge and define SHADOW_ROOTHIDE for this scheme.
+build_roothide() {
+    stage_deps roothide
+    check_deps roothide
+    # Same PID-unique control mutation pattern as the fat pass: the roothide
+    # flavor must not depend on RootBridge (the seam links libroothide instead).
+    local BAK=/tmp/shadow-control-roothide.bak.$$
+    trap "mv $BAK control 2>/dev/null || true" EXIT
+    cp control "$BAK"
+    # roothide bootstrap: iOS 15.0-17.0 only; drop RootBridge dep (seam uses
+    # libroothide) and raise the firmware floor from the shared 12.0.
+    sed -e 's/, me.jjolano.fmwk.rootbridge//' -e 's/firmware (>= 12.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
+
+    make clean &&
+    THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make -C Shadow.framework &&
+    rm -rf $THEOS/lib/iphone/roothide/Shadow.framework &&
+    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework $THEOS/lib/iphone/roothide/ &&
+    THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make package FINALPACKAGE=1 &&
+    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
+
+    rm -rf $THEOS/lib/Shadow.framework
+}
+
 case ${1:-all} in
     rootless) build_rootless ;;
     fat) build_fat ;;
+    roothide) build_roothide ;;
     quick) build_quick ;;
     deps) check_deps "${2:-rooted}" ;;
     all) build_rootless; build_fat ;;
-    *) echo "usage: $0 [all|rootless|fat|quick|deps <flavor>]" >&2; exit 1 ;;
+    *) echo "usage: $0 [all|rootless|fat|roothide|quick|deps <flavor>]" >&2; exit 1 ;;
 esac

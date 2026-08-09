@@ -51,3 +51,8 @@
 "UNSUPPORTED_ELLEKIT_REASON" = "需要 ElleKit 钩子库。";
 "UNSUPPORTED_MSG_REASON" = "需要支持 Objective-C 消息钩子的钩子库（ElleKit、Substrate 或 Substitute）。";
 "UNSUPPORTED_FUNC_REASON" = "需要支持 C 函数钩子的钩子库。";
+"BYPASS_PRESET" = "绕过预设";
+"PRESET_SELECT" = "选择预设以应用一组绕过设置。之后仍可单独切换各个钩子。";
+"PRESET_STANDARD" = "标准";
+"PRESET_MAXIMUM" = "最大";
+"PRESET_CUSTOM" = "自定义";

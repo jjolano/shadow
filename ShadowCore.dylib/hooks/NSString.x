@@ -2,12 +2,32 @@
 
 typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDictionary<NSAttributedStringDocumentAttributeKey, id> *, NSError *);
 
+// Stock-shaped NSURLError for blocked URL reads: domain/code plus the
+// standard userInfo keys (NSURLErrorKey + NSFilePathErrorKey). Boxed errors
+// without the keys diverge from what a stock device answers for the same
+// query and are a fingerprint for a detector that parses error.userInfo.
+static NSError* _shdw_urlReadError(NSURL* url) {
+    NSMutableDictionary* userInfo = [NSMutableDictionary new];
+
+    if(url) {
+        userInfo[NSURLErrorKey] = url;
+
+        NSString* path = [url path];
+
+        if(path) {
+            userInfo[NSFilePathErrorKey] = path;
+        }
+    }
+
+    return [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:userInfo];
+}
+
 %group shadowhook_NSString
 %hook NSString
 - (instancetype)initWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -19,7 +39,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (instancetype)initWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -31,7 +51,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (instancetype)stringWithContentsOfFile:(NSString *)path encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -43,7 +63,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (instancetype)stringWithContentsOfFile:(NSString *)path usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
 
         return nil;
@@ -55,7 +75,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (instancetype)stringWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = _shdw_urlReadError(url);
         }
 
         return nil;
@@ -67,7 +87,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (instancetype)initWithContentsOfURL:(NSURL *)url encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = _shdw_urlReadError(url);
         }
 
         return nil;
@@ -79,7 +99,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (instancetype)stringWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = _shdw_urlReadError(url);
         }
 
         return nil;
@@ -91,7 +111,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 - (instancetype)initWithContentsOfURL:(NSURL *)url usedEncoding:(NSStringEncoding *)enc error:(NSError * _Nullable *)error {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
-            *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            *error = _shdw_urlReadError(url);
         }
 
         return nil;
@@ -184,7 +204,12 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
-        return self;
+        // Stock shape for a path that does not resolve on a stock device:
+        // the input, lexically standardized, with no symlink resolution.
+        // (Resolution of a restricted path is what would leak the preboot/
+        // jbroot target; returning the raw unresolved self would leave a
+        // ".."-containing intermediate, which stock never produces.)
+        return [self stringByStandardizingPath];
     }
 
     return result;
@@ -201,13 +226,11 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 // }
 
 - (NSString *)stringByStandardizingPath {
-    NSString* result = %orig;
-
-    if(isCallerExternal() && [_shadow isPathRestricted:result]) {
-        return self;
-    }
-
-    return result;
+    // Pure lexical normalization — ".." collapsing and duplicate-slash
+    // removal — whose output carries no information beyond the receiver, so
+    // no restriction check (a filtered value here is a stock-impossible
+    // answer for the exact query the detector constructed).
+    return %orig;
 }
 %end
 
@@ -228,7 +251,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 
         if([_shadow isURLRestricted:url] || (readAccessURL && [_shadow isURLRestricted:readAccessURL])) {
             if(error) {
-                *error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+                *error = _shdw_urlReadError(url);
             }
 
             return nil;
@@ -244,7 +267,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
             // Async contract: blocked-path failures are never delivered
             // inline — dispatch the (nil, nil, error) result to a background
             // queue exactly like the WebKit loader would.
-            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            NSError* error = _shdw_urlReadError(fileURL);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                 completionHandler(nil, nil, error);
             });
@@ -259,7 +282,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 + (void)loadFromHTMLWithRequest:(NSURLRequest *)request options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
     if(isCallerExternal() && request && [_shadow isURLRestricted:[request URL]]) {
         if(completionHandler) {
-            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+            NSError* error = _shdw_urlReadError([request URL]);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                 completionHandler(nil, nil, error);
             });
@@ -280,7 +303,7 @@ typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDict
 
         if(baseURL && [_shadow isURLRestricted:baseURL]) {
             if(completionHandler) {
-                NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorFileDoesNotExist userInfo:nil];
+                NSError* error = _shdw_urlReadError(baseURL);
                 dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                     completionHandler(nil, nil, error);
                 });
