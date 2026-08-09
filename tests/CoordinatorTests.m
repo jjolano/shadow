@@ -131,7 +131,7 @@ static void TestPlannerUIKit(void) {
     SHDWCapabilities full = SHDWCapMessage | SHDWCapFunction | SHDWCapInline | SHDWCapPrivateSym;
 
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventUIKitLoaded);
-    CHECK([plan isEqualToArray:@[ @"Hook_URLScheme", @"Hook_Foundation@uikit" ]], "uikit plan == the two UIKit-class units, in order");
+    CHECK(([plan isEqualToArray:@[ @"Hook_URLScheme", @"Hook_Foundation@uikit" ]]), "uikit plan == the two UIKit-class units, in order");
 
     // Message backend required (mirror legacy watcher gate).
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventUIKitLoaded);
@@ -141,7 +141,11 @@ static void TestPlannerUIKit(void) {
     NSDictionary* prefs = DefaultsFor(SHDWHookIDURLScheme, NO);
     NSArray* planPref = SHDWHookPlan(prefs, full, SHDWEventUIKitLoaded);
     CHECK(!IDInPlan(planPref, "Hook_URLScheme"), "uikit: URLScheme pref off → dropped");
-    CHECK(IDInPlan(planPref, "Hook_Foundation@uikit"), "uikit: Foundation pref on → present");
+    CHECK(!IDInPlan(planPref, "Hook_Foundation@uikit"), "uikit: Foundation default off → dropped");
+
+    NSDictionary* prefsFnd = DefaultsFor(SHDWHookIDFoundation, YES);
+    NSArray* planFnd = SHDWHookPlan(prefsFnd, full, SHDWEventUIKitLoaded);
+    CHECK(IDInPlan(planFnd, "Hook_Foundation@uikit"), "uikit: Foundation pref on → present");
 }
 
 static void TestPlannerEscalation(void) {

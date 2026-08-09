@@ -34,7 +34,9 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m ShadowdShims.m detecto
        $(FRAMEWORK)/RulesetCompiler.m \
        $(FRAMEWORK)/RulesetStore.m \
        RestrictionTests.m \
-       PolicyTests.m
+       PolicyTests.m \
+       $(FRAMEWORK)/HookConfiguration.m \
+       CoordinatorTests.m
 
 harness: $(SRCS) Makefile
 	$(CC) $(CFLAGS) $(INCS) $(SRCS) -framework Foundation -o harness
