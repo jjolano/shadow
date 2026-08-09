@@ -10,6 +10,8 @@
 #import <libSandy.h>
 #import <HookKit.h>
 
+#import "HookCoordinator.h"   // B2a: coordinator installer table + ctor gate
+
 
 #import "../vendor/apple/dyld_priv.h"   // dyld_image_path_containing_address
 
@@ -248,6 +250,154 @@ static void shdw_install_tier2(void) {
     #endif
 }
 
+// ---------------------------------------------------------------------------
+// B2a: coordinator installer table + legacy-flag gate.
+//
+// SHADOW_LEGACY_COORDINATOR — compile-time rollback switch. Default UNSET:
+// the ctor below runs EXACTLY as it always has (the coordinator table and
+// dispatch below still compile, but are never invoked). When the flag IS
+// defined (e.g. `make -C ShadowCore.dylib
+// ADDITIONAL_CFLAGS="-DSHADOW_LEGACY_COORDINATOR"`), the ctor hands the
+// install orchestration to the coordinator INSTEAD of the legacy block —
+// only one path can install hooks at runtime. The legacy block remains in
+// the binary, compiled and dead, so flipping the flag back is a pure
+// rebuild.
+//
+// Rows are in the EXACT SHDWInstallUnits() order (the canonical install
+// order, see Shadow.framework/HookConfiguration.m); each row REFERENCES the
+// legacy shadowhook_* functions the ctor calls. A few units have no single
+// legacy function (their legacy install = several shadowhook_* calls), so
+// the row points at a thin dylib.x-side wrapper that calls the legacy
+// functions in the same order and with the same backend role the ctor used.
+// The wrappers also carry each group's non-hook side effects (envvar
+// sanitization) so the coordinator path is behaviorally identical to the
+// legacy ctor pass.
+//
+// Multi-function units (row → legacy calls):
+//   symlookup        → shadowhook_dyld_symlookup + shadowhook_dyld_symaddrlookup (both on subSymLookup)
+//   Hook_Filesystem@objc → shadowhook_NSFileManager/NSFileHandle/NSFileVersion/NSFileWrapper (subMain)
+//   Hook_Foundation@objc → shadowhook_NSArray/NSDictionary/NSBundle/NSString/NSURL/NSData/NSThread/NSUserDefaults (subMain)
+// Verify rows mirror the ctor's verify pass (dylib.x:667-712) per unit.
+// ---------------------------------------------------------------------------
+
+#ifdef SHADOW_LEGACY_COORDINATOR
+
+static void shdw_coord_dyld(HKSubstitutor* hooks) {
+    shadowhook_dyld(hooks);
+}
+
+static void shdw_coord_envvars_c(HKSubstitutor* hooks) {
+    // Legacy inline envvar sanitization (dylib.x:488-511), preserved
+    // verbatim so the coordinator path behaves identically.
+    NSProcessInfo* procInfo = [NSProcessInfo processInfo];
+    NSDictionary* procEnv = [procInfo environment];
+
+    NSArray* safe_envvars = @[
+        @"CFFIXED_USER_HOME",
+        @"HOME",
+        @"LOGNAME",
+        @"PATH",
+        @"SHELL",
+        @"TMPDIR",
+        @"USER",
+        @"XPC_FLAGS",
+        @"XPC_SERVICE_NAME",
+        @"__CF_USER_TEXT_ENCODING"
+    ];
+
+    for(NSString* envvar in procEnv) {
+        if(![safe_envvars containsObject:envvar]) {
+            NSLog(@"+ removing envvar: %@", envvar);
+            unsetenv([envvar UTF8String]);
+        }
+    }
+
+    setenv("SHELL", "/bin/sh", 1);
+
+    shadowhook_libc_envvar(hooks);
+    shadowhook_NSProcessInfo(hooks);   // legacy: subMain (ObjC swizzles)
+}
+
+static void shdw_coord_symlookup(HKSubstitutor* hooks) {
+    shadowhook_dyld_symlookup(hooks);
+    shadowhook_dyld_symaddrlookup(hooks);
+}
+
+static void shdw_coord_filesystem_objc(HKSubstitutor* hooks) {
+    shadowhook_NSFileManager(hooks);
+    shadowhook_NSFileHandle(hooks);
+    shadowhook_NSFileVersion(hooks);
+    shadowhook_NSFileWrapper(hooks);
+}
+
+static void shdw_coord_foundation_objc(HKSubstitutor* hooks) {
+    shadowhook_NSArray(hooks);
+    shadowhook_NSDictionary(hooks);
+    shadowhook_NSBundle(hooks);
+    shadowhook_NSString(hooks);
+    shadowhook_NSURL(hooks);
+    shadowhook_NSData(hooks);
+    shadowhook_NSThread(hooks);
+    shadowhook_NSUserDefaults(hooks);
+}
+
+static void shdw_coord_verify_envvars(void) {
+    shadowhook_libc_envvar_verify();
+}
+
+static void shdw_coord_verify_symlookup(void) {
+    shadowhook_dyld_symlookup_verify();
+    shadowhook_dyld_symaddrlookup_verify();
+}
+
+// EXACT SHDWInstallUnits() order (21 rows). install/verify reference the
+// legacy shadowhook_* functions — no bodies moved.
+static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
+    { "dyld",                         shdw_coord_dyld,                 shadowhook_dyld_verify },
+    { "Hook_Filesystem@c",            shadowhook_libc,                 shadowhook_libc_verify },
+    { "Hook_EnvVars@c",               shdw_coord_envvars_c,            shdw_coord_verify_envvars },
+    { "Hook_EnvVars@objc",            shadowhook_NSProcessInfo,        NULL },
+    { "Hook_DeviceCheck",             shadowhook_DeviceCheck,          NULL },
+    { "Hook_MachBootstrap",           shadowhook_mach,                 shadowhook_mach_verify },
+    { "Hook_IOKit",                   shadowhook_iokit,                shadowhook_iokit_verify },
+    { "Hook_LowLevelC",               shadowhook_libc_lowlevel,        shadowhook_libc_lowlevel_verify },
+    { "Hook_AntiDebugging",           shadowhook_libc_antidebugging,   shadowhook_libc_antidebugging_verify },
+    { "objc",                         shadowhook_objc,                 NULL },
+    { "Hook_Syscall",                 shadowhook_syscall,              shadowhook_syscall_verify },
+    { "Hook_Memory",                  shadowhook_mem,                  shadowhook_mem_verify },
+    { "Hook_Sandbox",                 shadowhook_sandbox,              shadowhook_sandbox_verify },
+    { "classes",                      shadowhook_objc_hidetweakclasses, NULL },
+    { "symlookup",                    shdw_coord_symlookup,            shdw_coord_verify_symlookup },
+    { "Hook_DynamicLibrariesExtra",   shadowhook_dyld_extra,           shadowhook_dyld_extra_verify },
+    { "Hook_Filesystem@objc",         shdw_coord_filesystem_objc,      NULL },
+    { "Hook_Foundation@objc",         shdw_coord_foundation_objc,      NULL },
+    { "Hook_HideApps",                shadowhook_LSApplicationWorkspace, NULL },
+    { "Hook_URLScheme",               shadowhook_UIApplication,        NULL },
+    { "Hook_Foundation@uikit",        shadowhook_UIImage,              NULL },
+};
+
+// Coordinator ctor dispatch: the flag-gated replacement for the legacy ctor
+// install/verify block. Runs the coordinator's planner-driven ctor pass.
+static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
+    SHDWHookCoordinator* coordinator =
+        [[SHDWHookCoordinator alloc] initWithInstallerTable:kSHDWCoordinatorInstallers
+                                                      count:sizeof(kSHDWCoordinatorInstallers) / sizeof(kSHDWCoordinatorInstallers[0])
+                                                      prefs:prefs_load];
+
+    if(!coordinator) {
+        NSLog(@"[Shadow][coordinator] init failed — running legacy ctor path");
+        return;
+    }
+
+    // The legacy ctor runs the envvar sanitization + installs as one block;
+    // the coordinator runs the planner pass, which installs every
+    // ctorInstall unit in SHDWInstallUnits() order (including the identity
+    // groups), one v2 batch at the end.
+    [coordinator installEvent:SHDWEventCtor];
+}
+
+#endif // SHADOW_LEGACY_COORDINATOR
+
 %ctor {
     // Fail-soft: any unexpected NSException from this ctor — watcher
     // registration, prefs read, daemon lease, hook install, image replay —
@@ -296,6 +446,16 @@ static void shdw_install_tier2(void) {
     if(!enabled) {
         return;
     }
+
+    // B2a: coordinator takeover (compile-time rollback). When
+    // SHADOW_LEGACY_COORDINATOR is defined (e.g. via
+    // `make -C ShadowCore.dylib ADDITIONAL_CFLAGS="-DSHADOW_LEGACY_COORDINATOR"`)
+    // the coordinator installs the ctor pass instead of the legacy block
+    // below; otherwise the legacy block runs untouched. Both paths compile;
+    // only one runs.
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    shdw_coordinator_ctor(prefs_load);
+    #endif
 
     // Emergency kill-switch (AR2): the dyld_all_image_infos memory-hiding
     // patch is unconditional by default, but a misbehaving patch on a new iOS
