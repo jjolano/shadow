@@ -3,6 +3,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/Ruleset.h>
+#import <Shadow/RestrictionQuery.h>
 
 __attribute__((visibility("default")))
 @interface ShadowBackend : NSObject {
@@ -16,6 +17,10 @@ __attribute__((visibility("default")))
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID;
+
+// Candidate 5: typed entry point (see Core.h). The dictionary methods
+// translate to this internally; behavior is identical.
+- (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 
 // C0-5: current ruleset generation (incremented on every reload), read
 // atomically; consumers use it to invalidate caches on ruleset reload.
