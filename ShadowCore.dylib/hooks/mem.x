@@ -22,15 +22,19 @@ static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address
         }
 
         // Restricted region: drop the object-name send right this skipped
-        // call returned (it is ours to deallocate) and advance to the next
-        // region. Each successful original call already advanced *address
-        // past the region it returned, so the loop resumes where the kernel
-        // left off and terminates at the end of the map (the next call then
-        // returns an error).
+        // call returned (it is ours to deallocate) and advance the search
+        // address past the region. vm_region_64 does NOT advance *address
+        // itself — on success it returns the region CONTAINING the input
+        // address with *address set to that region's START, and callers
+        // advance by the returned size (the step every stock iteration loop
+        // takes). Without the advance the re-call returns the same region
+        // forever.
         if(object_name && *object_name != MACH_PORT_NULL) {
             mach_port_deallocate(mach_task_self(), *object_name);
             *object_name = MACH_PORT_NULL;
         }
+
+        *address += *size;
     }
 }
 
@@ -46,6 +50,10 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
         if(!isCallerExternal() || ![_shadow isAddrRestricted:(void *) *address]) {
             return result;
         }
+
+        // No *address auto-advance in this API: skip past the restricted
+        // region manually (see replaced_vm_region_64).
+        *address += *size;
     }
 }
 
@@ -72,11 +80,14 @@ static kern_return_t replaced_mach_vm_region(vm_map_read_t target_task, mach_vm_
 
         // Restricted region: drop the object-name send right this skipped
         // call returned (it is ours to deallocate) and advance to the next
-        // region — same loop discipline as the vm_region_64 hook above.
+        // region — same loop discipline as the vm_region_64 hook above
+        // (mach_vm_region likewise does not advance *address on return).
         if(object_name && *object_name != MACH_PORT_NULL) {
             mach_port_deallocate(mach_task_self(), *object_name);
             *object_name = MACH_PORT_NULL;
         }
+
+        *address += *size;
     }
 }
 
@@ -93,6 +104,10 @@ static kern_return_t replaced_mach_vm_region_recurse(vm_map_read_t target_task, 
         if(!isCallerExternal() || ![_shadow isAddrRestricted:(void *) *address]) {
             return result;
         }
+
+        // No *address auto-advance in this API: skip past the restricted
+        // region manually (see replaced_vm_region_64).
+        *address += *size;
     }
 }
 

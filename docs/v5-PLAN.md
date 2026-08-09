@@ -203,6 +203,8 @@ signature scan — only catches inline hooks, not fishhook GOT rebinding).
 - [x] AR4 detector escalation
 - [x] W4 build system (3-pass: rootless/rooted/legacy; floors 15/12/9; framework export list; all packages build green)
 - [x] shadowd root daemon (LaunchDaemon rootless + rootful; vnode-layer kernel hiding, ledger/lease model, libjb + tfp0 krw)
+- [x] Roothide build pass scaffolding: JBPath/JBIsRootless seam header (Shadow/JBPath.h — RootBridge on existing flavors, libroothide jbroot() under -DSHADOW_ROOTHIDE), 13 call sites swapped, Core.m resolver roothide branch (live jbroot("/") prefix check), Makefiles drop RootBridge + add -lroothide/-DSHADOW_ROOTHIDE under THEOS_PACKAGE_SCHEME=roothide, Shadow.framework install_name stays @rpath except roothide (module forces @loader_path/.jbroot), build.sh roothide pass (stage/check deps, control mutation: drop me.jjolano.fmwk.rootbridge, firmware >= 15.0)
+- [ ] roothide device verify (needs roothide theos fork replacing ~/theos + hardware; shadowd libkrw0 krw backend separate, hardware-gated)
 - [ ] W5 device verification (kit ready: dyldprobe app + debug builds + matrix below)
 
 ## W5 — Device verification

@@ -8,9 +8,10 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/SystemRulesGenerator.h>
 
-#import <RootBridge.h>
+
 
 #import "../common.h"
+#import <Shadow/JBPath.h>
 
 // Watcher daemon (-d): regenerates the installed-apps ruleset when apps are
 // installed or uninstalled. App installs arrive in bursts (restores), so each
@@ -99,7 +100,7 @@ int main(int argc, char *argv[], char *envp[]) {
             BOOL dpkg_ok = NO;
 
             if(ruleset_dpkg) {
-                NSString* db_path = [RootBridge getJBPath:@(SHADOW_DB_PLIST)];
+                NSString* db_path = JBPath(@(SHADOW_DB_PLIST));
                 // Atomic: serialize to a temp file in the same directory, then
                 // rename() over the target. A crash mid-write leaves the
                 // previous dpkg ruleset intact instead of a truncated plist.

@@ -114,17 +114,20 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
-        return nil;
+        // Stock shape for a path that does not resolve on a stock device:
+        // the receiver, lexically standardized, with no symlink resolution
+        // (resolving a restricted path is what leaks the preboot/jbroot
+        // target). Matches -[NSString stringByResolvingSymlinksInPath].
+        return [self URLByStandardizingPath];
     }
 
     return result;
 }
 
 - (NSURL *)URLByStandardizingPath {
-    if(isCallerExternal() && [_shadow isURLRestricted:self]) {
-        return nil;
-    }
-
+    // Pure lexical normalization — the output carries no information beyond
+    // the receiver — so no restriction check (a filtered value here is a
+    // stock-impossible answer for the query the detector constructed).
     return %orig;
 }
 

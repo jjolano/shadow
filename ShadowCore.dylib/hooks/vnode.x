@@ -1,10 +1,11 @@
 #import "hooks.h"
 #import <mach/mach_error.h>
 #import <bootstrap.h>
-#import <RootBridge.h>
+
 
 #import "../../protocol.h"
 
+#import <Shadow/JBPath.h>
 // Vnode-layer file hiding — thin Mach IPC client. All kernel-touching work
 // (krw init, vnode pinning, VISSHADOW, state file) lives in the privileged
 // daemon (shadowd); this strictly-unprivileged client sends acquire/release
@@ -157,7 +158,7 @@ static BOOL shdw_vnode_pref_enabled(void) {
         NSDictionary* prefs = nil;
 
         for(NSString* path in @[
-            [RootBridge getJBPath:@(SHADOW_PREFS_PLIST)],
+            JBPath(@(SHADOW_PREFS_PLIST)),
             @(SHADOW_PREFS_PLIST)
         ]) {
             prefs = [NSDictionary dictionaryWithContentsOfFile:path];

@@ -2,13 +2,14 @@
 #import <UIKit/UIKit.h>
 
 #import "../common.h"
+#import <Shadow/JBPath.h>
 #import "hooks/hooks.h"
 
 #import <Shadow.h>
 #import <Shadow/Settings.h>
 #import <libSandy.h>
 #import <HookKit.h>
-#import <RootBridge.h>
+
 
 #import "../vendor/apple/dyld_priv.h"   // dyld_image_path_containing_address
 
@@ -17,6 +18,12 @@
 // invoke — never by image-name matching. Consumed by the vnode hiding gate
 // (vnode.x) and by the hook-backend routing below.
 BOOL shdw_detector_present = NO;
+
+// Emergency kill-switch for the dyld_all_image_infos memory-hiding patch
+// (AR2). Default YES (patch on); set from the MemoryLevelHiding pref in the
+// ctor before shadowhook_dyld installs, so a misbehaving patch on a new iOS
+// can be disabled without a reinstall (see hooks.h).
+BOOL shdw_memory_hiding_enabled = YES;
 
 // ---------------------------------------------------------------------------
 // Spawn-time image watcher (no-Filter loading: the tweak now loads at process
@@ -284,6 +291,13 @@ static void shdw_install_tier2(void) {
     if(!enabled) {
         return;
     }
+
+    // Emergency kill-switch (AR2): the dyld_all_image_infos memory-hiding
+    // patch is unconditional by default, but a misbehaving patch on a new iOS
+    // must be disableable without a reinstall. Read the pref here — before
+    // shadowhook_dyld installs — so dyld.x can skip patching / restore the
+    // original struct. Default YES (patch on).
+    shdw_memory_hiding_enabled = [prefs_load[@"MemoryLevelHiding"] boolValue];
 
     // Initialize Shadow instance.
     [Shadow sharedInstance];

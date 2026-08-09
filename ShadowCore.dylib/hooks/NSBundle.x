@@ -1,5 +1,26 @@
 #import "hooks.h"
 
+// Main-bundle path/URL captured once at install (CF API: bypasses the
+// Objective-C dispatch entirely, so a protected-bundle branch can never
+// re-enter the bundlePath/bundleURL hooks it sits inside). The value is
+// immutable for the process lifetime, so the statics need no locking.
+static NSString* _shdw_main_bundle_path;
+static NSURL* _shdw_main_bundle_url;
+
+static void shdw_cache_main_bundle(void) {
+    CFURLRef url = CFBundleCopyBundleURL(CFBundleGetMainBundle());
+
+    if(url) {
+        _shdw_main_bundle_url = CFBridgingRelease(url);
+        _shdw_main_bundle_path = [_shdw_main_bundle_url path];
+    }
+
+    // ponytail: CFBundleCopyBundleURL never fails for a running main bundle;
+    // if it somehow did, both statics stay nil and the hooks fall back to
+    // their original result (internal-caller classification still guards
+    // Shadow's own reads).
+}
+
 %group shadowhook_NSBundle
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
@@ -322,7 +343,7 @@
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
-        return [[NSBundle mainBundle] bundlePath];
+        return _shdw_main_bundle_path ?: result;
     }
 
     return result;
@@ -332,7 +353,7 @@
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
-        return [[NSBundle mainBundle] bundleURL];
+        return _shdw_main_bundle_url ?: result;
     }
 
     return result;
@@ -450,5 +471,6 @@
 %end
 
 void shadowhook_NSBundle(HKSubstitutor* hooks) {
+    shdw_cache_main_bundle();
     %init(shadowhook_NSBundle);
 }
