@@ -3,33 +3,25 @@
 %group shadowhook_NSArray
 %hook NSArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -89,33 +81,25 @@
 
 %hook NSMutableArray
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
 + (id)arrayWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (id)arrayWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }

@@ -1,19 +1,5 @@
 #import "hooks.h"
 
-// %group shadowhook_objc
-// %hook NSObject
-// + (Class)class {
-//     Class result = %orig;
-
-//     if(!isCallerExternal() && [_shadow isAddrRestricted:(__bridge const void *)result]) {
-//         return nil;
-//     }
-
-//     return result;
-// }
-// %end
-// %end
-
 static const char* (*original_class_getImageName)(Class cls);
 static const char* replaced_class_getImageName(Class cls) {
     // C0-2: Shadow's own code sees truth; every other caller is filtered.

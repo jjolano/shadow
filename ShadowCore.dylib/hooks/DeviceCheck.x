@@ -37,15 +37,6 @@
 }
 %end
 
-// %hook SFAntiPiracy
-// + (int)isJailbroken {
-// 	// Probably should not hook with a hard coded value.
-// 	// This value may be changed by developers using this library.
-// 	// Best to defeat the checks rather than skip them.
-// 	return 4783242;
-// }
-// %end
-
 %hook JailbreakDetectionVC
 - (BOOL)isJailbroken {
     return NO;
