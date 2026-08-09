@@ -3,14 +3,21 @@
 // Self-contained host assertions (the tests/Makefile + build-linux.sh wiring
 // is owned by the orchestrator; see the report's "exact lines to add").
 // RunRestrictionTests() is called AFTER the harness has staged the fixture
-// rulesets (001-BaseRules.plist blacklists /usr/bin/ssh and
-// /usr/lib/libghost.dylib exactly) and the virtual FS (jb/usr/bin/ssh,
-// jb/usr/sbin/fstab exist; libghost doesn't).
+// rulesets and the virtual FS. Staged ruleset state:
+//   001-BaseRules.plist  blacklists /usr/sbin/fstab, /usr/bin/ssh and
+//                        /usr/lib/libghost.dylib exactly (plus prefix rules)
+//   002-Overrides.plist  whitelists /usr/bin/ssh exactly (whitelist beats the
+//                        exact blacklist on the path itself), /usr/sbin/sshd
+//                        and /var/mobile/Media as prefixes
+// So in the running state /usr/sbin/fstab is RESTRICTED and /usr/bin/ssh is
+// ALLOWED (main.m:357-358 asserts the same pair, pass/fail mirrored here).
+// Virtual FS: fixtures/fs/jb/usr/{bin,sbin} exist (ssh, fstab); libghost
+// doesn't.
 //
 // Two layers:
 //   1. Grounded verdicts that hold in BOTH rooted and rootless modes
-//      (write probes skip the existence gates — device-accurate; the two
-//      read probes are mode-independent by construction, see each check).
+//      (write probes skip the existence gates — device-accurate; the read
+//      probes are mode-independent by construction, see each check).
 //   2. Differential-parity asserts: the typed entry must agree with the
 //      legacy dictionary entry on every option shape, and — via KVC access
 //      to the backend's engine (test-only category below) — the NEW engine
@@ -104,18 +111,26 @@ int RunRestrictionTests(void) {
     RCHECK(![shadow isPathRestrictedQuery:[ShadowRestrictionQuery queryWithPath:@"~definitely-not-a-user/foo"]], "typed unresolvable tilde allowed");
 
     // --- grounded verdicts (both modes; see file header) ------------------
-    BOOL sshRestricted = [shadow isPathRestricted:@"/usr/bin/ssh"];
-    RCHECK(sshRestricted, "typed /usr/bin/ssh restricted");
+    // /usr/sbin/fstab: blacklisted exactly (001) and NOT whitelisted (002
+    // only whitelists the /usr/sbin/sshd prefix) — the canonical restricted
+    // path in the staged state (mirrors main.m:357).
+    BOOL fstabRestricted = [shadow isPathRestricted:@"/usr/sbin/fstab"];
+    RCHECK(fstabRestricted, "typed /usr/sbin/fstab restricted");
+
+    // /usr/bin/ssh: whitelisted exactly by 002-Overrides, which beats the
+    // exact blacklist on the path itself (mirrors main.m:358).
+    RCHECK(![shadow isPathRestricted:@"/usr/bin/ssh"], "whitelist exact overrides blacklist exact (002-Overrides)");
 
     RCHECK(![shadow isPathRestricted:@"/usr/lib/libghost.dylib"], "absent exact-file read allowed (existence gate)");
     RCHECK([shadow isPathRestricted:@"/usr/lib/libghost.dylib" options:writeOpts()], "absent exact-file write denied (gate-skipping)");
     RCHECK([shadow isURLRestricted:[NSURL fileURLWithPath:@"/usr/lib/libghost.dylib"] options:writeOpts()], "absent exact-file URL write denied");
 
-    // working-dir relative resolution: fstab/ssh exist in the jb fixture tree,
-    // so the rootless existence gate passes and the exact blacklist applies.
+    // working-dir relative resolution: fstab exists in the jb fixture tree,
+    // so the rootless existence gate passes and the exact blacklist applies
+    // in both modes.
     RCHECK([shadow isPathRestricted:@"fstab" options:@{kShadowRestrictionWorkingDir : @"/usr/sbin"}], "relative fstab via workingDir restricted");
-    RCHECK([shadow isPathRestricted:@"ssh" options:@{kShadowRestrictionWorkingDir : @"/usr/bin"}], "relative ssh via workingDir restricted");
-    RCHECK([shadow isPathRestricted:@"/usr/bin/ssh" options:@{kShadowRestrictionWorkingDir : @"/"}], "workingDir inert for absolute path");
+    RCHECK(![shadow isPathRestricted:@"ssh" options:@{kShadowRestrictionWorkingDir : @"/usr/bin"}], "relative ssh via workingDir resolves to whitelisted /usr/bin/ssh");
+    RCHECK([shadow isPathRestricted:@"/usr/sbin/fstab" options:@{kShadowRestrictionWorkingDir : @"/"}], "workingDir inert for absolute path");
 
     // --- legacy dict <-> typed entry parity (every option shape) ----------
     NSArray* paths = @[
@@ -165,14 +180,14 @@ int RunRestrictionTests(void) {
     }
 
     // --- typed-native usage: defaults match the facade ---------------------
-    RCHECK([shadow isPathRestrictedQuery:[ShadowRestrictionQuery queryWithPath:@"/usr/bin/ssh"]] == sshRestricted,
+    RCHECK([shadow isPathRestrictedQuery:[ShadowRestrictionQuery queryWithPath:@"/usr/sbin/fstab"]] == fstabRestricted,
         "typed defaults == plain read");
 
     // Default-shaped queries are cacheable; explicit resolve-off queries are
     // not (legacy parity) — both must still agree with the facade verdict.
-    ShadowRestrictionQuery* noResolve = [ShadowRestrictionQuery queryWithPath:@"/usr/bin/ssh"];
+    ShadowRestrictionQuery* noResolve = [ShadowRestrictionQuery queryWithPath:@"/usr/sbin/fstab"];
     noResolve.flags = 0;
-    RCHECK([shadow isPathRestrictedQuery:noResolve] == sshRestricted, "resolve-off typed query agrees");
+    RCHECK([shadow isPathRestrictedQuery:noResolve] == fstabRestricted, "resolve-off typed query agrees");
 
     printf("RestrictionTests: %d passed, %d failed\n", rg, rf);
     return rf;
