@@ -1,4 +1,5 @@
 #import "hooks.h"
+#import "DeviceCheckHooks.h"
 
 %group shadowhook_DeviceCheck
 // TODO: late-loaded detector-class hook retry — detector classes that load
@@ -304,56 +305,13 @@
 %end
 
 // Encoding-aware install for third-party rooted/jailbroken properties whose
-// return ABI varies between SDK versions. The runtime method encoding is
-// inspected at install: B@:/c@: → BOOL-returning hook (NO), @@: →
-// object-returning hook (nil), anything else → skip and leave the real
-// method untouched.
-static BOOL shdw_replaced_probe_BOOL(id self, SEL _cmd) {
-    return NO;
-}
-
-static id shdw_replaced_probe_obj(id self, SEL _cmd) {
-    return nil;
-}
-
-static void shdw_install_probe_abi(const char* className, const char* selName, void** origBool, void** origObj) {
-    Class cls = objc_getClass(className);
-
-    if(!cls) {
-        return;
-    }
-
-    SEL sel = sel_registerName(selName);
-    Method method = class_getInstanceMethod(cls, sel);
-
-    if(!method) {
-        return;
-    }
-
-    const char* encoding = method_getTypeEncoding(method);
-
-    if(!encoding) {
-        return;
-    }
-
-    if(encoding[0] == 'B' || encoding[0] == 'c') {
-        HKHookMessage(cls, sel, (IMP) &shdw_replaced_probe_BOOL, origBool);
-    } else if(encoding[0] == '@') {
-        HKHookMessage(cls, sel, (IMP) &shdw_replaced_probe_obj, origObj);
-    }
-    // Unknown encoding: skip.
-}
-
-static BOOL (*shdw_orig_ub_is_rooted_BOOL)(id, SEL) = NULL;
-static id (*shdw_orig_ub_is_rooted_obj)(id, SEL) = NULL;
-static BOOL (*shdw_orig_enroll_jailbroken_BOOL)(id, SEL) = NULL;
-static id (*shdw_orig_enroll_jailbroken_obj)(id, SEL) = NULL;
+// return ABI varies between SDK versions: moved to DeviceCheckHooks.{h,m}
+// (descriptor-driven). The runtime method encoding is inspected at install:
+// B@:/c@: → BOOL-returning hook (NO), @@: → object-returning hook (nil),
+// anything else → skip and leave the real method untouched.
 
 void shadowhook_DeviceCheck(HKSubstitutor* hooks) {
     %init(shadowhook_DeviceCheck);
 
-    shdw_install_probe_abi("UBReportMetadataDevice", "is_rooted",
-        (void **) &shdw_orig_ub_is_rooted_BOOL, (void **) &shdw_orig_ub_is_rooted_obj);
-    shdw_install_probe_abi("EnrollParameters", "jailbroken",
-        (void **) &shdw_orig_enroll_jailbroken_BOOL, (void **) &shdw_orig_enroll_jailbroken_obj);
+    shdw_devicecheck_install_hooks(hooks);
 }
