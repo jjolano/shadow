@@ -17,18 +17,18 @@ HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # armv7 via hk_swift_supported()).
 HookKit_FILES += native/hk_swift.c
 HookKit_FRAMEWORKS = Foundation
+HookKit_INSTALL_PATH = /Library/Frameworks
+HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
+HookKit_CFLAGS = -fobjc-arc -I. -IHeaders -Ivendor -Ivendor/litehook
+HookKit_LDFLAGS =
 # Jailbreak-root seam is compile-time per scheme (see Backends/HKBackendCommon.m):
 # rooted = identity, rootless = libroot (auto-linked -lroot by theos),
-# roothide = libroothide's jbroot().
+# roothide = libroothide's jbroot(). Must append after the base CFLAGS above.
 ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
 HookKit_CFLAGS += -DSHADOW_ROOTLESS
 else ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_CFLAGS += -DSHADOW_ROOTHIDE
 endif
-HookKit_INSTALL_PATH = /Library/Frameworks
-HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
-HookKit_CFLAGS = -fobjc-arc -I. -IHeaders -Ivendor -Ivendor/litehook
-HookKit_LDFLAGS =
 # The roothide scheme module forces -install_name "@loader_path/.jbroot...",
 # which would override our @rpath install_name (instance LDFLAGS come after
 # internal LDFLAGS); under the roothide scheme drop our explicit install_name

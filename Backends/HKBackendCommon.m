@@ -19,8 +19,8 @@
 #import <roothide.h>
 NSString* HKJBPath(NSString* path) { return jbroot(path); }
 #elif defined(SHADOW_ROOTLESS)
-#import <libroot/libroot.h>
-NSString* HKJBPath(NSString* path) { return JBROOT_PATH_NS(path); }
+#import <rootless.h>
+NSString* HKJBPath(NSString* path) { return ROOT_PATH_NS(path); }
 #else
 NSString* HKJBPath(NSString* path) { return path; }
 #endif
