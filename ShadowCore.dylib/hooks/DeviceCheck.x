@@ -12,53 +12,9 @@
 // generateKey/attestKey/generateAssertion are deliberately NOT hooked — the
 // artifacts are server-verifiable, so a forged value would fail attestation
 // on the server side; returning "unsupported" here is the only honest answer.
-%hook DCDevice
-- (BOOL)isSupported {
-	return NO;
-}
-%end
-
-%hook DCAppAttestService
-- (BOOL)isSupported {
-	return NO;
-}
-%end
-
-%hook UIDevice
-+ (BOOL)isJailbroken {
-    return NO;
-}
-
-- (BOOL)isJailBreak {
-    return NO;
-}
-
-- (BOOL)isJailBroken {
-    return NO;
-}
-%end
-
-%hook JailbreakDetectionVC
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook DTTJailbreakDetection
-+ (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook ANSMetadata
-- (BOOL)computeIsJailbroken {
-    return NO;
-}
-
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
+// Step 2, batch 1: DCDevice, DCAppAttestService, UIDevice,
+// JailbreakDetectionVC, DTTJailbreakDetection, ANSMetadata blocks migrated
+// to DeviceCheckHooks.m descriptor rows.
 
 %hook AppsFlyerUtils
 + (BOOL)isJailBreakon {
