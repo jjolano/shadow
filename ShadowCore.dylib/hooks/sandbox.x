@@ -18,33 +18,6 @@ extern BOOL shdw_bootstrap_service_restricted(const char* name);
 // type for inspection. The ORIGINAL `type` is always forwarded unchanged.
 #define SHADOW_SANDBOX_FILTER_TYPE_MASK 0x1F
 
-// extern void* SecTaskCopyValueForEntitlement(void* task, CFStringRef entitlement, CFErrorRef  _Nullable *error);
-// extern void* SecTaskCreateFromSelf(CFAllocatorRef allocator);
-
-// extern int MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info);
-// extern NSString* kMISValidationOptionAllowAdHocSigning;
-// extern NSString* kMISValidationOptionRespectUppTrustAndAuthorization;
-
-// static int (*original_MISValidateSignatureAndCopyInfo)(NSString* file, NSDictionary* options, NSDictionary** info);
-// static int replaced_MISValidateSignatureAndCopyInfo(NSString* file, NSDictionary* options, NSDictionary** info) {
-//     int result =  original_MISValidateSignatureAndCopyInfo(file, options, info);
-
-//     if(result == 0) {
-//         // Don't allow checking trust cache for self
-//         if([file hasPrefix:[[NSBundle mainBundle] bundlePath]]
-//         && options[kMISValidationOptionAllowAdHocSigning]
-//         && options[kMISValidationOptionRespectUppTrustAndAuthorization]) {
-//             return -1;
-//         }
-
-//         if([_shadow isPathRestricted:file]) {
-//             return -1;
-//         }
-//     }
-
-//     return result;
-// }
-
 static kern_return_t (*original_task_for_pid)(task_port_t task, pid_t pid, task_port_t* target);
 static kern_return_t replaced_task_for_pid(task_port_t task, pid_t pid, task_port_t* target) {
     if(!isCallerExternal()) {
@@ -721,7 +694,6 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     // [hooks hookFunction:task_get_exception_ports withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     [hooks hookFunction:task_for_pid withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
     [hooks hookFunction:sigaction withReplacement:replaced_sigaction outOldPtr:(void **) &original_sigaction];
-    // [hooks hookFunction:MISValidateSignatureAndCopyInfo withReplacement:replaced_MISValidateSignatureAndCopyInfo outOldPtr:(void **) &original_MISValidateSignatureAndCopyInfo];
 
     [hooks hookFunction:execle withReplacement:replaced_execle outOldPtr:NULL];
     [hooks hookFunction:execlp withReplacement:replaced_execlp outOldPtr:NULL];

@@ -63,17 +63,13 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 %group shadowhook_UIImage
 %hook UIImage
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (UIImage *)imageWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }

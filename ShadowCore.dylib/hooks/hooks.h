@@ -148,6 +148,24 @@ void shdw_own_ranges_refresh(void);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
 
+#define SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path) \
+    do { \
+        if(isCallerExternal() && [_shadow isPathRestricted:(path)]) { \
+            return nil; \
+        } \
+    } while(0)
+
+#define SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url) \
+    do { \
+        if(isCallerExternal() && [_shadow isURLRestricted:(url)]) { \
+            return nil; \
+        } \
+    } while(0)
+
+static inline NSDictionary* shdw_restriction_write_options(void) {
+    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+}
+
 // Set by dylib.x when a known detection library (IOSSecuritySuite/freeRASP)
 // is loaded; read by dyld.x to escalate memory-level hiding.
 extern BOOL shdw_detector_present;

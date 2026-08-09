@@ -11,8 +11,6 @@ static NSMutableArray<NSValue *>* _shdw_dyld_remove_image = nil;
 // dlerror on the same thread. The old global let one thread's denial poison
 // another thread's dlerror.
 static _Thread_local const char* _shdw_dyld_error_tls = NULL;
-// static NSOperationQueue* _shdw_dyld_queue = nil;
-// NSMutableData* _shdw_dyld_task_dyld_info = nil;
 
 // Real dyld_all_image_infos global (resolved in shadowhook_dyld). When set,
 // we patch its arrays directly. When NULL (very old iOS), memory hiding stays
@@ -742,7 +740,7 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
             NSArray* _dyld_add_image = [_shdw_dyld_add_image copy];
 
             if([_dyld_add_image count]) {
-                NSLog(@"%@: %@", @"dyld", @"add_image calling handlers");
+                NSLog(@"dyld: add_image calling handlers");
 
                 for(NSValue* func_ptr in _dyld_add_image) {
                     void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];
@@ -792,7 +790,7 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         NSArray* _dyld_remove_image = [_shdw_dyld_remove_image copy];
 
         if([_dyld_remove_image count]) {
-            NSLog(@"%@: %@", @"dyld", @"remove_image calling handlers");
+            NSLog(@"dyld: remove_image calling handlers");
             
             for(NSValue* func_ptr in _dyld_remove_image) {
                 void (*func)(const struct mach_header*, intptr_t) = [func_ptr pointerValue];

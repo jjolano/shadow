@@ -28,10 +28,6 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
     return options;
 }
 
-static NSDictionary* _shdw_urlWriteOptions(void) {
-    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
-}
-
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
@@ -321,7 +317,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
     
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"%@: %@", @"enumeratorAtURL", url);
+        NSLog(@"enumeratorAtURL: %@", url);
     }
 
     return result;
@@ -336,7 +332,7 @@ static NSDictionary* _shdw_urlWriteOptions(void) {
 
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"%@: %@", @"enumeratorAtPath", path);
+        NSLog(@"enumeratorAtPath: %@", path);
     }
     
     return result;
@@ -507,7 +503,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
-    NSLog(@"%@: %@", @"changeCurrentDirectoryPath", path);
+    NSLog(@"changeCurrentDirectoryPath: %@", path);
 
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;
@@ -571,7 +567,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — replacing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:newItemURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:newItemURL options:shdw_restriction_write_options()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
@@ -585,7 +581,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — copying a directory that
     // contains a restricted descendant requires an unhooked subtree walk.
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -616,7 +612,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — moving a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -655,7 +651,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)setUbiquitous:(BOOL)flag itemAtURL:(NSURL *)url destinationURL:(NSURL *)destinationURL error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && ([_shadow isURLRestricted:url options:_shdw_urlWriteOptions()] || [_shadow isURLRestricted:destinationURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:url options:shdw_restriction_write_options()] || [_shadow isURLRestricted:destinationURL options:shdw_restriction_write_options()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -667,7 +663,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)startDownloadingUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -679,7 +675,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)evictUbiquitousItemAtURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -691,7 +687,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSURL *)URLForPublishingUbiquitousItemAtURL:(NSURL *)url expirationDate:(NSDate * _Nullable *)outDate error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -764,7 +760,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:_shdw_urlWriteOptions()])) {
+    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -840,7 +836,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -874,7 +870,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — removing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(isCallerExternal() && [_shadow isURLRestricted:URL options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:URL options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
@@ -902,7 +898,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
     // TODO(plan-wave-C): subtree preflight — trashing a directory with a
     // restricted descendant requires an unhooked subtree walk.
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:_shdw_urlWriteOptions()]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }

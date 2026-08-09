@@ -32,33 +32,25 @@ static void shdw_cache_main_bundle(void) {
 }
 
 + (instancetype)bundleWithURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
     
     return %orig;
 }
 
 + (instancetype)bundleWithPath:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
     return %orig;
 }
 
 - (instancetype)initWithURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
     
     return %orig;
 }
 
 - (instancetype)initWithPath:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
     return %orig;
 }

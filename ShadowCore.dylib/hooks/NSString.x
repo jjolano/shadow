@@ -236,9 +236,7 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 
 %hook NSAttributedString
 - (instancetype)initWithHTML:(NSData *)data baseURL:(NSURL *)base documentAttributes:(NSDictionary<NSAttributedStringDocumentAttributeKey, id> * _Nullable *)dict {
-    if(isCallerExternal() && [_shadow isURLRestricted:base]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(base);
 
     return %orig;
 }
@@ -321,9 +319,7 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 %group shadowhook_NSCharacterSet
 %hook NSCharacterSet
 + (NSCharacterSet *)characterSetWithContentsOfFile:(NSString *)fName {
-    if(isCallerExternal() && [_shadow isPathRestricted:fName]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(fName);
 
     return %orig;
 }
@@ -331,9 +327,7 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 
 %hook NSMutableCharacterSet
 + (NSMutableCharacterSet *)characterSetWithContentsOfFile:(NSString *)fName {
-    if(isCallerExternal() && [_shadow isPathRestricted:fName]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(fName);
 
     return %orig;
 }
