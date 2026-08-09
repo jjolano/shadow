@@ -604,6 +604,43 @@ static void testHookEntryPoints(void) {
     CHECK(![shdw() isAddrRestricted:(const void*)0x1234], "isAddrRestricted unresolvable address allowed");
 }
 
+// Pure hook filters (ShadowCore.dylib/hooks/filters.h): the per-record mount
+// decision and the APFS snapshot name classifier. Compiled into the harness
+// directly — no Darwin-only headers, so the exact device logic is testable.
+#include "filters.h"
+
+static void testHookFilters(void) {
+    printf("[tests] hook filters (mount + snapshot)\n");
+
+    // shdw_mount_filter: restricted verdict removes the record.
+    uint32_t flags = 0;
+    CHECK(shdw_mount_filter("/", "/dev/disk1", &flags, 1, 1) == 0, "mount filter: restricted removed");
+
+    // restricted=0 + "/" + statfsFlags=1 -> kept, MNT_RDONLY OR'd in.
+    flags = 0;
+    CHECK(shdw_mount_filter("/", "/dev/disk1", &flags, 1, 0) == 1, "mount filter: root kept");
+    CHECK((flags & MNT_RDONLY) != 0, "mount filter: MNT_RDONLY OR'd for root with statfsFlags");
+
+    // restricted=0 + "/" + statfsFlags=0 -> kept, flags untouched.
+    flags = 0;
+    CHECK(shdw_mount_filter("/", "/dev/disk1", &flags, 0, 0) == 1, "mount filter: root kept without statfsFlags");
+    CHECK(flags == 0, "mount filter: flags untouched without statfsFlags");
+
+    // restricted=0 + non-"/" + statfsFlags=1 -> kept, flags untouched.
+    flags = 0;
+    CHECK(shdw_mount_filter("/System", "/dev/disk1", &flags, 1, 0) == 1, "mount filter: non-root kept");
+    CHECK(flags == 0, "mount filter: non-root flags untouched");
+
+    // NULL mntonname -> kept, no crash.
+    CHECK(shdw_mount_filter(NULL, "/dev/disk1", &flags, 1, 0) == 1, "mount filter: NULL mntonname kept");
+
+    // shdw_snapshot_is_jb: exact-match deny-list.
+    CHECK(shdw_snapshot_is_jb("fakefs") == 1, "snapshot: fakefs hidden");
+    CHECK(shdw_snapshot_is_jb("com.apple.os.update-1234") == 0, "snapshot: stock update kept");
+    CHECK(shdw_snapshot_is_jb("random") == 0, "snapshot: random kept");
+    CHECK(shdw_snapshot_is_jb(NULL) == 0, "snapshot: NULL kept");
+}
+
 // generateDatabase: builds a ruleset dict from the dpkg info database.
 // Coverage-gap tests: the branches the unit groups don't reach (from the
 // gcov report) — isURLRestricted's nil/reference-URL paths,
@@ -1689,6 +1726,7 @@ int main(int argc, const char** argv) {
         testSandbox();
         testUtilities();
         testHookEntryPoints();
+        testHookFilters();
         testDatabase();
         testCoverageGaps();
         testShadowdLedger();

@@ -22,6 +22,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -include tests/hdr/dispatch/once.h -include tests/hdr/CoreFoundation/CFBundle.h \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Ivendor/RootBridge.framework/Headers \
+  -IShadowCore.dylib/hooks \
   tests/main.m tests/RootBridgeStub.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m tests/shadowd/RecoveryHarness.m \
   shadowd/ledger.m \
