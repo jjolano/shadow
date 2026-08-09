@@ -16,6 +16,13 @@ HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # Swift vtable backend: arm64/arm64e only (entry points report unsupported on
 # armv7 via hk_swift_supported()).
 HookKit_FILES += native/hk_swift.c
+# BlockHook vendored library (vendor/blockhook): arm64 only — the .m bodies
+# are #if-gated to __arm64__ && !__arm64e__ (libffi ships no arm64e slice and
+# BlockHook needs iOS 12+, armv7 tops out at 10.3), so the other slices
+# compile them empty. The ffi headers are arch-neutral. FILES/CFLAGS must be
+# set before framework.mk snapshots them; the -lffi link lives in an ifeq
+# block after the include (link flags are read at link time).
+HookKit_FILES += vendor/blockhook/BlockHook.m vendor/blockhook/BHDealloc.m vendor/blockhook/BHHelper.m vendor/blockhook/BHInvocation.m vendor/blockhook/BHLock.m vendor/blockhook/BHToken.m
 HookKit_FRAMEWORKS = Foundation
 # RootBridge is the /var/jb convention; roothide replaces it with libroothide
 # via the HKJBPath seam in HKSubstitutor.m.
@@ -24,7 +31,7 @@ HookKit_EXTRA_FRAMEWORKS = RootBridge
 endif
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
-HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor -Ivendor/litehook
+HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor -Ivendor/litehook -Ivendor/blockhook/ffi
 ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_CFLAGS += -Ivendor/RootBridge.framework/Headers
 else
@@ -49,6 +56,18 @@ include $(THEOS_MAKE_PATH)/framework.mk
 # armv7/armv7s build by the ARCHS filter.
 ifeq ($(filter arm64,$(ARCHS)),arm64)
 HookKit_LDFLAGS += -Lvendor/dobby -ldobby -lc++
+endif
+
+# BlockHook: vendored block-hooking library (vendor/blockhook), which needs
+# iOS 12+ and spirals through libffi. libffi ships armv7+arm64 slices only —
+# no armv7s, no arm64e — so hooking is arm64-only: the six .m implementation
+# bodies are #if-gated to __arm64__ && !__arm64e__ like hk_native.c (on the
+# other slices they compile to nothing and reference no libffi symbols), the
+# arch-neutral headers get an unconditional -I, and the static lib only links
+# when the build includes arm64 (the armv7-only build has no arm64 slice in
+# this fat archive, so the -lffi stays out to avoid a no-slice link).
+ifeq ($(filter arm64,$(ARCHS)),arm64)
+HookKit_LDFLAGS += -Lvendor/blockhook/ffi -lffi
 endif
 
 # HKGum: thin wrapper dylib statically linking the frida-gum devkit. The

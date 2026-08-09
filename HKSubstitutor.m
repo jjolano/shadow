@@ -292,6 +292,13 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 @optional
 - (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
+// Block hooking. Optional and arch-guarded like the public headers:
+// BHToken/BlockHookMode exist on arm64 only (libffi has no arm64e slice),
+// so on arm64e/armv7 this method is not declared — the selector does not
+// exist there, matching blockhook_available().
+#if defined(__arm64__) && !defined(__arm64e__)
+- (BHToken *)hookBlock:(id)block withMode:(BlockHookMode)mode usingBlock:(id)aspectBlock;
+#endif
 // Technique hint for strategy-aware backends (HKLitehookBackend). Optional:
 // backends without it keep their vendor default technique.
 - (void)setStrategy:(HKStrategy)strategy;
@@ -1065,6 +1072,110 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 @end
 
+// BlockHook backend: hooks Objective-C blocks via the vendored BlockHook
+// library (vendor/blockhook), which needs iOS 12+ and libffi. arm64 only —
+// libffi ships no arm64e slice and armv7 tops out at iOS 10.3 — so the
+// @interface stays visible for the registry but the @implementation is
+// arch-gated like HKDobbyBackend, and blockhook_available() reports NO
+// elsewhere. Blocks bypass the message/function/memory kind system (like
+// Swift vtables): the hook applies at hook time via the dedicated
+// hookBlock:withMode:usingBlock: API.
+@interface HKBlockHookBackend : NSObject <HKSubstitutorBackend> {
+    int _lastErrno;
+}
+@end
+
+#if defined(__arm64__) && !defined(__arm64e__)
+@implementation HKBlockHookBackend
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    // block hooking is a separate API; none of the three kinds apply
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: block hooks apply at hook time (batchingSupported NO)
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return NULL;
+}
+
+- (void)closeImage:(HKImageRef)image {
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    return NULL;
+}
+
+- (BHToken *)hookBlock:(id)block withMode:(BlockHookMode)mode usingBlock:(id)aspectBlock {
+    return [block block_hookWithMode:mode usingBlock:aspectBlock];
+}
+@end
+#else   // !arm64: stub — the class symbol must exist for the registry entry,
+        // but blockhook_available() is NO here so this is never instantiated.
+@implementation HKBlockHookBackend
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return NULL;
+}
+
+- (void)closeImage:(HKImageRef)image {
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    return NULL;
+}
+@end
+#endif
+
 // Native backend: HookKit's own engine, requiring no hooking library on the
 // device. Never selected automatically — callers opt in with HK_LIB_NATIVE.
 // See native/hk_native.h for the constraints.
@@ -1441,8 +1552,10 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 // RootBridge (same pattern as libhooker/libsubstitute): the framework never
 // links frida-gum directly. No arch guard — everything is runtime dlopen, and
 // on armv7 dlopen simply fails (the wrapper product is arch-gated in the
-// Makefile). The devkit's minos=14.0 also gates older iOS: dyld refuses to
-// dlopen HKGum.dylib on iOS 12/13, so dlopen failure is the whole gate.
+// Makefile). Theos forces the arm64e slice minos to 14.0, but the arm64 slice
+// keeps the deployment floor (9.0/12.0), so HKGum.dylib loads on iOS 12/13 on
+// arm64 devices; only on arm64e does dyld refuse below iOS 14. dlopen failure
+// is the whole gate (verified: built HKGum arm64 slice carries minos 12.0).
 static void *hkgum_handle = NULL;
 static int (*fn_hkgum_hook_function)(void *, void *, void **) = NULL;
 static int (*fn_hkgum_begin_transaction)(void) = NULL;
@@ -1565,6 +1678,27 @@ static BOOL litehook_available(void) {
     return YES;
 }
 
+// BlockHook is compiled in on arm64 only (libffi ships no arm64e slice and
+// armv7 tops out at iOS 10.3, below the iOS 12 floor). The arch is a
+// compile-time constant and the OS version never changes, so the result is
+// cached once like the other availability functions.
+static BOOL blockhook_available(void) {
+    static BOOL cached = NO;
+    static BOOL available = NO;
+
+    if(cached) {
+        return available;
+    }
+
+#if defined(__arm64__) && !defined(__arm64e__)
+    available = NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 12;
+#endif
+
+    cached = YES;
+
+    return available;
+}
+
 static BOOL native_available(void) {
     return hk_native_supported() ? YES : NO;
 }
@@ -1647,7 +1781,7 @@ static BOOL frida_available(void) {
 }
 
 static const HKBackendDescriptor *hk_backends(size_t *outCount) {
-    static HKBackendDescriptor table[9];
+    static HKBackendDescriptor table[10];
     static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
@@ -1670,6 +1804,10 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
         // function-rebind floor; litehook adds memory patching on all archs,
         // plus inline and private-symbol techniques for its category entries.
         table[8] = (HKBackendDescriptor){ HK_LIB_LITEHOOK, [HKLitehookBackend class], @"litehook", @"litehook", litehook_available, NO, YES };
+        // Never automatic: block hooks are a separate API (no
+        // message/function overlap) and only make sense when the caller has a
+        // block in hand, so this backend is opt-in.
+        table[9] = (HKBackendDescriptor){ HK_LIB_BLOCKHOOK, [HKBlockHookBackend class], @"blockhook", @"BlockHook", blockhook_available, NO, YES };
     });
 
     *outCount = sizeof(table) / sizeof(table[0]);
@@ -2146,6 +2284,32 @@ category_done: ;
     [self noteHookResult:result];
     return result;
 }
+
+#if defined(__arm64__) && !defined(__arm64e__)
+// Block hooking (BlockHook backend only). Mirrors the Swift dispatch: the
+// selector exists on arm64 only (the types do too — see Compat.h), the
+// backend must be the BlockHook backend to respond, and the hook applies at
+// call time via BlockHook itself (nothing is batched). Returns nil when no
+// backend is available or the backend doesn't implement block hooking.
+- (BHToken *)hookBlock:(id)block withMode:(BlockHookMode)mode usingBlock:(id)aspectBlock {
+    if(!block || !aspectBlock) {
+        return nil;
+    }
+
+    if(!backend) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return nil;
+    }
+
+    if(![backend respondsToSelector:@selector(hookBlock:withMode:usingBlock:)]) {
+        [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+        return nil;
+    }
+
+    [self noteHookResult:HK_OK];
+    return [backend hookBlock:block withMode:mode usingBlock:aspectBlock];
+}
+#endif
 
 - (HKImageRef)openImage:(NSString *)path {
     if(!path) {

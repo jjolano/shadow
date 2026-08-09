@@ -3,6 +3,16 @@
 
 #import <Foundation/Foundation.h>
 
+// BlockHook's public types (BHToken, BHInvocation, BlockHookMode) come from
+// Headers/HookKit/BlockHook/. They only exist on arm64: libffi ships no
+// arm64e slice and BlockHook needs iOS 12+ (armv7 tops out at iOS 10.3), so
+// unlike the rest of the API surface the block API below is arch-guarded —
+// on arm64e/armv7 the types cannot exist, so the method is not declared
+// either (an intentional deviation from the always-declared Swift API).
+#if defined(__arm64__) && !defined(__arm64e__)
+#import <HookKit/BlockHook/BlockHook.h>
+#endif
+
 typedef enum {
     HK_OK = 0,
     HK_ERR = (1 << 0),
@@ -21,7 +31,8 @@ typedef enum {
     HK_LIB_DOBBY = (1 << 5),
     HK_LIB_FRIDA = (1 << 6),
     HK_LIB_SWIFT = (1 << 7),
-    HK_LIB_LITEHOOK = (1 << 8)
+    HK_LIB_LITEHOOK = (1 << 8),
+    HK_LIB_BLOCKHOOK = (1 << 9)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
@@ -76,6 +87,7 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  *   fishhook        no        yes*      no        no
  *   Swift           no        no*****   no        no
  *   litehook        no        yes*8     yes       no
+ *   BlockHook       no        no        no        no
  *     * exported symbols only, rebinding by symbol name
  *     ** arm64/arm64e only
  *     *** arm64/arm64e only; inline patching needs relaxed codesigning
@@ -88,6 +100,8 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  *         original-call trampoline for direct-branch hooks
  *     *9  via MSHookMemory when the installed Cydia Substrate exports it
  *     *10 via the MS-compatible SubHookMemory on Substitute
+ *     *11 blocks only (hookBlock:withMode:usingBlock:), opt-in
+ *         (HK_LIB_BLOCKHOOK), arm64 + iOS 12+ only
  *   Each footnote is expanded in the per-backend caveats linked below.
  *
  * Symbol name convention: names passed to findSymbolInImage:/
@@ -206,6 +220,24 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // return HK_ERR (HK_SWIFT_ERR_INVALID_INDEX). Replacement contract and v1
 // scope are identical to hookSwiftMethodInClass:withName:.
 - (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
+
+// Guarded like the BlockHook headers above: the types only exist on arm64
+// (libffi has no arm64e slice; BlockHook needs iOS 12+), so on arm64e/armv7
+// the selector is not declared at all — an intentional deviation from the
+// Swift methods, which are always declared and just report NOT_SUPPORTED.
+#if defined(__arm64__) && !defined(__arm64e__)
+// Hook an Objective-C block by pointer (BlockHook backend only;
+// HK_LIB_BLOCKHOOK, opt-in, arm64 + iOS 12+). `block` is the block object;
+// `mode` selects before/instead/after/dead interception (BlockHookMode,
+// NS_OPTIONS — you may OR multiple bits, but Instead combines with nothing).
+// `aspectBlock` receives a BHInvocation first followed by the block's own
+// arguments. Returns a BHToken for the hook, or nil if no backend is
+// available. Blocks can be hooked multiple times; each call returns a new
+// token, and [token remove] reverts it.
+// Unannotated like the rest of this header (no _Nullable/_Nonnull anywhere —
+// annotating one method would trip -Wnullability-completeness on the others).
+- (BHToken *)hookBlock:(id)block withMode:(BlockHookMode)mode usingBlock:(id)aspectBlock;
+#endif
 
 // Returns an opaque pointer to an image for use with findSymbol(s)InImage methods, or NULL if unsuccessful.
 - (HKImageRef)openImage:(NSString *)path;
