@@ -3,16 +3,6 @@
 
 #import <Foundation/Foundation.h>
 
-// BlockHook's public types (BHToken, BHInvocation, BlockHookMode) come from
-// Headers/HookKit/BlockHook/. They only exist on arm64: libffi ships no
-// arm64e slice and BlockHook needs iOS 12+ (armv7 tops out at iOS 10.3), so
-// unlike the rest of the API surface the block API below is arch-guarded —
-// on arm64e/armv7 the types cannot exist, so the method is not declared
-// either (an intentional deviation from the always-declared Swift API).
-#if defined(__arm64__) && !defined(__arm64e__)
-#import <HookKit/BlockHook/BlockHook.h>
-#endif
-
 typedef enum {
     HK_OK = 0,
     HK_ERR = (1 << 0),
@@ -31,8 +21,7 @@ typedef enum {
     HK_LIB_DOBBY = (1 << 5),
     HK_LIB_FRIDA = (1 << 6),
     HK_LIB_SWIFT = (1 << 7),
-    HK_LIB_LITEHOOK = (1 << 8),
-    HK_LIB_BLOCKHOOK = (1 << 9)
+    HK_LIB_LITEHOOK = (1 << 8)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
@@ -61,17 +50,20 @@ typedef enum {
 } hookkit_cat_t;
 
 /*
- * Hooking technique a backend applies to function hooks. Set per-instance
- * during category resolution (substitutorWithCategory: /
- * substitutorWithOrderedCategories:): the winning category picker decides the
- * routine, and activeStrategy reflects it. Most callers never touch this — it
- * is the resolution result, not a request.
+ * How a backend resolves and applies function hooks. Set per-instance during
+ * category resolution (substitutorWithCategory: /
+ * substitutorWithOrderedCategories:): the winning category picker decides it,
+ * and activeStrategy reflects it. Most callers never touch this — it is the
+ * resolution result, not a request. HKStrategyRebind and HKStrategyInline are
+ * hooking techniques; HKStrategyPrivateSymbol is a resolution mode, not a
+ * technique — the backend locates the private/DSC symbol first, then falls
+ * through to address-based rebinding (HKStrategyRebind's routine) to hook it.
  */
 typedef NS_ENUM(NSUInteger, HKStrategy) {
     HKStrategyDefault,       // vendor's single/fallback technique
     HKStrategyRebind,        // GOT/import slot rebinding (clean prologue)
     HKStrategyInline,        // prologue inline trampoline (denyFishHook-immune)
-    HKStrategyPrivateSymbol  // DSC/private-symbol resolution + address-based hook
+    HKStrategyPrivateSymbol  // resolver mode: private/DSC lookup, hook via rebinding
 };
 
 /*
@@ -87,12 +79,11 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  *   fishhook        no        yes*      no        no
  *   Swift           no        no*****   no        no
  *   litehook        no        yes*8     yes       no
- *   BlockHook       no        no        no        no
  *     * exported symbols only, rebinding by symbol name
  *     ** arm64/arm64e only
  *     *** arm64/arm64e only; inline patching needs relaxed codesigning
- *     **** iOS 14+ and arm64/arm64e only; inline patching needs relaxed
- *          codesigning
+ *     **** arm64/arm64e only — the arm64 slice loads on iOS 12+, the arm64e
+ *          slice needs iOS 14+; inline patching needs relaxed codesigning
  *     ***** Swift vtable hooking is a separate API
  *          (hookSwiftMethodInClass:withName:... / ...withIndex:...), not the
  *          message/function columns
@@ -100,8 +91,6 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  *         original-call trampoline for direct-branch hooks
  *     *9  via MSHookMemory when the installed Cydia Substrate exports it
  *     *10 via the MS-compatible SubHookMemory on Substitute
- *     *11 blocks only (hookBlock:withMode:usingBlock:), opt-in
- *         (HK_LIB_BLOCKHOOK), arm64 + iOS 12+ only
  *   Each footnote is expanded in the per-backend caveats linked below.
  *
  * Symbol name convention: names passed to findSymbolInImage:/
@@ -110,15 +99,49 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  * The Substrate/MS and fishhook backends pass names through unchanged;
  * ElleKit accepts both forms.
  *
- * Threading: the batch queue is thread-safe — enqueue may race executeHooks,
- * which drains a snapshot under the same lock, so every queued hook runs
- * exactly once. Not synchronized: last-error state (getLibErrno: reports the
- * last hook call on that substitutor, from whichever thread made it) and
- * backend selection — settle types / initLibraries before hooking starts. The
+ * Threading: configure first — settle types / initLibraries and the batching
+ * mode before any hook call. Backend selection is one-shot: the first
+ * successful resolution wins, and later calls are no-ops. Hooks install on
+ * exactly one thread, normally the main/load thread. Enqueueing may happen
+ * from multiple threads (the batch queue is thread-safe — enqueue may race
+ * executeHooks, which drains a snapshot under the same lock, so every queued
+ * hook runs exactly once), but only as long as exactly one thread calls
+ * executeHooks — concurrent executeHooks calls are not serialized, so do not
+ * issue them from more than one thread. Not synchronized: last-error state —
+ * getLibErrno: reports the last hook call's per-backend detail; read it
+ * immediately on the same thread that made the call, not cross-thread. The
  * native Substitute API additionally requires the main thread.
  *
- * Batch storage lifetime: while batching, the caller's old_ptr is only
- * written by executeHooks and is never retained past it.
+ * Batch storage lifetime: while batching, enqueue-time HK_OK means "accepted
+ * into the queue", not "installed" — only executeHooks installs and writes
+ * old_ptr. The caller's old_ptr storage is borrowed: it must stay alive until
+ * executeHooks returns, and is never retained past it. Disabling batching
+ * while operations are queued leaves them queued — they still run at the next
+ * executeHooks — while new hook calls execute immediately. Batching backends
+ * may not preserve submission order across hook kinds: ElleKit partitions
+ * operations per kind (messages/functions/memory), and a Frida transaction is
+ * an atomic publication of the batch, not a rollback on partial failure.
+ * Backends without batching ignore the queue: they apply hooks immediately
+ * even while batching is on.
+ *
+ * Availability: per-process results are cached at the first probe — the
+ * ElleKit, Substrate, Substitute and Frida probes cache only positive results
+ * (a failed dlopen is retried on a later probe), while the Swift probe caches
+ * both success and failure.
+ *
+ * Error reporting: getLibErrno: is an OPAQUE backend-specific code, not a
+ * normalized error enum — do not rely on cross-backend meaning. For ElleKit it
+ * can be a libhooker message-error enum (LBHookMessage's LIBHOOKER_ERR) or
+ * libhooker's errno (from LHHookFunctions / LHPatchMemory), for the
+ * Substrate/MS APIs it reflects errno
+ * observed at submit time (those entry points are void, so success is
+ * unverifiable), for native/Dobby/Frida it can be a mach/driver return, and
+ * private negative codes are native/Swift engine errors. A rebinding hook
+ * that applies to future image loads can report success while no current
+ * symbol exists; backends that refuse this return HK_ERR_NOT_SUPPORTED.
+ * HK_ERR_PARTIAL from executeHooks / findSymbolsInImage: means some-but-not-
+ * all succeeded: executeHooks writes old_ptr only for succeeded operations,
+ * and findSymbolsInImage: leaves NULL entries for misses.
  *
  * Per-backend caveats — fishhook symbol-only rebinding; native/Dobby/Frida
  * codesigning, arch and load-time constraints; Swift vtable scope and calling
@@ -134,7 +157,7 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // The backend type actually in use (HK_LIB_NONE if no backend is available).
 @property (readonly, nonatomic) hookkit_lib_t activeType;
 
-// The hooking technique the active backend applies (HKStrategyDefault when no
+// The strategy the active backend applies (HKStrategyDefault when no
 // backend is available or when resolution did not name a technique). Set
 // before hooking begins; mirrors what category resolution picked.
 @property (readonly, nonatomic) HKStrategy activeStrategy;
@@ -221,24 +244,6 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // scope are identical to hookSwiftMethodInClass:withName:.
 - (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 
-// Guarded like the BlockHook headers above: the types only exist on arm64
-// (libffi has no arm64e slice; BlockHook needs iOS 12+), so on arm64e/armv7
-// the selector is not declared at all — an intentional deviation from the
-// Swift methods, which are always declared and just report NOT_SUPPORTED.
-#if defined(__arm64__) && !defined(__arm64e__)
-// Hook an Objective-C block by pointer (BlockHook backend only;
-// HK_LIB_BLOCKHOOK, opt-in, arm64 + iOS 12+). `block` is the block object;
-// `mode` selects before/instead/after/dead interception (BlockHookMode,
-// NS_OPTIONS — you may OR multiple bits, but Instead combines with nothing).
-// `aspectBlock` receives a BHInvocation first followed by the block's own
-// arguments. Returns a BHToken for the hook, or nil if no backend is
-// available. Blocks can be hooked multiple times; each call returns a new
-// token, and [token remove] reverts it.
-// Unannotated like the rest of this header (no _Nullable/_Nonnull anywhere —
-// annotating one method would trip -Wnullability-completeness on the others).
-- (BHToken *)hookBlock:(id)block withMode:(BlockHookMode)mode usingBlock:(id)aspectBlock;
-#endif
-
 // Returns an opaque pointer to an image for use with findSymbol(s)InImage methods, or NULL if unsuccessful.
 - (HKImageRef)openImage:(NSString *)path;
 
@@ -251,10 +256,20 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // Just like findSymbolsInImage, but for one symbol. Returns the symbol address, or NULL if not found.
 - (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName;
 
-// If batching property is enabled, performs all hooks made with batching (if supported) prior to this method being called. Returns HK_OK if successful.
+// Installs every hook queued while batching was enabled (batching-capable
+// backends only; others never queue). Drains the queue. Returns HK_OK if all
+// operations succeeded, HK_ERR_PARTIAL if some did, HK_ERR if all failed;
+// old_ptr cells are written only for the operations that succeeded.
+// Concurrent calls are not serialized — call from one thread.
 - (hookkit_status_t)executeHooks;
 
-// Returns the error number returned by the last hook method call, if available.
+// Returns backend-specific error detail from the last hook call that failed
+// with a backend error (cleared to 0 on success, on argument errors, and on
+// unsupported operations). The
+// value is opaque — backend-specific, see the Error reporting paragraph in
+// the header comment. If outType is non-NULL it receives the backend the
+// code came from (HK_LIB_NONE when cleared). Read it immediately, on the
+// same thread that made the call.
 - (int)getLibErrno:(hookkit_lib_t *)outType;
 @end
 

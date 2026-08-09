@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <string.h>
 #include <sys/fcntl.h>
@@ -9,6 +10,7 @@
 #include <mach/arm/kern_return.h>
 #include <mach/port.h>
 #include <mach/vm_prot.h>
+#include <mach/vm_region.h>
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
 #include <dlfcn.h>
@@ -131,11 +133,6 @@ kern_return_t litehook_unprotect(vm_address_t addr, vm_size_t size)
 	return litehook_vm_protect(mach_task_self(), addr, size, false, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
 }
 
-kern_return_t litehook_protect(vm_address_t addr, vm_size_t size)
-{
-	return litehook_vm_protect(mach_task_self(), addr, size, false, VM_PROT_READ | VM_PROT_EXECUTE);
-}
-
 // Simple memcpy reimplementation since we can't have any external dependencies during critical section
 static void litehook_memcpy(void *target, void *source, size_t size)
 {
@@ -148,12 +145,41 @@ static void litehook_memcpy(void *target, void *source, size_t size)
 
 kern_return_t litehook_hook_memory_default(void *target, void *source, size_t sourceSize)
 {
-	kern_return_t kr = litehook_unprotect((vm_address_t)target, sourceSize);
+	// Read the protection of the region the patch lands in: restoring a
+	// hard-coded RX would strip write access from patched writable
+	// (__DATA-style) targets, and guessing is worse than failing. If the
+	// region cannot be queried, or the patch range crosses into a neighbour
+	// region (whose protection would be a guess), reject the patch.
+	vm_address_t regionAddr = (vm_address_t)target;
+	vm_size_t regionSize = 0;
+	vm_region_basic_info_data_64_t info;
+	mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
+	mach_port_t objectName = MACH_PORT_NULL;
+	kern_return_t kr = vm_region_64(mach_task_self(), &regionAddr, &regionSize,
+			VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &infoCount, &objectName);
+	if (kr != KERN_SUCCESS) {
+		if (objectName) mach_port_deallocate(mach_task_self(), objectName);
+		return kr;
+	}
+	if (objectName) {
+		mach_port_deallocate(mach_task_self(), objectName);
+	}
+
+	uint64_t patchStart = (uint64_t)(uintptr_t)target;
+	uint64_t patchEnd = patchStart + sourceSize;
+	uint64_t regionEnd = (uint64_t)regionAddr + regionSize;
+	if (patchStart < (uint64_t)regionAddr || patchEnd > regionEnd || patchEnd < patchStart) {
+		// patch crosses the region boundary (or the range wrapped): the
+		// neighbour's protection is unknown — reject rather than guess
+		return KERN_FAILURE;
+	}
+
+	kr = litehook_unprotect((vm_address_t)target, sourceSize);
 	if (kr != KERN_SUCCESS) return kr;
 
 	litehook_memcpy(target, source, sourceSize);
 
-	kr = litehook_protect((vm_address_t)target, sourceSize);
+	kr = litehook_vm_protect(mach_task_self(), (mach_vm_address_t)target, sourceSize, false, info.protection);
 	if (kr != KERN_SUCCESS) return kr;
 
 	sys_icache_invalidate(target, sourceSize);
@@ -430,10 +456,35 @@ end:
 }
 
 // Tally of GOT slots rewritten by the most recent litehook_rebind_symbol
-// call, so callers can tell a real rebind from a silent no-op
-// (litehook_rebind_match_count). Reset on each public call; accumulated by
-// every per-header application it triggers.
+// call, so callers can tell a real rebind from a silent no-op. Captured under
+// the same lock as the apply and handed back through the call's out-param.
+// Reset on each public call; accumulated by every per-header application it
+// triggers (including dyld add-image callback walks).
 static size_t gRebindMatches = 0;
+
+// Serializes gRebinds mutations (realloc + append in litehook_rebind_symbol)
+// against the dyld add-image callback walk (_litehook_apply_global_rebinds),
+// which dyld can fire on any thread mid-dlopen. Both sides lock, and neither
+// path re-enters the lock, so a plain mutex suffices (the recursive static
+// initializer is feature-macro-guarded out of pthread.h in this build).
+// Also guards the match tally, which the apply paths touch.
+// ponytail: one global lock, fine at HookKit's hook-setup scale; split per
+// rebind if throughput ever matters.
+static pthread_mutex_t gRebindLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t gRebindRegisterOnce = PTHREAD_ONCE_INIT;
+
+// The add-image callback walk is defined below the registration function, so
+// declare it here for the reference in _litehook_register_global_rebind_callback.
+void _litehook_apply_global_rebinds(const mach_header_u *mh, intptr_t vmaddr_slide);
+
+// The add-image callback walks the rebind list; registered exactly once via
+// pthread_once (see litehook_rebind_symbol). Registration must NOT run while
+// holding gRebindLock: _dyld_register_func_for_add_image invokes the callback
+// synchronously for already-loaded images, and the callback takes the lock.
+static void _litehook_register_global_rebind_callback(void)
+{
+	_dyld_register_func_for_add_image((void (*)(const struct mach_header *, intptr_t))_litehook_apply_global_rebinds);
+}
 
 void _litehook_rebind_symbol_in_section(const mach_header_u *targetHeader, section_u *section, void *replacee, void *replacement)
 {
@@ -532,27 +583,58 @@ void _litehook_apply_global_rebind(const mach_header_u *mh, global_rebind *rebin
 
 void _litehook_apply_global_rebinds(const mach_header_u *mh, intptr_t vmaddr_slide)
 {
-	if (!gRebinds || gRebindCount == 0) return;
+	// dyld callback: can fire on any thread while another thread mutates the
+	// list in litehook_rebind_symbol. Lock BEFORE reading the list state —
+	// the early-return probe must live inside the critical section, or the
+	// realloc in litehook_rebind_symbol races this reader.
+	pthread_mutex_lock(&gRebindLock);
 
-	for (uint32_t i = 0; i < gRebindCount; i++) {
-		// Apply all existing rebinds for newly loaded image
-		_litehook_apply_global_rebind(mh, &gRebinds[i]);
+	if (gRebinds && gRebindCount != 0) {
+		for (uint32_t i = 0; i < gRebindCount; i++) {
+			// Apply all existing rebinds for newly loaded image
+			_litehook_apply_global_rebind(mh, &gRebinds[i]);
+		}
 	}
+
+	pthread_mutex_unlock(&gRebindLock);
 }
 
-void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header))
+kern_return_t litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header), unsigned int *outMatchCount)
 {
+	// Ensure the add-image callback is registered before the first global
+	// rebind, OUTSIDE the mutex: registration synchronously fires the
+	// callback for already-loaded images, and the callback takes the mutex
+	// to walk the list. pthread_once also removes the old retry edge (a
+	// realloc failure after registration previously left the list null, and
+	// a retry re-registered the callback).
+	pthread_once(&gRebindRegisterOnce, _litehook_register_global_rebind_callback);
+
+	pthread_mutex_lock(&gRebindLock);
+
 	// Fresh tally window per public call: the count reflects this invocation
 	// (and its per-image applications), nothing earlier.
 	gRebindMatches = 0;
 
+	if (outMatchCount) {
+		*outMatchCount = 0;
+	}
+
 	if (targetHeader == LITEHOOK_REBIND_GLOBAL) {
-		if (!replacee || !replacement) return;
+		if (!replacee || !replacement) {
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_INVALID_ARGUMENT;
+		}
 
 		// We need the mach_header in which the replacement function lives, since we want to exclude it from the rebind
 		Dl_info replacementInfo = {};
-		if (dladdr(replacement, &replacementInfo) == 0) return;
-		if (replacementInfo.dli_fname == NULL) return;
+		if (dladdr(replacement, &replacementInfo) == 0) {
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_FAILURE;
+		}
+		if (replacementInfo.dli_fname == NULL) {
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_FAILURE;
+		}
 		const mach_header_u *sourceHeader = NULL;
 		for (unsigned i = 0; i < _dyld_image_count(); i++) {
 			if (!strcmp(_dyld_get_image_name(i), replacementInfo.dli_fname)) {
@@ -560,13 +642,19 @@ void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, v
 				break;
 			}
 		}
-		if (!sourceHeader) return;
-
-		if (!gRebinds) {
-			_dyld_register_func_for_add_image((void (*)(const struct mach_header *, intptr_t))_litehook_apply_global_rebinds);
+		if (!sourceHeader) {
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_FAILURE;
 		}
 
-		gRebinds = realloc(gRebinds, sizeof(global_rebind) * ++gRebindCount);
+		// Grow first so a failed realloc leaves the live list untouched.
+		global_rebind *grown = realloc(gRebinds, sizeof(global_rebind) * (gRebindCount + 1));
+		if (!grown) {
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_MEMORY_FAILURE;
+		}
+		gRebinds = grown;
+		gRebindCount++;
 
 		global_rebind *rebind = &gRebinds[gRebindCount-1];
 		rebind->sourceHeader = sourceHeader;
@@ -583,11 +671,13 @@ void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, v
 	else {
 		_litehook_rebind_header(targetHeader, replacee, replacement, exceptionFilter);
 	}
-}
 
-size_t litehook_rebind_match_count(void)
-{
-	size_t count = gRebindMatches;
-	gRebindMatches = 0;
-	return count;
+	// Capture the tally under the same lock as the apply, so the caller's
+	// zero-match decision cannot race a concurrent dyld callback walk.
+	if (outMatchCount) {
+		*outMatchCount = (unsigned int)gRebindMatches;
+	}
+
+	pthread_mutex_unlock(&gRebindLock);
+	return KERN_SUCCESS;
 }

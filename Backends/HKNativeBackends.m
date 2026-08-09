@@ -1,0 +1,269 @@
+#import "Internal/HKBackendInternal.h"
+
+#import <dlfcn.h>
+#import <objc/runtime.h>
+
+#import "native/hk_native.h"
+#import "native/hk_swift.h"
+
+#pragma mark - HKNativeBackend
+
+@implementation HKNativeBackend {
+    int _lastErrno;
+}
+
+- (BOOL)batchingSupported {
+    return YES;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return YES;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+// Pure libobjc: no patching, no privileged memory, works wherever HookKit runs.
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+
+    Method method = class_getInstanceMethod(objcClass, selector);
+
+    if(!method) {
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    IMP inherited = method_getImplementation(method);
+
+    // class_getInstanceMethod walks superclasses, so the method may not belong
+    // to this class. Adding it here leaves the superclass untouched and chains
+    // to the implementation we would otherwise have inherited.
+    if(class_addMethod(objcClass, selector, (IMP)replacement, method_getTypeEncoding(method))) {
+        if(old_ptr) {
+            *old_ptr = (void *)inherited;
+        }
+
+        return HK_OK;
+    }
+
+    IMP previous = method_setImplementation(method, (IMP)replacement);
+
+    if(old_ptr) {
+        *old_ptr = (void *)previous;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    void *orig = NULL;
+
+    if(!hk_native_hook_function(function, replacement, &orig)) {
+        _lastErrno = hk_native_last_error();
+        return HK_ERR;
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(!hk_native_patch_memory(target, data, size)) {
+        _lastErrno = hk_native_last_error();
+        return HK_ERR;
+    }
+
+    _lastErrno = 0;
+    return HK_OK;
+}
+
+// No cross-hook batching to exploit — each patch is independent — but the
+// protocol's batch path is still honoured so callers get uniform semantics.
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    int total = (int)[hooks count];
+    int succeeded = 0;
+    int failureErrno = 0;
+
+    for(HKHookOperation *hook in hooks) {
+        hookkit_status_t result = HK_ERR;
+
+        switch(hook->kind) {
+            case HKHookKindMessage:
+                result = [self hookMessageInClass:hook->objcClass withSelector:hook->selector withReplacement:hook->replacement outOldPtr:&hook->origValue];
+                break;
+
+            case HKHookKindFunction:
+                result = [self hookFunction:hook->function withReplacement:hook->replacement outOldPtr:&hook->origValue];
+                break;
+
+            case HKHookKindMemory:
+                result = [self hookMemory:hook->target withData:[hook->data bytes] size:hook->size];
+                break;
+        }
+
+        if(result == HK_OK) {
+            hook->succeeded = YES;
+            succeeded += 1;
+        } else if(!failureErrno) {
+            failureErrno = _lastErrno;
+        }
+    }
+
+    _lastErrno = failureErrno;
+
+    return hk_batch_status(succeeded, total);
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return (HKImageRef)hk_native_open_image([path fileSystemRepresentation]);
+}
+
+- (void)closeImage:(HKImageRef)image {
+    if(image) {
+        hk_native_close_image((hk_image *)image);
+    }
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    const char *symbol = [symbolName UTF8String];
+
+    if(image) {
+        return hk_native_find_symbol((hk_image *)image, symbol);
+    }
+
+    // image == NULL: search the default scope, then all loaded dyld images
+    void *found = dlsym(RTLD_DEFAULT, symbol);
+
+    if(found) {
+        return found;
+    }
+
+    return hk_search_loaded_images(^void *(const char *image_name) {
+        hk_image *handle = hk_native_open_image(image_name);
+
+        if(!handle) {
+            return NULL;
+        }
+
+        void *result = hk_native_find_symbol(handle, symbol);
+        hk_native_close_image(handle);
+        return result;
+    });
+}
+@end
+
+#pragma mark - HKSwiftBackend
+
+@implementation HKSwiftBackend {
+    int _lastErrno;
+}
+
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    // Swift vtable hooking is a separate API; none of the three kinds apply
+    return NO;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    _lastErrno = 0;
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: Swift hooks apply at hook time (batchingSupported NO)
+    return HK_OK;
+}
+
+- (HKImageRef)openImage:(NSString *)path {
+    return NULL;
+}
+
+- (void)closeImage:(HKImageRef)image {
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    return NULL;
+}
+
+// Engine errors fall into two buckets: class-shape problems mean the target
+// is outside v1 scope (NOT_SUPPORTED); lookup/signing/write problems are
+// hard errors (HK_ERR).
+- (hookkit_status_t)mapEngineError:(int)code {
+    switch(code) {
+        case HK_SWIFT_ERR_UNSUPPORTED:
+        case HK_SWIFT_ERR_NOT_SWIFT:
+        case HK_SWIFT_ERR_NOT_CLASS_DESCRIPTOR:
+        case HK_SWIFT_ERR_NO_VTABLE:
+        case HK_SWIFT_ERR_UNSUPPORTED_LAYOUT:
+            return HK_ERR_NOT_SUPPORTED;
+
+        case HK_SWIFT_ERR_NOT_FOUND:
+        case HK_SWIFT_ERR_AMBIGUOUS:
+        case HK_SWIFT_ERR_PAC_MISMATCH:
+        case HK_SWIFT_ERR_INVALID_INDEX:
+        case HK_SWIFT_ERR_ARG:
+        case HK_SWIFT_ERR_WRITE:
+            return HK_ERR;
+    }
+
+    return HK_ERR;
+}
+
+- (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    // owned cell: the engine never touches the caller's pointer directly
+    void *orig = NULL;
+
+    if(!hk_swift_hook_method(objcClass, [name UTF8String], replacement, &orig)) {
+        _lastErrno = hk_swift_last_error();
+        return [self mapEngineError:_lastErrno];
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    void *orig = NULL;
+
+    if(!hk_swift_hook_vtable_slot(objcClass, (uint32_t)index, replacement, &orig)) {
+        _lastErrno = hk_swift_last_error();
+        return [self mapEngineError:_lastErrno];
+    }
+
+    _lastErrno = 0;
+
+    if(old_ptr) {
+        *old_ptr = orig;
+    }
+
+    return HK_OK;
+}
+@end

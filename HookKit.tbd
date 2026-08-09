@@ -2,9 +2,9 @@
 archs:                 [ arm64, arm64e, armv7, armv7s ]
 platform:              ios
 install-name:          '@rpath/HookKit.framework/HookKit'
-current-version:       0
-compatibility-version: 0
+current-version:       2.1.1
+compatibility-version: 2.1.1
 exports:
   - archs:                [ arm64, arm64e, armv7, armv7s ]
-    objc-classes:         [ _HKSubstitutor ]
+    objc-classes:         [ HKSubstitutor ]
 ...

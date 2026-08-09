@@ -13,8 +13,10 @@ mkdir -p build
 # name from control, so version and arch are never repeated in this script.
 build_rooted() {
     make clean &&
+    make test &&
     make package FINALPACKAGE=1 &&
-    cp -p "$(cat .theos/last_package)" build/
+    cp -p "$(cat .theos/last_package)" build/ &&
+    make check-exports
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
@@ -24,8 +26,10 @@ build_rooted() {
 # from rooted devices, so control's shared 9.0 Depends floor is harmless here.
 build_rootless() {
     make clean &&
+    make test &&
     THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:12.0 make package FINALPACKAGE=1 &&
-    cp -p "$(cat .theos/last_package)" build/
+    cp -p "$(cat .theos/last_package)" build/ &&
+    make check-exports
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
@@ -40,8 +44,10 @@ build_roothide() {
     trap "mv $BAK control 2>/dev/null || true" EXIT
     cp control "$BAK"
     sed -e 's/, me.jjolano.fmwk.rootbridge//' -e 's/firmware (>= 9.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
+    make test &&
     THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make package FINALPACKAGE=1 &&
-    cp -p "$(cat .theos/last_package)" build/
+    cp -p "$(cat .theos/last_package)" build/ &&
+    make check-exports
 
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }

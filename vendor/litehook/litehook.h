@@ -26,9 +26,14 @@ void *litehook_find_dsc_symbol(const char *imagePath, const char *symbolName);
 kern_return_t litehook_hook_function(void *source, void *target);
 
 #define LITEHOOK_REBIND_GLOBAL NULL
-void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header));
-
-// Number of GOT/import slots the most recent litehook_rebind_symbol call
-// actually rewrote; returns and resets the tally (0 = the rebind matched
-// nothing — a silent no-op for the caller).
-size_t litehook_rebind_match_count(void);
+// Rebind `replacee` to `replacement` in the given image (or every loaded
+// image, past and future, when targetHeader is LITEHOOK_REBIND_GLOBAL).
+// Returns KERN_SUCCESS on success; KERN_MEMORY_FAILURE when growing the global
+// rebind list fails (the live list is left untouched), KERN_FAILURE when the
+// replacement's image cannot be located, KERN_INVALID_ARGUMENT on bad args.
+//
+// When non-NULL, *outMatchCount receives the number of GOT/import slots this
+// call actually rewrote — captured under the same lock as the apply, so the
+// caller's zero-match decision cannot race a concurrent dyld add-image walk.
+// It is also written (to 0) on the failure paths above.
+kern_return_t litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header), unsigned int *outMatchCount);

@@ -10,28 +10,21 @@ include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = HookKit
 
-HookKit_FILES = HKSubstitutor.m vendor/fishhook/fishhook.c vendor/litehook/litehook.c
+HookKit_FILES = HKSubstitutor.m HKBackendRegistry.m Backends/HKBackendCommon.m Backends/HKElleKitBackend.m Backends/HKMSBackends.m Backends/HKFishhookBackend.m Backends/HKLitehookBackend.m Backends/HKInlineBackends.m Backends/HKNativeBackends.m vendor/fishhook/fishhook.c vendor/litehook/litehook.c
 # Native backend: arm64/arm64e only, stubbed out by #if on armv7.
 HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # Swift vtable backend: arm64/arm64e only (entry points report unsupported on
 # armv7 via hk_swift_supported()).
 HookKit_FILES += native/hk_swift.c
-# BlockHook vendored library (vendor/blockhook): arm64 only — the .m bodies
-# are #if-gated to __arm64__ && !__arm64e__ (libffi ships no arm64e slice and
-# BlockHook needs iOS 12+, armv7 tops out at 10.3), so the other slices
-# compile them empty. The ffi headers are arch-neutral. FILES/CFLAGS must be
-# set before framework.mk snapshots them; the -lffi link lives in an ifeq
-# block after the include (link flags are read at link time).
-HookKit_FILES += vendor/blockhook/BlockHook.m vendor/blockhook/BHDealloc.m vendor/blockhook/BHHelper.m vendor/blockhook/BHInvocation.m vendor/blockhook/BHLock.m vendor/blockhook/BHToken.m
 HookKit_FRAMEWORKS = Foundation
 # RootBridge is the /var/jb convention; roothide replaces it with libroothide
-# via the HKJBPath seam in HKSubstitutor.m.
+# via the HKJBPath seam in Backends/HKBackendCommon.m.
 ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_EXTRA_FRAMEWORKS = RootBridge
 endif
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
-HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor -Ivendor/litehook -Ivendor/blockhook/ffi
+HookKit_CFLAGS = -fobjc-arc -I. -IHeaders -Ivendor -Ivendor/litehook
 ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_CFLAGS += -Ivendor/RootBridge.framework/Headers
 else
@@ -48,6 +41,14 @@ else
 HookKit_LDFLAGS += -lroothide
 endif
 HookKit_LDFLAGS += -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+# Mach-O dylib versions: must match HookKit.tbd (current/compatibility 2.1.1)
+# so consumers linking via the tbd record a satisfiable requirement. Theos
+# sets no versions itself, so they come from here.
+HookKit_LDFLAGS += -current_version 2.1.1 -compatibility_version 2.1.1
+# Export boundary: only the public HKSubstitutor ObjC class symbols survive
+# the link (see scripts/export-HookKit.list); every backend/litehook/dobby/
+# fishhook/native symbol becomes local.
+HookKit_LDFLAGS += -exported_symbols_list $(CURDIR)/scripts/export-HookKit.list
 
 include $(THEOS_MAKE_PATH)/framework.mk
 
@@ -58,31 +59,37 @@ ifeq ($(filter arm64,$(ARCHS)),arm64)
 HookKit_LDFLAGS += -Lvendor/dobby -ldobby -lc++
 endif
 
-# BlockHook: vendored block-hooking library (vendor/blockhook), which needs
-# iOS 12+ and spirals through libffi. libffi ships armv7+arm64 slices only —
-# no armv7s, no arm64e — so hooking is arm64-only: the six .m implementation
-# bodies are #if-gated to __arm64__ && !__arm64e__ like hk_native.c (on the
-# other slices they compile to nothing and reference no libffi symbols), the
-# arch-neutral headers get an unconditional -I, and the static lib only links
-# when the build includes arm64 (the armv7-only build has no arm64 slice in
-# this fat archive, so the -lffi stays out to avoid a no-slice link).
-ifeq ($(filter arm64,$(ARCHS)),arm64)
-HookKit_LDFLAGS += -Lvendor/blockhook/ffi -lffi
-endif
-
 # HKGum: thin wrapper dylib statically linking the frida-gum devkit. The
 # framework never links gum — the Frida backend dlopens HKGum.dylib at
-# runtime via RootBridge (see HKSubstitutor.m), keeping LGPL code out of the
-# framework binary. The devkit ships no armv7 slice, so this product is pinned
-# to arm64/arm64e per-product rather than gated on the global ARCHS: that lets
-# the framework span all four slices in one pass while gum stays 64-bit.
-# Rootless packaging maps /usr/lib -> /var/jb/usr/lib automatically.
+# runtime via RootBridge (see Backends/HKInlineBackends.m), keeping LGPL code
+# out of the framework binary. The devkit ships no armv7 slice, so this
+# product is pinned to arm64/arm64e per-product rather than gated on the
+# global ARCHS: that lets the framework span all four slices in one pass while
+# gum stays 64-bit. Rootless packaging maps /usr/lib -> /var/jb/usr/lib
+# automatically.
 LIBRARY_NAME = HKGum
 HKGum_FILES = vendor/gum/hkgum.c
 HKGum_ARCHS = arm64 arm64e
-HKGum_LDFLAGS = -Lvendor/gum -lfrida-gum
+# Export boundary: only the 3 hkgum_* wrappers (scripts/export-HKGum.list);
+# the ~6k frida-gum symbols become local.
+HKGum_LDFLAGS = -Lvendor/gum -lfrida-gum -exported_symbols_list $(CURDIR)/scripts/export-HKGum.list
 HKGum_INSTALL_PATH = /usr/lib
 include $(THEOS_MAKE_PATH)/library.mk
+
+# Release export check: verifies every built binary exports exactly its
+# allowlist (scripts/export-*.list), per arch slice. Discovers the freshly
+# built products under .theos (fat + per-arch thin copies + staged copies),
+# so it works after both `make` and `make package`. Fails with a clear
+# diff-style message on any discrepancy.
+.PHONY: check-exports
+check-exports:
+	$(ECHO_NOTHING)bash scripts/check_exports.sh$(ECHO_END)
+
+# Host-side test aggregate: builds and runs both suites in sequence, stopping
+# at the first failure (no -k).
+.PHONY: test
+test:
+	$(ECHO_NOTHING)$(MAKE) test-reloc test-swift-abi$(ECHO_END)
 
 # Host-side relocator test. Runs on the build machine, not the device: it only
 # exercises instruction decode/re-encode, which is where the crashes come from.
