@@ -23,7 +23,8 @@ INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I$(VENDOR)/RootBridge.framework/He
 
 SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m ShadowdShims.m detectors/ShadowDetector.m Fuzz.m \
        shadowd/RecoveryHarness.m \
-       shadowd/ledger.m \
+       ../shadowd/ledger.m \
+       ../shadowd/recovery.m \
        $(FRAMEWORK)/Core.m \
        $(FRAMEWORK)/Backend.m \
        $(FRAMEWORK)/Ruleset.m \
