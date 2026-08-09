@@ -72,6 +72,23 @@ BOOL substrate_available(void) {
     return available;
 }
 
+// Preflight-only discovery, for the availability-introspection entry points
+// (getAvailableSubstitutorTypes / getAvailableCategories): reports loadability
+// WITHOUT loading — dlopen_preflight never maps the image and never runs its
+// constructors, so introspection cannot initialize a hooking provider.
+// Deliberately uncached: the check is a single stat-family syscall on the
+// preflight path, and an uncached probe retries if the engine appears after
+// HookKit loads (mirroring the activation probe's retry contract).
+BOOL substrate_discoverable(void) {
+    NSString *jbPath = HKJBPath(@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate");
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    return dlopen_preflight([jbPath fileSystemRepresentation]);
+}
+
 static void *libsubstitute_handle = NULL;
 static void (*substitute_hookFunction)(void *, void *, void **) = NULL;
 static void (*substitute_hookMessageEx)(Class, SEL, void *, void **) = NULL;
@@ -171,6 +188,23 @@ BOOL substitute_available(void) {
     available = YES;
 
     return available;
+}
+
+// Preflight-only discovery, for the availability-introspection entry points
+// (getAvailableSubstitutorTypes / getAvailableCategories): reports loadability
+// WITHOUT loading — dlopen_preflight never maps the image and never runs its
+// constructors, so introspection cannot initialize a hooking provider.
+// Deliberately uncached: the check is a single stat-family syscall on the
+// preflight path, and an uncached probe retries if the engine appears after
+// HookKit loads (mirroring the activation probe's retry contract).
+BOOL substitute_discoverable(void) {
+    NSString *jbPath = HKJBPath(@"/usr/lib/libsubstitute.0.dylib");
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    return dlopen_preflight([jbPath fileSystemRepresentation]);
 }
 
 #pragma mark - HKMSBackend
@@ -376,16 +410,27 @@ static hookkit_status_t substitute_error_to_status(int err) {
                 .options = 0
             };
 
-            int interposeResult = fn_substitute_interpose_imports(NULL, &ih, 1, NULL, 0);
-            _lastErrno = interposeResult;
+            // substitute_interpose_imports requires the importing image's
+            // handle (vendored substitute.h: "@handle handle of the importing
+            // library") and dereferences it, so NULL is a latent crash. The
+            // only concrete handle derivable here is the target function's
+            // defining image, opened from dladdr's path. If it can't be
+            // opened, skip the fallback and let the original result stand.
+            struct substitute_image *importingImage = info.dli_fname ? fn_substitute_open_image(info.dli_fname) : NULL;
 
-            // Publish the interpose result's old value only on success.
-            if(interposeResult == SUBSTITUTE_OK) {
-                if(old_ptr) {
-                    *old_ptr = interposedOld;
+            if(importingImage) {
+                int interposeResult = fn_substitute_interpose_imports(importingImage, &ih, 1, NULL, 0);
+                fn_substitute_close_image(importingImage);
+                _lastErrno = interposeResult;
+
+                // Publish the interpose result's old value only on success.
+                if(interposeResult == SUBSTITUTE_OK) {
+                    if(old_ptr) {
+                        *old_ptr = interposedOld;
+                    }
+
+                    return HK_OK;
                 }
-
-                return HK_OK;
             }
         }
     }
