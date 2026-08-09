@@ -75,6 +75,23 @@ BOOL libhooker_available(void) {
     return available;
 }
 
+// Preflight-only discovery, for the availability-introspection entry points
+// (getAvailableSubstitutorTypes / getAvailableCategories): reports loadability
+// WITHOUT loading — dlopen_preflight never maps the image and never runs its
+// constructors, so introspection cannot initialize a hooking provider.
+// Deliberately uncached: the check is a single stat-family syscall on the
+// preflight path, and an uncached probe retries if the engine appears after
+// HookKit loads (mirroring the activation probe's retry contract).
+BOOL libhooker_discoverable(void) {
+    NSString *jbPath = HKJBPath(@"/usr/lib/libhooker.dylib");
+
+    if(!jbPath) {
+        return NO;
+    }
+
+    return dlopen_preflight([jbPath fileSystemRepresentation]);
+}
+
 #pragma mark - HKElleKitBackend
 
 @implementation HKElleKitBackend

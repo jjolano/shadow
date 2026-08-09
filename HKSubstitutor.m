@@ -1,5 +1,6 @@
 #import <HookKit/Compat.h>
 #import "Internal/HKBackendInternal.h"
+#import "Internal/HKInlineGuard.h"
 
 #import <objc/runtime.h>
 
@@ -8,6 +9,49 @@
 // Owned here (resolved by swift_available() via dlsym); consumed by the
 // engine's name-based lookup (declared in native/hk_swift.h).
 hk_swift_demangle_fn hk_swift_demangle = NULL;
+
+// Inline-ownership guard scope: a backend is an inline writer when its hook
+// overwrites the target's prologue bytes. native/Dobby/Frida/ElleKit/
+// Substrate/Substitute always do for function hooks; litehook only in
+// HKStrategyInline mode — its default rebind path is GOT/import-scoped and
+// its memory path is a byte blob, neither of which touches the prologue, so
+// both stay unguarded. fishhook (rebind) and the Swift backend (vtable
+// metadata) are never inline writers either.
+static BOOL hk_backend_is_inline_writer(id<HKSubstitutorBackend> backend) {
+    if(!backend) {
+        return NO;
+    }
+
+    // The registry table is the single source of truth for the fixed backends.
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
+
+    for(size_t i = 0; i < count; i++) {
+        if(![backend isKindOfClass:table[i].backendClass]) {
+            continue;
+        }
+
+        switch(table[i].type) {
+            case HK_LIB_NATIVE:
+            case HK_LIB_DOBBY:
+            case HK_LIB_FRIDA:
+            case HK_LIB_ELLEKIT:
+            case HK_LIB_SUBSTRATE:
+            case HK_LIB_SUBSTITUTE:
+                return YES;
+
+            case HK_LIB_LITEHOOK:
+                // Inline only when the active technique says so: rebind and
+                // memory never write the prologue.
+                return [backend respondsToSelector:@selector(strategy)] && [(id)backend strategy] == HKStrategyInline;
+
+            default:
+                return NO;
+        }
+    }
+
+    return NO;
+}
 
 #pragma mark - HKSubstitutor
 
@@ -281,7 +325,39 @@ auto_cover_done: ;
     const HKBackendDescriptor *table = hk_backends(&count);
 
     for(size_t i = 0; i < count; i++) {
-        if(table[i].available()) {
+        // Introspection must not ACTIVATE engines: the four dlopen-based
+        // backends (ElleKit, Substrate, Substitute, Frida) are probed with
+        // their preflight-only discoverable() variants — dlopen_preflight
+        // never maps the image and never runs its constructors, so this
+        // entry point can no longer initialize a hooking provider. The
+        // remaining backends (fishhook/litehook/native/dobby/swift) are
+        // compile-time or in-process engine checks with no dlopen, so their
+        // available() probes stay as-is. Selection paths (initLibraries,
+        // defaultBackend, ...) keep using the full available() probes.
+        BOOL available = table[i].available();
+
+        switch(table[i].type) {
+            case HK_LIB_ELLEKIT:
+                available = libhooker_discoverable();
+                break;
+
+            case HK_LIB_SUBSTRATE:
+                available = substrate_discoverable();
+                break;
+
+            case HK_LIB_SUBSTITUTE:
+                available = substitute_discoverable();
+                break;
+
+            case HK_LIB_FRIDA:
+                available = frida_discoverable();
+                break;
+
+            default:
+                break;
+        }
+
+        if(available) {
             types |= table[i].type;
         }
     }
@@ -296,11 +372,42 @@ auto_cover_done: ;
 
     // hk_category_priorities is the single source of truth for category
     // membership: a category is available when any of its pickers maps to an
-    // available backend — the same lookup initLibraries performs.
+    // available backend — the same lookup initLibraries performs. Same
+    // discovery-vs-activation rule as getAvailableSubstitutorTypes: the four
+    // dlopen-based backends are probed preflight-only (discoverable(), never
+    // loading the engine), the compile-time/in-process backends keep their
+    // available() probes.
     for(size_t c = 0; c < hk_category_priority_count; c++) {
         for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
             for(size_t i = 0; i < count; i++) {
-                if(table[i].type == hk_category_priorities[c].order[o].type && table[i].available()) {
+                if(table[i].type != hk_category_priorities[c].order[o].type) {
+                    continue;
+                }
+
+                BOOL available = table[i].available();
+
+                switch(table[i].type) {
+                    case HK_LIB_ELLEKIT:
+                        available = libhooker_discoverable();
+                        break;
+
+                    case HK_LIB_SUBSTRATE:
+                        available = substrate_discoverable();
+                        break;
+
+                    case HK_LIB_SUBSTITUTE:
+                        available = substitute_discoverable();
+                        break;
+
+                    case HK_LIB_FRIDA:
+                        available = frida_discoverable();
+                        break;
+
+                    default:
+                        break;
+                }
+
+                if(available) {
                     cats |= hk_category_priorities[c].category;
                     break;
                 }
@@ -526,12 +633,66 @@ auto_cover_done: ;
         }
     }
 
+    // Process-wide inline-ownership guard: prevents HookKit-vs-HookKit
+    // contention — two substitutors (or one hooking twice) installing
+    // DIFFERENT inline hooks on the same address through DIFFERENT inline
+    // backends would double-patch one prologue. Only inline writers are
+    // guarded: rebind paths (fishhook/litehook-rebind) are GOT-scoped and
+    // memory patches are byte blobs — neither overwrites the prologue, so
+    // both stay unguarded (ponytail: rebind-vs-inline on one address is a
+    // same-slot double-write only if the prologue is the GOT slot, which
+    // never happens for function pointers).
+    uintptr_t guardAddr = 0;
+
+    if(hk_backend_is_inline_writer(routeBackend)) {
+        // Normalize the key exactly as the backend will write: strip PAC on
+        // arm64e, mask the thumb bit on 32-bit ARM. The same key is stored
+        // on the op so executeHooks can update the guard without re-deriving
+        // it (ptrauth_strip needs the raw pointer, which the backend may
+        // have consumed by then).
+#if __has_feature(ptrauth_calls)
+        function = ptrauth_strip(function, ptrauth_key_asia);
+#endif
+#if defined(__arm__)
+        uintptr_t addr = (uintptr_t)function & ~(uintptr_t)1;
+#else
+        uintptr_t addr = (uintptr_t)function;
+#endif
+        guardAddr = addr;
+
+        void *guardOrig = NULL;
+        hk_guard_result_t guard = hk_inline_guard_reserve(addr, replacement, [self typeForBackend:routeBackend], &guardOrig);
+
+        if(guard == HK_GUARD_BLOCKED) {
+            // Already inline-hooked by another HookKit backend with a
+            // DIFFERENT replacement — invoking this backend would double-
+            // patch the prologue. Nothing was written.
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED fromBackend:routeBackend];
+            return HK_ERR_NOT_SUPPORTED;
+        }
+
+        if(guard == HK_GUARD_DUP) {
+            // Idempotent same-replacement re-hook: the hook is already
+            // installed, so the saved original is the answer.
+            if(old_ptr) {
+                *old_ptr = guardOrig;
+            }
+
+            [self noteHookResult:HK_OK fromBackend:routeBackend];
+            return HK_OK;
+        }
+
+        // HK_GUARD_OK: entry reserved; the hook proceeds. The entry is
+        // settled below (immediate path) or in executeHooks (batched path).
+    }
+
     hookkit_status_t status;
 
     if([self enqueueKind:HKHookKindFunction status:&status build:^(HKHookOperation *hook) {
         hook->function = function;
         hook->replacement = replacement;
         hook->callerOrig = old_ptr;
+        hook->guardAddr = guardAddr;    // 0 = not inline-guarded
     }]) {
         return status;
     }
@@ -539,6 +700,13 @@ auto_cover_done: ;
     // owned cell: the backend never touches the caller's pointer directly
     void *cell = NULL;
     hookkit_status_t result = [routeBackend hookFunction:function withReplacement:replacement outOldPtr:&cell];
+
+    if(guardAddr) {
+        // Settle the guard with the actual outcome: OK stores the saved
+        // original, HK_ERR taints (the prologue may be half-written), and
+        // NOT_SUPPORTED releases the entry (the backend wrote nothing).
+        hk_inline_guard_update(guardAddr, result, cell);
+    }
 
     if(result == HK_OK && old_ptr) {
         *old_ptr = cell;
@@ -702,6 +870,17 @@ auto_cover_done: ;
 
     // copy per-op results back to the callers and drop all borrowed references
     for(HKHookOperation *hook in hooks) {
+        // Settle the inline guard for guarded function ops with the batch's
+        // per-op outcome. NOT_SUPPORTED never comes out of executeHooks (only
+        // the succeeded flag), so taint-on-failure is the honest contract:
+        // ponytail: a failed op taints (HK_ERR) rather than releasing — the
+        // batch API cannot distinguish "backend wrote nothing" from "backend
+        // wrote part of the prologue", so blocking later different hooks is
+        // the safe approximation.
+        if(hook->guardAddr && hook->kind == HKHookKindFunction) {
+            hk_inline_guard_update(hook->guardAddr, hook->succeeded ? 0 : 1, hook->origValue);
+        }
+
         if(hook->callerOrig) {
             if(hook->succeeded) {
                 *hook->callerOrig = hook->origValue;
