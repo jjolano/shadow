@@ -28,7 +28,13 @@ SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m ShadowdShims.m detec
        $(FRAMEWORK)/Core.m \
        $(FRAMEWORK)/Backend.m \
        $(FRAMEWORK)/Ruleset.m \
-       $(FRAMEWORK)/Core+Utilities.m
+       $(FRAMEWORK)/Core+Utilities.m \
+       $(FRAMEWORK)/RestrictionResolver.m \
+       $(FRAMEWORK)/RestrictionEngine.m \
+       $(FRAMEWORK)/RulesetCompiler.m \
+       $(FRAMEWORK)/RulesetStore.m \
+       RestrictionTests.m \
+       PolicyTests.m
 
 harness: $(SRCS) Makefile
 	$(CC) $(CFLAGS) $(INCS) $(SRCS) -framework Foundation -o harness
