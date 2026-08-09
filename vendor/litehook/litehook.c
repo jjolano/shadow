@@ -647,6 +647,41 @@ kern_return_t litehook_rebind_symbol(const mach_header_u *targetHeader, void *re
 			return KERN_FAILURE;
 		}
 
+		// Staged candidate record, filled in but NOT committed to gRebinds
+		// yet: the current-image scan below decides whether this rebind has
+		// anything to do. The dyld add-image callback walks gRebinds under the
+		// same lock, so the candidate can never be observed half-committed.
+		// HookKit: upstream litehook appends the global record before scanning,
+		// so a zero-match rebind stayed registered and applied to FUTURE image
+		// loads — silently contradicting the caller's side-effect-free
+		// contract. Committing only on a first match keeps the zero-match path
+		// a true no-op (nothing retained, nothing applied later), and is
+		// exactly as safe under the lock as the old append-first order.
+		global_rebind candidate = {
+			.sourceHeader = sourceHeader,
+			.replacee = replacee,
+			.replacement = replacement,
+			.exceptionFilter = exceptionFilter,
+		};
+
+		for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+			const mach_header_u *header = (const mach_header_u *)_dyld_get_image_header(i);
+			// Apply new rebind for all already loaded images
+			_litehook_apply_global_rebind(header, &candidate);
+		}
+
+		if (gRebindMatches == 0) {
+			// Nothing rewrote a slot: the rebind is a silent no-op. Do not
+			// register it — a zero-match global rebind must apply to NO image,
+			// past or future, so the caller can report a side-effect-free,
+			// retryable failure (HK_ERR_NOT_SUPPORTED). The caller reads the
+			// match tally below under this same lock, so this stays race-free.
+			// HookKit: upstream appended the record regardless of the scan
+			// result, leaking the rebind into every future image load.
+			pthread_mutex_unlock(&gRebindLock);
+			return KERN_SUCCESS;
+		}
+
 		// Grow first so a failed realloc leaves the live list untouched.
 		global_rebind *grown = realloc(gRebinds, sizeof(global_rebind) * (gRebindCount + 1));
 		if (!grown) {
@@ -657,16 +692,7 @@ kern_return_t litehook_rebind_symbol(const mach_header_u *targetHeader, void *re
 		gRebindCount++;
 
 		global_rebind *rebind = &gRebinds[gRebindCount-1];
-		rebind->sourceHeader = sourceHeader;
-		rebind->replacee = replacee;
-		rebind->replacement = replacement;
-		rebind->exceptionFilter = exceptionFilter;
-
-		for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-			const mach_header_u *header = (const mach_header_u *)_dyld_get_image_header(i);
-			// Apply new rebind for all already loaded images
-			_litehook_apply_global_rebind(header, rebind);
-		}
+		*rebind = candidate;
 	}
 	else {
 		_litehook_rebind_header(targetHeader, replacee, replacement, exceptionFilter);

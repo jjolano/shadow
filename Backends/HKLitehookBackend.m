@@ -8,6 +8,10 @@
 #pragma mark - HKLitehookBackend
 
 @implementation HKLitehookBackend
+- (HKStrategy)strategy {
+    return _strategy;
+}
+
 - (void)setStrategy:(HKStrategy)strategy {
 #if !defined(__arm64__) && !defined(__arm64e__)
     if(strategy == HKStrategyInline) {
@@ -106,10 +110,14 @@
 
     // The tally is captured under the same lock as the apply. Zero rewritten
     // slots means no loaded image references the function through a GOT/import
-    // slot — a silent no-op, so report it as an error instead of a false HK_OK.
+    // slot. litehook_rebind_symbol commits the global rebind only after a
+    // first match, so a zero-match call registers NOTHING: no future image
+    // load is affected and nothing is retained. Report the side-effect-free,
+    // retryable HK_ERR_NOT_SUPPORTED (callers may switch technique), not the
+    // "may already be applied" HK_ERR.
     if(matched == 0) {
         _lastErrno = ENOENT;  // no GOT slot referenced this function
-        return HK_ERR;
+        return HK_ERR_NOT_SUPPORTED;
     }
 
     if(old_ptr) {

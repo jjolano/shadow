@@ -32,6 +32,11 @@ typedef NS_ENUM(int, HKHookKind) {
     NSData *data;       // owned copy of the memory patch bytes
     size_t size;
     BOOL succeeded;
+    // Normalized inline-guard key (PAC-stripped, thumb-masked target address)
+    // for function hooks; 0 = not inline-guarded. Set at reserve time in
+    // hookFunction: so executeHooks can update the guard with the same key
+    // the reserve used, without re-deriving it.
+    uintptr_t guardAddr;
 }
 @end
 
@@ -141,13 +146,19 @@ typedef NS_ENUM(int, HKHookKind) {
 // ponytail: litehook_rebind_symbol's kern_return_t carries the failure
 // detail (KERN_MEMORY_FAILURE leaves the live rebind list untouched), and the
 // zero-match honesty signal comes from its out-param match count, captured
-// under the same lock as the apply; hookFunction reports HK_ERR when it is 0.
+// under the same lock as the apply. litehook commits the global rebind only
+// after a first match, so a zero-match hookFunction: registers NOTHING and
+// reports HK_ERR_NOT_SUPPORTED (side-effect-free, retryable).
 @interface HKLitehookBackend : HKDlfcnBackend <HKSubstitutorBackend> {
     int _lastErrno;
     // zero-init (HKStrategyDefault): a bare [[self class] new] keeps the
     // vendor default until setStrategy: is called
     HKStrategy _strategy;
 }
+// Read the active technique: lets the facade's inline-ownership guard decide
+// whether a litehook hook is an inline writer (strategy == HKStrategyInline)
+// or a rebind/memory path (GOT-scoped, never touches the prologue).
+- (HKStrategy)strategy;
 @end
 
 // Native backend: HookKit's own engine, requiring no hooking library on the
@@ -208,10 +219,20 @@ hookkit_status_t hk_batch_status(int succeeded, int total);
 //   frida_available       -> Backends/HKInlineBackends.m
 // (fishhook/litehook/native/dobby/swift predicates are compile-time or
 // engine checks with no resolver of their own — they stay in the registry).
+//
+// The *_available() probes are ACTIVATION: they dlopen the engine and run
+// its constructors. Each dlopen-based backend therefore also exposes a
+// *_discoverable() sibling — dlopen_preflight on the same jb-root path,
+// side-effect-free (never loads, never initializes) — for the availability-
+// introspection entry points, which must not activate any provider.
 BOOL libhooker_available(void);
 BOOL substrate_available(void);
 BOOL substitute_available(void);
 BOOL frida_available(void);
+BOOL libhooker_discoverable(void);
+BOOL substrate_discoverable(void);
+BOOL substitute_discoverable(void);
+BOOL frida_discoverable(void);
 
 #pragma mark - Registry interface
 
