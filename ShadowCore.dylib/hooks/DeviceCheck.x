@@ -18,49 +18,11 @@
 // Step 2, batch 2: AppsFlyerUtils, jailBreak, GBDeviceInfo,
 // CMARAppRestrictionsDelegate, ADYSecurityChecks, UtilitySystem,
 // GemaltoConfiguration blocks migrated to DeviceCheckHooks.m descriptor rows.
-
-// UBReportMetadataDevice -is_rooted and EnrollParameters -jailbroken are
-// installed manually (shdw_install_probe_abi below): their return ABI varies
-// between SDK versions (BOOL on some, object on others), and a fixed
-// signature against the wrong ABI returns garbage.
-
-%hook CPWRDeviceInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook CPWRSessionInfo
-- (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook KSSystemInfo
-+ (bool)isJailbroken {
-    return false;
-}
-%end
-
-%hook EMDSKPPConfiguration
-- (bool)jailBroken {
-    return false;
-}
-%end
+// Step 2, batch 3: CPWRDeviceInfo, CPWRSessionInfo, KSSystemInfo,
+// EMDSKPPConfiguration, EMDskppConfigurationBuilder, FCRSystemMetadata
+// blocks migrated to DeviceCheckHooks.m descriptor rows.
 
 // EnrollParameters -jailbroken: see the note at UBReportMetadataDevice.
-
-%hook EMDskppConfigurationBuilder
-- (bool)jailbreakStatus {
-    return false;
-}
-%end
-
-%hook FCRSystemMetadata
-- (bool)isJailbroken {
-    return false;
-}
-%end
 
 %hook v_VDMap
 - (bool)isJailbrokenDetected {
