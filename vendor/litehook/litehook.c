@@ -429,6 +429,12 @@ end:
 	return symbol;
 }
 
+// Tally of GOT slots rewritten by the most recent litehook_rebind_symbol
+// call, so callers can tell a real rebind from a silent no-op
+// (litehook_rebind_match_count). Reset on each public call; accumulated by
+// every per-header application it triggers.
+static size_t gRebindMatches = 0;
+
 void _litehook_rebind_symbol_in_section(const mach_header_u *targetHeader, section_u *section, void *replacee, void *replacement)
 {
 	char segname[sizeof(section->segname)+1];
@@ -472,6 +478,7 @@ void _litehook_rebind_symbol_in_section(const mach_header_u *targetHeader, secti
 				os_thread_self_restrict_tpro_to_ro();
 			}
 #endif
+			gRebindMatches++;
 		}
 	}
 }
@@ -486,13 +493,39 @@ typedef struct {
 uint32_t gRebindCount = 0;
 global_rebind *gRebinds = NULL;
 
+// Per-header rebind core, shared by the public single-header path and the
+// global path's per-image application. No counter reset here: the caller
+// (litehook_rebind_symbol) owns the tally window so a global rebind totals
+// every image it touches.
+static void _litehook_rebind_header(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header))
+{
+	struct load_command *lcp = (void *)((uintptr_t)targetHeader + sizeof(mach_header_u));
+	for(int i = 0; i < targetHeader->ncmds; i++) {
+		if (lcp->cmd == LC_SEGMENT_U) {
+			segment_command_u *segCmd = (segment_command_u *)lcp;
+			if (!strncmp(segCmd->segname, "__AUTH_CONST", sizeof(segCmd->segname)) ||
+				!strncmp(segCmd->segname, "__DATA_CONST", sizeof(segCmd->segname)) ||
+				!strncmp(segCmd->segname, "__DATA", sizeof(segCmd->segname))) {
+				section_u *sections = (void *)((uintptr_t)lcp + sizeof(segment_command_u));
+				for (int j = 0; j < segCmd->nsects; j++) {
+					if ((sections[j].flags & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS || 
+						(sections[j].flags & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS) {
+						_litehook_rebind_symbol_in_section(targetHeader, &sections[j], replacee, replacement);
+					}
+				}
+			}
+		}
+		lcp = (void *)((uintptr_t)lcp + lcp->cmdsize);
+	}
+}
+
 void _litehook_apply_global_rebind(const mach_header_u *mh, global_rebind *rebind)
 {
 	if (mh != rebind->sourceHeader) {
 		bool filterAllowed = true;
 		if (rebind->exceptionFilter) filterAllowed = rebind->exceptionFilter(mh);
 		if (filterAllowed) {
-			litehook_rebind_symbol(mh, rebind->replacee, rebind->replacement, NULL);
+			_litehook_rebind_header(mh, rebind->replacee, rebind->replacement, NULL);
 		}
 	}
 }
@@ -509,6 +542,10 @@ void _litehook_apply_global_rebinds(const mach_header_u *mh, intptr_t vmaddr_sli
 
 void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header))
 {
+	// Fresh tally window per public call: the count reflects this invocation
+	// (and its per-image applications), nothing earlier.
+	gRebindMatches = 0;
+
 	if (targetHeader == LITEHOOK_REBIND_GLOBAL) {
 		if (!replacee || !replacement) return;
 
@@ -544,23 +581,13 @@ void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, v
 		}
 	}
 	else {
-		struct load_command *lcp = (void *)((uintptr_t)targetHeader + sizeof(mach_header_u));
-		for(int i = 0; i < targetHeader->ncmds; i++) {
-			if (lcp->cmd == LC_SEGMENT_U) {
-				segment_command_u *segCmd = (segment_command_u *)lcp;
-				if (!strncmp(segCmd->segname, "__AUTH_CONST", sizeof(segCmd->segname)) ||
-					!strncmp(segCmd->segname, "__DATA_CONST", sizeof(segCmd->segname)) ||
-					!strncmp(segCmd->segname, "__DATA", sizeof(segCmd->segname))) {
-					section_u *sections = (void *)((uintptr_t)lcp + sizeof(segment_command_u));
-					for (int j = 0; j < segCmd->nsects; j++) {
-						if ((sections[j].flags & SECTION_TYPE) == S_LAZY_SYMBOL_POINTERS || 
-							(sections[j].flags & SECTION_TYPE) == S_NON_LAZY_SYMBOL_POINTERS) {
-							_litehook_rebind_symbol_in_section(targetHeader, &sections[j], replacee, replacement);
-						}
-					}
-				}
-			}
-			lcp = (void *)((uintptr_t)lcp + lcp->cmdsize);
-		}
+		_litehook_rebind_header(targetHeader, replacee, replacement, exceptionFilter);
 	}
+}
+
+size_t litehook_rebind_match_count(void)
+{
+	size_t count = gRebindMatches;
+	gRebindMatches = 0;
+	return count;
 }

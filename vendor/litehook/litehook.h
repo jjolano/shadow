@@ -27,3 +27,8 @@ kern_return_t litehook_hook_function(void *source, void *target);
 
 #define LITEHOOK_REBIND_GLOBAL NULL
 void litehook_rebind_symbol(const mach_header_u *targetHeader, void *replacee, void *replacement, bool (*exceptionFilter)(const mach_header_u *header));
+
+// Number of GOT/import slots the most recent litehook_rebind_symbol call
+// actually rewrote; returns and resets the tally (0 = the rebind matched
+// nothing — a silent no-op for the caller).
+size_t litehook_rebind_match_count(void);

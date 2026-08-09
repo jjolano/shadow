@@ -50,6 +50,20 @@ typedef enum {
 } hookkit_cat_t;
 
 /*
+ * Hooking technique a backend applies to function hooks. Set per-instance
+ * during category resolution (substitutorWithCategory: /
+ * substitutorWithOrderedCategories:): the winning category picker decides the
+ * routine, and activeStrategy reflects it. Most callers never touch this — it
+ * is the resolution result, not a request.
+ */
+typedef NS_ENUM(NSUInteger, HKStrategy) {
+    HKStrategyDefault,       // vendor's single/fallback technique
+    HKStrategyRebind,        // GOT/import slot rebinding (clean prologue)
+    HKStrategyInline,        // prologue inline trampoline (denyFishHook-immune)
+    HKStrategyPrivateSymbol  // DSC/private-symbol resolution + address-based hook
+};
+
+/*
  * Backend capability matrix:
  *
  *                  message    function    memory    batching
@@ -106,6 +120,11 @@ typedef enum {
 // The backend type actually in use (HK_LIB_NONE if no backend is available).
 @property (readonly, nonatomic) hookkit_lib_t activeType;
 
+// The hooking technique the active backend applies (HKStrategyDefault when no
+// backend is available or when resolution did not name a technique). Set
+// before hooking begins; mirrors what category resolution picked.
+@property (readonly, nonatomic) HKStrategy activeStrategy;
+
 // Resolves the backend from the types property. One-shot: the first call that
 // finds a backend wins and later calls are no-ops, so set types before calling.
 // The substitutorWith... constructors already do this for you.
@@ -131,11 +150,20 @@ typedef enum {
 // hookkit_lib_t. Unknown types are skipped; an empty array yields no backend.
 + (instancetype)substitutorWithOrderedTypes:(NSArray<NSNumber *> *)types;
 
+// Creates an instance of HKSubstitutor for the given backend categories, tried
+// in the given priority order — the first category that resolves to an
+// available backend wins, selecting that category's own built-in picker
+// priority. Each element is an NSNumber wrapping a hookkit_cat_t. HK_CAT_NONE
+// entries are skipped; an empty array yields no backend (activeType ==
+// HK_LIB_NONE).
++ (instancetype)substitutorWithOrderedCategories:(NSArray<NSNumber *> *)categories;
+
 // Creates an instance of HKSubstitutor for the given backend category. The
 // first available backend in that category's built-in priority order is
 // selected — callers request a capability, not a specific library. Returns
 // an instance with no backend (activeType == HK_LIB_NONE) if no backend in
-// the category is available. HK_CAT_NONE is equivalent to defaultSubstitutor.
+// the category is available. Convenience for substitutorWithOrderedCategories:
+// with a single entry; HK_CAT_NONE is skipped and yields no backend.
 + (instancetype)substitutorWithCategory:(hookkit_cat_t)category;
 
 // Creates an instance of HKSubstitutor using the currently loaded substitutor.

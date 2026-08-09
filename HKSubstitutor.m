@@ -270,17 +270,9 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 
 #pragma mark - Backends
 
-// Hooking-technique hint, internal only (never public API — categories stay
-// the public surface). Declared here, ahead of the registry, because the
-// protocol's setStrategy: references it; the category picker table below
-// pairs it with the backends.
-typedef NS_ENUM(NSUInteger, HKStrategy) {
-    HKStrategyDefault,       // vendor's single/fallback technique
-    HKStrategyRebind,        // GOT/import slot rebinding (clean prologue)
-    HKStrategyInline,        // prologue inline trampoline (denyFishHook-immune)
-    HKStrategyPrivateSymbol  // DSC/private-symbol resolution + address-based hook
-};
-
+// HKStrategy is public API now (Compat.h, next to hookkit_cat_t) so that
+// activeStrategy is observable; the protocol's setStrategy: below is the
+// backend-facing channel that consumes it.
 @protocol HKSubstitutorBackend <NSObject>
 @property (nonatomic, readonly) BOOL batchingSupported;
 @property (nonatomic, readonly) int lastErrno;
@@ -954,9 +946,9 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 // and DSC private-symbol lookups (litehook_find_dsc_symbol), so one vendor
 // covers several categories. Compiled in on all archs; no ObjC message
 // hooking, no batching.
-// ponytail: litehook_rebind_symbol returns void, so the rebind path of
-// hookFunction always reports HK_OK — the rebind either works or silently
-// skips unmatched GOT slots.
+// ponytail: litehook_rebind_symbol is void, so match honesty comes from the
+// vendor's return-and-reset tally (litehook_rebind_match_count) instead of a
+// status code; hookFunction reports HK_ERR when the tally is zero.
 @interface HKLitehookBackend : HKDlfcnBackend <HKSubstitutorBackend> {
     int _lastErrno;
     // zero-init (HKStrategyDefault): a bare [[self class] new] keeps the
@@ -1013,6 +1005,15 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
     // function body at `function` is untouched, so `function` is still the
     // original implementation (same semantic as fishhook's old_ptr).
     litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, function, replacement, NULL);
+
+    // litehook_rebind_symbol is void: the vendor's match tally is the only
+    // honesty signal. Zero rewritten slots means no loaded image references
+    // the function through a GOT/import slot — a silent no-op, so report it
+    // as an error instead of a false HK_OK.
+    if(litehook_rebind_match_count() == 0) {
+        _lastErrno = ENOENT;  // no GOT slot referenced this function
+        return HK_ERR;
+    }
 
     if(old_ptr) {
         *old_ptr = function;
@@ -1536,8 +1537,9 @@ static int (*fn_hkgum_end_transaction)(void) = NULL;
 
 #pragma mark - Backend registry
 
-// One table drives selection, availability, type reporting and the info dicts,
-// so adding a backend is a single entry rather than four parallel cascades.
+// One table drives selection, availability, type reporting and the info dicts;
+// adding a backend is one entry here plus its picker rows in
+// hk_category_priorities (the single source of truth for category membership).
 // Order is priority order.
 typedef BOOL (*HKBackendAvailability)(void);
 
@@ -1548,7 +1550,9 @@ typedef struct {
     __unsafe_unretained NSString *name;
     HKBackendAvailability available;
     BOOL automatic;     // eligible for +defaultBackend
-    hookkit_cat_t categories;  // category flags this backend belongs to
+    BOOL selectable;    // appears in consumer settings-style pickers
+    // no categories field: membership lives in hk_category_priorities only,
+    // so the two can never diverge (see getAvailableCategories)
 } HKBackendDescriptor;
 
 // fishhook is compiled in, so it is the floor that is always present.
@@ -1647,25 +1651,25 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
-        table[0] = (HKBackendDescriptor){ HK_LIB_ELLEKIT, [HKElleKitBackend class], @"ellekit", @"ElleKit", libhooker_available, YES, HK_CAT_MESSAGE | HK_CAT_FUNCTION_INLINE | HK_CAT_PRIVATE_SYMBOL };
-        table[1] = (HKBackendDescriptor){ HK_LIB_SUBSTRATE, [HKSubstrateBackend class], @"substrate", @"Cydia Substrate", substrate_available, YES, HK_CAT_MESSAGE | HK_CAT_PRIVATE_SYMBOL };
-        table[2] = (HKBackendDescriptor){ HK_LIB_SUBSTITUTE, [HKSubstituteBackend class], @"substitute", @"Substitute", substitute_available, YES, HK_CAT_MESSAGE | HK_CAT_PRIVATE_SYMBOL };
+        table[0] = (HKBackendDescriptor){ HK_LIB_ELLEKIT, [HKElleKitBackend class], @"ellekit", @"ElleKit", libhooker_available, YES, YES };
+        table[1] = (HKBackendDescriptor){ HK_LIB_SUBSTRATE, [HKSubstrateBackend class], @"substrate", @"Cydia Substrate", substrate_available, YES, NO };
+        table[2] = (HKBackendDescriptor){ HK_LIB_SUBSTITUTE, [HKSubstituteBackend class], @"substitute", @"Substitute", substitute_available, YES, NO };
         // Never automatic: HookKit's own engine is opt-in so that devices with
         // a battle-tested library installed keep using it.
-        table[3] = (HKBackendDescriptor){ HK_LIB_NATIVE, [HKNativeBackend class], @"native", @"HookKit", native_available, NO, HK_CAT_MESSAGE };
-        table[4] = (HKBackendDescriptor){ HK_LIB_DOBBY, [HKDobbyBackend class], @"dobby", @"Dobby", dobby_available, YES, HK_CAT_FUNCTION_INLINE };
+        table[3] = (HKBackendDescriptor){ HK_LIB_NATIVE, [HKNativeBackend class], @"native", @"HookKit", native_available, NO, YES };
+        table[4] = (HKBackendDescriptor){ HK_LIB_DOBBY, [HKDobbyBackend class], @"dobby", @"Dobby", dobby_available, YES, YES };
         // Never automatic: Frida is opt-in — Dobby is compiled in and lighter;
         // Frida is the premium arm64e-tested engine users request explicitly.
-        table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO, HK_CAT_FUNCTION_INLINE };
-        table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES, HK_CAT_FUNCTION_REBIND };
+        table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO, YES };
+        table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES, YES };
         // Never automatic: Swift vtable hooks are a separate API (no
         // message/function overlap) and only make sense when the caller has a
         // Swift class in hand, so this backend is opt-in.
-        table[7] = (HKBackendDescriptor){ HK_LIB_SWIFT, [HKSwiftBackend class], @"swift", @"Swift vtables", swift_available, NO, HK_CAT_NONE };
+        table[7] = (HKBackendDescriptor){ HK_LIB_SWIFT, [HKSwiftBackend class], @"swift", @"Swift vtables", swift_available, NO, NO };
         // Never automatic: litehook is opt-in — fishhook is the compiled-in
         // function-rebind floor; litehook adds memory patching on all archs,
         // plus inline and private-symbol techniques for its category entries.
-        table[8] = (HKBackendDescriptor){ HK_LIB_LITEHOOK, [HKLitehookBackend class], @"litehook", @"litehook", litehook_available, NO, HK_CAT_FUNCTION_REBIND | HK_CAT_FUNCTION_INLINE | HK_CAT_PRIVATE_SYMBOL };
+        table[8] = (HKBackendDescriptor){ HK_LIB_LITEHOOK, [HKLitehookBackend class], @"litehook", @"litehook", litehook_available, NO, YES };
     });
 
     *outCount = sizeof(table) / sizeof(table[0]);
@@ -1680,6 +1684,9 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
 // implements setStrategy:; backends without it use their vendor default
 // technique. The order matches the main hk_backends table priority within
 // each category.
+// Single source of truth for category membership: getAvailableCategories
+// derives availability from this table alone, and HKBackendDescriptor carries
+// no category bits, so the two views cannot diverge.
 typedef struct {
     hookkit_lib_t type;
     HKStrategy strategy;
@@ -1713,13 +1720,19 @@ static const size_t hk_category_priority_count = sizeof(hk_category_priorities) 
     // Priority-ordered list of hookkit_lib_t (NSNumber), from substitutorWithOrderedTypes:.
     // Overrides the fixed table priority when non-nil; non-nil-but-empty means no backend.
     NSArray<NSNumber *> *orderedTypes;
-    // Backend category from substitutorWithCategory:. 0 (HK_CAT_NONE) = unset.
-    // When set and orderedTypes is nil, initLibraries resolves by iterating the
-    // category's priority list instead of the types property or defaultBackend.
-    hookkit_cat_t requestedCategory;
+    // Priority-ordered list of hookkit_cat_t (NSNumber), from
+    // substitutorWithOrderedCategories: (substitutorWithCategory: feeds a
+    // single-element list). Tried in order; the first category that resolves
+    // to an available backend wins. Non-nil-but-empty means no backend.
+    NSArray<NSNumber *> *orderedCategories;
+    // Technique the active backend applies: the winning picker's strategy, or
+    // HKStrategyDefault when resolution didn't name one. Zero-init default.
+    HKStrategy resolvedStrategy;
 }
 
-@synthesize types, batching, activeType;
+// activeStrategy is resolvedStrategy: set by the resolution branches in
+// initLibraries, readonly on the public surface.
+@synthesize types, batching, activeType, activeStrategy = resolvedStrategy;
 
 + (id<HKSubstitutorBackend>)defaultBackend {
     size_t count = 0;
@@ -1760,6 +1773,7 @@ static const size_t hk_category_priority_count = sizeof(hk_category_priorities) 
         const HKBackendDescriptor *table = hk_backends(&count);
 
         types = HK_LIB_NONE;
+        resolvedStrategy = HKStrategyDefault;
 
         for(NSNumber *num in orderedTypes) {
             for(size_t i = 0; i < count; i++) {
@@ -1774,33 +1788,43 @@ static const size_t hk_category_priority_count = sizeof(hk_category_priorities) 
                 break;
             }
         }
-    } else if(requestedCategory) {
-        // Category-based selection: iterate the category's (backend, strategy)
-        // pickers and pick the first available backend, handing it the
-        // picker's technique when it implements setStrategy:. Availability is
-        // checked directly (not the automatic flag), so opt-in backends like
-        // Native and Frida are still reachable when they are the only option
-        // in the category.
+    } else if(orderedCategories) {
+        // Category fallback list: try each category's (backend, strategy)
+        // pickers in order; the first category with an available backend wins
+        // (its own picker priority decides which). Availability is checked
+        // directly (not the automatic flag), so opt-in backends like Native
+        // and Frida are still reachable when they are the only option in a
+        // category.
         size_t count = 0;
         const HKBackendDescriptor *table = hk_backends(&count);
 
         types = HK_LIB_NONE;
 
-        for(size_t c = 0; c < hk_category_priority_count; c++) {
-            if(hk_category_priorities[c].category & requestedCategory) {
-                for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
-                    HKCategoryPicker picker = hk_category_priorities[c].order[o];
+        for(NSNumber *num in orderedCategories) {
+            hookkit_cat_t want = (hookkit_cat_t)num.unsignedIntegerValue;
 
-                    for(size_t i = 0; i < count; i++) {
-                        if(table[i].type == picker.type && table[i].available()) {
-                            backend = [table[i].backendClass new];
+            if(!want) {
+                // HK_CAT_NONE entry: nothing to resolve, keep looking
+                continue;
+            }
 
-                            if([backend respondsToSelector:@selector(setStrategy:)]) {
-                                [backend setStrategy:picker.strategy];
+            for(size_t c = 0; c < hk_category_priority_count; c++) {
+                if(hk_category_priorities[c].category & want) {
+                    for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
+                        HKCategoryPicker picker = hk_category_priorities[c].order[o];
+
+                        for(size_t i = 0; i < count; i++) {
+                            if(table[i].type == picker.type && table[i].available()) {
+                                backend = [table[i].backendClass new];
+
+                                if([backend respondsToSelector:@selector(setStrategy:)]) {
+                                    [backend setStrategy:picker.strategy];
+                                }
+
+                                resolvedStrategy = picker.strategy;
+                                types |= table[i].type;
+                                goto category_done;
                             }
-
-                            types |= table[i].type;
-                            goto category_done;
                         }
                     }
                 }
@@ -1810,9 +1834,12 @@ static const size_t hk_category_priority_count = sizeof(hk_category_priorities) 
 category_done: ;
     } else if(types == HK_LIB_NONE) {
         backend = [[self class] defaultBackend];
+        resolvedStrategy = HKStrategyDefault;
     } else {
         size_t count = 0;
         const HKBackendDescriptor *table = hk_backends(&count);
+
+        resolvedStrategy = HKStrategyDefault;
 
         for(size_t i = 0; i < count; i++) {
             if((types & table[i].type) && table[i].available()) {
@@ -1877,9 +1904,17 @@ category_done: ;
     size_t count = 0;
     const HKBackendDescriptor *table = hk_backends(&count);
 
-    for(size_t i = 0; i < count; i++) {
-        if(table[i].available()) {
-            cats |= table[i].categories;
+    // hk_category_priorities is the single source of truth for category
+    // membership: a category is available when any of its pickers maps to an
+    // available backend — the same lookup initLibraries performs.
+    for(size_t c = 0; c < hk_category_priority_count; c++) {
+        for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
+            for(size_t i = 0; i < count; i++) {
+                if(table[i].type == hk_category_priorities[c].order[o].type && table[i].available()) {
+                    cats |= hk_category_priorities[c].category;
+                    break;
+                }
+            }
         }
     }
 
@@ -1896,7 +1931,8 @@ category_done: ;
             [result addObject:@{
                 @"id" : table[i].identifier,
                 @"name" : table[i].name,
-                @"type" : @(table[i].type)
+                @"type" : @(table[i].type),
+                @"selectable" : @(table[i].selectable)
             }];
         }
     }
@@ -1920,8 +1956,14 @@ category_done: ;
 }
 
 + (instancetype)substitutorWithCategory:(hookkit_cat_t)category {
+    // single-element fallback list: shares the ordered resolution loop
+    return [self substitutorWithOrderedCategories:@[@(category)]];
+}
+
++ (instancetype)substitutorWithOrderedCategories:(NSArray<NSNumber *> *)categories {
     HKSubstitutor *substitutor = [self new];
-    substitutor->requestedCategory = category;
+    // nil is still an explicit ordered request: treat it as empty, never as unset
+    substitutor->orderedCategories = [categories copy] ?: @[];
     [substitutor initLibraries];
     return substitutor;
 }
