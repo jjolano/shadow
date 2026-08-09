@@ -6,7 +6,6 @@
 #import "../policy/ProcessPolicy.h"
 
 #import <unistd.h>
-#import <os/lock.h>
 
 // Forward declaration: shared post-success csops policy, defined in the
 // csops section below (used by the raw SYS_csops dispatch case).
@@ -19,210 +18,209 @@ static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, siz
 // them take pointers and/or ints — reading pointer-width slots preserves
 // every value); unknown numbers pass through replaced_syscall without any
 // vararg read.
+//
+// The number→shape mapping comes from hooks/RawSyscalls.def (single source
+// of truth); each SHADW_RAW_CAT/FWD token has one body below, shared by
+// every syscall of that shape (the open-family bodies read the mode arg
+// only when O_CREAT is set).
 static long (*original_syscall)(int number, ...);
+
+static long shdw_fwd_P1(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1);
+}
+
+static long shdw_fwd_P2I(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (int) a2);
+}
+
+static long shdw_fwd_EXECVE(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (char *const *) a2, (char *const *) a3);
+}
+
+static long shdw_fwd_READLINK(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3);
+}
+
+static long shdw_fwd_OPEN(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    // open only takes a mode when O_CREAT is set.
+    if(((int) a2) & O_CREAT) {
+        intptr_t a3 = va_arg(args, intptr_t);
+
+        return original_syscall(number, (const char *) a1, (int) a2, (mode_t) a3);
+    }
+
+    return original_syscall(number, (const char *) a1, (int) a2);
+}
+
+static long shdw_fwd_OPENAT(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    // openat only takes a mode when O_CREAT is set.
+    if(((int) a2) & O_CREAT) {
+        intptr_t a3 = va_arg(args, intptr_t);
+
+        return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3);
+    }
+
+    return original_syscall(number, (int) a1, (const char *) a2);
+}
+
+static long shdw_fwd_FSTATAT(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (const char *) a2, (struct stat *) a3, (int) a4);
+}
+
+static long shdw_fwd_CSOPS(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (pid_t) a1, (unsigned int) a2, (void *) a3, (size_t) a4);
+}
+
+static long shdw_fwd_SYSCTL(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+    intptr_t a6 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int *) a1, (u_int) a2, (void *) a3, (size_t *) a4, (void *) a5, (size_t) a6);
+}
+
+static long shdw_fwd_XATTR4(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4);
+}
+
+static long shdw_fwd_ACCESSEXT(int number, va_list args) {
+    // Real signature: (entries, size_t, results, uid_t) — a binary
+    // buffer, NOT a path string. Forward the slots untouched; the
+    // inspection in the dispatch deliberately skips this number (CAT_NONE).
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (void *) a1, (size_t) a2, (void *) a3, (uid_t) a4);
+}
+
+static long shdw_fwd_PTRACE(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (pid_t) a2, (caddr_t) a3, (int) a4);
+}
+
+static long shdw_fwd_GETATTRLIST(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4, (unsigned long) a5);
+}
+
+static long shdw_fwd_GETXATTR(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+    intptr_t a6 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
+}
+
+static long shdw_fwd_FGETXATTR(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+    intptr_t a6 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
+}
+
+static long shdw_fwd_LISTXATTR(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3, (int) a4);
+}
+
+static long shdw_fwd_FLISTXATTR(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (char *) a2, (size_t) a3, (int) a4);
+}
+
+static long shdw_fwd_OPENEXT(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+    intptr_t a6 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4, (int) a5, (void *) a6);
+}
+
+static long shdw_fwd_GETDIRENTRIES(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (void *) a2, (size_t) a3, (off_t *) a4);
+}
 
 static long shdw_syscall_forward(int number, va_list args) {
     switch(number) {
-        case SYS_chdir:
-        case SYS_chroot:
-        case SYS_rmdir:
-            return original_syscall(number, (const char *) va_arg(args, intptr_t));
-
-        case SYS_access:
-        case SYS_stat:
-        case SYS_lstat:
-        case SYS_stat64:
-        case SYS_lstat64:
-        case SYS_pathconf: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (int) a2);
-        }
-
-        case SYS_execve: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (char *const *) a2, (char *const *) a3);
-        }
-
-        case SYS_readlink: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3);
-        }
-
-        case SYS_open: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-
-            // open only takes a mode when O_CREAT is set.
-            if(((int) a2) & O_CREAT) {
-                intptr_t a3 = va_arg(args, intptr_t);
-
-                return original_syscall(number, (const char *) a1, (int) a2, (mode_t) a3);
-            }
-
-            return original_syscall(number, (const char *) a1, (int) a2);
-        }
-
-        case SYS_openat: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-
-            // openat only takes a mode when O_CREAT is set.
-            if(((int) a2) & O_CREAT) {
-                intptr_t a3 = va_arg(args, intptr_t);
-
-                return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3);
-            }
-
-            return original_syscall(number, (int) a1, (const char *) a2);
-        }
-
-        case SYS_fstatat:
-        case SYS_fstatat64: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int) a1, (const char *) a2, (struct stat *) a3, (int) a4);
-        }
-
-        case SYS_csops: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (pid_t) a1, (unsigned int) a2, (void *) a3, (size_t) a4);
-        }
-
-        case SYS_sysctl: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-            intptr_t a6 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int *) a1, (u_int) a2, (void *) a3, (size_t *) a4, (void *) a5, (size_t) a6);
-        }
-
-        case SYS_stat_extended:
-        case SYS_lstat_extended:
-        case SYS_stat64_extended:
-        case SYS_lstat64_extended: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4);
-        }
-
-        case SYS_access_extended: {
-            // Real signature: (entries, size_t, results, uid_t) — a binary
-            // buffer, NOT a path string. Forward the slots untouched; the
-            // inspection in replaced_syscall deliberately skips this number.
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (void *) a1, (size_t) a2, (void *) a3, (uid_t) a4);
-        }
-
-        case SYS_ptrace: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int) a1, (pid_t) a2, (caddr_t) a3, (int) a4);
-        }
-
-        case SYS_getattrlist: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4, (unsigned long) a5);
-        }
-
-        case SYS_getxattr: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-            intptr_t a6 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
-        }
-
-        case SYS_fgetxattr: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-            intptr_t a6 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int) a1, (const char *) a2, (void *) a3, (size_t) a4, (u_int32_t) a5, (int) a6);
-        }
-
-        case SYS_listxattr: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (char *) a2, (size_t) a3, (int) a4);
-        }
-
-        case SYS_flistxattr: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int) a1, (char *) a2, (size_t) a3, (int) a4);
-        }
-
-        case SYS_open_extended: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-            intptr_t a5 = va_arg(args, intptr_t);
-            intptr_t a6 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (const char *) a1, (int) a2, (uid_t) a3, (gid_t) a4, (int) a5, (void *) a6);
-        }
-
-        case SYS_getdirentries64: {
-            intptr_t a1 = va_arg(args, intptr_t);
-            intptr_t a2 = va_arg(args, intptr_t);
-            intptr_t a3 = va_arg(args, intptr_t);
-            intptr_t a4 = va_arg(args, intptr_t);
-
-            return original_syscall(number, (int) a1, (void *) a2, (size_t) a3, (off_t *) a4);
-        }
-
+#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) case NUM: return shdw_fwd_##FWD(NUM, args);
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
         default:
             // Unreachable: replaced_syscall only forwards the intercepted
-            // set (the OR-chain at its top). Keep this switch and that
-            // chain in sync — a mismatch drops the args of a forwarded
-            // syscall, so degrade to the register passthrough rather than
-            // reading unknown arities.
+            // set (the def-generated chain at its top). Keep this default
+            // as the register passthrough rather than reading unknown
+            // arities.
             return original_syscall(number);
     }
 }
@@ -239,6 +237,29 @@ static long shdw_syscall_forward(int number, va_list args) {
 // sysctl MIB arguments.
 static int shdw_raw_sysctl_original(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
     return (int) original_syscall(SYS_sysctl, name, namelen, oldp, oldlenp, newp, newlen);
+}
+
+// Policy categories for the intercepted set (from hooks/RawSyscalls.def):
+// each category maps to one inspection branch in the dispatch below.
+typedef enum {
+    SHADW_RAW_CAT_NONE = 0,      // forwarded, never inspected (access_extended)
+    SHADW_RAW_CAT_PTRACE,        // PT_DENY_ATTACH short-circuit
+    SHADW_RAW_CAT_PATH,          // single pathname inspection
+    SHADW_RAW_CAT_AT,            // dirfd-aware *at inspection
+    SHADW_RAW_CAT_SYSCTL,        // KERN_PROC/KERN_PROCARGS2 policy
+    SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
+    SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
+    SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
+} shdw_raw_syscall_category_t;
+
+static shdw_raw_syscall_category_t shdw_raw_syscall_category(int number) {
+    switch(number) {
+#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) case NUM: return SHADW_RAW_CAT_##CAT;
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
+        default:
+            return SHADW_RAW_CAT_NONE;
+    }
 }
 
 // Raw getdirentries64 result filter: compacts restricted entries out of the
@@ -309,125 +330,123 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     char* gd_buf = NULL;
 
     // Caller classification hoisted: the return-address read happens once,
-    // inline, at this entry (same frame for both gates below).
+    // inline, at this entry (same frame for both gates below). The policy
+    // category (from hooks/RawSyscalls.def) is computed once and drives
+    // every branch below.
     BOOL ext = isCallerExternal();
-
+    shdw_raw_syscall_category_t cat = shdw_raw_syscall_category(number);
     // Handle single pathname syscalls. NOTE: SYS_access_extended is NOT
     // inspected — its first argument is a binary entries buffer, not a C
-    // string; it is still forwarded with its exact arity below.
+    // string; it is still forwarded with its exact arity below (CAT_NONE).
+    // The category switch replaces the per-number membership chains: the
+    // number→category mapping is generated from hooks/RawSyscalls.def.
     if(ext) {
-        if(number == SYS_csops) {
-            csops_pid = (pid_t) va_arg(inspect, intptr_t);
-            csops_ops = (unsigned int) va_arg(inspect, intptr_t);
-            csops_useraddr = (void *) va_arg(inspect, intptr_t);
-            csops_usersize = (size_t) va_arg(inspect, intptr_t);
+        switch(cat) {
+            case SHADW_RAW_CAT_CSOPS: {
+                csops_pid = (pid_t) va_arg(inspect, intptr_t);
+                csops_ops = (unsigned int) va_arg(inspect, intptr_t);
+                csops_useraddr = (void *) va_arg(inspect, intptr_t);
+                csops_usersize = (size_t) va_arg(inspect, intptr_t);
 
-            // CS_OPS_MARKKILL on a process other than self: same policy as
-            // the csops hook — reject BEFORE the original runs (never
-            // execute-then-fail).
-            if(csops_ops == CS_OPS_MARKKILL && csops_pid != getpid()) {
-                errno = EBADEXEC;
-                va_end(inspect);
-                return -1;
-            }
-        } else if(number == SYS_openat
-        || number == SYS_fstatat
-        || number == SYS_fstatat64) {
-            int dirfd = (int) va_arg(inspect, intptr_t);
-            const char* pathname = va_arg(inspect, const char *);
-
-            // Same dirfd-aware path policy as the libc.x *at hooks (shared
-            // policy/PathPolicy.m).
-            if(shdw_at_path_denied(dirfd, pathname)) {
-                va_end(inspect);
-                return -1;  // errno set by the helper
-            }
-        } else if(number == SYS_sysctl) {
-            sysctl_mib = (int *) va_arg(inspect, intptr_t);
-            sysctl_miblen = (u_int) va_arg(inspect, intptr_t);
-            sysctl_oldp = (void *) va_arg(inspect, intptr_t);
-            sysctl_oldlenp = (size_t *) va_arg(inspect, intptr_t);
-
-            shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
-
-            // KERN_PROC_ALL process enumeration: same filtered-list policy
-            // as the libc.x sysctl hook, via the shared filter
-            // (policy/ProcessPolicy.m). The own reentrancy guard keeps a
-            // nested (__syscall-delegating) dispatch from re-applying it.
-            if(kind == SHADW_PROC_MIB_ALL) {
-                if(!shdw_proc_all_in_progress()) {
-                    int proc_ret = shdw_proc_all_filtered(shdw_raw_sysctl_original, sysctl_oldp, sysctl_oldlenp, YES);
+                // CS_OPS_MARKKILL on a process other than self: same policy as
+                // the csops hook — reject BEFORE the original runs (never
+                // execute-then-fail).
+                if(csops_ops == CS_OPS_MARKKILL && csops_pid != getpid()) {
+                    errno = EBADEXEC;
                     va_end(inspect);
-                    return proc_ret;
+                    return -1;
                 }
-            }
+            } break;
 
-            // Per-pid queries of a jailbreak daemon answer ENOENT (the same
-            // hiding the KERN_PROC_ALL filter applies to the list). The own
-            // pid passes — its record is sanitized after success below.
-            if(kind == SHADW_PROC_MIB_PID_OTHER && shdw_pid_restricted_uncached(sysctl_mib[3])) {
-                errno = ENOENT;
-                va_end(inspect);
-                return -1;
-            }
+            case SHADW_RAW_CAT_AT: {
+                int dirfd = (int) va_arg(inspect, intptr_t);
+                const char* pathname = va_arg(inspect, const char *);
 
-            // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
-            if(kind == SHADW_PROC_MIB_ARGS2_OTHER && shdw_pid_restricted_uncached(sysctl_mib[2])) {
-                errno = ENOENT;
-                va_end(inspect);
-                return -1;
-            }
-        } else if(number == SYS_getdirentries64) {
-            // Raw readdir-style enumeration bypasses the libc readdir hooks;
-            // the buffer is filtered after success instead. Hoist fd/buf;
-            // the dir path is resolved (F_GETPATH) only if the call succeeds.
-            gd_fd = (int) va_arg(inspect, intptr_t);
-            gd_buf = (char *) va_arg(inspect, intptr_t);
-        } else if(number == SYS_fgetxattr
-        || number == SYS_flistxattr) {
-            int fd = (int) va_arg(inspect, intptr_t);
-            char pathname[PATH_MAX];
+                // Same dirfd-aware path policy as the libc.x *at hooks (shared
+                // policy/PathPolicy.m).
+                if(shdw_at_path_denied(dirfd, pathname)) {
+                    va_end(inspect);
+                    return -1;  // errno set by the helper
+                }
+            } break;
 
-            // Same fd policy as the libc.x fgetxattr/flistxattr hooks:
-            // resolve via F_GETPATH, fail open when the path can't be
-            // named (the descriptor is legitimate — tty/pipe/socket).
-            if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                va_end(inspect);
-                return -1;
-            }
-        } else if(number == SYS_open
-        || number == SYS_chdir
-        || number == SYS_access
-        || number == SYS_execve
-        || number == SYS_chroot
-        || number == SYS_rmdir
-        || number == SYS_stat
-        || number == SYS_lstat
-        || number == SYS_getattrlist
-        || number == SYS_getxattr
-        || number == SYS_listxattr
-        || number == SYS_open_extended
-        || number == SYS_stat_extended
-        || number == SYS_lstat_extended
-        || number == SYS_stat64
-        || number == SYS_lstat64
-        || number == SYS_stat64_extended
-        || number == SYS_lstat64_extended
-        || number == SYS_readlink
-        || number == SYS_pathconf) {
-            const char* pathname = va_arg(inspect, const char *);
+            case SHADW_RAW_CAT_SYSCTL: {
+                sysctl_mib = (int *) va_arg(inspect, intptr_t);
+                sysctl_miblen = (u_int) va_arg(inspect, intptr_t);
+                sysctl_oldp = (void *) va_arg(inspect, intptr_t);
+                sysctl_oldlenp = (size_t *) va_arg(inspect, intptr_t);
 
-            if([_shadow isCPathRestricted:pathname]) {
-                errno = ENOENT;
-                va_end(inspect);
-                return -1;
-            }
+                shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
+
+                // KERN_PROC_ALL process enumeration: same filtered-list policy
+                // as the libc.x sysctl hook, via the shared filter
+                // (policy/ProcessPolicy.m). The own reentrancy guard keeps a
+                // nested (__syscall-delegating) dispatch from re-applying it.
+                if(kind == SHADW_PROC_MIB_ALL) {
+                    if(!shdw_proc_all_in_progress()) {
+                        int proc_ret = shdw_proc_all_filtered(shdw_raw_sysctl_original, sysctl_oldp, sysctl_oldlenp, YES);
+                        va_end(inspect);
+                        return proc_ret;
+                    }
+                }
+
+                // Per-pid queries of a jailbreak daemon answer ENOENT (the same
+                // hiding the KERN_PROC_ALL filter applies to the list). The own
+                // pid passes — its record is sanitized after success below.
+                if(kind == SHADW_PROC_MIB_PID_OTHER && shdw_pid_restricted_uncached(sysctl_mib[3])) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+
+                // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
+                if(kind == SHADW_PROC_MIB_ARGS2_OTHER && shdw_pid_restricted_uncached(sysctl_mib[2])) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_DIRENT:
+                // Raw readdir-style enumeration bypasses the libc readdir hooks;
+                // the buffer is filtered after success instead. Hoist fd/buf;
+                // the dir path is resolved (F_GETPATH) only if the call succeeds.
+                gd_fd = (int) va_arg(inspect, intptr_t);
+                gd_buf = (char *) va_arg(inspect, intptr_t);
+                break;
+
+            case SHADW_RAW_CAT_FDXATTR: {
+                int fd = (int) va_arg(inspect, intptr_t);
+                char pathname[PATH_MAX];
+
+                // Same fd policy as the libc.x fgetxattr/flistxattr hooks:
+                // resolve via F_GETPATH, fail open when the path can't be
+                // named (the descriptor is legitimate — tty/pipe/socket).
+                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_PATH: {
+                const char* pathname = va_arg(inspect, const char *);
+
+                if([_shadow isCPathRestricted:pathname]) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_NONE:
+            case SHADW_RAW_CAT_PTRACE:
+                break;
         }
     }
 
     // Handle ptrace (anti debug)
-    if(number == SYS_ptrace) {
+    if(cat == SHADW_RAW_CAT_PTRACE) {
         int _request = va_arg(inspect, int);
 
         if(_request == PT_DENY_ATTACH) {
@@ -443,38 +462,53 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     // After-success policies — same as the typed hooks, only on valid
     // success and only for app-origin callers.
     if(ext) {
-        if(number == SYS_csops && result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
-            return -1;
-        }
+        switch(cat) {
+            case SHADW_RAW_CAT_CSOPS:
+                if(result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
+                    return -1;
+                }
+                break;
 
-        if(number == SYS_sysctl && result == 0 && sysctl_mib) {
-            shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
+            case SHADW_RAW_CAT_SYSCTL:
+                if(result == 0 && sysctl_mib) {
+                    shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
 
-            if(kind == SHADW_PROC_MIB_PID_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
-                // Remove trace flags from our own process record.
-                // NOTE: the raw per-pid path deliberately does NOT rewrite
-                // e_ppid (the libc per-pid hook and the list filter do) —
-                // preserved as-is.
-                shdw_proc_sanitize_self_trace_flags((struct kinfo_proc *) sysctl_oldp);
-            }
+                    if(kind == SHADW_PROC_MIB_PID_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
+                        // Remove trace flags from our own process record.
+                        // NOTE: the raw per-pid path deliberately does NOT rewrite
+                        // e_ppid (the libc per-pid hook and the list filter do) —
+                        // preserved as-is.
+                        shdw_proc_sanitize_self_trace_flags((struct kinfo_proc *) sysctl_oldp);
+                    }
 
-            // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
-            // filtered NSProcessInfo/getenv views.
-            if(kind == SHADW_PROC_MIB_ARGS2_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
-                shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
-            }
-        }
+                    // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
+                    // filtered NSProcessInfo/getenv views.
+                    if(kind == SHADW_PROC_MIB_ARGS2_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
+                        shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
+                    }
+                }
+                break;
 
-        // Raw getdirentries64: compact restricted entries out of the result
-        // buffer (after success, external callers only). An fd whose path
-        // cannot be resolved passes through unfiltered — fail-open, the
-        // libc readdir path still filters.
-        if(number == SYS_getdirentries64 && result > 0 && gd_buf) {
-            char dir[PATH_MAX];
+            case SHADW_RAW_CAT_DIRENT: {
+                // Raw getdirentries64: compact restricted entries out of the
+                // result buffer (after success, external callers only). An fd
+                // whose path cannot be resolved passes through unfiltered —
+                // fail-open, the libc readdir path still filters.
+                if(result > 0 && gd_buf) {
+                    char dir[PATH_MAX];
 
-            if(fcntl(gd_fd, F_GETPATH, dir) != -1) {
-                result = shdw_dirents_filtered(gd_buf, result, dir);
-            }
+                    if(fcntl(gd_fd, F_GETPATH, dir) != -1) {
+                        result = shdw_dirents_filtered(gd_buf, result, dir);
+                    }
+                }
+            } break;
+
+            case SHADW_RAW_CAT_NONE:
+            case SHADW_RAW_CAT_PATH:
+            case SHADW_RAW_CAT_AT:
+            case SHADW_RAW_CAT_FDXATTR:
+            case SHADW_RAW_CAT_PTRACE:
+                break;
         }
     }
 
@@ -491,37 +525,15 @@ static long replaced_syscall(int number, ...) {
     // isCallerExternal, ...) may run first, since they clobber x1-x7 — and
     // the intercept test below must stay an OR-chain of compares on
     // `number` (clang lowers it to cmp/branch only; do not turn it into a
-    // helper function or switch table).
-    if(number != SYS_ptrace
-    && number != SYS_open
-    && number != SYS_chdir
-    && number != SYS_access
-    && number != SYS_execve
-    && number != SYS_chroot
-    && number != SYS_rmdir
-    && number != SYS_stat
-    && number != SYS_lstat
-    && number != SYS_getattrlist
-    && number != SYS_getxattr
-    && number != SYS_fgetxattr
-    && number != SYS_listxattr
-    && number != SYS_flistxattr
-    && number != SYS_open_extended
-    && number != SYS_stat_extended
-    && number != SYS_lstat_extended
-    && number != SYS_access_extended
-    && number != SYS_stat64
-    && number != SYS_lstat64
-    && number != SYS_stat64_extended
-    && number != SYS_lstat64_extended
-    && number != SYS_readlink
-    && number != SYS_pathconf
-    && number != SYS_openat
-    && number != SYS_fstatat
-    && number != SYS_fstatat64
-    && number != SYS_csops
-    && number != SYS_sysctl
-    && number != SYS_getdirentries64) {
+    // helper function or switch table). The chain is generated from
+    // hooks/RawSyscalls.def — still a plain OR-chain of compares on
+    // `number` (clang folds the trailing constant-true operand away and
+    // lowers the rest to cmp/branch only).
+    if(
+#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) number != NUM &&
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
+    1) {
         return original_syscall(number);
     }
 
@@ -538,36 +550,15 @@ static long replaced_syscall(int number, ...) {
 // Runtime-resolved; skipped cleanly when absent.
 static long (*original___syscall)(int number, ...);
 static long replaced___syscall(int number, ...) {
-    if(number != SYS_ptrace
-    && number != SYS_open
-    && number != SYS_chdir
-    && number != SYS_access
-    && number != SYS_execve
-    && number != SYS_chroot
-    && number != SYS_rmdir
-    && number != SYS_stat
-    && number != SYS_lstat
-    && number != SYS_getattrlist
-    && number != SYS_getxattr
-    && number != SYS_fgetxattr
-    && number != SYS_listxattr
-    && number != SYS_flistxattr
-    && number != SYS_open_extended
-    && number != SYS_stat_extended
-    && number != SYS_lstat_extended
-    && number != SYS_access_extended
-    && number != SYS_stat64
-    && number != SYS_lstat64
-    && number != SYS_stat64_extended
-    && number != SYS_lstat64_extended
-    && number != SYS_readlink
-    && number != SYS_pathconf
-    && number != SYS_openat
-    && number != SYS_fstatat
-    && number != SYS_fstatat64
-    && number != SYS_csops
-    && number != SYS_sysctl
-    && number != SYS_getdirentries64) {
+    // Same def-generated passthrough chain as replaced_syscall: it must
+    // remain the first thing this function does, as a chain of compares on
+    // `number` (no helper calls — they would clobber the argument
+    // registers the zero-argument forward relies on).
+    if(
+#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) number != NUM &&
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
+    1) {
         return original___syscall(number);
     }
 
