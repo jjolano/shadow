@@ -1,21 +1,21 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Backend.h>
 #import <Shadow/Ruleset.h>
+#import "RulesetStore.h"
 
 
 #import "../common.h"
 #import <Shadow/JBPath.h>
 
-#import <stdatomic.h>
-
-// Last time the ruleset dir was scanned. Atomic: multiple hook threads race the
-// 1s gate, and a plain double lets several of them scan the same interval.
-static _Atomic(double) lastRulesetCheck = 0.0;
+// Candidate 5: Backend is now a thin evaluation adapter over the atomic
+// ruleset store (RulesetStore.m). Load/reload/change-detection/generation all
+// moved to the store; queries that need rulesets grab ONE immutable snapshot
+// (rulesets + generation as a consistent pair) for the whole evaluation.
+// The path evaluation below (compliance veto / whitelist / blacklist / parent
+// recursion) is unchanged; step 3 moves it into RestrictionEngine.
 
 @interface ShadowBackend () {
-    // Sorted ruleset URLs from the last load; the per-second change check
-    // stats these cached URLs instead of re-enumerating + re-sorting the dir.
-    NSArray<NSURL *>* rulesetURLs;
+    ShadowRulesetStore* store;
 }
 @end
 
@@ -23,162 +23,25 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
 - (instancetype)init {
     if((self = [super init])) {
-        cache_restricted = [NSCache new];
-        // 1024 entries ≈ tens of KB: the queried-path working set plus its
-        // cached ancestors is a few hundred in practice, so this bounds memory
-        // without thrashing the hot path.
-        [cache_restricted setCountLimit:1024];
-        rulesets = [self _loadRulesets];
+        store = [ShadowRulesetStore new];
     }
 
     return self;
 }
 
-- (double)_fileMtime:(NSString *)path {
-    NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
-    NSDate* mod_date = [attrs fileModificationDate];
-
-    return mod_date ? [mod_date timeIntervalSinceReferenceDate] : 0.0;
-}
-
-- (NSArray<RulesetEngine *>*)_loadRulesets {
-    // C0-2: these are Shadow's own file reads (dir listing, plist loads,
-    // mtime stats). Without the internal scope the tweak's own
-    // NSFileManager/NSDictionary hooks would filter them — and once
-    // /Library/Shadow is itself a restricted path (C0-5), Shadow would deny
-    // itself its own rulesets. The scope flag is read by the hook layer via
-    // +[Shadow shdwIsInternalRead]; nested scopes (via _reloadRulesets) are
-    // depth-counted in Core.m.
-    SHADOW_INTERNAL_SCOPE;
-
-    NSMutableArray<RulesetEngine *>* result = [NSMutableArray new];
-    NSMutableArray<NSNumber *>* mtimes = [NSMutableArray new];
-
-    NSFileManager* fm = [NSFileManager defaultManager];
-    NSString* dir = JBPath(@SHADOW_RULESETS);
-
-    rulesetDirMtime = [self _fileMtime:dir];
-
-    NSArray* ruleset_urls = [fm contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dir isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
-
-    if(ruleset_urls) {
-        // Sort by file name so both load order and the mtime snapshot are deterministic.
-        ruleset_urls = [ruleset_urls sortedArrayUsingComparator:^NSComparisonResult(NSURL* a, NSURL* b) {
-            return [[a lastPathComponent] compare:[b lastPathComponent]];
-        }];
-
-        rulesetURLs = ruleset_urls;
-
-        for(NSURL* url in ruleset_urls) {
-            // RulesetEngine's own compiled caches live here too; they are not
-            // rulesets, so never track or load them (their rewrites are still
-            // caught by the dir-mtime check).
-            if([[url lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
-                continue;
-            }
-
-            RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
-
-            if(ruleset) {
-                NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
-
-                if(info) {
-                    NSLog(@"[Backend] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
-                } else {
-                    NSLog(@"[Backend] loaded ruleset: %@", url);
-                }
-
-                [result addObject:ruleset];
-            } else {
-                NSLog(@"[Backend] failed to load ruleset: %@", url);
-            }
-
-            // Snapshot every file in the dir (all plists load; a stray non-plist is still tracked so its rewrite is caught).
-            [mtimes addObject:@([self _fileMtime:[url path]])];
-        }
-    }
-
-    rulesetFileMtimes = [mtimes copy];
-
-    // Rulesets were just (re)loaded; don't re-scan on the first decision.
-    atomic_store_explicit(&lastRulesetCheck, [NSDate timeIntervalSinceReferenceDate], memory_order_release);
-    return [result copy];
-}
-
-- (void)_reloadRulesets {
-    // The ruleset state (rulesets, rulesetURLs, rulesetFileMtimes) is swapped
-    // as one unit under the lock: readers snapshot it under the same lock, so
-    // a reload can never free an array another thread is mid-iteration over
-    // (fast enumeration of a released array = UAF crash).
-    @synchronized(self) {
-        rulesets = [self _loadRulesets];
-
-        // C0-5: atomic generation bump — decision caches keyed on it must see the
-        // new value immediately (plain ivar in the public header; __atomic on the
-        // plain integer, matching the toolchain workaround documented in
-        // hooks.h). Reloads are serialized by the 1s scan gate, so the
-        // read-modify-write is single-writer.
-        NSUInteger gen = __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
-        __atomic_store_n(&rulesetGeneration, gen + 1, __ATOMIC_RELEASE);
-        [cache_restricted removeAllObjects];
-    }
-}
-
-// C0-5: current ruleset generation, read atomically. Consumers (Core.m's
-// bounded decision cache) use it to treat cached decisions as stale the
-// moment a ruleset reloads, instead of waiting out the TTL.
+// C0-5: current ruleset generation. Consumers (Core.m's bounded decision
+// cache) use it to treat cached decisions as stale the moment a ruleset
+// reloads, instead of waiting out the TTL.
 - (NSUInteger)rulesetGeneration {
-    return __atomic_load_n(&rulesetGeneration, __ATOMIC_ACQUIRE);
+    return [store generation];
 }
 
-- (void)_checkRulesetChanges {
-    // C0-2: the dir/file mtime stats are Shadow's own reads — see
-    // _loadRulesets. _reloadRulesets nests a _loadRulesets scope; the depth
-    // counter in Core.m keeps the scope busy until this one exits.
-    SHADOW_INTERNAL_SCOPE;
-
-    double now = [NSDate timeIntervalSinceReferenceDate];
-    double last = atomic_load_explicit(&lastRulesetCheck, memory_order_acquire);
-
-    if(now - last < 1.0) {
-        return;
-    }
-
-    // Claim this interval; exactly one thread scans per second.
-    double expected = last;
-
-    if(!atomic_compare_exchange_strong_explicit(&lastRulesetCheck, &expected, now, memory_order_acq_rel, memory_order_acquire)) {
-        return;
-    }
-
-    NSString* dir = JBPath(@SHADOW_RULESETS);
-
-    // All ruleset files live directly in this dir and the generated ruleset is
-    // written with atomically:YES (rename), so a dir-mtime change catches adds,
-    // removes and renames. In-place edits don't touch the dir mtime and are
-    // caught by the per-file stats on the cached URL list below.
-    if([self _fileMtime:dir] != rulesetDirMtime) {
-        [self _reloadRulesets];
-        return;
-    }
-
-    // Snapshot the URL/mtime arrays under the lock: a concurrent reload
-    // (ruleset file changed) swaps both arrays as one unit, so the snapshot
-    // stays internally consistent and outlives the iteration.
-    NSArray<NSURL*>* urls;
-    NSArray<NSNumber*>* mtimes;
-
-    @synchronized(self) {
-        urls = rulesetURLs;
-        mtimes = rulesetFileMtimes;
-    }
-
-    for(NSUInteger i = 0; i < [urls count]; i++) {
-        if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[mtimes objectAtIndex:i] doubleValue]) {
-            [self _reloadRulesets];
-            return;
-        }
-    }
+// 1s-gated change check + one immutable snapshot for the caller's whole
+// evaluation: (rulesets, generation) pair that can never skew across a
+// concurrent reload (replaces the old per-query @synchronized array grab).
+- (ShadowRulesetSnapshot *)_currentSnapshot {
+    [store checkForChanges];
+    return [store currentSnapshot];
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
@@ -186,9 +49,11 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         return NO;
     }
 
-    [self _checkRulesetChanges];
+    [store checkForChanges];
 
-    NSUInteger gen = rulesetGeneration;
+    // One immutable snapshot for gen + rulesets (see _currentSnapshot).
+    ShadowRulesetSnapshot* snapshot = [store currentSnapshot];
+    NSUInteger gen = snapshot.generation;
 
     // Header types this cache as <NSString *, NSArray *>; entries are packed
     // NSNumbers, so cast (header is public and unchanged).
@@ -204,16 +69,8 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         }
     }
 
-    // Snapshot the ruleset list under the lock: a concurrent reload swaps the
-    // array, and iterating a released array (fast enumeration) is a UAF crash.
-    NSArray<RulesetEngine *>* snapshot;
-
-    @synchronized(self) {
-        snapshot = rulesets;
-    }
-
     // pass 1: compliance (hard veto)
-    for(RulesetEngine* ruleset in snapshot) {
+    for(RulesetEngine* ruleset in snapshot.rulesets) {
         if(![ruleset isPathCompliant:path]) {
             [cache_restricted setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | 1) forKey:path];
             return YES;
@@ -223,7 +80,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // pass 2: whitelist
     BOOL whitelisted = NO;
 
-    for(RulesetEngine* ruleset in snapshot) {
+    for(RulesetEngine* ruleset in snapshot.rulesets) {
         if([ruleset isPathWhitelisted:path]) {
             whitelisted = YES;
             break;
@@ -233,7 +90,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // pass 3: blacklist
     BOOL blacklisted = NO;
 
-    for(RulesetEngine* ruleset in snapshot) {
+    for(RulesetEngine* ruleset in snapshot.rulesets) {
         if([ruleset isPathBlacklisted:path]) {
             blacklisted = YES;
             break;
@@ -255,8 +112,6 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         return NO;
     }
 
-    [self _checkRulesetChanges];
-
     // C0-3: compare case-insensitively — detectors probe case variants
     // ("Cydia", "SILEO") to dodge exact matches. Rulesets additionally
     // normalize their entries to lowercase at load (Ruleset.m _compile).
@@ -269,8 +124,9 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
     BOOL restricted = NO;
 
-    // Check rulesets
-    for(RulesetEngine* ruleset in rulesets) {
+    // Check rulesets against the immutable snapshot (the old direct `rulesets`
+    // ivar iteration could UAF across a concurrent reload).
+    for(RulesetEngine* ruleset in [self _currentSnapshot].rulesets) {
         if([ruleset isSchemeRestricted:scheme_lower]) {
             restricted = YES;
             break;
@@ -288,11 +144,9 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         return NO;
     }
 
-    [self _checkRulesetChanges];
-
     NSString* bundleID_lower = [bundleID lowercaseString];
 
-    for(RulesetEngine* ruleset in rulesets) {
+    for(RulesetEngine* ruleset in [self _currentSnapshot].rulesets) {
         if([ruleset isBundleIDRestricted:bundleID_lower]) {
             return YES;
         }

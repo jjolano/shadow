@@ -8,15 +8,12 @@
 // enumerate the rulesets directory (ShadowBackend) skip these files.
 FOUNDATION_EXPORT NSString* const kShadowRulesetCacheSuffix;
 
+// Candidate 5: RulesetEngine retains matching only. Parsing, validation,
+// compilation and the compiled-cache persistence moved to RulesetCompiler.m
+// (ShadowRulesetCompiler, framework-internal); loading via rulesetWithURL:
+// delegates to it, preserving last-known-good per URL.
 __attribute__((visibility("default")))
-@interface RulesetEngine : NSObject {
-    NSSet<NSString *>* set_urlschemes;
-    NSSet<NSString *>* set_whitelist;
-    NSSet<NSString *>* set_blacklist;
-
-    NSPredicate* pred_whitelist;
-    NSPredicate* pred_blacklist;
-}
+@interface RulesetEngine : NSObject
 
 @property (strong, nonatomic) NSDictionary* payloadDictionary;
 
