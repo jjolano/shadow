@@ -182,18 +182,59 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     return [self isPathRestricted:path options:nil];
 }
 
+// Candidate 5: legacy dictionary -> typed query translation. Only the four
+// published keys are read; unknown keys were never read by the pipeline (they
+// only disabled the decision cache via [options count] > 0, which the typed
+// pipeline preserves by caching only default-shaped queries).
+static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary<NSString*, id>* options) {
+    ShadowRestrictionQuery* query = [ShadowRestrictionQuery queryWithPath:path];
+    query.flags = ShadowRestrictionFlagResolve;
+    query.operation = ShadowRestrictionOperationRead;
+
+    if(!options) {
+        return query;
+    }
+
+    id resolve = [options objectForKey:kShadowRestrictionEnableResolve];
+
+    if(resolve && ![resolve boolValue]) {
+        query.flags &= ~ShadowRestrictionFlagResolve;
+    }
+
+    if([[options objectForKey:kShadowRestrictionNoFollow] boolValue]) {
+        query.flags |= ShadowRestrictionFlagNoFollow;
+    }
+
+    if([[options objectForKey:kShadowRestrictionOperation] isEqualToString:kShadowRestrictionOpWrite]) {
+        query.operation = ShadowRestrictionOperationWrite;
+    }
+
+    NSString* wd = [options objectForKey:kShadowRestrictionWorkingDir];
+
+    if(wd) {
+        query.workingDirectory = wd;
+    }
+
+    return query;
+}
+
+// Candidate 5: the dictionary methods translate to the typed entry point.
+- (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
+    return [self isPathRestrictedQuery:shdwQueryFromOptions(path, options)];
+}
+
 // Evaluate an absolute, standardized path exactly as a non-exempt
 // (shouldCheckPath == YES) query would be: rootless fast-paths, existence
 // gates, then the backend ruleset. Shared by the direct check and the
 // resolve-before-exempt re-check so a resolved symlink target is restricted
-// exactly when the equivalent direct path would be. options only contributes
+// exactly when the equivalent direct path would be. query only contributes
 // the operation intent, same as the direct path.
-- (BOOL)evaluatePathRestriction:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
+- (BOOL)evaluatePathRestriction:(NSString *)path query:(ShadowRestrictionQuery *)query {
     // C0-1: write/create/delete probes must not be let through by the
     // existence gates — a detector probing a restricted-classified path it
     // could create (e.g. /var/jb/usr/lib/libjailbreak.dylib before it
     // exists) must get a denial, not an "allowed because absent".
-    BOOL isWrite = [[options objectForKey:kShadowRestrictionOperation] isEqualToString:kShadowRestrictionOpWrite];
+    BOOL isWrite = (query.operation == ShadowRestrictionOperationWrite);
 
     // Rootless optimization: skip rooted checks. Covers /var/jb, its
     // canonical preboot target and /cores/ via isPathInRestrictedRoot.
@@ -260,15 +301,17 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     return NO;
 }
 
-- (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
+- (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
     // Pool-less pthread_create threads (Unity/Unreal loading threads, Flutter
     // engine threads, C++ std::thread file IO) have no autoreleasepool: every
     // autoreleased object this method allocates — the composite cache key,
-    // joined/standardized/resolved path strings, the options copy — would log
+    // joined/standardized/resolved path strings, the query copy — would log
     // "autoreleased with no pool in place — just leaking" and never be
     // released. The pool drains them all; the BOOL return survives, and cache
     // entries (NSCache retains) and _Thread_local state outlive the pool.
     @autoreleasepool {
+        NSString* path = query ? query.path : nil;
+
         if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
             return NO;
         }
@@ -282,10 +325,10 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         // jbroot files) is observed at most TTL later while a ruleset reload
         // invalidates immediately. Options that alter the decision (file
         // extension, resolve re-check, symlink resolution) are never cached; the
-        // single exception is the working-dir-only dict the readdir/enumerator
-        // hook lanes pass for every directory entry: with nothing but
-        // kShadowRestrictionWorkingDir in options, the decision depends solely
-        // on the joined workingDir+entry path, so it is cached under a composite
+        // single exception is the working-dir-only query the readdir/enumerator
+        // hook lanes pass for every directory entry: with nothing but the
+        // working directory set, the decision depends solely on the joined
+        // workingDir+entry path, so it is cached under a composite
         // (workingDir, entry) key — an array key, which can never collide with
         // the string keys of plain absolute-path queries, nor between two
         // different (workingDir, entry) pairs (identical pairs imply identical
@@ -293,16 +336,15 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         // be absolute (a relative one falls back to the process cwd, which is
         // not a stable cache input) and the entry must not be tilde-prefixed
         // (tilde expansion would make the decision depend on the process home).
-        BOOL cacheable = ((options == nil) || ([options count] == 0)) && [path isAbsolutePath];
+        BOOL defaultQuery = (query.operation == ShadowRestrictionOperationRead)
+            && (query.flags == ShadowRestrictionFlagResolve);
+        BOOL cacheable = defaultQuery && (query.workingDirectory == nil) && [path isAbsolutePath];
         id cacheKey = path;
 
-        if(!cacheable && [options count] == 1) {
-            NSString* workingDir = [options objectForKey:kShadowRestrictionWorkingDir];
-
-            if(workingDir && [workingDir isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
-                cacheKey = @[workingDir, path];
-                cacheable = YES;
-            }
+        if(!cacheable && defaultQuery && query.workingDirectory
+            && [query.workingDirectory isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
+            cacheKey = @[query.workingDirectory, path];
+            cacheable = YES;
         }
 
         if(cacheable) {
@@ -332,7 +374,7 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 
         // Attempt to resolve any relative paths.
         if(![path isAbsolutePath]) {
-            NSString* cwd = [options objectForKey:kShadowRestrictionWorkingDir];
+            NSString* cwd = query.workingDirectory;
 
             if(!cwd || ![cwd isAbsolutePath]) {
                 cwd = [[NSFileManager defaultManager] currentDirectoryPath];
@@ -356,20 +398,19 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
         // /usr/bin/ssh) is restricted exactly when the equivalent direct path
         // would be. A failed resolution (path does not exist) keeps the exemption
-        // — a non-existent path can't leak anything. Only no-follow options
+        // — a non-existent path can't leak anything. Only no-follow queries
         // (readlink/lstat link-location checks — the libc lane wires
         // kShadowRestrictionNoFollow into those hooks) skip resolution: they
         // request a location-only answer about the link itself, not its target.
-        // Every other options-bearing query resolves too — the options only
-        // contribute the working dir, relative-path handling and the
-        // file-extension suffix, all already applied to `path` above, so the
-        // resolved target is evaluated with the same options a direct path gets.
-        // Cacheable queries fold the result into the bounded decision cache
-        // (same TTL), amortizing the realpath syscall. shdw_resolvingPath
-        // guards the realpath call: the libc realpath hook re-enters
-        // isCPathRestricted from inside realpath, which would recurse forever
-        // without the per-thread guard.
-        BOOL noFollow = [[options objectForKey:kShadowRestrictionNoFollow] boolValue];
+        // Every other query resolves too — the query only contributes the
+        // working dir, relative-path handling and the operation, all already
+        // applied to `path` above, so the resolved target is evaluated with the
+        // same query a direct path gets. Cacheable queries fold the result into
+        // the bounded decision cache (same TTL), amortizing the realpath
+        // syscall. shdw_resolvingPath guards the realpath call: the libc
+        // realpath hook re-enters isCPathRestricted from inside realpath, which
+        // would recurse forever without the per-thread guard.
+        BOOL noFollow = (query.flags & ShadowRestrictionFlagNoFollow) != 0;
 
         if(!shouldCheckPath
             && !noFollow
@@ -383,7 +424,7 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
                 NSString* resolved = [NSString stringWithUTF8String:resolved_path];
 
                 resolvedRestricted = isPathInRestrictedRoot(resolved)
-                    || [self evaluatePathRestriction:resolved options:options];
+                    || [self evaluatePathRestriction:resolved query:query];
             }
 
             shdw_resolvingPath = NO;
@@ -395,21 +436,23 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         }
 
         if(shouldCheckPath) {
-            if([self evaluatePathRestriction:path options:options]) {
+            if([self evaluatePathRestriction:path query:query]) {
                 restricted = YES;
                 goto done;
             }
         }
 
         // Resolve into full path and check again.
-        if(![options objectForKey:kShadowRestrictionEnableResolve] || [[options objectForKey:kShadowRestrictionEnableResolve] boolValue]) {
+        if(query.flags & ShadowRestrictionFlagResolve) {
             NSString* resolved_path = [path stringByStandardizingPath];
 
             if(![resolved_path isEqualToString:path]) {
-                NSMutableDictionary* opt = [NSMutableDictionary dictionaryWithDictionary:options];
-                [opt setObject:@(NO) forKey:kShadowRestrictionEnableResolve];
+                ShadowRestrictionQuery* sub = [ShadowRestrictionQuery queryWithPath:resolved_path];
+                sub.workingDirectory = query.workingDirectory;
+                sub.operation = query.operation;
+                sub.flags = query.flags & ~ShadowRestrictionFlagResolve;
 
-                if([self isPathRestricted:resolved_path options:[opt copy]]) {
+                if([self isPathRestrictedQuery:sub]) {
                     restricted = YES;
                     goto done;
                 }
@@ -555,5 +598,21 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 
         return NO;
     }
+}
+@end
+
+@implementation ShadowRestrictionQuery
+
++ (instancetype)queryWithPath:(NSString *)path {
+    ShadowRestrictionQuery* query = [self new];
+    query.path = path;
+    query.operation = ShadowRestrictionOperationRead;
+    query.flags = ShadowRestrictionFlagResolve;
+    return query;
+}
+
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<ShadowRestrictionQuery path=%@ wd=%@ op=%ld flags=%lu>",
+        self.path, self.workingDirectory, (long)self.operation, (unsigned long)self.flags];
 }
 @end
