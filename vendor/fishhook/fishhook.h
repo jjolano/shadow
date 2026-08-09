@@ -80,6 +80,19 @@ int rebind_symbols_image(void *header,
                          struct rebinding rebindings[],
                          size_t rebindings_nel);
 
+/*
+ * Removes the entries previously added by rebind_symbols /
+ * rebind_symbols_checked, matched by the exact name/replacement/replaced
+ * pointers stored at that time (each caller's pointers are unique per call).
+ * The entry storage is freed; the caller keeps ownership of the pointed-to
+ * name/replaced memory. Returns 0 if any entry was removed, -1 if none
+ * matched. Lets a caller that detected a no-op (matched == 0) undo the
+ * registration so it leaves no state for future image loads.
+ */
+FISHHOOK_VISIBILITY
+int rebind_symbols_unbind(struct rebinding rebindings[],
+                          size_t rebindings_nel);
+
 #ifdef __cplusplus
 }
 #endif //__cplusplus

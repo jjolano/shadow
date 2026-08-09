@@ -32,6 +32,19 @@
 // Used to detect a target function too short to patch safely.
 HK_INTERNAL bool hk_arm64_is_terminator(uint32_t insn);
 
+// True if any complete instruction in the window [win, win+len) is an early
+// exit or unconditional control transfer that a prologue patch must not
+// clobber: RET/RETAA/RETAB, BR/BRAA/BRAB/BRAAZ/BRABZ, unconditional B.
+// Trailing partial instructions are ignored; never reads past `len`.
+// Used to refuse patching a function that ends inside the overwrite window.
+HK_INTERNAL bool hk_arm64_has_early_terminator(const void *win, size_t len);
+
+// True if any complete instruction in the window is a PC-relative literal
+// load (LDR literal / PRFM literal) or ADR/ADRP — forms whose relocation is
+// fragile or fatal in Dobby-style relocators. Conservative: a false positive
+// costs a declined backend, a false negative costs a crash.
+HK_INTERNAL bool hk_arm64_has_aarch64_literal_load(const void *win, size_t len);
+
 // Bytes a branch from `from` to `to` will occupy: 4 when a plain B reaches
 // (+/-128MB), otherwise 16.
 HK_INTERNAL size_t hk_arm64_branch_size(uint64_t from, uint64_t to);

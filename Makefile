@@ -89,7 +89,7 @@ check-exports:
 # at the first failure (no -k).
 .PHONY: test
 test:
-	$(ECHO_NOTHING)$(MAKE) test-reloc test-swift-abi$(ECHO_END)
+	$(ECHO_NOTHING)$(MAKE) test-reloc test-swift-abi test-substitute-classifier$(ECHO_END)
 
 # Host-side relocator test. Runs on the build machine, not the device: it only
 # exercises instruction decode/re-encode, which is where the crashes come from.
@@ -106,3 +106,13 @@ test-reloc:
 .PHONY: test-swift-abi
 test-swift-abi:
 	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -rdynamic -o $(THEOS_OBJ_DIR)/test_swift_abi tests/test_swift_abi.c && $(THEOS_OBJ_DIR)/test_swift_abi$(ECHO_END)
+
+# Host-side substitute error classifier test. Pure code table, runs on the
+# build machine. Compiles as ObjC so the test can include the REAL
+# Headers/HookKit/Compat.h and the REAL vendored substitute.h (through a fake
+# __APPLE__ plus minimal Mach-O/ObjC/Foundation header stubs, so the vendored
+# header's Apple-only sections compile on Linux). The classifier itself is a
+# commented mirror copy of the static function in Backends/HKMSBackends.m.
+.PHONY: test-substitute-classifier
+test-substitute-classifier:
+	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -x objective-c -Ivendor -IHeaders -I$(CURDIR)/tests/fake_headers -D__APPLE__ -o $(THEOS_OBJ_DIR)/test_substitute_classifier tests/test_substitute_classifier.c && $(THEOS_OBJ_DIR)/test_substitute_classifier$(ECHO_END)

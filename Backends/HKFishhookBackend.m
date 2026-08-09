@@ -18,7 +18,9 @@
 // forever — per-hook, bounded. Deliberate: fishhook writes the original
 // through these cells on every future image load. Guarded because
 // hookFunction: may be called from multiple threads (fishhook's own list is
-// locked internally; the ObjC store is not).
+// locked internally; the ObjC store is not). Hooks that matched no loaded
+// reference are unregistered (rebind_symbols_unbind) and freed instead, so a
+// refused (HK_ERR_NOT_SUPPORTED) hook retains nothing for future image loads.
 @interface HKFishhookRebinding : NSObject {
 @public
     char *name;
@@ -102,14 +104,15 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
     if(matched == 0) {
         // The symbol is exported (dladdr found it) but no loaded image
         // references it through an indirect symbol pointer, so the rebinding
-        // is a silent no-op today. fishhook retains it for future image
-        // loads, so keep the cells alive in the store, but report the no-op
-        // honestly instead of pretending the hook took effect.
+        // is a silent no-op. Unregister it from fishhook and free the cells:
+        // nothing may apply on a future image load and nothing is retained,
+        // so HK_ERR_NOT_SUPPORTED stays side-effect-free.
         NSLog(@"[HookKit] fishhook: symbol '%s' is not referenced by any loaded image; hook is a no-op", owned->name);
 
-        @synchronized(fishhookRebindingStore()) {
-            [fishhookRebindingStore() addObject:owned];
-        }
+        rebind_symbols_unbind(&rebinding, 1);
+
+        free(owned->name);
+        free(owned->origCell);
 
         return HK_ERR_NOT_SUPPORTED;
     }

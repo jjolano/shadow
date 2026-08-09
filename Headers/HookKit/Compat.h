@@ -110,7 +110,10 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  * issue them from more than one thread. Not synchronized: last-error state —
  * getLibErrno: reports the last hook call's per-backend detail; read it
  * immediately on the same thread that made the call, not cross-thread. The
- * native Substitute API additionally requires the main thread.
+ * native Substitute API additionally requires the main thread, and the native
+ * engine requires it too for function and memory patching — it does not
+ * suspend peer threads, so off the main thread those return
+ * HK_ERR_NOT_SUPPORTED without patching.
  *
  * Batch storage lifetime: while batching, enqueue-time HK_OK means "accepted
  * into the queue", not "installed" — only executeHooks installs and writes
@@ -142,6 +145,42 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
  * HK_ERR_PARTIAL from executeHooks / findSymbolsInImage: means some-but-not-
  * all succeeded: executeHooks writes old_ptr only for succeeded operations,
  * and findSymbolsInImage: leaves NULL entries for misses.
+ *
+ * HK_ERR_NOT_SUPPORTED contract: the code means "not installed — the target
+ * is outside this technique's capability, nothing was written, and the
+ * caller's old_ptr is untouched", so callers may retry with another
+ * technique. Backends that cannot promise a side-effect-free failure report
+ * HK_ERR instead (a failed invocation may have applied). Per backend:
+ * fishhook returns it when a symbol is exported but no loaded image
+ * references it, and unregisters the rebinding so nothing applies to future
+ * image loads (rebind_symbols_unbind); substitute maps the capability-miss
+ * codes (FUNC_TOO_SHORT / BAD_INSN_AT_START / CALLS_AT_START /
+ * JUMPS_TO_START / OUT_OF_RANGE / NO_SUCH_SELECTOR) through
+ * substitute_error_to_status, and the GOT/PLT interpose fallback fires only
+ * for those five function codes, with a fresh out-cell; the native engine
+ * maps its UNSUPPORTED / SHORT_FUNCTION / RELOCATE failures the same way;
+ * the preflight rejections below use it too. Everything else — OOM, VM,
+ * NOT_ON_MAIN_THREAD, UNEXPECTED_PC_ON_OTHER_THREAD, unknown/future codes —
+ * is HK_ERR: the hook may already be applied, so it must never be retried.
+ *
+ * Fail-closed prologue preflight: before any inline code patch, the litehook
+ * (20-byte overwrite), Dobby (16-byte) and native backends reject — with
+ * HK_ERR_NOT_SUPPORTED and nothing written — a target whose prologue is
+ * misaligned, a self-hook, a function that ends inside the overwrite window
+ * (an early RET/RETAA/RETAB/BR/BRAAZ/BRABZ or unconditional B), or a literal
+ * load / ADR(ADRP) in the window (Dobby/litehook; the native engine's own
+ * checks). Too-small functions and literal-load prologues are refused, not
+ * smashed. The checks read only the window and never write, so a reject
+ * leaves the target intact; they are check-then-act — another thread could
+ * mutate the window between scan and patch, an accepted ceiling, as only
+ * Substitute suspends threads. Hooks must still be installed at load time,
+ * before the target can run elsewhere.
+ *
+ * Arch gates: litehook's inline technique is arm64/arm64e-only — its
+ * trampoline emits AArch64 opcodes — so setStrategy: refuses HKStrategyInline
+ * on 32-bit, hookFunction:'s inline branch refuses, and the registry's
+ * HK_CAT_FUNCTION_INLINE picker drops the litehook row on armv7. litehook
+ * rebind and memory-patch remain available on all archs.
  *
  * Per-backend caveats — fishhook symbol-only rebinding; native/Dobby/Frida
  * codesigning, arch and load-time constraints; Swift vtable scope and calling
@@ -195,6 +234,27 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // HK_LIB_NONE).
 + (instancetype)substitutorWithOrderedCategories:(NSArray<NSNumber *> *)categories;
 
+// Auto-cover routing mode: creates an instance of HKSubstitutor that, instead
+// of pinning one backend at init, routes each non-batched function hook to the
+// first available backend in the given categories whose side-effect-free
+// preflight accepts the target. Each element is an NSNumber wrapping a
+// hookkit_cat_t; within a category the built-in picker priority applies, and
+// categories are tried in the given order. When every picker declines the
+// target, the hook returns HK_ERR_NOT_SUPPORTED without invoking any backend
+// (fail closed, nothing written). Backends without a preflight are presumed to
+// accept. This is the "try the next technique when the first cannot handle
+// this function" fallback, made safe: routing is driven by preflight
+// capability probes, never by hook results (a failed invocation may have
+// mutated the target, so results are never retried). Batch hooks and the
+// image/symbol APIs use the first available category backend, pinned at init
+// (batches must not split across backends). activeType reflects the pinned
+// fallback; the per-hook winner is not reported. Coverage note: a function
+// too small for an inline patch is often still rebindable — fishhook and
+// litehook rebind a GOT-referenced export regardless of body size — so
+// @[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)] is the recommended
+// composition.
++ (instancetype)substitutorWithAutoCoverCategories:(NSArray<NSNumber *> *)categories;
+
 // Creates an instance of HKSubstitutor for the given backend category. The
 // first available backend in that category's built-in priority order is
 // selected — callers request a capability, not a specific library. Returns
@@ -206,7 +266,10 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 // Creates an instance of HKSubstitutor using the currently loaded substitutor.
 + (instancetype)defaultSubstitutor;
 
-// Hook method for Objective-C runtime methods. Returns HK_OK if successful.
+// Hook method for Objective-C runtime methods. Class-method-only selectors are
+// dispatched through the metaclass (object_getClass()), so class methods hook
+// correctly on every backend; instance methods pass the class as-is. Returns
+// HK_OK if successful.
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 
 // Hook method for C functions. Executes immediately if batching property is disabled. Returns HK_OK if successful.

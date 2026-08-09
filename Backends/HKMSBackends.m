@@ -66,6 +66,7 @@ static struct substitute_image *(*fn_substitute_open_image)(const char *) = NULL
 static void (*fn_substitute_close_image)(struct substitute_image *) = NULL;
 static int (*fn_substitute_find_private_syms)(struct substitute_image *, const char **, void **, size_t) = NULL;
 static void *(*fn_substitute_sym_to_ptr)(struct substitute_image *, substitute_sym *) = NULL;
+static int (*fn_substitute_interpose_imports)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int) = NULL;
 static BOOL substitute_native_available = NO;
 
 static void *resolve_ms_symbol(void *handle, const char *name, const char *fallback) {
@@ -110,6 +111,7 @@ BOOL substitute_available(void) {
     fn_substitute_close_image = (void (*)(struct substitute_image *))dlsym(libsubstitute_handle, "substitute_close_image");
     fn_substitute_find_private_syms = (int (*)(struct substitute_image *, const char **, void **, size_t))dlsym(libsubstitute_handle, "substitute_find_private_syms");
     fn_substitute_sym_to_ptr = (void *(*)(struct substitute_image *, substitute_sym *))dlsym(libsubstitute_handle, "substitute_sym_to_ptr");
+    fn_substitute_interpose_imports = (int (*)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int))dlsym(libsubstitute_handle, "substitute_interpose_imports");
 
     substitute_native_available = fn_substitute_hook_functions && fn_substitute_hook_objc_message
         && fn_substitute_open_image && fn_substitute_close_image
@@ -230,6 +232,38 @@ BOOL substitute_available(void) {
 }
 @end
 
+#pragma mark - Substitute error classification
+
+// Maps a native libsubstitute error code to the hookkit status. Pure: no
+// state, just the code table. Shared by hookFunction: and hookMessageInClass:.
+//
+// Capability misses mean the hook was NOT applied — the function's shape or
+// the selector's absence make this technique unusable, which is what
+// HK_ERR_NOT_SUPPORTED reports so callers can switch hooking techniques.
+//
+// Everything else (OOM, VM, NOT_ON_MAIN_THREAD, UNEXPECTED_PC_ON_OTHER_THREAD
+// [the hooks were otherwise completed], ADJUSTING_THREADS, or any unknown or
+// future code from a newer installed libsubstitute than the vendored header)
+// is terminal: the hook may already be applied, so it must never be retried.
+// The default fails closed to HK_ERR.
+static hookkit_status_t substitute_error_to_status(int err) {
+    switch(err) {
+        case SUBSTITUTE_OK:
+            return HK_OK;
+
+        case SUBSTITUTE_ERR_FUNC_TOO_SHORT:
+        case SUBSTITUTE_ERR_FUNC_BAD_INSN_AT_START:
+        case SUBSTITUTE_ERR_FUNC_CALLS_AT_START:
+        case SUBSTITUTE_ERR_FUNC_JUMPS_TO_START:
+        case SUBSTITUTE_ERR_OUT_OF_RANGE:
+        case SUBSTITUTE_ERR_NO_SUCH_SELECTOR:
+            return HK_ERR_NOT_SUPPORTED;
+
+        default:
+            return HK_ERR;
+    }
+}
+
 #pragma mark - HKSubstituteBackend
 
 @implementation HKSubstituteBackend
@@ -249,7 +283,7 @@ BOOL substitute_available(void) {
 
     int result = fn_substitute_hook_objc_message(objcClass, selector, replacement, old_ptr, NULL);
     _lastErrno = result;
-    return result == SUBSTITUTE_OK ? HK_OK : HK_ERR;
+    return substitute_error_to_status(result);
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
@@ -268,7 +302,54 @@ BOOL substitute_available(void) {
         return HK_OK;
     }
 
-    return HK_ERR;
+    // GOT/PLT interposition fallback: on iOS 16.2+ the AMFI/APT policy
+    // changes broke executable-code patching, so substitute_hook_functions
+    // fails on functions it could otherwise hook. The fallback fires ONLY
+    // for the five capability-miss codes — substitute reported it could not
+    // patch the function, so nothing was written and interposing is safe.
+    // Any other code (OOM, VM, NOT_ON_MAIN_THREAD, UNEXPECTED_PC_ON_OTHER_
+    // THREAD, ADJUSTING_THREADS, or unknown/future) means the hook may
+    // already be applied — retrying with interposition could double-hook.
+    if(fn_substitute_interpose_imports
+        && (result == SUBSTITUTE_ERR_FUNC_TOO_SHORT
+            || result == SUBSTITUTE_ERR_FUNC_BAD_INSN_AT_START
+            || result == SUBSTITUTE_ERR_FUNC_CALLS_AT_START
+            || result == SUBSTITUTE_ERR_FUNC_JUMPS_TO_START
+            || result == SUBSTITUTE_ERR_OUT_OF_RANGE)) {
+        Dl_info info;
+
+#if __has_feature(ptrauth_calls)
+        function = ptrauth_strip(function, ptrauth_key_asia);
+#endif
+
+        if(dladdr(function, &info) && info.dli_sname) {
+            // Fresh zeroed out-cell: substitute may have written old_ptr
+            // while preparing the failed inline hook — never reuse a
+            // possibly-written cell.
+            void *interposedOld = NULL;
+
+            struct substitute_import_hook ih = {
+                .name = info.dli_sname,
+                .replacement = replacement,
+                .old_ptr = &interposedOld,
+                .options = 0
+            };
+
+            int interposeResult = fn_substitute_interpose_imports(NULL, &ih, 1, NULL, 0);
+            _lastErrno = interposeResult;
+
+            // Publish the interpose result's old value only on success.
+            if(interposeResult == SUBSTITUTE_OK) {
+                if(old_ptr) {
+                    *old_ptr = interposedOld;
+                }
+
+                return HK_OK;
+            }
+        }
+    }
+
+    return substitute_error_to_status(result);
 }
 
 - (HKImageRef)openImage:(NSString *)path {

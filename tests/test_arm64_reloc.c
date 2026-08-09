@@ -152,6 +152,86 @@ static void test_terminators(void) {
     assert(!hk_arm64_is_terminator(0x54000100));    // B.cond falls through
 }
 
+static void test_has_early_terminator(void) {
+    // Empty / too-short windows are not "early terminator".
+    assert(!hk_arm64_has_early_terminator(NULL, 0));
+    assert(!hk_arm64_has_early_terminator((const void *)0x1000, 0));
+    assert(!hk_arm64_has_early_terminator((const void *)0x1000, 3));
+
+    // A single RET is an early terminator.
+    uint32_t ret = 0xD65F03C0;
+    assert(hk_arm64_has_early_terminator(&ret, 4));
+
+    // RETAA / RETAB (authenticated returns)
+    uint32_t retaa = 0xD65F0BFC;
+    assert(hk_arm64_has_early_terminator(&retaa, 4));
+    uint32_t retab = 0xD65F0FFC;
+    assert(hk_arm64_has_early_terminator(&retab, 4));
+
+    // BRAAZ X17 / BRABZ X17 (authenticated indirect branches)
+    uint32_t braaz = 0xD71F0BF1;
+    assert(hk_arm64_has_early_terminator(&braaz, 4));
+    uint32_t brabz = 0xD71F0FF1;    // key-B variant (bit 10 set)
+    assert(hk_arm64_has_early_terminator(&brabz, 4));
+
+    // Unconditional B in a window.
+    uint32_t b = 0x14000010;
+    assert(hk_arm64_has_early_terminator(&b, 4));
+
+    // A 12-byte window of NOPs has no terminator...
+    uint32_t nops[3] = { 0xD503201F, 0xD503201F, 0xD503201F };
+    assert(!hk_arm64_has_early_terminator(nops, 12));
+
+    // ...but a window with a terminator in the middle does, even if the
+    // window extends past it.
+    uint32_t mid[4] = { 0xD503201F, 0xD65F03C0, 0xD503201F, 0xD503201F };
+    assert(hk_arm64_has_early_terminator(mid, 16));
+
+    // BLRAA (authenticated call) is NOT a terminator.
+    uint32_t blraaz = 0xD73F0BF1;
+    assert(!hk_arm64_has_early_terminator(&blraaz, 4));
+
+    // BLR is not a terminator.
+    uint32_t blr = 0xD63F0200;
+    assert(!hk_arm64_has_early_terminator(&blr, 4));
+
+    // B.cond falls through — not a terminator.
+    uint32_t bcond = 0x54000100;
+    assert(!hk_arm64_has_early_terminator(&bcond, 4));
+
+    // Trailing partial instruction (3 bytes) does not read past the window.
+    uint32_t three = 0xD65F03C0;
+    assert(!hk_arm64_has_early_terminator(&three, 3));
+}
+
+static void test_has_literal_load(void) {
+    // LDR X0, #0x40 (literal) is a literal load.
+    uint32_t ldr = 0x58000200;
+    assert(hk_arm64_has_aarch64_literal_load(&ldr, 4));
+
+    // PRFM literal.
+    uint32_t prfm = 0xD8000200;
+    assert(hk_arm64_has_aarch64_literal_load(&prfm, 4));
+
+    // ADR / ADRP.
+    uint32_t adr = 0x10000800;
+    assert(hk_arm64_has_aarch64_literal_load(&adr, 4));
+    uint32_t adrp = 0xB0000008;
+    assert(hk_arm64_has_aarch64_literal_load(&adrp, 4));
+
+    // NOP / ADD / RET are not literal loads.
+    uint32_t nop = 0xD503201F;
+    assert(!hk_arm64_has_aarch64_literal_load(&nop, 4));
+    uint32_t add = 0x91000108;
+    assert(!hk_arm64_has_aarch64_literal_load(&add, 4));
+    uint32_t ret = 0xD65F03C0;
+    assert(!hk_arm64_has_aarch64_literal_load(&ret, 4));
+
+    // Empty / too-short windows.
+    assert(!hk_arm64_has_aarch64_literal_load(NULL, 0));
+    assert(!hk_arm64_has_aarch64_literal_load((const void *)0x1000, 3));
+}
+
 static void test_branch_emit(void) {
     assert(hk_arm64_branch_size(0x1000, 0x1040) == 4);
     assert(hk_arm64_branch_size(0x1000, 0x1000 + (1 << 27)) == 16);
@@ -201,6 +281,8 @@ int main(void) {
     test_cond_branch();
     test_load_literal();
     test_terminators();
+    test_has_early_terminator();
+    test_has_literal_load();
     test_branch_emit();
     test_multi_and_capacity();
 

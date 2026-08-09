@@ -101,6 +101,11 @@ static int prepend_rebindings(struct rebindings_entry **rebindings_head,
   }
   memcpy(new_entry->rebindings, rebindings, sizeof(struct rebinding) * nel);
   new_entry->rebindings_nel = nel;
+  // Zero-init so a fresh entry deterministically reports "nothing matched"
+  // through outMatched; a garbage count would look like a real rebinding.
+  // The counter accumulates across future image loads, so it is only reset
+  // here, at allocation.
+  new_entry->matched = 0;
   new_entry->next = *rebindings_head;
   *rebindings_head = new_entry;
   return 0;
@@ -352,4 +357,46 @@ int rebind_symbols_image(void *header,
     }
     free(rebindings_head);
     return retval;
+}
+
+// Removes the entries previously prepended for rebindings by a
+// rebind_symbols/rebind_symbols_checked call, matching on the exact
+// name/replacement/replaced pointers stored at that time (each caller's
+// pointers are unique per call). Frees the entry storage only; the caller
+// keeps ownership of the pointed-to name/replaced memory. Returns 0 if any
+// entry was removed, -1 if none matched. Lets a caller that detected a no-op
+// (matched == 0) undo the registration so nothing persists for future image
+// loads.
+int rebind_symbols_unbind(struct rebinding rebindings[],
+                          size_t rebindings_nel) {
+  int removed = -1;
+
+  pthread_mutex_lock(&rebindings_lock);
+
+  struct rebindings_entry **link = &_rebindings_head;
+  while (*link) {
+    struct rebindings_entry *entry = *link;
+    if (entry->rebindings_nel == rebindings_nel) {
+      bool same = true;
+      for (size_t i = 0; i < rebindings_nel; i++) {
+        if (entry->rebindings[i].name != rebindings[i].name ||
+            entry->rebindings[i].replacement != rebindings[i].replacement ||
+            entry->rebindings[i].replaced != rebindings[i].replaced) {
+          same = false;
+          break;
+        }
+      }
+      if (same) {
+        *link = entry->next;
+        free(entry->rebindings);
+        free(entry);
+        removed = 0;
+        continue;
+      }
+    }
+    link = &entry->next;
+  }
+
+  pthread_mutex_unlock(&rebindings_lock);
+  return removed;
 }

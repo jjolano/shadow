@@ -1,6 +1,13 @@
 #import "Internal/HKBackendInternal.h"
 
 #import <dlfcn.h>
+#import <errno.h>
+
+#if __has_include(<ptrauth.h>)
+#import <ptrauth.h>
+#endif
+
+#import "native/hk_arm64.h"
 
 // Dobby: vendored static lib with arm64/arm64e slices only; the header is
 // plain C and safe to include, but the backend class below is arch-gated too
@@ -30,9 +37,64 @@
     return HK_ERR_NOT_SUPPORTED;
 }
 
+- (hookkit_status_t)hk_dobby_inline_preflight:(void *)function replacement:(void *)replacement {
+    // Fail closed before DobbyHook: Dobby's relocator neither rejects short
+    // functions (it reads its 12-16 byte overwrite window without recognizing
+    // early exits, smashing whatever follows) nor handles literal loads (it
+    // UNIMPLEMENTED()s on some LDR-literal encodings and mishandles SIMD
+    // literal loads). The prologue checks below read only the first 16 bytes
+    // and never write, so a reject leaves the target untouched.
+    if(((uintptr_t)function & 0x3) != 0) {
+        _lastErrno = EINVAL;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(function == replacement) {
+        _lastErrno = EINVAL;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(hk_arm64_has_early_terminator(function, 16)) {
+        // Function ends inside the overwrite window: patching would smash a
+        // neighbor's bytes.
+        _lastErrno = EOPNOTSUPP;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(hk_arm64_has_aarch64_literal_load(function, 16)) {
+        // Literal load / ADR(ADRP) in the overwrite window: the relocator
+        // fatally mishandles these.
+        _lastErrno = EOPNOTSUPP;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
+    return [self hk_dobby_inline_preflight:function replacement:replacement];
+}
+
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+
+#if __has_feature(ptrauth_calls)
+    // Strip PAC so the raw address is what the relocator will inspect (arm64e).
+    function = ptrauth_strip(function, ptrauth_key_asia);
+    replacement = ptrauth_strip(replacement, ptrauth_key_asia);
+#endif
+
+    hookkit_status_t preflight = [self hk_dobby_inline_preflight:function replacement:replacement];
+
+    if(preflight != HK_OK) {
+        // Refused before any write: the target's prologue cannot be
+        // overwritten safely (see hk_dobby_inline_preflight).
+        return preflight;
+    }
+
     // DobbyHook returns 0 on success; -1 on failure (null address, already
     // hooked, or routing error). Hooks by address — no exported-symbol check.
+    // A vendor -1 stays HK_ERR: mutation may already have occurred.
     void *orig = NULL;
     int result = DobbyHook(function, replacement, &orig);
     _lastErrno = result;

@@ -1,8 +1,11 @@
 #import "Internal/HKBackendInternal.h"
 
 #import <dlfcn.h>
+#import <errno.h>
 #import <objc/runtime.h>
+#import <pthread.h>
 
+#import "native/hk_arm64.h"
 #import "native/hk_native.h"
 #import "native/hk_swift.h"
 
@@ -37,31 +40,94 @@
     IMP inherited = method_getImplementation(method);
 
     // class_getInstanceMethod walks superclasses, so the method may not belong
-    // to this class. Adding it here leaves the superclass untouched and chains
-    // to the implementation we would otherwise have inherited.
-    if(class_addMethod(objcClass, selector, (IMP)replacement, method_getTypeEncoding(method))) {
-        if(old_ptr) {
-            *old_ptr = (void *)inherited;
-        }
-
-        return HK_OK;
-    }
-
-    IMP previous = method_setImplementation(method, (IMP)replacement);
+    // to this class. class_replaceMethod atomically adds it here (for an
+    // inherited/absent method) or replaces it (for an owned one) on THIS class
+    // only — never touching the superclass — and reports the implementation
+    // we would otherwise have inherited. Works for metaclasses too, so class
+    // methods hook through the same path.
+    class_replaceMethod(objcClass, selector, (IMP)replacement, method_getTypeEncoding(method));
 
     if(old_ptr) {
-        *old_ptr = (void *)previous;
+        *old_ptr = (void *)inherited;
+    }
+
+    return HK_OK;
+}
+
+// The native engine patches executable memory without suspending peer
+// threads, so code patching must only happen at load time, on the main
+// thread, before the target can run elsewhere (same contract as Substitute).
+static BOOL hk_native_ensure_main_thread(void) {
+#if TARGET_OS_IPHONE
+    if(!pthread_main_np()) {
+        return NO;
+    }
+#endif
+
+    return YES;
+}
+
+// Engine failures split into capability misses (the target's shape is outside
+// what the engine can safely patch — callers may switch technique) and hard
+// errors (the patch was attempted and failed).
+static hookkit_status_t hk_native_map_engine_failure(int errnoVal) {
+    switch(errnoVal) {
+        case HK_NATIVE_ERR_UNSUPPORTED:
+        case HK_NATIVE_ERR_SHORT_FUNCTION:
+        case HK_NATIVE_ERR_RELOCATE:
+            return HK_ERR_NOT_SUPPORTED;
+
+        default:
+            return HK_ERR;
+    }
+}
+
+// Side-effect-free capability preflight for auto-cover routing: mirrors the
+// no-write rejections the engine would produce (alignment, self-hook,
+// short-function, literal-load) plus the main-thread gate, so a router can
+// pick this backend without ever invoking a hook that would be refused. All
+// checks read only; a reject leaves the target untouched.
+- (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
+    if(!hk_native_ensure_main_thread()) {
+        _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    void *rawTarget = function;
+    void *rawReplacement = replacement;
+
+#if __has_feature(ptrauth_calls)
+    // Strip PAC so the raw address is what the engine inspects (arm64e).
+    rawTarget = ptrauth_strip(rawTarget, ptrauth_key_asia);
+    rawReplacement = ptrauth_strip(rawReplacement, ptrauth_key_asia);
+#endif
+
+    if(((uintptr_t)rawTarget & 0x3) != 0 || rawTarget == rawReplacement) {
+        _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    // Overwrite window is the branch size (4 or 16 bytes). Only the earliest
+    // instructions matter for the short-function/literal checks.
+    if(hk_arm64_has_early_terminator(rawTarget, 16) || hk_arm64_has_aarch64_literal_load(rawTarget, 16)) {
+        _lastErrno = HK_NATIVE_ERR_SHORT_FUNCTION;
+        return HK_ERR_NOT_SUPPORTED;
     }
 
     return HK_OK;
 }
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    if(!hk_native_ensure_main_thread()) {
+        _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
     void *orig = NULL;
 
     if(!hk_native_hook_function(function, replacement, &orig)) {
         _lastErrno = hk_native_last_error();
-        return HK_ERR;
+        return hk_native_map_engine_failure(_lastErrno);
     }
 
     _lastErrno = 0;
@@ -74,9 +140,14 @@
 }
 
 - (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(!hk_native_ensure_main_thread()) {
+        _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
     if(!hk_native_patch_memory(target, data, size)) {
         _lastErrno = hk_native_last_error();
-        return HK_ERR;
+        return hk_native_map_engine_failure(_lastErrno);
     }
 
     _lastErrno = 0;

@@ -114,11 +114,24 @@ const HKBackendDescriptor *hk_backends(size_t *outCount) {
 const HKCategoryPriority hk_category_priorities[] = {
     { HK_CAT_MESSAGE,         { {HK_LIB_ELLEKIT, HKStrategyDefault}, {HK_LIB_SUBSTRATE, HKStrategyDefault}, {HK_LIB_SUBSTITUTE, HKStrategyDefault}, {HK_LIB_NATIVE, HKStrategyDefault} }, 4 },
     { HK_CAT_FUNCTION_REBIND, { {HK_LIB_FISHHOOK, HKStrategyRebind}, {HK_LIB_LITEHOOK, HKStrategyRebind} }, 2 },
+    // Prologue inline trampolines are AArch64-only: litehook, Dobby and Frida
+    // emit AArch64 instructions unconditionally, so litehook's picker is
+    // arm64/arm64e-only. On 32-bit archs ElleKit, Dobby and Frida still cover
+    // the category, and Dobby/Frida report unavailable at runtime, so no
+    // resolution can select HKStrategyInline there.
+    { HK_CAT_FUNCTION_INLINE, { {HK_LIB_ELLEKIT, HKStrategyInline}, {HK_LIB_DOBBY, HKStrategyInline}, {HK_LIB_FRIDA, HKStrategyInline},
 #if defined(__arm64__) || defined(__arm64e__)
-    // Prologue inline trampolines are AArch64-only (litehook, Dobby and Frida
-    // all emit AArch64 instructions unconditionally), so on 32-bit archs the
-    // category is unavailable and no resolution can select HKStrategyInline.
-    { HK_CAT_FUNCTION_INLINE, { {HK_LIB_ELLEKIT, HKStrategyInline}, {HK_LIB_DOBBY, HKStrategyInline}, {HK_LIB_FRIDA, HKStrategyInline}, {HK_LIB_LITEHOOK, HKStrategyInline} }, 4 },
+                                {HK_LIB_LITEHOOK, HKStrategyInline} },
+                               4 },
+#else
+                                // litehook's inline trampoline emits AArch64
+                                // opcodes only (see HKLitehookBackend), so its
+                                // inline picker is arm64/arm64e-only; on 32-bit
+                                // archs ElleKit, Dobby and Frida still cover
+                                // the category. litehook rebind and memory use
+                                // stay available on 32-bit.
+                                },
+                               3 },
 #endif
 #if defined(__arm64__) || defined(__arm64e__)
     { HK_CAT_PRIVATE_SYMBOL,  { {HK_LIB_ELLEKIT, HKStrategyPrivateSymbol}, {HK_LIB_SUBSTRATE, HKStrategyPrivateSymbol}, {HK_LIB_SUBSTITUTE, HKStrategyPrivateSymbol}, {HK_LIB_LITEHOOK, HKStrategyPrivateSymbol} }, 4 },

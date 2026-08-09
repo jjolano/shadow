@@ -62,6 +62,14 @@ typedef NS_ENUM(int, HKHookKind) {
 // Technique hint for strategy-aware backends (HKLitehookBackend). Optional:
 // backends without it keep their vendor default technique.
 - (void)setStrategy:(HKStrategy)strategy;
+// Side-effect-free capability preflight (auto-cover routing). Optional: a
+// backend that does not implement it is presumed able to attempt any target
+// it supportsHookKind: (a preflight that only declines, never verifies —
+// HK_OK means "no known veto", not "guaranteed safe"). Backends with real
+// prologue preflights (litehook/Dobby/native inline) implement it so the
+// auto-cover router can pick the first backend that accepts a target without
+// ever invoking a hook that would be rejected mid-flight.
+- (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement;
 @end
 
 #pragma mark - Backend classes

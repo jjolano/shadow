@@ -205,6 +205,20 @@ bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
     void *raw_target = hk_strip_code(target);
     void *raw_replacement = hk_strip_code(replacement);
 
+    // AArch64 instructions are 4-byte aligned; a misaligned target is not an
+    // instruction boundary, and patching it would smash whatever it points at.
+    if(((uintptr_t)raw_target & 3u) != 0) {
+        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
+        return false;
+    }
+
+    // Hooking a function with itself is a no-op that would clobber the
+    // original bytes with a branch back to the same place.
+    if(raw_target == raw_replacement) {
+        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
+        return false;
+    }
+
     uint64_t target_addr = (uint64_t)(uintptr_t)raw_target;
     size_t patch_bytes = hk_arm64_branch_size(target_addr, (uint64_t)(uintptr_t)raw_replacement);
     size_t insn_count = patch_bytes / 4;
@@ -212,12 +226,14 @@ bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
 
     // A terminator before the last instruction we would overwrite means the
     // function ends inside the patch -- the remaining bytes belong to whatever
-    // follows it. Refuse rather than corrupt an unrelated function.
-    for(size_t i = 0; i + 1 < insn_count; i++) {
-        if(hk_arm64_is_terminator(src[i])) {
-            hk_errno = HK_NATIVE_ERR_SHORT_FUNCTION;
-            return false;
-        }
+    // follows it. Refuse rather than corrupt an unrelated function. (The
+    // helper recognizes the authenticated forms too: RETAA/RETAB/BRAA-family,
+    // which arm64e micro-thunks use.) The last instruction is excluded
+    // because it is fully replaced by the branch, exactly like the original
+    // loop's `i + 1 < insn_count` bound.
+    if(hk_arm64_has_early_terminator(src, patch_bytes - 4)) {
+        hk_errno = HK_NATIVE_ERR_SHORT_FUNCTION;
+        return false;
     }
 
     pthread_mutex_lock(&tramp.lock);
@@ -272,6 +288,12 @@ bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
 
 bool hk_native_patch_memory(void *target, const void *data, size_t size) {
     if(!target || !data || size == 0) {
+        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
+        return false;
+    }
+
+    // Patching a region with its own bytes is a no-op that can only fail.
+    if(target == data) {
         hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
         return false;
     }

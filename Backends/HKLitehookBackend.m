@@ -6,6 +6,7 @@
 #import <ptrauth.h>
 #endif
 
+#import "native/hk_arm64.h"
 #import "vendor/litehook/litehook.h"
 
 #pragma mark - HKLitehookBackend
@@ -22,6 +23,48 @@
     }
 #endif
     _strategy = strategy;
+}
+
+// Shared by hookFunction:'s inline branch and preflightFunction: so the
+// router and the direct path decline exactly the same targets. Reads only
+// the overwrite window and never writes; a reject leaves the target intact.
+- (hookkit_status_t)hk_litehook_inline_preflight:(void *)function replacement:(void *)replacement {
+    if(((uintptr_t)function & 0x3) != 0) {
+        _lastErrno = EINVAL;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(function == replacement) {
+        _lastErrno = EINVAL;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(hk_arm64_has_early_terminator(function, 20)) {
+        // Function ends inside the 20-byte overwrite window: patching would
+        // smash a neighbor's bytes.
+        _lastErrno = EOPNOTSUPP;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    if(hk_arm64_has_aarch64_literal_load(function, 20)) {
+        // Literal load / ADR(Ps) in the overwrite window: litehook copies the
+        // window to the trampoline verbatim, smashing the pool or address the
+        // instruction points at.
+        _lastErrno = EOPNOTSUPP;
+        return HK_ERR_NOT_SUPPORTED;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
+    // Rebind/memory techniques have no prologue constraints; only the inline
+    // trampoline overwrites the target's bytes.
+    if(_strategy != HKStrategyInline) {
+        return HK_OK;
+    }
+
+    return [self hk_litehook_inline_preflight:function replacement:replacement];
 }
 
 - (BOOL)batchingSupported {
@@ -45,14 +88,32 @@
     _lastErrno = 0;
 
 #if __has_feature(ptrauth_calls)
-    // Strip PAC so the raw address matches GOT slots (arm64e).
+    // Strip PAC so the raw address matches GOT slots (arm64e). Replacement is
+    // stripped too so the self-hook check below compares raw addresses.
     function = ptrauth_strip(function, ptrauth_key_asia);
+    replacement = ptrauth_strip(replacement, ptrauth_key_asia);
 #endif
 
     if(_strategy == HKStrategyInline) {
+#if !defined(__arm64__) && !defined(__arm64e__)
+        // litehook's inline trampoline emits AArch64 opcodes unconditionally
+        // (4x MOVK + BR), so on 32-bit archs it would write ARM64 garbage into
+        // an ARMv7 prologue. Refuse explicitly — never fall back to rebinding,
+        // which the caller did not ask for.
+        _lastErrno = EOPNOTSUPP;
+        return HK_ERR_NOT_SUPPORTED;
+#endif
         // Prologue inline trampoline variant (denyFishHook-immune). litehook
         // has no original-call trampoline, so the original body is gone once
         // hooked: old_ptr stays NULL when requested.
+        hookkit_status_t preflight = [self hk_litehook_inline_preflight:function replacement:replacement];
+
+        if(preflight != HK_OK) {
+            // Refused before any write: the target's prologue cannot be
+            // overwritten safely (see hk_litehook_inline_preflight).
+            return preflight;
+        }
+
         kern_return_t kr = litehook_hook_function(function, replacement);
         _lastErrno = kr;
 

@@ -1,6 +1,8 @@
 #import <HookKit/Compat.h>
 #import "Internal/HKBackendInternal.h"
 
+#import <objc/runtime.h>
+
 #import "native/hk_swift.h"
 
 // Owned here (resolved by swift_available() via dlsym); consumed by the
@@ -13,6 +15,7 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 - (void)noteHookResult:(hookkit_status_t)status;
 - (hookkit_lib_t)backendType;
 - (BOOL)enqueueKind:(HKHookKind)kind status:(hookkit_status_t *)outStatus build:(void (^)(HKHookOperation *hook))build;
+- (void)setAutoCoverCategories:(NSArray<NSNumber *> *)categories;
 @end
 
 @implementation HKSubstitutor {
@@ -28,6 +31,12 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
     // single-element list). Tried in order; the first category that resolves
     // to an available backend wins. Non-nil-but-empty means no backend.
     NSArray<NSNumber *> *orderedCategories;
+    // Auto-cover routing mode: same shape as orderedCategories, but the
+    // backend is chosen PER-HOOK by preflight instead of once at init. The
+    // category's pickers are walked in priority order; the first available
+    // backend whose side-effect-free preflight accepts the target is invoked
+    // exactly once. Set via substitutorWithAutoCoverCategories:.
+    NSArray<NSNumber *> *autoCoverCategories;
     // Technique the active backend applies: the winning picker's strategy, or
     // HKStrategyDefault when resolution didn't name one. Zero-init default.
     HKStrategy resolvedStrategy;
@@ -135,6 +144,48 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
         }
 
 category_done: ;
+    } else if(autoCoverCategories) {
+        // Auto-cover mode: no single backend is authoritative. Pin the first
+        // available category backend as the fallback used by the batched path
+        // and the image APIs; non-batched function hooks route per-hook via
+        // preflight instead (see hk_backendForAutoCoverFunction:).
+        size_t count = 0;
+        const HKBackendDescriptor *table = hk_backends(&count);
+
+        types = HK_LIB_NONE;
+        resolvedStrategy = HKStrategyDefault;
+
+        for(NSNumber *num in autoCoverCategories) {
+            hookkit_cat_t want = (hookkit_cat_t)num.unsignedIntegerValue;
+
+            if(!want) {
+                continue;
+            }
+
+            for(size_t c = 0; c < hk_category_priority_count; c++) {
+                if(hk_category_priorities[c].category & want) {
+                    for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
+                        HKCategoryPicker picker = hk_category_priorities[c].order[o];
+
+                        for(size_t i = 0; i < count; i++) {
+                            if(table[i].type == picker.type && table[i].available()) {
+                                backend = [table[i].backendClass new];
+
+                                if([backend respondsToSelector:@selector(setStrategy:)]) {
+                                    [backend setStrategy:picker.strategy];
+                                }
+
+                                resolvedStrategy = picker.strategy;
+                                types |= table[i].type;
+                                goto auto_cover_done;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+auto_cover_done: ;
     } else if(types == HK_LIB_NONE) {
         backend = [[self class] defaultBackend];
         resolvedStrategy = HKStrategyDefault;
@@ -285,6 +336,19 @@ category_done: ;
     return substitutor;
 }
 
++ (instancetype)substitutorWithAutoCoverCategories:(NSArray<NSNumber *> *)categories {
+    HKSubstitutor *substitutor = [self new];
+    // nil is still an explicit request: treat it as empty, never as unset
+    substitutor->autoCoverCategories = [categories copy] ?: @[];
+    // Auto-cover resolves per-hook, so no backend is pinned at init.
+    [substitutor initLibraries];
+    return substitutor;
+}
+
+- (void)setAutoCoverCategories:(NSArray<NSNumber *> *)categories {
+    // Mutating after init is not supported: resolution already happened.
+}
+
 + (instancetype)defaultSubstitutor {
     static HKSubstitutor *defaultSubstitutor = nil;
     static dispatch_once_t onceToken = 0;
@@ -295,6 +359,62 @@ category_done: ;
     });
 
     return defaultSubstitutor;
+}
+
+// Auto-cover routing core: walks the autoCoverCategories list in priority
+// order, and within each category walks its picker order. For each
+// (category, picker) pair, instantiates the picker's backend and consults its
+// side-effect-free preflightFunction: — the first available backend whose
+// preflight accepts the target wins. Returns the configured backend, or nil
+// when every picker declined (or no category matched).
+//
+// Deliberately preflight-driven only: it never inspects a hook RESULT to
+// decide routing (a failed invocation may have mutated the target). A backend
+// without preflightFunction: is presumed to accept (no known veto), matching
+// its direct-path behavior.
+- (id<HKSubstitutorBackend>)hk_backendForAutoCoverFunction:(void *)function replacement:(void *)replacement {
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
+
+    for(NSNumber *num in autoCoverCategories) {
+        hookkit_cat_t want = (hookkit_cat_t)num.unsignedIntegerValue;
+
+        if(!want) {
+            continue;
+        }
+
+        for(size_t c = 0; c < hk_category_priority_count; c++) {
+            if(hk_category_priorities[c].category & want) {
+                for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
+                    HKCategoryPicker picker = hk_category_priorities[c].order[o];
+
+                    for(size_t i = 0; i < count; i++) {
+                        if(table[i].type != picker.type || !table[i].available()) {
+                            continue;
+                        }
+
+                        id<HKSubstitutorBackend> candidate = [table[i].backendClass new];
+
+                        if([candidate respondsToSelector:@selector(setStrategy:)]) {
+                            [candidate setStrategy:picker.strategy];
+                        }
+
+                        if(![candidate respondsToSelector:@selector(preflightFunction:withReplacement:)]) {
+                            return candidate;   // no veto: accept
+                        }
+
+                        hookkit_status_t verdict = [candidate preflightFunction:function withReplacement:replacement];
+
+                        if(verdict == HK_OK) {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return nil;
 }
 
 // Shared tail of the three batching-capable hook entry points: backend
@@ -335,10 +455,18 @@ category_done: ;
         return HK_ERR_INVALID_ARGUMENT;
     }
 
+    // Normalize the dispatch class: class methods live on the metaclass, so a
+    // class-method-only selector must be hooked through object_getClass() —
+    // backends use class_getInstanceMethod(), which walks the metaclass's
+    // inheritance tree exactly like the class's own. Instance methods pass the
+    // class through unchanged. (A selector that exists on neither the class
+    // nor the metaclass is left to the backend's own NOT_SUPPORTED check.)
+    Class dispatchClass = class_getInstanceMethod(objcClass, selector) ? objcClass : object_getClass(objcClass);
+
     hookkit_status_t status;
 
     if([self enqueueKind:HKHookKindMessage status:&status build:^(HKHookOperation *hook) {
-        hook->objcClass = objcClass;
+        hook->objcClass = dispatchClass;
         hook->selector = selector;
         hook->replacement = replacement;
         hook->callerOrig = old_ptr;
@@ -348,7 +476,7 @@ category_done: ;
 
     // owned cell: the backend never touches the caller's pointer directly
     void *cell = NULL;
-    hookkit_status_t result = [backend hookMessageInClass:objcClass withSelector:selector withReplacement:replacement outOldPtr:&cell];
+    hookkit_status_t result = [backend hookMessageInClass:dispatchClass withSelector:selector withReplacement:replacement outOldPtr:&cell];
 
     if(result == HK_OK && old_ptr) {
         *old_ptr = cell;
@@ -364,6 +492,21 @@ category_done: ;
         return HK_ERR_INVALID_ARGUMENT;
     }
 
+    // Auto-cover routing: pick the first backend whose preflight accepts this
+    // target (see hk_backendForAutoCoverFunction:), then invoke it once. When
+    // routing is not enabled, `backend` is the pinned resolution.
+    id<HKSubstitutorBackend> routeBackend = backend;
+
+    if(autoCoverCategories && !batching) {
+        routeBackend = [self hk_backendForAutoCoverFunction:function replacement:replacement];
+
+        if(!routeBackend) {
+            // Every picker declined the target: no backend can hook it safely.
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+            return HK_ERR_NOT_SUPPORTED;
+        }
+    }
+
     hookkit_status_t status;
 
     if([self enqueueKind:HKHookKindFunction status:&status build:^(HKHookOperation *hook) {
@@ -376,7 +519,7 @@ category_done: ;
 
     // owned cell: the backend never touches the caller's pointer directly
     void *cell = NULL;
-    hookkit_status_t result = [backend hookFunction:function withReplacement:replacement outOldPtr:&cell];
+    hookkit_status_t result = [routeBackend hookFunction:function withReplacement:replacement outOldPtr:&cell];
 
     if(result == HK_OK && old_ptr) {
         *old_ptr = cell;

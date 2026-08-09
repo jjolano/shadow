@@ -78,6 +78,80 @@ bool hk_arm64_is_terminator(uint32_t insn) {
     return false;
 }
 
+// RETAA / RETAB authenticate then return; BRAAZ/BRABZ are authenticated
+// indirect branches. These are exactly the shapes arm64e micro-thunks use.
+//
+// Encodings (ARMv8.3-A, "authenticated indirect branch"):
+//   BRAAZ Xn  0xD71F0800 | (Rn << 5)   (key A, no modifier)  — verified:
+//   BRAAZ X17 = 0xD71F0BF1
+//   BRABZ Xn  same with the key bit (bit 10) set: 0xD71F0C00 | (Rn << 5)
+//   (BRAA/BRAB, the register-pair forms, carry a modifier register and a
+//   different op2 prefix — not matched here; they are vanishingly rare in
+//   function prologues, and a false positive would only decline a hook.)
+//   BLRAAZ/BLRABZ start 0xD73F..., so the 0xD71F prefix already excludes
+//   authenticated calls.
+static bool is_authenticated_terminator(uint32_t insn) {
+    if(insn == 0xD65F0BFCu) {
+        return true;    // RETAA (fixed encoding)
+    }
+
+    if(insn == 0xD65F0FFCu) {
+        return true;    // RETAB (fixed encoding)
+    }
+
+    if((insn & 0xFFFFFC00u) == 0xD71F0800u) {
+        return true;    // BRAAZ Xn
+    }
+
+    if((insn & 0xFFFFFC00u) == 0xD71F0C00u) {
+        return true;    // BRABZ Xn
+    }
+
+    return false;
+}
+
+bool hk_arm64_has_early_terminator(const void *win, size_t len) {
+    if(!win || len < 4) {
+        return false;
+    }
+
+    const uint32_t *insns = (const uint32_t *)win;
+    size_t count = len / 4;
+
+    for(size_t i = 0; i < count; i++) {
+        if(hk_arm64_is_terminator(insns[i]) || is_authenticated_terminator(insns[i])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool hk_arm64_has_aarch64_literal_load(const void *win, size_t len) {
+    if(!win || len < 4) {
+        return false;
+    }
+
+    const uint32_t *insns = (const uint32_t *)win;
+    size_t count = len / 4;
+
+    for(size_t i = 0; i < count; i++) {
+        uint32_t insn = insns[i];
+
+        // Load-literal group: opc(31:30) 011 V(26) 00 imm19 Rt
+        if((insn & 0x3B000000u) == 0x18000000u) {
+            return true;    // LDR/PRFM literal — relocation-fragile
+        }
+
+        // ADR / ADRP — PC-relative address materialisation
+        if((insn & 0x1F000000u) == 0x10000000u) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 size_t hk_arm64_branch_size(uint64_t from, uint64_t to) {
     int64_t delta = (int64_t)to - (int64_t)from;
 
