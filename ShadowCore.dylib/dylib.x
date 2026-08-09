@@ -38,15 +38,24 @@ BOOL shdw_memory_hiding_enabled = YES;
 // ---------------------------------------------------------------------------
 #ifdef hookkit_h
 static BOOL _shdw_watcher_enabled = NO;      // ctor passed all gates + prefs on
-static BOOL _shdw_watcher_started = NO;      // single-shot replay guard
+#ifndef SHADOW_LEGACY_COORDINATOR
+static BOOL _shdw_watcher_started = NO;      // single-shot replay guard (legacy replay only)
+#endif
 static BOOL _shdw_objc_backend = NO;         // ElleKit/Substrate/Substitute available
 static BOOL _shdw_pref_urlscheme = NO;
 static BOOL _shdw_pref_foundation = NO;
 static BOOL _shdw_pref_filesystem = NO;
 static BOOL _shdw_pref_fakemac = NO;
 static BOOL _shdw_pref_hideapps = NO;
+// B2b: _shdw_dyld_installed / _shdw_symlookup_installed are provably
+// write-only (set at the ctor's install sites, read NOWHERE — no hooks, no
+// escalation, no coordinator). The coordinator path (SHADOW_LEGACY_COORDINATOR
+// defined) does not need them and does not declare them; the legacy path
+// keeps them verbatim.
+#ifndef SHADOW_LEGACY_COORDINATOR
 static BOOL _shdw_dyld_installed = NO;       // set when the ctor installed the group
 static BOOL _shdw_symlookup_installed = NO;
+#endif
 static BOOL _shdw_dyldextra_installed = NO;
 static BOOL _shdw_uikit_installed = NO;      // UIKit groups installed
 static BOOL _shdw_escalation_installed = NO; // detector escalation handled
@@ -447,22 +456,24 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         return;
     }
 
-    // B2a: coordinator takeover (compile-time rollback). When
-    // SHADOW_LEGACY_COORDINATOR is defined (e.g. via
-    // `make -C ShadowCore.dylib ADDITIONAL_CFLAGS="-DSHADOW_LEGACY_COORDINATOR"`)
-    // the coordinator installs the ctor pass instead of the legacy block
-    // below; otherwise the legacy block runs untouched. Both paths compile;
-    // only one runs.
-    #ifdef SHADOW_LEGACY_COORDINATOR
-    shdw_coordinator_ctor(prefs_load);
-    #endif
-
     // Emergency kill-switch (AR2): the dyld_all_image_infos memory-hiding
     // patch is unconditional by default, but a misbehaving patch on a new iOS
     // must be disableable without a reinstall. Read the pref here — before
     // shadowhook_dyld installs — so dyld.x can skip patching / restore the
     // original struct. Default YES (patch on).
     shdw_memory_hiding_enabled = [prefs_load[@"MemoryLevelHiding"] boolValue];
+
+    // B2a: coordinator takeover (compile-time rollback). When
+    // SHADOW_LEGACY_COORDINATOR is defined (e.g. via
+    // `make -C ShadowCore.dylib ADDITIONAL_CFLAGS="-DSHADOW_LEGACY_COORDINATOR"`)
+    // the coordinator installs the ctor pass instead of the legacy block
+    // below; otherwise the legacy block runs untouched. Both paths compile;
+    // only one runs. (Ordered after the MemoryLevelHiding read above so the
+    // coordinator's shadowhook_dyld sees the resolved kill-switch pref —
+    // dyld.x reads shdw_memory_hiding_enabled inside shadowhook_dyld.)
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    shdw_coordinator_ctor(prefs_load);
+    #endif
 
     // Initialize Shadow instance.
     [Shadow sharedInstance];
@@ -567,6 +578,11 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // FUNCTION_REBIND (fishhook) before subCFunc — intended, since
     // dlsym/dladdr concealment prefers rebind over an unpinned inline-capable
     // pref backend. Tradeoff: inline trampolines are prologue-detectable.
+    // B2b: subSymLookup/subDyldExtra are consumed ONLY by the legacy install
+    // block (compiled out under SHADOW_LEGACY_COORDINATOR) — the coordinator
+    // path resolves its own symlookup/private-symbol backends, so the
+    // declarations are excluded with the block (-Werror unused-variable).
+    #ifndef SHADOW_LEGACY_COORDINATOR
     HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]] ?: subCFunc;
 
     // dlopen_internal is a private libdyld symbol fishhook can't rebind:
@@ -576,6 +592,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // symbols), before falling back to subMain — the guard below skips the
     // group when no such backend exists.
     HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]] ?: subMain;
+    #endif
 
     // Batching must be enabled per instance; the HK*Batching macros below
     // only touch the default substitutor (subMain). subCFunc may be a fresh
@@ -588,8 +605,10 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     #else
     HKSubstitutor* subMain = NULL;
     HKSubstitutor* subCFunc = NULL;
+    #ifndef SHADOW_LEGACY_COORDINATOR
     HKSubstitutor* subSymLookup = NULL;
     HKSubstitutor* subDyldExtra = NULL;
+    #endif
     #endif
 
     // Stash state for the spawn-time watcher (shdw_early_image_add): it runs
@@ -600,7 +619,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     _shdw_pref_urlscheme = [prefs_load[@"Hook_URLScheme"] boolValue];
     _shdw_pref_foundation = [prefs_load[@"Hook_Foundation"] boolValue];
     _shdw_pref_filesystem = [prefs_load[@"Hook_Filesystem"] boolValue];
+    // B2b: Hook_FakeMac is a stale, accepted-but-ignored key — the FakeMac
+    // group was removed as inert (its installer installs nothing). The
+    // legacy path still reads it into _shdw_pref_fakemac verbatim; the
+    // coordinator path skips the read entirely (no-op).
+    #ifndef SHADOW_LEGACY_COORDINATOR
     _shdw_pref_fakemac = [prefs_load[@"Hook_FakeMac"] boolValue];
+    #endif
     _shdw_pref_hideapps = [prefs_load[@"Hook_HideApps"] boolValue];
 
     // The watcher only runs when a hook group needs it: the UIKit-class
@@ -619,6 +644,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // tripwire runs the full escalation (vnode re-arm, dyldextra, tier-2).
     #endif
 
+    // B2b: the legacy install block below is dead in the coordinator path
+    // (SHADOW_LEGACY_COORDINATOR defined — shdw_coordinator_ctor above
+    // already installed the ctor pass via the planner). Compile it out so
+    // the coordinator path carries no duplicate install/verify gates and no
+    // write-only global writes; the flag-unset build keeps it verbatim.
+    #ifndef SHADOW_LEGACY_COORDINATOR
+
     // Identity concealment, installed for every enabled app: the dyld image
     // routing surface must not depend on a detector being identified by name
     // or on the user leaving this toggle on — a jailbreak-scanning app sees
@@ -629,7 +661,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
 
     shadowhook_dyld(subCFunc);
 
-    #ifdef hookkit_h
+    #if defined(hookkit_h) && !defined(SHADOW_LEGACY_COORDINATOR)
     _shdw_dyld_installed = YES;
     #endif
 
@@ -774,7 +806,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     shadowhook_dyld_symlookup(subSymLookup);
     shadowhook_dyld_symaddrlookup(subSymLookup);
 
-    #ifdef hookkit_h
+    #if defined(hookkit_h) && !defined(SHADOW_LEGACY_COORDINATOR)
     _shdw_symlookup_installed = YES;
     #endif
 
@@ -870,7 +902,8 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     if([prefs_load[@"Hook_DynamicLibrariesExtra"] boolValue] || shdw_detector_present) {
         shadowhook_dyld_extra_verify();
     }
-    #endif
+    #endif // hookkit_h
+    #endif // SHADOW_LEGACY_COORDINATOR (B2b: legacy install/verify block)
     } @catch (NSException* e) {
         NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
         return;
