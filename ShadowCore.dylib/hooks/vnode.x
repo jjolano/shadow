@@ -151,7 +151,29 @@ shdw_acquire(void) {
 // both paths. The pref is read ONCE (dispatch_once); the detector escalation
 // is re-evaluated per call so a detection library that loads after the first
 // evaluation still triggers acquisition.
+//
+// B2c: the resolved effective preference now arrives from dylib.x (the ctor
+// already holds prefs_load — a second independent plist read was the drift
+// the lifecycle rewrite targets). shdw_vnode_set_pref_enabled: stores the
+// caller-resolved value; shdw_vnode_pref_enabled: returns it when set, and
+// falls back to this file's own plist read ONLY for call sites that cannot
+// reach a resolved pref (the detector-escalation re-arm in
+// shdw_detector_detected has no prefs_load in scope). The two resolutions
+// are behaviorally identical (both apply per-app override → global →
+// default NO), so the fallback never changes the gate.
+static BOOL shdw_vnode_pref_resolved = NO;
+static BOOL shdw_vnode_pref_has_resolved = NO;   // setter called
+
+void shdw_vnode_set_pref_enabled(BOOL enabled) {
+    shdw_vnode_pref_resolved = enabled;
+    shdw_vnode_pref_has_resolved = YES;
+}
+
 static BOOL shdw_vnode_pref_enabled(void) {
+    if(shdw_vnode_pref_has_resolved) {
+        return shdw_vnode_pref_resolved;
+    }
+
     static BOOL enabled = NO;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{

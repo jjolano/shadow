@@ -260,6 +260,12 @@ extern void* shdw_sym_policy_lookup_iokit(const char* name);
 extern void shadowhook_vnode(HKSubstitutor* hooks);
 extern void shadowhook_vnode_release(void);
 
+// B2c: vnode receives the resolved effective VnodeHiding preference from
+// dylib.x (the ctor already holds prefs_load) instead of re-reading the
+// plist. Call before shadowhook_vnode(NULL) when a resolved pref is
+// available; vnode.x falls back to its own plist read when not called.
+extern void shdw_vnode_set_pref_enabled(BOOL enabled);
+
 extern void shadowhook_libc_verify(void);
 extern void shadowhook_libc_envvar_verify(void);
 extern void shadowhook_libc_lowlevel_verify(void);
