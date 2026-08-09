@@ -196,10 +196,11 @@ static void tramp_abort(void) {
 
 #pragma mark - Hooking
 
-bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
+// The engine's own capability gate, shared by hk_native_hook_function and the
+// backend preflight so the two can never disagree on the checks they share.
+int hk_native_preflight_function(void *target, void *replacement) {
     if(!target || !replacement) {
-        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
-        return false;
+        return HK_NATIVE_ERR_UNSUPPORTED;
     }
 
     void *raw_target = hk_strip_code(target);
@@ -208,20 +209,17 @@ bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
     // AArch64 instructions are 4-byte aligned; a misaligned target is not an
     // instruction boundary, and patching it would smash whatever it points at.
     if(((uintptr_t)raw_target & 3u) != 0) {
-        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
-        return false;
+        return HK_NATIVE_ERR_UNSUPPORTED;
     }
 
     // Hooking a function with itself is a no-op that would clobber the
     // original bytes with a branch back to the same place.
     if(raw_target == raw_replacement) {
-        hk_errno = HK_NATIVE_ERR_UNSUPPORTED;
-        return false;
+        return HK_NATIVE_ERR_UNSUPPORTED;
     }
 
     uint64_t target_addr = (uint64_t)(uintptr_t)raw_target;
     size_t patch_bytes = hk_arm64_branch_size(target_addr, (uint64_t)(uintptr_t)raw_replacement);
-    size_t insn_count = patch_bytes / 4;
     const uint32_t *src = (const uint32_t *)raw_target;
 
     // A terminator before the last instruction we would overwrite means the
@@ -232,9 +230,26 @@ bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
     // because it is fully replaced by the branch, exactly like the original
     // loop's `i + 1 < insn_count` bound.
     if(hk_arm64_has_early_terminator(src, patch_bytes - 4)) {
-        hk_errno = HK_NATIVE_ERR_SHORT_FUNCTION;
+        return HK_NATIVE_ERR_SHORT_FUNCTION;
+    }
+
+    return 0;
+}
+
+bool hk_native_hook_function(void *target, void *replacement, void **out_orig) {
+    int preflight_errno = hk_native_preflight_function(target, replacement);
+
+    if(preflight_errno != 0) {
+        hk_errno = preflight_errno;
         return false;
     }
+
+    void *raw_target = hk_strip_code(target);
+    void *raw_replacement = hk_strip_code(replacement);
+    uint64_t target_addr = (uint64_t)(uintptr_t)raw_target;
+    size_t patch_bytes = hk_arm64_branch_size(target_addr, (uint64_t)(uintptr_t)raw_replacement);
+    size_t insn_count = patch_bytes / 4;
+    const uint32_t *src = (const uint32_t *)raw_target;
 
     pthread_mutex_lock(&tramp.lock);
 
@@ -310,6 +325,11 @@ bool hk_native_supported(void) {
 }
 
 int hk_native_last_error(void) {
+    return HK_NATIVE_ERR_UNSUPPORTED;
+}
+
+int hk_native_preflight_function(void *target, void *replacement) {
+    (void)target; (void)replacement;
     return HK_NATIVE_ERR_UNSUPPORTED;
 }
 

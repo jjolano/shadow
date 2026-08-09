@@ -224,10 +224,10 @@ static const struct hk_cache_symbols *cache_symbols(void) {
     static dispatch_once_t once = 0;
 
     dispatch_once(&once, ^{
-        // Deliberately NOT routed through RootBridge getJBPath:. That prefixes
-        // the jailbreak root (/var/jb/...) onto paths a rootless install
-        // relocates, and the shared cache is not one of them -- it stays at its
-        // system path on every jailbreak. Prefixing here would only ever
+        // Deliberately NOT routed through HKJBPath. That prefixes the
+        // jailbreak root (/var/jb/...) onto paths a rootless install
+        // relocates, and the shared cache is not one of them -- it stays at
+        // its system path on every jailbreak. Prefixing here would only ever
         // produce paths that do not exist.
         static const char *candidates[] = {
             "/System/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_arm64e.symbols",

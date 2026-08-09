@@ -33,11 +33,12 @@ typedef const struct HKImage* HKImageRef;
  *
  *   MESSAGE          — ObjC message hooking (class_addMethod / MSHookMessageEx /
  *                      LBHookMessage / substitute_hook_objc_message)
- *   FUNCTION_REBIND  — C function rebinding by exported symbol name (fishhook)
- *   FUNCTION_INLINE  — C function inline hooking by address (Dobby / Frida /
- *                      ElleKit LHHookFunctions)
+ *   FUNCTION_REBIND  — C function rebinding by exported symbol name (fishhook
+ *                      / litehook)
+ *   FUNCTION_INLINE  — C function inline hooking by address (ElleKit / Dobby
+ *                      / Frida / litehook)
  *   PRIVATE_SYMBOL   — Private symbol lookup in a loaded image (ElleKit /
- *                      Substrate / Substitute)
+ *                      Substrate / Substitute / litehook)
  *
  * Flags are powers of two and may be OR'd for getAvailableCategories.
  */
@@ -67,32 +68,6 @@ typedef NS_ENUM(NSUInteger, HKStrategy) {
 };
 
 /*
- * Backend capability matrix:
- *
- *                  message    function    memory    batching
- *   ElleKit        yes        yes         yes       yes
- *   Cydia Substrate yes       yes         yes*9     no
- *   Substitute      yes       yes         yes*10    no
- *   native          yes       yes**     yes       yes
- *   Dobby           no        yes***    yes       no
- *   Frida           no        yes****   no        yes
- *   fishhook        no        yes*      no        no
- *   Swift           no        no*****   no        no
- *   litehook        no        yes*8     yes       no
- *     * exported symbols only, rebinding by symbol name
- *     ** arm64/arm64e only
- *     *** arm64/arm64e only; inline patching needs relaxed codesigning
- *     **** arm64/arm64e only — the arm64 slice loads on iOS 12+, the arm64e
- *          slice needs iOS 14+; inline patching needs relaxed codesigning
- *     ***** Swift vtable hooking is a separate API
- *          (hookSwiftMethodInClass:withName:... / ...withIndex:...), not the
- *          message/function columns
- *     *8  exported-symbol/address rebinding via litehook_rebind_symbol; no
- *         original-call trampoline for direct-branch hooks
- *     *9  via MSHookMemory when the installed Cydia Substrate exports it
- *     *10 via the MS-compatible SubHookMemory on Substitute
- *   Each footnote is expanded in the per-backend caveats linked below.
- *
  * Symbol name convention: names passed to findSymbolInImage:/
  * findSymbolsInImage: are Substrate-style — C symbols carry no leading
  * underscore ("malloc"); C++ mangled names keep their leading underscore.

@@ -42,16 +42,35 @@ BOOL libhooker_available(void) {
         return NO;
     }
 
-    fn_LBHookMessage = (enum LIBHOOKER_ERR (*)(Class, SEL, void *, void *))dlsym(libhooker_handle, "LBHookMessage");
-    fn_LHHookFunctions = (int (*)(const struct LHFunctionHook *, int))dlsym(libhooker_handle, "LHHookFunctions");
-    fn_LHPatchMemory = (int (*)(const struct LHMemoryPatch *, int))dlsym(libhooker_handle, "LHPatchMemory");
-    fn_LHOpenImage = (struct libhooker_image *(*)(const char *))dlsym(libhooker_handle, "LHOpenImage");
-    fn_LHCloseImage = (void (*)(struct libhooker_image *))dlsym(libhooker_handle, "LHCloseImage");
-    fn_LHFindSymbols = (bool (*)(struct libhooker_image *, const char **, void **, size_t))dlsym(libhooker_handle, "LHFindSymbols");
+    // Resolve into locals first: the globals are published only after the
+    // ENTIRE required symbol set is present, so an incomplete library can
+    // never leave half-populated function pointers behind.
+    enum LIBHOOKER_ERR (*LBHookMessage)(Class, SEL, void *, void *) = (enum LIBHOOKER_ERR (*)(Class, SEL, void *, void *))dlsym(libhooker_handle, "LBHookMessage");
+    int (*LHHookFunctions)(const struct LHFunctionHook *, int) = (int (*)(const struct LHFunctionHook *, int))dlsym(libhooker_handle, "LHHookFunctions");
+    int (*LHPatchMemory)(const struct LHMemoryPatch *, int) = (int (*)(const struct LHMemoryPatch *, int))dlsym(libhooker_handle, "LHPatchMemory");
+    struct libhooker_image *(*LHOpenImage)(const char *) = (struct libhooker_image *(*)(const char *))dlsym(libhooker_handle, "LHOpenImage");
+    void (*LHCloseImage)(struct libhooker_image *) = (void (*)(struct libhooker_image *))dlsym(libhooker_handle, "LHCloseImage");
+    bool (*LHFindSymbols)(struct libhooker_image *, const char **, void **, size_t) = (bool (*)(struct libhooker_image *, const char **, void **, size_t))dlsym(libhooker_handle, "LHFindSymbols");
 
-    available = fn_LBHookMessage && fn_LHHookFunctions && fn_LHPatchMemory
-        && fn_LHOpenImage && fn_LHCloseImage && fn_LHFindSymbols;
+    // ABI-incomplete: drop the handle and stay uncached so a later probe
+    // genuinely retries (the engine may gain the full ABI after HookKit
+    // loads). Nothing was published.
+    if(!(LBHookMessage && LHHookFunctions && LHPatchMemory
+            && LHOpenImage && LHCloseImage && LHFindSymbols)) {
+        dlclose(libhooker_handle);
+        libhooker_handle = NULL;
+        return NO;
+    }
+
+    fn_LBHookMessage = LBHookMessage;
+    fn_LHHookFunctions = LHHookFunctions;
+    fn_LHPatchMemory = LHPatchMemory;
+    fn_LHOpenImage = LHOpenImage;
+    fn_LHCloseImage = LHCloseImage;
+    fn_LHFindSymbols = LHFindSymbols;
+
     cached = YES;
+    available = YES;
 
     return available;
 }

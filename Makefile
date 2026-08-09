@@ -10,27 +10,25 @@ include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = HookKit
 
-HookKit_FILES = HKSubstitutor.m HKBackendRegistry.m Backends/HKBackendCommon.m Backends/HKElleKitBackend.m Backends/HKMSBackends.m Backends/HKFishhookBackend.m Backends/HKLitehookBackend.m Backends/HKInlineBackends.m Backends/HKNativeBackends.m vendor/fishhook/fishhook.c vendor/litehook/litehook.c
+HookKit_FILES = HKSubstitutor.m HKBackendRegistry.m Backends/HKBackendCommon.m Backends/HKElleKitBackend.m Backends/HKMSBackends.m Backends/HKFishhookBackend.m Backends/HKLitehookBackend.m Backends/HKInlineBackends.m Backends/HKNativeBackends.m vendor/fishhook/fishhook.c vendor/litehook/litehook.c Internal/HKSubstituteErrors.c Internal/HKInlinePreflight.m
 # Native backend: arm64/arm64e only, stubbed out by #if on armv7.
 HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # Swift vtable backend: arm64/arm64e only (entry points report unsupported on
 # armv7 via hk_swift_supported()).
 HookKit_FILES += native/hk_swift.c
 HookKit_FRAMEWORKS = Foundation
-# RootBridge is the /var/jb convention; roothide replaces it with libroothide
-# via the HKJBPath seam in Backends/HKBackendCommon.m.
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-HookKit_EXTRA_FRAMEWORKS = RootBridge
+# Jailbreak-root seam is compile-time per scheme (see Backends/HKBackendCommon.m):
+# rooted = identity, rootless = libroot (auto-linked -lroot by theos),
+# roothide = libroothide's jbroot().
+ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+HookKit_CFLAGS += -DSHADOW_ROOTLESS
+else ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
+HookKit_CFLAGS += -DSHADOW_ROOTHIDE
 endif
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
 HookKit_CFLAGS = -fobjc-arc -I. -IHeaders -Ivendor -Ivendor/litehook
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-HookKit_CFLAGS += -Ivendor/RootBridge.framework/Headers
-else
-HookKit_CFLAGS += -DSHADOW_ROOTHIDE
-endif
-HookKit_LDFLAGS = -Fvendor
+HookKit_LDFLAGS =
 # The roothide scheme module forces -install_name "@loader_path/.jbroot...",
 # which would override our @rpath install_name (instance LDFLAGS come after
 # internal LDFLAGS); under the roothide scheme drop our explicit install_name
@@ -111,8 +109,10 @@ test-swift-abi:
 # build machine. Compiles as ObjC so the test can include the REAL
 # Headers/HookKit/Compat.h and the REAL vendored substitute.h (through a fake
 # __APPLE__ plus minimal Mach-O/ObjC/Foundation header stubs, so the vendored
-# header's Apple-only sections compile on Linux). The classifier itself is a
-# commented mirror copy of the static function in Backends/HKMSBackends.m.
+# header's Apple-only sections compile on Linux). The classifier under test is
+# the REAL Internal/HKSubstituteErrors.c — compiled alongside the test, no
+# mirror copy. The -I$(CURDIR)/Internal flag is needed for the helper's
+# include of "HKSubstituteErrors.h" from the test's compilation directory.
 .PHONY: test-substitute-classifier
 test-substitute-classifier:
-	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -x objective-c -Ivendor -IHeaders -I$(CURDIR)/tests/fake_headers -D__APPLE__ -o $(THEOS_OBJ_DIR)/test_substitute_classifier tests/test_substitute_classifier.c && $(THEOS_OBJ_DIR)/test_substitute_classifier$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p $(THEOS_OBJ_DIR) && clang -Wall -Wextra -O2 -x objective-c -Ivendor -IHeaders -I$(CURDIR)/tests/fake_headers -I$(CURDIR)/Internal -D__APPLE__ -o $(THEOS_OBJ_DIR)/test_substitute_classifier tests/test_substitute_classifier.c Internal/HKSubstituteErrors.c && $(THEOS_OBJ_DIR)/test_substitute_classifier$(ECHO_END)

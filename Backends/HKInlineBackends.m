@@ -1,11 +1,10 @@
 #import "Internal/HKBackendInternal.h"
+#import "Internal/HKInlinePreflight.h"
 
 #import <dlfcn.h>
 #import <errno.h>
 
-#if __has_include(<ptrauth.h>)
-#import <ptrauth.h>
-#endif
+#include <stdint.h>
 
 #import "native/hk_arm64.h"
 
@@ -42,33 +41,12 @@
     // functions (it reads its 12-16 byte overwrite window without recognizing
     // early exits, smashing whatever follows) nor handles literal loads (it
     // UNIMPLEMENTED()s on some LDR-literal encodings and mishandles SIMD
-    // literal loads). The prologue checks below read only the first 16 bytes
-    // and never write, so a reject leaves the target untouched.
-    if(((uintptr_t)function & 0x3) != 0) {
-        _lastErrno = EINVAL;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(function == replacement) {
-        _lastErrno = EINVAL;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(hk_arm64_has_early_terminator(function, 16)) {
-        // Function ends inside the overwrite window: patching would smash a
-        // neighbor's bytes.
-        _lastErrno = EOPNOTSUPP;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(hk_arm64_has_aarch64_literal_load(function, 16)) {
-        // Literal load / ADR(ADRP) in the overwrite window: the relocator
-        // fatally mishandles these.
-        _lastErrno = EOPNOTSUPP;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    return HK_OK;
+    // literal loads). The checks read only the overwrite window and never
+    // write, so a reject leaves the target untouched. Shared with the
+    // litehook backend and with Dobby's own hook path (see
+    // Internal/HKInlinePreflight.h), so preflight agrees exactly with
+    // execution.
+    return hk_inline_preflight(function, replacement, HK_INLINE_PREFLIGHT_DOBBY_WINDOW, &_lastErrno);
 }
 
 - (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
@@ -77,12 +55,6 @@
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     _lastErrno = 0;
-
-#if __has_feature(ptrauth_calls)
-    // Strip PAC so the raw address is what the relocator will inspect (arm64e).
-    function = ptrauth_strip(function, ptrauth_key_asia);
-    replacement = ptrauth_strip(replacement, ptrauth_key_asia);
-#endif
 
     hookkit_status_t preflight = [self hk_dobby_inline_preflight:function replacement:replacement];
 
@@ -164,8 +136,8 @@
 
 #pragma mark - Frida (HKGum) runtime resolution
 
-// Frida hooks through the HKGum.dylib wrapper, dlopen'd at runtime via
-// RootBridge (same pattern as libhooker/libsubstitute): the framework never
+// Frida hooks through the HKGum.dylib wrapper, dlopen'd at runtime (path
+// resolved via HKJBPath, same pattern as libhooker/libsubstitute): the framework never
 // links frida-gum directly. No arch guard — everything is runtime dlopen, and
 // on armv7 dlopen simply fails (the wrapper product is arch-gated in the
 // Makefile). Theos forces the arm64e slice minos to 14.0, but the arm64 slice
@@ -177,9 +149,13 @@ static int (*fn_hkgum_hook_function)(void *, void *, void **) = NULL;
 static int (*fn_hkgum_begin_transaction)(void) = NULL;
 static int (*fn_hkgum_end_transaction)(void) = NULL;
 
-// Frida is available when the HKGum.dylib wrapper dlopens (see the resolution
-// block above). Only successful probes are cached: if dlopen fails, a later
-// call retries.
+// Frida is available when the HKGum.dylib wrapper dlopens AND the full
+// required symbol set resolves (see the resolution block above). Only
+// successful probes are cached: on dlopen failure or an ABI-incomplete dylib
+// the handle is closed and nothing is cached, so a later probe retries.
+// The function-pointer globals are published only after the complete symbol
+// set is validated, so a partial probe never leaves half-initialized state
+// for hook paths to trip over.
 BOOL frida_available(void) {
     static BOOL cached = NO;
     static BOOL available = NO;
@@ -194,17 +170,30 @@ BOOL frida_available(void) {
         return NO;
     }
 
-    hkgum_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
+    void *handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
-    if(!hkgum_handle) {
+    if(!handle) {
         return NO;
     }
 
-    fn_hkgum_hook_function = (int (*)(void *, void *, void **))dlsym(hkgum_handle, "hkgum_hook_function");
-    fn_hkgum_begin_transaction = (int (*)(void))dlsym(hkgum_handle, "hkgum_begin_transaction");
-    fn_hkgum_end_transaction = (int (*)(void))dlsym(hkgum_handle, "hkgum_end_transaction");
+    int (*hookFunction)(void *, void *, void **) = (int (*)(void *, void *, void **))dlsym(handle, "hkgum_hook_function");
+    int (*beginTransaction)(void) = (int (*)(void))dlsym(handle, "hkgum_begin_transaction");
+    int (*endTransaction)(void) = (int (*)(void))dlsym(handle, "hkgum_end_transaction");
 
-    available = fn_hkgum_hook_function && fn_hkgum_begin_transaction && fn_hkgum_end_transaction;
+    if(!hookFunction || !beginTransaction || !endTransaction) {
+        // ABI-incomplete: not the wrapper we expect. Leave state uncached so
+        // a later probe can retry, and don't leave the handle lying around.
+        dlclose(handle);
+        return NO;
+    }
+
+    // Full set resolved: publish the function pointers and cache the success.
+    hkgum_handle = handle;
+    fn_hkgum_hook_function = hookFunction;
+    fn_hkgum_begin_transaction = beginTransaction;
+    fn_hkgum_end_transaction = endTransaction;
+
+    available = YES;
     cached = YES;
 
     return available;
@@ -255,13 +244,23 @@ BOOL frida_available(void) {
 
 // One gum transaction around the whole batch: replacements inside a
 // transaction are only published at end_transaction, so the batch is applied
-// atomically. Message/memory hooks are not supported (succeeded stays NO).
+// atomically. end_transaction's result is authoritative: a commit failure
+// means nothing was published, so no operation may be reported successful and
+// the batch fails as a whole. Individual hook failures (a rejected or
+// already-replaced target) stay per-operation: they fail the batch without a
+// rollback, exactly as documented. Message/memory hooks are not supported
+// (succeeded stays NO).
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
     int total = (int)[hooks count];
     int succeeded = 0;
     int failureErrno = 0;
 
-    fn_hkgum_begin_transaction();
+    if(fn_hkgum_begin_transaction() != 0) {
+        // Transaction never opened: nothing below was applied, so no hook can
+        // be marked successful.
+        _lastErrno = HK_ERR;
+        return HK_ERR;
+    }
 
     for(HKHookOperation *hook in hooks) {
         switch(hook->kind) {
@@ -270,6 +269,7 @@ BOOL frida_available(void) {
                 int result = fn_hkgum_hook_function(hook->function, hook->replacement, &orig);
 
                 if(result == 0) {
+                    // Staged only: published by end_transaction below.
                     hook->origValue = orig;
                     hook->succeeded = YES;
                     succeeded += 1;
@@ -287,7 +287,18 @@ BOOL frida_available(void) {
         }
     }
 
-    fn_hkgum_end_transaction();
+    int commit = fn_hkgum_end_transaction();
+
+    if(commit != 0) {
+        // Nothing was published: the staged successes above never took
+        // effect, so report the whole batch as failed.
+        for(HKHookOperation *hook in hooks) {
+            hook->succeeded = NO;
+        }
+
+        _lastErrno = commit;
+        return HK_ERR;
+    }
 
     _lastErrno = failureErrno;
 

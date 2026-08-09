@@ -38,6 +38,15 @@ HK_INTERNAL bool hk_native_supported(void);
 // it immediately after the call that failed.
 HK_INTERNAL int hk_native_last_error(void);
 
+// Side-effect-free capability preflight: exactly the checks the engine runs
+// before writing (PAC strip, alignment, self-hook, short-function over the
+// actual 4- or 16-byte branch window, with the final overwritten instruction
+// excluded). Returns 0 when hk_native_hook_function would attempt the patch,
+// otherwise an HK_NATIVE_ERR_* code. The engine's own hook path validates
+// through this function, so a preflight accept and the hook can never
+// disagree on the checks they share.
+HK_INTERNAL int hk_native_preflight_function(void *target, void *replacement);
+
 // Inline function hook. On success *out_orig receives a callable pointer to the
 // original implementation (PAC-signed on arm64e).
 HK_INTERNAL bool hk_native_hook_function(void *target, void *replacement, void **out_orig);

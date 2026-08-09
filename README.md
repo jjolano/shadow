@@ -147,7 +147,7 @@ HKExecuteBatch();
 
 ## Building
 
-Requires [Theos](https://theos.dev). RootBridge.framework is checked in under `vendor/` for linking; the rooted and rootless packages depend on `me.jjolano.fmwk.rootbridge` at runtime, which is built separately (build the RootBridge repo and install the framework to `$THEOS/lib`). The roothide target drops RootBridge (there is no `/var/jb` on roothide) and uses libroothide's `jbroot()` instead.
+Requires [Theos](https://theos.dev). Jailbreak-root path resolution is compile-time per scheme via theos's bundled libroot (auto-linked as `-lroot`): the rooted package keeps paths as-is, the rootless package resolves via libroot (`/var/jb`), and the roothide target uses libroothide's `jbroot()`. There is no runtime root-detection dependency.
 
 ```
 ./build.sh all|rootless|rooted|roothide
@@ -155,7 +155,7 @@ Requires [Theos](https://theos.dev). RootBridge.framework is checked in under `v
 
 - `rootless` — iphoneos-arm64 deb (arm64/arm64e), iOS 12+.
 - `rooted` — one fat iphoneos-arm deb spanning armv7 through arm64e, iOS 9+.
-- `roothide` — iOS 15–17 with a random-named jbroot; requires the roothide Theos fork (`THEOS_PACKAGE_SCHEME=roothide`) and libroothide; drops RootBridge.
+- `roothide` — iOS 15–17 with a random-named jbroot; requires the roothide Theos fork (`THEOS_PACKAGE_SCHEME=roothide`) and libroothide.
 
 Theos bumps the arm64e slice minos to 14.0; a build-time warning about this is expected and known.
 
@@ -178,7 +178,7 @@ Disadvantages:
 - [frida-gum](https://github.com/frida/frida-gum)
 - [libhooker](https://github.com/coolstar/libhooker) / [ElleKit](https://github.com/evelyneee/ellekit)
 - [litehook](https://github.com/opa334/litehook)
+- [libroot](https://github.com/opa334/libroot) — rootless path resolution (bundled with theos)
 - [Substitute](https://github.com/sbingner/substitute)
 - [Cydia Substrate](http://www.cydiasubstrate.com)
-- [RootBridge](https://github.com/jjolano/RootBridge)
 - [apple/swift](https://github.com/apple/swift) — Swift 5 ABI documentation (`include/swift/ABI/Metadata.h`, `MetadataValues.h`, `stdlib/public/runtime/Metadata.cpp`, `lib/IRGen/GenMeta.cpp`), which the Swift vtable backend's offsets and pointer-authentication recipe were verified against

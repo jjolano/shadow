@@ -1,12 +1,8 @@
 #import "Internal/HKBackendInternal.h"
+#import "Internal/HKInlinePreflight.h"
 
 #import <errno.h>
 
-#if __has_include(<ptrauth.h>)
-#import <ptrauth.h>
-#endif
-
-#import "native/hk_arm64.h"
 #import "vendor/litehook/litehook.h"
 
 #pragma mark - HKLitehookBackend
@@ -28,33 +24,12 @@
 // Shared by hookFunction:'s inline branch and preflightFunction: so the
 // router and the direct path decline exactly the same targets. Reads only
 // the overwrite window and never writes; a reject leaves the target intact.
+// The vendor trampoline emits 5 instructions (4x MOVK + BR) = 20 bytes; the
+// same validator serves the Dobby backend's 16-byte window (see
+// Internal/HKInlinePreflight.h), and it strips PAC before inspecting so
+// preflight and the hook path agree even on arm64e.
 - (hookkit_status_t)hk_litehook_inline_preflight:(void *)function replacement:(void *)replacement {
-    if(((uintptr_t)function & 0x3) != 0) {
-        _lastErrno = EINVAL;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(function == replacement) {
-        _lastErrno = EINVAL;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(hk_arm64_has_early_terminator(function, 20)) {
-        // Function ends inside the 20-byte overwrite window: patching would
-        // smash a neighbor's bytes.
-        _lastErrno = EOPNOTSUPP;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    if(hk_arm64_has_aarch64_literal_load(function, 20)) {
-        // Literal load / ADR(Ps) in the overwrite window: litehook copies the
-        // window to the trampoline verbatim, smashing the pool or address the
-        // instruction points at.
-        _lastErrno = EOPNOTSUPP;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    return HK_OK;
+    return hk_inline_preflight(function, replacement, HK_INLINE_PREFLIGHT_LITEHOOK_WINDOW, &_lastErrno);
 }
 
 - (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
@@ -86,13 +61,6 @@
 
 - (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
     _lastErrno = 0;
-
-#if __has_feature(ptrauth_calls)
-    // Strip PAC so the raw address matches GOT slots (arm64e). Replacement is
-    // stripped too so the self-hook check below compares raw addresses.
-    function = ptrauth_strip(function, ptrauth_key_asia);
-    replacement = ptrauth_strip(replacement, ptrauth_key_asia);
-#endif
 
     if(_strategy == HKStrategyInline) {
 #if !defined(__arm64__) && !defined(__arm64e__)

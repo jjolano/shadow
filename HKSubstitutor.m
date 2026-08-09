@@ -12,10 +12,9 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 #pragma mark - HKSubstitutor
 
 @interface HKSubstitutor ()
-- (void)noteHookResult:(hookkit_status_t)status;
+- (void)noteHookResult:(hookkit_status_t)status fromBackend:(id<HKSubstitutorBackend>)resultBackend;
 - (hookkit_lib_t)backendType;
 - (BOOL)enqueueKind:(HKHookKind)kind status:(hookkit_status_t *)outStatus build:(void (^)(HKHookOperation *hook))build;
-- (void)setAutoCoverCategories:(NSArray<NSNumber *> *)categories;
 @end
 
 @implementation HKSubstitutor {
@@ -43,8 +42,20 @@ hk_swift_demangle_fn hk_swift_demangle = NULL;
 }
 
 // activeStrategy is resolvedStrategy: set by the resolution branches in
-// initLibraries, readonly on the public surface.
+// initLibraries, readonly on the public surface. `types` is backed by its own
+// ivar with an explicit setter that freezes configuration after resolution.
 @synthesize types, batching, activeType, activeStrategy = resolvedStrategy;
+
+- (void)setTypes:(hookkit_lib_t)value {
+    // Configuration is frozen once a backend has been resolved: mutating the
+    // request mask afterwards would leave `types` and `activeType` describing
+    // different configurations (initLibraries keeps the original backend).
+    // Pre-resolution writes still work, so a failed resolution can be retried
+    // with a different request before any backend exists.
+    if(!backend) {
+        types = value;
+    }
+}
 
 + (id<HKSubstitutorBackend>)defaultBackend {
     size_t count = 0;
@@ -212,12 +223,12 @@ auto_cover_done: ;
     }
 }
 
-- (hookkit_lib_t)backendType {
+- (hookkit_lib_t)typeForBackend:(id<HKSubstitutorBackend>)candidate {
     size_t count = 0;
     const HKBackendDescriptor *table = hk_backends(&count);
 
     for(size_t i = 0; i < count; i++) {
-        if([backend isKindOfClass:table[i].backendClass]) {
+        if([candidate isKindOfClass:table[i].backendClass]) {
             return table[i].type;
         }
     }
@@ -225,15 +236,26 @@ auto_cover_done: ;
     return HK_LIB_NONE;
 }
 
+- (hookkit_lib_t)backendType {
+    return [self typeForBackend:backend];
+}
+
 - (void)noteHookResult:(hookkit_status_t)status {
+    // Default attribution: the pinned backend. The auto-cover path passes the
+    // routed backend explicitly (see hookFunction:), since routing can pick a
+    // different backend than the one pinned at init.
+    [self noteHookResult:status fromBackend:backend];
+}
+
+- (void)noteHookResult:(hookkit_status_t)status fromBackend:(id<HKSubstitutorBackend>)resultBackend {
     if(status == HK_OK || status == HK_ERR_INVALID_ARGUMENT) {
         // success, or a caller error with no backend-specific detail
         lastLibErrno = 0;
         lastLibErrnoType = HK_LIB_NONE;
-    } else if(backend) {
-        int backendErrno = [backend lastErrno];
+    } else if(resultBackend) {
+        int backendErrno = [resultBackend lastErrno];
 
-        if(status == HK_ERR_NOT_SUPPORTED && !([backend isKindOfClass:[HKSwiftBackend class]] && backendErrno != 0)) {
+        if(status == HK_ERR_NOT_SUPPORTED && !([resultBackend isKindOfClass:[HKSwiftBackend class]] && backendErrno != 0)) {
             // Generic capability gate: the backend set no meaningful detail,
             // so clear any stale value from an earlier, unrelated call. The
             // Swift backend is the carve-out — it deliberately maps real
@@ -245,7 +267,7 @@ auto_cover_done: ;
             lastLibErrnoType = HK_LIB_NONE;
         } else {
             lastLibErrno = backendErrno;
-            lastLibErrnoType = activeType;
+            lastLibErrnoType = [self typeForBackend:resultBackend];
         }
     } else {
         lastLibErrno = 0;
@@ -343,10 +365,6 @@ auto_cover_done: ;
     // Auto-cover resolves per-hook, so no backend is pinned at init.
     [substitutor initLibraries];
     return substitutor;
-}
-
-- (void)setAutoCoverCategories:(NSArray<NSNumber *> *)categories {
-    // Mutating after init is not supported: resolution already happened.
 }
 
 + (instancetype)defaultSubstitutor {
@@ -502,7 +520,8 @@ auto_cover_done: ;
 
         if(!routeBackend) {
             // Every picker declined the target: no backend can hook it safely.
-            [self noteHookResult:HK_ERR_NOT_SUPPORTED];
+            // No backend-specific detail to report — clear any stale state.
+            [self noteHookResult:HK_ERR_NOT_SUPPORTED fromBackend:nil];
             return HK_ERR_NOT_SUPPORTED;
         }
     }
@@ -525,7 +544,9 @@ auto_cover_done: ;
         *old_ptr = cell;
     }
 
-    [self noteHookResult:result];
+    // Attribute to the backend that actually ran (routeBackend == backend
+    // except in auto-cover mode, where routing can pick a different one).
+    [self noteHookResult:result fromBackend:routeBackend];
     return result;
 }
 

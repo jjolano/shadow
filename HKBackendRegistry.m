@@ -29,7 +29,7 @@ static BOOL native_available(void) {
 // Swift vtables: available when the arch supports the engine (arm64/arm64e),
 // the Swift 5 ABI runtime is present (iOS 12.2+), and swift_demangle
 // resolves. libswiftCore is a plain system dylib — never a jailbreak path,
-// so no RootBridge. The probe result is cached unconditionally, success or
+// so no path rewrite. The probe result is cached unconditionally, success or
 // failure: a Swift runtime that appears after the first probe is not retried.
 static BOOL swift_available(void) {
     static BOOL cached = NO;

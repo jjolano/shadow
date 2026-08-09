@@ -6,6 +6,7 @@
 
 #import "vendor/substrate/substrate.h"
 #import "vendor/substitute/substitute.h"
+#import "Internal/HKSubstituteErrors.h"
 
 #pragma mark - Cydia Substrate / Substitute (MS-compatible API) runtime resolution
 
@@ -19,6 +20,8 @@ static void *(*substrate_getImageByName)(const char *) = NULL;
 static void *(*substrate_findSymbol)(void *, const char *) = NULL;
 static void (*substrate_hookMemory)(void *, const void *, size_t) = NULL;
 
+// Only successful probes are cached: if dlopen fails, a later call retries
+// (the engine may appear after HookKit loads).
 BOOL substrate_available(void) {
     static BOOL cached = NO;
     static BOOL available = NO;
@@ -33,21 +36,38 @@ BOOL substrate_available(void) {
         return NO;
     }
 
-    substrate_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
+    void *handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
-    if(!substrate_handle) {
+    if(!handle) {
         return NO;
     }
 
-    substrate_hookFunction = (void (*)(void *, void *, void **))dlsym(substrate_handle, "MSHookFunction");
-    substrate_hookMessageEx = (void (*)(Class, SEL, void *, void **))dlsym(substrate_handle, "MSHookMessageEx");
-    substrate_getImageByName = (void *(*)(const char *))dlsym(substrate_handle, "MSGetImageByName");
-    substrate_findSymbol = (void *(*)(void *, const char *))dlsym(substrate_handle, "MSFindSymbol");
-    substrate_hookMemory = (void (*)(void *, const void *, size_t))dlsym(substrate_handle, "MSHookMemory");
+    // Resolve into locals first: the globals are published only after the
+    // ENTIRE required symbol set is present, so an incomplete library can
+    // never leave half-populated function pointers behind.
+    void (*hookFunction)(void *, void *, void **) = (void (*)(void *, void *, void **))dlsym(handle, "MSHookFunction");
+    void (*hookMessageEx)(Class, SEL, void *, void **) = (void (*)(Class, SEL, void *, void **))dlsym(handle, "MSHookMessageEx");
+    void *(*getImageByName)(const char *) = (void *(*)(const char *))dlsym(handle, "MSGetImageByName");
+    void *(*findSymbol)(void *, const char *) = (void *(*)(void *, const char *))dlsym(handle, "MSFindSymbol");
+    void (*hookMemory)(void *, const void *, size_t) = (void (*)(void *, const void *, size_t))dlsym(handle, "MSHookMemory");
 
-    available = substrate_hookFunction && substrate_hookMessageEx
-        && substrate_getImageByName && substrate_findSymbol;
+    // ABI-incomplete: drop the handle and stay uncached so a later probe
+    // genuinely retries (the engine may gain the full ABI after HookKit
+    // loads). Nothing was published.
+    if(!(hookFunction && hookMessageEx && getImageByName && findSymbol)) {
+        dlclose(handle);
+        return NO;
+    }
+
+    substrate_handle = handle;
+    substrate_hookFunction = hookFunction;
+    substrate_hookMessageEx = hookMessageEx;
+    substrate_getImageByName = getImageByName;
+    substrate_findSymbol = findSymbol;
+    substrate_hookMemory = hookMemory;
+
     cached = YES;
+    available = YES;
 
     return available;
 }
@@ -79,6 +99,8 @@ static void *resolve_ms_symbol(void *handle, const char *name, const char *fallb
     return symbol;
 }
 
+// Only successful probes are cached: if dlopen fails, a later call retries
+// (the engine may appear after HookKit loads).
 BOOL substitute_available(void) {
     static BOOL cached = NO;
     static BOOL available = NO;
@@ -93,35 +115,60 @@ BOOL substitute_available(void) {
         return NO;
     }
 
-    libsubstitute_handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
+    void *handle = dlopen([jbPath fileSystemRepresentation], RTLD_LAZY);
 
-    if(!libsubstitute_handle) {
+    if(!handle) {
         return NO;
     }
 
-    substitute_hookFunction = (void (*)(void *, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookFunction", "SubHookFunction");
-    substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
-    substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
-    substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
-    substitute_hookMemory = (void (*)(void *, const void *, size_t))resolve_ms_symbol(libsubstitute_handle, "MSHookMemory", "SubHookMemory");
+    // Resolve into locals first: the globals are published only after the
+    // ENTIRE required symbol set is present, so an incomplete library can
+    // never leave half-populated function pointers behind.
+    void (*hookFunction)(void *, void *, void **) = (void (*)(void *, void *, void **))resolve_ms_symbol(handle, "MSHookFunction", "SubHookFunction");
+    void (*hookMessageEx)(Class, SEL, void *, void **) = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(handle, "MSHookMessageEx", "SubHookMessageEx");
+    void *(*getImageByName)(const char *) = (void *(*)(const char *))resolve_ms_symbol(handle, "MSGetImageByName", "SubGetImageByName");
+    void *(*findSymbol)(void *, const char *) = (void *(*)(void *, const char *))resolve_ms_symbol(handle, "MSFindSymbol", "SubFindSymbol");
+    void (*hookMemory)(void *, const void *, size_t) = (void (*)(void *, const void *, size_t))resolve_ms_symbol(handle, "MSHookMemory", "SubHookMemory");
 
-    fn_substitute_hook_functions = (int (*)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int))dlsym(libsubstitute_handle, "substitute_hook_functions");
-    fn_substitute_hook_objc_message = (int (*)(Class, SEL, void *, void *, bool *))dlsym(libsubstitute_handle, "substitute_hook_objc_message");
-    fn_substitute_open_image = (struct substitute_image *(*)(const char *))dlsym(libsubstitute_handle, "substitute_open_image");
-    fn_substitute_close_image = (void (*)(struct substitute_image *))dlsym(libsubstitute_handle, "substitute_close_image");
-    fn_substitute_find_private_syms = (int (*)(struct substitute_image *, const char **, void **, size_t))dlsym(libsubstitute_handle, "substitute_find_private_syms");
-    fn_substitute_sym_to_ptr = (void *(*)(struct substitute_image *, substitute_sym *))dlsym(libsubstitute_handle, "substitute_sym_to_ptr");
-    fn_substitute_interpose_imports = (int (*)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int))dlsym(libsubstitute_handle, "substitute_interpose_imports");
+    int (*hookFunctions)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int) = (int (*)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int))dlsym(handle, "substitute_hook_functions");
+    int (*hookObjcMessage)(Class, SEL, void *, void *, bool *) = (int (*)(Class, SEL, void *, void *, bool *))dlsym(handle, "substitute_hook_objc_message");
+    struct substitute_image *(*openImage)(const char *) = (struct substitute_image *(*)(const char *))dlsym(handle, "substitute_open_image");
+    void (*closeImage)(struct substitute_image *) = (void (*)(struct substitute_image *))dlsym(handle, "substitute_close_image");
+    int (*findPrivateSyms)(struct substitute_image *, const char **, void **, size_t) = (int (*)(struct substitute_image *, const char **, void **, size_t))dlsym(handle, "substitute_find_private_syms");
+    void *(*symToPtr)(struct substitute_image *, substitute_sym *) = (void *(*)(struct substitute_image *, substitute_sym *))dlsym(handle, "substitute_sym_to_ptr");
+    int (*interposeImports)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int) = (int (*)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int))dlsym(handle, "substitute_interpose_imports");
 
-    substitute_native_available = fn_substitute_hook_functions && fn_substitute_hook_objc_message
-        && fn_substitute_open_image && fn_substitute_close_image
-        && fn_substitute_find_private_syms && fn_substitute_sym_to_ptr;
+    BOOL nativeAvailable = hookFunctions && hookObjcMessage
+        && openImage && closeImage
+        && findPrivateSyms && symToPtr;
 
-    available = (substitute_hookFunction && substitute_hookMessageEx
-        && substitute_getImageByName && substitute_findSymbol)
-        || substitute_native_available;
+    // ABI-incomplete (neither the MS-compatible shim set nor the native set
+    // is fully present): drop the handle and stay uncached so a later probe
+    // genuinely retries. Nothing was published.
+    if(!((hookFunction && hookMessageEx && getImageByName && findSymbol)
+            || nativeAvailable)) {
+        dlclose(handle);
+        return NO;
+    }
+
+    libsubstitute_handle = handle;
+    substitute_hookFunction = hookFunction;
+    substitute_hookMessageEx = hookMessageEx;
+    substitute_getImageByName = getImageByName;
+    substitute_findSymbol = findSymbol;
+    substitute_hookMemory = hookMemory;
+
+    fn_substitute_hook_functions = hookFunctions;
+    fn_substitute_hook_objc_message = hookObjcMessage;
+    fn_substitute_open_image = openImage;
+    fn_substitute_close_image = closeImage;
+    fn_substitute_find_private_syms = findPrivateSyms;
+    fn_substitute_sym_to_ptr = symToPtr;
+    fn_substitute_interpose_imports = interposeImports;
+    substitute_native_available = nativeAvailable;
 
     cached = YES;
+    available = YES;
 
     return available;
 }
@@ -246,17 +293,15 @@ BOOL substitute_available(void) {
 // future code from a newer installed libsubstitute than the vendored header)
 // is terminal: the hook may already be applied, so it must never be retried.
 // The default fails closed to HK_ERR.
+//
+// The taxonomy itself lives in Internal/HKSubstituteErrors.c (pure C, shared
+// with the host-side unit test) — the mapping here is just its status form.
 static hookkit_status_t substitute_error_to_status(int err) {
-    switch(err) {
-        case SUBSTITUTE_OK:
+    switch(hk_substitute_err_classify(err)) {
+        case HKSubErrOK:
             return HK_OK;
 
-        case SUBSTITUTE_ERR_FUNC_TOO_SHORT:
-        case SUBSTITUTE_ERR_FUNC_BAD_INSN_AT_START:
-        case SUBSTITUTE_ERR_FUNC_CALLS_AT_START:
-        case SUBSTITUTE_ERR_FUNC_JUMPS_TO_START:
-        case SUBSTITUTE_ERR_OUT_OF_RANGE:
-        case SUBSTITUTE_ERR_NO_SUCH_SELECTOR:
+        case HKSubErrCapabilityMiss:
             return HK_ERR_NOT_SUPPORTED;
 
         default:
@@ -310,12 +355,8 @@ static hookkit_status_t substitute_error_to_status(int err) {
     // Any other code (OOM, VM, NOT_ON_MAIN_THREAD, UNEXPECTED_PC_ON_OTHER_
     // THREAD, ADJUSTING_THREADS, or unknown/future) means the hook may
     // already be applied — retrying with interposition could double-hook.
-    if(fn_substitute_interpose_imports
-        && (result == SUBSTITUTE_ERR_FUNC_TOO_SHORT
-            || result == SUBSTITUTE_ERR_FUNC_BAD_INSN_AT_START
-            || result == SUBSTITUTE_ERR_FUNC_CALLS_AT_START
-            || result == SUBSTITUTE_ERR_FUNC_JUMPS_TO_START
-            || result == SUBSTITUTE_ERR_OUT_OF_RANGE)) {
+    // Same taxonomy as the status mapping above (Internal/HKSubstituteErrors.c).
+    if(fn_substitute_interpose_imports && hk_substitute_err_is_retryable(result)) {
         Dl_info info;
 
 #if __has_feature(ptrauth_calls)

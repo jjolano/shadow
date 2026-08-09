@@ -184,8 +184,9 @@ typedef NS_ENUM(int, HKHookKind) {
 
 #pragma mark - Shared helpers
 
-// Jailbreak-root path (RootBridge /var/jb, or libroothide's jbroot on
-// roothide). Defined in Backends/HKBackendCommon.m.
+// Jailbreak-root path (identity on rooted; libroot's jbrootpath on
+// rootless; libroothide's jbroot on roothide). Defined in
+// Backends/HKBackendCommon.m.
 NSString *HKJBPath(NSString *path);
 
 // Iterates the loaded dyld images, calling probe with each image's name until

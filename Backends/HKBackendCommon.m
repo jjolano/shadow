@@ -9,15 +9,20 @@
 @implementation HKHookOperation
 @end
 
-// Jailbreak-root path seam — same convention as Shadow's JBPath.h. Legacy
-// rootless/rooted resolve via RootBridge (/var/jb); roothide has no /var/jb
-// (random-named jbroot) so it uses libroothide's jbroot() instead.
+// Jailbreak-root path seam — compile-time per scheme, same convention as
+// Shadow's JBPath.h. Each package is built for one jailbreak type, so the
+// branch is baked in: rooted = identity (no prefix), rootless = libroot's
+// jbrootpath (auto-linked -lroot by theos; resolves /var/jb or the
+// jailbreak's own prefix), roothide = libroothide's jbroot() (random-named
+// jbroot, no /var/jb).
 #ifdef SHADOW_ROOTHIDE
 #import <roothide.h>
 NSString* HKJBPath(NSString* path) { return jbroot(path); }
+#elif defined(SHADOW_ROOTLESS)
+#import <libroot/libroot.h>
+NSString* HKJBPath(NSString* path) { return JBROOT_PATH_NS(path); }
 #else
-#import <RootBridge.h>
-NSString* HKJBPath(NSString* path) { return [RootBridge getJBPath:path]; }
+NSString* HKJBPath(NSString* path) { return path; }
 #endif
 
 // Shared by every backend that scans for a symbol with no image specified.

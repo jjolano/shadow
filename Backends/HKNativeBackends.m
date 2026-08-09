@@ -84,34 +84,23 @@ static hookkit_status_t hk_native_map_engine_failure(int errnoVal) {
 
 // Side-effect-free capability preflight for auto-cover routing: mirrors the
 // no-write rejections the engine would produce (alignment, self-hook,
-// short-function, literal-load) plus the main-thread gate, so a router can
-// pick this backend without ever invoking a hook that would be refused. All
-// checks read only; a reject leaves the target untouched.
+// short-function over the actual 4- or 16-byte branch window) plus the
+// main-thread gate, so a router can pick this backend without ever invoking a
+// hook that would be refused. The engine's own hook path validates through
+// hk_native_preflight_function, so a preflight accept and the hook can never
+// disagree on the checks they share. All checks read only; a reject leaves
+// the target untouched.
 - (hookkit_status_t)preflightFunction:(void *)function withReplacement:(void *)replacement {
     if(!hk_native_ensure_main_thread()) {
         _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
         return HK_ERR_NOT_SUPPORTED;
     }
 
-    void *rawTarget = function;
-    void *rawReplacement = replacement;
+    int engineErrno = hk_native_preflight_function(function, replacement);
 
-#if __has_feature(ptrauth_calls)
-    // Strip PAC so the raw address is what the engine inspects (arm64e).
-    rawTarget = ptrauth_strip(rawTarget, ptrauth_key_asia);
-    rawReplacement = ptrauth_strip(rawReplacement, ptrauth_key_asia);
-#endif
-
-    if(((uintptr_t)rawTarget & 0x3) != 0 || rawTarget == rawReplacement) {
-        _lastErrno = HK_NATIVE_ERR_UNSUPPORTED;
-        return HK_ERR_NOT_SUPPORTED;
-    }
-
-    // Overwrite window is the branch size (4 or 16 bytes). Only the earliest
-    // instructions matter for the short-function/literal checks.
-    if(hk_arm64_has_early_terminator(rawTarget, 16) || hk_arm64_has_aarch64_literal_load(rawTarget, 16)) {
-        _lastErrno = HK_NATIVE_ERR_SHORT_FUNCTION;
-        return HK_ERR_NOT_SUPPORTED;
+    if(engineErrno != 0) {
+        _lastErrno = engineErrno;
+        return hk_native_map_engine_failure(engineErrno);
     }
 
     return HK_OK;
