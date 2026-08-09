@@ -7,7 +7,8 @@
 # bump deliberately. HookKit is jjolano's own fork (Substrate/Substitute
 # backends); AltList/libsandy are opa334's, pinned at upstream HEAD.
 # fat = rooted (arm64/arm64e) + legacy (armv7/armv7s) builds lipo-merged
-# into one 4-arch flavor (also merges vendor/RootBridge.framework).
+# into one 4-arch flavor (also merges vendor/RootBridge.framework — HookKit
+# links RootBridge at runtime, so it ships in the dep set).
 set -euo pipefail
 
 FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy|fat>}
@@ -17,7 +18,7 @@ PB=$ROOT/../prebuilt
 WORK=${WORK:-/tmp/shadow-deps}
 LIPO=${LIPO:-$THEOS/toolchain/linux/iphone/bin/lipo}
 
-HOOKKIT=77324f7ad01c7f6294fe4a9ecf809e9396638cb2
+HOOKKIT=eb747eb7a08b4cc4532ea300b5ee33a03056e0df
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 ROOTBRIDGE=2ba635ce088c0c3ded517b07b741c7351d20239e
@@ -52,7 +53,10 @@ build_variant() { # <rootless|rooted|legacy>
     fi
 
     # --- RootBridge (jjolano; built FIRST — HookKit links the installed framework
-    # from $THEOS/lib, so it must be the per-flavor build, not a stale one) ---
+    # from $THEOS/lib, so it must be the per-flavor build, not a stale one).
+    # Shadow's own code no longer links RootBridge (the path seam is
+    # compile-time), but the vendored HookKit still calls getJBPath: at
+    # runtime, so the framework stays in the dep set. ---
     clone_pin jjolano/RootBridge "$ROOTBRIDGE" rootbridge
 (
     cd "$WORK/rootbridge"
@@ -61,7 +65,8 @@ build_variant() { # <rootless|rooted|legacy>
     rm -rf "$ROOT/vendor/RootBridge.framework"
     cp -R "$LIBDIR/RootBridge.framework" "$ROOT/vendor/"
     # No RootBridge_PUBLIC_HEADERS in the Makefile; the framework install skips
-    # Headers, which Shadow.framework needs (<RootBridge.h>).
+    # Headers (the vendored framework ships them for completeness; nothing
+    # in Shadow includes <RootBridge.h> anymore).
     [[ -d "$ROOT/vendor/RootBridge.framework/Headers" ]] ||
         cp -R Headers "$ROOT/vendor/RootBridge.framework/"
 )
