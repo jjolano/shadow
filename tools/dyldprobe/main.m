@@ -526,6 +526,50 @@ static void probe_section_8(NSMutableString* out, NSArray* hiddenMarkers, NSMuta
     }
 }
 
+// Section 9: denyFishHook-style GOT revert on a FISHHOOK-rebound C function.
+// v5-PLAN AR5 documents the residual: denyFishHook reverts GOT slots only —
+// the inline-pinned dladdr/dlsym/dlopen_internal are immune (section 8), but
+// the ~60 fishhook-rebound libc/mach/sandbox/mem hooks are revertible. This
+// section proves the residual is real and exploitable: rebind the GOT slot
+// for access() (a fishhook-rebound libc export) and show the jailbreak-path
+// filter is defeated. Deliberately LAST (after section 8) and fail-soft.
+static int dyldprobe_dummy_access(const char* path, int mode) {
+    return 0;  // "path exists" — the unfiltered answer a reverted access() gives on a JB device
+}
+
+static void probe_section_9(NSMutableString* out) {
+    [out appendString:@"\n== 9. denyFishHook GOT revert on a fishhook-rebound C function (documented residual) ==\n"];
+    @try {
+        void (*rebindSymbols)(struct rebinding*, int) = (void (*)(struct rebinding*, int))dlsym(RTLD_DEFAULT, "rebind_symbols");
+
+        if(!rebindSymbols) {
+            [out appendString:@"  rebind_symbols unavailable — section skipped\n"];
+            return;
+        }
+
+        // Baseline: with Shadow active, access() on a jailbreak path is filtered.
+        int before = access("/var/jb", F_OK);
+        [out appendFormat:@"  access(\"/var/jb\", F_OK) before revert = %d %@\n", before, before == 0 ? @"(path VISIBLE — no filter active)" : @"(filtered — Shadow hook active)"];
+
+        // Replicate denyFishHook: rebind the GOT slot for "access" to a
+        // replacement. If the slot was fishhook-rebound by Shadow, rebind
+        // finds and patches it (replaced != NULL) — the revert ran.
+        void* replaced = NULL;
+        struct rebinding r = {"access", (void*)dyldprobe_dummy_access, &replaced};
+        rebindSymbols(&r, 1);
+        [out appendFormat:@"  rebind_symbols({\"access\" -> dummy}) called; replaced = %p %@\n", replaced, replaced ? @"(GOT slot WAS rebound — fishhook hook revertible)" : @"(no GOT slot patched — hook not fishhook-rebound)"];
+
+        // After: does the JB path now resolve? If yes, the filter is defeated.
+        int after = access("/var/jb", F_OK);
+        [out appendFormat:@"  access(\"/var/jb\", F_OK) after revert = %d %@\n", after, after == 0 ? @"(path VISIBLE — filter DEFEATED, residual exploited)" : @"(still filtered)"];
+
+        BOOL residual = (replaced != NULL) && (after == 0);
+        [out appendFormat:@"  result: %@\n", residual ? @"RESIDUAL CONFIRMED — fishhook-rebound C hooks are revertible by denyFishHook (documented unfixable)" : @"hook survived the revert (inline-pinned, or no Shadow active)"];
+    } @catch(NSException* e) {
+        [out appendFormat:@"  EXCEPTION in revert probe: %@\n", e];
+    }
+}
+
 static NSString* ProbeReport(void) {
     NSMutableString* out = [NSMutableString string];
     NSString* appPath = [[NSBundle mainBundle] bundlePath];
@@ -547,6 +591,7 @@ static NSString* ProbeReport(void) {
     probe_section_6(out, fm, hiddenMarkers);
     probe_section_7(out);
     probe_section_8(out, hiddenMarkers, hiddenAddrs);
+    probe_section_9(out);
 
     [out appendString:@"\n== done ==\n"];
     return out;

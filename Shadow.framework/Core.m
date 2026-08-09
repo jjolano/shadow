@@ -1,7 +1,7 @@
 #import <Shadow/Core.h>
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Backend.h>
-#import <RootBridge.h>
+#import <Shadow/JBPath.h>
 
 #import <dlfcn.h>
 #import <pwd.h>
@@ -14,7 +14,11 @@
 static NSCache* decisionCache;
 
 // How long a cached decision is honored (see isPathRestricted:options:).
-static const NSTimeInterval kDecisionCacheTTL = 2.0;
+// Trimmed from 2.0s (plan C0-1): a "not restricted" verdict for a
+// nonexistent path is cached, and if the jailbreak file appears within the
+// window a probe gets a stale "allowed". Ruleset reloads already invalidate
+// via the generation tag; this shrinks the filesystem-appearance window.
+static const NSTimeInterval kDecisionCacheTTL = 0.5;
 
 // Reentrancy guard for the resolve-before-exempt step: the libc realpath hook
 // (hooks/libc.x) re-enters isCPathRestricted from realpath — this code calls
@@ -36,12 +40,32 @@ static _Thread_local NSUInteger shdw_internal_busy = 0;
 // Restricted roots that never hold legitimate app data: the rootless /var/jb
 // fast-path, its canonical target (/var/jb is a symlink to
 // /private/preboot/<hash>/jb on rootless) and rooted /cores crash dumps.
+// On roothide there is no /var/jb at all — the jailbreak root is a
+// random-named jbroot resolved through jbroot() — so that prefix check is
+// replaced by a live-jbroot check.
 static BOOL isPathInRestrictedRoot(NSString* path) {
     // Canonical rootless jbroot target, resolved once. nil when not rootless
     // (realpath("/var/jb") fails), so the jbroot check is a no-op there.
     static NSString* jbrootTarget = nil;
     static dispatch_once_t onceToken = 0;
 
+#ifdef SHADOW_ROOTHIDE
+    // roothide: jbroot() already returns the full jailbreak root path for
+    // the current process; resolve it once and prefix-check it.
+    static NSString* roothideRoot = nil;
+
+    dispatch_once(&onceToken, ^{
+        NSString* root = jbroot(@"/");
+        roothideRoot = [root hasSuffix:@"/"] ? root : [root stringByAppendingString:@"/"];
+        jbrootTarget = nil;
+    });
+
+    if(path && roothideRoot && [path hasPrefix:roothideRoot]) {
+        return YES;
+    }
+
+    return NO;
+#else
     dispatch_once(&onceToken, ^{
         char resolved[PATH_MAX];
 
@@ -61,6 +85,7 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
     }
 
     return NO;
+#endif
 }
 
 @implementation Shadow
@@ -101,7 +126,7 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
         realHomePath = [[self class] getStandardizedPath:realHomePath];
 
         hasAppSandbox = [[bundlePath pathExtension] isEqualToString:@"app"];
-        rootless = [RootBridge isJBRootless];
+        rootless = JBIsRootless();
 
         backend = [ShadowBackend new];
     }
