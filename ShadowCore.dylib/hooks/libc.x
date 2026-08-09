@@ -1,10 +1,13 @@
 #import "hooks.h"
+#import "filters.h"
 
 #import <string.h>
 #import <stdlib.h>
 #import <os/lock.h>
 #import <sys/xattr.h>
 #import <sys/resource.h>
+#import <sys/attr.h>
+#import <sys/snapshot.h>
 
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
@@ -420,17 +423,19 @@ static int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
     for(int i = 0; i < count; i++) {
         struct statfs* rec = &buf[i];
 
-        if([_shadow isCPathRestricted:rec->f_mntonname]
-        || [_shadow isCPathRestricted:rec->f_mntfromname]) {
+        // Per-record decision lives in filters.h (pure, harness-testable);
+        // the isCPathRestricted verdicts are computed here because they need
+        // the Objective-C engine.
+        int restricted = [_shadow isCPathRestricted:rec->f_mntonname]
+            || [_shadow isCPathRestricted:rec->f_mntfromname];
+
+        if(!shdw_mount_filter(rec->f_mntonname, rec->f_mntfromname,
+            (uint32_t*) &rec->f_flags, statfsFlags, restricted)) {
             continue;  // restricted mount: removed, compacted away below
         }
 
         if(out != i) {
             buf[out] = buf[i];
-        }
-
-        if(statfsFlags && strcmp(buf[out].f_mntonname, "/") == 0) {
-            buf[out].f_flags |= MNT_RDONLY;
         }
 
         out++;
@@ -1022,6 +1027,141 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
     if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
         errno = ENOENT;
         return -1;
+    }
+
+    return result;
+}
+
+// APFS snapshot enumeration: a detector can list jailbreak fakefs snapshots
+// via fs_snapshot_list, so external callers get the jailbreak snapshot names
+// compacted out of the returned buffer. No raw-syscall hook: there is no
+// public SYS_fs_snapshot_list number in the SDK (only SYS_fs_snapshot 518),
+// so raw-syscall users are vanishingly rare — libc-level hook only.
+//
+// Buffer format (device-tested reference: SystemRulesGenerator.m
+// _findSnapshotNameWithFd): fs_snapshot_list(2) is getattrlistbulk(2) with
+// FSOPT_LIST_SNAPSHOTS — the attrlist is passed IN (requesting
+// ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME), NOT written at the buffer start.
+// The buffer holds variable-length records: uint32 length, attribute_set_t
+// returned attrs, then the name attrreference_t at
+// 4 + sizeof(attribute_set_t) = 24. The return value is the NUMBER OF
+// RECORDS (not a byte count); 0 = empty. The name string sits at
+// buf + offset + kNameRefOffset + nameRef.attr_dataoffset, NUL-terminated
+// within the record. shdw_snapshot_is_jb only exact-matches "fakefs", so
+// stock "com.apple.os.update-*" names are inherently safe.
+static int (*original_fs_snapshot_list)(int, struct attrlist*, void*, size_t, uint32_t);
+static int replaced_fs_snapshot_list(int dirfd, struct attrlist* attrs, void* buf, size_t bufsize, uint32_t flags) {
+    if(!isCallerExternal()) {
+        return original_fs_snapshot_list(dirfd, attrs, buf, bufsize, flags);
+    }
+
+    int result = original_fs_snapshot_list(dirfd, attrs, buf, bufsize, flags);
+
+    if(result > 0 && buf) {
+        // Record layout (mirrors SystemRulesGenerator.m:245-249): uint32
+        // length, attribute_set_t returned attrs, then the name
+        // attrreference_t at 4 + sizeof(attribute_set_t) = 24.
+        const uint32_t kNameRefOffset = (uint32_t)(sizeof(uint32_t) + sizeof(attribute_set_t));
+        const uint32_t kMinRecord = kNameRefOffset + (uint32_t)sizeof(attrreference_t) + 1;
+
+        uint32_t offset = 0;
+        int valid = 1;
+
+        // Pass 1 (validate): walk `result` records exactly like
+        // SystemRulesGenerator.m:253-322. If ANY record is malformed, leave
+        // the buffer completely unchanged and return the original result
+        // (fail soft — a partially compacted buffer would corrupt the
+        // caller's record walk).
+        for(int record = 0; record < result; record++) {
+            // The record header must fit in the buffer.
+            if((uint64_t) offset + sizeof(uint32_t) > bufsize) {
+                valid = 0;
+                break;
+            }
+
+            uint32_t recLen;
+            memcpy(&recLen, (char*) buf + offset, sizeof(recLen));
+
+            // Minimum record: length + attribute_set_t + attrreference + NUL.
+            if(recLen < kMinRecord || (uint64_t) offset + recLen > bufsize) {
+                valid = 0;
+                break;
+            }
+
+            // Trust the name reference only if the returned-attrs bitmap
+            // says the name attribute was actually returned.
+            attribute_set_t returned;
+            memcpy(&returned, (char*) buf + offset + sizeof(uint32_t), sizeof(returned));
+
+            if(!(returned.commonattr & ATTR_CMN_NAME)) {
+                valid = 0;
+                break;
+            }
+
+            // nameRef follows the length and attribute_set_t; its
+            // attr_dataoffset is relative to the START of the attrreference.
+            attrreference_t nameRef;
+            memcpy(&nameRef, (char*) buf + offset + kNameRefOffset, sizeof(nameRef));
+
+            if(nameRef.attr_dataoffset < (int32_t) sizeof(nameRef)) {
+                valid = 0;
+                break;
+            }
+
+            // The NUL-terminated name string must fit inside the record.
+            uint32_t nameOffset = (uint32_t) nameRef.attr_dataoffset;
+
+            if((uint64_t) nameOffset + 1 > (uint64_t) recLen - kNameRefOffset) {
+                valid = 0;
+                break;
+            }
+
+            const char* nameStr = (char*) buf + offset + kNameRefOffset + nameOffset;
+
+            // Bound the scan by the record tail AND the kernel-reported
+            // attribute length; the NUL must be found within the bound.
+            size_t avail = recLen - kNameRefOffset - nameOffset;
+
+            if(nameRef.attr_length < avail) {
+                avail = nameRef.attr_length;
+            }
+
+            if(strnlen(nameStr, avail) == avail) {
+                valid = 0;  // no NUL within the bounded name: malformed
+                break;
+            }
+
+            offset += recLen;  // recLen >= kMinRecord: offset strictly advances
+        }
+
+        if(valid) {
+            // Pass 2 (compact): for each valid record, extract the name and
+            // if shdw_snapshot_is_jb(name) is 1, memmove the tail down by
+            // recLen and decrement the record count. Survivors stay in place.
+            size_t totalBytes = offset;  // byte extent of the records region
+            offset = 0;
+
+            for(int record = 0; record < result; record++) {
+                uint32_t recLen;
+                memcpy(&recLen, (char*) buf + offset, sizeof(recLen));
+
+                attrreference_t nameRef;
+                memcpy(&nameRef, (char*) buf + offset + kNameRefOffset, sizeof(nameRef));
+
+                uint32_t nameOffset = (uint32_t) nameRef.attr_dataoffset;
+                const char* nameStr = (char*) buf + offset + kNameRefOffset + nameOffset;
+
+                if(shdw_snapshot_is_jb(nameStr)) {
+                    // Remove: shift the tail down over this record; the next
+                    // record now starts at the same offset.
+                    memmove((char*) buf + offset, (char*) buf + offset + recLen, totalBytes - (offset + recLen));
+                    totalBytes -= recLen;
+                    result--;
+                } else {
+                    offset += recLen;
+                }
+            }
+        }
     }
 
     return result;
@@ -2528,6 +2668,7 @@ void shadowhook_libc(HKSubstitutor* hooks) {
         }
     }
     [hooks hookFunction:getattrlist withReplacement:replaced_getattrlist outOldPtr:(void **) &original_getattrlist];
+    [hooks hookFunction:fs_snapshot_list withReplacement:replaced_fs_snapshot_list outOldPtr:(void **) &original_fs_snapshot_list];
     [hooks hookFunction:getxattr withReplacement:replaced_getxattr outOldPtr:(void **) &original_getxattr];
     [hooks hookFunction:listxattr withReplacement:replaced_listxattr outOldPtr:(void **) &original_listxattr];
     [hooks hookFunction:fgetxattr withReplacement:replaced_fgetxattr outOldPtr:(void **) &original_fgetxattr];
@@ -2645,6 +2786,7 @@ void shadowhook_libc_verify(void) {
         { "realpath", original_realpath }, { "readlink", original_readlink },
         { "readlinkat", original_readlinkat }, { "link", original_link },
         { "getmntinfo", original_getmntinfo }, { "getattrlist", original_getattrlist },
+        { "fs_snapshot_list", original_fs_snapshot_list },
         { "getxattr", original_getxattr }, { "listxattr", original_listxattr },
         { "fgetxattr", original_fgetxattr }, { "flistxattr", original_flistxattr },
         { "fgetattrlist", original_fgetattrlist }, { "symlink", original_symlink },
@@ -2726,6 +2868,7 @@ static const shdw_libc_sym_policy_entry_t shdw_libc_sym_policy_table[] = {
     { "fstatvfs", (void*)&replaced_fstatvfs, (void* const*)&original_fstatvfs },
     { "futimes", (void*)&replaced_futimes, (void* const*)&original_futimes },
     { "getattrlist", (void*)&replaced_getattrlist, (void* const*)&original_getattrlist },
+    { "fs_snapshot_list", (void*)&replaced_fs_snapshot_list, (void* const*)&original_fs_snapshot_list },
     { "getenv", (void*)&replaced_getenv, (void* const*)&original_getenv },
     { "getfsstat", (void*)&replaced_getfsstat, (void* const*)&original_getfsstat },
     { "getmntinfo", (void*)&replaced_getmntinfo, (void* const*)&original_getmntinfo },
