@@ -119,7 +119,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
 
 // --- Class lookup / enumeration (plan Wave 1c): the result's image is
 // classified, so classes whose data lives in a protected image (Shadow,
-// HookKit, RootBridge, libSandy, substrate/substitute/ellekit) never resolve
+// HookKit, libSandy, substrate/substitute/ellekit) never resolve
 // for external callers. objc_getRequiredClass is deliberately NOT hooked: it
 // aborts the process when the class is missing, so a suppressed class would
 // turn a benign miss into a hard crash (its fatal contract) — and its abort

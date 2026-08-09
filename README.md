@@ -32,7 +32,6 @@ You may need additional repositories for dependencies - these are the current de
 * `libSandy` from [opa334's Repo](https://opa334.github.io) (preferences - sandboxed loading)
 * `AltList` from [opa334‘s Repo](https://opa334.github.io) (preferences - application listing)
 * `HookKit Framework` (hooking + change hooking library feature)
-* `RootBridge Framework` (rootless compatibility/universal binary building)
 
 A recommended (but not required) package is `Injection Foundation` from PoomSmart's Repo (`https://poomsmart.github.io/repo`). This package ensures that Shadow is injected properly into certain apps.
 

@@ -17,13 +17,13 @@ BASE_LIBS=$(gnustep-config --base-libs)
 # open() call in the binary routes literal /var/jb paths into the fixture
 # tree and consults the engine before answering.
 clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
-  -Wall -Wno-unused-parameter -DDEBUG -O0 -g \
+  -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS \
   $OBJC_FLAGS \
   -include tests/hdr/dispatch/once.h -include tests/hdr/CoreFoundation/CFBundle.h \
   -Itests/hdr \
-  -IShadow.framework/Headers -IShadow.framework -Ivendor/RootBridge.framework/Headers \
+  -IShadow.framework/Headers -IShadow.framework -Itests \
   -IShadowCore.dylib/hooks \
-  tests/main.m tests/RootBridgeStub.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
+  tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m tests/shadowd/RecoveryHarness.m \
   shadowd/ledger.m shadowd/recovery.m \
   Shadow.framework/Core.m Shadow.framework/Backend.m Shadow.framework/Ruleset.m \
