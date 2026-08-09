@@ -88,14 +88,13 @@ HKExecuteBatch();
 Requires [Theos](https://theos.dev). RootBridge.framework is checked in under `vendor/` for linking; the package depends on `me.jjolano.fmwk.rootbridge` at runtime, which is built separately (build the RootBridge repo and install the framework to `$THEOS/lib`).
 
 ```
-./build.sh all|rootless|rooted|legacy
+./build.sh all|rootless|rooted
 ```
 
-- `rootless` — iphoneos-arm64 deb.
-- `rooted` — iphoneos-arm deb.
-- `legacy` — 32-bit armv7/armv7s, iOS 9+, deb renamed with a `-legacy` suffix.
+- `rootless` — iphoneos-arm64 deb, iOS 12+.
+- `rooted` — one fat iphoneos-arm deb spanning armv7 through arm64e, iOS 9+.
 
-Deployment floor is iOS 12. On that floor Theos bumps the arm64e slice minos to 14.0; a build-time warning about this is expected and known.
+Theos bumps the arm64e slice minos to 14.0; a build-time warning about this is expected and known.
 
 ## Advantages and Disadvantages
 
