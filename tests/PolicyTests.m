@@ -7,8 +7,10 @@
 // documented inline. Changing a rule in EnvironmentPolicy.m without
 // updating the mirror here is a test failure by design.
 //
-// Single battery today (environment policy); mirrors the "[tests] ..." style
-// of tests/main.m.
+// RunPolicyTests() is called from the harness (tests/main.m) after the unit
+// groups have run; returns the failure count. Self-contained mirrors of the
+// EnvironmentPolicy rules — this file must NOT be the link entry point
+// (the harness main() lives in main.m).
 
 #import <Foundation/Foundation.h>
 
@@ -394,7 +396,7 @@ static void testSnapshotBuilder(void) {
     CHECK((*snap2)[1] == raw4, "unchanged entries keep their original pointers");
 }
 
-int main(void) {
+int RunPolicyTests(void) {
     @autoreleasepool {
         testHiddenNames();
         testPathSanitizer();
@@ -403,6 +405,6 @@ int main(void) {
         testSnapshotBuilder();
 
         printf("=== policy: %d passed, %d failed\n", gPass, gFail);
-        return gFail ? 1 : 0;
+        return gFail;
     }
 }
