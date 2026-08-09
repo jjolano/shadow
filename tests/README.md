@@ -3,7 +3,7 @@
 Host-side test harness for Shadow's decision engine — no device, no theos,
 no simulator. Builds the real `Shadow.framework` decision sources
 (`Core.m`, `Backend.m`, `Ruleset.m`, `Core+Utilities.m`) against a host
-Foundation with a stubbed `RootBridge`, then runs the engine against staged
+Foundation with a path shim, then runs the engine against staged
 fixture rulesets and a fixture jailbreak tree.
 
 ## Build & run
@@ -51,8 +51,10 @@ mode) and each child execs itself from the staged `.app` dir.
 
 ## How the device semantics are faked on a host
 
-- **RootBridge stub** (`RootBridgeStub.m`): rooted/rootless switchable;
-  the rulesets dir redirects to the staged dir in both modes.
+- **Path shim** (`ShdwPathShim.m`): rooted/rootless switchable; under
+  `-DSHADOW_TEST_HARNESS` the `JBPath`/`JBIsRootless` seam routes through it
+  (the production seam is compile-time via `THEOS_PACKAGE_INSTALL_PREFIX`).
+  The rulesets dir redirects to the staged dir in both modes.
 - **Virtual filesystem** (`fsinterpose.c`, Linux only): the engine's
   rootless existence gates call real `access()`/`realpath()` on literal
   `/var/jb`-prefixed paths. The harness links with
@@ -254,7 +256,7 @@ hooked API group is never exercised by any battery — a gap to fill.
 ## Layout
 
 - `main.m` — staging, fork/exec, assertions, detector battery
-- `RootBridgeStub.m`/`.h` — host `RootBridge` implementation
+- `ShdwPathShim.m`/`.h` — host path shim (JBPath seam in test mode)
 - `fsinterpose.c`/`.h` — virtual filesystem + dyld/dispatch/CF shims
 - `Dockerfile`, `build-linux.sh` — Linux toolchain image + build
 - `fixtures/rulesets/` — synthetic rulesets (base, overrides, structure,

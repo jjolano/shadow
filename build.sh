@@ -63,12 +63,6 @@ check_deps() { # flavor
             exit 1
         fi
     done
-
-    # RootBridge lives in vendor/ (built by build-deps.sh), not ../prebuilt.
-    if [ "$flavor" = "fat" ] && ! has_slices vendor/RootBridge.framework/RootBridge $archs; then
-        echo "deps: vendor/RootBridge.framework missing [$archs] — run build-deps.sh fat" >&2
-        exit 1
-    fi
 }
 
 stage_deps() {
@@ -91,9 +85,9 @@ stage_deps() {
             # Framework link order resolves $THEOS/lib before -F../vendor, so
             # the 4-slice merge must also land there (per-flavor passes got
             # this from build-deps installing the matching variant; the fat
-            # pass leaves the legacy one behind). HookKit/RootBridge merge
-            # lives in vendor/; AltList/libsandy are already fat above.
-            for fw in HookKit RootBridge; do
+            # pass leaves the legacy one behind). HookKit's merge lives in
+            # vendor/; AltList/libsandy are already fat above.
+            for fw in HookKit; do
                 rm -rf $THEOS/lib/$fw.framework
                 cp -R vendor/$fw.framework $THEOS/lib/
             done
@@ -189,18 +183,17 @@ build_quick() {
 
 # roothide flavor — iOS 15-17, random-named jbroot (no /var/jb). Requires the
 # roothide theos fork (THEOS_PACKAGE_SCHEME=roothide) and libroothide; the
-# Makefiles drop RootBridge and define SHADOW_ROOTHIDE for this scheme.
+# path seam (Shadow/JBPath.h) uses jbroot() and the Makefiles link libroothide
+# under this scheme.
 build_roothide() {
     stage_deps roothide
     check_deps roothide
-    # Same PID-unique control mutation pattern as the fat pass: the roothide
-    # flavor must not depend on RootBridge (the seam links libroothide instead).
+    # PID-unique control mutation pattern (same as the fat pass): the
+    # roothide bootstrap is iOS 15.0-17.0 only.
     local BAK=/tmp/shadow-control-roothide.bak.$$
     trap "mv $BAK control 2>/dev/null || true" EXIT
     cp control "$BAK"
-    # roothide bootstrap: iOS 15.0-17.0 only; drop RootBridge dep (seam uses
-    # libroothide) and raise the firmware floor from the shared 12.0.
-    sed -e 's/, me.jjolano.fmwk.rootbridge//' -e 's/firmware (>= 12.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
+    sed -e 's/firmware (>= 12.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
 
     make clean &&
     THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make -C Shadow.framework &&

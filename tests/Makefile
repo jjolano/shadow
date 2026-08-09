@@ -1,8 +1,8 @@
 # Host test harness for Shadow's decision engine (no device required).
 
 # Builds the REAL Shadow.framework decision sources (Core.m, Backend.m,
-# Ruleset.m, Core+Utilities.m) against a host Foundation with a stubbed
-# RootBridge. Nothing here touches the theos/device toolchain.
+# Ruleset.m, Core+Utilities.m) against a host Foundation with a path shim.
+# Nothing here touches the theos/device toolchain.
 #
 # Platform split:
 #   macOS   — clang + the system Foundation; `make` builds `harness`.
@@ -18,10 +18,10 @@ CC ?= clang
 FRAMEWORK = ../Shadow.framework
 VENDOR = ../vendor
 
-CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g
-INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I$(VENDOR)/RootBridge.framework/Headers -I../ShadowCore.dylib/hooks
+CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS
+INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../ShadowCore.dylib/hooks
 
-SRCS = main.m RootBridgeStub.m fsinterpose.c ShadowFilter.m ShadowdShims.m detectors/ShadowDetector.m Fuzz.m \
+SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m ShadowdShims.m detectors/ShadowDetector.m Fuzz.m \
        shadowd/RecoveryHarness.m \
        ../shadowd/ledger.m \
        ../shadowd/recovery.m \

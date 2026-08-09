@@ -265,7 +265,6 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
                 @"shadow.framework",
                 @"libsandy.dylib",
                 @"hookkit.framework",
-                @"rootbridge.framework",
                 @"substrate",
                 @"libsubstrate",
                 @"substitute",

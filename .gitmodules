@@ -1,6 +1,3 @@
 [submodule "vendor/HookKit.framework"]
 	path = vendor/HookKit.framework
 	url = https://github.com/jjolano/HookKit.git
-[submodule "vendor/RootBridge.framework"]
-	path = vendor/RootBridge.framework
-	url = https://github.com/jjolano/RootBridge.git

@@ -82,7 +82,7 @@ static BOOL _shdw_dyld_replay_in_progress = NO;
 
 // Shadow-owned image spans for shdw_caller_is_external() (see hooks.h).
 // C0-2: truth is granted ONLY to Shadow's own artifacts — Shadow.dylib,
-// Shadow.framework, libSandy.dylib, HookKit.framework, RootBridge.framework
+// Shadow.framework, libSandy.dylib, HookKit.framework
 // and the substrate/substitute/ellekit binaries — so the collector gathers
 // THOSE spans, not the app bundle's. isProtectedImagePath matches by
 // case-insensitive basename prefix, collapsing rootful and rootless

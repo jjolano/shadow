@@ -73,7 +73,7 @@ static inline Shadow* shdw_shadow_instance(void) {
 // bundle is a tweak → truth") let every system frame and embedded detector
 // bypass filtering; the new model grants truth ONLY to explicit Shadow
 // internals: a return address inside one of Shadow's own images
-// (Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, RootBridge,
+// (Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit,
 // substrate/substitute/ellekit) or a thread inside an internal read scope
 // (SHADOW_INTERNAL_SCOPE, which sets the +[Shadow shdwIsInternalRead] flag —
 // see Core.h; the flag lives in the framework because a C TLS symbol cannot
@@ -90,7 +90,7 @@ static inline Shadow* shdw_shadow_instance(void) {
 // group installs — and on every add/remove image callback, so the published
 // set is never stale in practice.
 // NOTE: the collector in dyld.x gathers ONLY the Shadow-owned spans above —
-// Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, RootBridge, and
+// Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, and
 // substrate/substitute/ellekit, matched by case-insensitive basename via
 // isProtectedImagePath — and rebuilds the snapshot at install and on every
 // add/remove image callback, so the published set tracks Shadow's loaded

@@ -1,7 +1,7 @@
 // Shadow decision-engine test harness (host, no device).
 //
 // Builds the real Shadow.framework decision sources (Core, Backend, Ruleset,
-// Core+Utilities) against the host Foundation with a stubbed RootBridge, then
+// Core+Utilities) against the host Foundation with a path shim, then
 // stages itself into a temp dir shaped like an app on a jailbroken device:
 //
 //   <work>/Harness.app/harness          the running binary (bundlePath ends
@@ -31,8 +31,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow.h>
-#import <RootBridge.h>
-#import "RootBridgeStub.h"
+#import "ShdwPathShim.h"
 #import "fsinterpose.h"
 
 #import <unistd.h>
@@ -1650,7 +1649,7 @@ int main(int argc, const char** argv) {
         // filesystem must be armed before any gate call.
         shdw_fs_set_argv((char**)argv);
         shdw_fs_set_jbroot([jbPath UTF8String]);
-        [RootBridge shdwHarnessSetJBPath:jbPath rulesetsDir:rulesetsDir];
+        shdw_harness_set_jbpath(jbPath, rulesetsDir);
 
         printf("=== Shadow harness (%s, %s) work=%s\n",
             gRootless ? "rootless" : "rooted",
