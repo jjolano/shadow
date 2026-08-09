@@ -61,7 +61,7 @@ __attribute__((visibility("default")))
 
 // C0-3: protected-name policy — YES when the path is restricted by a ruleset
 // OR its basename matches one of Shadow's own artifacts (Shadow.dylib,
-// Shadow.framework, libSandy.dylib, HookKit.framework, RootBridge.framework,
+// Shadow.framework, libSandy.dylib, HookKit.framework,
 // substrate/substitute/ellekit), case-insensitive prefix match on the
 // basename so rootful and rootless (/var/jb) prefixes both resolve to it.
 - (BOOL)isProtectedImagePath:(NSString *)path;

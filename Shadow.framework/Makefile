@@ -5,16 +5,12 @@ FRAMEWORK_NAME = Shadow
 Shadow_FILES = Core.m Core+Utilities.m Backend.m Ruleset.m RulesetCompiler.m RulesetStore.m RestrictionResolver.m RestrictionEngine.m Settings.m SystemRulesGenerator.m HookConfiguration.m
 Shadow_FRAMEWORKS = Foundation CoreFoundation
 Shadow_PRIVATE_FRAMEWORKS = MobileCoreServices
-# RootBridge is the /var/jb convention; roothide replaces it with libroothide
-# (the seam in JBPath.h picks the API; the roothide scheme adds the link).
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-Shadow_EXTRA_FRAMEWORKS = RootBridge
-endif
 Shadow_INSTALL_PATH = /Library/Frameworks
+# The path seam (Shadow/JBPath.h) is compile-time: the rooted/rootless mapping
+# comes from THEOS_PACKAGE_INSTALL_PREFIX; the roothide scheme defines
+# SHADOW_ROOTHIDE and links libroothide.
 Shadow_CFLAGS = -fobjc-arc -fvisibility=hidden -IHeaders
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-Shadow_CFLAGS += -I../vendor/RootBridge.framework/Headers
-else
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 Shadow_CFLAGS += -DSHADOW_ROOTHIDE
 endif
 Shadow_LDFLAGS = -Wl,-x -F../vendor/

@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           cd .github/scripts
-          for dep in HOOKKIT:jjolano/HookKit ROOTBRIDGE:jjolano/RootBridge \
+          for dep in HOOKKIT:jjolano/HookKit \
                      ALTLIST:opa334/AltList LIBSANDY:opa334/libSandy; do
             var=${dep%%:*}; repo=${dep#*:}
             pin=$(grep "^$var=" build-deps.sh | cut -d= -f2)

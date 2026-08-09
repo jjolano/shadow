@@ -18,7 +18,6 @@ static BOOL shdw_imageNameProtected(NSString* name) {
             @"shadow.framework",
             @"libsandy.dylib",
             @"hookkit.framework",
-            @"rootbridge.framework",
             @"substrate",
             @"libsubstrate",
             @"substitute",

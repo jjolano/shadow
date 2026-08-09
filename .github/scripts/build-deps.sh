@@ -7,8 +7,7 @@
 # bump deliberately. HookKit is jjolano's own fork (Substrate/Substitute
 # backends); AltList/libsandy are opa334's, pinned at upstream HEAD.
 # fat = rooted (arm64/arm64e) + legacy (armv7/armv7s) builds lipo-merged
-# into one 4-arch flavor (also merges vendor/RootBridge.framework — HookKit
-# links RootBridge at runtime, so it ships in the dep set).
+# into one 4-arch flavor.
 set -euo pipefail
 
 FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy|fat>}
@@ -21,7 +20,6 @@ LIPO=${LIPO:-$THEOS/toolchain/linux/iphone/bin/lipo}
 HOOKKIT=eb747eb7a08b4cc4532ea300b5ee33a03056e0df
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
-ROOTBRIDGE=2ba635ce088c0c3ded517b07b741c7351d20239e
 
 clone_pin() { # <repo> <sha> <dir>
     if [[ ! -d "$WORK/$3/.git" ]]; then
@@ -51,25 +49,6 @@ build_variant() { # <rootless|rooted|legacy>
     else
         LIBDIR=$THEOS/lib
     fi
-
-    # --- RootBridge (jjolano; built FIRST — HookKit links the installed framework
-    # from $THEOS/lib, so it must be the per-flavor build, not a stale one).
-    # Shadow's own code no longer links RootBridge (the path seam is
-    # compile-time), but the vendored HookKit still calls getJBPath: at
-    # runtime, so the framework stays in the dep set. ---
-    clone_pin jjolano/RootBridge "$ROOTBRIDGE" rootbridge
-(
-    cd "$WORK/rootbridge"
-    make clean >/dev/null 2>&1 || true
-    env $SCHEME ARCHS="$ARCHS" make package FINALPACKAGE=1
-    rm -rf "$ROOT/vendor/RootBridge.framework"
-    cp -R "$LIBDIR/RootBridge.framework" "$ROOT/vendor/"
-    # No RootBridge_PUBLIC_HEADERS in the Makefile; the framework install skips
-    # Headers (the vendored framework ships them for completeness; nothing
-    # in Shadow includes <RootBridge.h> anymore).
-    [[ -d "$ROOT/vendor/RootBridge.framework/Headers" ]] ||
-        cp -R Headers "$ROOT/vendor/RootBridge.framework/"
-)
 
 # --- HookKit (jjolano's fork; vendored fishhook/substrate/substitute backends) ---
 clone_pin jjolano/HookKit "$HOOKKIT" hookkit
@@ -132,17 +111,8 @@ merge_fat() { # lipo the rooted+legacy prebuilt flavors into .../fat/
 
 case "$FLAVOR" in
     fat)
-        # build_variant leaves its RootBridge build in vendor/; snapshot the
-        # rooted one before the legacy pass overwrites vendor/, then lipo the
-        # disjoint slice sets (rooted arm64/arm64e + legacy armv7/armv7s).
         build_variant rooted
-        rm -rf "$WORK/rb-rooted"
-        mv "$ROOT/vendor/RootBridge.framework" "$WORK/rb-rooted"
         build_variant legacy
-        "$LIPO" -create "$WORK/rb-rooted/RootBridge" "$ROOT/vendor/RootBridge.framework/RootBridge" \
-            -output "$WORK/rb-fat" &&
-        mv "$WORK/rb-fat" "$ROOT/vendor/RootBridge.framework/RootBridge"
-        rm -rf "$WORK/rb-rooted"
         merge_fat
         ;;
     *) build_variant "$FLAVOR" ;;

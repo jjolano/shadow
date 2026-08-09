@@ -9,14 +9,9 @@ ShadowCore_FILES = $(wildcard hooks/*.x) hooks/DeviceCheckHooks.m $(wildcard pol
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-ShadowCore_EXTRA_FRAMEWORKS += RootBridge
-endif
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
 ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
-ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
-ShadowCore_CFLAGS += -I../vendor/RootBridge.framework/Headers
-else
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_CFLAGS += -DSHADOW_ROOTHIDE
 endif
 ShadowCore_LDFLAGS = -Wl,-x -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
