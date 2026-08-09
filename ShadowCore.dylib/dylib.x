@@ -249,6 +249,11 @@ static void shdw_install_tier2(void) {
 }
 
 %ctor {
+    // Fail-soft: any unexpected NSException from this ctor — watcher
+    // registration, prefs read, daemon lease, hook install, image replay —
+    // must not crash the app at spawn. Log and continue unhooked (the verify
+    // functions below surface what failed to install).
+    @try {
     // No detector classification by image name: identity concealment must not
     // depend on knowing a detector's name, so the identity groups below
     // install for every enabled app unconditionally, and detection attempts
@@ -321,10 +326,6 @@ static void shdw_install_tier2(void) {
     // Initialize hooks.
     NSLog(@"starting hooks");
 
-    // Fail-soft: an unexpected NSException from the hooking library during
-    // install must not crash the app at spawn — log and continue unhooked
-    // (the verify functions below surface what failed to install).
-    @try {
     #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
     
@@ -711,7 +712,7 @@ static void shdw_install_tier2(void) {
     }
     #endif
     } @catch (NSException* e) {
-        NSLog(@"[Shadow] hook install failed: %@ — continuing unhooked", e);
+        NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
         return;
     }
 
