@@ -1,10 +1,10 @@
 # HookKit
 
-A slim iOS developer framework that unifies eight hooking backends behind one API.
+A slim iOS developer framework that unifies nine hooking backends behind one API.
 
 ## Backends
 
-The best backend available on the device is picked at runtime, in priority order: ElleKit > Cydia Substrate > Substitute > Dobby > fishhook. fishhook and Dobby are compiled in and always present on their architectures, making them the fallback floors: Dobby is the floor on arm64/arm64e, fishhook the floor on armv7. Frida is never picked automatically — opt in with `HK_LIB_FRIDA`. Swift vtables (opt-in, `HK_LIB_SWIFT`) hook Swift class methods through the class metadata vtable — a separate API, not a message/function hooking engine. Backends are not packaged separately: the single package `me.jjolano.fmwk.hookkit` works on every jailbreak. (This replaces the v1 Modulous plugin-bundle architecture.)
+The best backend available on the device is picked at runtime, in priority order: ElleKit > Cydia Substrate > Substitute > Dobby > fishhook. fishhook and Dobby are compiled in and always present on their architectures, making them the fallback floors: Dobby is the floor on arm64/arm64e, fishhook the floor on armv7. Frida is never picked automatically — opt in with `HK_LIB_FRIDA`. `litehook` (opt-in, `HK_LIB_LITEHOOK`) is the compiled-in memory-patching backend that also works on armv7. Swift vtables (opt-in, `HK_LIB_SWIFT`) hook Swift class methods through the class metadata vtable — a separate API, not a message/function hooking engine. Backends are not packaged separately: the single package `me.jjolano.fmwk.hookkit` works on every jailbreak. (This replaces the v1 Modulous plugin-bundle architecture.)
 
 To override the priority order, pass an explicit list with `substitutorWithOrderedTypes:` — the first available entry wins:
 
@@ -21,8 +21,9 @@ HKSubstitutor *sub = [HKSubstitutor substitutorWithOrderedTypes:@[@(HK_LIB_SUBST
 | Backend         | Message | Function | Memory | Batching |
 |-----------------|---------|----------|--------|----------|
 | ElleKit         | yes     | yes      | yes    | yes      |
-| Cydia Substrate | yes     | yes      | no     | no       |
-| Substitute      | yes     | yes      | no     | no       |
+| Cydia Substrate | yes     | yes      | yes******* | no       |
+| litehook        | no      | yes****** | yes    | no       |
+| Substitute      | yes     | yes      | yes******* | no       |
 | native          | yes     | yes**    | yes    | yes      |
 | Dobby           | no      | yes***   | yes    | no       |
 | Frida           | no      | yes****  | no     | yes      |
@@ -35,9 +36,13 @@ HKSubstitutor *sub = [HKSubstitutor substitutorWithOrderedTypes:@[@(HK_LIB_SUBST
 
 \*\*\* arm64/arm64e only; inline patching needs relaxed codesigning (see the Dobby caveat below).
 
-\*\*\*\* iOS 14+ and arm64/arm64e only; inline patching needs relaxed codesigning (see the Frida caveat below).
+\*\*\*\* arm64/arm64e only; arm64e slice requires iOS 14+; inline patching needs relaxed codesigning (see the Frida caveat below).
 
 \*\*\*\*\* Swift vtable hooking is a separate API (`hookSwiftMethodInClass:withName:...` / `hookSwiftVtableSlotInClass:withIndex:...`), not the message/function columns (see the Swift caveat below).
+
+\*\*\*\*\*\* Exported-symbol or GOT-referenced C functions, rebinding by address (see the litehook caveat below).
+
+\*\*\*\*\*\*\* Via `MSHookMemory` on Substrate, and via the MS-compatible `SubHookMemory` on Substitute (see the memory-caveat below). Not available on the Substitute native path when the shim is absent.
 
 ### native
 
@@ -75,9 +80,11 @@ HKExecuteBatch();
 - Symbol names are Substrate-style: C symbols carry no leading underscore (`"malloc"`); C++ mangled names keep theirs. ElleKit accepts both forms; the Substrate/MS and fishhook backends pass names through unchanged.
 - Status codes: `HK_OK`, `HK_ERR`, `HK_ERR_NOT_SUPPORTED`, `HK_ERR_INVALID_ARGUMENT`, `HK_ERR_PARTIAL`. Batch and `findSymbolsInImage:` can return `HK_ERR_PARTIAL`.
 - fishhook caveat: rebinding is by symbol name, so private/interior addresses are not rebindable; `old_ptr` reflects the state at hook time (fishhook retains the rebinding for all future image loads). arm64e PAC is handled: `__auth_got` slots are resigned with the asia key and slot-address discriminator, and `old_ptr` is resigned to the plain function-pointer scheme. A hook whose symbol no loaded image references is refused (`HK_ERR_NOT_SUPPORTED`) instead of silently succeeding. The rebinding list is thread-safe.
+- litehook caveat: opt-in (`HK_LIB_LITEHOOK`), never selected automatically. Function hooks rebind GOT/import slots by address (so exported and GOT-referenced C functions are hookable; `old_ptr` is the original function address, which is untouched). The library's direct-branch `litehook_hook_function` provides no original-call trampoline and is not used by this backend. Memory patching works on every supported arch (arm64e/arm64/armv7s/armv7, iOS 10+) — this is the only compiled-in backend that patches memory on armv7. No ObjC message hooking. MIT-licensed, no runtime dependency beyond libsystem.
 - native caveat: arm64/arm64e only — on armv7 it reports unavailable, since those devices always have Substrate. Inline patching needs relaxed codesigning, which holds in a tweak-injected process but not in an unmodified one. Function hooks are refused (`HK_ERR`, `errno` `-2`) on targets too short to patch without clobbering the function that follows them. Hooks must be installed at load time: the patch is not atomic and so is not safe against code already running on another thread. Shared cache symbol parsing depends on the cache layout and should be re-verified each major iOS release.
 - Dobby caveat: inline patching needs relaxed codesigning (same constraint as native). arm64/arm64e only — on armv7 it reports unavailable. Interior/private C functions are hookable by address (beyond fishhook's exported-symbols-only limit). No ObjC message hooking.
-- Frida caveat: hooks through the `HKGum.dylib` wrapper (frida-gum devkit, LGPL-2.1 with wxWindows exception) dlopen'd at runtime — the framework never links gum directly. The devkit's minos=14.0 means iOS 14+ only; on iOS 12/13 dyld refuses to load the wrapper, so dlopen failure gates it. arm64/arm64e only (no armv7 gum devkit). Inline patching needs relaxed codesigning (same as native/Dobby). Hooks must be installed at load time: the prologue patch is not atomic and so is not safe against code already running on another thread. No ObjC message hooking.
+- memory caveat: `hookMemory:` works via `MSHookMemory` on Cydia Substrate (unc0ver-class Substrate exports it) and via the MS-compatible `SubHookMemory` on Substitute (libsubstitute's substrate-shim exports it). Both are distinct MS-compatible symbols; the Substitute native path (`substitute_interpose_imports`) handles function/import rebinding but is not used for raw-address `hookMemory:`.
+- Frida caveat: hooks through the `HKGum.dylib` wrapper (frida-gum devkit, LGPL-2.1 with wxWindows exception) dlopen'd at runtime — the framework never links gum directly. The wrapper is built with a 9.0/12.0 arm64 floor, so the arm64 slice loads on iOS 12/13; only the arm64e slice carries the 14.0 minos (theos's clang forces arm64e to ≥ 14.0) — see "Building". arm64/arm64e only (no armv7 gum devkit). Inline patching needs relaxed codesigning (same as native/Dobby). Hooks must be installed at load time: the prologue patch is not atomic and so is not safe against code already running on another thread. No ObjC message hooking.
 - Swift caveat: vtable hooking via `HK_LIB_SWIFT` (opt-in, never selected automatically). The slot write is a single aligned pointer store (≈ atomic) with no code patching, so no relaxed codesigning is required for the write itself. Devirtualization and inlining can silently bypass vtable dispatch, and KVO-swizzled instances are unaffected. On arm64e the engine validates its signing recipe against the live slot before writing (PAC pre-write self-check): a mismatch fails the hook cleanly instead of corrupting memory. For stripped binaries, use the index API (declaration order, stable per build); name lookup cannot work without symbols. v1 limits: own methods only, non-generic, no resilient superclass, no async, no class methods, no extensions; Swift calling convention required for replacements. Swift 5 ABI (iOS 12.2+) and arm64/arm64e only.
 - Requested but unavailable backends are not silently substituted: hook calls return `HK_ERR_NOT_SUPPORTED` and `activeType` is `HK_LIB_NONE`. Check `activeType` before relying on a backend.
 - Threading: the batch queue is thread-safe — enqueue may race `executeHooks`, which drains a snapshot under the same lock, so every queued hook runs exactly once. Not synchronized: last-error state (`getLibErrno:` reports the last hook call on that substitutor, from whichever thread made it) and backend selection — settle `types` / `initLibraries` before hooking starts. The native Substitute API additionally requires the main thread.
@@ -105,7 +112,7 @@ Advantages:
 
 Disadvantages:
 
-- Library-specific functionality is not implemented: the Substrate-compatible backends offer no memory patching or batching, and fishhook only hooks exported C symbols.
+- Library-specific functionality is not implemented: Substitute offers no memory patching, the Substrate-compatible backends offer no batching, and fishhook only hooks exported C symbols.
 - Existing tweaks will need to be rewritten/recompiled to use HookKit.
 
 ## Credits

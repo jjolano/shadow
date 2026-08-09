@@ -20,23 +20,48 @@ typedef enum {
     HK_LIB_NATIVE = (1 << 4),
     HK_LIB_DOBBY = (1 << 5),
     HK_LIB_FRIDA = (1 << 6),
-    HK_LIB_SWIFT = (1 << 7)
+    HK_LIB_SWIFT = (1 << 7),
+    HK_LIB_LITEHOOK = (1 << 8)
 } hookkit_lib_t;
 
 typedef const struct HKImage* HKImageRef;
+
+/*
+ * Backend category flags. Categories group backends by hooking capability;
+ * callers use substitutorWithCategory: to select the first available backend
+ * in that category's priority order, without naming a specific library.
+ *
+ *   MESSAGE          — ObjC message hooking (class_addMethod / MSHookMessageEx /
+ *                      LBHookMessage / substitute_hook_objc_message)
+ *   FUNCTION_REBIND  — C function rebinding by exported symbol name (fishhook)
+ *   FUNCTION_INLINE  — C function inline hooking by address (Dobby / Frida /
+ *                      ElleKit LHHookFunctions)
+ *   PRIVATE_SYMBOL   — Private symbol lookup in a loaded image (ElleKit /
+ *                      Substrate / Substitute)
+ *
+ * Flags are powers of two and may be OR'd for getAvailableCategories.
+ */
+typedef enum {
+    HK_CAT_NONE             = 0,
+    HK_CAT_MESSAGE          = (1 << 0),
+    HK_CAT_FUNCTION_REBIND  = (1 << 1),
+    HK_CAT_FUNCTION_INLINE  = (1 << 2),
+    HK_CAT_PRIVATE_SYMBOL   = (1 << 3)
+} hookkit_cat_t;
 
 /*
  * Backend capability matrix:
  *
  *                  message    function    memory    batching
  *   ElleKit        yes        yes         yes       yes
- *   Cydia Substrate yes       yes         no        no
- *   Substitute      yes       yes         no        no
+ *   Cydia Substrate yes       yes         yes*9     no
+ *   Substitute      yes       yes         yes*10    no
  *   native          yes       yes**     yes       yes
  *   Dobby           no        yes***    yes       no
  *   Frida           no        yes****   no        yes
  *   fishhook        no        yes*      no        no
  *   Swift           no        no*****   no        no
+ *   litehook        no        yes*8     yes       no
  *     * exported symbols only, rebinding by symbol name
  *     ** arm64/arm64e only
  *     *** arm64/arm64e only; inline patching needs relaxed codesigning
@@ -45,6 +70,10 @@ typedef const struct HKImage* HKImageRef;
  *     ***** Swift vtable hooking is a separate API
  *          (hookSwiftMethodInClass:withName:... / ...withIndex:...), not the
  *          message/function columns
+ *     *8  exported-symbol/address rebinding via litehook_rebind_symbol; no
+ *         original-call trampoline for direct-branch hooks
+ *     *9  via MSHookMemory when the installed Cydia Substrate exports it
+ *     *10 via the MS-compatible SubHookMemory on Substitute
  *   Each footnote is expanded in the per-backend caveats linked below.
  *
  * Symbol name convention: names passed to findSymbolInImage:/
@@ -85,6 +114,11 @@ typedef const struct HKImage* HKImageRef;
 // Returns an integer representing available substitutor types on the system. Use getSubstitutorTypeInfo to receive an array for more details.
 + (hookkit_lib_t)getAvailableSubstitutorTypes;
 
+// Returns the OR of all category flags for which at least one backend is
+// available on the current device. Callers can use this to probe which
+// categories are usable before requesting a backend by category.
++ (hookkit_cat_t)getAvailableCategories;
+
 // Returns an array of dictionaries containing information on given substitutor types, as supported by the running version of HookKit.
 + (NSArray<NSDictionary *> *)getSubstitutorTypeInfo:(hookkit_lib_t)types;
 
@@ -96,6 +130,13 @@ typedef const struct HKImage* HKImageRef;
 // the built-in table order. Each element is an NSNumber wrapping a
 // hookkit_lib_t. Unknown types are skipped; an empty array yields no backend.
 + (instancetype)substitutorWithOrderedTypes:(NSArray<NSNumber *> *)types;
+
+// Creates an instance of HKSubstitutor for the given backend category. The
+// first available backend in that category's built-in priority order is
+// selected — callers request a capability, not a specific library. Returns
+// an instance with no backend (activeType == HK_LIB_NONE) if no backend in
+// the category is available. HK_CAT_NONE is equivalent to defaultSubstitutor.
++ (instancetype)substitutorWithCategory:(hookkit_cat_t)category;
 
 // Creates an instance of HKSubstitutor using the currently loaded substitutor.
 + (instancetype)defaultSubstitutor;

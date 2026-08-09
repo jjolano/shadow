@@ -26,6 +26,7 @@ static NSString* HKJBPath(NSString* path) { return [RootBridge getJBPath:path]; 
 #endif
 #import "vendor/substrate/substrate.h"
 #import "vendor/substitute/substitute.h"
+#import "vendor/litehook/litehook.h"
 
 // Dobby: vendored static lib with arm64/arm64e slices only; the header is
 // plain C and safe to include, but the backend class below is arch-gated too
@@ -95,6 +96,7 @@ static void (*substrate_hookFunction)(void *, void *, void **) = NULL;
 static void (*substrate_hookMessageEx)(Class, SEL, void *, void **) = NULL;
 static void *(*substrate_getImageByName)(const char *) = NULL;
 static void *(*substrate_findSymbol)(void *, const char *) = NULL;
+static void (*substrate_hookMemory)(void *, const void *, size_t) = NULL;
 
 static BOOL substrate_available(void) {
     static BOOL cached = NO;
@@ -120,6 +122,7 @@ static BOOL substrate_available(void) {
     substrate_hookMessageEx = (void (*)(Class, SEL, void *, void **))dlsym(substrate_handle, "MSHookMessageEx");
     substrate_getImageByName = (void *(*)(const char *))dlsym(substrate_handle, "MSGetImageByName");
     substrate_findSymbol = (void *(*)(void *, const char *))dlsym(substrate_handle, "MSFindSymbol");
+    substrate_hookMemory = (void (*)(void *, const void *, size_t))dlsym(substrate_handle, "MSHookMemory");
 
     available = substrate_hookFunction && substrate_hookMessageEx
         && substrate_getImageByName && substrate_findSymbol;
@@ -133,6 +136,7 @@ static void (*substitute_hookFunction)(void *, void *, void **) = NULL;
 static void (*substitute_hookMessageEx)(Class, SEL, void *, void **) = NULL;
 static void *(*substitute_getImageByName)(const char *) = NULL;
 static void *(*substitute_findSymbol)(void *, const char *) = NULL;
+static void (*substitute_hookMemory)(void *, const void *, size_t) = NULL;
 
 // Native libsubstitute API, preferred over the MS-compatible shims when present.
 static int (*fn_substitute_hook_functions)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int) = NULL;
@@ -141,6 +145,7 @@ static struct substitute_image *(*fn_substitute_open_image)(const char *) = NULL
 static void (*fn_substitute_close_image)(struct substitute_image *) = NULL;
 static int (*fn_substitute_find_private_syms)(struct substitute_image *, const char **, void **, size_t) = NULL;
 static void *(*fn_substitute_sym_to_ptr)(struct substitute_image *, substitute_sym *) = NULL;
+static int (*fn_substitute_interpose_imports)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int) = NULL;
 static BOOL substitute_native_available = NO;
 
 static void *resolve_ms_symbol(void *handle, const char *name, const char *fallback) {
@@ -177,6 +182,7 @@ static BOOL substitute_available(void) {
     substitute_hookMessageEx = (void (*)(Class, SEL, void *, void **))resolve_ms_symbol(libsubstitute_handle, "MSHookMessageEx", "SubHookMessageEx");
     substitute_getImageByName = (void *(*)(const char *))resolve_ms_symbol(libsubstitute_handle, "MSGetImageByName", "SubGetImageByName");
     substitute_findSymbol = (void *(*)(void *, const char *))resolve_ms_symbol(libsubstitute_handle, "MSFindSymbol", "SubFindSymbol");
+    substitute_hookMemory = (void (*)(void *, const void *, size_t))resolve_ms_symbol(libsubstitute_handle, "MSHookMemory", "SubHookMemory");
 
     fn_substitute_hook_functions = (int (*)(const struct substitute_function_hook *, size_t, struct substitute_function_hook_record **, int))dlsym(libsubstitute_handle, "substitute_hook_functions");
     fn_substitute_hook_objc_message = (int (*)(Class, SEL, void *, void *, bool *))dlsym(libsubstitute_handle, "substitute_hook_objc_message");
@@ -184,6 +190,7 @@ static BOOL substitute_available(void) {
     fn_substitute_close_image = (void (*)(struct substitute_image *))dlsym(libsubstitute_handle, "substitute_close_image");
     fn_substitute_find_private_syms = (int (*)(struct substitute_image *, const char **, void **, size_t))dlsym(libsubstitute_handle, "substitute_find_private_syms");
     fn_substitute_sym_to_ptr = (void *(*)(struct substitute_image *, substitute_sym *))dlsym(libsubstitute_handle, "substitute_sym_to_ptr");
+    fn_substitute_interpose_imports = (int (*)(const struct substitute_image *, const struct substitute_import_hook *, size_t, struct substitute_import_hook_record **, int))dlsym(libsubstitute_handle, "substitute_interpose_imports");
 
     substitute_native_available = fn_substitute_hook_functions && fn_substitute_hook_objc_message
         && fn_substitute_open_image && fn_substitute_close_image
@@ -263,6 +270,17 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 
 #pragma mark - Backends
 
+// Hooking-technique hint, internal only (never public API — categories stay
+// the public surface). Declared here, ahead of the registry, because the
+// protocol's setStrategy: references it; the category picker table below
+// pairs it with the backends.
+typedef NS_ENUM(NSUInteger, HKStrategy) {
+    HKStrategyDefault,       // vendor's single/fallback technique
+    HKStrategyRebind,        // GOT/import slot rebinding (clean prologue)
+    HKStrategyInline,        // prologue inline trampoline (denyFishHook-immune)
+    HKStrategyPrivateSymbol  // DSC/private-symbol resolution + address-based hook
+};
+
 @protocol HKSubstitutorBackend <NSObject>
 @property (nonatomic, readonly) BOOL batchingSupported;
 @property (nonatomic, readonly) int lastErrno;
@@ -282,6 +300,9 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 @optional
 - (hookkit_status_t)hookSwiftMethodInClass:(Class)objcClass withName:(NSString *)name withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
 - (hookkit_status_t)hookSwiftVtableSlotInClass:(Class)objcClass withIndex:(NSUInteger)index withReplacement:(void *)replacement outOldPtr:(void **)old_ptr;
+// Technique hint for strategy-aware backends (HKLitehookBackend). Optional:
+// backends without it keep their vendor default technique.
+- (void)setStrategy:(HKStrategy)strategy;
 @end
 
 // ElleKit backend: libhooker API, resolved at runtime via dlopen/dlsym.
@@ -585,6 +606,16 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 - (instancetype)init {
     return [super initWithHookFunction:substrate_hookFunction hookMessageEx:substrate_hookMessageEx getImageByName:substrate_getImageByName findSymbol:substrate_findSymbol];
 }
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(substrate_hookMemory) {
+        _lastErrno = 0;
+        substrate_hookMemory(target, data, size);
+        return HK_OK;
+    }
+
+    return HK_ERR_NOT_SUPPORTED;
+}
 @end
 
 // Substitute backend: checkra1n-classic (Substitute-based jailbreaks).
@@ -624,7 +655,40 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
 
     int result = fn_substitute_hook_functions(&hook, 1, NULL, 0);
     _lastErrno = result;
-    return result == SUBSTITUTE_OK ? HK_OK : HK_ERR;
+
+    if(result == SUBSTITUTE_OK) {
+        return HK_OK;
+    }
+
+    // iOS 16.2+: substitute_hook_functions (executable-code patching) is
+    // broken by AMFI/APT policy changes. Fall back to GOT/PLT import
+    // interposition (substitute_interpose_imports) when the function is an
+    // exported symbol — no executable-code patching needed.
+    if(fn_substitute_interpose_imports) {
+        Dl_info info;
+
+#if __has_feature(ptrauth_calls)
+        function = ptrauth_strip(function, ptrauth_key_asia);
+#endif
+
+        if(dladdr(function, &info) && info.dli_sname) {
+            struct substitute_import_hook ih = {
+                .name = info.dli_sname,
+                .replacement = replacement,
+                .old_ptr = (void *)old_ptr,
+                .options = 0
+            };
+
+            int r = fn_substitute_interpose_imports(NULL, &ih, 1, NULL, 0);
+
+            if(r == SUBSTITUTE_OK) {
+                _lastErrno = r;
+                return HK_OK;
+            }
+        }
+    }
+
+    return HK_ERR;
 }
 
 - (HKImageRef)openImage:(NSString *)path {
@@ -681,6 +745,18 @@ static hookkit_status_t hk_batch_status(int succeeded, int total) {
         fn_substitute_close_image(subImage);
         return result;
     });
+}
+
+// Substitute backend memory hooking: the MS-compatible shim path resolves
+// SubHookMemory on Substitute (the native API has no separate memory hook).
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    if(substitute_hookMemory) {
+        _lastErrno = 0;
+        substitute_hookMemory(target, data, size);
+        return HK_OK;
+    }
+
+    return HK_ERR_NOT_SUPPORTED;
 }
 @end
 
@@ -866,8 +942,125 @@ static NSMutableArray<HKFishhookRebinding *> *fishhookRebindingStore(void) {
 }
 
 - (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
-    // nothing pending: function hooks are applied at hookFunction: time
+    // nothing pending: function hooks and memory patches apply at hook time
     return HK_OK;
+}
+@end
+
+// litehook backend: strategy-aware — GOT/import rebinding via
+// litehook_rebind_symbol (address-based, no symbol-name requirement) by
+// default, plus memory patching via litehook_hook_memory. With setStrategy:
+// the same backend also serves prologue inline trampolines (litehook_hook_function)
+// and DSC private-symbol lookups (litehook_find_dsc_symbol), so one vendor
+// covers several categories. Compiled in on all archs; no ObjC message
+// hooking, no batching.
+// ponytail: litehook_rebind_symbol returns void, so the rebind path of
+// hookFunction always reports HK_OK — the rebind either works or silently
+// skips unmatched GOT slots.
+@interface HKLitehookBackend : HKDlfcnBackend <HKSubstitutorBackend> {
+    int _lastErrno;
+    // zero-init (HKStrategyDefault): a bare [[self class] new] keeps the
+    // vendor default until setStrategy: is called
+    HKStrategy _strategy;
+}
+@end
+
+@implementation HKLitehookBackend
+- (void)setStrategy:(HKStrategy)strategy {
+    _strategy = strategy;
+}
+
+- (BOOL)batchingSupported {
+    return NO;
+}
+
+- (BOOL)supportsHookKind:(HKHookKind)kind {
+    return kind == HKHookKindFunction || kind == HKHookKindMemory;
+}
+
+- (int)lastErrno {
+    return _lastErrno;
+}
+
+- (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    return HK_ERR_NOT_SUPPORTED;
+}
+
+- (hookkit_status_t)hookFunction:(void *)function withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
+    _lastErrno = 0;
+
+#if __has_feature(ptrauth_calls)
+    // Strip PAC so the raw address matches GOT slots (arm64e).
+    function = ptrauth_strip(function, ptrauth_key_asia);
+#endif
+
+    if(_strategy == HKStrategyInline) {
+        // Prologue inline trampoline variant (denyFishHook-immune). litehook
+        // has no original-call trampoline, so the original body is gone once
+        // hooked: old_ptr stays NULL when requested.
+        kern_return_t kr = litehook_hook_function(function, replacement);
+        _lastErrno = kr;
+
+        if(old_ptr) {
+            *old_ptr = NULL;
+        }
+
+        return kr == KERN_SUCCESS ? HK_OK : HK_ERR;
+    }
+
+    // Address/exported-symbol based: rebinds all images' GOT/import slots
+    // whose value equals `function`. No original-call trampoline — the
+    // function body at `function` is untouched, so `function` is still the
+    // original implementation (same semantic as fishhook's old_ptr).
+    litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, function, replacement, NULL);
+
+    if(old_ptr) {
+        *old_ptr = function;
+    }
+
+    return HK_OK;
+}
+
+- (hookkit_status_t)hookMemory:(void *)target withData:(const void *)data size:(size_t)size {
+    kern_return_t kr = litehook_hook_memory(target, (void *)data, size);
+    _lastErrno = kr;
+    return kr == KERN_SUCCESS ? HK_OK : HK_ERR;
+}
+
+- (hookkit_status_t)executeHooks:(NSArray<HKHookOperation *> *)hooks {
+    // nothing pending: function hooks and memory patches apply at hook time
+    return HK_OK;
+}
+
+- (void *)findSymbolInImage:(HKImageRef)image symbolName:(NSString *)symbolName {
+    // DSC/private-symbol resolution is path-keyed, and HKDlfcnBackend's image
+    // handle carries no path, so a handle-based lookup has nothing to search
+    // and falls straight through to super.
+    // ponytail: litehook's DSC lookup strcmps the path, so its nil-path
+    // variant would crash — instead, enumerate the loaded images' paths,
+    // which mirrors super's no-handle scan anyway.
+    if(_strategy == HKStrategyPrivateSymbol && !image) {
+        const char *plain = [symbolName UTF8String];
+        // DSC nlist names keep the leading underscore; dlsym-style names
+        // (what callers pass) do not — try both
+        NSString *underscored = [symbolName hasPrefix:@"_"] ? nil : [@"_" stringByAppendingString:symbolName];
+
+        void *found = hk_search_loaded_images(^void *(const char *image_name) {
+            void *result = litehook_find_dsc_symbol(image_name, plain);
+
+            if(!result && underscored) {
+                result = litehook_find_dsc_symbol(image_name, [underscored UTF8String]);
+            }
+
+            return result;
+        });
+
+        if(found) {
+            return found;
+        }
+    }
+
+    return [super findSymbolInImage:image symbolName:symbolName];
 }
 @end
 
@@ -1355,10 +1548,16 @@ typedef struct {
     __unsafe_unretained NSString *name;
     HKBackendAvailability available;
     BOOL automatic;     // eligible for +defaultBackend
+    hookkit_cat_t categories;  // category flags this backend belongs to
 } HKBackendDescriptor;
 
 // fishhook is compiled in, so it is the floor that is always present.
 static BOOL fishhook_available(void) {
+    return YES;
+}
+
+// litehook is compiled in and available on all archs.
+static BOOL litehook_available(void) {
     return YES;
 }
 
@@ -1444,25 +1643,29 @@ static BOOL frida_available(void) {
 }
 
 static const HKBackendDescriptor *hk_backends(size_t *outCount) {
-    static HKBackendDescriptor table[8];
+    static HKBackendDescriptor table[9];
     static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
-        table[0] = (HKBackendDescriptor){ HK_LIB_ELLEKIT, [HKElleKitBackend class], @"ellekit", @"ElleKit", libhooker_available, YES };
-        table[1] = (HKBackendDescriptor){ HK_LIB_SUBSTRATE, [HKSubstrateBackend class], @"substrate", @"Cydia Substrate", substrate_available, YES };
-        table[2] = (HKBackendDescriptor){ HK_LIB_SUBSTITUTE, [HKSubstituteBackend class], @"substitute", @"Substitute", substitute_available, YES };
+        table[0] = (HKBackendDescriptor){ HK_LIB_ELLEKIT, [HKElleKitBackend class], @"ellekit", @"ElleKit", libhooker_available, YES, HK_CAT_MESSAGE | HK_CAT_FUNCTION_INLINE | HK_CAT_PRIVATE_SYMBOL };
+        table[1] = (HKBackendDescriptor){ HK_LIB_SUBSTRATE, [HKSubstrateBackend class], @"substrate", @"Cydia Substrate", substrate_available, YES, HK_CAT_MESSAGE | HK_CAT_PRIVATE_SYMBOL };
+        table[2] = (HKBackendDescriptor){ HK_LIB_SUBSTITUTE, [HKSubstituteBackend class], @"substitute", @"Substitute", substitute_available, YES, HK_CAT_MESSAGE | HK_CAT_PRIVATE_SYMBOL };
         // Never automatic: HookKit's own engine is opt-in so that devices with
         // a battle-tested library installed keep using it.
-        table[3] = (HKBackendDescriptor){ HK_LIB_NATIVE, [HKNativeBackend class], @"native", @"HookKit", native_available, NO };
-        table[4] = (HKBackendDescriptor){ HK_LIB_DOBBY, [HKDobbyBackend class], @"dobby", @"Dobby", dobby_available, YES };
+        table[3] = (HKBackendDescriptor){ HK_LIB_NATIVE, [HKNativeBackend class], @"native", @"HookKit", native_available, NO, HK_CAT_MESSAGE };
+        table[4] = (HKBackendDescriptor){ HK_LIB_DOBBY, [HKDobbyBackend class], @"dobby", @"Dobby", dobby_available, YES, HK_CAT_FUNCTION_INLINE };
         // Never automatic: Frida is opt-in — Dobby is compiled in and lighter;
         // Frida is the premium arm64e-tested engine users request explicitly.
-        table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO };
-        table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES };
+        table[5] = (HKBackendDescriptor){ HK_LIB_FRIDA, [HKFridaBackend class], @"frida", @"Frida", frida_available, NO, HK_CAT_FUNCTION_INLINE };
+        table[6] = (HKBackendDescriptor){ HK_LIB_FISHHOOK, [HKFishhookBackend class], @"fishhook", @"fishhook", fishhook_available, YES, HK_CAT_FUNCTION_REBIND };
         // Never automatic: Swift vtable hooks are a separate API (no
         // message/function overlap) and only make sense when the caller has a
         // Swift class in hand, so this backend is opt-in.
-        table[7] = (HKBackendDescriptor){ HK_LIB_SWIFT, [HKSwiftBackend class], @"swift", @"Swift vtables", swift_available, NO };
+        table[7] = (HKBackendDescriptor){ HK_LIB_SWIFT, [HKSwiftBackend class], @"swift", @"Swift vtables", swift_available, NO, HK_CAT_NONE };
+        // Never automatic: litehook is opt-in — fishhook is the compiled-in
+        // function-rebind floor; litehook adds memory patching on all archs,
+        // plus inline and private-symbol techniques for its category entries.
+        table[8] = (HKBackendDescriptor){ HK_LIB_LITEHOOK, [HKLitehookBackend class], @"litehook", @"litehook", litehook_available, NO, HK_CAT_FUNCTION_REBIND | HK_CAT_FUNCTION_INLINE | HK_CAT_PRIVATE_SYMBOL };
     });
 
     *outCount = sizeof(table) / sizeof(table[0]);
@@ -1470,6 +1673,31 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
 }
 
 #pragma mark - HKSubstitutor
+
+// Per-category priority order, as (backend, technique) pairs: each entry
+// lists the pickers that satisfy the category, in the order they are tried
+// (first available wins). The strategy is passed to the backend when it
+// implements setStrategy:; backends without it use their vendor default
+// technique. The order matches the main hk_backends table priority within
+// each category.
+typedef struct {
+    hookkit_lib_t type;
+    HKStrategy strategy;
+} HKCategoryPicker;
+
+typedef struct {
+    hookkit_cat_t category;
+    HKCategoryPicker order[8];
+    size_t count;
+} HKCategoryPriority;
+
+static const HKCategoryPriority hk_category_priorities[] = {
+    { HK_CAT_MESSAGE,         { {HK_LIB_ELLEKIT, HKStrategyDefault}, {HK_LIB_SUBSTRATE, HKStrategyDefault}, {HK_LIB_SUBSTITUTE, HKStrategyDefault}, {HK_LIB_NATIVE, HKStrategyDefault} }, 4 },
+    { HK_CAT_FUNCTION_REBIND, { {HK_LIB_FISHHOOK, HKStrategyRebind}, {HK_LIB_LITEHOOK, HKStrategyRebind} }, 2 },
+    { HK_CAT_FUNCTION_INLINE, { {HK_LIB_ELLEKIT, HKStrategyInline}, {HK_LIB_DOBBY, HKStrategyInline}, {HK_LIB_FRIDA, HKStrategyInline}, {HK_LIB_LITEHOOK, HKStrategyInline} }, 4 },
+    { HK_CAT_PRIVATE_SYMBOL,  { {HK_LIB_ELLEKIT, HKStrategyPrivateSymbol}, {HK_LIB_SUBSTRATE, HKStrategyPrivateSymbol}, {HK_LIB_SUBSTITUTE, HKStrategyPrivateSymbol}, {HK_LIB_LITEHOOK, HKStrategyPrivateSymbol} }, 4 },
+};
+static const size_t hk_category_priority_count = sizeof(hk_category_priorities) / sizeof(hk_category_priorities[0]);
 
 @interface HKSubstitutor ()
 - (void)noteHookResult:(hookkit_status_t)status;
@@ -1485,6 +1713,10 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     // Priority-ordered list of hookkit_lib_t (NSNumber), from substitutorWithOrderedTypes:.
     // Overrides the fixed table priority when non-nil; non-nil-but-empty means no backend.
     NSArray<NSNumber *> *orderedTypes;
+    // Backend category from substitutorWithCategory:. 0 (HK_CAT_NONE) = unset.
+    // When set and orderedTypes is nil, initLibraries resolves by iterating the
+    // category's priority list instead of the types property or defaultBackend.
+    hookkit_cat_t requestedCategory;
 }
 
 @synthesize types, batching, activeType;
@@ -1542,6 +1774,40 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
                 break;
             }
         }
+    } else if(requestedCategory) {
+        // Category-based selection: iterate the category's (backend, strategy)
+        // pickers and pick the first available backend, handing it the
+        // picker's technique when it implements setStrategy:. Availability is
+        // checked directly (not the automatic flag), so opt-in backends like
+        // Native and Frida are still reachable when they are the only option
+        // in the category.
+        size_t count = 0;
+        const HKBackendDescriptor *table = hk_backends(&count);
+
+        types = HK_LIB_NONE;
+
+        for(size_t c = 0; c < hk_category_priority_count; c++) {
+            if(hk_category_priorities[c].category & requestedCategory) {
+                for(size_t o = 0; o < hk_category_priorities[c].count; o++) {
+                    HKCategoryPicker picker = hk_category_priorities[c].order[o];
+
+                    for(size_t i = 0; i < count; i++) {
+                        if(table[i].type == picker.type && table[i].available()) {
+                            backend = [table[i].backendClass new];
+
+                            if([backend respondsToSelector:@selector(setStrategy:)]) {
+                                [backend setStrategy:picker.strategy];
+                            }
+
+                            types |= table[i].type;
+                            goto category_done;
+                        }
+                    }
+                }
+            }
+        }
+
+category_done: ;
     } else if(types == HK_LIB_NONE) {
         backend = [[self class] defaultBackend];
     } else {
@@ -1606,6 +1872,20 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     return types;
 }
 
++ (hookkit_cat_t)getAvailableCategories {
+    hookkit_cat_t cats = HK_CAT_NONE;
+    size_t count = 0;
+    const HKBackendDescriptor *table = hk_backends(&count);
+
+    for(size_t i = 0; i < count; i++) {
+        if(table[i].available()) {
+            cats |= table[i].categories;
+        }
+    }
+
+    return cats;
+}
+
 + (NSArray<NSDictionary *> *)getSubstitutorTypeInfo:(hookkit_lib_t)types {
     NSMutableArray *result = [NSMutableArray new];
     size_t count = 0;
@@ -1635,6 +1915,13 @@ static const HKBackendDescriptor *hk_backends(size_t *outCount) {
     HKSubstitutor *substitutor = [self new];
     // nil is still an explicit ordered request: treat it as empty, never as unset
     substitutor->orderedTypes = [types copy] ?: @[];
+    [substitutor initLibraries];
+    return substitutor;
+}
+
++ (instancetype)substitutorWithCategory:(hookkit_cat_t)category {
+    HKSubstitutor *substitutor = [self new];
+    substitutor->requestedCategory = category;
     [substitutor initLibraries];
     return substitutor;
 }

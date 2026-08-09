@@ -10,7 +10,7 @@ include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = HookKit
 
-HookKit_FILES = HKSubstitutor.m vendor/fishhook/fishhook.c
+HookKit_FILES = HKSubstitutor.m vendor/fishhook/fishhook.c vendor/litehook/litehook.c
 # Native backend: arm64/arm64e only, stubbed out by #if on armv7.
 HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # Swift vtable backend: arm64/arm64e only (entry points report unsupported on
@@ -24,7 +24,7 @@ HookKit_EXTRA_FRAMEWORKS = RootBridge
 endif
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
-HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor
+HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor -Ivendor/litehook
 ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_CFLAGS += -Ivendor/RootBridge.framework/Headers
 else
