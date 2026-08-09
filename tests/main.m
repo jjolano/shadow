@@ -47,6 +47,7 @@ int shdw_fuzz_run(NSUInteger iters, unsigned seed);
 int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed);
 int RunRestrictionTests(void);
 int RunPolicyTests(void);
+int RunCoordinatorTests(void);
 
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
@@ -1734,6 +1735,7 @@ int main(int argc, const char** argv) {
         testShadowdRecovery();
         gFail += RunRestrictionTests();
         gFail += RunPolicyTests();
+        gFail += RunCoordinatorTests();
 
         if(!gRootless) {
             testReload();
