@@ -1,6 +1,7 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "hooks.h"
+#import "../policy/EnvironmentPolicy.h"
 
 #import <unistd.h>
 #import <os/lock.h>
@@ -1013,95 +1014,16 @@ static int replaced___sysctlbyname(const char* name, void* oldp, size_t* oldlenp
 // pointer is never modified (callers may write through the returned
 // pointer; ours is private storage). The snapshot is rebuilt on every call
 // so variables added by setenv since the last call stay visible.
-// The filter mirrors the libc.x envvar group's getenv policy EXACTLY (all
-// DYLD_*/JAILBREAKD_* variables, the safe-mode flags, and jailbreak PATH
-// components): a scan of *environ must agree with getenv() and
-// NSProcessInfo.environment, or a detector comparing the two channels sees
-// the contradiction. PATH entries are sanitized into thread-local storage
-// (the entry pointer follows the same per-thread lifetime as getenv's).
+// The filtering itself lives in policy/EnvironmentPolicy.m and mirrors the
+// libc envvar group's getenv policy EXACTLY (all DYLD_*/JAILBREAKD_*
+// variables, the safe-mode flags, and jailbreak PATH components): a scan of
+// *environ must agree with getenv() and NSProcessInfo.environment, or a
+// detector comparing the two channels sees the contradiction.
 // NOTE: direct reads of the raw `environ` symbol are not covered (the
 // snapshot is our own storage by contract; remedying the symbol itself
 // needs a libSystem data-symbol rebind — not attempted).
 
 extern char*** _NSGetEnviron(void);
-
-static BOOL shdw_environ_var_hidden(const char* var) {
-    static const char* hidden[] = {
-        "DYLD_INSERT_LIBRARIES=",
-        "_MSSafeMode=",
-        "_SafeMode=",
-        "_SubstituteSafeMode=",
-        NULL
-    };
-
-    for(int i = 0; hidden[i]; i++) {
-        if(strncmp(var, hidden[i], strlen(hidden[i])) == 0) {
-            return YES;
-        }
-    }
-
-    return NO;
-}
-
-// Whole-entry policy for *environ scans: every dynamic-loader and
-// jailbreakd-launch variable is dropped (same set as the libc envvar
-// group), not just the INSERT_LIBRARIES entry.
-static BOOL shdw_environ_entry_hidden(const char* var) {
-    if(!var) {
-        return NO;
-    }
-
-    if(strncmp(var, "DYLD_", 5) == 0 || strncmp(var, "JAILBREAKD_", 11) == 0) {
-        return YES;
-    }
-
-    return shdw_environ_var_hidden(var);
-}
-
-// Sanitizes a "PATH=..." entry: jailbreak components (/var/jb bootstrap and
-// preboot roots) dropped, other components preserved. Returns NULL when
-// nothing needed removing (the caller keeps the original entry), otherwise
-// a rebuilt entry in thread-local storage.
-static char* shdw_environ_sanitized_path_entry(const char* var, char** storage, size_t* capacity) {
-    if(!var || strncmp(var, "PATH=", 5) != 0 || var[5] == '\0') {
-        return NULL;
-    }
-
-    NSArray* parts = [[NSString stringWithUTF8String:var + 5] componentsSeparatedByString:@":"];
-    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
-
-    for(NSString* part in parts) {
-        if([part hasPrefix:@"/var/jb"]
-        || [part hasPrefix:@"/private/preboot"]
-        || [part hasPrefix:@"/preboot"]) {
-            continue;
-        }
-
-        [kept addObject:part];
-    }
-
-    if(kept.count == parts.count) {
-        return NULL;
-    }
-
-    NSString* joined = [NSString stringWithFormat:@"PATH=%@", [kept componentsJoinedByString:@":"]];
-    size_t len = [joined lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1;
-
-    if(len > *capacity) {
-        char* grown = realloc(*storage, len);
-
-        if(!grown) {
-            // OOM: keep the original entry rather than a truncated path.
-            return NULL;
-        }
-
-        *storage = grown;
-        *capacity = len;
-    }
-
-    strcpy(*storage, joined.UTF8String);
-    return *storage;
-}
 
 static char*** (*original_NSGetEnviron)(void);
 static char*** replaced_NSGetEnviron(void) {
@@ -1109,54 +1031,9 @@ static char*** replaced_NSGetEnviron(void) {
         return original_NSGetEnviron();
     }
 
-    size_t count = 0;
+    char*** snapshot = shdw_env_filtered_snapshot(environ);
 
-    while(environ[count]) {
-        count++;
-    }
-
-    // Thread-local snapshot: concurrent realloc of a static buffer (two
-    // threads calling _NSGetEnviron at once) is a use-after-free. The
-    // returned pointer follows getenv-style per-thread lifetime semantics —
-    // valid until this thread's next call — which is what callers expect.
-    static _Thread_local char** filtered = NULL;
-    static _Thread_local size_t filtered_capacity = 0;
-    static _Thread_local char* path_entry_storage = NULL;
-    static _Thread_local size_t path_entry_capacity = 0;
-
-    if(filtered_capacity < count + 1) {
-        char** grown = realloc(filtered, (count + 1) * sizeof(char *));
-
-        if(!grown) {
-            return original_NSGetEnviron();
-        }
-
-        filtered = grown;
-        filtered_capacity = count + 1;
-    }
-
-    size_t out = 0;
-
-    for(size_t i = 0; i < count; i++) {
-        if(shdw_environ_entry_hidden(environ[i])) {
-            continue;
-        }
-
-        if(strncmp(environ[i], "PATH=", 5) == 0) {
-            char* sanitized = shdw_environ_sanitized_path_entry(environ[i], &path_entry_storage, &path_entry_capacity);
-
-            if(sanitized) {
-                filtered[out++] = sanitized;
-                continue;
-            }
-        }
-
-        filtered[out++] = environ[i];
-    }
-
-    filtered[out] = NULL;
-
-    return &filtered;
+    return snapshot ? snapshot : original_NSGetEnviron();
 }
 
 // todo: research on "supervised syscalls"

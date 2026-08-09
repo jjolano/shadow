@@ -1,5 +1,6 @@
 #import "hooks.h"
 #import "filters.h"
+#import "../policy/EnvironmentPolicy.h"
 
 #import <string.h>
 #import <stdlib.h>
@@ -1501,54 +1502,9 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
-// Sanitized PATH storage: thread-local so the returned pointer keeps getenv's
-// documented lifetime (valid until the next getenv call on this thread) and
-// one thread can't overwrite another's value.
-static _Thread_local char* shdw_getenv_path_storage = NULL;
-static _Thread_local size_t shdw_getenv_path_capacity = 0;
-
-// Removes jailbreak components from a PATH value (/var/jb bootstrap and
-// preboot roots — stock iOS PATH has neither). Returns the original pointer
-// when nothing needed removing, otherwise a sanitized copy in thread-local
-// storage.
-static char* shdw_getenv_sanitized_path(const char* value) {
-    NSArray* parts = [[NSString stringWithUTF8String:value] componentsSeparatedByString:@":"];
-    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
-
-    for(NSString* part in parts) {
-        if([part hasPrefix:@"/var/jb"]
-        || [part hasPrefix:@"/private/preboot"]
-        || [part hasPrefix:@"/preboot"]) {
-            continue;
-        }
-
-        [kept addObject:part];
-    }
-
-    if(kept.count == parts.count) {
-        return (char*) value;
-    }
-
-    NSString* joined = [kept componentsJoinedByString:@":"];
-    size_t len = joined.length + 1;
-
-    if(len > shdw_getenv_path_capacity) {
-        char* grown = realloc(shdw_getenv_path_storage, len);
-
-        if(!grown) {
-            // OOM: fall back to the original value rather than returning a
-            // truncated path.
-            return (char*) value;
-        }
-
-        shdw_getenv_path_storage = grown;
-        shdw_getenv_path_capacity = len;
-    }
-
-    strcpy(shdw_getenv_path_storage, joined.UTF8String);
-    return shdw_getenv_path_storage;
-}
-
+// getenv: hidden names answer NULL and PATH is sanitized — shared policy
+// (policy/EnvironmentPolicy.m) so the getenv, *environ and NSProcessInfo
+// channels agree.
 static char* (*original_getenv)(const char* name);
 static char* replaced_getenv(const char* name) {
     if(!isCallerExternal()) {
@@ -1562,18 +1518,13 @@ static char* replaced_getenv(const char* name) {
     }
 
     // Stock iOS never has these set; their presence is the jailbreak signal
-    // a detector reads back from getenv. DYLD_* covers INSERT_LIBRARIES and
-    // every search-path knob.
-    if(strncmp(name, "DYLD_", 5) == 0
-    || strncmp(name, "JAILBREAKD_", 11) == 0
-    || strcmp(name, "_MSSafeMode") == 0
-    || strcmp(name, "_SafeMode") == 0
-    || strcmp(name, "_SubstituteSafeMode") == 0) {
+    // a detector reads back from getenv.
+    if(shdw_env_name_hidden(name)) {
         return NULL;
     }
 
     if(strcmp(name, "PATH") == 0) {
-        return shdw_getenv_sanitized_path(result);
+        return shdw_env_sanitized_path(result);
     }
 
     return result;
@@ -1779,229 +1730,9 @@ static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
     return 0;
 }
 
-// KERN_PROCARGS2 payload filter (self pid): the kernel payload encodes
-// [int argc][char* argv[argc+1]][char* envp...][strings blob], argv/envp
-// pointers referencing the strings blob. The kernel view carries the
-// launch-time injection flags and the unfiltered environment while
-// -[NSProcessInfo arguments] / getenv() / _NSGetEnviron() report the
-// filtered view — a detector comparing the two channels sees the
-// contradiction. When the views differ, the payload is rebuilt in place with
-// the SAME drop rules as those hooks: injection flags (with their value),
-// restricted paths, DYLD_*/JAILBREAKD_*/safe-mode env entries and jailbreak
-// PATH components. The strings blob is memmoved down, every kept pointer
-// into it is shifted by the compaction amount, and a sanitized PATH= entry
-// is prefixed to the blob when it changed. Malformed payloads pass through
-// untouched.
-void shdw_procargs2_filter(void* oldp, size_t* oldlenp) {
-    @autoreleasepool {
-        if(!oldp || !oldlenp) {
-            return;
-        }
-
-        size_t len = *oldlenp;
-        char* base = (char *) oldp;
-
-        if(len < sizeof(int) + sizeof(char *)) {
-            return;
-        }
-
-        int argc = ((int *) base)[0];
-        char** argv = (char **) (base + sizeof(int));
-
-        if(argc <= 0) {
-            return;
-        }
-
-        size_t argv_slots = (size_t) argc + 1;
-
-        if(sizeof(int) + argv_slots * sizeof(char *) + sizeof(char *) > len) {
-            return;  // no room for the envp terminator: malformed
-        }
-
-        char** envp = argv + argv_slots;
-        size_t envp_count = 0;
-        size_t max_env = (len - (sizeof(int) + argv_slots * sizeof(char *))) / sizeof(char *);
-
-        while(envp_count < max_env && envp[envp_count] != NULL) {
-            envp_count++;
-        }
-
-        if(envp_count == max_env) {
-            return;  // envp terminator missing from the payload: malformed
-        }
-
-        char* blob_start = (char *) envp + (envp_count + 1) * sizeof(char *);
-        char* blob_end = base + len;
-
-        // ---- argv drop decisions (mirrors -[NSProcessInfo arguments]) ----
-        BOOL* keep = (BOOL *) calloc((size_t) argc, sizeof(BOOL));
-
-        if(!keep) {
-            return;
-        }
-
-        int new_argc = 0;
-
-        for(int i = 0; i < argc; i++) {
-            char* a = argv[i];
-
-            if(a == NULL || a < blob_start || a >= blob_end) {
-                keep[i] = YES;  // NULL or unclassifiable: keep
-                new_argc++;
-                continue;
-            }
-
-            if([_shadow isCPathRestricted:a]) {
-                continue;  // restricted path argument: drop
-            }
-
-            if(strcmp(a, "-dylib") == 0 || strcmp(a, "-insert") == 0 || strcmp(a, "-load") == 0
-            || strcmp(a, "-bundle") == 0 || strcmp(a, "-init") == 0) {
-                if(i + 1 < argc) {
-                    i++;  // drop the flag's value slot as well
-                }
-
-                continue;
-            }
-
-            keep[i] = YES;
-            new_argc++;
-        }
-
-        // ---- env entries (mirrors getenv/_NSGetEnviron) ----
-        char** env_keep = (char **) malloc((envp_count + 1) * sizeof(char *));
-
-        if(!env_keep) {
-            free(keep);
-            return;
-        }
-
-        size_t eout = 0;
-        char* sanitized_path = NULL;
-        char* path_blob_ptr = NULL;  // blob pointer of the (single) PATH entry
-        static _Thread_local char* path_entry_storage = NULL;
-        static _Thread_local size_t path_entry_capacity = 0;
-
-        for(size_t i = 0; i < envp_count; i++) {
-            char* e = envp[i];
-
-            if(e == NULL || e < blob_start || e >= blob_end) {
-                continue;
-            }
-
-            if(strncmp(e, "DYLD_", 5) == 0 || strncmp(e, "JAILBREAKD_", 11) == 0) {
-                continue;
-            }
-
-            if(strncmp(e, "_MSSafeMode=", 12) == 0 || strncmp(e, "_SafeMode=", 10) == 0
-            || strncmp(e, "_SubstituteSafeMode=", 20) == 0) {
-                continue;
-            }
-
-            if(strncmp(e, "PATH=", 5) == 0 && e[5]) {
-                // Rewrite the PATH entry in place (same sanitizer shape as the
-                // getenv PATH hook). The sanitized value is always SHORTER
-                // than the original, so it fits where the original string
-                // lives inside the blob — no payload growth, pointer stays at
-                // its (shifted) blob location.
-                NSArray* parts = [[NSString stringWithUTF8String:e + 5] componentsSeparatedByString:@":"];
-                NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
-
-                for(NSString* part in parts) {
-                    if([part hasPrefix:@"/var/jb"]
-                    || [part hasPrefix:@"/private/preboot"]
-                    || [part hasPrefix:@"/preboot"]) {
-                        continue;
-                    }
-
-                    [kept addObject:part];
-                }
-
-                if(kept.count != parts.count) {
-                    NSString* joined = [NSString stringWithFormat:@"PATH=%@", [kept componentsJoinedByString:@":"]];
-                    size_t nlen = [joined lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1;
-
-                    if(nlen > path_entry_capacity) {
-                        char* grown = realloc(path_entry_storage, nlen);
-
-                        if(grown) {
-                            path_entry_storage = grown;
-                            path_entry_capacity = nlen;
-                        }
-                    }
-
-                    if(path_entry_storage && path_entry_capacity >= nlen) {
-                        strcpy(path_entry_storage, joined.UTF8String);
-                        sanitized_path = path_entry_storage;
-                        path_blob_ptr = e;
-                    }
-                }
-
-                env_keep[eout++] = e;
-                continue;
-            }
-
-            env_keep[eout++] = e;
-        }
-
-        size_t new_envp_count = eout;
-
-        // ---- rebuild geometry ----
-        size_t new_arrays_end = sizeof(int) + ((size_t) new_argc + 1 + new_envp_count + 1) * sizeof(char *);
-        size_t old_blob_off = sizeof(int) + (argv_slots + envp_count + 1) * sizeof(char *);
-
-        if(new_arrays_end > old_blob_off) {
-            // Arrays only shrink when dropping entries; never grow the payload.
-            free(keep);
-            free(env_keep);
-            return;
-        }
-
-        ptrdiff_t shift = (ptrdiff_t)(old_blob_off - new_arrays_end);
-
-        if(shift == 0 && !sanitized_path) {
-            free(keep);
-            free(env_keep);
-            return;  // the payload already agrees with the filtered view
-        }
-
-        // ---- write back (all reads below are from captured state) ----
-        ((int *) base)[0] = new_argc;
-
-        char** dst = argv;
-
-        for(int i = 0; i < argc; i++) {
-            if(keep[i]) {
-                *dst++ = argv[i] ? argv[i] - shift : NULL;
-            }
-        }
-
-        *dst = NULL;
-        dst++;
-
-        for(size_t i = 0; i < new_envp_count; i++) {
-            *dst++ = env_keep[i] - shift;  // all entries live in the blob
-        }
-
-        *dst = NULL;
-
-        if(shift > 0) {
-            memmove(base + new_arrays_end, base + old_blob_off, len - old_blob_off);
-        }
-
-        if(sanitized_path && path_blob_ptr) {
-            // Rewrite the PATH entry in its (moved) blob location. The value
-            // is shorter than the original that occupied this space, so the
-            // write stays inside the payload.
-            strcpy(path_blob_ptr - shift, sanitized_path);
-        }
-
-        *oldlenp = new_arrays_end + (len - old_blob_off);
-
-        free(keep);
-        free(env_keep);
-    }
-}
+// KERN_PROCARGS2 payload filter (self pid): defined in
+// policy/EnvironmentPolicy.m (shared with syscall.x's raw dispatch and
+// sysctlbyname hooks); called after a successful self query.
 
 // KERN_PROC/PROCARGS2 per-pid and proc-list filtering (defined further down;
 // forward-declared so the sysctl hook below can call it).

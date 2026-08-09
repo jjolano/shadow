@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = ShadowCore
 
-ShadowCore_FILES = $(wildcard hooks/*.x) dylib.x
+ShadowCore_FILES = $(wildcard hooks/*.x) $(wildcard policy/*.m) dylib.x
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
