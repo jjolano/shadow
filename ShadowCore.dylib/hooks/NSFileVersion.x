@@ -20,17 +20,13 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 %group shadowhook_NSFileVersion
 %hook NSFileVersion
 + (NSFileVersion *)currentVersionOfItemAtURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
 + (NSArray<NSFileVersion *> *)otherVersionsOfItemAtURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     NSArray* result = %orig;
 
@@ -42,17 +38,13 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSFileVersion *)versionOfItemAtURL:(NSURL *)url forPersistentIdentifier:(id)persistentIdentifier {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
 + (NSURL *)temporaryDirectoryURLForNewVersionOfItemAtURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -75,9 +67,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 }
 
 + (NSArray<NSFileVersion *> *)unresolvedConflictVersionsOfItemAtURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     NSArray* result = %orig;
 

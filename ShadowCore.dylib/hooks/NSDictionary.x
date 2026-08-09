@@ -3,17 +3,13 @@
 %group shadowhook_NSDictionary
 %hook NSDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -31,9 +27,7 @@
 }
 
 + (id)dictionaryWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
@@ -51,9 +45,7 @@
 }
 
 + (id)dictionaryWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -89,33 +81,25 @@
 
 %hook NSMutableDictionary
 - (id)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 - (id)initWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
 + (NSMutableDictionary *)dictionaryWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (NSMutableDictionary *)dictionaryWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
