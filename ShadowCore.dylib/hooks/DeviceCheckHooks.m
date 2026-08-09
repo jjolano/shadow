@@ -99,6 +99,17 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "jailBrokenJudge",          "isPathJailBreak",      DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "jailBrokenJudge",          "boolIsjailbreak",      DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "FBAdBotDetector",          "isJailBrokenDevice",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+
+    // Step 2, batch 6: final classes.
+    { "TNGDeviceTool",            "isJailBreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "TNGDeviceTool",            "isJailBreak_file",     DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "TNGDeviceTool",            "isJailBreak_cydia",    DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "TNGDeviceTool",            "isJailBreak_appList",  DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "TNGDeviceTool",            "isJailBreak_env",      DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "DTDeviceInfo",             "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "SecVIDeviceUtil",          "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "RVPBridgeExtension4Jailbroken", "isJailbroken",    DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "ZDetection",               "isRootedOrJailbroken", DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { NULL, NULL, 0, 0, 0, 0 }
 };
 
