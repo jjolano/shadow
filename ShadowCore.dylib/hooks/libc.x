@@ -4,6 +4,7 @@
 #import <stdlib.h>
 #import <os/lock.h>
 #import <sys/xattr.h>
+#import <sys/resource.h>
 
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
@@ -1707,6 +1708,31 @@ static pid_t replaced_getppid(void) {
     return 1;
 }
 
+// getrusage(RUSAGE_CHILDREN): a detector spawns a child to test execution
+// and measures its CPU usage to infer a jailbreak. Zero the child-accounting
+// fields for external callers so the probe sees a child that never ran.
+// RUSAGE_SELF is untouched — it is the caller's own accounting and carries
+// no jailbreak signal.
+static int (*original_getrusage)(int who, struct rusage* usage);
+static int replaced_getrusage(int who, struct rusage* usage) {
+    int result = original_getrusage(who, usage);
+
+    if(result == 0 && isCallerExternal() && who == RUSAGE_CHILDREN && usage) {
+        memset(usage, 0, sizeof(*usage));
+    }
+
+    return result;
+}
+
+// getrlimit: pass-through (conservative). RLIMIT probes are not a reliable
+// jailbreak signal — legitimate apps set/read limits routinely — so no
+// fabrication here; the hook exists for coverage and to keep the symbol in
+// the dlsym policy table (GOT-vs-dlsym agreement).
+static int (*original_getrlimit)(int resource, struct rlimit* rlp);
+static int replaced_getrlimit(int resource, struct rlimit* rlp) {
+    return original_getrlimit(resource, rlp);
+}
+
 // libproc enumeration (proc_listpids/proc_listallpids/proc_pidinfo) is the
 // second process-list surface after sysctl KERN_PROC: detectors enumerate
 // pids and query per-pid details to find jailbreak daemons. The sysctl hook
@@ -2314,6 +2340,8 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
     [hooks hookFunction:ptrace withReplacement:replaced_ptrace outOldPtr:(void **) &original_ptrace];
     [hooks hookFunction:sysctl withReplacement:replaced_sysctl outOldPtr:(void **) &original_sysctl];
     [hooks hookFunction:getppid withReplacement:replaced_getppid outOldPtr:(void **) &original_getppid];
+    [hooks hookFunction:getrusage withReplacement:replaced_getrusage outOldPtr:(void **) &original_getrusage];
+    [hooks hookFunction:getrlimit withReplacement:replaced_getrlimit outOldPtr:(void **) &original_getrlimit];
 
     // libproc enumeration: stable libSystem exports, resolved at runtime and
     // skipped cleanly when absent (same pattern as getmntinfo_r_np above).
@@ -2392,7 +2420,8 @@ void shadowhook_libc_antidebugging_verify(void) {
     // excluded (NULL is expected when absent).
     shdw_hook_check_t checks[] = {
         { "ptrace", original_ptrace }, { "sysctl", original_sysctl },
-        { "getppid", original_getppid },
+        { "getppid", original_getppid }, { "getrusage", original_getrusage },
+        { "getrlimit", original_getrlimit },
     };
 
     shdw_verify_hooks("libc_antidebugging", checks, sizeof(checks) / sizeof(checks[0]));
@@ -2438,6 +2467,8 @@ static const shdw_libc_sym_policy_entry_t shdw_libc_sym_policy_table[] = {
     { "getmntinfo", (void*)&replaced_getmntinfo, (void* const*)&original_getmntinfo },
     { "getmntinfo_r_np", (void*)&shdw_replaced_getmntinfo_r_np, (void* const*)&original_getmntinfo_r_np },
     { "getppid", (void*)&replaced_getppid, (void* const*)&original_getppid },
+    { "getrlimit", (void*)&replaced_getrlimit, (void* const*)&original_getrlimit },
+    { "getrusage", (void*)&replaced_getrusage, (void* const*)&original_getrusage },
     { "getxattr", (void*)&replaced_getxattr, (void* const*)&original_getxattr },
     { "link", (void*)&replaced_link, (void* const*)&original_link },
     { "linkat", (void*)&replaced_linkat, (void* const*)&original_linkat },

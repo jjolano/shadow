@@ -8,6 +8,32 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
+			<string>PRESET_SELECT</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>id</key>
+			<string>BypassPreset</string>
+			<key>label</key>
+			<string>BYPASS_PRESET</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>staticTextMessage</key>
+			<string>PRESET_SELECT</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+			<key>valuesDataSource</key>
+			<string>getPresetValues:</string>
+			<key>titlesDataSource</key>
+			<string>getPresetTitles:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
 			<string>HK_LIB_DESC</string>
 		</dict>
 		<dict>
@@ -121,6 +147,18 @@
 			<string>Hook_MachBootstrap</string>
 			<key>label</key>
 			<string>HOOK_MACH</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>Hook_IOKit</string>
+			<key>label</key>
+			<string>HOOK_IOKIT</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

@@ -970,6 +970,10 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
             extra = shdw_sym_policy_lookup_mem(symbol);
         }
 
+        if(!extra) {
+            extra = shdw_sym_policy_lookup_iokit(symbol);
+        }
+
         if(extra) {
             return extra;
         }
@@ -1106,6 +1110,10 @@ static void* shdw_cfbundle_attributed(void* addr, CFStringRef symbolName) {
 
             if(!extra) {
                 extra = shdw_sym_policy_lookup_mem(name);
+            }
+
+            if(!extra) {
+                extra = shdw_sym_policy_lookup_iokit(name);
             }
 
             if(extra) {

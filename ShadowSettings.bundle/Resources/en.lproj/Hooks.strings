@@ -23,6 +23,7 @@
 "EXTRA_HOOKS_DESC" = "Extra hooks cover even more methods that may be used by jailbreak detection, including private APIs.";
 
 "HOOK_MACH" = "Mach Service Lookups";
+"HOOK_IOKIT" = "IOKit Service Probing";
 "HOOK_SYMLOOKUP" = "Runtime Symbol Lookups";
 "HOOK_OBJC" = "Objective-C Class Methods";
 "HOOK_ANTIDBG" = "Anti-Debugging Methods";

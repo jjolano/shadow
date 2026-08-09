@@ -219,6 +219,10 @@ extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
 extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
 extern void shadowhook_NSThread(HKSubstitutor* hooks);
+extern void shadowhook_NSUserDefaults(HKSubstitutor* hooks);
+extern void shadowhook_iokit(HKSubstitutor* hooks);
+extern void shadowhook_iokit_verify(void);
+extern void* shdw_sym_policy_lookup_iokit(const char* name);
 extern void shadowhook_vnode(HKSubstitutor* hooks);
 extern void shadowhook_vnode_release(void);
 
