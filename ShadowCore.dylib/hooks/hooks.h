@@ -213,6 +213,13 @@ extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symlookup(HKSubstitutor* hooks);
 extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
 
+// KERN_PROCARGS2 self-query payload filter (libc.x): rebuilds the kernel's
+// [argc][argv][envp][strings] payload so its argv/envp agree with the
+// filtered NSProcessInfo/getenv views. Called by the libc sysctl hook, the
+// raw syscall dispatch and the sysctlbyname hooks after a successful self
+// query. Defined in libc.x (static elsewhere), extern here for syscall.x.
+void shdw_procargs2_filter(void* oldp, size_t* oldlenp);
+
 // Symbol policy lookups for the C-function hook groups (libc/mach/sandbox/
 // mem). The dlsym hook in dyld.x consults these after its own table misses,
 // so every fishhook-rebound export resolves to its replacement for external

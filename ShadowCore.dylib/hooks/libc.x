@@ -687,6 +687,13 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         return original_lstat(pathname, buf);
     }
 
+    // A NULL caller buffer keeps stock semantics: lstat(path, NULL) fails
+    // with EFAULT. Replay it before classification so a restricted path is
+    // answered with the stock EFAULT for the malformed call, not ENOENT.
+    if(buf == NULL) {
+        return original_lstat(pathname, NULL);
+    }
+
     struct stat _buf;
     int result = original_lstat(pathname, &_buf);
 
@@ -702,15 +709,6 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         }]) {
             errno = ENOENT;
             return -1;
-        }
-
-        // A NULL caller buffer must keep stock semantics: lstat(path, NULL)
-        // fails with EFAULT. The local-buffer read above would otherwise
-        // turn it into a success, so replay the NULL through the original
-        // (only reached for non-restricted paths — restricted ones already
-        // returned ENOENT above).
-        if(buf == NULL) {
-            return original_lstat(pathname, NULL);
         }
 
         // Only copy on success: on failure _buf is uninitialized stack.
@@ -1648,6 +1646,234 @@ static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
     return 0;
 }
 
+// KERN_PROCARGS2 payload filter (self pid): the kernel payload encodes
+// [int argc][char* argv[argc+1]][char* envp...][strings blob], argv/envp
+// pointers referencing the strings blob. The kernel view carries the
+// launch-time injection flags and the unfiltered environment while
+// -[NSProcessInfo arguments] / getenv() / _NSGetEnviron() report the
+// filtered view — a detector comparing the two channels sees the
+// contradiction. When the views differ, the payload is rebuilt in place with
+// the SAME drop rules as those hooks: injection flags (with their value),
+// restricted paths, DYLD_*/JAILBREAKD_*/safe-mode env entries and jailbreak
+// PATH components. The strings blob is memmoved down, every kept pointer
+// into it is shifted by the compaction amount, and a sanitized PATH= entry
+// is prefixed to the blob when it changed. Malformed payloads pass through
+// untouched.
+void shdw_procargs2_filter(void* oldp, size_t* oldlenp) {
+    @autoreleasepool {
+        if(!oldp || !oldlenp) {
+            return;
+        }
+
+        size_t len = *oldlenp;
+        char* base = (char *) oldp;
+
+        if(len < sizeof(int) + sizeof(char *)) {
+            return;
+        }
+
+        int argc = ((int *) base)[0];
+        char** argv = (char **) (base + sizeof(int));
+
+        if(argc <= 0) {
+            return;
+        }
+
+        size_t argv_slots = (size_t) argc + 1;
+
+        if(sizeof(int) + argv_slots * sizeof(char *) + sizeof(char *) > len) {
+            return;  // no room for the envp terminator: malformed
+        }
+
+        char** envp = argv + argv_slots;
+        size_t envp_count = 0;
+        size_t max_env = (len - (sizeof(int) + argv_slots * sizeof(char *))) / sizeof(char *);
+
+        while(envp_count < max_env && envp[envp_count] != NULL) {
+            envp_count++;
+        }
+
+        if(envp_count == max_env) {
+            return;  // envp terminator missing from the payload: malformed
+        }
+
+        char* blob_start = (char *) envp + (envp_count + 1) * sizeof(char *);
+        char* blob_end = base + len;
+
+        // ---- argv drop decisions (mirrors -[NSProcessInfo arguments]) ----
+        BOOL* keep = (BOOL *) calloc((size_t) argc, sizeof(BOOL));
+
+        if(!keep) {
+            return;
+        }
+
+        int new_argc = 0;
+
+        for(int i = 0; i < argc; i++) {
+            char* a = argv[i];
+
+            if(a == NULL || a < blob_start || a >= blob_end) {
+                keep[i] = YES;  // NULL or unclassifiable: keep
+                new_argc++;
+                continue;
+            }
+
+            if([_shadow isCPathRestricted:a]) {
+                continue;  // restricted path argument: drop
+            }
+
+            if(strcmp(a, "-dylib") == 0 || strcmp(a, "-insert") == 0 || strcmp(a, "-load") == 0
+            || strcmp(a, "-bundle") == 0 || strcmp(a, "-init") == 0) {
+                if(i + 1 < argc) {
+                    i++;  // drop the flag's value slot as well
+                }
+
+                continue;
+            }
+
+            keep[i] = YES;
+            new_argc++;
+        }
+
+        // ---- env entries (mirrors getenv/_NSGetEnviron) ----
+        char** env_keep = (char **) malloc((envp_count + 1) * sizeof(char *));
+
+        if(!env_keep) {
+            free(keep);
+            return;
+        }
+
+        size_t eout = 0;
+        char* sanitized_path = NULL;
+        char* path_blob_ptr = NULL;  // blob pointer of the (single) PATH entry
+        static _Thread_local char* path_entry_storage = NULL;
+        static _Thread_local size_t path_entry_capacity = 0;
+
+        for(size_t i = 0; i < envp_count; i++) {
+            char* e = envp[i];
+
+            if(e == NULL || e < blob_start || e >= blob_end) {
+                continue;
+            }
+
+            if(strncmp(e, "DYLD_", 5) == 0 || strncmp(e, "JAILBREAKD_", 11) == 0) {
+                continue;
+            }
+
+            if(strncmp(e, "_MSSafeMode=", 12) == 0 || strncmp(e, "_SafeMode=", 10) == 0
+            || strncmp(e, "_SubstituteSafeMode=", 20) == 0) {
+                continue;
+            }
+
+            if(strncmp(e, "PATH=", 5) == 0 && e[5]) {
+                // Rewrite the PATH entry in place (same sanitizer shape as the
+                // getenv PATH hook). The sanitized value is always SHORTER
+                // than the original, so it fits where the original string
+                // lives inside the blob — no payload growth, pointer stays at
+                // its (shifted) blob location.
+                NSArray* parts = [[NSString stringWithUTF8String:e + 5] componentsSeparatedByString:@":"];
+                NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
+
+                for(NSString* part in parts) {
+                    if([part hasPrefix:@"/var/jb"]
+                    || [part hasPrefix:@"/private/preboot"]
+                    || [part hasPrefix:@"/preboot"]) {
+                        continue;
+                    }
+
+                    [kept addObject:part];
+                }
+
+                if(kept.count != parts.count) {
+                    NSString* joined = [NSString stringWithFormat:@"PATH=%@", [kept componentsJoinedByString:@":"]];
+                    size_t nlen = [joined lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1;
+
+                    if(nlen > path_entry_capacity) {
+                        char* grown = realloc(path_entry_storage, nlen);
+
+                        if(grown) {
+                            path_entry_storage = grown;
+                            path_entry_capacity = nlen;
+                        }
+                    }
+
+                    if(path_entry_storage && path_entry_capacity >= nlen) {
+                        strcpy(path_entry_storage, joined.UTF8String);
+                        sanitized_path = path_entry_storage;
+                        path_blob_ptr = e;
+                    }
+                }
+
+                env_keep[eout++] = e;
+                continue;
+            }
+
+            env_keep[eout++] = e;
+        }
+
+        size_t new_envp_count = eout;
+
+        // ---- rebuild geometry ----
+        size_t new_arrays_end = sizeof(int) + ((size_t) new_argc + 1 + new_envp_count + 1) * sizeof(char *);
+        size_t old_blob_off = sizeof(int) + (argv_slots + envp_count + 1) * sizeof(char *);
+
+        if(new_arrays_end > old_blob_off) {
+            // Arrays only shrink when dropping entries; never grow the payload.
+            free(keep);
+            free(env_keep);
+            return;
+        }
+
+        ptrdiff_t shift = (ptrdiff_t)(old_blob_off - new_arrays_end);
+
+        if(shift == 0 && !sanitized_path) {
+            free(keep);
+            free(env_keep);
+            return;  // the payload already agrees with the filtered view
+        }
+
+        // ---- write back (all reads below are from captured state) ----
+        ((int *) base)[0] = new_argc;
+
+        char** dst = argv;
+
+        for(int i = 0; i < argc; i++) {
+            if(keep[i]) {
+                *dst++ = argv[i] ? argv[i] - shift : NULL;
+            }
+        }
+
+        *dst = NULL;
+        dst++;
+
+        for(size_t i = 0; i < new_envp_count; i++) {
+            *dst++ = env_keep[i] - shift;  // all entries live in the blob
+        }
+
+        *dst = NULL;
+
+        if(shift > 0) {
+            memmove(base + new_arrays_end, base + old_blob_off, len - old_blob_off);
+        }
+
+        if(sanitized_path && path_blob_ptr) {
+            // Rewrite the PATH entry in its (moved) blob location. The value
+            // is shorter than the original that occupied this space, so the
+            // write stays inside the payload.
+            strcpy(path_blob_ptr - shift, sanitized_path);
+        }
+
+        *oldlenp = new_arrays_end + (len - old_blob_off);
+
+        free(keep);
+        free(env_keep);
+    }
+}
+
+// KERN_PROC/PROCARGS2 per-pid and proc-list filtering (defined further down;
+// forward-declared so the sysctl hook below can call it).
+static BOOL shdw_libproc_pid_is_restricted(pid_t pid);
+
 static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
     if(name == NULL || namelen == 0) {
         return original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
@@ -1666,6 +1892,37 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
         && name[1] == KERN_PROC
         && name[2] == KERN_PROC_PID
         && name[3] == getpid();
+
+    // Per-pid queries of a jailbreak daemon must answer ENOENT, the same
+    // hiding the KERN_PROC_ALL filter applies to the list (a pid-scanning
+    // detector steps the MIB pid by pid).
+    BOOL isOtherPid = name[0] == CTL_KERN
+        && namelen == 4
+        && name[1] == KERN_PROC
+        && name[2] == KERN_PROC_PID
+        && name[3] > 0
+        && name[3] != getpid();
+
+    // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
+    BOOL isOwnProcargs = name[0] == CTL_KERN
+        && namelen == 3
+        && name[1] == KERN_PROCARGS2
+        && name[2] == getpid();
+
+    BOOL isOtherProcargs = name[0] == CTL_KERN
+        && namelen == 3
+        && name[1] == KERN_PROCARGS2
+        && name[2] > 0
+        && name[2] != getpid();
+
+    if(isOtherPid || isOtherProcargs) {
+        pid_t other = isOtherPid ? name[3] : name[2];
+
+        if(shdw_libproc_pid_is_restricted(other)) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
 
     int ret;
 
@@ -1692,6 +1949,12 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
         // record must say the same — a detector comparing getppid() against
         // kp_eproc.e_ppid would otherwise see the real parent (debugger, host app).
         p->kp_eproc.e_ppid = 1;
+    }
+
+    // Own KERN_PROCARGS2: the kernel payload is the raw launch argv/envp;
+    // rebuild it to agree with the filtered NSProcessInfo/getenv views.
+    if(ret == 0 && isOwnProcargs && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
+        shdw_procargs2_filter(oldp, oldlenp);
     }
 
     return ret;
@@ -2065,6 +2328,12 @@ static int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
         return original_lstat64(pathname, buf);
     }
 
+    // NULL caller buffer keeps stock semantics (EFAULT from the kernel);
+    // replay before classification.
+    if(buf == NULL) {
+        return original_lstat64(pathname, NULL);
+    }
+
     shdw_stat64_t _buf;
     int result = original_lstat64(pathname, &_buf);
 
@@ -2079,11 +2348,6 @@ static int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
         }]) {
             errno = ENOENT;
             return -1;
-        }
-
-        // NULL caller buffer keeps stock semantics (EFAULT from the kernel).
-        if(buf == NULL) {
-            return original_lstat64(pathname, NULL);
         }
 
         // Only copy on success: on failure _buf is uninitialized stack.

@@ -59,7 +59,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
 
@@ -67,7 +67,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
 
@@ -75,7 +75,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(error) {
             *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
         }

@@ -99,7 +99,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
 
@@ -107,7 +107,7 @@
 }
 
 - (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:path url:nil];
         }
@@ -119,7 +119,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
 
@@ -127,7 +127,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+    if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
         }

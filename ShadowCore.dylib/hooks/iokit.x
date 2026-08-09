@@ -85,15 +85,37 @@ static BOOL shdw_iokit_service_restricted(io_service_t service) {
 }
 
 static kern_return_t (*original_IOServiceGetMatchingServices)(mach_port_t masterPort, CFDictionaryRef matching, io_iterator_t* existing);
+
+// Stock no-match shape for IOServiceGetMatchingServices: kIOReturnSuccess
+// with an EMPTY iterator (never kIOReturnNotFound — a stock device answers
+// "no such service" with success + an iterator that yields nothing, and a
+// caller branching off the error path would see the divergence).
+static kern_return_t shdw_iokit_empty_iterator(io_iterator_t* existing) {
+    if(!existing) {
+        return kIOReturnSuccess;
+    }
+
+    // Match against a service name that can never exist; the kernel answers
+    // success with an empty iterator.
+    CFMutableDictionaryRef none = IOServiceMatching("__shadow_no_such_service__");
+
+    if(none) {
+        kern_return_t kr = original_IOServiceGetMatchingServices(MACH_PORT_NULL, none, existing);
+        CFRelease(none);
+
+        if(kr == kIOReturnSuccess && existing) {
+            return kr;
+        }
+    }
+
+    *existing = 0;
+    return kIOReturnSuccess;
+}
+
 static kern_return_t replaced_IOServiceGetMatchingServices(mach_port_t masterPort, CFDictionaryRef matching, io_iterator_t* existing) {
     if(isCallerExternal() && shdw_iokit_matching_restricted(matching)) {
         shdw_detector_detected("iokit");
-
-        if(existing) {
-            *existing = 0;
-        }
-
-        return kIOReturnNotFound;
+        return shdw_iokit_empty_iterator(existing);
     }
 
     return original_IOServiceGetMatchingServices(masterPort, matching, existing);
@@ -118,7 +140,10 @@ static kern_return_t replaced_IOServiceOpen(io_service_t service, task_port_t ow
             *connect = 0;
         }
 
-        return kIOReturnNotFound;
+        // Stock shape for an existing service that exposes no openable user
+        // client: kIOReturnUnsupported. kIOReturnNotFound would contradict
+        // the service object the caller just matched and holds in hand.
+        return kIOReturnUnsupported;
     }
 
     return original_IOServiceOpen(service, owningTask, type, connect);

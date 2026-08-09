@@ -44,20 +44,15 @@ static _Thread_local NSUInteger shdw_internal_busy = 0;
 // random-named jbroot resolved through jbroot() — so that prefix check is
 // replaced by a live-jbroot check.
 static BOOL isPathInRestrictedRoot(NSString* path) {
-    // Canonical rootless jbroot target, resolved once. nil when not rootless
-    // (realpath("/var/jb") fails), so the jbroot check is a no-op there.
-    static NSString* jbrootTarget = nil;
-    static dispatch_once_t onceToken = 0;
-
 #ifdef SHADOW_ROOTHIDE
     // roothide: jbroot() already returns the full jailbreak root path for
     // the current process; resolve it once and prefix-check it.
     static NSString* roothideRoot = nil;
+    static dispatch_once_t onceToken = 0;
 
     dispatch_once(&onceToken, ^{
         NSString* root = jbroot(@"/");
         roothideRoot = [root hasSuffix:@"/"] ? root : [root stringByAppendingString:@"/"];
-        jbrootTarget = nil;
     });
 
     if(path && roothideRoot && [path hasPrefix:roothideRoot]) {
@@ -66,6 +61,11 @@ static BOOL isPathInRestrictedRoot(NSString* path) {
 
     return NO;
 #else
+    // Canonical rootless jbroot target, resolved once. nil when not rootless
+    // (realpath("/var/jb") fails), so the jbroot check is a no-op there.
+    static NSString* jbrootTarget = nil;
+    static dispatch_once_t onceToken = 0;
+
     dispatch_once(&onceToken, ^{
         char resolved[PATH_MAX];
 

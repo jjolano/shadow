@@ -18,13 +18,10 @@
     return %orig;
 }
 
-- (instancetype)initSymbolicLinkWithDestinationURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return 0;
-    }
-
-    return %orig;
-}
+// initSymbolicLinkWithDestinationURL: intentionally NOT hooked — it only
+// records the destination (no I/O at construction, so nothing can leak) and
+// stock never returns nil from it, so a filtered nil would be a
+// stock-impossible answer for the exact value the caller supplied.
 
 - (BOOL)matchesContentsOfURL:(NSURL *)url {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
