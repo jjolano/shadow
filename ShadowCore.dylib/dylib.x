@@ -394,22 +394,27 @@ static void shdw_install_tier2(void) {
         subCFunc = [HKSubstitutor substitutorWithTypes:hooklibs];
     }
 
-    // dlsym/dladdr group: inline-first via category API. substitutorWithCategory:
-    // HK_CAT_FUNCTION_INLINE picks the first available inline-capable backend
+    // dlsym/dladdr group: inline-first via category API.
+    // substitutorWithOrderedCategories: tries HK_CAT_FUNCTION_INLINE first
     // (inline trampolines are denyFishHook-immune, so IOSSecuritySuite's
-    // denyFishHook("dladdr") cannot un-rebind the hide). The concealment must
-    // not depend on knowing a detector (name-based detection is gone), so the
-    // pair never rides on a detector flag. Fishhook (via subCFunc) only when
-    // no inline-capable backend is available. Tradeoff: inline trampolines are
-    // prologue-detectable.
-    HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_INLINE] ?: subCFunc;
+    // denyFishHook("dladdr") cannot un-rebind the hide), then falls back
+    // within the category API to HK_CAT_FUNCTION_REBIND (fishhook) before the
+    // subCFunc safety net. The concealment must not depend on knowing a
+    // detector (name-based detection is gone), so the pair never rides on a
+    // detector flag. Behavioral delta: on devices with no inline backend but
+    // a pref-selected substrate/substitute, the fallback now lands on
+    // FUNCTION_REBIND (fishhook) before subCFunc — intended, since
+    // dlsym/dladdr concealment prefers rebind over an unpinned inline-capable
+    // pref backend. Tradeoff: inline trampolines are prologue-detectable.
+    HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]] ?: subCFunc;
 
     // dlopen_internal is a private libdyld symbol fishhook can't rebind:
     // private-symbol-capable backend only, always (never fishhook).
-    // substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL picks the first available
-    // backend that can reach private symbols (inline-only). Falls back to
-    // subMain when no such backend exists — the guard below skips the group.
-    HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL] ?: subMain;
+    // substitutorWithOrderedCategories: tries HK_CAT_PRIVATE_SYMBOL first,
+    // then HK_CAT_MESSAGE (message-capable backends can also reach private
+    // symbols), before falling back to subMain — the guard below skips the
+    // group when no such backend exists.
+    HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]] ?: subMain;
 
     // Batching must be enabled per instance; the HK*Batching macros below
     // only touch the default substitutor (subMain). subCFunc may be a fresh

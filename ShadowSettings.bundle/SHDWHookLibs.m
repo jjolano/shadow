@@ -5,12 +5,12 @@ NSArray<NSDictionary *> *SHDWAvailableHookLibs(void) {
 	NSMutableArray* hooklibs_info = [[HKSubstitutor getSubstitutorTypeInfo:[HKSubstitutor getAvailableSubstitutorTypes]] mutableCopy];
 
 	for(NSDictionary* hooklib_info in [hooklibs_info copy]) {
-		NSString* hooklib_id = hooklib_info[@"id"];
-
-		// substrate/substitute are legacy selection ids; swift is a vtable-only
-	// opt-in API with no message/function hooks — selecting it as the
-	// general hooking engine would leave every hook group unsupported.
-	if([hooklib_id isEqualToString:@"substrate"] || [hooklib_id isEqualToString:@"substitute"] || [hooklib_id isEqualToString:@"swift"]) {
+		// Legacy/opt-in backends (substrate, substitute, swift) are marked
+		// selectable=NO by the registry — they exist for compatibility/opt-in
+		// but must not be user-selectable. Only filter when the key is
+		// explicitly NO: a missing key (older framework) means selectable.
+		// ponytail: key-existence-and-NO, not boolValue==NO alone
+		if([hooklib_info objectForKey:@"selectable"] && ![[hooklib_info objectForKey:@"selectable"] boolValue]) {
 			[hooklibs_info removeObject:hooklib_info];
 		}
 	}
