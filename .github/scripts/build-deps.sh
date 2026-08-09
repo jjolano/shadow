@@ -17,7 +17,7 @@ PB=$ROOT/../prebuilt
 WORK=${WORK:-/tmp/shadow-deps}
 LIPO=${LIPO:-$THEOS/toolchain/linux/iphone/bin/lipo}
 
-HOOKKIT=eb747eb7a08b4cc4532ea300b5ee33a03056e0df
+HOOKKIT=8beda9ea5a287613a8887a8eaa39c3fc43d876bf
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
