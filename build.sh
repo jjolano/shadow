@@ -30,9 +30,26 @@ build_rootless() {
     rm -rf "${THEOS:?}/lib/HookKit.framework"
 }
 
+# roothide: iOS 15-17, random-named jbroot (no /var/jb). Requires the
+# roothide theos fork (THEOS_PACKAGE_SCHEME=roothide) + libroothide; the
+# Makefile drops RootBridge and defines SHADOW_ROOTHIDE for this scheme.
+build_roothide() {
+    make clean &&
+    test -d "${THEOS:?}/vendor/mod/roothide" && \
+    local BAK=/tmp/hookkit-control-roothide.bak.$$
+    trap "mv $BAK control 2>/dev/null || true" EXIT
+    cp control "$BAK"
+    sed -e 's/, me.jjolano.fmwk.rootbridge//' -e 's/firmware (>= 9.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
+    THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make package FINALPACKAGE=1 &&
+    cp -p "$(cat .theos/last_package)" build/
+
+    rm -rf "${THEOS:?}/lib/HookKit.framework"
+}
+
 case ${1:-all} in
     rootless) build_rootless ;;
     rooted) build_rooted ;;
-    all) build_rootless; build_rooted ;;
-    *) echo "usage: $0 [all|rootless|rooted]" >&2; exit 1 ;;
+    roothide) build_roothide ;;
+    all) build_rootless; build_rooted; build_roothide ;;
+    *) echo "usage: $0 [all|rootless|rooted|roothide]" >&2; exit 1 ;;
 esac

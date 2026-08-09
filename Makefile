@@ -17,11 +17,29 @@ HookKit_FILES += native/hk_native.c native/hk_arm64.c native/hk_symbols.c
 # armv7 via hk_swift_supported()).
 HookKit_FILES += native/hk_swift.c
 HookKit_FRAMEWORKS = Foundation
+# RootBridge is the /var/jb convention; roothide replaces it with libroothide
+# via the HKJBPath seam in HKSubstitutor.m.
+ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
 HookKit_EXTRA_FRAMEWORKS = RootBridge
+endif
 HookKit_INSTALL_PATH = /Library/Frameworks
 HookKit_PUBLIC_HEADERS = Headers/HookKit.h Headers/HookKit
-HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor -Ivendor/RootBridge.framework/Headers
-HookKit_LDFLAGS = -Fvendor -install_name @rpath/HookKit.framework/HookKit
+HookKit_CFLAGS = -fobjc-arc -IHeaders -Ivendor
+ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
+HookKit_CFLAGS += -Ivendor/RootBridge.framework/Headers
+else
+HookKit_CFLAGS += -DSHADOW_ROOTHIDE
+endif
+HookKit_LDFLAGS = -Fvendor
+# The roothide scheme module forces -install_name "@loader_path/.jbroot...",
+# which would override our @rpath install_name (instance LDFLAGS come after
+# internal LDFLAGS); under the roothide scheme drop our explicit install_name
+# so the module's .jbroot one wins.
+ifneq ($(THEOS_PACKAGE_SCHEME),roothide)
+HookKit_LDFLAGS += -install_name @rpath/HookKit.framework/HookKit
+else
+HookKit_LDFLAGS += -lroothide
+endif
 HookKit_LDFLAGS += -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 
 include $(THEOS_MAKE_PATH)/framework.mk

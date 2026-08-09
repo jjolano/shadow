@@ -1,5 +1,15 @@
 #import <HookKit/Compat.h>
+
+// Jailbreak-root path seam — same convention as Shadow's JBPath.h. Legacy
+// rootless/rooted resolve via RootBridge (/var/jb); roothide has no /var/jb
+// (random-named jbroot) so it uses libroothide's jbroot() instead.
+#ifdef SHADOW_ROOTHIDE
+#import <roothide.h>
+static NSString* HKJBPath(NSString* path) { return jbroot(path); }
+#else
 #import <RootBridge.h>
+static NSString* HKJBPath(NSString* path) { return [RootBridge getJBPath:path]; }
+#endif
 
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
@@ -49,7 +59,7 @@ static BOOL libhooker_available(void) {
         return available;
     }
 
-    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/libhooker.dylib"];
+    NSString *jbPath = HKJBPath(@"/usr/lib/libhooker.dylib");
 
     if(!jbPath) {
         return NO;
@@ -94,7 +104,7 @@ static BOOL substrate_available(void) {
         return available;
     }
 
-    NSString *jbPath = [RootBridge getJBPath:@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"];
+    NSString *jbPath = HKJBPath(@"/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate");
 
     if(!jbPath) {
         return NO;
@@ -151,7 +161,7 @@ static BOOL substitute_available(void) {
         return available;
     }
 
-    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/libsubstitute.0.dylib"];
+    NSString *jbPath = HKJBPath(@"/usr/lib/libsubstitute.0.dylib");
 
     if(!jbPath) {
         return NO;
@@ -1411,7 +1421,7 @@ static BOOL frida_available(void) {
         return available;
     }
 
-    NSString *jbPath = [RootBridge getJBPath:@"/usr/lib/HKGum.dylib"];
+    NSString *jbPath = HKJBPath(@"/usr/lib/HKGum.dylib");
 
     if(!jbPath) {
         return NO;
