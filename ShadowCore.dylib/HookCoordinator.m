@@ -1,0 +1,361 @@
+// SHDWHookCoordinator — see HookCoordinator.h. Additive machinery; dylib.x
+// does not route through it yet (step B2 wires the handoff).
+
+#import "HookCoordinator.h"
+
+// Installed-state bitset, indexed by unit index in the SHDWInstallUnits()
+// table. The installer table's row order must match the metadata table's
+// order (SHDWHookInstaller carries unitID precisely so the coordinator can
+// cross-check and, if they ever disagree, fall back to a per-ID lookup).
+#define SHDW_MAX_UNITS 64
+
+@interface SHDWBackendSet ()   // readwrite backing for the init-time fill
+@property (nonatomic, readwrite) HKSubstitutor* message;
+@property (nonatomic, readwrite) HKSubstitutor* rebind;
+@property (nonatomic, readwrite) HKSubstitutor* inlineCover;
+@property (nonatomic, readwrite) HKSubstitutor* symlookup;
+@property (nonatomic, readwrite) HKSubstitutor* privateSym;
+@property (nonatomic, readwrite) HKSubstitutor* batch;
+@property (nonatomic, readwrite) SHDWCapabilities capabilities;
+@end
+
+@interface SHDWHookCoordinator () {
+    SHDWHookInstaller _installers[SHDW_MAX_UNITS];
+    NSUInteger _installerCount;
+    uint64_t _installedBits;          // bitset: bit i = unit i installed
+    uint64_t _skippedMessageBits;     // bitset: unit i fail-soft skipped (no message backend)
+    BOOL _uikitSeen;                  // recordUIKitImageLoad fired
+    BOOL _escalated;
+}
+@property (nonatomic, readwrite) SHDWBackendSet* backends;
+@property (nonatomic, readwrite, copy) NSDictionary<NSString*, id>* prefs;
+@property (nonatomic, readwrite) NSUInteger unitCount;
+@property (nonatomic, readwrite) dispatch_queue_t lifecycleQueue;  // serial
+@end
+
+@implementation SHDWBackendSet
+@end
+
+@implementation SHDWHookCoordinator
+
+- (instancetype)initWithInstallerTable:(const SHDWHookInstaller*)installers
+                                 count:(NSUInteger)count
+                                 prefs:(NSDictionary<NSString*, id>*)prefs {
+    self = [super init];
+
+    if(!self) {
+        return nil;
+    }
+
+    _installerCount = MIN(count, SHDW_MAX_UNITS);
+
+    for(NSUInteger i = 0; i < _installerCount; i++) {
+        _installers[i] = installers[i];
+    }
+
+    _prefs = [prefs copy];
+    _lifecycleQueue = dispatch_queue_create("com.shadow.hookcoordinator.lifecycle", DISPATCH_QUEUE_SERIAL);
+
+    NSUInteger unitMetaCount = 0;
+    SHDWInstallUnits(&unitMetaCount);
+    _unitCount = unitMetaCount;
+
+    // One-shot v2 backend resolution (the category pickers are
+    // availability-cached by HookKit at first probe; the instances pin their
+    // backend at init). The batch instance must NOT be an auto-cover
+    // instance: batches must not split across backends (Compat.h), and
+    // batch hooks route to the pinned first-available category backend.
+    HKSubstitutor* message   = [HKSubstitutor substitutorWithCategory:HK_CAT_MESSAGE];
+    HKSubstitutor* rebind    = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
+    HKSubstitutor* inlineCov = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
+    HKSubstitutor* symlookup = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
+    HKSubstitutor* privSym   = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]];
+    HKSubstitutor* batch     = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_REBIND), @(HK_CAT_FUNCTION_INLINE), @(HK_CAT_MESSAGE)]];
+
+    // activeType == HK_LIB_NONE means the category resolved no backend.
+    SHDWCapabilities caps = 0;
+
+    if(message.activeType != HK_LIB_NONE) {
+        caps |= SHDWCapMessage;
+    }
+
+    if(rebind.activeType != HK_LIB_NONE) {
+        caps |= SHDWCapFunction;
+    }
+
+    // Mirrors the legacy subInline nil-ness (fishhook-only devices had no
+    // inline backend and the escalation skip logged it).
+    if(inlineCov.activeType != HK_LIB_NONE) {
+        caps |= SHDWCapInline;
+    }
+
+    if(privSym.activeType != HK_LIB_NONE) {
+        caps |= SHDWCapPrivateSym;
+    }
+
+    SHDWBackendSet* set = [SHDWBackendSet new];
+    set.message = message;
+    set.rebind = rebind;
+    set.inlineCover = inlineCov;
+    set.symlookup = symlookup;
+    set.privateSym = privSym;
+    set.batch = batch;
+    set.capabilities = caps;
+    self.backends = set;
+
+    if(!(caps & SHDWCapMessage)) {
+        NSLog(@"[Shadow][coordinator] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
+    }
+
+    if(!(caps & SHDWCapPrivateSym)) {
+        NSLog(@"[Shadow][coordinator] no private-symbol-capable backend (dlopen_internal needs one)");
+    }
+
+    return self;
+}
+
+#pragma mark - Unit lookup
+
+static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
+    NSUInteger count = 0;
+    const SHDWInstallUnit* units = SHDWInstallUnits(&count);
+    return index < count ? &units[index] : NULL;
+}
+
+- (NSUInteger)unitIndexForID:(NSString*)unitID {
+    NSUInteger count = 0;
+    const SHDWInstallUnit* units = SHDWInstallUnits(&count);
+
+    for(NSUInteger i = 0; i < count; i++) {
+        if([[NSString stringWithUTF8String:units[i].unitID] isEqualToString:unitID]) {
+            return i;
+        }
+    }
+
+    return NSNotFound;
+}
+
+- (const SHDWHookInstaller*)installerForUnitID:(NSString*)unitID {
+    for(NSUInteger i = 0; i < _installerCount; i++) {
+        if(strcmp(_installers[i].unitID, unitID.UTF8String) == 0) {
+            return &_installers[i];
+        }
+    }
+
+    return NULL;
+}
+
+#pragma mark - Backend selection per capability kind
+
+// Maps a unit's capability kind to the backend the legacy ctor would have
+// passed. Mirrors dylib.x exactly: function groups ride the rebind backend
+// (subCFunc = subFish, never subMain unless no rebind backend resolved),
+// message groups ride the message backend, symlookup rides the ordered
+// inline-first instance, private-symbol groups ride the ordered
+// private-symbol instance.
+- (HKSubstitutor*)backendForUnit:(const SHDWInstallUnit*)unit {
+    switch(unit->capability) {
+        case SHDWCapabilityMessage:
+            return self.backends.message;
+        case SHDWCapabilitySymlookup:
+            return self.backends.symlookup;
+        case SHDWCapabilityPrivateSym:
+            return self.backends.privateSym;
+        case SHDWCapabilityFunction:
+        case SHDWCapabilityNone:
+        default:
+            return self.backends.rebind ?: self.backends.message;
+    }
+}
+
+// Capability gating (mirror legacy):
+//   - message groups fail-soft without a message-capable backend (planner
+//     already dropped them, but re-check defensively);
+//   - private-symbol groups gate on the backend, like legacy
+//     subDyldExtra==subMain skip (dlopen_internal needs a
+//     private-symbol-capable backend; the log mirrors the legacy message);
+//   - everything else installs unconditionally on its pref (legacy: subCFunc
+//     always resolves to something).
+- (BOOL)unitCapable:(const SHDWInstallUnit*)unit
+             index:(NSUInteger)index
+              plan:(NSArray<NSString*>*)plan {
+    SHDWCapabilities caps = self.backends.capabilities;
+
+    if(unit->capability == SHDWCapabilityMessage) {
+        if(!(caps & SHDWCapMessage)) {
+            NSLog(@"[Shadow][coordinator] %s skipped: no ObjC-capable backend", unit->unitID);
+            return NO;
+        }
+
+        return YES;
+    }
+
+    if(unit->capability == SHDWCapabilityPrivateSym) {
+        if(!(caps & SHDWCapPrivateSym)) {
+            // Legacy message, preserved verbatim (dylib.x:628-629 / the
+            // escalation skip in shdw_detector_detected).
+            NSLog(@"[Shadow][coordinator] dylibex skipped: no private-symbol-capable backend (dlopen_internal needs one)");
+            return NO;
+        }
+
+        return YES;
+    }
+
+    if(unit->capability == SHDWCapabilitySymlookup && !(caps & (SHDWCapInline | SHDWCapFunction))) {
+        // Cannot happen in practice (rebind is always resolvable), but keep
+        // the fail-soft mirror honest: legacy subSymLookup fell back to
+        // subCFunc, which always resolved.
+        NSLog(@"[Shadow][coordinator] %s skipped: no rebind/inline backend", unit->unitID);
+        return NO;
+    }
+
+    (void) index;
+    (void) plan;
+    return YES;
+}
+
+#pragma mark - Batch commit
+
+// Executes the batch and handles HK_ERR_PARTIAL / HK_ERR by running the
+// verify functions of the units just attempted (mirrors the legacy
+// post-install verify pass — the verify functions log exactly which hooks
+// missed). When no batching-capable backend resolved, setBatching: is
+// accepted but ignored and hooks installed immediately (Compat.h), so this
+// path is always safe.
+- (void)commitBatch:(NSArray<NSString*>*)unitIDs {
+    if(!unitIDs.count) {
+        return;
+    }
+
+    [self.backends.batch setBatching:YES];
+
+    hookkit_status_t status = [self.backends.batch executeHooks];
+
+    [self.backends.batch setBatching:NO];
+
+    if(status == HK_OK) {
+        return;
+    }
+
+    NSLog(@"[Shadow][coordinator] executeHooks returned %d — running per-unit verify", (int) status);
+
+    for(NSString* unitID in unitIDs) {
+        const SHDWHookInstaller* installer = [self installerForUnitID:unitID];
+
+        if(installer && installer->verify) {
+            installer->verify();
+        }
+    }
+}
+
+#pragma mark - Event install
+
+- (NSUInteger)installEvent:(SHDWLifecycleEvent)event {
+    __block NSUInteger installed = 0;
+
+    dispatch_sync(self.lifecycleQueue, ^{
+        installed = [self installEventSync:event];
+    });
+
+    return installed;
+}
+
+- (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
+    NSArray<NSString*>* plan = SHDWHookPlan(self.prefs, self.backends.capabilities, event);
+
+    if(!plan.count) {
+        return 0;
+    }
+
+    NSMutableArray<NSString*>* attempted = [NSMutableArray new];
+    NSUInteger localInstalled = 0;
+
+    for(NSString* unitID in plan) {
+        NSUInteger index = [self unitIndexForID:unitID];
+
+        if(index == NSNotFound || index >= SHDW_MAX_UNITS) {
+            NSLog(@"[Shadow][coordinator] plan named unknown unit %@", unitID);
+            continue;
+        }
+
+        // Idempotence per event: legacy _shdw_*_installed guards. The bitset
+        // makes a unit installed by an earlier event a no-op in a later one
+        // (e.g. a ctor-installed group re-named by the escalation plan).
+        if((_installedBits >> index) & 1ULL) {
+            continue;
+        }
+
+        const SHDWInstallUnit* unit = SHDWUnitAt(index);
+        const SHDWHookInstaller* installer = [self installerForUnitID:unitID];
+
+        if(!installer) {
+            NSLog(@"[Shadow][coordinator] no installer for unit %@", unitID);
+            continue;
+        }
+
+        if(![self unitCapable:unit index:index plan:plan]) {
+            if(unit->capability == SHDWCapabilityMessage) {
+                _skippedMessageBits |= (1ULL << index);
+            }
+
+            continue;
+        }
+
+        NSLog(@"[Shadow][coordinator] + %s", unit->unitID);
+
+        installer->install([self backendForUnit:unit]);
+        _installedBits |= (1ULL << index);
+        localInstalled++;
+        [attempted addObject:unitID];
+    }
+
+    // One batch per lifecycle event. Batch hooks go through the pinned batch
+    // backend, which is the same instance the installers were handed (all
+    // non-auto-cover instances share the pinned batch backend — the
+    // auto-cover instance is never used for batching).
+    if(attempted.count) {
+        [self commitBatch:attempted];
+    }
+
+    return localInstalled;
+}
+
+- (void)escalateWithReason:(NSString*)reason {
+    (void) reason;
+
+    dispatch_sync(self.lifecycleQueue, ^{
+        if(_escalated) {
+            return;
+        }
+
+        _escalated = YES;
+        [self installEventSync:SHDWEventDetectorEscalation];
+    });
+}
+
+- (void)recordUIKitImageLoad {
+    // The image watcher itself arrives in a later step; dylib.x still owns
+    // _dyld_register_func_for_add_image. Recording here keeps the
+    // coordinator's event model complete so the B2 cutover only moves the
+    // registration, not the logic.
+    dispatch_sync(self.lifecycleQueue, ^{
+        _uikitSeen = YES;
+    });
+}
+
+- (BOOL)isUnitInstalledAtIndex:(NSUInteger)index {
+    __block BOOL installed = NO;
+
+    dispatch_sync(self.lifecycleQueue, ^{
+        installed = index < SHDW_MAX_UNITS && ((_installedBits >> index) & 1ULL);
+    });
+
+    return installed;
+}
+
+- (BOOL)isUnitInstalledWithID:(NSString*)unitID {
+    NSUInteger index = [self unitIndexForID:unitID];
+    return index == NSNotFound ? NO : [self isUnitInstalledAtIndex:index];
+}
+
+@end
