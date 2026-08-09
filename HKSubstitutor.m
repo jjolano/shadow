@@ -580,22 +580,18 @@ auto_cover_done: ;
         return HK_ERR_INVALID_ARGUMENT;
     }
 
-    // v1-compat: pass the class through to the backend unchanged. Backends
-    // resolve their own dispatch — LBHookMessage / MSHookMessageEx /
-    // class_replaceMethod all walk the metaclass and superclass chains
-    // themselves (class methods hook through the metaclass, inherited
-    // instance methods resolve through the class). Normalizing here (e.g.
-    // object_getClass() when class_getInstanceMethod() misses) breaks
-    // delegate/protocol methods like -applicationDidFinishLaunching: that
-    // aren't declared directly on the hook target class — the hook lands on
-    // the metaclass, the original IMP is lost, and the real method calls a
-    // NULL. v1's modules passed the class through, so this restores that
-    // contract. (A selector that exists on neither the class nor the
-    // metaclass is left to the backend's own NOT_SUPPORTED check.)
+    // Normalize the dispatch class: class methods live on the metaclass, so a
+    // class-method-only selector must be hooked through object_getClass() —
+    // backends use class_getInstanceMethod(), which walks the metaclass's
+    // inheritance tree exactly like the class's own. Instance methods pass the
+    // class through unchanged. (A selector that exists on neither the class
+    // nor the metaclass is left to the backend's own NOT_SUPPORTED check.)
+    Class dispatchClass = class_getInstanceMethod(objcClass, selector) ? objcClass : object_getClass(objcClass);
+
     hookkit_status_t status;
 
     if([self enqueueKind:HKHookKindMessage status:&status build:^(HKHookOperation *hook) {
-        hook->objcClass = objcClass;
+        hook->objcClass = dispatchClass;
         hook->selector = selector;
         hook->replacement = replacement;
         hook->callerOrig = old_ptr;
@@ -605,7 +601,7 @@ auto_cover_done: ;
 
     // owned cell: the backend never touches the caller's pointer directly
     void *cell = NULL;
-    hookkit_status_t result = [backend hookMessageInClass:objcClass withSelector:selector withReplacement:replacement outOldPtr:&cell];
+    hookkit_status_t result = [backend hookMessageInClass:dispatchClass withSelector:selector withReplacement:replacement outOldPtr:&cell];
 
     if(result == HK_OK && old_ptr) {
         *old_ptr = cell;
