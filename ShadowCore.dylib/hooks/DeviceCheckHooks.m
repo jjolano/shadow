@@ -72,6 +72,21 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "EMDSKPPConfiguration",     "jailBroken",           DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "EMDskppConfigurationBuilder", "jailbreakStatus",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "FCRSystemMetadata",        "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+
+    // Step 2, batch 4: VOS detector + misc classes. AWMyDeviceGeneralInfo
+    // is the one TRUE policy row (legacy returned true).
+    { "v_VDMap",                  "isJailbrokenDetected",        DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isJailBrokenDetectedByVOS",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isDFPHookedDetecedByVOS",     DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isCodeInjectionDetectedByVOS", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isDebuggerCheckDetectedByVOS", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isAppSignerCheckDetectedByVOS", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "v_checkAModified",            DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "v_VDMap",                  "isRuntimeTamperingDetected",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "SDMUtils",                 "isJailBroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "OneSignalJailbreakDetection", "isJailbroken",      DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "DigiPassHandler",          "rootedDeviceTestResult", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "AWMyDeviceGeneralInfo",    "isCompliant",          DCHMethodInstance, 'B', 0, DCHPolicyTrue },
     { NULL, NULL, 0, 0, 0, 0 }
 };
 
