@@ -345,49 +345,43 @@ static void shdw_install_tier2(void) {
         }
     }
 
-    // subMain: ALWAYS the default substitutor, except on devices where no
-    // runtime library is loaded (see below). The HK_Library pref may only
-    // configure the C-function substitutors (subCFunc/subSymLookup below) —
-    // subMain backs every ObjC-method hook group, and fishhook cannot swizzle
-    // ObjC methods, so applying the pref here (as before) silently broke
-    // those groups whenever the pref picked fishhook. Never setTypes: on
-    // subMain.
+    // subMain: message-capable backend via category API. substitutorWithCategory:
+    // picks the first available backend that supports HK_CAT_MESSAGE (ElleKit,
+    // Substrate, Substitute, or native — in that priority order). This replaces
+    // the old explicit availability-bitmask logic: the category API encapsulates
+    // the priority order and availability check, so the caller only states the
+    // capability requirement. The HK_Library pref never configures subMain:
+    // fishhook cannot swizzle ObjC methods, so applying the pref here silently
+    // broke every ObjC group. Never setTypes: on subMain.
+    hookkit_cat_t available_categories = [HKSubstitutor getAvailableCategories];
+    BOOL objcBackendAvailable = (available_categories & HK_CAT_MESSAGE) != 0;
 
-    // ObjC groups need a method-swizzling backend. With no ElleKit /
-    // Substrate / Substitute available (e.g. pref=fishhook on a fishhook-only
-    // device) the default substitutor is fishhook-only and those groups would
-    // fail at hook time anyway — log once and skip them gracefully, never
-    // crash.
-    hookkit_lib_t available_types = [HKSubstitutor getAvailableSubstitutorTypes];
-    BOOL runtimeBackendAvailable = (available_types & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE)) != 0;
-
-    // subMain: the default substitutor, EXCEPT on devices where no runtime
-    // library is loaded — there the default lands on fishhook, which cannot
-    // swizzle ObjC methods, so fall back to HookKit's own native backend
-    // (arm64/arm64e, HK_LIB_NATIVE, also message-capable). The HK_Library pref
-    // never configures subMain: fishhook cannot swizzle ObjC methods, so
-    // applying the pref here silently broke every ObjC group.
-    HKSubstitutor* subMain = runtimeBackendAvailable ? [HKSubstitutor defaultSubstitutor]
-        : ((available_types & HK_LIB_NATIVE) ? [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE] : [HKSubstitutor defaultSubstitutor]);
-
-    BOOL objcBackendAvailable = runtimeBackendAvailable || (available_types & HK_LIB_NATIVE);
+    // subMain: when a message-capable backend is available, use the category
+    // picker; otherwise fall back to defaultSubstitutor (fishhook-only, which
+    // will cause ObjC groups to fail gracefully at hook time — logged below).
+    HKSubstitutor* subMain = objcBackendAvailable
+        ? [HKSubstitutor substitutorWithCategory:HK_CAT_MESSAGE]
+        : [HKSubstitutor defaultSubstitutor];
 
     if(!objcBackendAvailable) {
         NSLog(@"[Shadow] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
     }
 
-    // subFish: fishhook backend. Rebinds pointer-table slots only — function
-    // prologues stay untouched, so amIMSHooked-style prologue scans see
-    // nothing. C-function hooks that detectors call route through this.
-    HKSubstitutor* subFish = ([HKSubstitutor getAvailableSubstitutorTypes] & HK_LIB_FISHHOOK) ? [HKSubstitutor substitutorWithTypes:HK_LIB_FISHHOOK] : NULL;
+    // subFish: function-rebind backend via category API. substitutorWithCategory:
+    // picks the first available backend that supports HK_CAT_FUNCTION_REBIND
+    // (fishhook by priority — clean prologues, no trampoline detection surface).
+    // C-function hooks that detectors call route through this. Falls to NULL
+    // when no rebind-capable backend is available.
+    HKSubstitutor* subFish = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
 
-    // subInline: ElleKit (inline) backend. Installs trampolines in function
-    // prologues (ldr x16, #imm; br x16), so amIMSHooked-style prologue
-    // scanners can spot them — but denyFishHook("dladdr") cannot un-rebind
-    // inline hooks, and fishhook can't reach private symbols like
+    // subInline: function-inline backend via category API. Installs trampolines
+    // in function prologues (ldr x16, #imm; br x16), so amIMSHooked-style
+    // prologue scanners can spot them — but denyFishHook("dladdr") cannot
+    // un-rebind inline hooks, and fishhook can't reach private symbols like
     // dlopen_internal. Used for dlopen_internal always, and inline-first for
-    // the dlsym/dladdr pair (see subSymLookup below).
-    HKSubstitutor* subInline = ([HKSubstitutor getAvailableSubstitutorTypes] & HK_LIB_ELLEKIT) ? [HKSubstitutor substitutorWithTypes:HK_LIB_ELLEKIT] : NULL;
+    // the dlsym/dladdr pair (see subSymLookup below). Falls to NULL when no
+    // inline-capable backend is available.
+    HKSubstitutor* subInline = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_INLINE];
 
     // C-function groups: the HK_Library pref picks the backend here —
     // fishhook by default (clean prologues), any selectable backend when
@@ -400,17 +394,22 @@ static void shdw_install_tier2(void) {
         subCFunc = [HKSubstitutor substitutorWithTypes:hooklibs];
     }
 
-    // dlsym/dladdr group: inline-first — inline trampolines are
-    // denyFishHook-immune, so IOSSecuritySuite's denyFishHook("dladdr")
-    // cannot un-rebind the hide. The concealment must not depend on knowing
-    // a detector (name-based detection is gone), so the pair never rides on
-    // a detector flag. Fishhook (via subCFunc) only when ElleKit is
-    // unavailable. Tradeoff: inline trampolines are prologue-detectable.
-    HKSubstitutor* subSymLookup = subInline ? subInline : subCFunc;
+    // dlsym/dladdr group: inline-first via category API. substitutorWithCategory:
+    // HK_CAT_FUNCTION_INLINE picks the first available inline-capable backend
+    // (inline trampolines are denyFishHook-immune, so IOSSecuritySuite's
+    // denyFishHook("dladdr") cannot un-rebind the hide). The concealment must
+    // not depend on knowing a detector (name-based detection is gone), so the
+    // pair never rides on a detector flag. Fishhook (via subCFunc) only when
+    // no inline-capable backend is available. Tradeoff: inline trampolines are
+    // prologue-detectable.
+    HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_INLINE] ?: subCFunc;
 
     // dlopen_internal is a private libdyld symbol fishhook can't rebind:
-    // inline only, always (never fishhook — see subInline comment).
-    HKSubstitutor* subDyldExtra = subInline ? subInline : subMain;
+    // private-symbol-capable backend only, always (never fishhook).
+    // substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL picks the first available
+    // backend that can reach private symbols (inline-only). Falls back to
+    // subMain when no such backend exists — the guard below skips the group.
+    HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL] ?: subMain;
 
     // Batching must be enabled per instance; the HK*Batching macros below
     // only touch the default substitutor (subMain). subCFunc may be a fresh
@@ -617,11 +616,11 @@ static void shdw_install_tier2(void) {
         NSLog(@"+ dylibex");
 
         // dlopen_internal is a private libdyld symbol fishhook can't rebind —
-        // inline only. On a fishhook-only device subDyldExtra falls back to a
-        // non-inline substitutor that cannot rebind it — skip, fail-soft
-        // (same guard as the escalation site in shdw_detector_detected).
-        if(!subInline) {
-            NSLog(@"[Shadow] dylibex skipped: no inline backend (dlopen_internal needs one)");
+        // private-symbol-capable backend only. If the category yielded no such
+        // backend (subDyldExtra fell back to subMain), skip — fail-soft (same
+        // guard as the escalation site in shdw_detector_detected).
+        if(subDyldExtra == subMain) {
+            NSLog(@"[Shadow] dylibex skipped: no private-symbol-capable backend (dlopen_internal needs one)");
         } else {
             shadowhook_dyld_extra(subDyldExtra);
 
