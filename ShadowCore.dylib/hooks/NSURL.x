@@ -1,12 +1,5 @@
 #import "hooks.h"
 
-// Write intent for URL mutations: restricted-classified paths are denied
-// even when the probe target does not exist (Core.m skips the existence
-// gate for write operations).
-static NSDictionary* _shdw_urlWriteOptions(void) {
-    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
-}
-
 // Classify a RESULT URL after %orig. Plain file URLs classify directly;
 // file-reference URLs do not — Core.m resolves them through -filePathURL,
 // whose hook returns nil for a restricted reference, so a reference that
@@ -172,7 +165,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)setResourceValue:(id)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
+    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }
@@ -184,7 +177,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 }
 
 - (BOOL)setResourceValues:(NSDictionary<NSURLResourceKey, id> *)keyedValues error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, _shdw_urlWriteOptions())) {
+    if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
         }

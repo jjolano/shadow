@@ -3,9 +3,7 @@
 %group shadowhook_NSData
 %hook NSData
 + (instancetype)dataWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
@@ -23,9 +21,7 @@
 }
 
 + (instancetype)dataWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -43,9 +39,7 @@
 }
 
 - (instancetype)initWithContentsOfFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
@@ -63,9 +57,7 @@
 }
 
 - (instancetype)initWithContentsOfURL:(NSURL *)url {
-    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
@@ -83,17 +75,13 @@
 }
 
 - (id)initWithContentsOfMappedFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
 + (id)dataWithContentsOfMappedFile:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path]) {
-        return nil;
-    }
+    SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }

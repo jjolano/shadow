@@ -44,7 +44,7 @@
 }
 
 - (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
-    NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+    NSDictionary* writeOptions = shdw_restriction_write_options();
 
     if(isCallerExternal() && [_shadow isURLRestricted:url options:writeOptions]) {
         if(outError) {

@@ -769,13 +769,6 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     return original_faccessat(dirfd, pathname, mode, flags);
 }
 
-// static int (*original_scandir)(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *));
-// static int replaced_scandir(const char* dirname, struct dirent*** namelist, int (*select)(struct dirent *), int (*compar)(const void *, const void *)) {
-//     int result = original_scandir(dirname, namelist, select, compar);
-
-//     return result;
-// }
-
 // readdir/readdir_r used to resolve the DIR*'s parent path (dirfd + F_GETPATH)
 // and build the options dictionary for every entry. Cache both per DIR* so
 // only the per-entry child check runs; invalidated on closedir because DIR*
@@ -2656,7 +2649,6 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     [hooks hookFunction:readlink withReplacement:replaced_readlink outOldPtr:(void **) &original_readlink];
     [hooks hookFunction:readlinkat withReplacement:replaced_readlinkat outOldPtr:(void **) &original_readlinkat];
     [hooks hookFunction:link withReplacement:replaced_link outOldPtr:(void **) &original_link];
-    // [hooks hookFunction:scandir withReplacement:replaced_scandir outOldPtr:(void **) &original_scandir];
     [hooks hookFunction:getmntinfo withReplacement:replaced_getmntinfo outOldPtr:(void **) &original_getmntinfo];
     {
         // getmntinfo_r_np is an iOS 16+ export; resolve at runtime and skip
