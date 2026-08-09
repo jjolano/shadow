@@ -21,66 +21,11 @@
 // Step 2, batch 3: CPWRDeviceInfo, CPWRSessionInfo, KSSystemInfo,
 // EMDSKPPConfiguration, EMDskppConfigurationBuilder, FCRSystemMetadata
 // blocks migrated to DeviceCheckHooks.m descriptor rows.
+// Step 2, batch 4: v_VDMap, SDMUtils, OneSignalJailbreakDetection,
+// DigiPassHandler, AWMyDeviceGeneralInfo blocks migrated to DeviceCheckHooks.m
+// descriptor rows.
 
 // EnrollParameters -jailbroken: see the note at UBReportMetadataDevice.
-
-%hook v_VDMap
-- (bool)isJailbrokenDetected {
-    return false;
-}
-
-- (bool)isJailBrokenDetectedByVOS {
-    return false;
-}
-
-- (bool)isDFPHookedDetecedByVOS {
-    return false;
-}
-
-- (bool)isCodeInjectionDetectedByVOS {
-    return false;
-}
-
-- (bool)isDebuggerCheckDetectedByVOS {
-    return false;
-}
-
-- (bool)isAppSignerCheckDetectedByVOS {
-    return false;
-}
-
-- (bool)v_checkAModified {
-    return false;
-}
-
-- (bool)isRuntimeTamperingDetected {
-    return false;
-}
-%end
-
-%hook SDMUtils
-- (BOOL)isJailBroken {
-    return NO;
-}
-%end
-
-%hook OneSignalJailbreakDetection
-+ (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook DigiPassHandler
-- (BOOL)rootedDeviceTestResult {
-    return NO;
-}
-%end
-
-%hook AWMyDeviceGeneralInfo
-- (bool)isCompliant {
-    return true;
-}
-%end
 
 %hook DTXSessionInfo
 - (bool)isJailbroken {
