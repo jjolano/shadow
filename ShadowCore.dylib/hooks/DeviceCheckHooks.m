@@ -54,6 +54,16 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "DTTJailbreakDetection",    "isJailbroken",         DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "ANSMetadata",              "computeIsJailbroken",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "ANSMetadata",              "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+
+    // Step 2, batch 2: SDK/detection-helper classes.
+    { "AppsFlyerUtils",           "isJailBreakon",        DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "AppsFlyerUtils",           "isJailbrokenWithSkipAdvancedJailbreakValidation:", DCHMethodClass, 'B', 1, DCHPolicyFalse },
+    { "jailBreak",                "isJailBreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "GBDeviceInfo",             "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "CMARAppRestrictionsDelegate", "isDeviceNonCompliant", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "ADYSecurityChecks",        "isDeviceJailbroken",   DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "UtilitySystem",            "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "GemaltoConfiguration",     "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { NULL, NULL, 0, 0, 0, 0 }
 };
 

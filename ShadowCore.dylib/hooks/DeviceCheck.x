@@ -15,57 +15,14 @@
 // Step 2, batch 1: DCDevice, DCAppAttestService, UIDevice,
 // JailbreakDetectionVC, DTTJailbreakDetection, ANSMetadata blocks migrated
 // to DeviceCheckHooks.m descriptor rows.
-
-%hook AppsFlyerUtils
-+ (BOOL)isJailBreakon {
-    return NO;
-}
-
-+ (bool)isJailbrokenWithSkipAdvancedJailbreakValidation:(bool)a {
-    return false;
-}
-%end
-
-%hook jailBreak
-+ (bool)isJailBreak {
-    return false;
-}
-%end
-
-%hook GBDeviceInfo
-- (BOOL)isJailbroken {
-    return NO;
-}
-%end
-
-%hook CMARAppRestrictionsDelegate
-- (bool)isDeviceNonCompliant {
-    return false;
-}
-%end
-
-%hook ADYSecurityChecks
-+ (bool)isDeviceJailbroken {
-    return false;
-}
-%end
+// Step 2, batch 2: AppsFlyerUtils, jailBreak, GBDeviceInfo,
+// CMARAppRestrictionsDelegate, ADYSecurityChecks, UtilitySystem,
+// GemaltoConfiguration blocks migrated to DeviceCheckHooks.m descriptor rows.
 
 // UBReportMetadataDevice -is_rooted and EnrollParameters -jailbroken are
 // installed manually (shdw_install_probe_abi below): their return ABI varies
 // between SDK versions (BOOL on some, object on others), and a fixed
 // signature against the wrong ABI returns garbage.
-
-%hook UtilitySystem
-+ (bool)isJailbreak {
-    return false;
-}
-%end
-
-%hook GemaltoConfiguration
-+ (bool)isJailbreak {
-    return false;
-}
-%end
 
 %hook CPWRDeviceInfo
 - (bool)isJailbroken {
