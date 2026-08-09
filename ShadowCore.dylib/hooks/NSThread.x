@@ -49,7 +49,21 @@
                 }
             }
 
-            [result_filtered addObject:line];
+            // Reindex the surviving frame: dropping restricted frames leaves
+            // gaps in the stock index column ("0,1,3,4"), a trace stock never
+            // produces. The new index is the count so far; the leading index
+            // token is replaced in place, preserving the frame's spacing and
+            // the addresses below it. Also keeps the frames' index sequence
+            // aligned 1:1 with the filtered callStackReturnAddresses.
+            if(fields.count >= 1) {
+                NSString* reindexed = [[NSString stringWithFormat:@"%lu", (unsigned long)result_filtered.count]
+                    stringByAppendingString:[line substringFromIndex:fields[0].length]];
+
+                [result_filtered addObject:reindexed];
+            } else {
+                // Unparsable line: keep it verbatim.
+                [result_filtered addObject:line];
+            }
         }
 
         result = [result_filtered copy];

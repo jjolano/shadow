@@ -267,6 +267,24 @@ static BOOL shdw_raw_at_path_denied(int dirfd, const char* pathname) {
 // proc_pidpath is a stable libSystem export; declared here as in libc.x.
 extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 
+// PID-only restricted classification for the per-pid sysctl deny paths
+// (KERN_PROC_PID / KERN_PROCARGS2 of a jailbreak daemon): the list filters
+// already remove restricted processes, so a per-pid query of one must
+// answer ENOENT the same way. Un-cached by design — these queries are rare.
+static BOOL shdw_raw_pid_restricted(pid_t pid) {
+    if(pid <= 0) {
+        return NO;
+    }
+
+    char path[PATH_MAX];
+
+    if(proc_pidpath(pid, path, sizeof(path)) <= 0) {
+        return NO;  // unclassifiable: keep (same fail-open rule as the caches)
+    }
+
+    return [_shadow isCPathRestricted:path];
+}
+
 // Classifies a process as restricted (jailbreak daemon) by its executable
 // path — mirrors libc.x's shdw_proc_is_restricted (static there). When
 // proc_pidpath fails the process cannot be classified and is kept: denying
@@ -565,6 +583,33 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                     return proc_ret;
                 }
             }
+
+            // Per-pid queries of a jailbreak daemon answer ENOENT (the same
+            // hiding the KERN_PROC_ALL filter applies to the list). The own
+            // pid passes — its record is sanitized after success below.
+            if(sysctl_mib && sysctl_miblen == 4
+            && sysctl_mib[0] == CTL_KERN
+            && sysctl_mib[1] == KERN_PROC
+            && sysctl_mib[2] == KERN_PROC_PID
+            && sysctl_mib[3] > 0
+            && sysctl_mib[3] != getpid()
+            && shdw_raw_pid_restricted(sysctl_mib[3])) {
+                errno = ENOENT;
+                va_end(inspect);
+                return -1;
+            }
+
+            // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
+            if(sysctl_mib && sysctl_miblen == 3
+            && sysctl_mib[0] == CTL_KERN
+            && sysctl_mib[1] == KERN_PROCARGS2
+            && sysctl_mib[2] > 0
+            && sysctl_mib[2] != getpid()
+            && shdw_raw_pid_restricted(sysctl_mib[2])) {
+                errno = ENOENT;
+                va_end(inspect);
+                return -1;
+            }
         } else if(number == SYS_getdirentries64) {
             // Raw readdir-style enumeration bypasses the libc readdir hooks;
             // the buffer is filtered after success instead. Hoist fd/buf;
@@ -651,6 +696,16 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             if(p->kp_proc.p_flag & P_SELECT) {
                 p->kp_proc.p_flag &= ~P_SELECT;
             }
+        }
+
+        // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
+        // filtered NSProcessInfo/getenv views.
+        if(number == SYS_sysctl && result == 0 && sysctl_mib && sysctl_miblen == 3
+        && sysctl_mib[0] == CTL_KERN
+        && sysctl_mib[1] == KERN_PROCARGS2
+        && sysctl_mib[2] == getpid()
+        && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
+            shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
         }
 
         // Raw getdirentries64: compact restricted entries out of the result
@@ -878,8 +933,20 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
 
         static const char procPidPrefix[] = "kern.proc.pid.";
 
-        if(strncmp(name, procPidPrefix, sizeof(procPidPrefix) - 1) == 0
-        && atoi(name + sizeof(procPidPrefix) - 1) == getpid()) {
+        if(strncmp(name, procPidPrefix, sizeof(procPidPrefix) - 1) == 0) {
+            pid_t pid = (pid_t) atoi(name + sizeof(procPidPrefix) - 1);
+
+            if(pid != getpid()) {
+                // Per-pid query of a jailbreak daemon: same ENOENT hiding
+                // the list filters apply.
+                if(shdw_raw_pid_restricted(pid)) {
+                    errno = ENOENT;
+                    return -1;
+                }
+
+                return original(name, oldp, oldlenp, newp, newlen);
+            }
+
             int ret = original(name, oldp, oldlenp, newp, newlen);
 
             // Remove trace flags from our own process record — only on
@@ -898,6 +965,30 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
                 // Cross-API consistency: getppid() reports parent 1, so
                 // the own record must say the same (see libc.x).
                 p->kp_eproc.e_ppid = 1;
+            }
+
+            return ret;
+        }
+
+        static const char procargs2Prefix[] = "kern.procargs2.";
+
+        if(strncmp(name, procargs2Prefix, sizeof(procargs2Prefix) - 1) == 0) {
+            pid_t pid = (pid_t) atoi(name + sizeof(procargs2Prefix) - 1);
+
+            if(pid != getpid()) {
+                if(shdw_raw_pid_restricted(pid)) {
+                    errno = ENOENT;
+                    return -1;
+                }
+
+                return original(name, oldp, oldlenp, newp, newlen);
+            }
+
+            int ret = original(name, oldp, oldlenp, newp, newlen);
+
+            // Own payload: rebuild to agree with the filtered argv/env views.
+            if(ret == 0 && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
+                shdw_procargs2_filter(oldp, oldlenp);
             }
 
             return ret;
