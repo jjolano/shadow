@@ -46,6 +46,8 @@
 // asserts invariants; returns the number of findings (0 = clean).
 int shdw_fuzz_run(NSUInteger iters, unsigned seed);
 int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed);
+int RunRestrictionTests(void);
+int RunPolicyTests(void);
 
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
@@ -1731,6 +1733,8 @@ int main(int argc, const char** argv) {
         testCoverageGaps();
         testShadowdLedger();
         testShadowdRecovery();
+        gFail += RunRestrictionTests();
+        gFail += RunPolicyTests();
 
         if(!gRootless) {
             testReload();
