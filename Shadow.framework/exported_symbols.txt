@@ -8,3 +8,5 @@ _OBJC_CLASS_$_RulesetEngine
 _OBJC_METACLASS_$_RulesetEngine
 _OBJC_CLASS_$_SystemRulesGenerator
 _OBJC_METACLASS_$_SystemRulesGenerator
+_OBJC_CLASS_$_ShadowRestrictionQuery
+_OBJC_METACLASS_$_ShadowRestrictionQuery

@@ -3,6 +3,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/Backend.h>
+#import <Shadow/RestrictionQuery.h>
 
 #define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
 #define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
@@ -41,6 +42,12 @@ __attribute__((visibility("default")))
 - (BOOL)isCPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options;
+
+// Candidate 5 typed entry point: the real pipeline. The legacy dictionary
+// methods above translate to a ShadowRestrictionQuery and call this; new
+// callers should use it directly (see RestrictionQuery.h for the key-to-field
+// mapping). Behavior is identical to the dictionary form.
+- (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 
 - (BOOL)isURLRestricted:(NSURL *)url;
 - (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options;
