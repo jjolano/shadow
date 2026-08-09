@@ -2,6 +2,8 @@
 
 #import "hooks.h"
 #import "../policy/EnvironmentPolicy.h"
+#import "../policy/PathPolicy.h"
+#import "../policy/ProcessPolicy.h"
 
 #import <unistd.h>
 #import <os/lock.h>
@@ -225,244 +227,18 @@ static long shdw_syscall_forward(int number, va_list args) {
     }
 }
 
-// Minimal dirfd resolution for the raw *at syscalls — mirrors libc.x's
-// shdw_resolve_dirfd_path (which is static to that file): absolute paths
-// ignore dirfd; AT_FDCWD resolves against the cwd; other dirfds resolve via
-// F_GETPATH. Returns YES when the query must be denied (errno = ENOENT
-// set). Unresolvable-but-valid dir vnodes fail closed; invalid descriptors
-// replay the original so the kernel reports the genuine error.
-static BOOL shdw_raw_at_path_denied(int dirfd, const char* pathname) {
-    if(pathname == NULL || pathname[0] == '\0') {
-        return NO;
-    }
+// Path/process classification shared with libc.x lives in
+// policy/PathPolicy.m and policy/ProcessPolicy.m (dirfd-aware *at
+// classification, uncached per-pid classification, the kinfo cache and the
+// filtered KERN_PROC_ALL enumeration). The raw surface's original calls
+// re-enter the (possibly __syscall-delegating) dispatch, so the enumeration
+// adapter below runs with the reentrancy guard (reentrant = YES).
 
-    if(pathname[0] == '/') {
-        return [_shadow isCPathRestricted:pathname];
-    }
-
-    char parent[PATH_MAX];
-
-    if(dirfd == AT_FDCWD) {
-        if(!getcwd(parent, sizeof(parent))) {
-            errno = ENOENT;
-            return YES;
-        }
-    } else if(fcntl(dirfd, F_GETPATH, parent) == -1) {
-        struct stat st;
-
-        if(fstat(dirfd, &st) == 0 && S_ISDIR(st.st_mode)) {
-            // Valid directory vnode that can't be named: fail closed.
-            errno = ENOENT;
-            return YES;
-        }
-
-        // Invalid or non-directory descriptor: the kernel reports the
-        // genuine error (EBADF/ENOTDIR) — never synthesize one here.
-        return NO;
-    }
-
-    return [_shadow isPathRestricted:[NSString stringWithUTF8String:pathname]
-        options:@{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]}];
-}
-
-// proc_pidpath is a stable libSystem export; declared here as in libc.x.
-extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
-
-// PID-only restricted classification for the per-pid sysctl deny paths
-// (KERN_PROC_PID / KERN_PROCARGS2 of a jailbreak daemon): the list filters
-// already remove restricted processes, so a per-pid query of one must
-// answer ENOENT the same way. Un-cached by design — these queries are rare.
-static BOOL shdw_raw_pid_restricted(pid_t pid) {
-    if(pid <= 0) {
-        return NO;
-    }
-
-    char path[PATH_MAX];
-
-    if(proc_pidpath(pid, path, sizeof(path)) <= 0) {
-        return NO;  // unclassifiable: keep (same fail-open rule as the caches)
-    }
-
-    return [_shadow isCPathRestricted:path];
-}
-
-// Classifies a process as restricted (jailbreak daemon) by its executable
-// path — mirrors libc.x's shdw_proc_is_restricted (static there). When
-// proc_pidpath fails the process cannot be classified and is kept: denying
-// legitimate processes would corrupt the process count on stock devices.
-//
-// Verdicts are cached keyed on pid + process start time (PID reuse can't
-// inherit a stale verdict) with a short TTL (a process can exec a different
-// binary without changing its start time). Fixed-size, round-robin eviction —
-// a miss just re-classifies, results stay identical. The lock is never held
-// across classification: isCPathRestricted is an ObjC call that could
-// re-enter hooked code.
-#define SHADW_RAW_PROC_CACHE_SIZE 32
-#define SHADW_RAW_PROC_CACHE_TTL 5  // seconds
-
-typedef struct {
-    pid_t pid;
-    time_t start_sec;        // kp_proc.p_starttime
-    suseconds_t start_usec;
-    time_t stamp;            // time(NULL) at fill
-    BOOL restricted;
-} shdw_raw_proc_cache_entry_t;
-
-static shdw_raw_proc_cache_entry_t shdw_raw_proc_cache[SHADW_RAW_PROC_CACHE_SIZE];
-static NSUInteger shdw_raw_proc_cache_next = 0;
-static os_unfair_lock shdw_raw_proc_cache_lock = OS_UNFAIR_LOCK_INIT;
-
-static BOOL shdw_raw_proc_is_restricted(const struct kinfo_proc* p) {
-    pid_t pid = p->kp_proc.p_pid;
-    time_t start_sec = p->kp_proc.p_starttime.tv_sec;
-    suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
-    time_t now = time(NULL);
-
-    os_unfair_lock_lock(&shdw_raw_proc_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_RAW_PROC_CACHE_SIZE; i++) {
-        const shdw_raw_proc_cache_entry_t* e = &shdw_raw_proc_cache[i];
-
-        if(e->pid == pid
-        && e->start_sec == start_sec
-        && e->start_usec == start_usec
-        && now - e->stamp < SHADW_RAW_PROC_CACHE_TTL) {
-            BOOL verdict = e->restricted;
-            os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
-            return verdict;
-        }
-    }
-
-    os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
-
-    char path[PATH_MAX];
-    BOOL restricted = NO;
-
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        restricted = [_shadow isCPathRestricted:path];
-    }
-
-    os_unfair_lock_lock(&shdw_raw_proc_cache_lock);
-
-    NSUInteger slot = shdw_raw_proc_cache_next;
-    shdw_raw_proc_cache_next = (shdw_raw_proc_cache_next + 1) % SHADW_RAW_PROC_CACHE_SIZE;
-
-    shdw_raw_proc_cache[slot].pid = pid;
-    shdw_raw_proc_cache[slot].start_sec = start_sec;
-    shdw_raw_proc_cache[slot].start_usec = start_usec;
-    shdw_raw_proc_cache[slot].stamp = now;
-    shdw_raw_proc_cache[slot].restricted = restricted;
-
-    os_unfair_lock_unlock(&shdw_raw_proc_cache_lock);
-    return restricted;
-}
-
-// Filtered KERN_PROC_ALL enumeration for raw SYS_sysctl — mirrors libc.x's
-// shdw_sysctl_proc_all (static there): two-phase size/full query with one
-// churn retry, restricted processes removed, self trace flags cleared,
-// size-only and short-buffer semantics preserved. Reentrancy-guarded: the
-// original_syscall calls below re-enter the (possibly __syscall-delegating)
-// dispatch, which must not re-apply this policy.
-static _Thread_local BOOL shdw_raw_sysctl_proc_all_in_progress = NO;
-
-static int shdw_raw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
-    int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
-
-    shdw_raw_sysctl_proc_all_in_progress = YES;
-
-    size_t capacity = 0;
-    int ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, NULL, &capacity, NULL, (size_t) 0);
-
-    if(ret != 0) {
-        shdw_raw_sysctl_proc_all_in_progress = NO;
-        return ret;  // kernel owns the error and *oldlenp
-    }
-
-    // Slack for process churn between the size and full queries.
-    capacity += sizeof(struct kinfo_proc) * 8;
-
-    struct kinfo_proc* procs = malloc(capacity);
-
-    if(!procs) {
-        errno = ENOMEM;
-        shdw_raw_sysctl_proc_all_in_progress = NO;
-        return -1;
-    }
-
-    size_t actual = capacity;
-    ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, procs, &actual, NULL, (size_t) 0);
-
-    if(ret != 0 && errno == ENOMEM) {
-        // Churn outgrew the first buffer: retry once with the kernel's size.
-        free(procs);
-        capacity = actual;
-        procs = malloc(capacity);
-
-        if(!procs) {
-            errno = ENOMEM;
-            shdw_raw_sysctl_proc_all_in_progress = NO;
-            return -1;
-        }
-
-        actual = capacity;
-        ret = original_syscall(SYS_sysctl, procMIB, (u_int) 3, procs, &actual, NULL, (size_t) 0);
-    }
-
-    if(ret != 0) {
-        free(procs);
-        shdw_raw_sysctl_proc_all_in_progress = NO;
-        return ret;
-    }
-
-    int count = (int)(actual / sizeof(struct kinfo_proc));
-    int out = 0;
-
-    for(int i = 0; i < count; i++) {
-        struct kinfo_proc* p = &procs[i];
-
-        if(p->kp_proc.p_pid == getpid()) {
-            // Never report our own trace flags.
-            p->kp_proc.p_flag &= ~P_TRACED;
-            p->kp_proc.p_flag &= ~P_SELECT;
-
-            // Cross-API consistency: getppid() reports parent 1, so the
-            // own record must say the same (see libc.x replaced_sysctl).
-            p->kp_eproc.e_ppid = 1;
-        } else if(shdw_raw_proc_is_restricted(p)) {
-            continue;  // jailbreak daemon: removed from the list
-        }
-
-        if(out != i) {
-            procs[out] = procs[i];
-        }
-
-        out++;
-    }
-
-    size_t needed = (size_t) out * sizeof(struct kinfo_proc);
-
-    if(oldp == NULL) {
-        // Size-only query: report the filtered byte count.
-        *oldlenp = needed;
-        free(procs);
-        shdw_raw_sysctl_proc_all_in_progress = NO;
-        return 0;
-    }
-
-    if(*oldlenp < needed) {
-        // Short buffer: stock sysctl semantics (ENOMEM + required size).
-        *oldlenp = needed;
-        free(procs);
-        errno = ENOMEM;
-        shdw_raw_sysctl_proc_all_in_progress = NO;
-        return -1;
-    }
-
-    memcpy(oldp, procs, needed);
-    *oldlenp = needed;
-    free(procs);
-    shdw_raw_sysctl_proc_all_in_progress = NO;
-    return 0;
+// Adapter: the shared KERN_PROC_ALL filter calls the original through a
+// sysctl-shaped function pointer; here that is the raw syscall with the
+// sysctl MIB arguments.
+static int shdw_raw_sysctl_original(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
+    return (int) original_syscall(SYS_sysctl, name, namelen, oldp, oldlenp, newp, newlen);
 }
 
 // Raw getdirentries64 result filter: compacts restricted entries out of the
@@ -560,8 +336,9 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             int dirfd = (int) va_arg(inspect, intptr_t);
             const char* pathname = va_arg(inspect, const char *);
 
-            // Same dirfd-aware path policy as the libc.x *at hooks.
-            if(shdw_raw_at_path_denied(dirfd, pathname)) {
+            // Same dirfd-aware path policy as the libc.x *at hooks (shared
+            // policy/PathPolicy.m).
+            if(shdw_at_path_denied(dirfd, pathname)) {
                 va_end(inspect);
                 return -1;  // errno set by the helper
             }
@@ -571,15 +348,15 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             sysctl_oldp = (void *) va_arg(inspect, intptr_t);
             sysctl_oldlenp = (size_t *) va_arg(inspect, intptr_t);
 
+            shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
+
             // KERN_PROC_ALL process enumeration: same filtered-list policy
-            // as the libc.x sysctl hook (static to that file).
-            if(sysctl_mib && sysctl_miblen >= 3
-            && sysctl_mib[0] == CTL_KERN
-            && sysctl_mib[1] == KERN_PROC
-            && sysctl_mib[2] == KERN_PROC_ALL
-            && (sysctl_miblen == 3 || (sysctl_miblen == 4 && sysctl_mib[3] == 0))) {
-                if(!shdw_raw_sysctl_proc_all_in_progress) {
-                    int proc_ret = shdw_raw_sysctl_proc_all(sysctl_oldp, sysctl_oldlenp);
+            // as the libc.x sysctl hook, via the shared filter
+            // (policy/ProcessPolicy.m). The own reentrancy guard keeps a
+            // nested (__syscall-delegating) dispatch from re-applying it.
+            if(kind == SHADW_PROC_MIB_ALL) {
+                if(!shdw_proc_all_in_progress()) {
+                    int proc_ret = shdw_proc_all_filtered(shdw_raw_sysctl_original, sysctl_oldp, sysctl_oldlenp, YES);
                     va_end(inspect);
                     return proc_ret;
                 }
@@ -588,25 +365,14 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             // Per-pid queries of a jailbreak daemon answer ENOENT (the same
             // hiding the KERN_PROC_ALL filter applies to the list). The own
             // pid passes — its record is sanitized after success below.
-            if(sysctl_mib && sysctl_miblen == 4
-            && sysctl_mib[0] == CTL_KERN
-            && sysctl_mib[1] == KERN_PROC
-            && sysctl_mib[2] == KERN_PROC_PID
-            && sysctl_mib[3] > 0
-            && sysctl_mib[3] != getpid()
-            && shdw_raw_pid_restricted(sysctl_mib[3])) {
+            if(kind == SHADW_PROC_MIB_PID_OTHER && shdw_pid_restricted_uncached(sysctl_mib[3])) {
                 errno = ENOENT;
                 va_end(inspect);
                 return -1;
             }
 
             // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
-            if(sysctl_mib && sysctl_miblen == 3
-            && sysctl_mib[0] == CTL_KERN
-            && sysctl_mib[1] == KERN_PROCARGS2
-            && sysctl_mib[2] > 0
-            && sysctl_mib[2] != getpid()
-            && shdw_raw_pid_restricted(sysctl_mib[2])) {
+            if(kind == SHADW_PROC_MIB_ARGS2_OTHER && shdw_pid_restricted_uncached(sysctl_mib[2])) {
                 errno = ENOENT;
                 va_end(inspect);
                 return -1;
@@ -681,32 +447,22 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             return -1;
         }
 
-        if(number == SYS_sysctl && result == 0 && sysctl_mib && sysctl_miblen == 4
-        && sysctl_mib[0] == CTL_KERN
-        && sysctl_mib[1] == KERN_PROC
-        && sysctl_mib[2] == KERN_PROC_PID
-        && sysctl_mib[3] == getpid()
-        && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
-            // Remove trace flags from our own process record.
-            struct kinfo_proc* p = (struct kinfo_proc *) sysctl_oldp;
+        if(number == SYS_sysctl && result == 0 && sysctl_mib) {
+            shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
 
-            if(p->kp_proc.p_flag & P_TRACED) {
-                p->kp_proc.p_flag &= ~P_TRACED;
+            if(kind == SHADW_PROC_MIB_PID_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
+                // Remove trace flags from our own process record.
+                // NOTE: the raw per-pid path deliberately does NOT rewrite
+                // e_ppid (the libc per-pid hook and the list filter do) —
+                // preserved as-is.
+                shdw_proc_sanitize_self_trace_flags((struct kinfo_proc *) sysctl_oldp);
             }
 
-            if(p->kp_proc.p_flag & P_SELECT) {
-                p->kp_proc.p_flag &= ~P_SELECT;
+            // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
+            // filtered NSProcessInfo/getenv views.
+            if(kind == SHADW_PROC_MIB_ARGS2_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
+                shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
             }
-        }
-
-        // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
-        // filtered NSProcessInfo/getenv views.
-        if(number == SYS_sysctl && result == 0 && sysctl_mib && sysctl_miblen == 3
-        && sysctl_mib[0] == CTL_KERN
-        && sysctl_mib[1] == KERN_PROCARGS2
-        && sysctl_mib[2] == getpid()
-        && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
-            shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
         }
 
         // Raw getdirentries64: compact restricted entries out of the result
@@ -918,18 +674,17 @@ static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr
 }
 
 // --- sysctlbyname/__sysctlbyname: kern.proc.* routed through the same
-// filtering as the sysctl hook. The sysctl body lives in libc.x's
-// antidebugging group and is static to that file, so the minimal KERN_PROC
-// handling is re-implemented here (mirroring that group):
-// "kern.proc.all" answers the filtered process list (via
-// shdw_raw_sysctl_proc_all, same two-phase enumeration), and a
-// KERN_PROC_PID query for self has its tracing flags cleared after a
-// successful original call. ---
+// filtering as the sysctl hooks, via the shared policy
+// (policy/ProcessPolicy.m): "kern.proc.all" answers the filtered process
+// list (same two-phase enumeration), and a KERN_PROC_PID query for self has
+// its tracing flags cleared after a successful original call. ---
 
 static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen, int (*original)(const char*, void*, size_t*, void*, size_t)) {
     if(isCallerExternal() && name) {
         if(strcmp(name, "kern.proc.all") == 0) {
-            return shdw_raw_sysctl_proc_all(oldp, oldlenp);
+            // The original calls below re-enter the (possibly
+            // __syscall-delegating) dispatch, hence reentrant = YES.
+            return shdw_proc_all_filtered(shdw_raw_sysctl_original, oldp, oldlenp, YES);
         }
 
         static const char procPidPrefix[] = "kern.proc.pid.";
@@ -940,7 +695,7 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             if(pid != getpid()) {
                 // Per-pid query of a jailbreak daemon: same ENOENT hiding
                 // the list filters apply.
-                if(shdw_raw_pid_restricted(pid)) {
+                if(shdw_pid_restricted_uncached(pid)) {
                     errno = ENOENT;
                     return -1;
                 }
@@ -953,19 +708,7 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             // Remove trace flags from our own process record — only on
             // valid success and only when the buffer carries the record.
             if(ret == 0 && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
-                struct kinfo_proc* p = (struct kinfo_proc *) oldp;
-
-                if(p->kp_proc.p_flag & P_TRACED) {
-                    p->kp_proc.p_flag &= ~P_TRACED;
-                }
-
-                if(p->kp_proc.p_flag & P_SELECT) {
-                    p->kp_proc.p_flag &= ~P_SELECT;
-                }
-
-                // Cross-API consistency: getppid() reports parent 1, so
-                // the own record must say the same (see libc.x).
-                p->kp_eproc.e_ppid = 1;
+                shdw_proc_sanitize_self_record((struct kinfo_proc *) oldp);
             }
 
             return ret;
@@ -977,7 +720,7 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             pid_t pid = (pid_t) atoi(name + sizeof(procargs2Prefix) - 1);
 
             if(pid != getpid()) {
-                if(shdw_raw_pid_restricted(pid)) {
+                if(shdw_pid_restricted_uncached(pid)) {
                     errno = ENOENT;
                     return -1;
                 }

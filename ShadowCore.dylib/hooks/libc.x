@@ -1,6 +1,8 @@
 #import "hooks.h"
 #import "filters.h"
 #import "../policy/EnvironmentPolicy.h"
+#import "../policy/PathPolicy.h"
+#import "../policy/ProcessPolicy.h"
 
 #import <string.h>
 #import <stdlib.h>
@@ -10,37 +12,11 @@
 #import <sys/attr.h>
 #import <sys/snapshot.h>
 
-// Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
-// path is a detector, whatever it calls itself — renamed, obfuscated, or
-// statically linked into the app binary (which has no image name at all for
-// the watcher's name scan to see). High-signal set: stock devices never have
-// these paths and app code never touches them except to probe.
-static BOOL shdw_is_jb_probe(const char* path) {
-    if(!path || !path[0]) {
-        return NO;
-    }
-
-    return strstr(path, "/var/jb") != NULL
-        || strstr(path, "/var/binpack") != NULL
-        || strstr(path, "/jbroot") != NULL
-        || strstr(path, "/.installed_") != NULL
-        || strstr(path, "/.bootstrapped_") != NULL
-        || strstr(path, "/var/lib/dpkg") != NULL
-        || strstr(path, "/var/lib/apt") != NULL
-        || strstr(path, "/usr/lib/libhooker.dylib") != NULL
-        || strstr(path, "/usr/lib/libsubstrate.dylib") != NULL
-        || strstr(path, "/usr/lib/libsubstitute") != NULL
-        || strstr(path, "/usr/lib/libellekit.dylib") != NULL
-        || strstr(path, "/usr/lib/pspawn_payload") != NULL
-        || strstr(path, "/usr/lib/tweakloader.dylib") != NULL
-        || strstr(path, "/usr/lib/libjailbreak.dylib") != NULL
-        || strstr(path, "MobileSubstrate.dylib") != NULL;
-}
-
 // Trip on the attempt, before any restricted-path filtering: the probe is the
 // caller touching a JB indicator, independent of how the filter answers it.
 // isCallerExternal() reads the return address, so it must expand inline at the
-// hook site — never route it through a helper function.
+// hook site — never route it through a helper function. The probe predicate
+// itself lives in policy/PathPolicy.m.
 #define SHADOW_TRIP(pathname, kind, ext) \
     if(ext && shdw_is_jb_probe(pathname)) { \
         shdw_detector_detected(kind); \
@@ -115,201 +91,19 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
     return result;
 }
 
-// Shared dirfd→path resolution for the *at family. Classifies a dirfd+path
-// pair without trusting the fd NUMBER: descriptors 0-2 can be closed and
-// reused, so a hook that exempts them filters by identity, not number.
-// Absolute paths ignore dirfd entirely; relative paths resolve against
-// AT_FDCWD (process cwd) or the dirfd's own path via F_GETPATH. The caller
-// replays the original call for descriptors it must not judge (the kernel
-// reports the genuine EBADF/ENOTDIR), and fails closed with ENOENT for a
-// valid directory vnode whose path cannot be resolved — EBADF on a valid
-// dirfd is a fingerprint, ENOENT is what a stock device answers for a path
-// query that must not succeed.
-typedef enum {
-    SHADW_DIRFD_OK = 0,        // `out` holds the resolved parent directory
-    SHADW_DIRFD_ABSOLUTE,      // path is absolute; dirfd is irrelevant
-    SHADW_DIRFD_ORIGINAL,      // replay the original call (kernel reports the genuine error)
-    SHADW_DIRFD_DENY,          // valid dir vnode, path unresolvable: fail closed
-} shdw_dirfd_status_t;
-
-static shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* out, size_t outlen) {
-    if(path == NULL || path[0] == '\0') {
-        // No path semantics to classify here — EFAULT/EINVAL come from the kernel.
-        return SHADW_DIRFD_ORIGINAL;
-    }
-
-    if(path[0] == '/') {
-        return SHADW_DIRFD_ABSOLUTE;
-    }
-
-    if(dirfd == AT_FDCWD) {
-        return getcwd(out, outlen) ? SHADW_DIRFD_OK : SHADW_DIRFD_DENY;
-    }
-
-    if(fcntl(dirfd, F_GETPATH, out) != -1) {
-        return SHADW_DIRFD_OK;
-    }
-
-    struct stat st;
-
-    if(fstat(dirfd, &st) == 0 && S_ISDIR(st.st_mode)) {
-        // Valid directory vnode that can't be named: fail closed.
-        return SHADW_DIRFD_DENY;
-    }
-
-    // Invalid or non-directory descriptor: the kernel reports the genuine
-    // error (EBADF/ENOTDIR) — never synthesize one here.
-    return SHADW_DIRFD_ORIGINAL;
-}
-
-// Applies the shared dirfd resolution to one *at path argument: returns YES
-// when the query must be denied (errno = ENOENT already set). Each hook gates
-// on isCallerExternal() first, keeping the return-address read inline at the
-// hook site — this helper is never reached for Shadow-internal callers.
-static BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
-    if(pathname == NULL || pathname[0] == '\0') {
-        return NO;
-    }
-
-    char parent[PATH_MAX];
-    shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
-
-    if(status == SHADW_DIRFD_ABSOLUTE) {
-        if([_shadow isCPathRestricted:pathname]) {
-            errno = ENOENT;
-            return YES;
-        }
-    } else if(status == SHADW_DIRFD_DENY) {
-        errno = ENOENT;
-        return YES;
-    } else if(status == SHADW_DIRFD_OK) {
-        NSString* path = [NSString stringWithUTF8String:pathname];
-
-        if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]}]) {
-            errno = ENOENT;
-            return YES;
-        }
-    }
-
-    // SHADW_DIRFD_ORIGINAL: let the kernel answer.
-    return NO;
-}
-
-// fd→path cache for the fd-based hooks (fstat/fstatfs/fstatvfs/fpathconf/
-// futimes/fchdir/fgetxattr/flistxattr/fgetattrlist): F_GETPATH is a syscall
-// per call, and the fstat family runs on every fd touch. The path is resolved
-// once per fd and cached; the close hook invalidates the entry, so a reused
-// fd can never inherit a stale path. Fixed-size table, round-robin eviction —
-// a miss just re-resolves. The lock is never held across isCPathRestricted
-// (an ObjC call that could re-enter hooked code); F_GETPATH itself runs under
-// the lock so a close+reuse race can't store a stale entry.
-#define SHADW_FD_CACHE_SIZE 16
-
-typedef struct {
-    int fd;
-    char path[PATH_MAX];
-    BOOL valid;  // F_GETPATH succeeded (fd has a nameable path)
-} shdw_fd_cache_entry_t;
-
-static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
-static NSUInteger shdw_fd_cache_next = 0;
-static os_unfair_lock shdw_fd_cache_lock = OS_UNFAIR_LOCK_INIT;
+// Shared dirfd→path classification for the *at family, the fd→path cache and
+// the readlink target resolver live in policy/PathPolicy.m (also used by the
+// raw-syscall surface in syscall.x — one resolver for every *at hook).
 
 // The close hook is installed by whichever group installs first (libc or
 // libc_lowlevel — both use the fd cache); the guard keeps the second group
 // from double-hooking close on the same substitutor.
 static BOOL shdw_close_hooked = NO;
 
-// Returns YES when the fd's path is restricted. stdio descriptors are exempt
-// (they never carry a restricted path and F_GETPATH on them is noise).
-static BOOL shdw_fd_path_restricted(int fd) {
-    if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) {
-        return NO;
-    }
-
-    char pathname[PATH_MAX];
-    BOOL valid = NO;
-
-    os_unfair_lock_lock(&shdw_fd_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
-        if(shdw_fd_cache[i].fd == fd) {
-            valid = shdw_fd_cache[i].valid;
-
-            if(valid) {
-                strlcpy(pathname, shdw_fd_cache[i].path, sizeof(pathname));
-            }
-
-            os_unfair_lock_unlock(&shdw_fd_cache_lock);
-            return valid ? [_shadow isCPathRestricted:pathname] : NO;
-        }
-    }
-
-    valid = fcntl(fd, F_GETPATH, pathname) != -1;
-
-    NSUInteger slot = shdw_fd_cache_next;
-    shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
-
-    shdw_fd_cache[slot].fd = fd;
-    shdw_fd_cache[slot].valid = valid;
-
-    if(valid) {
-        strlcpy(shdw_fd_cache[slot].path, pathname, sizeof(shdw_fd_cache[slot].path));
-    }
-
-    os_unfair_lock_unlock(&shdw_fd_cache_lock);
-
-    return valid ? [_shadow isCPathRestricted:pathname] : NO;
-}
-
 static int (*original_close)(int fd);
 static int replaced_close(int fd) {
-    os_unfair_lock_lock(&shdw_fd_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
-        if(shdw_fd_cache[i].fd == fd) {
-            shdw_fd_cache[i].fd = -1;
-            shdw_fd_cache[i].valid = NO;
-            break;
-        }
-    }
-
-    os_unfair_lock_unlock(&shdw_fd_cache_lock);
+    shdw_fd_cache_invalidate(fd);
     return original_close(fd);
-}
-
-// Classifies a readlink result: absolute targets are checked directly;
-// relative targets resolve against the directory CONTAINING the link (that's
-// where the kernel resolves them from). A target whose parent directory can't
-// be resolved is denied — never exposed unclassified.
-static BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char* target) {
-    if(target[0] == '/') {
-        return [_shadow isCPathRestricted:target];
-    }
-
-    NSString* linkPath = nil;
-
-    if(pathname[0] == '/') {
-        linkPath = [NSString stringWithUTF8String:pathname];
-    } else {
-        char parent[PATH_MAX];
-        shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
-
-        if(status != SHADW_DIRFD_OK) {
-            // The link's parent can't be resolved: fail closed. (The
-            // unresolvable-dirfd case was already denied by the location
-            // check before this helper ran.)
-            return YES;
-        }
-
-        linkPath = [[NSString stringWithUTF8String:parent] stringByAppendingPathComponent:[NSString stringWithUTF8String:pathname]];
-    }
-
-    NSString* joined = [[[linkPath stringByDeletingLastPathComponent]
-        stringByAppendingPathComponent:[NSString stringWithUTF8String:target]]
-        stringByStandardizingPath];
-
-    return [_shadow isCPathRestricted:[joined fileSystemRepresentation]];
 }
 
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
@@ -770,100 +564,9 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     return original_faccessat(dirfd, pathname, mode, flags);
 }
 
-// readdir/readdir_r used to resolve the DIR*'s parent path (dirfd + F_GETPATH)
-// and build the options dictionary for every entry. Cache both per DIR* so
-// only the per-entry child check runs; invalidated on closedir because DIR*
-// pointers get reused. Fixed-size table, round-robin eviction on overflow
-// (a miss just re-resolves — results stay identical). A valid directory
-// vnode whose path can't be resolved is cached as DENIED: entries are hidden
-// (fail closed) rather than exposed unfiltered — the old code cached the
-// F_GETPATH failure as "allowed".
-// TODO(plan-wave-A): invalidate on ruleset generation.
-#define SHADW_READDIR_CACHE_SIZE 16
-
-typedef struct {
-    DIR* dirp;
-    CFDictionaryRef options; // retained; NULL when no filtering applies
-    BOOL denied;             // valid dir vnode, path unresolvable: hide entries
-} shdw_readdir_cache_entry_t;
-
-static shdw_readdir_cache_entry_t shdw_readdir_cache[SHADW_READDIR_CACHE_SIZE];
-
-static NSUInteger shdw_readdir_cache_next = 0;
-static os_unfair_lock shdw_readdir_cache_lock = OS_UNFAIR_LOCK_INIT;
-
-static void shdw_readdir_cache_clear_locked(DIR* dirp) {
-    for(NSUInteger i = 0; i < SHADW_READDIR_CACHE_SIZE; i++) {
-        if(shdw_readdir_cache[i].dirp == dirp) {
-            if(shdw_readdir_cache[i].options) {
-                CFRelease(shdw_readdir_cache[i].options);
-            }
-
-            shdw_readdir_cache[i].dirp = NULL;
-            shdw_readdir_cache[i].options = NULL;
-            shdw_readdir_cache[i].denied = NO;
-            break;
-        }
-    }
-}
-
-// Returns a retained options dict for the DIR*'s parent path (caller must
-// CFRelease), or NULL when no filtering applies. Sets *denied when the DIR*
-// is a valid directory vnode whose path can't be resolved: entries must be
-// hidden (fail closed). *denied is never set for an invalid DIR* — the
-// original readdir fails on its own with the genuine EBADF.
-static NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied) {
-    os_unfair_lock_lock(&shdw_readdir_cache_lock);
-
-    *denied = NO;
-    NSDictionary* result = nil;
-    BOOL cached = NO;
-
-    for(NSUInteger i = 0; i < SHADW_READDIR_CACHE_SIZE; i++) {
-        if(shdw_readdir_cache[i].dirp == dirp) {
-            cached = YES;
-
-            if(shdw_readdir_cache[i].options) {
-                result = (__bridge NSDictionary*)CFRetain(shdw_readdir_cache[i].options);
-            }
-
-            *denied = shdw_readdir_cache[i].denied;
-            break;
-        }
-    }
-
-    if(!cached) {
-        char pathname[PATH_MAX];
-        NSDictionary* options = nil;
-        BOOL deniedEntry = NO;
-
-        if(fcntl(dirfd(dirp), F_GETPATH, pathname) != -1) {
-            options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
-            result = (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);
-        } else if(errno != EBADF) {
-            // Valid vnode whose path can't be named: fail closed.
-            deniedEntry = YES;
-            *denied = YES;
-        }
-
-        // errno == EBADF: invalid DIR*; the original readdir fails on its own.
-
-        // Evict the next slot (may drop a live DIR*'s entry; a miss just re-resolves).
-        NSUInteger slot = shdw_readdir_cache_next;
-        shdw_readdir_cache_next = (shdw_readdir_cache_next + 1) % SHADW_READDIR_CACHE_SIZE;
-
-        if(shdw_readdir_cache[slot].options) {
-            CFRelease(shdw_readdir_cache[slot].options);
-        }
-
-        shdw_readdir_cache[slot].dirp = dirp;
-        shdw_readdir_cache[slot].options = options ? CFRetain((__bridge CFDictionaryRef)options) : NULL;
-        shdw_readdir_cache[slot].denied = deniedEntry;
-    }
-
-    os_unfair_lock_unlock(&shdw_readdir_cache_lock);
-    return result;
-}
+// readdir/readdir_r filtering: the DIR* cache (parent path + options dict,
+// denied-vnode fail-closed) lives in policy/PathPolicy.m; the per-entry
+// child check runs here, external-caller-gated.
 
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
 static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** oresult) {
@@ -947,10 +650,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 
 static int (*original_closedir)(DIR* dirp);
 static int replaced_closedir(DIR* dirp) {
-    os_unfair_lock_lock(&shdw_readdir_cache_lock);
-    shdw_readdir_cache_clear_locked(dirp);
-    os_unfair_lock_unlock(&shdw_readdir_cache_lock);
-
+    shdw_readdir_cache_clear(dirp);
     return original_closedir(dirp);
 }
 
@@ -1560,229 +1260,29 @@ struct shdw_proc_bsdinfo_prefix {
     uint32_t pbi_ppid;     /* 0x10 */
 };
 
+// Process classification/filtering shared with syscall.x lives in
+// policy/ProcessPolicy.m: the kinfo cache, the filtered KERN_PROC_ALL
+// enumeration, the libproc pid filter and the MIB classification
+// (shdw_proc_mib_kind) that drives this hook's branches.
 static int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
-
-// Classifies a process as restricted (jailbreak daemon) by its executable
-// path. proc_pidpath is visible for other pids on iOS; when it fails (EPERM)
-// the process can't be classified and is kept — denying legitimate processes
-// would corrupt the process count on stock devices.
-//
-// Verdicts are cached keyed on pid + process start time (the same identity
-// trick as shadowd's owner_dead, so a reused pid can't inherit a stale
-// verdict), with a short TTL because a process can exec a different binary
-// without changing its start time. Fixed-size table, round-robin eviction —
-// a miss just re-classifies, results stay identical. The lock is never held
-// across classification: isCPathRestricted is an ObjC call that could
-// re-enter hooked code.
-#define SHADW_PROC_CACHE_SIZE 32
-#define SHADW_PROC_CACHE_TTL 5  // seconds
-
-typedef struct {
-    pid_t pid;
-    time_t start_sec;        // kp_proc.p_starttime
-    suseconds_t start_usec;
-    time_t stamp;            // time(NULL) at fill
-    BOOL restricted;
-} shdw_proc_cache_entry_t;
-
-static shdw_proc_cache_entry_t shdw_proc_cache[SHADW_PROC_CACHE_SIZE];
-static NSUInteger shdw_proc_cache_next = 0;
-static os_unfair_lock shdw_proc_cache_lock = OS_UNFAIR_LOCK_INIT;
-
-static BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
-    pid_t pid = p->kp_proc.p_pid;
-    time_t start_sec = p->kp_proc.p_starttime.tv_sec;
-    suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
-    time_t now = time(NULL);
-
-    os_unfair_lock_lock(&shdw_proc_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_PROC_CACHE_SIZE; i++) {
-        const shdw_proc_cache_entry_t* e = &shdw_proc_cache[i];
-
-        if(e->pid == pid
-        && e->start_sec == start_sec
-        && e->start_usec == start_usec
-        && now - e->stamp < SHADW_PROC_CACHE_TTL) {
-            BOOL verdict = e->restricted;
-            os_unfair_lock_unlock(&shdw_proc_cache_lock);
-            return verdict;
-        }
-    }
-
-    os_unfair_lock_unlock(&shdw_proc_cache_lock);
-
-    char path[PATH_MAX];
-    BOOL restricted = NO;
-
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        restricted = [_shadow isCPathRestricted:path];
-    }
-
-    os_unfair_lock_lock(&shdw_proc_cache_lock);
-
-    NSUInteger slot = shdw_proc_cache_next;
-    shdw_proc_cache_next = (shdw_proc_cache_next + 1) % SHADW_PROC_CACHE_SIZE;
-
-    shdw_proc_cache[slot].pid = pid;
-    shdw_proc_cache[slot].start_sec = start_sec;
-    shdw_proc_cache[slot].start_usec = start_usec;
-    shdw_proc_cache[slot].stamp = now;
-    shdw_proc_cache[slot].restricted = restricted;
-
-    os_unfair_lock_unlock(&shdw_proc_cache_lock);
-    return restricted;
-}
-
-// KERN_PROC_ALL read: returns the process list with restricted processes
-// removed and the list compacted, using stock sysctl size semantics
-// (size-only query → filtered byte count in *oldlenp; short buffer → ENOMEM
-// with the required size in *oldlenp). The MIB is normalized to the canonical
-// 3 elements before touching the kernel.
-static int shdw_sysctl_proc_all(void* oldp, size_t* oldlenp) {
-    int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
-
-    size_t capacity = 0;
-    int ret = original_sysctl(procMIB, 3, NULL, &capacity, NULL, 0);
-
-    if(ret != 0) {
-        return ret;  // kernel owns the error and *oldlenp
-    }
-
-    // Slack for process churn between the size and full queries.
-    capacity += sizeof(struct kinfo_proc) * 8;
-
-    struct kinfo_proc* procs = malloc(capacity);
-
-    if(!procs) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    size_t actual = capacity;
-    ret = original_sysctl(procMIB, 3, procs, &actual, NULL, 0);
-
-    if(ret != 0 && errno == ENOMEM) {
-        // Churn outgrew the first buffer: retry once with the kernel's size.
-        free(procs);
-        capacity = actual;
-        procs = malloc(capacity);
-
-        if(!procs) {
-            errno = ENOMEM;
-            return -1;
-        }
-
-        actual = capacity;
-        ret = original_sysctl(procMIB, 3, procs, &actual, NULL, 0);
-    }
-
-    if(ret != 0) {
-        free(procs);
-        return ret;
-    }
-
-    int count = (int)(actual / sizeof(struct kinfo_proc));
-    int out = 0;
-
-    for(int i = 0; i < count; i++) {
-        struct kinfo_proc* p = &procs[i];
-
-        if(p->kp_proc.p_pid == getpid()) {
-            // Never report our own trace flags.
-            p->kp_proc.p_flag &= ~P_TRACED;
-            p->kp_proc.p_flag &= ~P_SELECT;
-
-            // Cross-API consistency: getppid() reports parent 1, so the
-            // own record must say the same (see replaced_sysctl).
-            p->kp_eproc.e_ppid = 1;
-        } else if(shdw_proc_is_restricted(p)) {
-            continue;  // jailbreak daemon: removed from the list
-        }
-
-        if(out != i) {
-            procs[out] = procs[i];
-        }
-
-        out++;
-    }
-
-    size_t needed = (size_t) out * sizeof(struct kinfo_proc);
-
-    if(oldp == NULL) {
-        // Size-only query: report the filtered byte count.
-        *oldlenp = needed;
-        free(procs);
-        return 0;
-    }
-
-    if(*oldlenp < needed) {
-        // Short buffer: stock sysctl semantics (ENOMEM + required size).
-        *oldlenp = needed;
-        free(procs);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    memcpy(oldp, procs, needed);
-    *oldlenp = needed;
-    free(procs);
-    return 0;
-}
-
-// KERN_PROCARGS2 payload filter (self pid): defined in
-// policy/EnvironmentPolicy.m (shared with syscall.x's raw dispatch and
-// sysctlbyname hooks); called after a successful self query.
-
-// KERN_PROC/PROCARGS2 per-pid and proc-list filtering (defined further down;
-// forward-declared so the sysctl hook below can call it).
-static BOOL shdw_libproc_pid_is_restricted(pid_t pid);
 
 static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
     if(name == NULL || namelen == 0) {
         return original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
     }
 
-    // KERN_PROC_ALL is a 3-element MIB (some callers append a legacy 4th
-    // zero element). Every index into name[] is bounds-checked.
-    BOOL isProcAll = name[0] == CTL_KERN
-        && namelen >= 3
-        && name[1] == KERN_PROC
-        && name[2] == KERN_PROC_ALL
-        && (namelen == 3 || (namelen == 4 && name[3] == 0));
-
-    BOOL isOwnPid = name[0] == CTL_KERN
-        && namelen == 4
-        && name[1] == KERN_PROC
-        && name[2] == KERN_PROC_PID
-        && name[3] == getpid();
+    shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(name, namelen);
 
     // Per-pid queries of a jailbreak daemon must answer ENOENT, the same
     // hiding the KERN_PROC_ALL filter applies to the list (a pid-scanning
     // detector steps the MIB pid by pid).
-    BOOL isOtherPid = name[0] == CTL_KERN
-        && namelen == 4
-        && name[1] == KERN_PROC
-        && name[2] == KERN_PROC_PID
-        && name[3] > 0
-        && name[3] != getpid();
-
-    // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
-    BOOL isOwnProcargs = name[0] == CTL_KERN
-        && namelen == 3
-        && name[1] == KERN_PROCARGS2
-        && name[2] == getpid();
-
-    BOOL isOtherProcargs = name[0] == CTL_KERN
-        && namelen == 3
-        && name[1] == KERN_PROCARGS2
-        && name[2] > 0
-        && name[2] != getpid();
-
-    if(isOtherPid || isOtherProcargs) {
-        pid_t other = isOtherPid ? name[3] : name[2];
-
-        if(shdw_libproc_pid_is_restricted(other)) {
+    if(kind == SHADW_PROC_MIB_PID_OTHER) {
+        if(shdw_pid_is_restricted(name[3])) {
+            errno = ENOENT;
+            return -1;
+        }
+    } else if(kind == SHADW_PROC_MIB_ARGS2_OTHER) {
+        if(shdw_pid_is_restricted(name[2])) {
             errno = ENOENT;
             return -1;
         }
@@ -1790,34 +1290,25 @@ static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp
 
     int ret;
 
-    if(isProcAll && newp == NULL && oldlenp != NULL) {
-        ret = shdw_sysctl_proc_all(oldp, oldlenp);
+    if(kind == SHADW_PROC_MIB_ALL && newp == NULL && oldlenp != NULL) {
+        // Filtered KERN_PROC_ALL enumeration: restricted processes removed,
+        // self trace flags cleared, stock size semantics preserved. The
+        // libc surface's original calls cannot re-enter the raw-syscall
+        // dispatch, so no in-progress guard (reentrant = NO).
+        ret = shdw_proc_all_filtered(original_sysctl, oldp, oldlenp, NO);
     } else {
         ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
     }
 
     // Remove trace flags from our own process record — only on valid success
     // and only when the caller's buffer actually carries the record.
-    if(ret == 0 && isOwnPid && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
-        struct kinfo_proc* p = (struct kinfo_proc*) oldp;
-
-        if(p->kp_proc.p_flag & P_TRACED) {
-            p->kp_proc.p_flag &= ~P_TRACED;
-        }
-
-        if(p->kp_proc.p_flag & P_SELECT) {
-            p->kp_proc.p_flag &= ~P_SELECT;
-        }
-
-        // Cross-API consistency: getppid() reports parent 1, so the own
-        // record must say the same — a detector comparing getppid() against
-        // kp_eproc.e_ppid would otherwise see the real parent (debugger, host app).
-        p->kp_eproc.e_ppid = 1;
+    if(ret == 0 && kind == SHADW_PROC_MIB_PID_SELF && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
+        shdw_proc_sanitize_self_record((struct kinfo_proc*) oldp);
     }
 
     // Own KERN_PROCARGS2: the kernel payload is the raw launch argv/envp;
     // rebuild it to agree with the filtered NSProcessInfo/getenv views.
-    if(ret == 0 && isOwnProcargs && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
+    if(ret == 0 && kind == SHADW_PROC_MIB_ARGS2_SELF && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
         shdw_procargs2_filter(oldp, oldlenp);
     }
 
@@ -1864,86 +1355,8 @@ static int replaced_getrlimit(int resource, struct rlimit* rlp) {
 // second process-list surface after sysctl KERN_PROC: detectors enumerate
 // pids and query per-pid details to find jailbreak daemons. The sysctl hook
 // filters the kinfo_proc list; these hooks filter the libproc views of the
-// same processes. Classification is pid-only (libproc hands us no start
-// time), so the cache keys on pid alone with a short TTL — a reused pid can
-// inherit a stale verdict for at most TTL seconds, and a miss just
-// re-classifies, so results stay identical. Same fail-open rule as the
-// sysctl path: an unclassifiable process (proc_pidpath EPERM) is kept —
-// denying legitimate processes would corrupt process counts on stock
-// devices. The lock is never held across classification (isCPathRestricted
-// is an ObjC call that could re-enter hooked code).
-#define SHADW_LIBPROC_CACHE_SIZE 32
-#define SHADW_LIBPROC_CACHE_TTL 5  // seconds
-
-typedef struct {
-    pid_t pid;
-    time_t stamp;
-    BOOL restricted;
-} shdw_libproc_cache_entry_t;
-
-static shdw_libproc_cache_entry_t shdw_libproc_cache[SHADW_LIBPROC_CACHE_SIZE];
-static NSUInteger shdw_libproc_cache_next = 0;
-static os_unfair_lock shdw_libproc_cache_lock = OS_UNFAIR_LOCK_INIT;
-
-static BOOL shdw_libproc_pid_is_restricted(pid_t pid) {
-    time_t now = time(NULL);
-
-    os_unfair_lock_lock(&shdw_libproc_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_LIBPROC_CACHE_SIZE; i++) {
-        const shdw_libproc_cache_entry_t* e = &shdw_libproc_cache[i];
-
-        if(e->pid == pid && now - e->stamp < SHADW_LIBPROC_CACHE_TTL) {
-            BOOL verdict = e->restricted;
-            os_unfair_lock_unlock(&shdw_libproc_cache_lock);
-            return verdict;
-        }
-    }
-
-    os_unfair_lock_unlock(&shdw_libproc_cache_lock);
-
-    char path[PATH_MAX];
-    BOOL restricted = NO;
-
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        restricted = [_shadow isCPathRestricted:path];
-    }
-
-    os_unfair_lock_lock(&shdw_libproc_cache_lock);
-
-    NSUInteger slot = shdw_libproc_cache_next;
-    shdw_libproc_cache_next = (shdw_libproc_cache_next + 1) % SHADW_LIBPROC_CACHE_SIZE;
-
-    shdw_libproc_cache[slot].pid = pid;
-    shdw_libproc_cache[slot].stamp = now;
-    shdw_libproc_cache[slot].restricted = restricted;
-
-    os_unfair_lock_unlock(&shdw_libproc_cache_lock);
-    return restricted;
-}
-
-// Compacts restricted pids out of a proc_listpids/proc_listallpids result
-// buffer in place. The buffer holds pid_t entries; the return value is the
-// pid count. Returns the filtered count (0 when everything was removed —
-// the caller reads that as "no processes", the same hiding the sysctl
-// filter achieves).
-static int shdw_libproc_pids_filtered(pid_t* pids, int count) {
-    int out = 0;
-
-    for(int i = 0; i < count; i++) {
-        if(shdw_libproc_pid_is_restricted(pids[i])) {
-            continue;  // jailbreak daemon: removed from the list
-        }
-
-        if(out != i) {
-            pids[out] = pids[i];
-        }
-
-        out++;
-    }
-
-    return out;
-}
+// same processes. Classification and the pid-list compaction live in
+// policy/ProcessPolicy.m (shdw_pid_is_restricted / shdw_proc_pids_filtered).
 
 static int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
 static int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
@@ -1953,7 +1366,7 @@ static int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer
         return count;
     }
 
-    return shdw_libproc_pids_filtered((pid_t*) buffer, count);
+    return shdw_proc_pids_filtered((pid_t*) buffer, count);
 }
 
 static int (*original_proc_listallpids)(void* buffer, int buffersize);
@@ -1964,12 +1377,12 @@ static int replaced_proc_listallpids(void* buffer, int buffersize) {
         return count;
     }
 
-    return shdw_libproc_pids_filtered((pid_t*) buffer, count);
+    return shdw_proc_pids_filtered((pid_t*) buffer, count);
 }
 
 static int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 static int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
-    if(isCallerExternal() && shdw_libproc_pid_is_restricted(pid)) {
+    if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
         // Jailbreak daemon: deny the per-pid query the same way the pid
         // list filters deny enumeration. EPERM matches what an unprivileged
         // caller sees for processes it may not inspect.
@@ -1990,48 +1403,9 @@ static int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer
     return ret;
 }
 
-// freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
-// jailbroken devices (symlink into writable bootstrap) and fails on stock.
-// Fail the same way stock does (ENOENT — the path doesn't resolve). The
-// probe is matched as an exact path COMPONENT under the app's bundle
-// directory: a substring match would trip on benign names like
-// "notajbrootfile". Deny only when a path component equals ".jbroot" and the
-// components before it are exactly the app bundle dir.
-static BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
-    if(!pathname || !(oflag & O_CREAT)) {
-        return NO;
-    }
-
-    // C fast-path: the probe matches a path COMPONENT equal to ".jbroot";
-    // if the string doesn't contain it at all, no NSString work is needed.
-    if(!strstr(pathname, ".jbroot")) {
-        return NO;
-    }
-
-    NSString* bundlePath = [_shadow bundlePath];
-
-    if(!bundlePath || !bundlePath.length) {
-        return NO;
-    }
-
-    NSArray* components = [[NSString stringWithUTF8String:pathname] pathComponents];
-    NSUInteger count = components.count;
-
-    for(NSUInteger i = 0; i < count; i++) {
-        if(![components[i] isEqualToString:@".jbroot"]) {
-            continue;
-        }
-
-        // The ".jbroot" component's parent must be the app bundle directory.
-        NSString* parent = [[NSString pathWithComponents:[components subarrayWithRange:NSMakeRange(0, i)]] stringByStandardizingPath];
-
-        if([parent isEqualToString:bundlePath]) {
-            return YES;
-        }
-    }
-
-    return NO;
-}
+// freeRASP rootless probe (.jbroot write): the classifier lives in
+// policy/PathPolicy.m (shdw_is_jbroot_write_probe), shared with the open
+// family hooks below.
 
 static int (*original_open)(const char *pathname, int oflag, ...);
 static int replaced_open(const char *pathname, int oflag, ...) {
