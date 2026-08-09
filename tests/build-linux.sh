@@ -31,6 +31,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/RestrictionResolver.m Shadow.framework/RestrictionEngine.m \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
   tests/RestrictionTests.m tests/PolicyTests.m \
+  Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
   $BASE_LIBS -o tests/harness
 
