@@ -415,6 +415,91 @@ static void testExistenceGates(void) {
     expectRestrictedWrite(@"write probe: absent /usr/lib denied", @"/usr/lib/libghost.dylib");
 }
 
+// Differential-coherence battery. The HookKit hooks cannot run in this Linux
+// harness, but every hook funnels its verdict through
+// -[Shadow isPathRestricted:options:] / isURLRestricted:options: and the file
+// error factory — so this pins the contracts the hooks RELY on, catching a
+// regression in one entry point (e.g. a write hook reverting to read intent)
+// even without the runtime. Mirrors the engine side of
+// docs/HOOK-OUTPUT-AUDIT.md.
+static void testDifferentialCoherence(void) {
+    printf("[tests] differential coherence (classification/error contracts)\n");
+
+    Shadow* shadow = shdw();
+    NSDictionary* write = writeOptions();
+
+    // ---- #8: write-intent agreement across path / URL / default ----
+    // Absent restricted exact-rule target: read allowed by the existence gate,
+    // but EVERY write form must deny it (C0-1). This is the contract the
+    // NSArray/NSDict/NSData write-hook fix now satisfies (they pass write
+    // intent); before the fix they used read intent and answered "allowed".
+    // libghost.dylib is the canonical restricted-but-absent exact-file target.
+    NSString* ghost = @"/usr/lib/libghost.dylib";
+    NSURL* ghostURL = [NSURL fileURLWithPath:ghost];
+
+    CHECK(![shadow isPathRestricted:ghost], "absent exact-file: read allowed by existence gate");
+    CHECK([shadow isPathRestricted:ghost options:write], "absent exact-file: path write denied");
+    CHECK([shadow isURLRestricted:ghostURL options:write], "absent exact-file: URL write denied (NSData/writeToURL contract)");
+
+    // Subtree rules deny regardless of existence in BOTH read and write, so
+    // the read/write discrepancy never applies to /var/jb subtrees (rootless).
+    if(gRootless) {
+        NSString* absentJb = @"/var/jb/usr/lib/definitely-not-there.dylib";
+        CHECK([shadow isPathRestricted:absentJb], "rootless /var/jb subtree: read denied when absent");
+        CHECK([shadow isPathRestricted:absentJb options:write], "rootless /var/jb subtree: write denied when absent");
+    }
+
+    // ---- option-stack coherence ----
+    // A stable (allowed) absolute-path verdict is invariant across the option
+    // stacks the hooks pass (nil / empty / workingDir-only).
+    NSString* allowed = @"/var/mobile/Media/DCIM/1.jpg";
+    BOOL base = [shadow isPathRestricted:allowed];
+
+    CHECK(!base, "stable allowed path baseline");
+    CHECK([shadow isPathRestricted:allowed options:@{}] == base, "empty options == nil for absolute path");
+    CHECK([shadow isPathRestricted:allowed options:@{kShadowRestrictionWorkingDir : @"/"}] == base, "workingDir inert for absolute path");
+
+    // ---- cross-entry-point differential (differential-fuzz) ----
+    // The same logical path must yield the SAME verdict through every alias a
+    // hook entry point uses: the ObjC string predicate (-isPathRestricted:),
+    // the C-string predicate (-isCPathRestricted:), the file-URL predicate
+    // (-isURLRestricted:). Any divergence between aliases is a detector-
+    // findable consistency break, so a fuzz over vectors asserts they and the
+    // expected verdict all agree.
+    struct { NSString* path; BOOL restricted; } vectors[] = {
+        { @"/var/jb/usr/bin",                            YES },
+        { @"/var/mobile/evil/foo",                       YES },
+        { @"/var/mobile/Media/DCIM/1.jpg",               NO  },
+        { @"/System/Library/Frameworks/UIKit.framework", NO  },
+    };
+
+    for(size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        NSString* p = vectors[i].path;
+        BOOL viaStr = [shadow isPathRestricted:p];
+        BOOL viaC   = [shadow isCPathRestricted:[p UTF8String]];
+        BOOL viaURL = [shadow isURLRestricted:[NSURL fileURLWithPath:p]];
+
+        if(viaStr != viaC || viaStr != viaURL || viaStr != vectors[i].restricted) {
+            printf("FAIL: differential vector '%s' (str=%d c=%d url=%d expected=%d)\n",
+                [p UTF8String], viaStr, viaC, viaURL, vectors[i].restricted);
+            gFail++;
+        } else {
+            gPass++;
+        }
+    }
+
+    // ---- file-error factory shape (findings #2/#11) ----
+    NSError* pathErr = [Shadow fileNoSuchFileErrorForPath:@"/var/x"];
+    CHECK([pathErr domain] == NSCocoaErrorDomain && [pathErr code] == NSFileNoSuchFileError, "err domain+code");
+    CHECK([pathErr userInfo][NSFilePathErrorKey] != nil, "err carries NSFilePathErrorKey");
+
+    NSURL* u = [NSURL fileURLWithPath:@"/var/x"];
+    NSError* urlErr = [Shadow fileNoSuchFileErrorForURL:u];
+    CHECK([urlErr code] == NSFileNoSuchFileError, "url err code");
+    CHECK([urlErr userInfo][NSURLErrorKey] != nil, "url err carries NSURLErrorKey");
+    CHECK([urlErr userInfo][NSFilePathErrorKey] != nil, "url err carries path key too");
+}
+
 static void testSchemesAndIDs(void) {
     printf("[tests] schemes, bundle IDs, URLs\n");
 
@@ -1598,6 +1683,7 @@ int main(int argc, const char** argv) {
         testBasics();
         testRulesets();
         testExistenceGates();
+        testDifferentialCoherence();
         testSchemesAndIDs();
         testProtectedNames();
         testSandbox();

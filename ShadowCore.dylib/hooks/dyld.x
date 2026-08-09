@@ -632,6 +632,21 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
 // add/remove callback would re-enter dyld with its notifier lock held.
 static void* _shdw_dyld_handles[SHADOW_DYLD_MIRROR_CAPACITY];
 
+// Format buffer for TLS loader-error messages carrying a symbol name
+// (dlsym denials answer "symbol not found: <name>", the stock dlsym shape —
+// dlopen's "library not found" for a dlsym denial would fingerprint the
+// hook to a detector that parses dlerror text).
+static _Thread_local char _shdw_dyld_error_msg[512];
+
+static void shdw_dyld_set_error(const char* fmt, const char* arg) {
+    if(arg) {
+        snprintf(_shdw_dyld_error_msg, sizeof(_shdw_dyld_error_msg), fmt, arg);
+        _shdw_dyld_error_tls = _shdw_dyld_error_msg;
+    } else {
+        _shdw_dyld_error_tls = fmt;
+    }
+}
+
 // Handles stashed by invalidation, awaiting dlclose. At most one table's
 // worth ever accumulates between drains: lookups (the only refillers of the
 // table) run inside replaced_dlsym, which drains the stash first.
@@ -993,7 +1008,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
             addr = shdw_dlsym_caller_relative(callerIdx, handle, symbol);
 
             if(!addr) {
-                _shdw_dyld_error_tls = "symbol not found";
+                shdw_dyld_set_error("symbol not found: %s", symbol);
                 return NULL;
             }
         }
@@ -1017,7 +1032,10 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         // A non-tweak caller resolving a jailbreak symbol is a probe.
         shdw_detector_detected("dlsym");
 
-        _shdw_dyld_error_tls = "library not found";
+        // Stock dlsym failure message shape — "symbol not found: <name>",
+        // never dlopen's "library not found" (a detector parsing dlerror
+        // text would otherwise see the wrong message for the wrong API).
+        shdw_dyld_set_error("symbol not found: %s", symbol);
         return NULL;
     }
 
@@ -1793,8 +1811,17 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
             infoGen[i].imageLoadAddress = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
             infoGen[i].imageFilePath = [dylib[@"name"] fileSystemRepresentation];
 
-            // ponytail: imageFileModDate is unused by detection suites; they only walk names/counts
-            infoGen[i].imageFileModDate = 0;
+            // Real mtime from the file: a synthetic 0 is a fingerprint for a
+            // raw reader cross-checking imageFilePath against stat(). The
+            // stat call originates from Shadow-owned code, so the hooked
+            // stat classifies it internal and passes through.
+            struct stat st;
+
+            if(stat([dylib[@"name"] fileSystemRepresentation], &st) == 0) {
+                infoGen[i].imageFileModDate = st.st_mtimespec.tv_sec;
+            } else {
+                infoGen[i].imageFileModDate = 0;
+            }
         }
 
         // Filtered uuid array: keep dyld's own uuid entries whose load address
