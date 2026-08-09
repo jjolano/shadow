@@ -1,8 +1,9 @@
+#import <Shadow/JBPath.h>
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "SHDWAboutListController.h"
 
-#import <RootBridge.h>
+
 
 @implementation SHDWAboutListController {
 	NSString* packageVersion;
@@ -28,7 +29,7 @@
 
 - (NSString *)aboutInstalledVersion:(id)sender {
 	if(!packageVersion) {
-		NSString* dpkg_status = [NSString stringWithContentsOfFile:[RootBridge getJBPath:@"/var/lib/dpkg/status"] encoding:NSUTF8StringEncoding error:nil];
+		NSString* dpkg_status = [NSString stringWithContentsOfFile:JBPath(@"/var/lib/dpkg/status") encoding:NSUTF8StringEncoding error:nil];
 
 		if(dpkg_status) {
 			NSRegularExpression* regex = [NSRegularExpression regularExpressionWithPattern:@"Package: me\\.jjolano\\.shadow\\n[\\s\\S]*?\\nVersion: ([^\\n]+)" options:0 error:nil];

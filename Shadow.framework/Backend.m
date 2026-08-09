@@ -1,9 +1,10 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Backend.h>
 #import <Shadow/Ruleset.h>
-#import <RootBridge.h>
+
 
 #import "../common.h"
+#import <Shadow/JBPath.h>
 
 #import <stdatomic.h>
 
@@ -54,7 +55,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     NSMutableArray<NSNumber *>* mtimes = [NSMutableArray new];
 
     NSFileManager* fm = [NSFileManager defaultManager];
-    NSString* dir = [RootBridge getJBPath:@SHADOW_RULESETS];
+    NSString* dir = JBPath(@SHADOW_RULESETS);
 
     rulesetDirMtime = [self _fileMtime:dir];
 
@@ -150,7 +151,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         return;
     }
 
-    NSString* dir = [RootBridge getJBPath:@SHADOW_RULESETS];
+    NSString* dir = JBPath(@SHADOW_RULESETS);
 
     // All ruleset files live directly in this dir and the generated ruleset is
     // written with atomically:YES (rename), so a dir-mtime change catches adds,

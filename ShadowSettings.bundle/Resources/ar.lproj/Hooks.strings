@@ -38,3 +38,8 @@
 "UNSUPPORTED_ELLEKIT_REASON" = "يتطلب مكتبة ElleKit.";
 "UNSUPPORTED_MSG_REASON" = "يتطلب مكتبة خطافات تدعم Objective-C (ElleKit أو Substrate أو Substitute).";
 "UNSUPPORTED_FUNC_REASON" = "يتطلب مكتبة خطافات تدعم دوال C.";
+"BYPASS_PRESET" = "إعداد مسبق للتجاوز";
+"PRESET_SELECT" = "اختر إعدادًا مسبقًا لتطبيق مجموعة من إعدادات التجاوز. يمكنك لاحقًا تبديل أي خطاف على حدة.";
+"PRESET_STANDARD" = "قياسي";
+"PRESET_MAXIMUM" = "أقصى";
+"PRESET_CUSTOM" = "مخصص";

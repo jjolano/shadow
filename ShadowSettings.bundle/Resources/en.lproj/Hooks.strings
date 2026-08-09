@@ -45,3 +45,8 @@
 "UNSUPPORTED_ELLEKIT_REASON" = "Requires the ElleKit hooking library.";
 "UNSUPPORTED_MSG_REASON" = "Requires an Objective-C-capable hooking library (ElleKit, Substrate or Substitute).";
 "UNSUPPORTED_FUNC_REASON" = "Requires a C-function-capable hooking library.";
+"BYPASS_PRESET" = "Bypass Preset";
+"PRESET_SELECT" = "Choose a preset to apply a set of bypass settings. Individual hooks can still be toggled afterwards.";
+"PRESET_STANDARD" = "Standard";
+"PRESET_MAXIMUM" = "Maximum";
+"PRESET_CUSTOM" = "Custom";
