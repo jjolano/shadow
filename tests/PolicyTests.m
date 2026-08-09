@@ -312,9 +312,13 @@ static void testPathSanitizer(void) {
     CHECK(mirrorSanitizedPathEntry("HOME=/x", &e2, &c2) == NULL, "non-PATH entry returns NULL");
     CHECK(mirrorSanitizedPathEntry("PATH=", &e2, &c2) == NULL, "empty PATH value returns NULL");
 
-    // /preboot prefix vs /prebootX (prefix match, not component match)
-    CHECK(strcmp(mirrorSanitizedPath("/prebootX/bin"), "/prebootX/bin") == 0, "/prebootX NOT dropped (prefix-only rule)");
-    CHECK(strcmp(mirrorSanitizedPath("/private/prebootX/bin"), "/private/prebootX/bin") == 0, "/private/prebootX NOT dropped");
+    // The drop rule is a RAW prefix match (baseline parity — the
+    // pre-rewrite hooks used hasPrefix @"/preboot" with NO path-component
+    // boundary): a component that merely starts with /preboot or
+    // /private/preboot is dropped too. /prebootX never exists on a stock
+    // device, and the old code dropped it, so the policy does.
+    CHECK(strcmp(mirrorSanitizedPath("/prebootX/bin"), "") == 0, "/prebootX dropped (raw prefix rule, like baseline)");
+    CHECK(strcmp(mirrorSanitizedPath("/private/prebootX/bin"), "") == 0, "/private/prebootX dropped (raw prefix rule)");
 }
 
 static void testDictionarySanitizer(void) {
