@@ -222,7 +222,21 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 // missed). When no batching-capable backend resolved, setBatching: is
 // accepted but ignored and hooks installed immediately (Compat.h), so this
 // path is always safe.
+//
+// B2a parity: %hook groups expand to HKHookMessage/HKHookFunction, which
+// route to [HKSubstitutor defaultSubstitutor] — NOT the instance the
+// installer passed. The legacy ctor drained that same default instance via
+// the global HKExecuteBatch()/HKDisableBatching() (dylib.x:664-665), so the
+// coordinator drains the default substitutor's queue here too, exactly once
+// per event, before the per-instance drain. Both drains are unconditional
+// (executeHooks on an empty queue is a no-op; setBatching: is idempotent).
 - (void)commitBatch:(NSArray<NSString*>*)unitIDs {
+    // Legacy global batch drain (HKExecuteBatch/HKDisableBatching): covers
+    // every %hook/%function Logos group, which queue on the default
+    // substitutor regardless of the instance passed to the installer.
+    HKExecuteBatch();
+    HKDisableBatching();
+
     if(!unitIDs.count) {
         return;
     }
