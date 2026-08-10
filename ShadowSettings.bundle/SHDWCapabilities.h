@@ -17,10 +17,14 @@ typedef NS_ENUM(NSInteger, SHDWDaemonState) {
     SHDWDaemonReady,
 };
 
-// Query daemon krw state via Mach IPC (bootstrap_look_up + STATUS). Cached
-// for SHDWCapabilitiesCacheInterval seconds — the Settings app holds the
-// bundle for the whole session, but re-queries on every specifier load.
+// Query daemon krw state via Mach IPC (bootstrap_look_up + STATUS). Returns
+// the cached value immediately; the first call triggers a background refresh
+// (see SHDWRefreshDaemonStateAsync:) so the Settings UI never blocks on IPC.
 SHDWDaemonState SHDWQueryDaemonState(void);
+
+// Refresh the daemon state on a background queue; completion runs on the main
+// queue with the fresh state. Callers re-apply gating on receipt.
+void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state));
 
 // Hook-group capability matrix. groupID is the plist id (e.g. "Hook_Memory").
 // Supported = the selected/available backends can actually run the group's
