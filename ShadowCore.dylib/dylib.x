@@ -525,12 +525,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
 
     if(!prefs_load) {
         NSLog(@"[Shadow] warning: preferences not loaded");
-        // On-device diagnostic (release compiles NSLog out): persist for SSH triage.
-        @try {
-            [[[NSString stringWithFormat:@"[Shadow-ctor] prefs_load is NIL for %@\n", bundleIdentifier]
-                dataUsingEncoding:NSUTF8StringEncoding]
-                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
-        } @catch(NSException* ignored) {}
         return;
     }
 
@@ -539,13 +533,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     BOOL enabled = [prefs_load[@"App_Enabled"] boolValue];
 
     if(!enabled) {
-        // On-device diagnostic: log the resolved pref dict so a silent
-        // early return is visible over SSH.
-        @try {
-            [[[NSString stringWithFormat:@"[Shadow-ctor] App_Enabled=NO prefs=%@\n", prefs_load]
-                dataUsingEncoding:NSUTF8StringEncoding]
-                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
-        } @catch(NSException* ignored) {}
         return;
     }
 
@@ -1039,13 +1026,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     #endif // SHADOW_LEGACY_COORDINATOR (B2b: legacy install/verify block)
     } @catch (NSException* e) {
         NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
-        // On-device diagnostic: the release build compiles NSLog out, so a
-        // fail-soft ctor exception is invisible. Persist it for SSH triage.
-        @try {
-            [[[NSString stringWithFormat:@"[Shadow] ctor exception: %@\n%@", e, [e callStackSymbols]]
-                dataUsingEncoding:NSUTF8StringEncoding]
-                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
-        } @catch(NSException* ignored) {}
         return;
     }
 
