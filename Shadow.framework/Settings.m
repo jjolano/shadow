@@ -4,6 +4,12 @@
 #import <Shadow/JBPath.h>
 #import <Shadow/HookConfiguration.h>
 
+// Preferences schema version. The suite plist never had a version key of its
+// own; this stamps it once per install and runs forward migrations below.
+// Migrations must stay idempotent and cheap — ShadowSettings is touched by
+// the settings app, ShadowCore in every hooked process, and the harness.
+static const NSInteger SHDWPrefsSchemaVersion = 1;
+
 @implementation ShadowSettings
 @synthesize defaultSettings, userDefaults;
 
@@ -17,9 +23,59 @@
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
         [userDefaults registerDefaults:defaultSettings];
+        [self migratePrefsIfNeeded];
     }
 
     return self;
+}
+
+// Runs the one-time forward migrations between stored schema versions.
+- (void)migratePrefsIfNeeded {
+    if([userDefaults integerForKey:@"PrefsSchemaVersion"] >= SHDWPrefsSchemaVersion) {
+        return;
+    }
+
+    [self purgeIgnoredKeys];
+
+    [userDefaults setInteger:SHDWPrefsSchemaVersion forKey:@"PrefsSchemaVersion"];
+    [userDefaults synchronize];
+}
+
+// Legacy keys the current schema accepts-but-ignores. Purging them is
+// cosmetic but keeps the suite clean and stops a stale stored value from
+// shadowing a future semantic change to the same key.
+- (void)purgeIgnoredKeys {
+    NSArray* ignored = @[ @"Hook_FakeMac" ];
+
+    for(NSString* key in ignored) {
+        if([userDefaults objectForKey:key]) {
+            [userDefaults removeObjectForKey:key];
+        }
+    }
+
+    // Same cleanup inside per-app override dicts (keyed by bundle ID).
+    NSDictionary* representation = [userDefaults dictionaryRepresentation];
+    for(NSString* key in representation) {
+        id value = representation[key];
+        if(![value isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+
+        NSMutableDictionary* dict = [value mutableCopy];
+        for(NSString* ignoredKey in ignored) {
+            [dict removeObjectForKey:ignoredKey];
+        }
+
+        if(dict.count == [(NSDictionary *)value count]) {
+            continue;
+        }
+
+        if(dict.count == 0) {
+            [userDefaults removeObjectForKey:key];
+        } else {
+            [userDefaults setObject:[dict copy] forKey:key];
+        }
+    }
 }
 
 + (instancetype)sharedInstance {
