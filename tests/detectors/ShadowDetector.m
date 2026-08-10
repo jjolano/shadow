@@ -109,6 +109,16 @@ static const char* const kSuspiciousPaths[] = {
     "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
     "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
     "/var/mobile/Library/Preferences/me.jjolano.shadow.plist",
+
+    // Shadow's own artifacts: the vnode daemon and the ruleset watcher. The
+    // daemon binary and shdw are rootful exact-blacklist entries in the
+    // shipped JailbreakMisc.plist (SystemRules covers them only when its
+    // generation succeeded), so probing them must stay ENOENT from the
+    // shipped rulesets alone.
+    "/usr/libexec/shadowd",
+    "/var/jb/usr/libexec/shadowd",
+    "/usr/local/bin/shdw",
+    "/var/jb/usr/local/bin/shdw",
 };
 
 // These paths exist legitimately on simulators and are SKIPPED by

@@ -45,6 +45,8 @@
 		<string>/usr/lib/tweaks</string>
 		<string>/usr/lib/libkrw</string>
 		<string>/usr/libexec/ellekit</string>
+		<string>/usr/libexec/shadowd</string>
+		<string>/usr/local/bin/shdw</string>
 		<string>/var/containers/Bundle/iosbinpack64</string>
 		<string>/var/containers/Bundle/tweaksupport</string>
 		<string>/var/db/stash</string>
