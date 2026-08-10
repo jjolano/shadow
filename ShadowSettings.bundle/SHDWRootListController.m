@@ -1,15 +1,21 @@
 #import "SHDWRootListController.h"
 #import "SHDWPrefs.h"
 
+// The document picker keeps an iOS 12-compatible path; its UTI APIs are
+// deprecated as of iOS 15, which -Werror turns into a hard error at the
+// roothide/rootless build target (15.0).
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/Settings.h>
 #import <Shadow/HookConfiguration.h>
 #import <Shadow/JBPath.h>
 
 #import <UIKit/UIKit.h>
-// MobileCoreServices re-exports CoreServices on modern SDKs; import the
-// framework that actually declares kUTType* (identical symbol at runtime).
+// Both UTIs are needed: kUTTypePropertyList (CoreServices) for the iOS 12
+// fallback, UTTypePropertyList (UniformTypeIdentifiers) on iOS 14+.
 #import <CoreServices/CoreServices.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 // Preset profiles: batch values for every hook toggle. "standard" mirrors the
 // shipped defaults; "maximum" enables everything including dangerous hooks.
@@ -138,9 +144,13 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)importSettings:(id)sender {
-	// Old-style initializer: the modern initForOpeningContentTypes: is
-	// iOS 14+, this bundle still targets iOS 12.
-	activePicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[(NSString *)kUTTypePropertyList] inMode:UIDocumentPickerModeImport];
+	// Modern initializer on iOS 14+; the old one stays for the iOS 12
+	// baseline (the project's minimum).
+	if(@available(iOS 14.0, *)) {
+		activePicker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypePropertyList] asCopy:YES];
+	} else {
+		activePicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[(NSString *)kUTTypePropertyList] inMode:UIDocumentPickerModeImport];
+	}
 	activePicker.delegate = self;
 	[self presentViewController:activePicker animated:YES completion:nil];
 }
