@@ -97,6 +97,16 @@ static _Thread_local NSUInteger shdw_internal_busy = 0;
         return YES;
     }
 
+    // No indicator fast-path here (the lane's strstr list was reverted): a
+    // ruleset can deny ANY path (test rulesets, user blacklists), so a C
+    // surface that short-circuits indicator-free paths would diverge from
+    // the ObjC surface — the differential contract (tests/main.m) requires
+    // them to agree. The rootful /Library prefixes and the canonical
+    // indicator strings are denied by the shipped rulesets via the full
+    // pipeline below; the indicator prefilters that remain live in
+    // ShadowCore (shdw_path_can_be_restricted), where the sites judge only
+    // image paths or are mandated by the *at contract.
+
     // Pool-less pthread_create threads (see isPathRestricted:options:):
     // [NSString stringWithUTF8String:] here is autoreleased, and the libc
     // hooks call this for every open/stat/access/lstat/readdir entry.

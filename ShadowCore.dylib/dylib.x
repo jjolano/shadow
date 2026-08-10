@@ -401,6 +401,7 @@ static void shdw_coord_envvars_c(HKSubstitutor* hooks) {
     setenv("SHELL", "/bin/sh", 1);
 
     shadowhook_libc_envvar(hooks);
+    shadowhook_envpolicy(hooks);   // setenv/unsetenv: PATH sanitization cache invalidation
     shadowhook_NSProcessInfo(hooks);   // legacy: subMain (ObjC swizzles)
 }
 
@@ -524,6 +525,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
 
     if(!prefs_load) {
         NSLog(@"[Shadow] warning: preferences not loaded");
+        // On-device diagnostic (release compiles NSLog out): persist for SSH triage.
+        @try {
+            [[[NSString stringWithFormat:@"[Shadow-ctor] prefs_load is NIL for %@\n", bundleIdentifier]
+                dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
+        } @catch(NSException* ignored) {}
         return;
     }
 
@@ -532,6 +539,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     BOOL enabled = [prefs_load[@"App_Enabled"] boolValue];
 
     if(!enabled) {
+        // On-device diagnostic: log the resolved pref dict so a silent
+        // early return is visible over SSH.
+        @try {
+            [[[NSString stringWithFormat:@"[Shadow-ctor] App_Enabled=NO prefs=%@\n", prefs_load]
+                dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
+        } @catch(NSException* ignored) {}
         return;
     }
 
@@ -811,6 +825,8 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // safe no-op. subCFunc: fishhook by default (clean prologues — the
         // envvar getter must stay indistinguishable from stock).
         shadowhook_libc_envvar(subCFunc);
+        // setenv/unsetenv: clear the PATH sanitization cache (EnvironmentPolicy.m).
+        shadowhook_envpolicy(subCFunc);
         // NSProcessInfo caches the launch environment at its first access (the
         // ctor touched it above), so the -environment/-arguments hooks must
         // install before app code can read the cached snapshot — ctor-time,
@@ -932,6 +948,26 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         }
     }
 
+    // Drain the batch BEFORE the image replay. HookKit v2 batching writes
+    // original pointers only at executeHooks; the replay's path checks call
+    // into the engine (e.g. objc_getMetaClass via NSClassFromString), which
+    // would hit a hooked replacement whose original is still NULL and crash
+    // (SIGSEGV at PC=0 — observed on-device). With batching disabled, the
+    // replay's UIKit-group installs apply immediately, each writing its own
+    // original — no use-before-drain window.
+    // NOTE: the objc/classes hooks (objc_getMetaClass etc.) ride on subMain,
+    // which is a separate instance from the default substitutor — the
+    // HK*Batching macros only touch the default, so drain subMain explicitly
+    // or its originals stay NULL (same crash, different lane).
+    [subMain executeHooks];
+    [subMain setBatching:NO];
+    [subFish executeHooks];
+    [subFish setBatching:NO];
+    [subInline executeHooks];
+    [subInline setBatching:NO];
+    HKExecuteBatch();
+    HKDisableBatching();
+
     #ifdef hookkit_h
     // Replay the already-loaded images into the watcher. The add-image
     // callback was registered at the top of this ctor — before any hooking,
@@ -952,13 +988,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
             shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
         }
     }
-
-    [subFish executeHooks];
-    [subFish setBatching:NO];
-    [subInline executeHooks];
-    [subInline setBatching:NO];
-    HKExecuteBatch();
-    HKDisableBatching();
 
     // Post-install verification: log any hook that failed to install (see
     // the shadowhook_libc*_verify functions) so a silent no-op surfaces.
@@ -1010,6 +1039,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     #endif // SHADOW_LEGACY_COORDINATOR (B2b: legacy install/verify block)
     } @catch (NSException* e) {
         NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
+        // On-device diagnostic: the release build compiles NSLog out, so a
+        // fail-soft ctor exception is invisible. Persist it for SSH triage.
+        @try {
+            [[[NSString stringWithFormat:@"[Shadow] ctor exception: %@\n%@", e, [e callStackSymbols]]
+                dataUsingEncoding:NSUTF8StringEncoding]
+                writeToFile:@"/var/mobile/Documents/shadow-ctor.log" atomically:YES];
+        } @catch(NSException* ignored) {}
         return;
     }
 

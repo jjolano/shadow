@@ -40,7 +40,7 @@ static NSString *ledger_path_marker(const char *path);
 
 NSString *gBootUUID = nil;   // current boot session (ledger key)
 
-bool ledger_wipe(void);   // used by ledger_read's bad-header path
+bool ledger_wipe(void);   // used by ledger_read_file's bad-header path
 
 static NSString *ledger_dir(void) {
     static NSString *dir = nil;
@@ -62,6 +62,29 @@ static bool fsync_dir(NSString *dir) {
     bool ok = (fsync(dfd) == 0);
     close(dfd);
     return ok;
+}
+
+static NSArray<NSString *> *ledger_read_file(NSString **outBootUUID);
+
+// In-memory mirror of the ledger file.  Loaded once on first use (the daemon's
+// first ledger call is startup recovery); every mutation runs against it and
+// rewrites the file ONLY when the content actually changed — a no-op update or
+// remove performs zero I/O.  The mirror is committed only when the file write
+// succeeded, so on failure it stays in sync with what is on disk (exactly what
+// a re-read would have returned).  Thread-safety: every ledger call in the
+// daemon is serialized on the kernel queue (single serial writer, same as the
+// file today), so no locking is needed.
+static NSMutableArray<NSString *> *gLedgerRecords = nil;
+static NSString *gLedgerBoot = nil;
+
+static NSMutableArray<NSString *> *ledger_load(void) {
+    if (!gLedgerRecords) {
+        NSString *boot = nil;
+        NSArray<NSString *> *records = ledger_read_file(&boot);
+        gLedgerRecords = [records mutableCopy];
+        gLedgerBoot = boot;
+    }
+    return gLedgerRecords;
 }
 
 bool ledger_write_lines(NSString *bootUUID, NSArray<NSString *> *records) {
@@ -117,6 +140,16 @@ bool ledger_write_lines(NSString *bootUUID, NSArray<NSString *> *records) {
         shdw_log("ledger: rename failed (%s)", strerror(errno));
         return false;
     }
+    // The file now contains `records` — mirror it BEFORE the dir fsync, so a
+    // (rare) dir-fsync failure still leaves the mirror matching the file, as
+    // a re-read would have.  Failures before the rename leave the file (and
+    // hence the mirror) untouched.
+    gLedgerBoot = bootUUID;
+    if (gLedgerRecords) {
+        [gLedgerRecords setArray:records];
+    } else {
+        gLedgerRecords = [records mutableCopy];
+    }
     // A12: the directory fsync is part of the durability contract — a failed
     // dir fsync must make the write fail (the rename may not be durable).
     if (!fsync_dir(dir)) {
@@ -126,7 +159,9 @@ bool ledger_write_lines(NSString *bootUUID, NSArray<NSString *> *records) {
     return true;
 }
 
-NSArray<NSString *> *ledger_read(NSString **outBootUUID) {
+// One-time file read (format validation + bad-header wipe); the mirror is
+// populated from this in ledger_load.
+static NSArray<NSString *> *ledger_read_file(NSString **outBootUUID) {
     NSString *path = ledger_file_path();
     if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         return @[];
@@ -159,14 +194,40 @@ NSArray<NSString *> *ledger_read(NSString **outBootUUID) {
     return records;
 }
 
+// Returns the in-memory mirror (loaded from the file on first use; kept in
+// sync by every successful rewrite/wipe).
+NSArray<NSString *> *ledger_read(NSString **outBootUUID) {
+    ledger_load();
+    if (outBootUUID) *outBootUUID = gLedgerBoot;
+    return gLedgerRecords;
+}
+
+// Test seam: simulate a fresh boot — the daemon reads the ledger file only
+// once at startup, so this discards the mirror and re-reads the file
+// (including the bad-header discard/wipe path). Returns whether the load
+// succeeded.
+bool ledger_reload(void) {
+    gLedgerRecords = nil;
+    gLedgerBoot = nil;
+    return ledger_load() != nil;
+}
+
 // A12: wipe reports failure — callers must know whether the removal is durable.
 bool ledger_wipe(void) {
     NSString *path = ledger_file_path();
     if (unlink(path.UTF8String) != 0) {
-        if (errno == ENOENT) return true;   // already gone — durable by definition
+        if (errno == ENOENT) {
+            gLedgerRecords = [NSMutableArray array];
+            gLedgerBoot = nil;
+            return true;   // already gone — durable by definition
+        }
         shdw_log("ledger: unlink failed (%s)", strerror(errno));
         return false;
     }
+    // The file is gone — mirror that BEFORE the dir fsync (same reasoning as
+    // ledger_write_lines: a re-read would see an absent file).
+    gLedgerRecords = [NSMutableArray array];
+    gLedgerBoot = nil;
     if (!fsync_dir(ledger_dir())) {
         shdw_log("ledger: dir fsync failed after unlink");
         return false;
@@ -175,60 +236,54 @@ bool ledger_wipe(void) {
 }
 
 bool ledger_add_record(const char *path, const char *ownerKey, uint64_t vnode, uint64_t vId, int state) {
-    NSString *boot = nil;
-    NSMutableArray<NSString *> *records = [NSMutableArray arrayWithArray:ledger_read(&boot)];
-    if (!boot) boot = gBootUUID;
-    [records addObject:ledger_format_record(state, path, ownerKey, vnode, vId)];
-    return ledger_write_lines(boot, records);
+    ledger_load();
+    NSMutableArray<NSString *> *next = [gLedgerRecords mutableCopy];
+    [next addObject:ledger_format_record(state, path, ownerKey, vnode, vId)];
+    return ledger_write_lines(gLedgerBoot ?: gBootUUID, next);
 }
 
 bool ledger_update_record(const char *path, const char *ownerKey, uint64_t vnode, uint64_t vId, int state) {
-    NSString *boot = nil;
-    NSMutableArray<NSString *> *records = [NSMutableArray arrayWithArray:ledger_read(&boot)];
-    if (!boot) boot = gBootUUID;
+    ledger_load();
     NSString *replacement = ledger_format_record(state, path, ownerKey, vnode, vId);
     NSString *prefix = ledger_owner_marker(path, ownerKey);
-    BOOL found = NO;
-    for (NSUInteger i = 0; i < records.count; i++) {
-        if ([records[i] rangeOfString:prefix].location != NSNotFound) {
-            records[i] = replacement;
-            found = YES;
-            break;
-        }
+    for (NSUInteger i = 0; i < gLedgerRecords.count; i++) {
+        if ([gLedgerRecords[i] rangeOfString:prefix].location == NSNotFound) continue;
+        // No state change — the record is already durable; skip the rewrite.
+        if ([gLedgerRecords[i] isEqualToString:replacement]) return true;
+        NSMutableArray<NSString *> *next = [gLedgerRecords mutableCopy];
+        next[i] = replacement;
+        return ledger_write_lines(gLedgerBoot ?: gBootUUID, next);
     }
-    if (!found) [records addObject:replacement];
-    return ledger_write_lines(boot, records);
+    NSMutableArray<NSString *> *next = [gLedgerRecords mutableCopy];
+    [next addObject:replacement];
+    return ledger_write_lines(gLedgerBoot ?: gBootUUID, next);
 }
 
 bool ledger_remove_path_records(const char *path) {
-    NSString *boot = nil;
-    NSMutableArray<NSString *> *records = [NSMutableArray arrayWithArray:ledger_read(&boot)];
-    if (!boot) boot = gBootUUID;
+    ledger_load();
     NSString *marker = ledger_path_marker(path);
     NSMutableArray<NSString *> *kept = [NSMutableArray array];
-    for (NSString *rec in records) {
+    for (NSString *rec in gLedgerRecords) {
         if ([rec rangeOfString:marker].location == NSNotFound) {
             [kept addObject:rec];
         }
     }
-    if (kept.count == records.count) return true;   // nothing to remove
+    if (kept.count == gLedgerRecords.count) return true;   // nothing to remove
     if (kept.count == 0) {
         return ledger_wipe();   // A12: propagate durability failure
     }
-    return ledger_write_lines(boot, kept);
+    return ledger_write_lines(gLedgerBoot ?: gBootUUID, kept);
 }
 
 // A21(b): remove ONLY the per-owner record for (path, ownerKey) — used when a
 // failed acquire must undo an ownership it added to a shared resource without
 // disturbing the other owners' records.
 bool ledger_remove_owner_record(const char *path, const char *ownerKey) {
-    NSString *boot = nil;
-    NSMutableArray<NSString *> *records = [NSMutableArray arrayWithArray:ledger_read(&boot)];
-    if (!boot) boot = gBootUUID;
+    ledger_load();
     NSString *marker = ledger_owner_marker(path, ownerKey);
     NSMutableArray<NSString *> *kept = [NSMutableArray array];
     BOOL found = NO;
-    for (NSString *rec in records) {
+    for (NSString *rec in gLedgerRecords) {
         if ([rec rangeOfString:marker].location != NSNotFound) {
             found = YES;
             continue;
@@ -239,7 +294,7 @@ bool ledger_remove_owner_record(const char *path, const char *ownerKey) {
     if (kept.count == 0) {
         return ledger_wipe();
     }
-    return ledger_write_lines(boot, kept);
+    return ledger_write_lines(gLedgerBoot ?: gBootUUID, kept);
 }
 
 // ---------------------------------------------------------------------------

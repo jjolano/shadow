@@ -37,6 +37,12 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     NSArray<NSURL *>* rulesetURLs;
     double rulesetDirMtime;
     NSArray<NSNumber *>* rulesetFileMtimes;
+    // Compiled engines from the last load, keyed by file path -> @[mtime,
+    // engine]. A reload only re-reads/compiles the file(s) whose mtime
+    // changed; unchanged files reuse their engine from here, so a one-file
+    // edit no longer re-unarchives and re-parses every ruleset. Swapped in
+    // _loadSnapshot together with the URL/mtime arrays.
+    NSDictionary<NSString *, NSArray *>* rulesetEngines;
 }
 
 - (instancetype)init {
@@ -87,6 +93,12 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
         rulesetURLs = ruleset_urls;
 
+        // Engines from the previous load: an unchanged file reuses its
+        // compiled engine instead of re-unarchiving/re-parsing it, so a
+        // single-file edit only re-reads that file.
+        NSDictionary* engines = rulesetEngines;
+        NSMutableDictionary* nextEngines = [NSMutableDictionary new];
+
         for(NSURL* url in ruleset_urls) {
             // RulesetEngine's own compiled caches live here too; they are not
             // rulesets, so never track or load them (their rewrites are still
@@ -95,7 +107,17 @@ static _Atomic(double) lastRulesetCheck = 0.0;
                 continue;
             }
 
-            RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
+            NSString* path = [url path];
+            double mtime = [self _fileMtime:path];
+
+            RulesetEngine* ruleset = nil;
+            NSArray* previous = [engines objectForKey:path];
+
+            if(previous && [[previous objectAtIndex:0] doubleValue] == mtime) {
+                ruleset = [previous objectAtIndex:1];
+            } else {
+                ruleset = [RulesetEngine rulesetWithURL:url];
+            }
 
             if(ruleset) {
                 NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
@@ -107,13 +129,16 @@ static _Atomic(double) lastRulesetCheck = 0.0;
                 }
 
                 [result addObject:ruleset];
+                [nextEngines setObject:@[@(mtime), ruleset] forKey:path];
             } else {
                 NSLog(@"[Backend] failed to load ruleset: %@", url);
             }
 
             // Snapshot every file in the dir (all plists load; a stray non-plist is still tracked so its rewrite is caught).
-            [mtimes addObject:@([self _fileMtime:[url path]])];
+            [mtimes addObject:@(mtime)];
         }
+
+        rulesetEngines = [nextEngines copy];
     }
 
     rulesetFileMtimes = [mtimes copy];
@@ -202,6 +227,15 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     }
 
     for(NSUInteger i = 0; i < [urls count]; i++) {
+        // The mtime list only tracks ruleset files (compiled .shadowcache
+        // artifacts are skipped at load), so skip them here too — with cache
+        // files present the original misaligned indexing reported a change on
+        // every pass, forcing a full reload each second instead of only when
+        // a ruleset actually changed.
+        if([[[urls objectAtIndex:i] lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
+            continue;
+        }
+
         if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[mtimes objectAtIndex:i] doubleValue]) {
             [self _reloadRulesets];
             return;

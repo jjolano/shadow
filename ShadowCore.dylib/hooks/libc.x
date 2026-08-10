@@ -156,7 +156,16 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
 static int (*original_chdir)(const char* pathname);
 static int replaced_chdir(const char* pathname) {
     if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
-        return original_chdir(pathname);
+        int result = original_chdir(pathname);
+
+        // A successful chdir changes the process cwd: drop the sandbox
+        // hook's cached cwd so the next relative-path query resolves
+        // against the new one.
+        if(result == 0) {
+            shdw_sandbox_invalidate_cwd();
+        }
+
+        return result;
     }
 
     errno = ENOENT;
@@ -165,16 +174,24 @@ static int replaced_chdir(const char* pathname) {
 
 static int (*original_fchdir)(int fd);
 static int replaced_fchdir(int fd) {
-    if(!isCallerExternal()) {
-        return original_fchdir(fd);
-    }
+    int result;
 
-    if(shdw_fd_path_restricted(fd)) {
+    if(!isCallerExternal()) {
+        result = original_fchdir(fd);
+    } else if(shdw_fd_path_restricted(fd)) {
         errno = EBADF;
         return -1;
+    } else {
+        result = original_fchdir(fd);
     }
 
-    return original_fchdir(fd);
+    // A successful fchdir changes the process cwd: drop the sandbox hook's
+    // cached cwd so the next relative-path query resolves against the new one.
+    if(result == 0) {
+        shdw_sandbox_invalidate_cwd();
+    }
+
+    return result;
 }
 
 static int (*original_chroot)(const char* pathname);
@@ -602,10 +619,12 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
                     }
                 }
             } while(result == 0 && *oresult);
-
-            CFRelease((__bridge CFDictionaryRef)options);
         }
     }
+
+    // options is retained by shdw_readdir_cache_options: release on every
+    // path after the retain, incl. end-of-stream/error (CFRelease(nil) is a no-op).
+    CFRelease((__bridge CFDictionaryRef)options);
 
     return result;
 }
@@ -640,9 +659,11 @@ static struct dirent* replaced_readdir(DIR* dirp) {
                 }
             }
         } while(result);
-
-        CFRelease((__bridge CFDictionaryRef)options);
     }
+
+    // options is retained by shdw_readdir_cache_options: release on every
+    // path after the retain, incl. end-of-stream/error (CFRelease(nil) is a no-op).
+    CFRelease((__bridge CFDictionaryRef)options);
 
     return result;
 }

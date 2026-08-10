@@ -64,7 +64,17 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
     NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
     NSDictionary* app_settings = bundleIdentifier ? [defaults objectForKey:bundleIdentifier] : nil;
 
-    if(![app_settings[@"App_Enabled"] boolValue] && ![defaults boolForKey:@"Global_Enabled"]) {
+    // On-device diagnostic: release builds compile NSLog out, so gate/dlopopen
+    // failures are invisible over SSH. Persist the decision for triage.
+    BOOL gateApp = [app_settings[@"App_Enabled"] boolValue];
+    BOOL gateGlobal = [defaults boolForKey:@"Global_Enabled"];
+    @try {
+        [[[NSString stringWithFormat:@"[Shadow-stub] bundle=%@ gateApp=%d gateGlobal=%d\n", bundleIdentifier, gateApp, gateGlobal]
+            dataUsingEncoding:NSUTF8StringEncoding]
+            writeToFile:@"/var/mobile/Documents/shadow-stub.log" atomically:YES];
+    } @catch(NSException* ignored) {}
+
+    if(!gateApp && !gateGlobal) {
         return;
     }
 
@@ -108,6 +118,13 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
 
         if(!dlopen([payloadPath UTF8String], RTLD_NOW)) {
             NSLog(@"[Shadow] payload load failed: %s", dlerror());
+            // On-device diagnostic (release compiles NSLog out): persist the
+            // dlopen error for SSH triage.
+            @try {
+                [[[NSString stringWithFormat:@"[Shadow-stub] dlopen failed: %s\n", dlerror()]
+                    dataUsingEncoding:NSUTF8StringEncoding]
+                    writeToFile:@"/var/mobile/Documents/shadow-stub.log" atomically:YES];
+            } @catch(NSException* ignored) {}
         }
     }
 }

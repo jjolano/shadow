@@ -3,6 +3,21 @@
 static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 static char* _NSDirectoryEnumerator_shdw_state_key = "shdw_state";
 
+// One-time-checked debug gate: SHADOW_DEBUG in the environment enables the
+// per-call NSLogs (enumerator creation, changeCurrentDirectoryPath). Checked
+// once — a static initializer can't call getenv, so the flag is read lazily.
+static bool g_shdw_debug = false;
+static bool g_shdw_debug_checked = false;
+
+static bool shdw_debug_logging_enabled(void) {
+    if(!g_shdw_debug_checked) {
+        g_shdw_debug_checked = true;
+        g_shdw_debug = getenv("SHADOW_DEBUG") != NULL;
+    }
+
+    return g_shdw_debug;
+}
+
 // The working-dir option is only consulted for relative paths (Shadow/Core.m);
 // absolute paths and file URLs skip it, so avoid building the dict / fetching cwd for them.
 static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolute) {
@@ -17,15 +32,15 @@ static NSDictionary* _shdw_optionsForAbsolute(NSFileManager* fm, BOOL allAbsolut
 // intent and is served from the decision cache, while the write key also
 // disables Core.m's existence gate so a restricted-classified path is denied
 // even when the target does not exist (nonexistent-target write probes).
+// Built lazily like _shdw_optionsForAbsolute: the mutable dict and the
+// currentDirectoryPath query only happen for relative paths.
 static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
-    NSMutableDictionary* options = [NSMutableDictionary dictionaryWithObject:kShadowRestrictionOpWrite
-                                                                      forKey:kShadowRestrictionOperation];
-
-    if(!allAbsolute) {
-        options[kShadowRestrictionWorkingDir] = [fm currentDirectoryPath];
+    if(allAbsolute) {
+        return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
     }
 
-    return options;
+    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite,
+             kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
 }
 
 %group shadowhook_NSFileManager
@@ -317,7 +332,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
     
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"enumeratorAtURL: %@", url);
+
+        if(shdw_debug_logging_enabled()) {
+            NSLog(@"enumeratorAtURL: %@", url);
+        }
     }
 
     return result;
@@ -332,7 +350,10 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"enumeratorAtPath: %@", path);
+
+        if(shdw_debug_logging_enabled()) {
+            NSLog(@"enumeratorAtPath: %@", path);
+        }
     }
     
     return result;
@@ -503,7 +524,9 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)changeCurrentDirectoryPath:(NSString *)path {
-    NSLog(@"changeCurrentDirectoryPath: %@", path);
+    if(shdw_debug_logging_enabled()) {
+        NSLog(@"changeCurrentDirectoryPath: %@", path);
+    }
 
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         return NO;

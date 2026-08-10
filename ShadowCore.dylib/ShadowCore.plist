@@ -1,3 +1,13 @@
-// Inert filter — the payload is dlopen'd by the stub, never by the loader;
-// this plist keeps both Substrate and ElleKit from injecting it directly.
-{ Filter = { Bundles = ("com.apple.Nonexistent") } }
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Filter</key>
+	<dict>
+		<key>Bundles</key>
+		<array>
+			<string>com.apple.Nonexistent</string>
+		</array>
+	</dict>
+</dict>
+</plist>

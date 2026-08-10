@@ -5,9 +5,9 @@
 
 
 @implementation SHDWAboutListController {
-	NSString* packageVersion;
 	NSString* latestVersion;
 	BOOL fetchingLatestVersion;
+	NSURLSessionDataTask* latestVersionTask;
 }
 
 - (NSArray *)specifiers {
@@ -27,6 +27,10 @@
 }
 
 - (NSString *)aboutInstalledVersion:(id)sender {
+	// Static: the dpkg status file is multi-MB and the pane re-creates this
+	// controller on every open — parse once per process, not per pane.
+	static NSString* packageVersion;
+
 	if(!packageVersion) {
 		NSString* dpkg_status = [NSString stringWithContentsOfFile:JBPath(@"/var/lib/dpkg/status") encoding:NSUTF8StringEncoding error:nil];
 
@@ -53,8 +57,13 @@
 
 		NSURL* update_url = [NSURL URLWithString:@"https://api.github.com/repos/jjolano/shadow/releases/latest"];
 
+		__weak typeof(self) weakSelf = self;
+		__weak typeof(sender) weakSpecifier = sender;
+
 		NSURLSession* session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:nil delegateQueue:[NSOperationQueue mainQueue]];
-		NSURLSessionDataTask* task = [session dataTaskWithURL:update_url completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+		latestVersionTask = [session dataTaskWithURL:update_url completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+			typeof(self) strongSelf = weakSelf;
+
 			NSString* version = nil;
 
 			if(!error) {
@@ -71,11 +80,15 @@
 
 			// Always reload: the placeholder ("…") cell must be replaced
 			// with the fetched version (or "Unknown") on every outcome.
-			latestVersion = version ?: [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
-			[self reloadSpecifier:sender];
+			if(strongSelf) {
+				strongSelf->latestVersion = version ?: [[NSBundle bundleForClass:[strongSelf class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
+				[strongSelf reloadSpecifier:weakSpecifier];
+			}
+
+			[session finishTasksAndInvalidate];
 		}];
 
-		[task resume];
+		[latestVersionTask resume];
 	}
 
 	// Placeholder until the fetch completes; reloadSpecifier: re-reads this.
@@ -94,9 +107,12 @@
 	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"] options:@{} completionHandler:nil];
 }
 
+- (void)dealloc {
+	[latestVersionTask cancel];
+}
+
 - (instancetype)init {
 	if((self = [super init])) {
-		packageVersion = nil;
 		latestVersion = nil;
 	}
 

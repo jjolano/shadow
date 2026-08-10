@@ -18,13 +18,40 @@ static const NSInteger kShadowRulesetCacheVersion = 2;
 // plist's mtime+size are unchanged), then parse + compile, then persist.
 // Per-URL last-known-good: if a later reload fails, keep serving the
 // previously parsed ruleset instead of dropping it. Verbatim move of the old
-// +[RulesetEngine rulesetWithURL:].
+// +[RulesetEngine rulesetWithURL:]. Entries are keyed by path and validated
+// against the plist's mtime, so a changed file's stale entry is unreachable
+// (and replaced on the next successful compile), and entries whose file no
+// longer exists are evicted on the next compile — the dict stays bounded to
+// live ruleset files instead of retaining every URL ever loaded.
 + (RulesetEngine *)compileRulesetAtURL:(NSURL *)url {
     @synchronized([RulesetEngine class]) {
         static NSMutableDictionary* lastKnownGood = nil;
 
         if(!lastKnownGood) {
             lastKnownGood = [NSMutableDictionary new];
+        }
+
+        NSString* plistPath = [url path];
+        NSDictionary* plistAttrs = [[NSFileManager defaultManager] attributesOfItemAtPath:plistPath error:nil];
+        double mtime = plistAttrs ? [[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate] : 0.0;
+
+        // Evict last-known-good entries whose file no longer exists; a
+        // changed file's entry is keyed out by its stale mtime and replaced
+        // below on the next successful compile.
+        NSMutableArray* deadKeys = nil;
+
+        for(NSString* key in [lastKnownGood allKeys]) {
+            if(![[NSFileManager defaultManager] fileExistsAtPath:key]) {
+                if(!deadKeys) {
+                    deadKeys = [NSMutableArray new];
+                }
+
+                [deadKeys addObject:key];
+            }
+        }
+
+        for(NSString* key in deadKeys) {
+            [lastKnownGood removeObjectForKey:key];
         }
 
         NSDictionary* ruleset_dict = nil;
@@ -35,7 +62,7 @@ static const NSInteger kShadowRulesetCacheVersion = 2;
         RulesetEngine* fromCache = [self _rulesetFromCompiledCacheForURL:url];
 
         if(fromCache) {
-            [lastKnownGood setObject:fromCache forKey:[url path]];
+            [lastKnownGood setObject:@[@(mtime), fromCache] forKey:plistPath];
             return fromCache;
         }
 
@@ -58,16 +85,16 @@ static const NSInteger kShadowRulesetCacheVersion = 2;
 
             if(ruleset) {
                 [self _writeCompiledCacheForRuleset:ruleset url:url];
-                [lastKnownGood setObject:ruleset forKey:[url path]];
+                [lastKnownGood setObject:@[@(mtime), ruleset] forKey:plistPath];
                 return ruleset;
             }
         }
 
-        RulesetEngine* previous = [lastKnownGood objectForKey:[url path]];
+        NSArray* entry = [lastKnownGood objectForKey:plistPath];
 
-        if(previous) {
+        if(entry && [[entry objectAtIndex:0] doubleValue] == mtime) {
             NSLog(@"[Ruleset] failed to load %@; serving last-known-good ruleset", url);
-            return previous;
+            return [entry objectAtIndex:1];
         }
     }
 
