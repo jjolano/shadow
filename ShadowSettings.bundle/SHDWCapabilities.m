@@ -41,8 +41,10 @@ static NSString* shdw_localized(NSString* key) {
 // ---------------------------------------------------------------------------
 
 #define SHDW_STATUS_TIMEOUT_MS 300
+#define SHDW_STATUS_CACHE_SECS  5.0
 
 static SHDWDaemonState gDaemonState = SHDWDaemonUnavailable;
+static CFAbsoluteTime gDaemonStateTime = 0;
 
 SHDWDaemonState shdw_query_daemon_state(void) {
     mach_port_t service_port = MACH_PORT_NULL;
@@ -123,11 +125,21 @@ SHDWDaemonState SHDWQueryDaemonState(void) {
 }
 
 void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
+    // Don't re-ping the daemon on every page entry; the state barely changes
+    // during a session. (Fresh queries still land at least this often.)
+    if(CFAbsoluteTimeGetCurrent() - gDaemonStateTime < SHDW_STATUS_CACHE_SECS) {
+        if(completion) {
+            completion(gDaemonState);
+        }
+        return;
+    }
+
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         SHDWDaemonState state = shdw_query_daemon_state();
 
         dispatch_async(dispatch_get_main_queue(), ^{
             gDaemonState = state;
+            gDaemonStateTime = CFAbsoluteTimeGetCurrent();
 
             if(completion) {
                 completion(state);
