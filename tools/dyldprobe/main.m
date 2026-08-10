@@ -619,8 +619,9 @@ static NSString* ProbeReport(void) {
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
     // Write the report FIRST — before any window setup — so it lands even if
     // UI initialization stalls (headless/SSH-launched contexts).
+    NSString* report;
     @autoreleasepool {
-        NSString* report = ProbeReport();
+        report = ProbeReport();
         fprintf(stderr, "%s\n", [report UTF8String]);
         [[report dataUsingEncoding:NSUTF8StringEncoding]
             writeToFile:@"/var/mobile/Documents/dyldprobe-report.txt" atomically:YES];
@@ -640,11 +641,12 @@ static NSString* ProbeReport(void) {
     _textView = [[UITextView alloc] initWithFrame:CGRectMake(0, 64, frame.size.width, frame.size.height - 64)];
     _textView.editable = NO;
     _textView.font = [UIFont systemFontOfSize:11];
+    // Reuse the launch report; _refresh (Refresh button) builds another on demand.
+    _textView.text = report;
     [vc.view addSubview:_textView];
 
     self.window.rootViewController = vc;
     [self.window makeKeyAndVisible];
-    [self _refresh];
     return YES;
 }
 

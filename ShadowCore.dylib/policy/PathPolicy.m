@@ -12,6 +12,21 @@
 #import <sys/stat.h>
 #import <limits.h>
 
+// Shared fd cache size (fd→path for the fstat family, per-dirfd options for
+// the *at family): fixed-size table, round-robin eviction.
+#define SHADW_FD_CACHE_SIZE 16
+
+typedef struct {
+    int fd;
+    char path[PATH_MAX];
+    BOOL valid;            // F_GETPATH succeeded (fd has a nameable path)
+    CFDictionaryRef options; // retained; per-dirfd options for the *at family
+} shdw_fd_cache_entry_t;
+
+static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
+static NSUInteger shdw_fd_cache_next = 0;
+static os_unfair_lock shdw_fd_cache_lock = OS_UNFAIR_LOCK_INIT;
+
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
 // statically linked into the app binary (which has no image name at all for
@@ -100,9 +115,60 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
         errno = ENOENT;
         return YES;
     } else if(status == SHADW_DIRFD_OK) {
-        NSString* path = [NSString stringWithUTF8String:pathname];
+        // Per-dirfd options dict, cached in the shared fd cache entry (same
+        // 16-slot round-robin table, same close-hook invalidation, so a
+        // reused fd can never inherit a stale parent). The engine only reads
+        // the dict, so the cached one is reused read-only. Built under the
+        // lock like the readdir cache; AT_FDCWD is never cached — getcwd
+        // changes under a chdir. One ref is held for the check below (fresh
+        // CFRetain on a hit, the build's retain on a miss) and released once.
+        CFDictionaryRef options = NULL;
+        NSUInteger hit = SHADW_FD_CACHE_SIZE; // index of the dirfd's entry, when found
 
-        if([_shadow isPathRestricted:path options:@{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]}]) {
+        os_unfair_lock_lock(&shdw_fd_cache_lock);
+
+        for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
+            if(shdw_fd_cache[i].fd == dirfd) {
+                hit = i;
+
+                if(shdw_fd_cache[i].options) {
+                    options = CFRetain(shdw_fd_cache[i].options);
+                }
+
+                break;
+            }
+        }
+
+        if(!options && dirfd != AT_FDCWD) {
+            NSDictionary* fresh = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]};
+
+            NSUInteger slot;
+
+            if(hit != SHADW_FD_CACHE_SIZE) {
+                slot = hit; // upgrade the path-only entry in place
+            } else {
+                slot = shdw_fd_cache_next;
+                shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
+
+                if(shdw_fd_cache[slot].options) {
+                    CFRelease(shdw_fd_cache[slot].options);
+                }
+            }
+
+            shdw_fd_cache[slot].fd = dirfd;
+            shdw_fd_cache[slot].valid = YES;
+            strlcpy(shdw_fd_cache[slot].path, parent, sizeof(shdw_fd_cache[slot].path));
+            shdw_fd_cache[slot].options = CFRetain((__bridge CFDictionaryRef)fresh);
+            options = CFRetain((__bridge CFDictionaryRef)fresh);
+        }
+
+        os_unfair_lock_unlock(&shdw_fd_cache_lock);
+
+        NSString* path = [NSString stringWithUTF8String:pathname];
+        BOOL restricted = [_shadow isPathRestricted:path options:(__bridge NSDictionary*)options];
+        CFRelease(options);
+
+        if(restricted) {
             errno = ENOENT;
             return YES;
         }
@@ -116,22 +182,13 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
 // futimes/fchdir/fgetxattr/flistxattr/fgetattrlist): F_GETPATH is a syscall
 // per call, and the fstat family runs on every fd touch. The path is resolved
 // once per fd and cached; the close hook invalidates the entry, so a reused
-// fd can never inherit a stale path. Fixed-size table, round-robin eviction —
+// fd can never inherit a stale path. The same entry carries the per-dirfd
+// options dict for the *at family (shdw_at_path_denied), built once per
+// dirfd and reused read-only — the engine only reads the dict, so a cached
+// one is safe to share across calls. Fixed-size table, round-robin eviction —
 // a miss just re-resolves. The lock is never held across isCPathRestricted
 // (an ObjC call that could re-enter hooked code); F_GETPATH itself runs under
 // the lock so a close+reuse race can't store a stale entry.
-#define SHADW_FD_CACHE_SIZE 16
-
-typedef struct {
-    int fd;
-    char path[PATH_MAX];
-    BOOL valid;  // F_GETPATH succeeded (fd has a nameable path)
-} shdw_fd_cache_entry_t;
-
-static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
-static NSUInteger shdw_fd_cache_next = 0;
-static os_unfair_lock shdw_fd_cache_lock = OS_UNFAIR_LOCK_INIT;
-
 BOOL shdw_fd_path_restricted(int fd) {
     if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) {
         return NO;
@@ -160,8 +217,13 @@ BOOL shdw_fd_path_restricted(int fd) {
     NSUInteger slot = shdw_fd_cache_next;
     shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
 
+    if(shdw_fd_cache[slot].options) {
+        CFRelease(shdw_fd_cache[slot].options);
+    }
+
     shdw_fd_cache[slot].fd = fd;
     shdw_fd_cache[slot].valid = valid;
+    shdw_fd_cache[slot].options = NULL;
 
     if(valid) {
         strlcpy(shdw_fd_cache[slot].path, pathname, sizeof(shdw_fd_cache[slot].path));
@@ -179,6 +241,12 @@ void shdw_fd_cache_invalidate(int fd) {
         if(shdw_fd_cache[i].fd == fd) {
             shdw_fd_cache[i].fd = -1;
             shdw_fd_cache[i].valid = NO;
+
+            if(shdw_fd_cache[i].options) {
+                CFRelease(shdw_fd_cache[i].options);
+                shdw_fd_cache[i].options = NULL;
+            }
+
             break;
         }
     }

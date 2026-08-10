@@ -64,11 +64,24 @@ BOOL shdw_env_entry_hidden(const char* var) {
 static _Thread_local char* shdw_env_path_storage = NULL;
 static _Thread_local size_t shdw_env_path_capacity = 0;
 
+// Cached raw PATH input for shdw_env_sanitized_path: the split/join only
+// reruns when the value differs from this thread's last-seen one. Thread-local
+// like the output storage — a returned pointer keeps its per-thread lifetime,
+// and the setenv/unsetenv hooks below only clear their own thread's entry (a
+// changed PATH on any thread fails the input comparison and recomputes).
+static _Thread_local char* shdw_env_path_cache_input = NULL;
+static _Thread_local size_t shdw_env_path_cache_capacity = 0;
+
 // Removes jailbreak components from a PATH value (/var/jb bootstrap and
 // preboot roots — stock iOS PATH has neither). Returns the original pointer
 // when nothing needed removing, otherwise a sanitized copy in thread-local
-// storage.
+// storage. An unchanged PATH (same raw value as the last call) returns the
+// cached sanitized result without re-splitting/re-joining.
 char* shdw_env_sanitized_path(const char* value) {
+    if(value && shdw_env_path_cache_input && strcmp(value, shdw_env_path_cache_input) == 0) {
+        return shdw_env_path_storage;  // PATH unchanged: cached sanitized result
+    }
+
     NSArray* parts = [[NSString stringWithUTF8String:value] componentsSeparatedByString:@":"];
     NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
@@ -83,27 +96,88 @@ char* shdw_env_sanitized_path(const char* value) {
     }
 
     if(kept.count == parts.count) {
-        return (char *) value;
-    }
+        // Nothing needed removing: cache the unchanged value so the next call
+        // short-circuits instead of re-splitting.
+        size_t len = strlen(value) + 1;
 
-    NSString* joined = [kept componentsJoinedByString:@":"];
-    size_t len = joined.length + 1;
+        if(len > shdw_env_path_capacity) {
+            char* grown = realloc(shdw_env_path_storage, len);
 
-    if(len > shdw_env_path_capacity) {
-        char* grown = realloc(shdw_env_path_storage, len);
+            if(!grown) {
+                return (char *) value;
+            }
 
-        if(!grown) {
-            // OOM: fall back to the original value rather than returning a
-            // truncated path.
-            return (char *) value;
+            shdw_env_path_storage = grown;
+            shdw_env_path_capacity = len;
         }
 
-        shdw_env_path_storage = grown;
-        shdw_env_path_capacity = len;
+        strcpy(shdw_env_path_storage, value);
+    } else {
+        NSString* joined = [kept componentsJoinedByString:@":"];
+        size_t len = joined.length + 1;
+
+        if(len > shdw_env_path_capacity) {
+            char* grown = realloc(shdw_env_path_storage, len);
+
+            if(!grown) {
+                // OOM: fall back to the original value rather than returning a
+                // truncated path.
+                return (char *) value;
+            }
+
+            shdw_env_path_storage = grown;
+            shdw_env_path_capacity = len;
+        }
+
+        strcpy(shdw_env_path_storage, joined.UTF8String);
     }
 
-    strcpy(shdw_env_path_storage, joined.UTF8String);
+    // Remember the raw input for the next call.
+    size_t input_len = strlen(value) + 1;
+
+    if(input_len > shdw_env_path_cache_capacity) {
+        char* grown = realloc(shdw_env_path_cache_input, input_len);
+
+        if(!grown) {
+            return shdw_env_path_storage;  // OOM: no caching, next call recomputes
+        }
+
+        shdw_env_path_cache_input = grown;
+        shdw_env_path_cache_capacity = input_len;
+    }
+
+    strcpy(shdw_env_path_cache_input, value);
     return shdw_env_path_storage;
+}
+
+// setenv/unsetenv can change the value behind the getenv hook's PATH
+// sanitization. The input comparison above self-heals a changed value; these
+// hooks clear this thread's cache entry so a setenv with the SAME content
+// still forces a re-evaluation. (Only the calling thread's entry is cleared;
+// other threads' entries fail the input comparison on their next call.)
+static void shdw_env_path_cache_invalidate(void) {
+    if(shdw_env_path_cache_input) {
+        shdw_env_path_cache_input[0] = '\0';
+    }
+}
+
+static int (*original_setenv)(const char* name, const char* value, int overwrite);
+static int replaced_setenv(const char* name, const char* value, int overwrite) {
+    shdw_env_path_cache_invalidate();
+    return original_setenv(name, value, overwrite);
+}
+
+static int (*original_unsetenv)(const char* name);
+static int replaced_unsetenv(const char* name) {
+    shdw_env_path_cache_invalidate();
+    return original_unsetenv(name);
+}
+
+// Installed with the envvar group (dylib.x, next to shadowhook_libc_envvar):
+// keeps the PATH sanitization cache coherent with the live environment.
+void shadowhook_envpolicy(HKSubstitutor* hooks) {
+    [hooks hookFunction:setenv withReplacement:replaced_setenv outOldPtr:(void **) &original_setenv];
+    [hooks hookFunction:unsetenv withReplacement:replaced_unsetenv outOldPtr:(void **) &original_unsetenv];
 }
 
 // Sanitizes a "PATH=..." entry: jailbreak components dropped, other

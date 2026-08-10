@@ -225,6 +225,7 @@ extern void shadowhook_syscall(HKSubstitutor* hooks);
 extern void shadowhook_UIApplication(HKSubstitutor* hooks);
 extern void shadowhook_UIImage(HKSubstitutor* hooks);
 extern void shadowhook_libc_envvar(HKSubstitutor* hooks);
+extern void shadowhook_envpolicy(HKSubstitutor* hooks);
 extern void shadowhook_libc_lowlevel(HKSubstitutor* hooks);
 extern void shadowhook_libc_antidebugging(HKSubstitutor* hooks);
 extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
@@ -248,6 +249,10 @@ void* shdw_sym_policy_lookup_libc(const char* name);
 void* shdw_sym_policy_lookup_mach(const char* name);
 void* shdw_sym_policy_lookup_sandbox(const char* name);
 void* shdw_sym_policy_lookup_mem(const char* name);
+// Invalidates the sandbox hook's cached process cwd (defined in sandbox.x;
+// called by the libc chdir/fchdir hooks after a successful directory change,
+// so a relative-path sandbox query never resolves against a stale cwd).
+extern void shdw_sandbox_invalidate_cwd(void);
 extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);

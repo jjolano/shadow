@@ -809,10 +809,13 @@ static void testShadowdLedger(void) {
         CHECK(ledger_remove_path_records("/hidden/a"), "ledger remove path");
         CHECK([ledger_read(&boot) count] == 0, "ledger path records gone");
 
-        // Bad header: discarded and the ledger wiped.
+        // Bad header: discarded and the ledger wiped.  The harness reads the
+        // in-memory mirror, so force a reload first — this simulates a fresh
+        // boot (the daemon reads the ledger file once at startup).
         NSString* ledgerPath = @"/var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger";
 
         [@"GARBAGE\nx\n" writeToFile:ledgerPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        ledger_reload();
         CHECK([ledger_read(&boot) count] == 0, "ledger bad header discarded");
         CHECK(![[NSFileManager defaultManager] fileExistsAtPath:ledgerPath], "ledger bad header wipe removed file");
 

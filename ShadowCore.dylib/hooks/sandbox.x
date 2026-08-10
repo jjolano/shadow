@@ -165,6 +165,63 @@ static int replaced___sigaction(int sig, const struct sigaction* act, struct sig
 // denied); reads with read intent. Relative paths resolve against the
 // process cwd, same as the *at family. Returns YES when the query must be
 // denied — the caller reports the normal positive denial (1).
+// One immutable options dict per operation kind (read vs write), built once:
+// no per-call NSMutableDictionary/NSString allocation. Relative paths get
+// the working-dir key from the process cwd, fetched ONCE and cached with the
+// dict; later relative queries reuse the existing cached cwd. The chdir/fchdir
+// hooks call shdw_sandbox_invalidate_cwd after a successful directory change,
+// so a relative query never resolves against a stale cwd.
+static char shdw_sandbox_cached_cwd[PATH_MAX];
+static NSDictionary* read_options = nil;
+static NSDictionary* write_options = nil;
+
+// Invalidates the cached process cwd (called by the chdir/fchdir hooks in
+// libc.x after a successful directory change): the next relative-path query
+// re-fetches getcwd and rebuilds the options dict.
+void shdw_sandbox_invalidate_cwd(void) {
+    shdw_sandbox_cached_cwd[0] = '\0';
+    read_options = nil;
+    write_options = nil;
+}
+
+static NSDictionary* shdw_sandbox_check_options(BOOL is_write, BOOL needs_cwd) {
+    static dispatch_once_t read_once;
+    static dispatch_once_t write_once;
+
+    NSDictionary* options;
+
+    if(is_write) {
+        dispatch_once(&write_once, ^{
+            write_options = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+        });
+
+        options = write_options;
+    } else {
+        dispatch_once(&read_once, ^{
+            read_options = @{kShadowRestrictionOperation : kShadowRestrictionOpRead};
+        });
+
+        options = read_options;
+    }
+
+    if(needs_cwd && !options[kShadowRestrictionWorkingDir]) {
+        if(!getcwd(shdw_sandbox_cached_cwd, sizeof(shdw_sandbox_cached_cwd))) {
+            return nil;
+        }
+
+        options = @{kShadowRestrictionOperation : (is_write ? kShadowRestrictionOpWrite : kShadowRestrictionOpRead),
+                    kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:shdw_sandbox_cached_cwd]};
+
+        if(is_write) {
+            write_options = options;
+        } else {
+            read_options = options;
+        }
+    }
+
+    return options;
+}
+
 static BOOL shdw_sandbox_check_file_denied(const char* operation, const char* path) {
     if(!operation || !path) {
         return NO;
@@ -180,17 +237,10 @@ static BOOL shdw_sandbox_check_file_denied(const char* operation, const char* pa
 
     NSString* pathString = [NSString stringWithUTF8String:path];
 
-    NSMutableDictionary* options = [NSMutableDictionary dictionaryWithObject:(is_write ? kShadowRestrictionOpWrite : kShadowRestrictionOpRead)
-                                                                      forKey:kShadowRestrictionOperation];
+    NSDictionary* options = shdw_sandbox_check_options(is_write, path[0] != '/');
 
-    if(path[0] != '/') {
-        char cwd[PATH_MAX];
-
-        if(!getcwd(cwd, sizeof(cwd))) {
-            return NO;
-        }
-
-        options[kShadowRestrictionWorkingDir] = [NSString stringWithUTF8String:cwd];
+    if(!options) {
+        return NO;
     }
 
     return [_shadow isPathRestricted:pathString options:options];

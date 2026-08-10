@@ -109,6 +109,12 @@ static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
 	return nil;
 }
 
+// Rule counts are cached per ruleset path + mtime so unchanged rulesets are
+// not re-read (disk read + plist parse + compile) on every refresh; see
+// rulesetSection. Dev mode does not change ruleset semantics, so the toggle
+// leaves the cache alone.
+static NSMutableDictionary* shdw_rulesetCountCache;
+
 @interface StatusViewController () <UICollectionViewDelegate>
 @end
 
@@ -196,9 +202,18 @@ static NSString* const kHeaderReuseID = @"Header";
 		// doesn't export UICellAccessorySwitch for arm64e, so a class ref
 		// fails at link time. The class exists at runtime on iOS 14+.
 		Class switchClass = NSClassFromString(@"UICellAccessorySwitch");
-		cell.accessories = @[ [[switchClass alloc] initWithIsOn:row.on handler:^{
-			[weakSelf devModeToggled];
-		}] ];
+
+		// UICellAccessorySwitch is iOS 16+; on older systems the class is
+		// nil, and @[ [[nil alloc] init...] ] raises an NSArray
+		// nil-element exception in cellForItemAtIndexPath. Guard the
+		// accessory (the toggle just doesn't render on iOS < 16).
+		if(switchClass) {
+			cell.accessories = @[ [[switchClass alloc] initWithIsOn:row.on handler:^{
+				[weakSelf devModeToggled];
+			}] ];
+		} else {
+			cell.accessories = @[];
+		}
 	} else {
 		cell.accessories = @[];
 	}
@@ -353,6 +368,10 @@ static NSString* const kHeaderReuseID = @"Header";
 	dateFormatter.dateStyle = NSDateFormatterMediumStyle;
 	dateFormatter.timeStyle = NSDateFormatterShortStyle;
 
+	if(rulesetEngineClass && !shdw_rulesetCountCache) {
+		shdw_rulesetCountCache = [NSMutableDictionary new];
+	}
+
 	for(NSString* file in files) {
 		// Compiled-ruleset caches (RulesetEngine writes these next to each
 		// ruleset plist) are not rulesets.
@@ -366,8 +385,18 @@ static NSString* const kHeaderReuseID = @"Header";
 
 		NSUInteger ruleCount = 0;
 		if(rulesetEngineClass) {
-			RulesetEngine* ruleset = [rulesetEngineClass rulesetWithURL:[NSURL fileURLWithPath:fullPath]];
-			ruleCount = ruleset.payloadDictionary.count;
+			// Cache hit when the file is unchanged (path + mtime key); the
+			// count must refresh when the file changes.
+			NSString* cacheKey = [NSString stringWithFormat:@"%@|%f", fullPath, [attrs[NSFileModificationDate] timeIntervalSince1970]];
+			NSNumber* cachedCount = shdw_rulesetCountCache[cacheKey];
+
+			if(cachedCount) {
+				ruleCount = cachedCount.unsignedIntegerValue;
+			} else {
+				RulesetEngine* ruleset = [rulesetEngineClass rulesetWithURL:[NSURL fileURLWithPath:fullPath]];
+				ruleCount = ruleset.payloadDictionary.count;
+				shdw_rulesetCountCache[cacheKey] = @(ruleCount);
+			}
 		}
 
 		[rows addObject:shdw_row(file, [NSString stringWithFormat:@"%@ — %lu rules", mtime, (unsigned long)ruleCount])];

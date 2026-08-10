@@ -1,4 +1,13 @@
-// Loads in every process on both Substrate and ElleKit (NSObject exists in
-// every process via libobjc); the %ctor gates then decide whether to dlopen
-// the payload (ShadowCore.dylib).
-{ Filter = { Classes = ("NSObject") } }
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Filter</key>
+	<dict>
+		<key>Classes</key>
+		<array>
+			<string>NSObject</string>
+		</array>
+	</dict>
+</dict>
+</plist>
