@@ -230,7 +230,11 @@ void SHDWApplyHookGroupGating(NSArray* specifiers) {
     for(PSSpecifier* spec in specifiers) {
         // The plist "cell" key is a string ("PSGroupCell"); cellType is an
         // enum whose ordering is private API — compare the raw property.
-        if([[spec propertyForKey:PSTableCellKey] isEqualToString:@"PSGroupCell"]) {
+        // PSTableCellClassKey ("cell") is the plist string; PSTableCellKey
+        // ("cellObject") is the RENDERED cell (a UIResponder) — comparing
+        // that crashes with isEqualToString: once cells exist (async
+        // re-gating pass).
+        if([[spec propertyForKey:PSTableCellClassKey] isEqualToString:@"PSGroupCell"]) {
             currentGroup = spec;
             continue;
         }
