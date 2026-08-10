@@ -17,7 +17,7 @@
 "EXTRA_HOOKS" = "خطافات إضافية";
 "EXTRA_HOOKS_DESC" = "تغطي الخطافات الإضافية المزيد من الطرق التي يمكن استخدامها لكشف الجيلبريك، بما في ذلك واجهة برمجة التطبيقات الخاصة (APIs).";
 "HOOK_MACH" = "بحوثات Mach الخدمة";
-"HOOK_IOKIT" = "IOKit Service Probing";
+"HOOK_IOKIT" = "استقصاء خدمة IOKit";
 "HOOK_SYMLOOKUP" = "بحوثات رمز وقت التشغيل";
 "HOOK_OBJC" = "طرق قوالب Objective-C";
 "HOOK_ANTIDBG" = "طرق مضادات التصحيح";
