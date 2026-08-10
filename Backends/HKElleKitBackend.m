@@ -13,15 +13,23 @@
 // libhooker is dlopen'd at runtime so that HookKit loads cleanly without ElleKit installed.
 // fishhook is compiled in and always available.
 static void* libhooker_handle = NULL;
-// ElleKit's actual ABI (see ellekit/API/Libhooker.swift): LBHookMessage is
-// VOID (no status return — the hook either applies or it doesn't; errors are
-// surfaced through the out-ptr), and LHHookFunctions/LHPatchMemory return
-// 0 (LIBHOOKER_OK) on success, not an applied count. The libhooker.h headers
-// in the wild declare otherwise (an errno enum / applied count); trust the
-// provider, not the vendored header, or every hook is misread as failed and
-// the caller's original IMP is suppressed — which crashes v1-era tweaks whose
-// %orig reads that slot (Shadow 3.7.6's %hook SpringBoard crashed SpringBoard
-// into safe mode exactly this way).
+// The libhooker ABI is NOT uniform across providers. The vendored header
+// (libhooker.h, coolstar's real libhooker for unc0ver/Taurine) declares
+// LBHookMessage returning enum LIBHOOKER_ERR and LHHookFunctions/
+// LHPatchMemory returning an APPLIED COUNT. ElleKit (Dopamine/palera1n)
+// exports the same symbols with a VOID LBHookMessage (success = the out
+// pointer being written) and 0-on-success for the other two. Reading one
+// provider's return under the other's semantics makes every hook look
+// failed, the caller's original IMP gets suppressed, and v1-era tweaks
+// whose %orig reads that slot crash with a NULL call (Shadow 3.7.6's
+// %hook SpringBoard -applicationDidFinishLaunching: sent SpringBoard into
+// safe mode exactly this way).
+//
+// Detect the provider at probe time via dladdr on the resolved symbol:
+// the image name distinguishes ElleKit ("libellekit") from real libhooker.
+// Default to ElleKit semantics when detection fails (the modern jailbreak
+// default; the header matches neither provider, so it is no fallback).
+static BOOL libhooker_uses_applied_count = NO;
 static void (*fn_LBHookMessage)(Class, SEL, void *, void *) = NULL;
 static int (*fn_LHHookFunctions)(const struct LHFunctionHook *, int) = NULL;
 static int (*fn_LHPatchMemory)(const struct LHMemoryPatch *, int) = NULL;
@@ -78,6 +86,18 @@ BOOL libhooker_available(void) {
     fn_LHCloseImage = LHCloseImage;
     fn_LHFindSymbols = LHFindSymbols;
 
+    // Provider ABI detection: real libhooker (unc0ver/Taurine) returns an
+    // applied count from LHHookFunctions/LHPatchMemory and an errno enum
+    // from LBHookMessage; ElleKit returns void/0-on-success. Distinguish by
+    // the image the LBHookMessage symbol lives in. dladdr can fail only if
+    // the symbol isn't in a loaded image — it is, we just dlsym'd it, so a
+    // miss falls through to the ElleKit default.
+    Dl_info info;
+
+    if(dladdr((void *)LBHookMessage, &info) && info.dli_fname) {
+        libhooker_uses_applied_count = (strstr(info.dli_fname, "libellekit") == NULL);
+    }
+
     cached = YES;
     available = YES;
 
@@ -117,17 +137,19 @@ BOOL libhooker_discoverable(void) {
 }
 
 - (hookkit_status_t)hookMessageInClass:(Class)objcClass withSelector:(SEL)selector withReplacement:(void *)replacement outOldPtr:(void **)old_ptr {
-    // LBHookMessage is void in ElleKit: the hook applies (or not) and the
-    // original is written into *old_ptr. There is no status return to read —
-    // the only failure signal is the original never being written, which
-    // happens when the selector exists on neither the class nor the metaclass
-    // (see ElleKit messageHook: guard on class_getInstanceMethod /
-    // class_getClassMethod). Report NOT_SUPPORTED then, HK_OK otherwise.
-    // Reading the void return as an error enum is an ABI mismatch: the
-    // garbage value (typically the original's low bits) was treated as a
-    // failure, the caller's original stayed suppressed, and v1-era tweaks
-    // calling %orig through the NULL slot crashed (Shadow 3.7.6's
-    // %hook SpringBoard was exactly this).
+    // LBHookMessage's ABI is provider-dependent:
+    //  - ElleKit: void — success is the original being written into the out
+    //    cell; nothing written means the selector exists on neither the class
+    //    nor the metaclass (ElleKit messageHook's guard).
+    //  - real libhooker: int — LIBHOOKER_OK (0) on success,
+    //    LIBHOOKER_ERR_SELECTOR_NOT_FOUND (1) when the selector is absent.
+    // Both write the original on success, so the out cell is the common
+    // success signal; check it before any return-value reading. Reading the
+    // void return as an error enum was the ABI mismatch: the garbage value
+    // (typically the original's low bits) was treated as failure, the
+    // caller's original stayed suppressed, and v1-era tweaks calling %orig
+    // through the NULL slot crashed (Shadow 3.7.6's %hook SpringBoard was
+    // exactly this).
     void *cell = NULL;
     fn_LBHookMessage(objcClass, selector, replacement, (void *)&cell);
 
@@ -150,11 +172,19 @@ BOOL libhooker_discoverable(void) {
         function, replacement, (void *)old_ptr, NULL
     };
 
-    // LHHookFunctions returns LIBHOOKER_OK (0) on success — not an applied
-    // count. A non-zero return is the failure detail itself (e.g.
-    // LIBHOOKER_ERR_NO_SYMBOL); errno is not the channel.
+    // LHHookFunctions semantics by provider:
+    //  - ElleKit: LIBHOOKER_OK (0) on success; non-zero is the failure detail.
+    //  - real libhooker: applied count (1 for a single hook); 0 on failure.
+    // A single-hook call succeeds when the result equals the requested count
+    // under the applied-count ABI, or equals LIBHOOKER_OK under ElleKit's.
     _lastErrno = 0;
     int result = fn_LHHookFunctions(&hook, 1);
+
+    if(libhooker_uses_applied_count) {
+        _lastErrno = result == 1 ? 0 : result;
+        return result == 1 ? HK_OK : HK_ERR;
+    }
+
     _lastErrno = result;
     return result == LIBHOOKER_OK ? HK_OK : HK_ERR;
 }
@@ -164,10 +194,17 @@ BOOL libhooker_discoverable(void) {
         target, data, size, 0
     };
 
-    // LHPatchMemory returns LIBHOOKER_OK (0) on success, 1 when a patch is
-    // malformed (NULL dest/data). Not an applied count.
+    // LHPatchMemory semantics by provider:
+    //  - ElleKit: LIBHOOKER_OK (0) on success, 1 when a patch is malformed.
+    //  - real libhooker: applied count (1 for a single patch); 0 on failure.
     _lastErrno = 0;
     int result = fn_LHPatchMemory(&patch, 1);
+
+    if(libhooker_uses_applied_count) {
+        _lastErrno = result == 1 ? 0 : result;
+        return result == 1 ? HK_OK : HK_ERR;
+    }
+
     _lastErrno = result;
     return result == LIBHOOKER_OK ? HK_OK : HK_ERR;
 }
@@ -233,22 +270,40 @@ BOOL libhooker_discoverable(void) {
         errno = 0;
         int result = fn_LHHookFunctions([functionHooks mutableBytes], count);
 
-        // LHHookFunctions returns LIBHOOKER_OK (0) on success; any non-zero
-        // return is the failure detail (e.g. NO_SYMBOL), not a partial count.
-        // ElleKit iterates every entry and writes each orig pointer, so a 0
-        // return means every op succeeded.
-        if(result != LIBHOOKER_OK) {
-            if(!detail) {
-                detail = result;
+        if(libhooker_uses_applied_count) {
+            // Real libhooker: result is the number of hooks applied. ElleKit
+            // semantics can't be assumed here — a successful batch returns
+            // the full count, so treat result == count as all-succeeded.
+            if(result < count) {
+                if(!detail) {
+                    detail = result;
+                }
+
+                NSLog(@"[HKElleKit] warning: batch LHHookFunctions retval less than expected (%d/%d)", result, count);
             }
 
-            NSLog(@"[HKElleKit] warning: batch LHHookFunctions failed (%d)", result);
+            for(int i = 0; i < result; i++) {
+                functionOps[i]->succeeded = YES;
+            }
+
+            succeeded += result;
         } else {
-            for(HKHookOperation *op in functionOps) {
-                op->succeeded = YES;
-            }
+            // ElleKit: LIBHOOKER_OK (0) on success; non-zero is the failure
+            // detail itself, not a partial count. A 0 return means every op
+            // succeeded (ElleKit iterates all entries and writes each orig).
+            if(result != LIBHOOKER_OK) {
+                if(!detail) {
+                    detail = result;
+                }
 
-            succeeded += count;
+                NSLog(@"[HKElleKit] warning: batch LHHookFunctions failed (%d)", result);
+            } else {
+                for(HKHookOperation *op in functionOps) {
+                    op->succeeded = YES;
+                }
+
+                succeeded += count;
+            }
         }
     }
 
@@ -257,18 +312,34 @@ BOOL libhooker_discoverable(void) {
         errno = 0;
         int result = fn_LHPatchMemory([memoryHooks mutableBytes], count);
 
-        if(result != LIBHOOKER_OK) {
-            if(!detail) {
-                detail = result;
+        if(libhooker_uses_applied_count) {
+            if(result < count) {
+                if(!detail) {
+                    detail = result;
+                }
+
+                NSLog(@"[HKElleKit] warning: batch LHPatchMemory retval less than expected (%d/%d)", result, count);
             }
 
-            NSLog(@"[HKElleKit] warning: batch LHPatchMemory failed (%d)", result);
+            for(int i = 0; i < result; i++) {
+                memoryOps[i]->succeeded = YES;
+            }
+
+            succeeded += result;
         } else {
-            for(HKHookOperation *op in memoryOps) {
-                op->succeeded = YES;
-            }
+            if(result != LIBHOOKER_OK) {
+                if(!detail) {
+                    detail = result;
+                }
 
-            succeeded += count;
+                NSLog(@"[HKElleKit] warning: batch LHPatchMemory failed (%d)", result);
+            } else {
+                for(HKHookOperation *op in memoryOps) {
+                    op->succeeded = YES;
+                }
+
+                succeeded += count;
+            }
         }
     }
 
