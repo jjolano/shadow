@@ -1,5 +1,4 @@
 #import <Shadow/JBPath.h>
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "SHDWAboutListController.h"
 
@@ -84,15 +83,15 @@
 }
 
 - (void)openGitHub:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"]];
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"] options:@{} completionHandler:nil];
 }
 
 - (void)openKofi:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"]];
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"] options:@{} completionHandler:nil];
 }
 
 - (void)openChangeLog:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"]];
+	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"] options:@{} completionHandler:nil];
 }
 
 - (instancetype)init {
