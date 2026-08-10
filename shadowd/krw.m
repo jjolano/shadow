@@ -125,6 +125,11 @@ static int (*libjb_proc_rele)(uint64_t) = NULL;
 // dlsym → typed function pointer without -Werror conversion issues.
 #define DL_SYM(var, name) do { *(void **)(&(var)) = dlsym(gLibJB, (name)); } while (0)
 
+// ---- libkrw (Siguza libkrw0, rootless standard) ----
+static void *gLibKrw = NULL;
+static int (*libkrw_kread)(uint64_t, void *, size_t) = NULL;
+static int (*libkrw_kwrite)(void *, uint64_t, size_t) = NULL;
+
 // One init attempt: dlopen + dlsym all symbols + jbdInitPPLRW.  Retried by
 // the caller every 2s up to 30s.  The daemon is root, so no getuid hooking
 // is needed (the jailed caller protection doesn't apply).
@@ -292,6 +297,26 @@ static kern_return_t kwrite_buf_tfp0(kaddr_t addr, const void *buf, mach_msg_typ
     return KERN_SUCCESS;
 }
 
+// Mode-aware kernel read for the pfinder/allproc machinery: routes through
+// libkrw when that backend is active, tfp0 otherwise (libjb never runs
+// pfinder).  libkrw signature: int kread(uint64_t from, void *to, size_t len).
+// Chunked by page like the tfp0 path: libkrw's kread can fail on single
+// multi-MB reads (pfinder reads whole kernel sections).
+static bool kread_mode(kaddr_t addr, void *buf, size_t len) {
+    if (gKrwMode == KRW_LIBKRW) {
+        uint8_t *p = buf;
+        while (len != 0) {
+            size_t chunk = MIN(len, vm_kernel_page_size - (addr & vm_kernel_page_mask));
+            if (libkrw_kread(addr, p, chunk) != 0) return false;
+            p += chunk;
+            addr += chunk;
+            len -= chunk;
+        }
+        return true;
+    }
+    return kread_buf_tfp0(addr, buf, len) == KERN_SUCCESS;
+}
+
 static kaddr_t get_kbase(kaddr_t *kslide) {
     mach_msg_type_number_t cnt = TASK_DYLD_INFO_COUNT;
     vm_region_extended_info_data_t extended_info;
@@ -333,7 +358,7 @@ static kern_return_t find_section(kaddr_t sg64_addr, struct segment_command_64 s
     kaddr_t s64_addr, s64_end;
 
     for (s64_addr = sg64_addr + sizeof(sg64), s64_end = s64_addr + (sg64.cmdsize - sizeof(*sp)); s64_addr < s64_end; s64_addr += sizeof(*sp)) {
-        if (kread_buf_tfp0(s64_addr, sp, sizeof(*sp)) != KERN_SUCCESS) {
+        if (!kread_mode(s64_addr, sp, sizeof(*sp))) {
             break;
         }
         if (strncmp(sp->segname, sg64.segname, sizeof(sp->segname)) == 0 && strncmp(sp->sectname, sect_name, sizeof(sp->sectname)) == 0) {
@@ -355,7 +380,7 @@ static void sec_term(sec_64_t *sec) {
 
 static kern_return_t sec_init(sec_64_t *sec) {
     if ((sec->data = malloc(sec->s64.size)) != NULL) {
-        if (kread_buf_tfp0(sec->s64.addr, sec->data, sec->s64.size) == KERN_SUCCESS) {
+        if (kread_mode(sec->s64.addr, sec->data, sec->s64.size)) {
             return KERN_SUCCESS;
         }
         sec_term(sec);
@@ -382,9 +407,9 @@ static kern_return_t pfinder_init(pfinder_t *pfinder, kaddr_t kbase) {
     struct section_64 s64;
 
     pfinder_reset(pfinder);
-    if (kread_buf_tfp0(kbase, &mh64, sizeof(mh64)) == KERN_SUCCESS && mh64.magic == MH_MAGIC_64 && mh64.cputype == CPU_TYPE_ARM64 && mh64.filetype == MH_EXECUTE) {
+    if (kread_mode(kbase, &mh64, sizeof(mh64)) && mh64.magic == MH_MAGIC_64 && mh64.cputype == CPU_TYPE_ARM64 && mh64.filetype == MH_EXECUTE) {
         for (sg64_addr = kbase + sizeof(mh64), sg64_end = sg64_addr + (mh64.sizeofcmds - sizeof(sg64)); sg64_addr < sg64_end; sg64_addr += sg64.cmdsize) {
-            if (kread_buf_tfp0(sg64_addr, &sg64, sizeof(sg64)) != KERN_SUCCESS) {
+            if (!kread_mode(sg64_addr, &sg64, sizeof(sg64))) {
                 break;
             }
             if (sg64.cmd == LC_SEGMENT_64) {
@@ -481,8 +506,8 @@ static uint64_t find_our_proc(pid_t pid) {
     kaddr_t cur = allproc;
     pid_t cur_pid;
 
-    while (kread_buf_tfp0(cur, &cur, sizeof(cur)) == KERN_SUCCESS && cur != 0) {
-        if (kread_buf_tfp0(cur + off_p_pid, &cur_pid, sizeof(cur_pid)) == KERN_SUCCESS && cur_pid == pid) {
+    while (kread_mode(cur, &cur, sizeof(cur)) && cur != 0) {
+        if (kread_mode(cur + off_p_pid, &cur_pid, sizeof(cur_pid)) && cur_pid == pid) {
             return cur;
         }
     }
@@ -528,6 +553,80 @@ int krw_init_tfp0(void) {
     return 0;
 }
 
+// libkrw (Siguza libkrw0, rootless standard).  The daemon is a LaunchDaemon
+// (no entitlements), so kbase() is NOT used — it hangs without the proper
+// signed entitlements on some builds; the mach header scan below is
+// entitlement-free and validated on-device.
+int krw_init_libkrw_once(void) {
+    if (is_arm64e()) {
+        // libkrw0's tfp0-style backend is not PAC-safe; never use on arm64e.
+        shdw_log("libkrw: refused on arm64e");
+        return 1;
+    }
+    if (!gLibKrw) {
+        gLibKrw = dlopen("/var/jb/usr/lib/libkrw.0.dylib", RTLD_NOW);
+        if (!gLibKrw) {
+            shdw_log("libkrw: dlopen failed: %s", dlerror());
+            return 1;
+        }
+    }
+    *(void **)(&libkrw_kread) = dlsym(gLibKrw, "kread");
+    *(void **)(&libkrw_kwrite) = dlsym(gLibKrw, "kwrite");
+    if (!libkrw_kread || !libkrw_kwrite) {
+        shdw_log("libkrw: missing symbols (kread=%p kwrite=%p)", libkrw_kread, libkrw_kwrite);
+        return 1;
+    }
+    // NOTE: libkrw signature is kwrite(void *from, uint64_t to, size_t len)
+    // — user buffer FIRST, kernel address SECOND (verified on-device).
+
+    // kbase via mach header scan (kbase() hangs here).  Match only the
+    // kernel mach-O: magic alone is not enough — the kernelcache image
+    // contains kext headers (also 0xfeedfacf, MH_KEXT_BUNDLE) that can
+    // appear earlier in the slide range.
+    kaddr_t kbase = 0;
+    for (uint64_t off = 0; off < 0x10000000ULL; off += 0x4000ULL) {
+        struct mach_header_64 mh = {0};
+        if (libkrw_kread(VM_KERNEL_LINK_ADDRESS + off, &mh, sizeof(mh)) != 0) continue;
+        if (mh.magic == MH_MAGIC_64 && mh.filetype == MH_EXECUTE &&
+            mh.cputype == CPU_TYPE_ARM64 && mh.ncmds > 5) {
+            kbase = VM_KERNEL_LINK_ADDRESS + off;
+            break;
+        }
+    }
+    if (kbase == 0) {
+        shdw_log("libkrw: mach header scan failed");
+        return 1;
+    }
+    shdw_log("libkrw: kbase 0x%llx", kbase);
+
+    // Route pfinder through libkrw before running it.
+    krw_mode_t savedMode = gKrwMode;
+    gKrwMode = KRW_LIBKRW;
+
+    pfinder_t pfinder;
+    if (pfinder_init(&pfinder, kbase) != KERN_SUCCESS) {
+        gKrwMode = savedMode;
+        shdw_log("libkrw: pfinder_init failed");
+        return 1;
+    }
+    if ((allproc = pfinder_allproc(pfinder)) == 0) {
+        pfinder_term(&pfinder);
+        gKrwMode = savedMode;
+        shdw_log("libkrw: pfinder_allproc failed");
+        return 1;
+    }
+    pfinder_term(&pfinder);
+
+    gOurProc = find_our_proc(getpid());
+    if (gOurProc == 0) {
+        gKrwMode = savedMode;
+        shdw_log("libkrw: find_our_proc failed");
+        return 1;
+    }
+    shdw_log("libkrw: our proc 0x%llx", gOurProc);
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Unified krw dispatch — every call checks status; failures are never ignored
 // ---------------------------------------------------------------------------
@@ -562,12 +661,19 @@ static bool krw_read(uint64_t addr, void *buf, size_t len) {
     if (gKrwMode == KRW_LIBJB) {
         return libjb_kreadbuf(addr, buf, len) == 0;
     }
+    if (gKrwMode == KRW_LIBKRW) {
+        return libkrw_kread(addr, buf, len) == 0;
+    }
     return kread_buf_tfp0(addr, buf, len) == KERN_SUCCESS;
 }
 
 static bool krw_write(uint64_t addr, const void *buf, size_t len) {
     if (gKrwMode == KRW_LIBJB) {
         return libjb_kwritebuf(addr, buf, len) == 0;
+    }
+    if (gKrwMode == KRW_LIBKRW) {
+        // libkrw signature: kwrite(void *from, uint64_t to, size_t len)
+        return libkrw_kwrite((void *)buf, addr, len) == 0;
     }
     return kwrite_buf_tfp0(addr, buf, len) == KERN_SUCCESS;
 }
