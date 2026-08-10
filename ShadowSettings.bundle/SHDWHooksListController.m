@@ -129,6 +129,8 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
+	SHDWToggleHaptic();
+
 	if([[specifier identifier] isEqualToString:@"BypassPreset"]) {
 		// "custom" is a read-only status (no profile matches); selecting it
 		// must not clobber the current settings. Reload so the segment

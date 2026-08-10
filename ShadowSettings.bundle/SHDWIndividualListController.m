@@ -64,6 +64,7 @@
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
+	SHDWToggleHaptic();
 	SHDWWriteAppPref(prefs, [self applicationIDInContext], [specifier identifier], value);
 }
 
