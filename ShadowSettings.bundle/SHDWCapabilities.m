@@ -41,10 +41,8 @@ static NSString* shdw_localized(NSString* key) {
 // ---------------------------------------------------------------------------
 
 #define SHDW_STATUS_TIMEOUT_MS 300
-#define SHDW_CACHE_INTERVAL    5.0
 
 static SHDWDaemonState gDaemonState = SHDWDaemonUnavailable;
-static CFAbsoluteTime gDaemonStateTime = 0;
 
 SHDWDaemonState shdw_query_daemon_state(void) {
     mach_port_t service_port = MACH_PORT_NULL;
@@ -117,14 +115,25 @@ SHDWDaemonState shdw_query_daemon_state(void) {
 }
 
 SHDWDaemonState SHDWQueryDaemonState(void) {
-    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-
-    if(now - gDaemonStateTime > SHDW_CACHE_INTERVAL) {
-        gDaemonState = shdw_query_daemon_state();
-        gDaemonStateTime = now;
-    }
-
+    // Cache-first: never block the Settings UI on Mach IPC. The cache is
+    // primed by SHDWRefreshDaemonStateAsync:, so the first specifier load
+    // renders instantly (unavailable until the refresh lands), then the
+    // controller re-applies gating with the fresh state.
     return gDaemonState;
+}
+
+void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        SHDWDaemonState state = shdw_query_daemon_state();
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            gDaemonState = state;
+
+            if(completion) {
+                completion(state);
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
