@@ -182,7 +182,10 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 		[prefs synchronize];
 
 		UIAlertController* applied = [UIAlertController alertControllerWithTitle:[self localized:@"IMPORT_APPLIED" fallback:@"Settings imported. Respring to apply."] message:nil preferredStyle:UIAlertControllerStyleAlert];
-		[applied addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_OK" fallback:@"OK"] style:UIAlertActionStyleDefault handler:nil]];
+		[applied addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_OK" fallback:@"OK"] style:UIAlertActionStyleCancel handler:nil]];
+		[applied addAction:[UIAlertAction actionWithTitle:[self localized:@"RESPRING" fallback:@"Respring"] style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
+			[self respring:nil];
+		}]];
 		[self presentViewController:applied animated:YES completion:nil];
 	}]];
 
