@@ -607,9 +607,24 @@ static NSString* ProbeReport(void) {
 
 - (void)_refresh {
     _textView.text = ProbeReport();
+    // Instrumentation for SSH-driven verification: dump the full report to
+    // stderr AND persist it to a known-writable path so any launch path
+    // makes it retrievable without screen capture. NSDocumentDirectory
+    // resolution can fail in launch contexts, so use the mobile home dir.
+    fprintf(stderr, "%s\n", [_textView.text UTF8String]);
+    [[_textView.text dataUsingEncoding:NSUTF8StringEncoding]
+        writeToFile:@"/var/mobile/Documents/dyldprobe-report.txt" atomically:YES];
 }
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
+    // Write the report FIRST — before any window setup — so it lands even if
+    // UI initialization stalls (headless/SSH-launched contexts).
+    @autoreleasepool {
+        NSString* report = ProbeReport();
+        fprintf(stderr, "%s\n", [report UTF8String]);
+        [[report dataUsingEncoding:NSUTF8StringEncoding]
+            writeToFile:@"/var/mobile/Documents/dyldprobe-report.txt" atomically:YES];
+    }
     CGRect frame = [[UIScreen mainScreen] bounds];
     self.window = [[UIWindow alloc] initWithFrame:frame];
 
