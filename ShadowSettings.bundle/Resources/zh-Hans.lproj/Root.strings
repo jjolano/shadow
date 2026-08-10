@@ -19,3 +19,18 @@
 "ROOT_ABOUT" = "关于";
 
 "ROOT_DETECTOR_LOG" = "检测器日志";
+
+"TOOLS_HDR" = "工具";
+
+"EXPORT_SETTINGS" = "导出设置";
+"IMPORT_SETTINGS" = "导入设置";
+
+"APPS_ENABLED_FMT" = "%ld 个已启用";
+
+"IMPORT_CONFIRM_TITLE" = "导入设置？";
+"IMPORT_CONFIRM_MSG" = "这将用所选文件替换所有当前设置。";
+"IMPORT_CONFIRM" = "导入";
+"IMPORT_CANCEL" = "取消";
+"IMPORT_BAD_FILE" = "所选文件不是有效的 Shadow 设置备份。";
+"IMPORT_APPLIED" = "设置已导入，重启以生效。";
+"IMPORT_OK" = "好";

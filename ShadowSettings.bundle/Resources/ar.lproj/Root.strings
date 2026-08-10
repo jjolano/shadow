@@ -15,3 +15,15 @@
 }
 
 "ROOT_DETECTOR_LOG" = "سجل كاشف الجيلبريك";
+
+"TOOLS_HDR" = "أدوات";
+"EXPORT_SETTINGS" = "تصدير الإعدادات";
+"IMPORT_SETTINGS" = "استيراد الإعدادات";
+"APPS_ENABLED_FMT" = "%ld مفعّل";
+"IMPORT_CONFIRM_TITLE" = "استيراد الإعدادات؟";
+"IMPORT_CONFIRM_MSG" = "سيستبدل هذا جميع الإعدادات الحالية بالملف المحدد.";
+"IMPORT_CONFIRM" = "استيراد";
+"IMPORT_CANCEL" = "إلغاء";
+"IMPORT_BAD_FILE" = "الملف المحدد ليس نسخة احتياطية صالحة لإعدادات Shadow.";
+"IMPORT_APPLIED" = "تم استيراد الإعدادات. أعد التشغيل للتطبيق.";
+"IMPORT_OK" = "حسنًا";

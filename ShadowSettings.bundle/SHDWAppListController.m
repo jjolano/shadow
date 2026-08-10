@@ -16,10 +16,44 @@
 	NSMutableArray* preset_titles;
 }
 
+// YES while the app has no per-app override (App_Enabled absent or NO):
+// the page collapses to "follow global" and the hook toggles are hidden.
+- (BOOL)followGlobal {
+	NSDictionary* appPrefs = [prefs dictionaryForKey:[self applicationID]];
+	if(appPrefs && [appPrefs[@"App_Enabled"] boolValue]) {
+		return NO;
+	}
+
+	return YES;
+}
+
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
-		[_specifiers addObjectsFromArray:[self loadSpecifiersFromPlistName:@"Hooks" target:self]];
+
+		if(![self followGlobal]) {
+			[_specifiers addObjectsFromArray:[self loadSpecifiersFromPlistName:@"Hooks" target:self]];
+		}
+
+		// Tell the user why the hook rows are (not) shown. The group is found
+		// by id (its display name is localized); the footer is written
+		// already-localized, since specifier loading localizes plist strings.
+		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+		PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
+		if(settingsGroup) {
+			NSString* footer = [self followGlobal]
+				? [bundle localizedStringForKey:@"APP_USES_GLOBAL" value:@"Following the global settings. Turn off to customize this app." table:@"App"]
+				: [bundle localizedStringForKey:@"APP_SETTINGS_DESC" value:@"Adjust the bypass configuration for this application." table:@"App"];
+			[settingsGroup setProperty:footer forKey:@"footerText"];
+		}
+
+		// The preset segment cell reads its options from specifier
+		// properties; the titles are localized in code (Hooks table).
+		PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+		if(presetSpecifier) {
+			[presetSpecifier setProperty:preset_titles forKey:PSValidTitlesKey];
+			[presetSpecifier setProperty:preset_values forKey:PSValidValuesKey];
+		}
 
 		// Same capability gating as the global Hooks page: per-app toggles
 		// can't run a group the device's backends don't support either.
@@ -73,23 +107,38 @@
 		return @"custom";
 	}
 
-	id value = SHDWReadAppPref(prefs, [self applicationID], key);
-
-	// The master switch mirrors the global enable state until overridden.
-	if([key isEqualToString:@"App_Enabled"] && !value) {
-		return [prefs objectForKey:@"Global_Enabled"];
+	if([key isEqualToString:@"App_FollowGlobal"]) {
+		return @([self followGlobal]);
 	}
 
-	return value;
+	return SHDWReadAppPref(prefs, [self applicationID], key);
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
 	NSString* key = [specifier identifier];
 
+	if([key isEqualToString:@"App_FollowGlobal"]) {
+		// Following global = no per-app override; customizing flips the
+		// per-app master switch on and reveals the hook rows.
+		if([value boolValue]) {
+			SHDWWriteAppPref(prefs, [self applicationID], @"App_Enabled", @(NO));
+		} else {
+			SHDWWriteAppPref(prefs, [self applicationID], @"App_Enabled", @(YES));
+		}
+
+		[self reloadSpecifiers];
+		return;
+	}
+
 	if([key isEqualToString:@"BypassPreset"]) {
 		// "custom" is a read-only status (no profile matches); selecting it
-		// must not clobber the current settings.
+		// must not clobber the current settings. Reload so the segment
+		// snaps back to the derived preset.
 		if(![value isEqualToString:@"standard"] && ![value isEqualToString:@"maximum"]) {
+			PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+			if(presetSpecifier) {
+				[self reloadSpecifier:presetSpecifier];
+			}
 			return;
 		}
 
@@ -142,14 +191,6 @@
 	}
 
 	return YES;
-}
-
-- (NSArray *)getPresetValues:(PSSpecifier *)specifier {
-	return [preset_values copy];
-}
-
-- (NSArray *)getPresetTitles:(PSSpecifier *)specifier {
-	return [preset_titles copy];
 }
 
 - (NSArray *)getValues:(PSSpecifier *)specifier {
