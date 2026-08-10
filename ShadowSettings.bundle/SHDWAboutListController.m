@@ -56,6 +56,8 @@
 
 		NSURLSession* session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:nil delegateQueue:[NSOperationQueue mainQueue]];
 		NSURLSessionDataTask* task = [session dataTaskWithURL:update_url completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+			NSString* version = nil;
+
 			if(!error) {
 				NSDictionary* json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
@@ -63,17 +65,14 @@
 					NSString* tag_name = json[@"tag_name"];
 
 					if(tag_name && tag_name.length > 0) {
-						latestVersion = [tag_name hasPrefix:@"v"] ? [tag_name substringFromIndex:1] : tag_name;
-				} else {
-					latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
+						version = [tag_name hasPrefix:@"v"] ? [tag_name substringFromIndex:1] : tag_name;
+					}
 				}
-			} else {
-				latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
 			}
-		} else {
-			latestVersion = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
-		}
 
+			// Always reload: the placeholder ("…") cell must be replaced
+			// with the fetched version (or "Unknown") on every outcome.
+			latestVersion = version ?: [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"UNKNOWN" value:@"Unknown" table:@"About"];
 			[self reloadSpecifier:sender];
 		}];
 
