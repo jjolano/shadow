@@ -19,10 +19,17 @@ description: Publish Shadow's built debs to the jjolano apt repo (../ios-repo). 
 | `me.jjolano.shadow_<ver>_iphoneos-arm64.deb` | `rootless/` |
 | `me.jjolano.shadow_<ver>_iphoneos-arm.deb` (fat: armv7/armv7s + arm64/arm64e) | `root/` |
 | `me.jjolano.shadow_<ver>_iphoneos-arm64e.deb` (roothide, fat arm64+arm64e, `.jbroot` install_names) | `roothide/` |
+| `me.jjolano.shadow.harness_<ver>_iphoneos-arm.deb` | `root/` |
+| `me.jjolano.shadow.harness_<ver>_iphoneos-arm64.deb` | `rootless/` |
+
+## Harness
+
+The harness deb (`me.jjolano.shadow.harness`) is optional per release and version-independent of Shadow: `update.sh` dedupes per (Package, Version, Architecture), so any release that contains the deb indexes it on its own cadence. There is no roothide harness build — only the rooted (`root/`) and rootless (`rootless/`) debs above.
 
 ## Gotchas
 
 - **One deb per package+version+arch.** The flavors can't share one entry — apt keys on `name_version_arch`.
+- **Any `.deb` asset in a release is indexed automatically** — the harness needs no special handling beyond being uploaded.
 - **Roothide is `iphoneos-arm64e` by ecosystem convention** (roothide.github.io publishes everything as arm64e even though it supports A8–A11; the fat arm64+arm64e slices cover both). Requires the roothide theos fork's `THEOS_PACKAGE_SCHEME=roothide`. `./build.sh roothide` emits it; requires `../HookKit` built for roothide too (same scheme) so the `.jbroot` deps resolve.
 - **The fat deb replaces both the old rooted and legacy packages.** `control` keeps `Conflicts: me.jjolano.shadow.legacy`, so installing it on a device with the old v2-era `me.jjolano.shadow.legacy` package auto-removes it (dpkg deinstalls conflicted packages). Never ship the old legacy id — the fat deb is the single `iphoneos-arm` entry.
 - **`update.sh` pushes to the LIVE repo.** Confirm with the user before running.

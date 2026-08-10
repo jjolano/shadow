@@ -31,10 +31,16 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
         return;
     }
 
-    if([executablePath hasPrefix:@"/Applications"]
+    // The harness verification app is its own test subject: it installs to
+    // /Applications (rooted) or /var/jb/Applications (rootless) — both
+    // denied below — so without this exception it can never be hooked and
+    // its battery would always read all-GAP on-device.
+    BOOL isShadowHarness = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"];
+
+    if(!isShadowHarness && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
     || [executablePath hasPrefix:@"/private/preboot"]
-    || [executablePath hasPrefix:@"/var/jb"]) {
+    || [executablePath hasPrefix:@"/var/jb"])) {
         return;
     }
 
