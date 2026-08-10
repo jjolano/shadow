@@ -83,6 +83,19 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	[prefs synchronize];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+	[super viewWillAppear:animated];
+
+	// The summary rows derive from settings that can change on pushed pages
+	// (preset, per-app overrides); refresh them on every return.
+	for(NSString* specID in @[ @"BypassPresetSummary", @"ApplicationsSummary" ]) {
+		PSSpecifier* summary = [self specifierForID:specID];
+		if(summary) {
+			[self reloadSpecifier:summary];
+		}
+	}
+}
+
 - (void)respring:(id)sender {
 	if([[NSFileManager defaultManager] fileExistsAtPath:JBPath(@"/usr/bin/sbreload")]) {
 		pid_t pid;
