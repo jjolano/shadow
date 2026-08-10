@@ -40,7 +40,7 @@ static NSString* shdw_localized(NSString* key) {
 // No retained connection — the Settings process only pings for health.
 // ---------------------------------------------------------------------------
 
-#define SHDW_STATUS_TIMEOUT_MS 2000
+#define SHDW_STATUS_TIMEOUT_MS 300
 #define SHDW_CACHE_INTERVAL    5.0
 
 static SHDWDaemonState gDaemonState = SHDWDaemonUnavailable;
