@@ -320,6 +320,15 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
     unsigned int n = 0;
 
     for(unsigned int i = 0; i < localCount; i++) {
+        // Fail-soft: original_method_getImplementation lives on the rebind
+        // lane (shadowhook_objc_methodimpl). If that hook was refused (no
+        // rebind backend), the cell is NULL — skip the IMP check rather than
+        // crash (the Method itself is still filtered).
+        if(!original_method_getImplementation) {
+            result[n++] = result[i];
+            continue;
+        }
+
         IMP imp = original_method_getImplementation(result[i]);
 
         if([_shadow isAddrRestricted:(void *)result[i]] || [_shadow isAddrRestricted:(void *)imp]) {
@@ -346,9 +355,11 @@ static Method replaced_class_getInstanceMethod(Class cls, SEL name) {
 
     Method result = original_class_getInstanceMethod(cls, name);
 
+    // original_method_getImplementation lives on the rebind lane; a refused
+    // hook leaves it NULL — skip the IMP check (fail-soft) rather than crash.
     if([_shadow isAddrRestricted:(__bridge const void *)cls]
     || [_shadow isAddrRestricted:(void *)result]
-    || [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)]) {
+    || (original_method_getImplementation && [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)])) {
         return NULL;
     }
 
@@ -363,9 +374,10 @@ static Method replaced_class_getClassMethod(Class cls, SEL name) {
 
     Method result = original_class_getClassMethod(cls, name);
 
+    // Fail-soft like replaced_class_getInstanceMethod (rebind-lane original).
     if([_shadow isAddrRestricted:(__bridge const void *)cls]
     || [_shadow isAddrRestricted:(void *)result]
-    || [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)]) {
+    || (original_method_getImplementation && [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)])) {
         return NULL;
     }
 
@@ -607,13 +619,28 @@ void shadowhook_objc(HKSubstitutor* hooks) {
     [hooks hookFunction:class_getImageName withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
     [hooks hookFunction:objc_copyClassNamesForImage withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];
     [hooks hookFunction:objc_copyImageNames withReplacement:replaced_objc_copyImageNames outOldPtr:(void **) &original_objc_copyImageNames];
-    [hooks hookFunction:method_getImplementation withReplacement:replaced_method_getImplementation outOldPtr:(void **) &original_method_getImplementation];
     [hooks hookFunction:class_getMethodImplementation withReplacement:replaced_class_getMethodImplementation outOldPtr:(void **) &original_class_getMethodImplementation];
 
     void* imp_getBlock_ptr = dlsym(RTLD_DEFAULT, "imp_getBlock");
     if(imp_getBlock_ptr) {
         [hooks hookFunction:imp_getBlock_ptr withReplacement:replaced_imp_getBlock outOldPtr:(void **) &original_imp_getBlock];
     }
+}
+
+// method_getImplementation is a TINY libobjc leaf (~12 bytes: cbz/ldr/ret).
+// subMain's shared inline preflight (hk_shared_inline_preflight_ok) refuses
+// any target whose first 20 bytes contain an early terminator, so the hook
+// would be silently declined at enqueue, leaving original_method_getImplementation
+// NULL — and replaced_class_copyMethodList / replaced_class_getInstanceMethod /
+// replaced_class_getClassMethod all call it, so a NULL cell is a guaranteed
+// SIGSEGV the moment QuartzCore walks a class's methods (observed on-device:
+// classDescription_locked -> class_copyMethodList -> blr to NULL). The rebind
+// (fishhook) lane has no prologue preflight and rebinds by GOT entry, which
+// is exactly right here: external callers are intercepted, and libobjc's own
+// internal calls bypass (they classify internal anyway). Installed on
+// subCFunc (see dylib.x) — never on subMain.
+void shadowhook_objc_methodimpl(HKSubstitutor* hooks) {
+    [hooks hookFunction:method_getImplementation withReplacement:replaced_method_getImplementation outOldPtr:(void **) &original_method_getImplementation];
 }
 
 void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
@@ -665,30 +692,37 @@ void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
 
     // Chained-hook SPIs (plan Wave 3): capture the native predecessors and
     // restore them as the current hooks (hot paths stay native); untrusted
-    // setters get the filtered proxies.
+    // setters get the filtered proxies. The capture must use the RAW setter
+    // — calling through the hooked setter here would re-enter
+    // replaced_objc_setHook_* whose original_* is still NULL until the
+    // batch drains (SIGSEGV at PC=0). Hook the setter only after the
+    // predecessor is captured and restored.
     void* setHookGetImageNamePtr = dlsym(RTLD_DEFAULT, "objc_setHook_getImageName");
 
     if(setHookGetImageNamePtr) {
-        [hooks hookFunction:setHookGetImageNamePtr withReplacement:replaced_objc_setHook_getImageName outOldPtr:(void **) &original_objc_setHook_getImageName];
+        // Capture the native predecessor via the raw setter — calling the
+        // hooked setter here would re-enter replaced_objc_setHook_* whose
+        // original_* is still NULL until the batch drains. outOldValue is
+        // _Nonnull: pass real storage (the global directly — Apple publishes
+        // *outOldValue before the new hook can run).
+        ((void (*)(objc_hook_getImageName, objc_hook_getImageName *))setHookGetImageNamePtr)(shdw_getImageName_proxy, &shdw_native_getImageName);
 
-        objc_hook_getImageName native = NULL;
         objc_hook_getImageName restore = NULL;
+        ((void (*)(objc_hook_getImageName, objc_hook_getImageName *))setHookGetImageNamePtr)(shdw_native_getImageName, &restore);
 
-        original_objc_setHook_getImageName(shdw_getImageName_proxy, &native);
-        shdw_native_getImageName = native;
-        original_objc_setHook_getImageName(native, &restore);
+        [hooks hookFunction:setHookGetImageNamePtr withReplacement:replaced_objc_setHook_getImageName outOldPtr:(void **) &original_objc_setHook_getImageName];
     }
 
     void* setHookGetClassPtr = dlsym(RTLD_DEFAULT, "objc_setHook_getClass");
 
     if(setHookGetClassPtr) {
-        [hooks hookFunction:setHookGetClassPtr withReplacement:replaced_objc_setHook_getClass outOldPtr:(void **) &original_objc_setHook_getClass];
-
         objc_hook_getClass native = NULL;
-        objc_hook_getClass restore = NULL;
-
-        original_objc_setHook_getClass(shdw_getClass_proxy, &native);
+        ((void (*)(objc_hook_getClass, objc_hook_getClass *))setHookGetClassPtr)(shdw_getClass_proxy, &native);
         shdw_native_getClass = native;
-        original_objc_setHook_getClass(native, &restore);
+
+        objc_hook_getClass restore = NULL;
+        ((void (*)(objc_hook_getClass, objc_hook_getClass *))setHookGetClassPtr)(native, &restore);
+
+        [hooks hookFunction:setHookGetClassPtr withReplacement:replaced_objc_setHook_getClass outOldPtr:(void **) &original_objc_setHook_getClass];
     }
 }

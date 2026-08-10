@@ -220,6 +220,7 @@ extern void shadowhook_NSProcessInfo(HKSubstitutor* hooks);
 extern void shadowhook_NSString(HKSubstitutor* hooks);
 extern void shadowhook_NSURL(HKSubstitutor* hooks);
 extern void shadowhook_objc(HKSubstitutor* hooks);
+extern void shadowhook_objc_methodimpl(HKSubstitutor* hooks);
 extern void shadowhook_sandbox(HKSubstitutor* hooks);
 extern void shadowhook_syscall(HKSubstitutor* hooks);
 extern void shadowhook_UIApplication(HKSubstitutor* hooks);
