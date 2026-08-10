@@ -119,6 +119,19 @@ shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
 static os_unfair_lock _shdw_own_ranges_lock = OS_UNFAIR_LOCK_INIT;
 
 void shdw_own_ranges_refresh(void) {
+    // Replay guard: during shadowhook_dyld's add-image registration, dyld
+    // synchronously replays EVERY loaded image, and each replay callback
+    // calls this refresh, which scans the WHOLE image list through the full
+    // restriction engine (isProtectedImagePath: → RulesetStore.currentSnapshot
+    // → @synchronized). N callbacks × N-image scans = O(N²) CPU churn — a
+    // launch watchdog kill on image-heavy apps (observed on-device:
+    // ConsumerApp, 20s budget exhausted, 27.6s CPU, spin in objc_sync_exit).
+    // The single final refresh after registration (shadowhook_dyld) rebuilds
+    // the same spans once, so skipping during replay loses nothing.
+    if(_shdw_dyld_replay_in_progress) {
+        return;
+    }
+
     os_unfair_lock_lock(&_shdw_own_ranges_lock);
 
     shdw_own_ranges_t* published = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
