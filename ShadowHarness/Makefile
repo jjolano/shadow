@@ -1,8 +1,12 @@
+# The redesigned UI (scene lifecycle, list layouts, SF Symbols) needs iOS 14+.
+# build.sh passes TARGET explicitly per flavor; this default covers standalone
+# builds of the harness.
+TARGET ?= iphone:clang:latest:14.0
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = ShadowHarness
 
-ShadowHarness_FILES = main.m AppDelegate.m StatusViewController.m Battery.m ShadowDetector.m
+ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m StatusViewController.m Battery.m ShadowDetector.m
 ShadowHarness_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers
 # Mirror shdw's linkage exactly: Shadow.framework resolves at runtime through
 # these rpaths (rooted + rootless layouts), staged builds come from $THEOS/lib.
