@@ -5,11 +5,6 @@
 "AUTOMATIC" = "自动";
 
 
-"ALLOW_RESOURCES_DESC" = "某些插件需要完全访问一些越狱资源。除非需要插件，否则不要启用此功能。";
-
-
-"ENH_PR_DESC" = "启用此设置将产生对文件访问操作的额外处理，但会对性能产生明显影响。";
-
 "ESSENTIAL_HOOKS" = "基本Hook";
 "ESSENTIAL_HOOKS_DESC" = "基本Hook包含最常见的越狱检测方法。";
 
