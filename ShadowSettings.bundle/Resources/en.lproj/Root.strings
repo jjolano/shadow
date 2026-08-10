@@ -19,3 +19,18 @@
 "ROOT_ABOUT" = "About";
 
 "ROOT_DETECTOR_LOG" = "Detector Log";
+
+"TOOLS_HDR" = "Tools";
+
+"EXPORT_SETTINGS" = "Export Settings";
+"IMPORT_SETTINGS" = "Import Settings";
+
+"APPS_ENABLED_FMT" = "%ld enabled";
+
+"IMPORT_CONFIRM_TITLE" = "Import Settings?";
+"IMPORT_CONFIRM_MSG" = "This replaces all current settings with the selected file.";
+"IMPORT_CONFIRM" = "Import";
+"IMPORT_CANCEL" = "Cancel";
+"IMPORT_BAD_FILE" = "The selected file is not a valid Shadow settings backup.";
+"IMPORT_APPLIED" = "Settings imported. Respring to apply.";
+"IMPORT_OK" = "OK";

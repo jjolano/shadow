@@ -30,6 +30,9 @@
 "HOOK_SYSCALL" = "Private Syscalls";
 "HOOK_APPENUM" = "App Enumeration";
 
+"INDIVIDUAL_HOOKS" = "Individual Hooks";
+"INDIVIDUAL_HOOKS_DESC" = "Fine-tune individual hooks. The preset applies a recommended set at once.";
+
 "DNGR_HOOKS" = "⚠︎ Dangerous Hooks";
 "DNGR_HOOKS_DESC" = "Low-level bypass methods. May crash apps or break system features. Enable only if the Recommended hooks did not work.";
 
@@ -50,3 +53,6 @@
 "PRESET_STANDARD" = "Standard";
 "PRESET_MAXIMUM" = "Maximum";
 "PRESET_CUSTOM" = "Custom";
+
+"STATUS_HDR" = "Status";
+"STATUS_FMT" = "%ld hooks active · %@";

@@ -18,3 +18,15 @@
 "APPLICATIONS" = "應用程式";
 "RESET" = "重置設定";
 "RESPRING" = "重新啟動SpringBoard";
+
+"TOOLS_HDR" = "工具";
+"EXPORT_SETTINGS" = "匯出設定";
+"IMPORT_SETTINGS" = "匯入設定";
+"APPS_ENABLED_FMT" = "%ld 個已啟用";
+"IMPORT_CONFIRM_TITLE" = "匯入設定？";
+"IMPORT_CONFIRM_MSG" = "這會用所選檔案取代所有目前設定。";
+"IMPORT_CONFIRM" = "匯入";
+"IMPORT_CANCEL" = "取消";
+"IMPORT_BAD_FILE" = "所選檔案不是有效的 Shadow 設定備份。";
+"IMPORT_APPLIED" = "設定已匯入，重新啟動以生效。";
+"IMPORT_OK" = "好";

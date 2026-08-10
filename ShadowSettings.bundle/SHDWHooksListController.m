@@ -38,6 +38,14 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
 		[self setTitle:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"BYPASS_SETTINGS" value:@"Bypass Settings" table:@"Root"]];
 
+		// The preset segment cell reads its options from specifier
+		// properties; the titles are localized in code (Hooks table).
+		PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+		if(presetSpecifier) {
+			[presetSpecifier setProperty:preset_titles forKey:PSValidTitlesKey];
+			[presetSpecifier setProperty:preset_values forKey:PSValidValuesKey];
+		}
+
 		// Disable hook groups whose backend capability is missing on this
 		// device (message/function/inline), with a footer note per group.
 		// Gate instantly with cached state, then re-gate when the async
@@ -73,6 +81,29 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
+	if([[specifier identifier] isEqualToString:@"BypassStatus"]) {
+		// "N hooks active · <preset>": count enabled defaults, derive the
+		// preset the same way the segment row does.
+		NSInteger count = 0;
+		for(NSString* key in SHDWDefaultHookSettings()) {
+			if([SHDWReadAppPref(prefs, nil, key) boolValue]) {
+				count++;
+			}
+		}
+
+		NSString* presetID = @"custom";
+		if(PrefsMatchPreset(prefs, SHDWPresetStandard())) {
+			presetID = @"standard";
+		} else if(PrefsMatchPreset(prefs, SHDWPresetMaximum())) {
+			presetID = @"maximum";
+		}
+
+		NSString* presetKey = [NSString stringWithFormat:@"PRESET_%@", [presetID uppercaseString]];
+		NSString* presetTitle = [[NSBundle bundleForClass:[self class]] localizedStringForKey:presetKey value:presetID table:@"Hooks"];
+
+		return [NSString stringWithFormat:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"STATUS_FMT" value:@"%ld hooks active · %@" table:@"Hooks"], (long)count, presetTitle];
+	}
+
 	if([[specifier identifier] isEqualToString:@"BypassPreset"]) {
 		if(PrefsMatchPreset(prefs, SHDWPresetStandard())) {
 			return @"standard";
@@ -91,8 +122,13 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
 	if([[specifier identifier] isEqualToString:@"BypassPreset"]) {
 		// "custom" is a read-only status (no profile matches); selecting it
-		// must not clobber the current settings.
+		// must not clobber the current settings. Reload so the segment
+		// snaps back to the derived preset.
 		if(![value isEqualToString:@"standard"] && ![value isEqualToString:@"maximum"]) {
+			PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+			if(presetSpecifier) {
+				[self reloadSpecifier:presetSpecifier];
+			}
 			return;
 		}
 
@@ -133,14 +169,6 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	if(presetSpecifier) {
 		[self reloadSpecifier:presetSpecifier];
 	}
-}
-
-- (NSArray *)getPresetValues:(PSSpecifier *)specifier {
-	return [preset_values copy];
-}
-
-- (NSArray *)getPresetTitles:(PSSpecifier *)specifier {
-	return [preset_titles copy];
 }
 
 - (NSArray *)getValues:(PSSpecifier *)specifier {

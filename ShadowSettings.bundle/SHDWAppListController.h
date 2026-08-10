@@ -9,6 +9,4 @@
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier;
 - (NSArray *)getValues:(PSSpecifier *)specifier;
 - (NSArray *)getTitles:(PSSpecifier *)specifier;
-- (NSArray *)getPresetValues:(PSSpecifier *)specifier;
-- (NSArray *)getPresetTitles:(PSSpecifier *)specifier;
 @end

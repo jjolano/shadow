@@ -36,6 +36,9 @@
 "HOOK_SYSCALL" = "私有系统调用";
 "HOOK_APPENUM" = "应用枚举";
 
+"INDIVIDUAL_HOOKS" = "单独钩子";
+"INDIVIDUAL_HOOKS_DESC" = "单独微调每个钩子。预设可一次性应用推荐配置。";
+
 "DNGR_HOOKS" = "⚠︎ 危险Hook";
 "DNGR_HOOKS_DESC" = "底层屏蔽方法。可能导致应用崩溃或系统功能异常。仅在推荐的Hook无法生效时启用。";
 
@@ -56,3 +59,6 @@
 "PRESET_STANDARD" = "标准";
 "PRESET_MAXIMUM" = "最大";
 "PRESET_CUSTOM" = "自定义";
+
+"STATUS_HDR" = "状态";
+"STATUS_FMT" = "%ld 个钩子已启用 · %@";
