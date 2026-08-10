@@ -1,0 +1,9 @@
+Package: me.jjolano.shadow.harness
+Name: Shadow Harness
+Depends: me.jjolano.shadow
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Optional on-device verification harness for Shadow
+Maintainer: jjolano
+Author: jjolano
+Section: Utilities

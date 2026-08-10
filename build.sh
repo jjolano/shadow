@@ -142,6 +142,12 @@ build_rootless() {
     THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make package FINALPACKAGE=1 &&
     cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
 
+    # On-device verification harness (separate package). Same scheme/archs
+    # as this flavor; the rootless scheme sets THEOS_PACKAGE_INSTALL_PREFIX
+    # (/var/jb) itself, so no extra env is needed.
+    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make -C ShadowHarness package FINALPACKAGE=1 &&
+    cp -p ShadowHarness/packages/*.deb $PWD/build/
+
     rm -rf $THEOS/lib/Shadow.framework
 }
 
@@ -164,6 +170,11 @@ build_fat() {
     make clean &&
     ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
     cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm.deb
+
+    # On-device verification harness (separate package). Same archs/target
+    # as this flavor (rooted scheme — no THEOS_PACKAGE_SCHEME).
+    ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make -C ShadowHarness package FINALPACKAGE=1 &&
+    cp -p ShadowHarness/packages/*.deb $PWD/build/
 
     rm -rf $THEOS/lib/Shadow.framework
 }
