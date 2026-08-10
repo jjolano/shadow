@@ -259,6 +259,15 @@ void shdw_detector_detected(const char* reason) {
         if(!_shdw_objc_installed) {
             NSLog(@"+ objc (installed on detector evidence)");
             shadowhook_objc(_shdw_watcher_main);
+
+            // method_getImplementation rides the rebind lane even on the
+            // escalation path (same tiny-prologue preflight constraint; see
+            // shadowhook_objc_methodimpl). _shdw_watcher_cfunc is the legacy
+            // subCFunc (fishhook lane, or subMain when no rebind backend).
+            if(_shdw_watcher_cfunc && _shdw_watcher_cfunc != _shdw_watcher_main) {
+                shadowhook_objc_methodimpl(_shdw_watcher_cfunc);
+            }
+
             _shdw_objc_installed = YES;
         }
 
@@ -437,7 +446,7 @@ static void shdw_coord_verify_symlookup(void) {
     shadowhook_dyld_symaddrlookup_verify();
 }
 
-// EXACT SHDWInstallUnits() order (21 rows). install/verify reference the
+// EXACT SHDWInstallUnits() order (22 rows). install/verify reference the
 // legacy shadowhook_* functions — no bodies moved.
 static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
     { "dyld",                         shdw_coord_dyld,                 shadowhook_dyld_verify },
@@ -450,6 +459,7 @@ static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
     { "Hook_LowLevelC",               shadowhook_libc_lowlevel,        shadowhook_libc_lowlevel_verify },
     { "Hook_AntiDebugging",           shadowhook_libc_antidebugging,   shadowhook_libc_antidebugging_verify },
     { "objc",                         shadowhook_objc,                 NULL },
+    { "objc@methodimpl",              shadowhook_objc_methodimpl,      NULL },
     { "Hook_Syscall",                 shadowhook_syscall,              shadowhook_syscall_verify },
     { "Hook_Memory",                  shadowhook_mem,                  shadowhook_mem_verify },
     { "Hook_Sandbox",                 shadowhook_sandbox,              shadowhook_sandbox_verify },
@@ -582,6 +592,17 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
 
     // Initialize hooks.
     NSLog(@"starting hooks");
+
+    // Entire install section runs under the internal-read scope: the
+    // backend's own file I/O (temp files, dyld image scans) and Foundation
+    // APIs invoked during installs re-enter the just-installed hooks. Their
+    // replacements consult isCallerExternal() — external callers run the
+    // restriction engine, which reads rulesets via NSFileManager, which
+    // re-enters the hooks again (engine recursion) and can hit half-installed
+    // state (SIGSEGV at PC=0, observed on-device). The scope makes every
+    // ctor-time call classify as Shadow-internal: replacements short-circuit
+    // to their originals, no trips fire, no engine runs.
+    [Shadow shdwEnterInternalRead];
 
     #ifdef hookkit_h
     hookkit_lib_t hooklibs = HK_LIB_NONE;
@@ -777,6 +798,22 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // The ObjC groups (NSFileManager etc.) install on detector evidence —
         // see shdw_install_tier2.
         shadowhook_libc(subCFunc);
+
+        // Drain the batch immediately: the envvars block below calls libc
+        // functions (NSProcessInfo environment, unsetenv/setenv, dlsym) that
+        // are themselves in the just-installed hook set. While batched, the
+        // replacements' originals are still NULL, so any of those calls
+        // re-enters a replacement that jumps through a NULL original —
+        // SIGSEGV at PC=0. subCFunc is the fishhook lane (batching is a
+        // no-op there: batchingSupported=NO, originals publish at hook
+        // time), so this drain is belt-and-suspenders for the libc lane.
+        // subMain deliberately stays batched here: its runtime hooks
+        // (objc/classes groups) queue below, and HookKit 2.2.5 publishes
+        // originals at batch-apply time — draining now would make them
+        // install immediately, opening the same use-before-publish window
+        // for re-entrant runtime calls. It is drained right after +classes.
+        [subCFunc executeHooks];
+        [subCFunc setBatching:NO];
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
@@ -865,6 +902,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // in hot paths — keep them inline via subMain to be safe.
         shadowhook_objc(subMain);
 
+        // method_getImplementation is a tiny libobjc leaf; subMain's shared
+        // inline preflight refuses targets whose first 20 bytes contain an
+        // early terminator (the hook would be silently declined, leaving
+        // original_method_getImplementation NULL — and the Wave-3
+        // class_copyMethodList/class_getInstanceMethod/class_getClassMethod
+        // replacements all call that cell, so QuartzCore's method walk
+        // SIGSEGVs at PC=0). The rebind lane has no prologue preflight and
+        // intercepts exactly the external callers the hide targets.
+        if(subCFunc && subCFunc != subMain) {
+            shadowhook_objc_methodimpl(subCFunc);
+        }
+
         #ifdef hookkit_h
         _shdw_objc_installed = YES;
         #endif
@@ -902,6 +951,21 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         _shdw_tweakclasses_installed = YES;
         #endif
     }
+
+    // Drain subMain's batch NOW — right after the objc/classes groups queued
+    // their runtime hooks — while still in the internal-read scope. HookKit
+    // v2 publishes originals only at executeHooks (batch apply time); the
+    // chained-hook SPIs captured their native predecessors via the raw
+    // setters above, but the NSClassFromString/objc_getClass/objc_getMetaClass
+    // replacements are live the moment the batch drains, and everything after
+    // this point (symlookup install, replay, app code) may call them. Draining
+    // here — before any of that runs — closes the use-before-publication
+    // window (SIGSEGV at PC=0, observed on-device). Idempotent: a later drain
+    // of subMain is a no-op.
+    [subMain executeHooks];
+    [subMain setBatching:NO];
+    HKExecuteBatch();
+    HKDisableBatching();
 
     // Identity concealment, installed for every enabled app: public symbol /
     // address lookup answers (dlsym/dladdr) must not be pref-gated (same
@@ -955,6 +1019,9 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     HKExecuteBatch();
     HKDisableBatching();
 
+    // Installs are done; leave the internal-read scope so post-ctor hooks
+    // (the replay callbacks, app code, detectors) classify normally.
+    [Shadow shdwExitInternalRead];
     #ifdef hookkit_h
     // Replay the already-loaded images into the watcher. The add-image
     // callback was registered at the top of this ctor — before any hooking,
