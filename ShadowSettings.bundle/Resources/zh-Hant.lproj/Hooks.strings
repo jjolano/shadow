@@ -7,6 +7,8 @@
 "EXTRA_HOOKS" = "額外掛鉤";
 "EXTRA_HOOKS_DESC" = "額外掛鉤涵蓋了更多的越獄偵測方法，包含私人API。";
 "HK_LIB_SELECT" = "這是可在設備上使用的掛鉤函式庫列表。選擇「自動」以允許Hookkit為您的設備選擇最佳的掛鉤函式庫。譯者註：「自動」將會選擇基於您越獄工具的函式庫，只會提升應用程式運行的效能，不會增強防越獄偵測能力；選擇「ElleKit, fishhook, Dobby」對某些應用程式可以增強防越獄偵測能力。";
+"AUTOMATIC" = "自動";
+
 "HOOKING_LIBRARY" = "掛鉤函式庫";
 "HOOK_ANTIDBG" = "反偵錯方法";
 "HOOK_APPENUM" = "應用程式列舉";
