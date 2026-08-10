@@ -1,0 +1,22 @@
+#import "SceneDelegate.h"
+
+#import "StatusViewController.h"
+
+@implementation SceneDelegate
+
+- (void)scene:(UIScene*)scene willConnectToSession:(UISceneSession*)session options:(UISceneConnectionOptions*)connectionOptions {
+	if(![scene isKindOfClass:[UIWindowScene class]]) {
+		return;
+	}
+
+	self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
+
+	StatusViewController* statusViewController = [StatusViewController new];
+	UINavigationController* navigationController = [[UINavigationController alloc] initWithRootViewController:statusViewController];
+	navigationController.navigationBar.prefersLargeTitles = YES;
+	self.window.rootViewController = navigationController;
+
+	[self.window makeKeyAndVisible];
+}
+
+@end

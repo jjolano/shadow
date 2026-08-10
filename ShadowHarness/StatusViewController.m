@@ -6,6 +6,15 @@
 
 #import "Battery.h"
 
+// UICellAccessorySwitch is a real public API since iOS 14 but is not declared
+// in this SDK's UICellAccessory.h — declare it locally (same pattern as the
+// _NSGetArgv extern below).
+@interface UICellAccessorySwitch : UICellAccessory
+@property (nonatomic, getter=isOn) BOOL on;
+@property (nonatomic, copy) void (^handler)(void);
+- (instancetype)initWithIsOn:(BOOL)on handler:(void (^)(void))handler;
+@end
+
 // Shadow's own prefs plist (mirrors common.h SHADOW_PREFS_PLIST; kept local
 // so the harness does not depend on the framework source tree).
 static NSString* const kShadowPrefsPlist = @"/var/mobile/Library/Preferences/me.jjolano.shadow.plist";
@@ -13,6 +22,71 @@ static NSString* const kShadowPrefsPlist = @"/var/mobile/Library/Preferences/me.
 // Same argv[0] probe the stub's ctor evaluates (Shadow.dylib/dylib.x) —
 // shown in the why rows so a user can see the path Shadow's loader saw.
 extern char*** _NSGetArgv();
+
+#pragma mark - Typed model
+
+typedef NS_ENUM(NSInteger, ShdwRowKind) {
+	ShdwRowKindDefault,
+	ShdwRowKindSwitch,
+};
+
+// One list row. Instances double as diffable-data-source item identifiers
+// (identity hashing; every rebuild produces fresh objects, so no duplicates
+// within a snapshot).
+@interface ShdwRow : NSObject
+@property (nonatomic, copy) NSString* text;
+@property (nonatomic, copy) NSString* detail;
+@property (nonatomic) ShdwRowKind kind;
+@property (nonatomic) BOOL on;
+@property (nonatomic, copy) NSString* symbolName;   // SF Symbol, nil = none
+@property (nonatomic, strong) UIColor* symbolTint;
+@end
+
+@implementation ShdwRow
+@end
+
+// One list section. Also the section identifier.
+@interface ShdwSection : NSObject
+@property (nonatomic, copy) NSString* title;
+@property (nonatomic, copy) NSArray<ShdwRow*>* rows;
+@end
+
+@implementation ShdwSection
+@end
+
+static ShdwRow* shdw_row(NSString* text, NSString* detail) {
+	ShdwRow* row = [ShdwRow new];
+	row.text = text;
+	row.detail = detail;
+	return row;
+}
+
+static ShdwSection* shdw_section(NSString* title, NSArray<ShdwRow*>* rows) {
+	ShdwSection* section = [ShdwSection new];
+	section.title = title;
+	section.rows = rows;
+	return section;
+}
+
+// Symbol semantics, one place so both probe sections agree:
+// green checkmark = works/hidden/PASS, orange triangle = gap/visible,
+// gray info = informational, yellow questionmark = MIXED.
+static void shdw_style_row_for_verdict(ShdwRow* row, NSString* verdict) {
+	if([verdict isEqualToString:@"hidden"] || [verdict isEqualToString:@"PASS"]) {
+		row.symbolName = @"checkmark.circle.fill";
+		row.symbolTint = [UIColor systemGreenColor];
+	} else if([verdict isEqualToString:@"visible"] ||
+			  [verdict isEqualToString:@"GAP"] || [verdict isEqualToString:@"HOOK-GAP"]) {
+		row.symbolName = @"exclamationmark.triangle.fill";
+		row.symbolTint = [UIColor systemOrangeColor];
+	} else if([verdict isEqualToString:@"MIXED"]) {
+		row.symbolName = @"questionmark.circle";
+		row.symbolTint = [UIColor systemYellowColor];
+	} else { // n/a, INFO
+		row.symbolName = @"info.circle";
+		row.symbolTint = [UIColor systemGrayColor];
+	}
+}
 
 // ShadowSettings class only exists when Shadow.framework is loaded. The
 // harness links the framework, so it is present at runtime; fall back to a
@@ -35,21 +109,61 @@ static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
 	return nil;
 }
 
+@interface StatusViewController () <UICollectionViewDelegate>
+@end
+
 @implementation StatusViewController {
-	NSArray<NSDictionary*>* _sections;
+	UICollectionView* _collectionView;
+	UICollectionViewDiffableDataSource<ShdwSection*, ShdwRow*>* _dataSource;
+	NSArray<ShdwSection*>* _sections;
 	BOOL _devMode;
 }
+
+static NSString* const kCellReuseID = @"Cell";
+static NSString* const kHeaderReuseID = @"Header";
 
 - (void)viewDidLoad {
 	[super viewDidLoad];
 
 	self.title = @"Shadow Harness";
+	self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
 	self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
 		initWithTitle:@"Copy diagnostics" style:UIBarButtonItemStylePlain
 		target:self action:@selector(copyDiagnostics:)];
 
+	UICollectionLayoutListConfiguration* listConfig =
+		[[UICollectionLayoutListConfiguration alloc] initWithAppearance:UICollectionLayoutListAppearanceInsetGrouped];
+	listConfig.headerMode = UICollectionLayoutListHeaderModeSupplementary;
+	// +layoutWithListConfiguration: is missing from this SDK's headers; the
+	// section-provider initializer covers the same single-section-type list.
+	UICollectionViewCompositionalLayout* layout =
+		[[UICollectionViewCompositionalLayout alloc] initWithSectionProvider:
+			^NSCollectionLayoutSection*(NSInteger sectionIndex, id<NSCollectionLayoutEnvironment> environment) {
+				return [NSCollectionLayoutSection sectionWithListConfiguration:listConfig layoutEnvironment:environment];
+			}];
+
+	_collectionView = [[UICollectionView alloc] initWithFrame:self.view.bounds collectionViewLayout:layout];
+	_collectionView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+	_collectionView.delegate = self;
+	[self.view addSubview:_collectionView];
+
+	[_collectionView registerClass:[UICollectionViewListCell class] forCellWithReuseIdentifier:kCellReuseID];
+	[_collectionView registerClass:[UICollectionViewListCell class]
+		forSupplementaryViewOfKind:UICollectionElementKindSectionHeader withReuseIdentifier:kHeaderReuseID];
+
+	__weak __typeof(self) weakSelf = self;
+	_dataSource = [[UICollectionViewDiffableDataSource alloc] initWithCollectionView:_collectionView
+		cellProvider:^UICollectionViewCell*(UICollectionView* collectionView, NSIndexPath* indexPath, ShdwRow* row) {
+			return [weakSelf collectionView:collectionView cellForRow:row atIndexPath:indexPath];
+		}];
+	_dataSource.supplementaryViewProvider =
+		^UICollectionReusableView*(UICollectionView* collectionView, NSString* elementKind, NSIndexPath* indexPath) {
+			return [weakSelf collectionView:collectionView headerAtIndexPath:indexPath];
+		};
+
 	_devMode = NO;
 	_sections = [self buildSectionsIncludingBattery:NO];
+	[self applySnapshotAnimated:NO];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -57,12 +171,63 @@ static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
 	// Re-run the probes every time the view appears — cheap, and the
 	// diagnostics stay fresh.
 	_sections = [self buildSectionsIncludingBattery:NO];
-	[self.tableView reloadData];
+	[self applySnapshotAnimated:NO];
+}
+
+#pragma mark - Cells
+
+- (UICollectionViewCell*)collectionView:(UICollectionView*)collectionView cellForRow:(ShdwRow*)row atIndexPath:(NSIndexPath*)indexPath {
+	UICollectionViewListCell* cell = [collectionView dequeueReusableCellWithReuseIdentifier:kCellReuseID forIndexPath:indexPath];
+
+	UIListContentConfiguration* config = [UIListContentConfiguration subtitleCellConfiguration];
+	config.text = row.text;
+	config.secondaryText = row.detail;
+	// Long diagnostic strings must wrap.
+	config.secondaryTextProperties.numberOfLines = 0;
+	if(row.symbolName) {
+		config.image = [UIImage systemImageNamed:row.symbolName];
+		config.imageProperties.tintColor = row.symbolTint;
+	}
+	cell.contentConfiguration = config;
+
+	if(row.kind == ShdwRowKindSwitch) {
+		__weak __typeof(self) weakSelf = self;
+		// NSClassFromString, not a direct class ref: this SDK's UIKit.tbd
+		// doesn't export UICellAccessorySwitch for arm64e, so a class ref
+		// fails at link time. The class exists at runtime on iOS 14+.
+		Class switchClass = NSClassFromString(@"UICellAccessorySwitch");
+		cell.accessories = @[ [[switchClass alloc] initWithIsOn:row.on handler:^{
+			[weakSelf devModeToggled];
+		}] ];
+	} else {
+		cell.accessories = @[];
+	}
+
+	return cell;
+}
+
+- (UICollectionReusableView*)collectionView:(UICollectionView*)collectionView headerAtIndexPath:(NSIndexPath*)indexPath {
+	UICollectionViewListCell* header = [collectionView
+		dequeueReusableSupplementaryViewOfKind:UICollectionElementKindSectionHeader
+		withReuseIdentifier:kHeaderReuseID forIndexPath:indexPath];
+	UIListContentConfiguration* config = header.defaultContentConfiguration;
+	config.text = [_sections[indexPath.section] title];
+	header.contentConfiguration = config;
+	return header;
+}
+
+- (void)applySnapshotAnimated:(BOOL)animated {
+	NSDiffableDataSourceSnapshot<ShdwSection*, ShdwRow*>* snapshot = [NSDiffableDataSourceSnapshot new];
+	[snapshot appendSectionsWithIdentifiers:_sections];
+	for(ShdwSection* section in _sections) {
+		[snapshot appendItemsWithIdentifiers:section.rows intoSectionWithIdentifier:section];
+	}
+	[_dataSource applySnapshot:snapshot animatingDifferences:animated];
 }
 
 #pragma mark - Model
 
-- (NSArray<NSDictionary*>*)buildSectionsIncludingBattery:(BOOL)includeBattery {
+- (NSArray<ShdwSection*>*)buildSectionsIncludingBattery:(BOOL)includeBattery {
 	NSMutableArray* sections = [NSMutableArray new];
 
 	[sections addObject:[self shadowStatusSection]];
@@ -78,12 +243,7 @@ static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
 	return sections;
 }
 
-// Row helpers.
-static NSDictionary* row(NSString* text, NSString* detail) {
-	return detail.length ? @{ @"text" : text, @"detail" : detail } : @{ @"text" : text };
-}
-
-- (NSDictionary*)shadowStatusSection {
+- (ShdwSection*)shadowStatusSection {
 	NSMutableArray* rows = [NSMutableArray new];
 
 	// The harness links Shadow.framework directly, so class presence says
@@ -95,21 +255,29 @@ static NSDictionary* row(NSString* text, NSString* detail) {
 	if(payloadActive) {
 		Shadow* shadow = [NSClassFromString(@"Shadow") sharedInstance];
 
-		[rows addObject:row(@"Shadow active (hooks payload)", @"YES")];
-		[rows addObject:row(@"Engine present (framework)", @"YES")];
-		[rows addObject:row(@"Rootless", shadow.rootless ? @"yes" : @"no")];
-		[rows addObject:row(@"Has app sandbox", shadow.hasAppSandbox ? @"yes" : @"no")];
-		[rows addObject:row(@"Bundle path", shadow.bundlePath)];
-		[rows addObject:row(@"Home path", shadow.homePath)];
+		ShdwRow* activeRow = shdw_row(@"Shadow active (hooks payload)", @"YES");
+		activeRow.symbolName = @"checkmark.circle.fill";
+		activeRow.symbolTint = [UIColor systemGreenColor];
+		[rows addObject:activeRow];
+
+		[rows addObject:shdw_row(@"Engine present (framework)", @"YES")];
+		[rows addObject:shdw_row(@"Rootless", shadow.rootless ? @"yes" : @"no")];
+		[rows addObject:shdw_row(@"Has app sandbox", shadow.hasAppSandbox ? @"yes" : @"no")];
+		[rows addObject:shdw_row(@"Bundle path", shadow.bundlePath)];
+		[rows addObject:shdw_row(@"Home path", shadow.homePath)];
 	} else {
-		[rows addObject:row(@"Shadow active (hooks payload)", @"NO")];
-		[rows addObject:row(@"Engine present (framework)", enginePresent ? @"YES" : @"NO")];
+		ShdwRow* activeRow = shdw_row(@"Shadow active (hooks payload)", @"NO");
+		activeRow.symbolName = @"xmark.circle";
+		activeRow.symbolTint = [UIColor systemRedColor];
+		[rows addObject:activeRow];
+
+		[rows addObject:shdw_row(@"Engine present (framework)", enginePresent ? @"YES" : @"NO")];
 
 		// "Why" rows: the path the stub's gate evaluated, then this app's
 		// own entry in Shadow's prefs. The keys are App_Enabled (per-app
 		// override) and Global_Enabled (always-on); with neither set, the
 		// stub skips this app by design.
-		[rows addObject:row(@"Executable path", @(**_NSGetArgv()))];
+		[rows addObject:shdw_row(@"Executable path", @(**_NSGetArgv()))];
 
 		NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 		NSUserDefaults* prefs = shdw_prefs();
@@ -118,28 +286,28 @@ static NSDictionary* row(NSString* text, NSString* detail) {
 		NSNumber* globalEnabled = [prefs objectForKey:@"Global_Enabled"];
 
 		if(appSettings) {
-			[rows addObject:row(@"Per-app override",
+			[rows addObject:shdw_row(@"Per-app override",
 				[NSString stringWithFormat:@"present (App_Enabled=%@)", appEnabled ? appEnabled : @"(unset)"])];
 		} else {
-			[rows addObject:row(@"Per-app override", @"absent")];
+			[rows addObject:shdw_row(@"Per-app override", @"absent")];
 		}
-		[rows addObject:row(@"Global_Enabled", globalEnabled ? [globalEnabled boolValue] ? @"YES" : @"NO" : @"(unreadable)")];
+		[rows addObject:shdw_row(@"Global_Enabled", globalEnabled ? [globalEnabled boolValue] ? @"YES" : @"NO" : @"(unreadable)")];
 
 		if([appEnabled boolValue]) {
-			[rows addObject:row(@"Filter enabled", @"App_Enabled=YES — Shadow should be active")];
+			[rows addObject:shdw_row(@"Filter enabled", @"App_Enabled=YES — Shadow should be active")];
 		} else if([globalEnabled boolValue]) {
-			[rows addObject:row(@"Filter enabled", @"Global_Enabled=YES — Shadow should be active")];
+			[rows addObject:shdw_row(@"Filter enabled", @"Global_Enabled=YES — Shadow should be active")];
 		} else {
-			[rows addObject:row(@"Filter disabled",
+			[rows addObject:shdw_row(@"Filter disabled",
 				@"App_Enabled and Global_Enabled both off — Shadow skips this app")];
 		}
-		[rows addObject:row(@"Hint", @"Check Shadow settings for this app")];
+		[rows addObject:shdw_row(@"Hint", @"Check Shadow settings for this app")];
 	}
 
-	return @{ @"title" : @"Shadow status", @"rows" : rows };
+	return shdw_section(@"Shadow status", rows);
 }
 
-- (NSDictionary*)thisAppSection {
+- (ShdwSection*)thisAppSection {
 	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 	NSUserDefaults* prefs = shdw_prefs();
 	NSDictionary* appSettings = bundleID ? [prefs objectForKey:bundleID] : nil;
@@ -161,19 +329,19 @@ static NSDictionary* row(NSString* text, NSString* detail) {
 	NSString* modeDetail = appEnabled ? @"App_Enabled=YES (per-app)" :
 		[globalEnabled boolValue] ? @"Global_Enabled=YES" : @"neither key set";
 
-	return @{ @"title" : @"This app", @"rows" : @[
-		row(@"Bundle ID", bundleID ? bundleID : @"(nil)"),
-		row(@"Filter mode", filtered ? [@"filtered — " stringByAppendingString:modeDetail] : [@"off — " stringByAppendingString:modeDetail]),
-		row(@"Per-app override present?", appSettings ? @"yes" : @"no"),
-	]};
+	return shdw_section(@"This app", @[
+		shdw_row(@"Bundle ID", bundleID ? bundleID : @"(nil)"),
+		shdw_row(@"Filter mode", filtered ? [@"filtered — " stringByAppendingString:modeDetail] : [@"off — " stringByAppendingString:modeDetail]),
+		shdw_row(@"Per-app override present?", appSettings ? @"yes" : @"no"),
+	]);
 }
 
-- (NSDictionary*)rulesetSection {
+- (ShdwSection*)rulesetSection {
 	NSMutableArray* rows = [NSMutableArray new];
 
 	if(!NSClassFromString(@"Shadow")) {
-		[rows addObject:row(@"n/a", @"Shadow not loaded")];
-		return @{ @"title" : @"Ruleset", @"rows" : rows };
+		[rows addObject:shdw_row(@"n/a", @"Shadow not loaded")];
+		return shdw_section(@"Ruleset", rows);
 	}
 
 	NSString* rulesetsDir = JBPath(@"/Library/Shadow/Rulesets");
@@ -202,35 +370,45 @@ static NSDictionary* row(NSString* text, NSString* detail) {
 			ruleCount = ruleset.payloadDictionary.count;
 		}
 
-		[rows addObject:row(file, [NSString stringWithFormat:@"%@ — %lu rules", mtime, (unsigned long)ruleCount])];
+		[rows addObject:shdw_row(file, [NSString stringWithFormat:@"%@ — %lu rules", mtime, (unsigned long)ruleCount])];
 	}
 
 	if(!rows.count) {
-		[rows addObject:row(@"No rulesets", rulesetsDir)];
+		[rows addObject:shdw_row(@"No rulesets", rulesetsDir)];
 	}
 
-	return @{ @"title" : @"Ruleset", @"rows" : rows };
+	return shdw_section(@"Ruleset", rows);
 }
 
-- (NSDictionary*)canonicalSection {
+- (ShdwSection*)canonicalSection {
 	NSMutableArray* rows = [NSMutableArray new];
 	for(NSDictionary* probe in ShdwCanonicalProbes()) {
-		[rows addObject:row(probe[@"probe"],
-			[NSString stringWithFormat:@"engine: %@", probe[@"verdict"]])];
+		ShdwRow* row = shdw_row(probe[@"probe"],
+			[NSString stringWithFormat:@"engine: %@", probe[@"verdict"]]);
+		shdw_style_row_for_verdict(row, probe[@"verdict"]);
+		[rows addObject:row];
 	}
-	return @{ @"title" : @"Canonical probes", @"rows" : rows };
+	return shdw_section(@"Canonical probes", rows);
 }
 
-- (NSDictionary*)devModeSection {
+- (ShdwSection*)devModeSection {
 	NSMutableArray* rows = [NSMutableArray new];
-	[rows addObject:@{ @"text" : @"Dev mode", @"kind" : @"switch", @"on" : @(_devMode) }];
+
+	ShdwRow* toggle = shdw_row(@"Dev mode", nil);
+	toggle.kind = ShdwRowKindSwitch;
+	toggle.on = _devMode;
+	[rows addObject:toggle];
+
 	if(_devMode) {
-		[rows addObject:row(@"Footnote", @"known/public techniques only — not proof of undetectability.")];
+		ShdwRow* footnote = shdw_row(@"Footnote", @"known/public techniques only — not proof of undetectability.");
+		footnote.symbolName = @"info.circle";
+		footnote.symbolTint = [UIColor systemGrayColor];
+		[rows addObject:footnote];
 	}
-	return @{ @"title" : @"Dev mode", @"rows" : rows };
+	return shdw_section(@"Dev mode", rows);
 }
 
-- (NSDictionary*)batterySection {
+- (ShdwSection*)batterySection {
 	NSArray<NSDictionary*>* batteryRows = ShdwBatteryRows();
 
 	NSUInteger fired = 0;
@@ -241,71 +419,61 @@ static NSDictionary* row(NSString* text, NSString* detail) {
 	}
 
 	NSMutableArray* rows = [NSMutableArray new];
-	[rows addObject:row(@"Detector fired",
-		[NSString stringWithFormat:@"%lu/%lu probes fired", (unsigned long)fired, (unsigned long)batteryRows.count])];
+	ShdwRow* summary = shdw_row(@"Detector fired",
+		[NSString stringWithFormat:@"%lu/%lu probes fired", (unsigned long)fired, (unsigned long)batteryRows.count]);
+	summary.symbolName = @"info.circle";
+	summary.symbolTint = [UIColor systemGrayColor];
+	[rows addObject:summary];
 
 	for(NSDictionary* batteryRow in batteryRows) {
-		[rows addObject:row(batteryRow[@"name"],
+		ShdwRow* row = shdw_row(batteryRow[@"name"],
 			[NSString stringWithFormat:@"%@ — raw %@ / libc %@ / engine %@ — reason: %@",
 				batteryRow[@"verdict"], batteryRow[@"raw"], batteryRow[@"filtered"],
-				batteryRow[@"engine"], batteryRow[@"reason"]])];
+				batteryRow[@"engine"], batteryRow[@"reason"]]);
+		shdw_style_row_for_verdict(row, batteryRow[@"verdict"]);
+		[rows addObject:row];
 	}
 
-	return @{ @"title" : @"Detector battery", @"rows" : rows };
+	return shdw_section(@"Detector battery", rows);
 }
 
-#pragma mark - Table view data source
+#pragma mark - Selection
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
-	return _sections.count;
+- (BOOL)collectionView:(UICollectionView*)collectionView shouldSelectItemAtIndexPath:(NSIndexPath*)indexPath {
+	ShdwRow* row = _sections[indexPath.section].rows[indexPath.item];
+	return row.kind == ShdwRowKindDefault;
 }
 
-- (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-	return [_sections[section][@"rows"] count];
-}
-
-- (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
-	return _sections[section][@"title"];
-}
-
-- (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath {
-	NSDictionary* rowModel = _sections[indexPath.section][@"rows"][indexPath.row];
-
-	UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:@"Cell"];
-	if(!cell) {
-		cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"Cell"];
-		cell.textLabel.numberOfLines = 0;
-		cell.detailTextLabel.numberOfLines = 0;
-	}
-
-	cell.textLabel.text = rowModel[@"text"];
-	cell.detailTextLabel.text = rowModel[@"detail"];
-
-	if([rowModel[@"kind"] isEqualToString:@"switch"]) {
-		UISwitch* switchView = [UISwitch new];
-		switchView.on = [rowModel[@"on"] boolValue];
-		[switchView addTarget:self action:@selector(devModeChanged:) forControlEvents:UIControlEventValueChanged];
-		cell.accessoryView = switchView;
-		cell.selectionStyle = UITableViewCellSelectionStyleNone;
-	} else {
-		cell.accessoryView = nil;
-		cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-	}
-
-	return cell;
+- (void)collectionView:(UICollectionView*)collectionView didSelectItemAtIndexPath:(NSIndexPath*)indexPath {
+	[collectionView deselectItemAtIndexPath:indexPath animated:YES];
 }
 
 #pragma mark - Actions
 
-- (void)devModeChanged:(UISwitch*)switchView {
-	_devMode = switchView.on;
+- (void)devModeToggled {
+	_devMode = !_devMode;
 	_sections = [self buildSectionsIncludingBattery:NO];
-	[self.tableView reloadData];
+	[self applySnapshotAnimated:YES];
 }
 
 - (void)copyDiagnostics:(id)sender {
-	NSArray<NSDictionary*>* fullSections = [self buildSectionsIncludingBattery:YES];
-	[UIPasteboard generalPasteboard].string = ShdwDiagnosticsDump(fullSections);
+	NSArray<ShdwSection*>* fullSections = [self buildSectionsIncludingBattery:YES];
+
+	// ShdwDiagnosticsDump consumes the legacy dict shape {title, rows:[{text,
+	// detail}]}; adapt the typed model back into it. The switch row carries
+	// no detail, matching the old dump output.
+	NSMutableArray* dicts = [NSMutableArray new];
+	for(ShdwSection* section in fullSections) {
+		NSMutableArray* rows = [NSMutableArray new];
+		for(ShdwRow* row in section.rows) {
+			[rows addObject:row.detail.length ?
+				@{ @"text" : row.text, @"detail" : row.detail } :
+				@{ @"text" : row.text }];
+		}
+		[dicts addObject:@{ @"title" : section.title, @"rows" : rows }];
+	}
+
+	[UIPasteboard generalPasteboard].string = ShdwDiagnosticsDump(dicts);
 }
 
 @end

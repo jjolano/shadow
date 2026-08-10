@@ -171,9 +171,12 @@ build_fat() {
     ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
     cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm.deb
 
-    # On-device verification harness (separate package). Same archs/target
-    # as this flavor (rooted scheme — no THEOS_PACKAGE_SCHEME).
-    ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make -C ShadowHarness package FINALPACKAGE=1 &&
+    # On-device verification harness (separate package). Modern-only since
+    # the redesign: the UI (scene lifecycle, list layouts, SF Symbols) needs
+    # iOS 14+ and armv7 can't run it, so the harness ships its own 14.0
+    # target with arm64/arm64e slices — rooted iOS 14+ devices get it, older
+    # ones don't (the harness control declares firmware >= 14.0).
+    ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:14.0 make -C ShadowHarness package FINALPACKAGE=1 &&
     cp -p ShadowHarness/packages/*.deb $PWD/build/
 
     rm -rf $THEOS/lib/Shadow.framework

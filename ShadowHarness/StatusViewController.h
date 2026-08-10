@@ -1,5 +1,5 @@
 #import <UIKit/UIKit.h>
 
-@interface StatusViewController : UITableViewController
+@interface StatusViewController : UIViewController
 
 @end
