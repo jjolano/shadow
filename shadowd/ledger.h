@@ -27,6 +27,7 @@ extern NSString *gBootUUID;
 
 bool get_boot_uuid(char *buf, size_t len);
 NSArray<NSString *> *ledger_read(NSString **outBootUUID);
+bool ledger_reload(void);   // test seam: discard the mirror and re-read the file (simulates a fresh boot)
 bool ledger_wipe(void);
 bool ledger_write_lines(NSString *bootUUID, NSArray<NSString *> *records);
 bool ledger_add_record(const char *path, const char *ownerKey, uint64_t vnode, uint64_t vId, int state);

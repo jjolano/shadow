@@ -43,6 +43,29 @@ static struct dyld_uuid_info* _shdw_dyld_uuid_buffers[2] = {NULL, NULL};
 static struct dyld_uuid_info* _shdw_dyld_uuid_published = NULL;
 static NSMutableArray* _shdw_dyld_path_pool = nil;
 
+// Ceiling for the fixed-slot callback registries in this file (the
+// objc-notify slot arrays and the add/remove-image registration arrays in
+// the register-function replays share it).
+#define SHADOW_MAX_OBJC_NOTIFY_CBS 8
+
+// Path-pool ceiling: entries are never freed — holders exist that outlive
+// the remove path (the C4 snapshot's entry[].name pointers are handed to
+// external _dyld_get_image_name callers, and the dyld_all_image_infos
+// mirror's imageFilePath pointers are read raw across generation swaps), so
+// the pool retains every added string for the process lifetime and is
+// bounded instead — the mirror capacity, beyond any real process's image
+// count (same argument as the mirror buffers above).
+// ponytail: cap not refcount — freeing on remove would dangle those external
+// holders; a per-string refcount registry is the upgrade if that changes.
+#define SHADOW_MAX_DYLD_PATH_POOL SHADOW_DYLD_MIRROR_CAPACITY
+
+// FIX3: per-image add/remove NSLogs gated behind this one-time-checked debug
+// flag (initialized once in shadowhook_dyld — the gated callbacks can only
+// fire after the registrations made there, so every check sees it set; a
+// file-scope `= getenv(...)` initializer is illegal in C, and Logos .x files
+// compile as Objective-C).
+static bool gDyldDebug = false;
+
 // dyld's original uuid array, captured before our first patch overwrites the
 // struct's uuidArray pointer (later rebuilds must scan the original, not our
 // own filtered mirror, or new image uuids would never appear). Doubles as the
@@ -322,9 +345,13 @@ static const char* replaced_dyld_image_path_containing_address(const void* addr)
 
     const char* result = original_dyld_image_path_containing_address(addr);
 
+    if(!result) {
+        return NULL;
+    }
+
     // Restricted address: report "in no image" (NULL) — the executable-path
     // fake was a contradiction a detector could fingerprint (plan Wave 1c).
-    if(result && [_shadow isProtectedImagePath:@(result)]) {
+    if([_shadow isProtectedImagePath:@(result)]) {
         return NULL;
     }
 
@@ -599,8 +626,19 @@ static void replaced_dyld_register_func_for_add_image(void (*func)(const struct 
         return original_dyld_register_func_for_add_image(func);
     }
 
-    // add to our collection
-    [_shdw_dyld_add_image addObject:[NSValue valueWithPointer:func]];
+    // add to our collection; capped at SHADOW_MAX_OBJC_NOTIFY_CBS so a
+    // caller registering repeatedly can't grow the array forever (it is
+    // drained on every event but never shrinks).
+    if([_shdw_dyld_add_image count] < SHADOW_MAX_OBJC_NOTIFY_CBS) {
+        [_shdw_dyld_add_image addObject:[NSValue valueWithPointer:func]];
+    } else {
+        static BOOL warned = NO;
+
+        if(!warned) {
+            warned = YES;
+            NSLog(@"dyld: add_image registration slots full (%d), further registrations dropped", SHADOW_MAX_OBJC_NOTIFY_CBS);
+        }
+    }
 
     // do initial call
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
@@ -618,7 +656,16 @@ static void replaced_dyld_register_func_for_remove_image(void (*func)(const stru
         return original_dyld_register_func_for_remove_image(func);
     }
 
-    [_shdw_dyld_remove_image addObject:[NSValue valueWithPointer:func]];
+    if([_shdw_dyld_remove_image count] < SHADOW_MAX_OBJC_NOTIFY_CBS) {
+        [_shdw_dyld_remove_image addObject:[NSValue valueWithPointer:func]];
+    } else {
+        static BOOL warned = NO;
+
+        if(!warned) {
+            warned = YES;
+            NSLog(@"dyld: remove_image registration slots full (%d), further registrations dropped", SHADOW_MAX_OBJC_NOTIFY_CBS);
+        }
+    }
 }
 
 // Memoized dlopen handles per dyld image index (RTLD_NEXT resolution hot
@@ -717,7 +764,9 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         NSString* path = [NSString stringWithUTF8String:image_path];
 
         if(![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}] && ![_shadow isProtectedImagePath:path]) {
-            NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
+            if(gDyldDebug) {
+                NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
+            }
 
             [_shdw_dyld_collection addObject:@{
                 @"name" : path,
@@ -726,8 +775,12 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
             }];
 
             // Retain the path for the mirror's imageFilePath pointers (the
-            // collection may release it again on remove).
-            [_shdw_dyld_path_pool addObject:path];
+            // collection may release it again on remove). Capped at
+            // SHADOW_MAX_DYLD_PATH_POOL: beyond the ceiling the string is
+            // not retained past removal (never reached in practice).
+            if([_shdw_dyld_path_pool count] < SHADOW_MAX_DYLD_PATH_POOL) {
+                [_shdw_dyld_path_pool addObject:path];
+            }
 
             // Keep dyld_all_image_infos filtered arrays in sync. Deferred
             // during the add-image replay at install — one rebuild after
@@ -780,7 +833,9 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
     if(dylibToRemove) {
         // Remove this from our collection
-        NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylibToRemove[@"name"]);
+        if(gDyldDebug) {
+            NSLog(@"%@: %@: %@", @"dyld", @"removing lib", dylibToRemove[@"name"]);
+        }
         [_shdw_dyld_collection removeObject:dylibToRemove];
 
         // Keep dyld_all_image_infos filtered arrays in sync.
@@ -1270,7 +1325,6 @@ static void replaced_dyld_images_for_addresses(unsigned count, const void* addre
 // and keeps dyld's unfiltered notifier — only post-hook (detector)
 // registrants are captured, same limitation as the tail-branch thunk TODO
 // above.
-#define SHADOW_MAX_OBJC_NOTIFY_CBS 8
 static _dyld_objc_notify_mapped shdw_objc_mapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
 static _dyld_objc_notify_init shdw_objc_init_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
 static _dyld_objc_notify_unmapped shdw_objc_unmapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
@@ -1908,6 +1962,11 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     _shdw_dyld_add_image = [NSMutableArray new];
     _shdw_dyld_remove_image = [NSMutableArray new];
     _shdw_dyld_path_pool = [NSMutableArray new];
+
+    // One-time-checked debug flag (FIX3): the gated add/remove NSLogs below
+    // can only fire after the registrations made in this function, so the
+    // flag is always initialized by the time it is read.
+    gDyldDebug = getenv("SHADOW_DEBUG") != NULL;
 
     // Defer per-image mirror rebuilds during the replay below (the collection
     // grows by one per callback; a rebuild per image is O(N²·M) compares +

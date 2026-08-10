@@ -23,6 +23,14 @@ extern int fs_snapshot_mount(int fd, const char* dir, const char* name, uint32_t
 
 @implementation SystemRulesGenerator
 
+// Curated-ruleset engine cache for generateInstalledAppsRuleset, keyed by
+// file path -> @[mtime, engine]. The harvest re-runs on every app
+// install/uninstall event; an unchanged ruleset file reuses its compiled
+// engine instead of re-reading and re-compiling every curated ruleset each
+// time. The generator is a class-method utility (shadowd calls it directly),
+// so a static is the instance.
+static NSMutableDictionary* shdwCuratedRulesetEngines = nil;
+
 typedef struct {
     const char* path;
     int depth; // -1 = unlimited, 1 = direct children only
@@ -408,6 +416,11 @@ static BOOL IsCryptexZone(NSString* zonePath) {
                 } else {
                     fprintf(stderr, "warning: SystemRules: snapshot walk returned nothing, skipping diff\n");
                 }
+
+                // The diff is the snapshot set's last consumer; drop it
+                // (hundreds of thousands of strings) before the live
+                // fallback/output assembly below.
+                snapshotSet = nil;
             } else {
                 fprintf(stderr, "warning: SystemRules: failed to mount snapshot, using live filesystem\n");
             }
@@ -554,12 +567,33 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     // and break their real canOpenURL:/openURL: links.
     NSMutableArray<RulesetEngine*>* curated = [NSMutableArray new];
 
+    if(!shdwCuratedRulesetEngines) {
+        shdwCuratedRulesetEngines = [NSMutableDictionary new];
+    }
+
     for(NSURL* url in urls) {
         if([[url lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
             continue;
         }
 
-        RulesetEngine* ruleset = [RulesetEngine rulesetWithURL:url];
+        NSString* path = [url path];
+        NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+        double mtime = attrs ? [[attrs fileModificationDate] timeIntervalSinceReferenceDate] : 0.0;
+
+        // Reuse the compiled engine when the file is unchanged since the
+        // last harvest; only a changed file is re-read and re-compiled.
+        RulesetEngine* ruleset = nil;
+        NSArray* previous = [shdwCuratedRulesetEngines objectForKey:path];
+
+        if(previous && [[previous objectAtIndex:0] doubleValue] == mtime) {
+            ruleset = [previous objectAtIndex:1];
+        } else {
+            ruleset = [RulesetEngine rulesetWithURL:url];
+
+            if(ruleset) {
+                [shdwCuratedRulesetEngines setObject:@[@(mtime), ruleset] forKey:path];
+            }
+        }
 
         if(!ruleset) {
             continue;
