@@ -29,7 +29,7 @@
 "EXTRA_HOOKS_DESC" = "额外Hook包含可能使用的更多越狱检测方法，包括私有API。";
 
 "HOOK_MACH" = "Mach服务查找";
-"HOOK_IOKIT" = "IOKit Service Probing";
+"HOOK_IOKIT" = "IOKit 服務探測";
 "HOOK_SYMLOOKUP" = "运行时符号查找";
 "HOOK_OBJC" = "Objective-C方法";
 "HOOK_ANTIDBG" = "反调试方法";
