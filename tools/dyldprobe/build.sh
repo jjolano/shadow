@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build dyldprobe. Default: debs for both flavors, collected in build/.
 #   ./build.sh ipa — sideloadable .ipa (Payload/dyldprobe.app) per flavor
-#   instead, for on-device W5 verification through the normal user app
+#   instead, for on-device verification through the normal user app
 #   channel: sideloading installs under /var/containers/Bundle/Application,
 #   which Shadow's ctor injects, unlike the /Applications deb install.
 set -e

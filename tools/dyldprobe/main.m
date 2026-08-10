@@ -4,7 +4,7 @@
 #import <dlfcn.h>
 #import <stdatomic.h>
 
-// dyldprobe — W5 on-device verification probe for Shadow v5.
+// dyldprobe — on-device verification probe for Shadow.
 // Shows the jailbreak the way detectors see it, from four angles:
 //   1. dyld_all_image_infos read DIRECTLY from memory (W2's target)
 //   2. the dyld API view (_dyld_image_count / _dyld_get_image_name)
