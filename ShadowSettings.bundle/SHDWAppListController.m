@@ -7,6 +7,12 @@
 #import <Shadow/HookConfiguration.h>
 #import <AltList/LSApplicationProxy+AltList.h>
 
+// The theos PSSpecifier header omits the values/titles accessors the
+// framework uses; declare them so PSSegmentCell can read its options.
+@interface PSSpecifier (ShadowSegments)
+- (void)setValues:(NSArray *)values titles:(NSArray *)titles;
+@end
+
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
 
@@ -55,10 +61,13 @@
 			[settingsGroup setProperty:footer forKey:@"footerText"];
 		}
 
-		// The preset segment cell reads its options from specifier
-		// properties; the titles are localized in code (Hooks table).
+		// The preset segment cell reads its options from the specifier's
+		// values/titles (the plist loader converts validValues/validTitles,
+		// but we set them in code, so go through the cell-facing API);
+		// the titles are localized in code (Hooks table).
 		PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
 		if(presetSpecifier) {
+			[presetSpecifier setValues:preset_values titles:preset_titles];
 			[presetSpecifier setProperty:preset_titles forKey:PSValidTitlesKey];
 			[presetSpecifier setProperty:preset_values forKey:PSValidValuesKey];
 		}
