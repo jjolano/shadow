@@ -99,7 +99,13 @@ extern char*** _NSGetArgv();
     // C0-2: this is Shadow's own dpkg-database read (dir listing, file
     // contents, bundle plists) — the internal scope keeps the tweak's own
     // hooks from filtering it, exactly like Backend's ruleset loads.
-    SHADOW_INTERNAL_SCOPE;
+    // NOTE: the macro is a for-loop — the braced body is the scope; the
+    // early return stays inside (a real exit path), the final value is
+    // assigned to a local and returned after the scope (the compiler can't
+    // prove the for body executes).
+    NSDictionary* database = nil;
+
+    SHADOW_INTERNAL_SCOPE {
 
     // Determine dpkg info database path.
     NSArray* dpkgInfoPaths = @[
@@ -198,7 +204,7 @@ extern char*** _NSGetArgv();
     
     [db_installed filterUsingPredicate:not_emoji];
 
-    return @{
+    database = @{
         @"RulesetInfo" : @{
             @"Name" : @"dpkg installed files",
             @"Author" : @"Shadow Service"
@@ -206,6 +212,9 @@ extern char*** _NSGetArgv();
         @"BlacklistExactPaths" : [db_installed allObjects],
         @"BlacklistURLSchemes" : [schemes allObjects]
     };
+    }
+
+    return database;
 }
 
 + (NSArray *)filterPathArray:(NSArray *)array restricted:(BOOL)restricted options:(NSDictionary<NSString *, id> *)options {
