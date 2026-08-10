@@ -19,10 +19,27 @@
 
 		// Same capability gating as the global Hooks page: per-app toggles
 		// can't run a group the device's backends don't support either.
+		// Gate instantly with cached state, then re-gate when the async
+		// daemon refresh lands (never block the initial render on IPC).
 		SHDWApplyHookGroupGating(_specifiers);
+		[self refreshDaemonStateAndRegate];
 	}
 
 	return _specifiers;
+}
+
+- (void)refreshDaemonStateAndRegate {
+	__weak typeof(self) weakSelf = self;
+
+	SHDWRefreshDaemonStateAsync(^(SHDWDaemonState state) {
+		typeof(self) self = weakSelf;
+		if(!self) {
+			return;
+		}
+
+		SHDWApplyHookGroupGating(self->_specifiers);
+		[self reloadSpecifiers];
+	});
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
