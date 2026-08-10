@@ -94,6 +94,17 @@
 			<string>respring:</string>
 			<key>cell</key>
 			<string>PSButtonCell</string>
+			<key>confirmation</key>
+			<dict>
+				<key>prompt</key>
+				<string>RESPRING_PROMPT</string>
+				<key>title</key>
+				<string>RESPRING</string>
+				<key>okTitle</key>
+				<string>RESPRING</string>
+				<key>cancelTitle</key>
+				<string>RESET_CANCEL</string>
+			</dict>
 			<key>icon</key>
 			<string>IcoRespring.png</string>
 			<key>label</key>

@@ -16,6 +16,11 @@
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
 
+	// Hook rows loaded once and kept across reloads; the Follow Global
+	// toggle animates them in/out (native row insert/delete) instead of a
+	// full table reload.
+	NSArray* hookSpecifiers;
+
 	NSMutableArray* hk_lib_values;
 	NSMutableArray* hk_lib_titles;
 
@@ -45,21 +50,17 @@
 			[self setTitle:proxy.atl_fastDisplayName];
 		}
 
+		// Load the hook rows once (kept across reloads so the Follow Global
+		// toggle can animate them in/out), gated the same way the global
+		// Hooks page gates them.
+		hookSpecifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
+		SHDWApplyHookGroupGating(hookSpecifiers);
+
 		if(![self followGlobal]) {
-			[_specifiers addObjectsFromArray:[self loadSpecifiersFromPlistName:@"Hooks" target:self]];
+			[_specifiers addObjectsFromArray:hookSpecifiers];
 		}
 
-		// Tell the user why the hook rows are (not) shown. The group is found
-		// by id (its display name is localized); the footer is written
-		// already-localized, since specifier loading localizes plist strings.
-		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
-		PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
-		if(settingsGroup) {
-			NSString* footer = [self followGlobal]
-				? [bundle localizedStringForKey:@"APP_USES_GLOBAL" value:@"Following the global settings. Turn off to customize this app." table:@"App"]
-				: [bundle localizedStringForKey:@"APP_SETTINGS_DESC" value:@"Adjust the bypass configuration for this application." table:@"App"];
-			[settingsGroup setProperty:footer forKey:@"footerText"];
-		}
+		[self updateSettingsGroupFooter];
 
 		// The preset segment cell reads its options from the specifier's
 		// values/titles (the plist loader converts validValues/validTitles,
@@ -76,11 +77,24 @@
 		// can't run a group the device's backends don't support either.
 		// Gate instantly with cached state, then re-gate when the async
 		// daemon refresh lands (never block the initial render on IPC).
-		SHDWApplyHookGroupGating(_specifiers);
 		[self refreshDaemonStateAndRegate];
 	}
 
 	return _specifiers;
+}
+
+// Group footer explaining why the hook rows are (not) shown. The group is
+// found by id (its display name is localized); the footer is written
+// already-localized, since specifier loading localizes plist strings.
+- (void)updateSettingsGroupFooter {
+	NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+	PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
+	if(settingsGroup) {
+		NSString* footer = [self followGlobal]
+			? [bundle localizedStringForKey:@"APP_USES_GLOBAL" value:@"Following the global settings. Turn off to customize this app." table:@"App"]
+			: [bundle localizedStringForKey:@"APP_SETTINGS_DESC" value:@"Adjust the bypass configuration for this application." table:@"App"];
+		[settingsGroup setProperty:footer forKey:@"footerText"];
+	}
 }
 
 - (void)refreshDaemonStateAndRegate {
@@ -132,18 +146,34 @@
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
+	SHDWToggleHaptic();
 	NSString* key = [specifier identifier];
 
 	if([key isEqualToString:@"App_FollowGlobal"]) {
 		// Following global = no per-app override; customizing flips the
-		// per-app master switch on and reveals the hook rows.
+		// per-app master switch on and reveals the hook rows. Rows animate
+		// in/out (native insert/delete) like Settings' own conditional rows,
+		// instead of a full table reload.
 		if([value boolValue]) {
 			SHDWWriteAppPref(prefs, [self applicationID], @"App_Enabled", @(NO));
+			for(PSSpecifier* spec in [hookSpecifiers reverseObjectEnumerator]) {
+				[self removeSpecifier:spec animated:YES];
+			}
 		} else {
 			SHDWWriteAppPref(prefs, [self applicationID], @"App_Enabled", @(YES));
+			PSSpecifier* anchor = [self specifierForID:@"App_FollowGlobal"];
+			for(PSSpecifier* spec in hookSpecifiers) {
+				[self insertSpecifier:spec afterSpecifier:anchor animated:YES];
+				anchor = spec;
+			}
 		}
 
-		[self reloadSpecifiers];
+		// The group's footer explains the current state; refresh it to match.
+		[self updateSettingsGroupFooter];
+		PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
+		if(settingsGroup) {
+			[self reloadSpecifier:settingsGroup];
+		}
 		return;
 	}
 

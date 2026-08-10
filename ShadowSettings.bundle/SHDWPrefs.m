@@ -1,5 +1,7 @@
 #import "SHDWPrefs.h"
 
+#import <UIKit/UIKit.h>
+
 id SHDWReadAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key) {
 	if(appID) {
 		NSDictionary* prefs_app = [prefs dictionaryForKey:appID];
@@ -26,4 +28,11 @@ void SHDWWriteAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key, id 
 	}
 
 	[prefs synchronize];
+}
+
+void SHDWToggleHaptic(void) {
+	// Fresh instance per event: toggle flips are rare, allocation cost is
+	// irrelevant next to the impact itself.
+	UIImpactFeedbackGenerator* generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+	[generator impactOccurred];
 }

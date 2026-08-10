@@ -85,6 +85,7 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
+	SHDWToggleHaptic();
 	[prefs setObject:value forKey:[specifier identifier]];
 	[prefs synchronize];
 }

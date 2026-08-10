@@ -12,6 +12,7 @@
 "APPLICATIONS" = "应用";
 
 "RESPRING" = "重启SpringBoard";
+"RESPRING_PROMPT" = "这将重新启动SpringBoard。";
 "RESET" = "重置设置";
 "RESET_PROMPT" = "这将重置Shadow的所有设置并重新启动SpringBoard。";
 "RESET_CANCEL" = "取消";

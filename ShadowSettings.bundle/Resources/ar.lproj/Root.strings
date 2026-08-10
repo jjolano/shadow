@@ -7,6 +7,7 @@
 "ROOT_APP_SETTINGS_DESC" = "إعدادات التطبيقات الخاصة بها سيتم تطبيقها فوق الإعداد العام إذا كان مفعلًا.";
 "APPLICATIONS" = "التطبيقات";
 "RESPRING" = "إعادة تشغيل واجهة النظام";
+"RESPRING_PROMPT" = "سيؤدي هذا إلى إعادة تشغيل SpringBoard";
 "RESET" = "إعادة تعيين الإعدادات";
 "RESET_PROMPT" = "سيؤدي هذا إلى إعادة تعيين كل إعدادات Shadow وإعادة تشغيل SpringBoard";
 "RESET_CANCEL" = "إلغاء";
