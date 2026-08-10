@@ -163,11 +163,13 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 - (void)viewWillAppear:(BOOL)animated {
 	[super viewWillAppear:animated];
 
-	// Toggles flipped on a pushed page (Dangerous hooks) can change the
-	// preset classification; refresh the preset row on return.
-	PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
-	if(presetSpecifier) {
-		[self reloadSpecifier:presetSpecifier];
+	// Toggles flipped on a pushed page (Individual/Dangerous hooks) can
+	// change the preset classification and the status line; refresh both.
+	for(NSString* specID in @[ @"BypassPreset", @"BypassStatus" ]) {
+		PSSpecifier* specifier = [self specifierForID:specID];
+		if(specifier) {
+			[self reloadSpecifier:specifier];
+		}
 	}
 }
 
