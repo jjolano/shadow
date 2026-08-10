@@ -32,14 +32,29 @@
 	static NSString* packageVersion;
 
 	if(!packageVersion) {
-		NSString* dpkg_status = [NSString stringWithContentsOfFile:JBPath(@"/var/lib/dpkg/status") encoding:NSUTF8StringEncoding error:nil];
+		// dpkg keeps its status at the real root on rooted jailbreaks, but
+		// inside the bootstrap on rootless/roothide. JBPath only prefixes
+		// /Library, /usr and /Applications (never /var), so add the
+		// bootstrap location explicitly — the fileExistsAtPath check makes
+		// the chain a no-op on flavors where the path doesn't exist.
+		for(NSString* statusPath in @[
+			JBPath(@"/var/lib/dpkg/status"),
+			[@THEOS_PACKAGE_INSTALL_PREFIX stringByAppendingString:@"/var/lib/dpkg/status"]
+		]) {
+			if(![[NSFileManager defaultManager] fileExistsAtPath:statusPath]) {
+				continue;
+			}
 
-		if(dpkg_status) {
-			NSRegularExpression* regex = [NSRegularExpression regularExpressionWithPattern:@"Package: me\\.jjolano\\.shadow\\n[\\s\\S]*?\\nVersion: ([^\\n]+)" options:0 error:nil];
-			NSTextCheckingResult* match = [regex firstMatchInString:dpkg_status options:0 range:NSMakeRange(0, dpkg_status.length)];
+			NSString* dpkg_status = [NSString stringWithContentsOfFile:statusPath encoding:NSUTF8StringEncoding error:nil];
 
-			if(match) {
-				packageVersion = [dpkg_status substringWithRange:[match rangeAtIndex:1]];
+			if(dpkg_status) {
+				NSRegularExpression* regex = [NSRegularExpression regularExpressionWithPattern:@"Package: me\\.jjolano\\.shadow\\n[\\s\\S]*?\\nVersion: ([^\\n]+)" options:0 error:nil];
+				NSTextCheckingResult* match = [regex firstMatchInString:dpkg_status options:0 range:NSMakeRange(0, dpkg_status.length)];
+
+				if(match) {
+					packageVersion = [dpkg_status substringWithRange:[match rangeAtIndex:1]];
+					break;
+				}
 			}
 		}
 	}
