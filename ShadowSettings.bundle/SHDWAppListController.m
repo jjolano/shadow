@@ -5,6 +5,7 @@
 
 #import <Shadow/Settings.h>
 #import <Shadow/HookConfiguration.h>
+#import <AltList/LSApplicationProxy+AltList.h>
 
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
@@ -30,6 +31,13 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
+
+		// Title the page with the app's display name (AltList never sets the
+		// pushed subcontroller's title); the plist title is the fallback.
+		LSApplicationProxy* proxy = [LSApplicationProxy applicationProxyForIdentifier:[self applicationID]];
+		if(proxy.atl_fastDisplayName.length > 0) {
+			[self setTitle:proxy.atl_fastDisplayName];
+		}
 
 		if(![self followGlobal]) {
 			[_specifiers addObjectsFromArray:[self loadSpecifiersFromPlistName:@"Hooks" target:self]];
