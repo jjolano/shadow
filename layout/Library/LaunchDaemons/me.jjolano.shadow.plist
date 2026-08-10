@@ -8,6 +8,11 @@
 	<array>
 		<string>/usr/libexec/shadowd</string>
 	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>DISABLE_TWEAKS</key>
+		<string>1</string>
+	</dict>
 	<key>MachServices</key>
 	<dict>
 		<key>me.jjolano.shadow.service</key>

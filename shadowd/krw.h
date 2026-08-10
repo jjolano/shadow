@@ -49,7 +49,8 @@ extern int gDarwinMinor;
 typedef enum {
     KRW_NONE = 0,
     KRW_LIBJB,   // Dopamine: libjailbreak.dylib (PPL r/w)
-    KRW_TFP0     // palera1n/legacy: task_for_pid(0) + mach_vm r/w
+    KRW_LIBKRW,  // rootless: Siguza libkrw0 (libkrw.0.dylib)
+    KRW_TFP0     // legacy: task_for_pid(0) + mach_vm r/w
 } krw_mode_t;
 
 typedef enum {
@@ -75,6 +76,7 @@ typedef enum {
 
 // One init attempt for each backend (retried by krw_init_background).
 int krw_init_libjb_once(void);
+int krw_init_libkrw_once(void);
 int krw_init_tfp0(void);
 
 // Row offsets + t1sz_boot — must be in place before ANY krw work.

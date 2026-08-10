@@ -1205,12 +1205,17 @@ static void krw_init_background(void) {
                 shdw_log("krw: libjailbreak unavailable after %ds — feature disabled", KRW_RETRY_INTERVAL * KRW_RETRY_MAX);
             }
         } else {
-            shdw_log("krw: arm64 — tfp0 path (A8-A11)");
-            if (krw_init_tfp0() == 0) {
+            // arm64 (A8-A11): libkrw first (rootless standard, works on
+            // palera1n where tfp0 is unavailable), tfp0 as fallback.
+            if (krw_init_libkrw_once() == 0) {
+                gKrwMode = KRW_LIBKRW;
+                ok = true;
+                shdw_log("krw: libkrw backend ready");
+            } else if (krw_init_tfp0() == 0) {
                 gKrwMode = KRW_TFP0;
                 ok = true;
             } else {
-                shdw_log("krw: tfp0 init failed — feature disabled");
+                shdw_log("krw: libkrw + tfp0 init failed — feature disabled");
             }
         }
 
@@ -1225,7 +1230,7 @@ static void krw_init_background(void) {
             });
             if (recovered) {
                 atomic_store(&gKrwState, KRW_READY);
-                shdw_log("krw: ready (mode %s)", gKrwMode == KRW_LIBJB ? "libjailbreak" : "tfp0");
+                shdw_log("krw: ready (mode %s)", gKrwMode == KRW_LIBJB ? "libjailbreak" : (gKrwMode == KRW_LIBKRW ? "libkrw" : "tfp0"));
             } else {
                 shdw_log("krw: ledger recovery not durable — feature disabled");
                 atomic_store(&gKrwState, KRW_DISABLED);
