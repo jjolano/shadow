@@ -164,7 +164,23 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
 // (RestrictionEngine.m), which runs the differential (legacy + resolver-based
 // engines, legacy authoritative until the cutover flag flips).
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
-    return [backend isPathRestrictedQuery:query];
+    // C0-2 recursion guard: the engine's own path normalization
+    // (getStandardizedPath:) constructs NSURLs via +[NSURL fileURLWithPath:],
+    // whose Foundation init internally calls the hooked
+    // fileExistsAtPath:isDirectory: — with the caller's return address inside
+    // Foundation, isCallerExternal() classifies it EXTERNAL and re-enters the
+    // engine: unbounded recursion (observed on-device: Bitwarden SIGSEGV at
+    // launch, 500+ frames of engine <-> fileURLWithPath). The internal-read
+    // scope makes every nested hook call classify as Shadow-internal and
+    // short-circuit to its original while the engine evaluates; the verdict
+    // the outer (real) caller sees is unchanged.
+    BOOL restricted = NO;
+
+    SHADOW_INTERNAL_SCOPE {
+        restricted = [backend isPathRestrictedQuery:query];
+    }
+
+    return restricted;
 }
 
 - (BOOL)isURLRestricted:(NSURL *)url {

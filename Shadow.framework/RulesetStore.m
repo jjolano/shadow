@@ -72,8 +72,12 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // /Library/Shadow is itself a restricted path (C0-5), Shadow would deny
     // itself its own rulesets. The scope flag is read by the hook layer via
     // +[Shadow shdwIsInternalRead]; nested scopes (via _reloadRulesets) are
-    // depth-counted in Core.m.
-    SHADOW_INTERNAL_SCOPE;
+    // depth-counted in Core.m. NOTE: the macro is a for-loop — the braced
+    // body below is what runs inside the scope; the return lives after it
+    // (the compiler can't prove the for body executes).
+    ShadowRulesetSnapshot* snapshot = nil;
+
+    SHADOW_INTERNAL_SCOPE {
 
     NSMutableArray<RulesetEngine *>* result = [NSMutableArray new];
     NSMutableArray<NSNumber *>* mtimes = [NSMutableArray new];
@@ -145,7 +149,10 @@ static _Atomic(double) lastRulesetCheck = 0.0;
 
     // Rulesets were just (re)loaded; don't re-scan on the first decision.
     atomic_store_explicit(&lastRulesetCheck, [NSDate timeIntervalSinceReferenceDate], memory_order_release);
-    return [ShadowRulesetSnapshot snapshotWithRulesets:result generation:_generation];
+    snapshot = [ShadowRulesetSnapshot snapshotWithRulesets:result generation:_generation];
+    }
+
+    return snapshot;
 }
 
 // Swaps in a fresh snapshot (1s-gated reload). Last-known-good: a reload that
@@ -188,7 +195,8 @@ static _Atomic(double) lastRulesetCheck = 0.0;
     // C0-2: the dir/file mtime stats are Shadow's own reads — see
     // _loadSnapshot. _reloadRulesets nests a _loadSnapshot scope; the depth
     // counter in Core.m keeps the scope busy until this one exits.
-    SHADOW_INTERNAL_SCOPE;
+    // NOTE: the macro is a for-loop — the braced body is the scope.
+    SHADOW_INTERNAL_SCOPE {
 
     double now = [NSDate timeIntervalSinceReferenceDate];
     double last = atomic_load_explicit(&lastRulesetCheck, memory_order_acquire);
@@ -240,6 +248,7 @@ static _Atomic(double) lastRulesetCheck = 0.0;
             [self _reloadRulesets];
             return;
         }
+    }
     }
 }
 @end
