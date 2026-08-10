@@ -138,6 +138,8 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)importSettings:(id)sender {
+	// Old-style initializer: the modern initForOpeningContentTypes: is
+	// iOS 14+, this bundle still targets iOS 12.
 	activePicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[(NSString *)kUTTypePropertyList] inMode:UIDocumentPickerModeImport];
 	activePicker.delegate = self;
 	[self presentViewController:activePicker animated:YES completion:nil];

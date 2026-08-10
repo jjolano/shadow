@@ -6,6 +6,12 @@
 #import <Shadow/Settings.h>
 #import <Shadow/HookConfiguration.h>
 
+// The theos PSSpecifier header omits the values/titles accessors the
+// framework uses; declare them so PSSegmentCell can read its options.
+@interface PSSpecifier (ShadowSegments)
+- (void)setValues:(NSArray *)values titles:(NSArray *)titles;
+@end
+
 @implementation SHDWHooksListController {
 	NSUserDefaults* prefs;
 
@@ -38,10 +44,13 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
 		[self setTitle:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"BYPASS_SETTINGS" value:@"Bypass Settings" table:@"Root"]];
 
-		// The preset segment cell reads its options from specifier
-		// properties; the titles are localized in code (Hooks table).
+		// The preset segment cell reads its options from the specifier's
+		// values/titles (the plist loader converts validValues/validTitles,
+		// but we set them in code, so go through the cell-facing API);
+		// the titles are localized in code (Hooks table).
 		PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
 		if(presetSpecifier) {
+			[presetSpecifier setValues:preset_values titles:preset_titles];
 			[presetSpecifier setProperty:preset_titles forKey:PSValidTitlesKey];
 			[presetSpecifier setProperty:preset_values forKey:PSValidValuesKey];
 		}
