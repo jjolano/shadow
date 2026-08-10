@@ -1878,6 +1878,15 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 #undef ANTIDBG
 
 static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
+    // Hook installs re-enter hooked libc functions: the backend's symbol
+    // resolution (dyld image walk) and Foundation file APIs call
+    // getppid/getrusage/sysctl/stat/fopen — which are themselves hooked by
+    // this or earlier groups. Their replacements consult isCallerExternal()
+    // and run the restriction engine, which during ctor-time install can
+    // re-enter the installer or hit half-installed state (SIGSEGV at PC=0
+    // observed on-device). Mark the install as an internal read so those
+    // replacements short-circuit to their originals.
+    [Shadow shdwEnterInternalRead];
     for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
         const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
 
@@ -1903,6 +1912,7 @@ static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
             shdw_close_hooked = YES;
         }
     }
+    [Shadow shdwExitInternalRead];
 }
 
 static void shdw_libc_verify_group(const char* group, uint32_t mask) {

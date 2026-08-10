@@ -21,6 +21,9 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     { "Hook_LowLevelC",       SHDWHookIDLowLevelC,           SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_AntiDebugging",   SHDWHookIDAntiDebugging,       SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "objc",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
+    // method_getImplementation rides the rebind lane (subMain's inline
+    // preflight refuses its tiny prologue; see shadowhook_objc_methodimpl).
+    { "objc@methodimpl",      NULL,                          SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
     { "Hook_Syscall",         SHDWHookIDSyscall,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_Memory",          SHDWHookIDMemory,              SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_Sandbox",         SHDWHookIDSandbox,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
