@@ -28,8 +28,12 @@
 "HOOK_SYSCALL" = "私有系統呼叫";
 "HOOK_TWEAKCLASS" = "隱藏插件類別";
 "HOOK_URLSCHEME" = "URL 處理";
+"INDIVIDUAL_HOOKS" = "個別鉤子";
+"INDIVIDUAL_HOOKS_DESC" = "個別微調每個鉤子。預設可一次套用建議設定。";
 "REC_HOOKS" = "推薦掛鉤";
 "REC_HOOKS_DESC" = "推薦掛鉤涵蓋了越獄偵測可能使用的其他方法。";
+"STATUS_FMT" = "%ld 個鉤子已啟用 · %@";
+"STATUS_HDR" = "狀態";
 "VNODE_UNAVAILABLE_REASON" = "Vnode 隱藏需要具備核心讀寫能力的 shadowd 守護進程。";
 "VNODE_STARTING_REASON" = "shadowd 守護進程仍在啟動，Vnode 隱藏暫無法使用。";
 "UNSUPPORTED_ELLEKIT_REASON" = "需要 ElleKit 掛鉤函式庫。";

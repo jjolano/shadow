@@ -35,6 +35,12 @@
 			<string>PSLinkCell</string>
 			<key>detail</key>
 			<string>SHDWHooksListController</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>icon</key>
+			<string>IcoBypass.png</string>
+			<key>id</key>
+			<string>BypassPresetSummary</string>
 			<key>isController</key>
 			<true/>
 			<key>label</key>
@@ -53,6 +59,12 @@
 			<string>PSLinkListCell</string>
 			<key>detail</key>
 			<string>SHDWATLController</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>icon</key>
+			<string>IcoApps.png</string>
+			<key>id</key>
+			<string>ApplicationsSummary</string>
 			<key>subcontrollerClass</key>
 			<string>SHDWAppListController</string>
 			<key>label</key>
@@ -78,22 +90,26 @@
 			<string>PSGroupCell</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
 			<key>action</key>
 			<string>respring:</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>icon</key>
+			<string>IcoRespring.png</string>
 			<key>label</key>
 			<string>RESPRING</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
 			<key>action</key>
 			<string>reset:</string>
-			<key>label</key>
-			<string>RESET</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
 			<key>destructive</key>
 			<true/>
+			<key>icon</key>
+			<string>IcoReset.png</string>
+			<key>label</key>
+			<string>RESET</string>
 			<key>confirmation</key>
 			<dict>
 				<key>prompt</key>
@@ -109,12 +125,40 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>TOOLS_HDR</string>
+		</dict>
+		<dict>
+			<key>action</key>
+			<string>exportSettings:</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>icon</key>
+			<string>IcoExport.png</string>
+			<key>label</key>
+			<string>EXPORT_SETTINGS</string>
+		</dict>
+		<dict>
+			<key>action</key>
+			<string>importSettings:</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>icon</key>
+			<string>IcoImport.png</string>
+			<key>label</key>
+			<string>IMPORT_SETTINGS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
 			<key>detail</key>
 			<string>SHDWDetectorLogListController</string>
+			<key>icon</key>
+			<string>IcoLog.png</string>
 			<key>isController</key>
 			<true/>
 			<key>label</key>
@@ -125,6 +169,8 @@
 			<string>PSLinkCell</string>
 			<key>detail</key>
 			<string>SHDWAboutListController</string>
+			<key>icon</key>
+			<string>IcoAbout.png</string>
 			<key>isController</key>
 			<true/>
 			<key>label</key>

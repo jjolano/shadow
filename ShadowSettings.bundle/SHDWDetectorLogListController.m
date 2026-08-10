@@ -1,6 +1,7 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "SHDWDetectorLogListController.h"
+#import "SHDWAppListController.h"
 
 #import <Preferences/PSSpecifier.h>
 #import <Preferences/PSTableCell.h>
@@ -27,6 +28,16 @@
 - (void)viewWillAppear:(BOOL)animated {
 	[super viewWillAppear:animated];
 
+	// When pushed from a per-app page, scope the log to that app.
+	if(!self.filterBundleID) {
+		for(UIViewController* controller in self.navigationController.viewControllers) {
+			if([controller isKindOfClass:[SHDWAppListController class]]) {
+				self.filterBundleID = [(SHDWAppListController *)controller applicationID];
+				break;
+			}
+		}
+	}
+
 	// The log can grow while the pane is open (probes fire in other apps),
 	// so refresh on every appearance.
 	[self reloadLogEntries];
@@ -36,11 +47,30 @@
 	return [[NSBundle bundleForClass:[self class]] localizedStringForKey:key value:fallback table:@"DetectorLog"];
 }
 
+// Entries are "yyyy-MM-dd HH:mm:ss  reason  bundleID"; the bundle identifier
+// is the last two-space-separated field and never contains spaces.
+- (NSArray *)filteredLogEntries {
+	NSArray* log = [prefs arrayForKey:@"DetectorLog"];
+
+	if(!self.filterBundleID) {
+		return log;
+	}
+
+	NSMutableArray* filtered = [NSMutableArray new];
+	for(NSString* entry in log) {
+		if([[[entry componentsSeparatedByString:@"  "] lastObject] isEqualToString:self.filterBundleID]) {
+			[filtered addObject:entry];
+		}
+	}
+
+	return filtered;
+}
+
 // Rebuilds the log-entry cells from the prefs array. The static specifiers
 // (group header + clear button) come from DetectorLog.plist; the entries are
 // dynamic, so they are inserted after the header group.
 - (void)reloadLogEntries {
-	NSArray* log = [prefs arrayForKey:@"DetectorLog"];
+	NSArray* log = [self filteredLogEntries];
 
 	// Remove previously inserted entry cells (they carry the
 	// "SHDWDetectorLogEntry" identifier).
@@ -72,7 +102,19 @@
 
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"CLEAR_CANCEL" fallback:@"Cancel"] style:UIAlertActionStyleCancel handler:nil]];
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"CLEAR_CONFIRM" fallback:@"Clear"] style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
-		[prefs removeObjectForKey:@"DetectorLog"];
+		if(self.filterBundleID) {
+			// Per-app clear: drop only the matching entries, keep the rest.
+			NSArray* log = [prefs arrayForKey:@"DetectorLog"];
+			NSMutableArray* kept = [NSMutableArray new];
+			for(NSString* entry in log) {
+				if(![[[entry componentsSeparatedByString:@"  "] lastObject] isEqualToString:self.filterBundleID]) {
+					[kept addObject:entry];
+				}
+			}
+			[prefs setObject:kept forKey:@"DetectorLog"];
+		} else {
+			[prefs removeObjectForKey:@"DetectorLog"];
+		}
 		[prefs synchronize];
 		[self reloadLogEntries];
 	}]];
@@ -81,7 +123,7 @@
 }
 
 - (void)shareLog:(id)sender {
-	NSArray* log = [prefs arrayForKey:@"DetectorLog"];
+	NSArray* log = [self filteredLogEntries];
 
 	if(log.count == 0) {
 		return;

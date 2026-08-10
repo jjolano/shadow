@@ -4,3 +4,9 @@
 "ENABLE_SHADOW" = "Enable Shadow";
 "ENABLED" = "Enabled";
 "ENABLED_GLOBAL" = "Enabled (Global)";
+
+"FOLLOW_GLOBAL" = "Follow Global Settings";
+"FOLLOW_GLOBAL_DESC" = "Use the global bypass configuration for this app.";
+"APP_USES_GLOBAL" = "Following the global settings. Turn off to customize this app.";
+"APP_DETECTOR_LOG" = "Detector Log";
+"APP_DETECTOR_LOG_DESC" = "Detector activity recorded in this app.";
