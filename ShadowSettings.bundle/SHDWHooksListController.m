@@ -50,11 +50,20 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)refreshDaemonStateAndRegate {
+	// Capture the state the current specifiers were rendered with. reloadSpecifiers
+	// clears _specifiers and re-enters this method through the getter; the async
+	// refresh's completion must not reload when the state is unchanged, or the
+	// synchronous cache path recurses (reload → getter → refresh → reload…).
+	SHDWDaemonState renderedState = SHDWQueryDaemonState();
 	__weak typeof(self) weakSelf = self;
 
 	SHDWRefreshDaemonStateAsync(^(SHDWDaemonState state) {
 		typeof(self) self = weakSelf;
 		if(!self) {
+			return;
+		}
+
+		if(state == renderedState) {
 			return;
 		}
 
@@ -93,10 +102,37 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 			SHDWWriteAppPref(prefs, nil, key, preset[key]);
 		}
 
+		// The framework only re-renders the edited cell; reload the hook
+		// toggles so they reflect the applied preset without leaving the page.
+		for(NSString* key in preset) {
+			PSSpecifier* toggleSpecifier = [self specifierForID:key];
+			if(toggleSpecifier) {
+				[self reloadSpecifier:toggleSpecifier];
+			}
+		}
+
 		return;
 	}
 
 	SHDWWriteAppPref(prefs, nil, [specifier identifier], value);
+
+	// The preset row derives from the toggles; keep its displayed value in
+	// sync when a toggle changes in place (Standard/Maximum → Custom).
+	PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+	if(presetSpecifier) {
+		[self reloadSpecifier:presetSpecifier];
+	}
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+	[super viewWillAppear:animated];
+
+	// Toggles flipped on a pushed page (Dangerous hooks) can change the
+	// preset classification; refresh the preset row on return.
+	PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
+	if(presetSpecifier) {
+		[self reloadSpecifier:presetSpecifier];
+	}
 }
 
 - (NSArray *)getPresetValues:(PSSpecifier *)specifier {
