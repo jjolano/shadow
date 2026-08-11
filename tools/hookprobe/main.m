@@ -240,6 +240,28 @@ static void probeObjC(void) {
     BOOL getClassHidden = objc_getClass("Shadow") == Nil;
     report(@"objc", @"objc_getClass(Shadow)", getClassHidden, @"");
 
+    // Shared-cache class probes: the class-hiding predicate classifies the
+    // RESULT's address via span ranges. System classes (NSString etc.) live in
+    // the dyld shared cache, whose Class metadata sits in split/global ObjC
+    // regions — if the span-based test misclassifies those, NSClassFromString
+    // returns nil for EXTERNAL callers and UIKit/BoardServices asserts break
+    // (observed on-device: ShadowHarness SIGTRAP in
+    // +[BSMutableServiceInterface interfaceWithIdentifier:] because the
+    // interface identifier class lookup returned nil).
+    Class nsstr = NSClassFromString(@"NSString");
+    BOOL nsstrOK = (nsstr != nil) && (nsstr == [NSString class]);
+    report(@"objc", @"NSClassFromString(NSString)", nsstrOK, nsstr ? @"resolved" : @"NIL");
+
+    Class nsobj = NSClassFromString(@"NSObject");
+    BOOL nsobjOK = (nsobj != nil) && (nsobj == [NSObject class]);
+    report(@"objc", @"NSClassFromString(NSObject)", nsobjOK, nsobj ? @"resolved" : @"NIL");
+
+    Class bsmutable = NSClassFromString(@"BSMutableServiceInterface");
+    report(@"objc", @"NSClassFromString(BSMutableServiceInterface)", bsmutable != nil, bsmutable ? @"resolved" : @"NIL");
+
+    Class nsclass = objc_getClass("NSString");
+    report(@"objc", @"objc_getClass(NSString)", nsclass != nil, nsclass ? @"resolved" : @"NIL");
+
     char canonicalPath[PATH_MAX];
 
     // The API keys on the LOADED IMAGE path (Shadow.framework/Shadow
