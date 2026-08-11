@@ -18,21 +18,19 @@
 // same-thread (the hook that reads the flag runs on the thread that entered
 // the scope).
 //
-// EXPORTED as a plain C thread-local, not only through the class methods
-// below. isCallerExternal() reads this on every one of ~400 hook entry
-// points; reaching it by objc_msgSend across the framework boundary meant a
-// cross-image message send on the hottest path in the tweak. Reading the
-// thread-local directly is strictly less work and lets isCallerExternal stay
-// a pure inline. (Darwin exports thread-locals like any other symbol — the
-// TLV descriptor goes in the export list — so the earlier "a C TLS symbol
-// cannot cross the export list" note was simply wrong.)
-//
-// Measured effect on launch CPU: below the noise floor on the app tested
-// (Bitwarden), whose launch cost is dominated by the per-path engine
-// pipeline, not hook-entry overhead. Kept because it is correct and cheaper,
-// not because it moved that number.
+// Exposed to the dylib through the exported C function shdwInternalBusy()
+// (below), not the TLS variable itself: theos links ShadowCore against
+// Shadow.tbd, and ld64's tbd reader cannot represent thread-local exports —
+// a TLS symbol in the export list resolves as a REGULAR symbol at link time
+// ("illegal thread local variable reference to regular symbol"). One call
+// through the PLT is still far cheaper than the objc_msgSend the class
+// methods cost, and it crosses the .tbd cleanly.
+static _Thread_local NSUInteger shdw_internal_busy = 0;
+
 __attribute__((visibility("default")))
-_Thread_local NSUInteger shdw_internal_busy = 0;
+NSUInteger shdwInternalBusy(void) {
+    return shdw_internal_busy;
+}
 
 @implementation Shadow
 @synthesize bundlePath, homePath, realHomePath, hasAppSandbox, rootless;
