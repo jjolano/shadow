@@ -31,10 +31,12 @@ extern _Atomic(uint64_t) shdw_ruleset_generation;
 // SHADOW_INTERNAL_SCOPE and must be shown truth. The +shdwIsInternalRead
 // class method below is the same value; it stays for the harness and for any
 // caller that would rather not link the symbol, but the ~400 hook entry
-// points read the variable, because an objc_msgSend there costs more than
-// everything else those hooks do.
+// points call the exported C accessor instead, because an objc_msgSend there
+// costs more than everything else those hooks do. (Exported as a FUNCTION,
+// not the TLS variable: theos links the dylib against Shadow.tbd, whose
+// format cannot carry thread-local exports.)
 __attribute__((visibility("default")))
-extern _Thread_local NSUInteger shdw_internal_busy;
+NSUInteger shdwInternalBusy(void);
 
 __attribute__((visibility("default")))
 @interface Shadow : NSObject {

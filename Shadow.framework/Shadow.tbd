@@ -13,5 +13,5 @@ exports:
                             _SHDWDefaultHookSettings, _SHDWPresetStandard,
                             _SHDWPresetMaximum, _SHDWHookGroupCapabilityKind,
                             _shdw_ruleset_generation,
-                            _shdw_internal_busy ]
+                            _shdwInternalBusy ]
 ...
