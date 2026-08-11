@@ -26,6 +26,16 @@
 __attribute__((visibility("default")))
 extern _Atomic(uint64_t) shdw_ruleset_generation;
 
+// C0-2: internal-read scope depth (Core.m). Read directly by the dylib's
+// isCallerExternal() — non-zero means this thread is inside
+// SHADOW_INTERNAL_SCOPE and must be shown truth. The +shdwIsInternalRead
+// class method below is the same value; it stays for the harness and for any
+// caller that would rather not link the symbol, but the ~400 hook entry
+// points read the variable, because an objc_msgSend there costs more than
+// everything else those hooks do.
+__attribute__((visibility("default")))
+extern _Thread_local NSUInteger shdw_internal_busy;
+
 __attribute__((visibility("default")))
 @interface Shadow : NSObject {
     ShadowBackend* backend;
