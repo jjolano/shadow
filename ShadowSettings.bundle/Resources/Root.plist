@@ -75,7 +75,7 @@
 					<key>sectionType</key>
 					<string>Custom</string>
 					<key>sectionPredicate</key>
-					<string>NOT (atl_bundleIdentifier BEGINSWITH 'com.apple') AND atl_isHidden == NO</string>
+					<string>NOT (atl_bundleIdentifier BEGINSWITH 'com.apple') AND atl_isHidden == NO AND NOT (atl_bundleIdentifier IN {'com.saurik.cydia', 'org.coolstar.sileo', 'xyz.willy.zebra', 'com.opa334.jailbreak', 'com.opa334.trollstore', 'science.xnu.underscore', 'com.llsc12.palera1nloader', 'com.samiiau.loader', 'jp.r333d.taurine', 'com.undecimus.unc0ver', 'eu.taurine.taurine', 'com.apt.theos'})</string>
 				</dict>
 			</array>
 			<key>useSearchBar</key>
@@ -115,7 +115,7 @@
 			<string>reset:</string>
 			<key>cell</key>
 			<string>PSButtonCell</string>
-			<key>destructive</key>
+			<key>isDestructive</key>
 			<true/>
 			<key>icon</key>
 			<string>IcoReset.png</string>

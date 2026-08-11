@@ -1,4 +1,4 @@
-"HK_LIB_DESC" = "控制C函数Hook所使用的Hook库。Objective-C Hook始终使用运行时的默认库（ElleKit、Substrate 或 Substitute）。一些Hook库可能提供更好的屏蔽效果，但也可能影响应用的稳定性。";
+"HK_LIB_DESC" = "控制C函数Hook所使用的Hook库。Objective-C Hook始终使用运行时的默认库（ElleKit、Substrate、Substitute 或原生 Objective-C 运行时）。一些Hook库可能提供更好的屏蔽效果，但也可能影响应用的稳定性。";
 
 "HOOKING_LIBRARY" = "Hook库";
 "HK_LIB_SELECT" = "这是一个可以在您的设备上使用的Hook库列表。选择「自动」来允许HookKit为您的设备选择最合适的Hook库。";
@@ -9,7 +9,6 @@
 "ESSENTIAL_HOOKS_DESC" = "基本Hook包含最常见的越狱检测方法。";
 
 "HOOK_FILE_SYSTEM" = "文件系统";
-"HOOK_DYLIB" = "动态库";
 "HOOK_URLSCHEME" = "URL处理";
 "HOOK_ENVVARS" = "环境变量";
 
@@ -18,15 +17,12 @@
 
 "HOOK_DETECTFMWK" = "检测框架";
 "HOOK_FOUNDATION" = "Foundation框架"; /* Foundation是Apple的框架名称. */
-"HOOK_MAC" = "M1 Mac 伪装（iOS 14+）";
 
 "EXTRA_HOOKS" = "额外Hook";
 "EXTRA_HOOKS_DESC" = "额外Hook包含可能使用的更多越狱检测方法，包括私有API。";
 
 "HOOK_MACH" = "Mach服务查找";
-"HOOK_IOKIT" = "IOKit 服務探測";
-"HOOK_SYMLOOKUP" = "运行时符号查找";
-"HOOK_OBJC" = "Objective-C方法";
+"HOOK_IOKIT" = "IOKit 服务探测";
 "HOOK_ANTIDBG" = "反调试方法";
 "HOOK_SYSCALL" = "私有系统调用";
 "HOOK_APPENUM" = "应用枚举";
@@ -40,14 +36,12 @@
 "HOOK_SANDBOX" = "增强应用沙盒";
 "HOOK_LLC" = "底层文件处理";
 "HOOK_MEM" = "隐藏可执行内存";
-"HOOK_TWEAKCLASS" = "隐藏插件的Objective-C类";
-"HOOK_DYLD" = "动态库加载器";
 "VNODE_HIDING" = "Vnode 级隐藏";
 
 "VNODE_UNAVAILABLE_REASON" = "Vnode 隐藏需要具备内核读写能力的 shadowd 守护进程。";
 "VNODE_STARTING_REASON" = "shadowd 守护进程仍在启动，Vnode 隐藏暂不可用。";
 "UNSUPPORTED_ELLEKIT_REASON" = "需要 ElleKit 钩子库。";
-"UNSUPPORTED_MSG_REASON" = "需要支持 Objective-C 消息钩子的钩子库（ElleKit、Substrate 或 Substitute）。";
+"UNSUPPORTED_MSG_REASON" = "需要支持 Objective-C 消息钩子的钩子库（ElleKit、Substrate、Substitute 或原生 Objective-C 运行时）。";
 "UNSUPPORTED_FUNC_REASON" = "需要支持 C 函数钩子的钩子库。";
 "BYPASS_PRESET" = "绕过预设";
 "PRESET_SELECT" = "选择预设以应用一组绕过设置。之后仍可单独切换各个钩子。";
@@ -57,3 +51,4 @@
 
 "STATUS_HDR" = "状态";
 "STATUS_FMT" = "%ld 个钩子已启用 · %@";
+"STATUS_FMT_SINGULAR" = "1 个钩子已启用 · %@";

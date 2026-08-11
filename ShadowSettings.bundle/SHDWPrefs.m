@@ -1,6 +1,7 @@
 #import "SHDWPrefs.h"
 
 #import <UIKit/UIKit.h>
+#import <Shadow/HookConfiguration.h>
 
 id SHDWReadAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key) {
 	if(appID) {
@@ -26,8 +27,25 @@ void SHDWWriteAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key, id 
 	} else {
 		[prefs setObject:v forKey:key];
 	}
+}
 
-	[prefs synchronize];
+NSUInteger SHDWCountEnabledHooks(NSUserDefaults *prefs, NSString *appID) {
+	NSUInteger count = 0;
+
+	// The canonical hook-key set is the preset keys (every Hook_* toggle plus
+	// VnodeHiding); Global_Enabled / HK_Library / MemoryLevelHiding are not
+	// user-facing hook toggles and must not inflate the count.
+	for(NSString* key in SHDWPresetStandard()) {
+		BOOL enabled = appID
+			? [SHDWReadAppPref(prefs, appID, key) boolValue]
+			: [prefs boolForKey:key];
+
+		if(enabled) {
+			count++;
+		}
+	}
+
+	return count;
 }
 
 void SHDWToggleHaptic(void) {

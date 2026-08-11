@@ -1,0 +1,9 @@
+"DNGR_HOOKS" = "⚠︎ 危险Hook";
+"DNGR_HOOKS_DESC" = "底层屏蔽方法。可能导致应用崩溃或系统功能异常。仅在推荐的Hook无法生效时启用。";
+"HOOK_SANDBOX" = "增强应用沙盒";
+"HOOK_LLC" = "底层文件处理";
+"HOOK_MEM" = "隐藏可执行内存";
+"VNODE_HIDING" = "Vnode 级隐藏";
+"MEMORY_LEVEL_HIDING" = "内存级隐藏";
+"HOOK_DYLD_EXTRA" = "提前安装动态库";
+"HOOK_DYLD_EXTRA_DESC" = "检测到检测器证据后，额外的动态库始终会被安装。启用此项会在启动时立即安装。";
