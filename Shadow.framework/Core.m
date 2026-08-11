@@ -14,11 +14,25 @@
 // filesystem reads in SHADOW_INTERNAL_SCOPE (see Core.h) so the tweak's own
 // hooks never filter them. A depth counter (not a BOOL) so nested scopes —
 // e.g. the ruleset store's change check → reload → load — stay busy until
-// the outermost scope exits. Exposed to the dylib hook layer through the
-// exported class methods in @implementation Shadow below; _Thread_local
-// because scopes are strictly same-thread (the hook that reads the flag runs
-// on the thread that entered the scope).
-static _Thread_local NSUInteger shdw_internal_busy = 0;
+// the outermost scope exits. _Thread_local because scopes are strictly
+// same-thread (the hook that reads the flag runs on the thread that entered
+// the scope).
+//
+// EXPORTED as a plain C thread-local, not only through the class methods
+// below. isCallerExternal() reads this on every one of ~400 hook entry
+// points; reaching it by objc_msgSend across the framework boundary meant a
+// cross-image message send on the hottest path in the tweak. Reading the
+// thread-local directly is strictly less work and lets isCallerExternal stay
+// a pure inline. (Darwin exports thread-locals like any other symbol — the
+// TLV descriptor goes in the export list — so the earlier "a C TLS symbol
+// cannot cross the export list" note was simply wrong.)
+//
+// Measured effect on launch CPU: below the noise floor on the app tested
+// (Bitwarden), whose launch cost is dominated by the per-path engine
+// pipeline, not hook-entry overhead. Kept because it is correct and cheaper,
+// not because it moved that number.
+__attribute__((visibility("default")))
+_Thread_local NSUInteger shdw_internal_busy = 0;
 
 @implementation Shadow
 @synthesize bundlePath, homePath, realHomePath, hasAppSandbox, rootless;
