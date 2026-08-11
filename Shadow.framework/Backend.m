@@ -12,8 +12,7 @@
 // change-detection/generation machinery moved to the ruleset store
 // (RulesetStore.m); path evaluation + the decision caches moved to the engine
 // (RestrictionEngine.m); the matching moved to Ruleset.m. These public
-// methods keep their signatures and behavior (the engine's legacy evaluator
-// is authoritative until the cutover flag flips).
+// methods keep their signatures and behavior.
 
 @interface ShadowBackend () {
     ShadowRulesetStore* store;

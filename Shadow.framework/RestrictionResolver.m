@@ -9,9 +9,7 @@
 // (hooks/libc.x) re-enters the engine from realpath — this code calls
 // realpath from inside the engine, so without a per-thread guard the
 // hook → engine → realpath → hook cycle would recurse forever. _Thread_local
-// is exactly right: the only recursion is same-thread. This guard covers the
-// NEW engine's resolver only; the legacy engine keeps its own (moved from
-// Core.m), so shadow-mode runs stay independent.
+// is exactly right: the only recursion is same-thread.
 static _Thread_local BOOL shdw_resolver_resolving = NO;
 
 @implementation ShadowRestrictionResolver {
@@ -54,8 +52,8 @@ static _Thread_local BOOL shdw_resolver_resolving = NO;
 }
 
 - (NSString *)resolveTarget:(NSString *)path {
-    // The guard mirrors the legacy pipeline's check-and-set around realpath:
-    // re-entered engine runs see the flag and skip their own realpath.
+    // The guard's check-and-set around realpath: re-entered engine runs see
+    // the flag and skip their own realpath.
     if(shdw_resolver_resolving) {
         return nil;
     }

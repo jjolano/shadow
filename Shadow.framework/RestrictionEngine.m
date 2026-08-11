@@ -8,26 +8,18 @@
 
 #import <limits.h>
 #import <unistd.h>
-#import <stdarg.h>
 
-// THE CUTOVER FLAG (Candidate 5 differential migration).
+// The Candidate 5 cutover is done: the resolver-based engine is THE path
+// engine. It ran alongside the legacy evaluator in shadow mode — every query
+// answered by both, divergences logged — until parity held across the harness
+// (RestrictionTests 214/214 rooted and rootless, 20,000 fuzz iterations, zero
+// mismatches), at which point the legacy evaluator and its two caches were
+// deleted. Running both in production cost 2x on the hottest path in the
+// tweak, which is a launch-watchdog-sized amount of work (see
+// shdw_addr_is_restricted in ShadowCore's hooks.h for the other half).
 //
-// Value 0 (default): the LEGACY engine is authoritative for path queries and
-// the NEW resolver-based engine runs alongside in shadow mode. Every query is
-// answered by both; a divergent verdict is logged LOUDLY to stderr (write(2),
-// so it survives the common.h NSLog compile-out in release builds) and the
-// legacy verdict is returned. This is the plan's "keep the old path under the
-// differential flag" state: production behavior is byte-for-byte the
-// pre-Candidate-5 pipeline until parity is proven.
-//
-// Flip to 1 ONLY after the DEBUG differential and the harness
-// (tests/RestrictionTests.m + tests/main.m, which builds with -DDEBUG and
-// prints every mismatch) have proven parity for every query shape. The new
-// engine is then THE answer for path queries; the legacy evaluator stays
-// compiled (the DEBUG differential still guards it) until it is removed.
-#ifndef SHADOW_NEW_ENGINE_AUTHORITATIVE
-#define SHADOW_NEW_ENGINE_AUTHORITATIVE 0
-#endif
+// tests/RestrictionTests.m still asserts every verdict this pipeline produces;
+// it just no longer has a second engine to compare against.
 
 // How long a cached decision is honored (see the cache notes below).
 // Trimmed from 2.0s (plan C0-1): a "not restricted" verdict for a
@@ -35,12 +27,6 @@
 // window a probe gets a stale "allowed". Ruleset reloads already invalidate
 // via the generation tag; this shrinks the filesystem-appearance window.
 static const NSTimeInterval kShadowDecisionCacheTTL = 0.5;
-
-// Reentrancy guard for the LEGACY engine's resolve-before-exempt step (see
-// Core.m history): the libc realpath hook re-enters the engine from realpath,
-// so each evaluator that calls realpath keeps its own per-thread guard. The
-// NEW engine's guard lives in RestrictionResolver.m (shdw_resolver_resolving).
-static _Thread_local BOOL shdw_legacy_resolving = NO;
 
 // Restricted roots that never hold legitimate app data: the rootless /var/jb
 // fast-path, its canonical target (/var/jb is a symlink to
@@ -110,26 +96,6 @@ static void shdwEnsureContext(void) {
     }
 }
 
-// Loud divergence report. stderr via write(2): NSLog is compiled out of
-// release builds (common.h) and these mismatches are exactly what must
-// surface in production shadow mode.
-static void shdwReportDiffMismatch(ShadowRestrictionQuery* query, BOOL legacy, BOOL fresh) {
-    char buf[640];
-    int n = snprintf(buf, sizeof(buf),
-        "[Shadow] DIFFERENTIAL MISMATCH path=%s wd=%s legacy=%s new=%s operation=%ld flags=%lu — "
-        "keeping legacy (SHADOW_NEW_ENGINE_AUTHORITATIVE=0). Do not flip the cutover until proven.\n",
-        query.path ? [query.path UTF8String] : "(nil)",
-        query.workingDirectory ? [query.workingDirectory UTF8String] : "(nil)",
-        legacy ? "restricted" : "allowed",
-        fresh ? "restricted" : "allowed",
-        (long)query.operation,
-        (unsigned long)query.flags);
-
-    if(n > 0) {
-        (void)write(STDERR_FILENO, buf, (size_t)n);
-    }
-}
-
 // Ruleset passes against one immutable snapshot: pass 1 compliance (hard
 // veto), then whitelist (wins over blacklist), then blacklist. Shared by both
 // backend evaluators — identical matching on the same snapshot, so the two
@@ -177,17 +143,10 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     //     smaller staleness window than the old generation-only backend
     //     cache.
     // Entries are @[computedTime, packed(generation << 1 | verdict)] (one
-    // NSNumber instead of two, packed exactly like the legacy backend cache)
-    // and are honored only within kShadowDecisionCacheTTL and while the
-    // generation matches.
+    // NSNumber instead of two) and are honored only within
+    // kShadowDecisionCacheTTL and while the generation matches.
     NSCache* sharedCache;
     NSCache* backendCache;
-
-    // The legacy engine's own caches, preserved exactly (its decisionCache
-    // TTL'd 3-array; its backend cache generation-packed, no TTL). They die
-    // with the differential.
-    NSCache* legacyDecisionCache;
-    NSCache* legacyBackendCache;
 }
 
 - (instancetype)initWithStore:(ShadowRulesetStore *)rulesetStore {
@@ -197,10 +156,6 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         [sharedCache setCountLimit:1024];
         backendCache = [NSCache new];
         [backendCache setCountLimit:1024];
-        legacyDecisionCache = [NSCache new];
-        [legacyDecisionCache setCountLimit:512];
-        legacyBackendCache = [NSCache new];
-        [legacyBackendCache setCountLimit:1024];
     }
 
     return self;
@@ -219,19 +174,9 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 // Public entry points
 // ---------------------------------------------------------------------------
 
-// Differential dispatch: both engines evaluate every path query; mismatches
-// are logged loudly and the verdict follows the cutover flag (legacy by
-// default — see SHADOW_NEW_ENGINE_AUTHORITATIVE above).
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
     @autoreleasepool {
-        BOOL legacy = [self _legacyPathRestrictedQuery:query];
-        BOOL fresh = [self _newPathRestrictedQuery:query];
-
-        if(legacy != fresh && query) {
-            shdwReportDiffMismatch(query, legacy, fresh);
-        }
-
-        return SHADOW_NEW_ENGINE_AUTHORITATIVE ? fresh : legacy;
+        return [self _newPathRestrictedQuery:query];
     }
 }
 
@@ -293,315 +238,6 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
 - (NSUInteger)rulesetGeneration {
     return [store generation];
-}
-
-// ---------------------------------------------------------------------------
-// LEGACY engine (pre-Candidate-5 pipeline, preserved verbatim)
-// ---------------------------------------------------------------------------
-
-// The old -[Shadow isPathRestricted:options:] body, transcribed onto query
-// fields. Kept exactly (rename-only) so the differential compares real
-// production behavior.
-- (BOOL)_legacyPathRestrictedQuery:(ShadowRestrictionQuery *)query {
-    // Pool-less pthread_create threads (Unity/Unreal loading threads, Flutter
-    // engine threads, C++ std::thread file IO) have no autoreleasepool: every
-    // autoreleased object this method allocates — the composite cache key,
-    // joined/standardized/resolved path strings, the query copy — would log
-    // "autoreleased with no pool in place — just leaking" and never be
-    // released. The pool drains them all; the BOOL return survives, and cache
-    // entries (NSCache retains) and _Thread_local state outlive the pool.
-    @autoreleasepool {
-        shdwEnsureContext();
-        NSString* path = query ? query.path : nil;
-
-        if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
-            return NO;
-        }
-
-        // Bounded decision cache: repeat queries of the same absolute path with
-        // default options skip tilde expansion, NSURL canonicalization, the
-        // rootless access() probe and the backend lookup. Entries carry the time
-        // they were computed, the store's ruleset generation (C0-5), and the
-        // restricted verdict; they are honored only within
-        // kShadowDecisionCacheTTL AND while the generation matches, so a
-        // changed file system (new/removed jbroot files) is observed at most
-        // TTL later while a ruleset reload invalidates immediately. Options
-        // that alter the decision (file extension, resolve re-check, symlink
-        // resolution) are never cached; the single exception is the
-        // working-dir-only query the readdir/enumerator hook lanes pass for
-        // every directory entry: with nothing but the working directory set,
-        // the decision depends solely on the joined workingDir+entry path, so
-        // it is cached under a composite (workingDir, entry) key — a
-        // length-prefixed joined string, which can never collide with the
-        // string keys of plain absolute-path queries (those start with "/"),
-        // nor between two different (workingDir, entry) pairs (identical
-        // joined strings imply identical lengths, working dirs and entries,
-        // and therefore identical decisions). The working dir must be
-        // absolute (a relative one falls back to the process cwd, which is
-        // not a stable cache input) and the entry must not be tilde-prefixed
-        // (tilde expansion would make the decision depend on the process
-        // home).
-        BOOL defaultQuery = (query.operation == ShadowRestrictionOperationRead)
-            && (query.flags == ShadowRestrictionFlagResolve);
-        BOOL cacheable = defaultQuery && (query.workingDirectory == nil) && [path isAbsolutePath];
-        id cacheKey = path;
-
-        if(!cacheable && defaultQuery && query.workingDirectory
-            && [query.workingDirectory isAbsolutePath] && ![path isAbsolutePath] && ![path hasPrefix:@"~"]) {
-            cacheKey = [NSString stringWithFormat:@"%lu:%@%@", (unsigned long)[query.workingDirectory length], query.workingDirectory, path];
-            cacheable = YES;
-        }
-
-        if(cacheable) {
-            NSUInteger gen = [store generation];
-            NSArray* cached = [legacyDecisionCache objectForKey:cacheKey];
-
-            if(cached) {
-                double age = [NSDate timeIntervalSinceReferenceDate] - [[cached objectAtIndex:0] doubleValue];
-
-                if(age >= 0 && age <= kShadowDecisionCacheTTL
-                    && [[cached objectAtIndex:2] unsignedIntegerValue] == gen) {
-                    return [[cached objectAtIndex:1] boolValue];
-                }
-            }
-        }
-
-        // cacheKey (above) already holds the original query path/key, so the
-        // remaining pipeline mutates `path` freely.
-        BOOL restricted = NO;
-
-        // Resolve any tilde paths.
-        path = [path stringByExpandingTildeInPath];
-
-        if([path characterAtIndex:0] == '~') {
-            return NO;
-        }
-
-        // Attempt to resolve any relative paths.
-        if(![path isAbsolutePath]) {
-            NSString* cwd = query.workingDirectory;
-
-            if(!cwd || ![cwd isAbsolutePath]) {
-                cwd = [[NSFileManager defaultManager] currentDirectoryPath];
-            }
-
-            path = [cwd stringByAppendingPathComponent:path];
-        }
-
-        // Standardize path string for our checks.
-        path = [Shadow getStandardizedPath:path];
-
-        // Run checks if path is outside the app sandbox.
-        BOOL shouldCheckPath = (!shdw_ctx.hasAppSandbox || (![path hasPrefix:shdw_ctx.bundlePath] && ![path hasPrefix:shdw_ctx.homePath]));
-
-        // Resolve-before-exempt: a symlink inside the sandbox (or bundle) can
-        // point at jailbreak files outside it, so a lexical prefix match against
-        // homePath/bundlePath is not a safe exemption. realpath() the exempted
-        // candidate and evaluate the resolved target: the restricted-root prefixes
-        // are a cheap early-out, but the target also runs through the same
-        // evaluation a non-exempt path would get, so a symlink at a ROOTFUL
-        // restricted path (e.g. /Library/MobileSubstrate, /usr/lib/substrate,
-        // /usr/bin/ssh) is restricted exactly when the equivalent direct path
-        // would be. A failed resolution (path does not exist) keeps the exemption
-        // — a non-existent path can't leak anything. Only no-follow queries
-        // (readlink/lstat link-location checks) skip resolution: they
-        // request a location-only answer about the link itself, not its target.
-        BOOL noFollow = (query.flags & ShadowRestrictionFlagNoFollow) != 0;
-
-        if(!shouldCheckPath
-            && !noFollow
-            && !shdw_legacy_resolving) {
-            shdw_legacy_resolving = YES;
-
-            char resolved_path[PATH_MAX];
-            BOOL resolvedRestricted = NO;
-
-            if(realpath([path fileSystemRepresentation], resolved_path)) {
-                NSString* resolved = [NSString stringWithUTF8String:resolved_path];
-
-                resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
-                    || [self _legacyEvaluatePathRestriction:resolved query:query];
-            }
-
-            shdw_legacy_resolving = NO;
-
-            if(resolvedRestricted) {
-                restricted = YES;
-                goto done;
-            }
-        }
-
-        if(shouldCheckPath) {
-            if([self _legacyEvaluatePathRestriction:path query:query]) {
-                restricted = YES;
-                goto done;
-            }
-        }
-
-        // Resolve into full path and check again.
-        if(query.flags & ShadowRestrictionFlagResolve) {
-            NSString* resolved_path = [path stringByStandardizingPath];
-
-            if(![resolved_path isEqualToString:path]) {
-                ShadowRestrictionQuery* sub = [ShadowRestrictionQuery queryWithPath:resolved_path];
-                sub.workingDirectory = query.workingDirectory;
-                sub.operation = query.operation;
-                sub.flags = query.flags & ~ShadowRestrictionFlagResolve;
-
-                if([self _legacyPathRestrictedQuery:sub]) {
-                    restricted = YES;
-                    goto done;
-                }
-            }
-        }
-
-        done:
-        if(cacheable) {
-            // C0-5: generation tag — a ruleset reload invalidates the entry at
-            // the next query even inside the TTL window.
-            [legacyDecisionCache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(restricted), @([store generation])] forKey:cacheKey];
-        }
-
-        return restricted;
-    }
-}
-
-// The old -[Shadow evaluatePathRestriction:options:] body, transcribed onto
-// query fields (rename-only move from Core.m).
-- (BOOL)_legacyEvaluatePathRestriction:(NSString *)path query:(ShadowRestrictionQuery *)query {
-    // C0-1: write/create/delete probes must not be let through by the
-    // existence gates — a detector probing a restricted-classified path it
-    // could create (e.g. /var/jb/usr/lib/libjailbreak.dylib before it
-    // exists) must get a denial, not an "allowed because absent".
-    BOOL isWrite = (query.operation == ShadowRestrictionOperationWrite);
-
-    // Rootless optimization: skip rooted checks. Covers /var/jb, its
-    // canonical preboot target and /cores/ via shdwIsPathInRestrictedRoot.
-    if(shdw_ctx.rootless) {
-        if(shdwIsPathInRestrictedRoot(path)) {
-            return YES;
-        }
-
-        BOOL checkable = [path hasPrefix:@"/var"]
-            || [path hasPrefix:@"/private/preboot"]
-            || [path hasPrefix:@"/usr/lib"];
-
-        if(!checkable) {
-            // Rooted-flavored query on a rootless jailbreak: the jailbreak file,
-            // if it exists, lives under /var/jb + path. Only evaluate rulesets
-            // (against the canonical rooted-flavored path, so existing ruleset
-            // entries/predicates apply) if the concrete jbroot file exists.
-            // Write probes skip the existence gate (C0-1): the ruleset decides
-            // even for a not-yet-created target.
-            if(!isWrite) {
-                NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
-                int errno_old = errno;
-                BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
-                errno = errno_old;
-
-                if(!exists) {
-                    return NO;
-                }
-            }
-
-            if([self _legacyBackendPathRestricted:path]) {
-                NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
-                return YES;
-            }
-
-            return NO;
-        }
-    }
-
-    if([path hasPrefix:@"/usr/lib"]) {
-        // Skip checks if file doesn't exist. Write probes skip the gate
-        // (C0-1): a restricted-classified path is denied even when absent.
-        if(!isWrite) {
-            int errno_old = errno;
-            NSString* check_path = path;
-
-            if(shdw_ctx.rootless) {
-                check_path = [@"/var/jb" stringByAppendingString:path];
-            }
-
-            if(access([check_path fileSystemRepresentation], F_OK) != 0) {
-                // reset errno
-                errno = errno_old;
-                return NO;
-            }
-        }
-    }
-
-    if([self _legacyBackendPathRestricted:path]) {
-        NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
-        return YES;
-    }
-
-    return NO;
-}
-
-// The old -[ShadowBackend isPathRestricted:] body (rename-only move from
-// Backend.m): its own generation-packed cache (no TTL, exactly as before) and
-// the store snapshot for the ruleset passes + parent recursion.
-- (BOOL)_legacyBackendPathRestricted:(NSString *)path {
-    if(!path || [path length] == 0 || [path isEqualToString:@"/"] || ![path isAbsolutePath]) {
-        return NO;
-    }
-
-    [store checkForChanges];
-
-    ShadowRulesetSnapshot* snapshot = [store currentSnapshot];
-    NSUInteger gen = snapshot.generation;
-
-    // Entries are packed NSNumbers, as in the old Backend.m cache.
-    NSNumber* cached = (NSNumber *)[legacyBackendCache objectForKey:path];
-
-    if(cached) {
-        // Packed as (generation << 1) | restricted: one NSNumber per entry
-        // instead of a 2-element array, with identical generation invalidation.
-        unsigned long long v = [cached unsignedLongLongValue];
-
-        if((NSUInteger)(v >> 1) == gen) {
-            return (v & 1) != 0;
-        }
-    }
-
-    // pass 1: compliance (hard veto)
-    for(RulesetEngine* ruleset in snapshot.rulesets) {
-        if(![ruleset isPathCompliant:path]) {
-            [legacyBackendCache setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | 1) forKey:path];
-            return YES;
-        }
-    }
-
-    // pass 2: whitelist
-    BOOL whitelisted = NO;
-
-    for(RulesetEngine* ruleset in snapshot.rulesets) {
-        if([ruleset isPathWhitelisted:path]) {
-            whitelisted = YES;
-            break;
-        }
-    }
-
-    // pass 3: blacklist
-    BOOL blacklisted = NO;
-
-    for(RulesetEngine* ruleset in snapshot.rulesets) {
-        if([ruleset isPathBlacklisted:path]) {
-            blacklisted = YES;
-            break;
-        }
-    }
-
-    BOOL restricted = blacklisted && !whitelisted;
-
-    if(!restricted) {
-        restricted = [self _legacyBackendPathRestricted:[path stringByDeletingLastPathComponent]];
-    }
-
-    [legacyBackendCache setObject:(NSArray *)(id)@(((unsigned long long)gen << 1) | (restricted ? 1 : 0)) forKey:path];
-    return restricted;
 }
 
 // ---------------------------------------------------------------------------
