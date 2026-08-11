@@ -91,14 +91,10 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	if([[specifier identifier] isEqualToString:@"BypassStatus"]) {
-		// "N hooks active · <preset>": count enabled defaults, derive the
-		// preset the same way the segment row does.
-		NSInteger count = 0;
-		for(NSString* key in SHDWDefaultHookSettings()) {
-			if([SHDWReadAppPref(prefs, nil, key) boolValue]) {
-				count++;
-			}
-		}
+		// "N hooks active · <preset>": count the enabled hook toggles (the
+		// canonical preset key set), derive the preset the same way the
+		// segment row does.
+		NSInteger count = SHDWCountEnabledHooks(prefs, nil);
 
 		NSString* presetID = @"custom";
 		if(PrefsMatchPreset(prefs, SHDWPresetStandard())) {
@@ -110,7 +106,8 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 		NSString* presetKey = [NSString stringWithFormat:@"PRESET_%@", [presetID uppercaseString]];
 		NSString* presetTitle = [[NSBundle bundleForClass:[self class]] localizedStringForKey:presetKey value:presetID table:@"Hooks"];
 
-		return [NSString stringWithFormat:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"STATUS_FMT" value:@"%ld hooks active · %@" table:@"Hooks"], (long)count, presetTitle];
+		NSString* statusKey = (count == 1) ? @"STATUS_FMT_SINGULAR" : @"STATUS_FMT";
+		return [NSString stringWithFormat:[[NSBundle bundleForClass:[self class]] localizedStringForKey:statusKey value:@"%ld hooks active · %@" table:@"Hooks"], (long)count, presetTitle];
 	}
 
 	if([[specifier identifier] isEqualToString:@"BypassPreset"]) {
@@ -149,13 +146,16 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 			SHDWWriteAppPref(prefs, nil, key, preset[key]);
 		}
 
-		// The framework only re-renders the edited cell; reload the hook
-		// toggles so they reflect the applied preset without leaving the page.
-		for(NSString* key in preset) {
-			PSSpecifier* toggleSpecifier = [self specifierForID:key];
-			if(toggleSpecifier) {
-				[self reloadSpecifier:toggleSpecifier];
-			}
+		// Batch write: flush explicitly (per-write synchronize was dropped;
+		// the batch must be durable before returning).
+		[prefs synchronize];
+
+		// The hook toggles live on pushed pages, not this controller (their
+		// specifierForID: here is nil), so there is nothing to reload — but
+		// the status row derives from the applied preset and must refresh.
+		PSSpecifier* status = [self specifierForID:@"BypassStatus"];
+		if(status) {
+			[self reloadSpecifier:status];
 		}
 
 		return;

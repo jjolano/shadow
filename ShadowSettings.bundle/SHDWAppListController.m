@@ -43,21 +43,28 @@
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
 
-		// Title the page with the app's display name (AltList never sets the
-		// pushed subcontroller's title); the plist title is the fallback.
-		LSApplicationProxy* proxy = [LSApplicationProxy applicationProxyForIdentifier:[self applicationID]];
-		if(proxy.atl_fastDisplayName.length > 0) {
-			[self setTitle:proxy.atl_fastDisplayName];
-		}
-
 		// Load the hook rows once (kept across reloads so the Follow Global
 		// toggle can animate them in/out), gated the same way the global
 		// Hooks page gates them.
 		hookSpecifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
 		SHDWApplyHookGroupGating(hookSpecifiers);
 
+		// Title the page with the app's display name (AltList never sets the
+		// pushed subcontroller's title). After both plist loads, so neither
+		// re-applies its own plist title over it.
+		LSApplicationProxy* proxy = [LSApplicationProxy applicationProxyForIdentifier:[self applicationID]];
+		if(proxy.atl_fastDisplayName.length > 0) {
+			[self setTitle:proxy.atl_fastDisplayName];
+		}
+
 		if(![self followGlobal]) {
-			[_specifiers addObjectsFromArray:hookSpecifiers];
+			// Insert behind the Follow Global row — the same anchor the live
+			// flip uses, so initial and on-the-fly customization order alike.
+			PSSpecifier* anchor = [self specifierForID:@"App_FollowGlobal"];
+			for(PSSpecifier* spec in hookSpecifiers) {
+				[self insertSpecifier:spec afterSpecifier:anchor animated:NO];
+				anchor = spec;
+			}
 		}
 
 		[self updateSettingsGroupFooter];
@@ -65,12 +72,17 @@
 		// The preset segment cell reads its options from the specifier's
 		// values/titles (the plist loader converts validValues/validTitles,
 		// but we set them in code, so go through the cell-facing API);
-		// the titles are localized in code (Hooks table).
-		PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
-		if(presetSpecifier) {
-			[presetSpecifier setValues:preset_values titles:preset_titles];
-			[presetSpecifier setProperty:preset_titles forKey:PSValidTitlesKey];
-			[presetSpecifier setProperty:preset_values forKey:PSValidValuesKey];
+		// the titles are localized in code (Hooks table). Configure the
+		// specifier inside the loaded rows, so the segment arrives
+		// configured on every insertion path — the initial custom load and
+		// the live Follow Global flip (which inserts these specifiers as-is).
+		for(PSSpecifier* spec in hookSpecifiers) {
+			if([[spec identifier] isEqualToString:@"BypassPreset"]) {
+				[spec setValues:preset_values titles:preset_titles];
+				[spec setProperty:preset_titles forKey:PSValidTitlesKey];
+				[spec setProperty:preset_values forKey:PSValidValuesKey];
+				break;
+			}
 		}
 
 		// Same capability gating as the global Hooks page: per-app toggles
@@ -122,6 +134,26 @@
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	NSString* key = [specifier identifier];
+
+	if([key isEqualToString:@"BypassStatus"]) {
+		// "N hooks active · <preset>": count the effective per-app hook
+		// toggles (app override, else global fallback), derive the preset
+		// the same way the segment row does.
+		NSInteger count = SHDWCountEnabledHooks(prefs, [self applicationID]);
+
+		NSString* presetID = @"custom";
+		if([self appPrefsMatchPreset:SHDWPresetStandard()]) {
+			presetID = @"standard";
+		} else if([self appPrefsMatchPreset:SHDWPresetMaximum()]) {
+			presetID = @"maximum";
+		}
+
+		NSString* presetKey = [NSString stringWithFormat:@"PRESET_%@", [presetID uppercaseString]];
+		NSString* presetTitle = [[NSBundle bundleForClass:[self class]] localizedStringForKey:presetKey value:presetID table:@"Hooks"];
+
+		NSString* statusKey = (count == 1) ? @"STATUS_FMT_SINGULAR" : @"STATUS_FMT";
+		return [NSString stringWithFormat:[[NSBundle bundleForClass:[self class]] localizedStringForKey:statusKey value:@"%ld hooks active · %@" table:@"Hooks"], (long)count, presetTitle];
+	}
 
 	if([key isEqualToString:@"BypassPreset"]) {
 		// Per-app effective values: the app's own dict falls back to the
@@ -195,13 +227,16 @@
 			SHDWWriteAppPref(prefs, [self applicationID], presetKey, preset[presetKey]);
 		}
 
-		// The framework only re-renders the edited cell; reload the hook
-		// toggles so they reflect the applied preset without leaving the page.
-		for(NSString* presetKey in preset) {
-			PSSpecifier* toggleSpecifier = [self specifierForID:presetKey];
-			if(toggleSpecifier) {
-				[self reloadSpecifier:toggleSpecifier];
-			}
+		// Batch write: flush explicitly (per-write synchronize was dropped;
+		// the batch must be durable before returning).
+		[prefs synchronize];
+
+		// The hook toggles live on pushed pages, not this controller (their
+		// specifierForID: here is nil), so there is nothing to reload — but
+		// the status row derives from the applied preset and must refresh.
+		PSSpecifier* status = [self specifierForID:@"BypassStatus"];
+		if(status) {
+			[self reloadSpecifier:status];
 		}
 
 		return;
@@ -221,10 +256,12 @@
 	[super viewWillAppear:animated];
 
 	// Toggles flipped on a pushed page (Dangerous hooks) can change the
-	// preset classification; refresh the preset row on return.
-	PSSpecifier* presetSpecifier = [self specifierForID:@"BypassPreset"];
-	if(presetSpecifier) {
-		[self reloadSpecifier:presetSpecifier];
+	// preset classification and the status line; refresh both on return.
+	for(NSString* specID in @[ @"BypassPreset", @"BypassStatus" ]) {
+		PSSpecifier* specifier = [self specifierForID:specID];
+		if(specifier) {
+			[self reloadSpecifier:specifier];
+		}
 	}
 }
 

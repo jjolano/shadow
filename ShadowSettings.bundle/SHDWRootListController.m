@@ -34,6 +34,87 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	return YES;
 }
 
+// Canonical Shadow preference keys (single source: the framework defaults,
+// plus App_Enabled and the detector log). Per-app override dicts (bundle-ID
+// keys) are recognized by their dictionary value, not listed here.
+static NSSet* SHDWAllowedKeys(void) {
+	static NSSet* keys = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		NSMutableSet* mutableKeys = [NSMutableSet setWithArray:[SHDWDefaultHookSettings() allKeys]];
+		[mutableKeys addObject:SHDWAppEnabledID];
+		[mutableKeys addObject:@"DetectorLog"];
+		keys = [mutableKeys copy];
+	});
+
+	return keys;
+}
+
+// Validate one value against its key's expected class: switches
+// (Global_Enabled, App_Enabled, Hook_*, VnodeHiding, MemoryLevelHiding) are
+// NSNumber, HK_Library is NSString, DetectorLog is an NSArray of NSString,
+// and any other top-level key must be a per-app override dict (bundle ID)
+// whose inner keys follow the same rules. Returns the value (per-app dicts
+// sanitized down to known inner keys) or nil to drop it — a hand-edited
+// backup must never write wrongly-typed values that crash ShadowCore later.
+static id SHDWSanitizeValue(NSString* key, id value) {
+	if([key isEqualToString:SHDWHookLibraryID]) {
+		return [value isKindOfClass:[NSString class]] ? value : nil;
+	}
+
+	if([key isEqualToString:@"DetectorLog"]) {
+		if(![value isKindOfClass:[NSArray class]]) {
+			return nil;
+		}
+
+		for(id entry in value) {
+			if(![entry isKindOfClass:[NSString class]]) {
+				return nil;
+			}
+		}
+
+		return value;
+	}
+
+	if([SHDWAllowedKeys() containsObject:key]) {
+		return [value isKindOfClass:[NSNumber class]] ? value : nil;
+	}
+
+	// Unknown top-level key: keep it only as a per-app override dict.
+	if([value isKindOfClass:[NSDictionary class]]) {
+		NSMutableDictionary* sanitized = [NSMutableDictionary new];
+
+		for(NSString* innerKey in value) {
+			id innerValue = SHDWSanitizeValue(innerKey, value[innerKey]);
+			if(innerValue) {
+				sanitized[innerKey] = innerValue;
+			}
+		}
+
+		return sanitized.count > 0 ? sanitized : nil;
+	}
+
+	return nil;
+}
+
+// Shadow's own preferences only: the allowlisted keys plus per-app override
+// dicts, validated through SHDWSanitizeValue. Never the raw
+// dictionaryRepresentation — that composite mixes in registered-default,
+// managed and argument domains, leaking unrelated keys into backups.
+static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
+	NSMutableDictionary* export = [NSMutableDictionary new];
+	NSDictionary* all = [prefs dictionaryRepresentation];
+
+	for(NSString* key in all) {
+		id value = SHDWSanitizeValue(key, all[key]);
+		if(value) {
+			export[key] = value;
+		}
+	}
+
+	return export;
+}
+
 @interface SHDWRootListController () <UIDocumentPickerDelegate>
 @end
 
@@ -54,6 +135,12 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	return [[NSBundle bundleForClass:[self class]] localizedStringForKey:key value:fallback table:@"Root"];
 }
 
+- (void)presentAlert:(NSString *)title message:(NSString *)message {
+	UIAlertController* alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_OK" fallback:@"OK"] style:UIAlertActionStyleDefault handler:nil]];
+	[self presentViewController:alert animated:YES completion:nil];
+}
+
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	NSString* key = [specifier identifier];
 
@@ -71,6 +158,12 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	}
 
 	if([key isEqualToString:@"ApplicationsSummary"]) {
+		// Global_Enabled makes every eligible app active, so the summary is
+		// trivial; otherwise count the per-app customizations.
+		if([prefs boolForKey:@"Global_Enabled"]) {
+			return [self localized:@"APPS_ALL_ENABLED" fallback:@"All apps enabled"];
+		}
+
 		NSInteger count = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
 			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:@"App_Enabled"] boolValue]) {
@@ -78,7 +171,7 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 			}
 		}
 
-		return [NSString stringWithFormat:[self localized:@"APPS_ENABLED_FMT" fallback:@"%ld enabled"], (long)count];
+		return [NSString stringWithFormat:[self localized:@"APPS_CUSTOMIZED_FMT" fallback:@"%ld customized"], (long)count];
 	}
 
 	return [prefs objectForKey:[specifier identifier]];
@@ -104,14 +197,25 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)respring:(id)sender {
+	// Prefer sbreload (clean relaunch); fall back to a hard killall -9,
+	// then to an alert if neither tool can be spawned.
+	BOOL spawned = NO;
+
 	if([[NSFileManager defaultManager] fileExistsAtPath:JBPath(@"/usr/bin/sbreload")]) {
 		pid_t pid;
 		const char *args[] = {"sbreload", NULL, NULL, NULL};
-		posix_spawn(&pid, [JBPath(@"/usr/bin/sbreload") fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
-	} else {
+		spawned = posix_spawn(&pid, [JBPath(@"/usr/bin/sbreload") fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL) == 0;
+	}
+
+	if(!spawned) {
 		pid_t pid;
 		const char *args[] = {"killall", "-9", "SpringBoard", NULL};
-		posix_spawn(&pid, [JBPath(@"/usr/bin/killall") fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL);
+		spawned = posix_spawn(&pid, [JBPath(@"/usr/bin/killall") fileSystemRepresentation], NULL, NULL, (char *const *)args, NULL) == 0;
+	}
+
+	if(!spawned) {
+		NSLog(@"Shadow: respring failed, neither sbreload nor killall could be spawned");
+		[self presentAlert:[self localized:@"RESPRING_FAILED_TITLE" fallback:@"Respring failed"] message:[self localized:@"RESPRING_FAILED_MSG" fallback:@"Neither sbreload nor killall could be launched. Changes take effect after SpringBoard restarts."]];
 	}
 }
 
@@ -127,20 +231,32 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)exportSettings:(id)sender {
-	NSData* data = [NSPropertyListSerialization dataWithPropertyList:[prefs dictionaryRepresentation] format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+	NSError* error = nil;
+	NSData* data = [NSPropertyListSerialization dataWithPropertyList:SHDWExportablePrefs(prefs) format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error];
 
 	if(!data) {
+		NSLog(@"Shadow: export serialization failed: %@", error);
+		[self presentAlert:[self localized:@"EXPORT_FAILED_TITLE" fallback:@"Export failed"] message:[self localized:@"EXPORT_FAILED_MSG" fallback:@"The settings could not be written to a file."]];
 		return;
 	}
 
 	NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ShadowSettings.plist"];
 	if(![data writeToFile:path atomically:YES]) {
+		NSLog(@"Shadow: export write failed: %@", path);
+		[self presentAlert:[self localized:@"EXPORT_FAILED_TITLE" fallback:@"Export failed"] message:[self localized:@"EXPORT_FAILED_MSG" fallback:@"The settings could not be written to a file."]];
 		return;
 	}
 
 	UIActivityViewController* avc = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:path]] applicationActivities:nil];
 	avc.popoverPresentationController.sourceView = self.view;
 	avc.popoverPresentationController.sourceRect = self.view.bounds;
+
+	// The share sheet owns the temp file; remove it when it's done (the
+	// handler runs on dismiss, including cancel).
+	avc.completionWithItemsHandler = ^(NSString* activityType, BOOL completed, NSArray* returnedItems, NSError* activityError) {
+		[[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+	};
+
 	[self presentViewController:avc animated:YES completion:nil];
 }
 
@@ -157,6 +273,8 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+	activePicker = nil;
+
 	if(urls.count == 0) {
 		return;
 	}
@@ -164,7 +282,9 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	NSData* data = [NSData dataWithContentsOfURL:urls[0]];
 	NSDictionary* imported = nil;
 
-	if(data) {
+	// Cap the file: a real backup is a few KB of toggles; anything larger is
+	// not a Shadow settings plist.
+	if(data && data.length <= 1024 * 1024) {
 		id plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:nil error:nil];
 
 		if([plist isKindOfClass:[NSDictionary class]]) {
@@ -172,10 +292,18 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 		}
 	}
 
-	if(!imported) {
-		UIAlertController* bad = [UIAlertController alertControllerWithTitle:[self localized:@"IMPORT_BAD_FILE" fallback:@"The selected file is not a valid Shadow settings backup."] message:nil preferredStyle:UIAlertControllerStyleAlert];
-		[bad addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_OK" fallback:@"OK"] style:UIAlertActionStyleDefault handler:nil]];
-		[self presentViewController:bad animated:YES completion:nil];
+	// Validate against the allowlist and drop foreign keys or wrongly-typed
+	// values before anything touches live preferences.
+	NSMutableDictionary* sanitized = [NSMutableDictionary new];
+	for(NSString* key in imported) {
+		id value = SHDWSanitizeValue(key, imported[key]);
+		if(value) {
+			sanitized[key] = value;
+		}
+	}
+
+	if(!imported || sanitized.count == 0) {
+		[self presentAlert:[self localized:@"IMPORT_BAD_FILE" fallback:@"The selected file is not a valid Shadow settings backup."] message:nil];
 		return;
 	}
 
@@ -188,11 +316,15 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 			[prefs removeObjectForKey:key];
 		}
 
-		for(id key in imported) {
-			[prefs setObject:imported[key] forKey:key];
+		for(NSString* key in sanitized) {
+			[prefs setObject:sanitized[key] forKey:key];
 		}
 
 		[prefs synchronize];
+
+		// Refresh the pane so the imported state (Global_Enabled switch,
+		// derived summary rows) shows without a respring.
+		[self reloadSpecifiers];
 
 		UIAlertController* applied = [UIAlertController alertControllerWithTitle:[self localized:@"IMPORT_APPLIED" fallback:@"Settings imported. Respring to apply."] message:nil preferredStyle:UIAlertControllerStyleAlert];
 		[applied addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_OK" fallback:@"OK"] style:UIAlertActionStyleCancel handler:nil]];
@@ -206,7 +338,7 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 }
 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
-	// no-op; the picker was dismissed by the user.
+	activePicker = nil;
 }
 
 - (instancetype)init {

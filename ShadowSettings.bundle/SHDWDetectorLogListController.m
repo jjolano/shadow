@@ -9,6 +9,7 @@
 
 @implementation SHDWDetectorLogListController {
 	NSUserDefaults* prefs;
+	NSMutableArray* entrySpecifiers;
 }
 
 - (NSArray *)specifiers {
@@ -72,27 +73,30 @@
 - (void)reloadLogEntries {
 	NSArray* log = [self filteredLogEntries];
 
-	// Remove previously inserted entry cells (they carry the
-	// "SHDWDetectorLogEntry" identifier).
-	NSArray* existing = [self specifiersForIDs:@[@"SHDWDetectorLogEntry"]];
-
-	for(PSSpecifier* spec in existing) {
+	// Remove previously inserted entry cells. Every entry shares the
+	// "SHDWDetectorLogEntry" identifier, and specifiersForIDs: resolves at
+	// most one specifier per id, so track the inserted objects instead.
+	for(PSSpecifier* spec in entrySpecifiers) {
 		[self removeSpecifier:spec];
 	}
+	[entrySpecifiers removeAllObjects];
 
 	if(log.count == 0) {
 		PSSpecifier* empty = [PSSpecifier preferenceSpecifierNamed:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"NO_ACTIVITY" value:@"No detector activity recorded" table:@"DetectorLog"] target:self set:NULL get:NULL detail:nil cell:PSStaticTextCell edit:nil];
 		[empty setProperty:@"SHDWDetectorLogEntry" forKey:@"id"];
 		[empty setProperty:@YES forKey:@"enabled"];
+		[entrySpecifiers addObject:empty];
 		[self insertSpecifier:empty atIndex:1];
 		return;
 	}
 
-	// Newest first.
-	for(NSInteger i = log.count - 1; i >= 0; i--) {
+	// Newest first: iterate oldest-to-newest so each insert at index 1
+	// pushes the previous entry down.
+	for(NSInteger i = 0; i < log.count; i++) {
 		PSSpecifier* entry = [PSSpecifier preferenceSpecifierNamed:log[i] target:self set:NULL get:NULL detail:nil cell:PSStaticTextCell edit:nil];
 		[entry setProperty:@"SHDWDetectorLogEntry" forKey:@"id"];
 		[entry setProperty:@YES forKey:@"enabled"];
+		[entrySpecifiers addObject:entry];
 		[self insertSpecifier:entry atIndex:1];
 	}
 }
@@ -104,6 +108,7 @@
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"CLEAR_CONFIRM" fallback:@"Clear"] style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
 		if(self.filterBundleID) {
 			// Per-app clear: drop only the matching entries, keep the rest.
+			// ponytail: interprocess RMW race with app-side appends; a proper fix needs a shared lock/daemon writer, not worth it for a log pane
 			NSArray* log = [prefs arrayForKey:@"DetectorLog"];
 			NSMutableArray* kept = [NSMutableArray new];
 			for(NSString* entry in log) {
@@ -139,6 +144,7 @@
 - (instancetype)init {
 	if((self = [super init])) {
 		prefs = [[ShadowSettings sharedInstance] userDefaults];
+		entrySpecifiers = [NSMutableArray new];
 	}
 
 	return self;

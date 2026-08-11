@@ -27,7 +27,7 @@
 			<string>clearLog:</string>
 			<key>label</key>
 			<string>CLEAR_LOG</string>
-			<key>destructive</key>
+			<key>isDestructive</key>
 			<true/>
 		</dict>
 	</array>
