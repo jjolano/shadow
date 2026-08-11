@@ -166,6 +166,23 @@ int krw_init_libjb_once(void) {
     return 0;
 }
 
+// Presence probe for the arm64 branch: libjailbreak is installed only on
+// Dopamine-family rootless builds (plain palera1n ships libkrw instead).
+// Doubles as the first dlopen so a later krw_init_libjb_once reuses the
+// handle.  A PRESENT-but-failing init is transient (jailbreakd still coming
+// up) and worth retrying; an absent dylib must fall through to libkrw/tfp0
+// without delay.
+bool krw_libjb_present(void) {
+    if (!gLibJB) {
+        gLibJB = dlopen("/var/jb/basebin/libjailbreak.dylib", RTLD_NOW);
+        if (!gLibJB) {
+            shdw_log("libjailbreak: dlopen failed: %s", dlerror());
+            return false;
+        }
+    }
+    return true;
+}
+
 // ---- tfp0 backend (plus007 main.m verbatim) ----
 typedef uint64_t kaddr_t;
 

@@ -61,12 +61,15 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
 // hooks above — same enumeration semantics over 64-bit address/size types,
 // same skip policy (a returned region inside a restricted interval is
 // SKIPPED and the original re-called to advance). The SDK's mach_vm.h is a
-// stub, so the prototypes are declared here; mach_vm_region takes the
-// flavor as an in/out pointer (unlike the vm_* variant's by-value flavor),
-// hence the dereference in the TOP_INFO pass-through.
-extern kern_return_t mach_vm_region(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t* flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
-static kern_return_t (*original_mach_vm_region)(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t* flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
-static kern_return_t replaced_mach_vm_region(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t* flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name) {
+// stub, so the prototypes are declared here. NOTE: mach_vm_region takes the
+// flavor BY VALUE (see shadowd/krw.m — the pointer flavor claimed in an
+// earlier revision was an ABI bug: the hook passed a pointer where the
+// kernel expects the int flavor, so the original call returned
+// KERN_INVALID_ARGUMENT and the hiding never engaged, and callers of
+// mach_vm_region got an error instead of region info).
+extern kern_return_t mach_vm_region(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
+static kern_return_t (*original_mach_vm_region)(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
+static kern_return_t replaced_mach_vm_region(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name) {
     for(;;) {
         kern_return_t result = original_mach_vm_region(target_task, address, size, flavor, info, infoCnt, object_name);
 
@@ -74,7 +77,7 @@ static kern_return_t replaced_mach_vm_region(vm_map_read_t target_task, mach_vm_
             return result;
         }
 
-        if(!isCallerExternal() || (flavor && *flavor == VM_REGION_TOP_INFO) || ![_shadow isAddrRestricted:(void *) *address]) {
+        if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || ![_shadow isAddrRestricted:(void *) *address]) {
             return result;
         }
 
