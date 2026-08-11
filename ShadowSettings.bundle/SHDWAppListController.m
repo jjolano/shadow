@@ -21,6 +21,10 @@
 	// full table reload.
 	NSArray* hookSpecifiers;
 
+	// Same reason as hookSpecifiers: the kill switch removes this row from the
+	// table, so specifierForID: can no longer find it to put it back.
+	PSSpecifier* followGlobalSpecifier;
+
 	NSMutableArray* hk_lib_values;
 	NSMutableArray* hk_lib_titles;
 
@@ -39,6 +43,30 @@
 	return YES;
 }
 
+// YES when the user has excluded this app from Shadow entirely. Independent of
+// followGlobal — the kill switch overrides the global toggle, so an excluded
+// app shows no configuration at all.
+- (BOOL)appDisabled {
+	NSDictionary* appPrefs = [prefs dictionaryForKey:[self applicationID]];
+	return appPrefs && [appPrefs[SHDWAppDisabledID] boolValue];
+}
+
+// Rows that only make sense while Shadow is active in this app: the Follow
+// Global switch and, when customizing, every hook row behind it.
+- (NSArray *)configurationSpecifiers {
+	NSMutableArray* specs = [NSMutableArray new];
+
+	if(followGlobalSpecifier) {
+		[specs addObject:followGlobalSpecifier];
+	}
+
+	if(![self followGlobal]) {
+		[specs addObjectsFromArray:hookSpecifiers];
+	}
+
+	return specs;
+}
+
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
@@ -49,6 +77,8 @@
 		hookSpecifiers = [self loadSpecifiersFromPlistName:@"Hooks" target:self];
 		SHDWApplyHookGroupGating(hookSpecifiers);
 
+		followGlobalSpecifier = [self specifierForID:@"App_FollowGlobal"];
+
 		// Title the page with the app's display name (AltList never sets the
 		// pushed subcontroller's title). After both plist loads, so neither
 		// re-applies its own plist title over it.
@@ -57,7 +87,10 @@
 			[self setTitle:proxy.atl_fastDisplayName];
 		}
 
-		if(![self followGlobal]) {
+		if([self appDisabled]) {
+			// Excluded app: nothing below the kill switch applies.
+			[self removeSpecifier:followGlobalSpecifier animated:NO];
+		} else if(![self followGlobal]) {
 			// Insert behind the Follow Global row — the same anchor the live
 			// flip uses, so initial and on-the-fly customization order alike.
 			PSSpecifier* anchor = [self specifierForID:@"App_FollowGlobal"];
@@ -102,9 +135,16 @@
 	NSBundle* bundle = [NSBundle bundleForClass:[self class]];
 	PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
 	if(settingsGroup) {
-		NSString* footer = [self followGlobal]
-			? [bundle localizedStringForKey:@"APP_USES_GLOBAL" value:@"Following the global settings. Turn off to customize this app." table:@"App"]
-			: [bundle localizedStringForKey:@"APP_SETTINGS_DESC" value:@"Adjust the bypass configuration for this application." table:@"App"];
+		NSString* footer;
+
+		if([self appDisabled]) {
+			footer = [bundle localizedStringForKey:@"APP_IS_DISABLED" value:@"Shadow is not loaded into this application." table:@"App"];
+		} else if([self followGlobal]) {
+			footer = [bundle localizedStringForKey:@"APP_USES_GLOBAL" value:@"Following the global settings. Turn off to customize this app." table:@"App"];
+		} else {
+			footer = [bundle localizedStringForKey:@"APP_SETTINGS_DESC" value:@"Adjust the bypass configuration for this application." table:@"App"];
+		}
+
 		[settingsGroup setProperty:footer forKey:@"footerText"];
 	}
 }
@@ -174,12 +214,46 @@
 		return @([self followGlobal]);
 	}
 
+	// Read the app's own dict, never the global fallback: exclusion is per-app
+	// by definition and there is no global App_Disabled.
+	if([key isEqualToString:SHDWAppDisabledID]) {
+		return @([self appDisabled]);
+	}
+
 	return SHDWReadAppPref(prefs, [self applicationID], key);
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
 	SHDWToggleHaptic();
 	NSString* key = [specifier identifier];
+
+	if([key isEqualToString:SHDWAppDisabledID]) {
+		// Excluding the app hides everything below the switch; re-including it
+		// restores whatever the app's own configuration was. Same animated
+		// insert/remove as the Follow Global flip below.
+		NSArray* rows = [self configurationSpecifiers];
+
+		SHDWWriteAppPref(prefs, [self applicationID], SHDWAppDisabledID, @([value boolValue]));
+
+		if([value boolValue]) {
+			for(PSSpecifier* spec in [rows reverseObjectEnumerator]) {
+				[self removeSpecifier:spec animated:YES];
+			}
+		} else {
+			PSSpecifier* anchor = [self specifierForID:SHDWAppDisabledID];
+			for(PSSpecifier* spec in rows) {
+				[self insertSpecifier:spec afterSpecifier:anchor animated:YES];
+				anchor = spec;
+			}
+		}
+
+		[self updateSettingsGroupFooter];
+		PSSpecifier* settingsGroup = [self specifierForID:@"AppSettingsGroup"];
+		if(settingsGroup) {
+			[self reloadSpecifier:settingsGroup];
+		}
+		return;
+	}
 
 	if([key isEqualToString:@"App_FollowGlobal"]) {
 		// Following global = no per-app override; customizing flips the
