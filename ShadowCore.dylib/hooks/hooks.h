@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 
 #import <stdio.h>
+#import <stdatomic.h>
 #import <sys/stat.h>
 #import <sys/statvfs.h>
 #import <sys/mount.h>
@@ -98,20 +99,35 @@ static inline Shadow* shdw_shadow_instance(void) {
 // operative truth signal for Shadow-owned code whose images are not yet
 // loaded or refreshed; outside those spans and scopes everyone classifies as
 // external, which is the safe (fail-closed) direction.
-#define SHADOW_OWN_IMAGE_MAX 16
-
-typedef struct {
-    uintptr_t base, end;
-} shdw_range_t;
-
-typedef struct {
-    uint32_t count;
-    shdw_range_t range[SHADOW_OWN_IMAGE_MAX];
-} shdw_own_ranges_t;
+// The tables themselves, and the pure lookup over them, live in ranges.h so
+// the host harness can test the lookup without this file's iOS-only headers.
+#import "ranges.h"
 
 extern shdw_own_ranges_t _shdw_own_ranges_a;
 extern shdw_own_ranges_t _shdw_own_ranges_b;
 extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
+
+// Restricted image spans for shdw_addr_is_restricted() — the address-keyed
+// half of the same idea as the own-ranges snapshot above, built in the same
+// walk (see shdw_own_ranges_refresh in dyld.x).
+//
+// -[Shadow isAddrRestricted:] answers "is the image containing this address
+// restricted" by calling dyld_image_path_containing_address() — a linear walk
+// of every loaded image — and then running the full string pipeline on the
+// result. That is an address-keyed question answered by a path-keyed engine,
+// once per call, and the hooks ask it in loops: class_copyMethodList asks it
+// twice per method of the class, and UIKit's _classWithImplementationOfSelector
+// walks a whole class hierarchy, so one appearance setter costs thousands of
+// engine queries (observed on-device: Bitwarden, ~18s of launch CPU against a
+// ~20s watchdog budget, killed with 0x8BADF00D).
+//
+// The set of restricted images is small (Shadow's own artifacts plus whatever
+// jailbreak images a ruleset denies) and only changes when an image loads or
+// the rulesets reload, so classify once per image per change and answer calls
+// from a range table — the same trade shdw_own_ranges already makes.
+extern shdw_restricted_ranges_t _shdw_restricted_ranges_a;
+extern shdw_restricted_ranges_t _shdw_restricted_ranges_b;
+extern shdw_restricted_ranges_t* _shdw_restricted_ranges_published;   // atomic
 
 // C0-2 internal-scope primitives for dylib code that needs truth (jailbreakd
 // probes, own reads). SHADOW_INTERNAL_SCOPE itself is defined in Core.h and
@@ -142,8 +158,30 @@ static inline BOOL shdw_caller_is_external(const void* ra) {
     return ![Shadow shdwIsInternalRead];
 }
 
-// Rebuilds the Shadow-owned image spans from the current dyld image list.
-// Called by dyld.x at install and from its add/remove image callbacks.
+// Is the image containing `addr` restricted? Same verdict as
+// -[Shadow isAddrRestricted:], answered from the snapshot above instead of a
+// dyld image walk plus the string pipeline (see shdw_restricted_ranges_t).
+//
+// Falls back to the real predicate whenever the snapshot cannot be trusted to
+// answer completely — it overflowed, or a ruleset reload has landed since it
+// was classified. Both fall-backs are correctness-preserving and rare; the
+// next refresh republishes a table that answers directly again.
+static inline BOOL shdw_addr_is_restricted(const void* addr) {
+    shdw_range_verdict_t verdict = shdw_ranges_lookup(
+        __atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE),
+        atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire),
+        (uintptr_t) addr);
+
+    if(verdict == SHDW_RANGE_UNKNOWN) {
+        return [_shadow isAddrRestricted:addr];
+    }
+
+    return verdict == SHDW_RANGE_YES;
+}
+
+// Rebuilds the Shadow-owned image spans and the restricted image spans from the
+// current dyld image list. Called by dyld.x at install and from its add/remove
+// image callbacks.
 void shdw_own_ranges_refresh(void);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))

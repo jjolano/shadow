@@ -9,7 +9,7 @@ static const char* replaced_class_getImageName(Class cls) {
 
     // Protected class (its data lives in a protected image): report "no
     // image" — NULL, never a fake executable path (plan Wave 1c).
-    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
         return NULL;
     }
 
@@ -110,7 +110,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
 
     Class result = original_NSClassFromString(aClassName);
 
-    if([_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(shdw_addr_is_restricted((__bridge const void *)result)) {
         return nil;
     }
 
@@ -134,7 +134,7 @@ static Class replaced_objc_getClass(const char* name) {
 
     Class result = original_objc_getClass(name);
 
-    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
         return Nil;
     }
 
@@ -149,7 +149,7 @@ static Class replaced_objc_lookUpClass(const char* name) {
 
     Class result = original_objc_lookUpClass(name);
 
-    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
         return Nil;
     }
 
@@ -164,7 +164,7 @@ static Class replaced_objc_getMetaClass(const char* name) {
 
     Class result = original_objc_getMetaClass(name);
 
-    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
         return Nil;
     }
 
@@ -196,7 +196,7 @@ static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
     int n = 0;
 
     for(int i = 0; i < filled; i++) {
-        if([_shadow isAddrRestricted:(__bridge const void *)all[i]]) {
+        if(shdw_addr_is_restricted((__bridge const void *)all[i])) {
             continue;
         }
 
@@ -244,7 +244,7 @@ static Class* replaced_objc_copyClassList(unsigned int* outCount) {
     unsigned int n = 0;
 
     for(int i = 0; i < filled; i++) {
-        if([_shadow isAddrRestricted:(__bridge const void *)all[i]]) {
+        if(shdw_addr_is_restricted((__bridge const void *)all[i])) {
             continue;
         }
 
@@ -272,7 +272,7 @@ static void replaced_objc_enumerateClasses(const void* image, const char* namePr
     // *stop) and forward everything else with the SAME stop pointer so the
     // caller's stop=YES propagates to the runtime.
     original_objc_enumerateClasses(image, namePrefix, conformingTo, subclassing, ^(Class aClass, BOOL* stop) {
-        if([_shadow isAddrRestricted:(__bridge const void *)aClass]) {
+        if(shdw_addr_is_restricted((__bridge const void *)aClass)) {
             return;
         }
 
@@ -295,7 +295,7 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
         return original_class_copyMethodList(cls, outCount);
     }
 
-    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
         if(outCount) {
             *outCount = 0;
         }
@@ -331,7 +331,7 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
 
         IMP imp = original_method_getImplementation(result[i]);
 
-        if([_shadow isAddrRestricted:(void *)result[i]] || [_shadow isAddrRestricted:(void *)imp]) {
+        if(shdw_addr_is_restricted((void *)result[i]) || shdw_addr_is_restricted((void *)imp)) {
             continue;
         }
 
@@ -357,9 +357,9 @@ static Method replaced_class_getInstanceMethod(Class cls, SEL name) {
 
     // original_method_getImplementation lives on the rebind lane; a refused
     // hook leaves it NULL — skip the IMP check (fail-soft) rather than crash.
-    if([_shadow isAddrRestricted:(__bridge const void *)cls]
-    || [_shadow isAddrRestricted:(void *)result]
-    || (original_method_getImplementation && [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)])) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls)
+    || shdw_addr_is_restricted((void *)result)
+    || (original_method_getImplementation && shdw_addr_is_restricted((void *)original_method_getImplementation(result)))) {
         return NULL;
     }
 
@@ -375,9 +375,9 @@ static Method replaced_class_getClassMethod(Class cls, SEL name) {
     Method result = original_class_getClassMethod(cls, name);
 
     // Fail-soft like replaced_class_getInstanceMethod (rebind-lane original).
-    if([_shadow isAddrRestricted:(__bridge const void *)cls]
-    || [_shadow isAddrRestricted:(void *)result]
-    || (original_method_getImplementation && [_shadow isAddrRestricted:(void *)original_method_getImplementation(result)])) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls)
+    || shdw_addr_is_restricted((void *)result)
+    || (original_method_getImplementation && shdw_addr_is_restricted((void *)original_method_getImplementation(result)))) {
         return NULL;
     }
 
@@ -393,7 +393,7 @@ static IMP replaced_method_getImplementationAndName(Method m, SEL* nameOut) {
 
     IMP result = original_method_getImplementationAndName(m, nameOut);
 
-    if([_shadow isAddrRestricted:(void *)m] || [_shadow isAddrRestricted:(void *)result]) {
+    if(shdw_addr_is_restricted((void *)m) || shdw_addr_is_restricted((void *)result)) {
         if(nameOut) {
             *nameOut = NULL;
         }
@@ -412,7 +412,7 @@ static IMP replaced_class_getMethodImplementation_stret(Class cls, SEL name) {
 
     IMP result = original_class_getMethodImplementation_stret(cls, name);
 
-    if([_shadow isAddrRestricted:(__bridge const void *)cls] || [_shadow isAddrRestricted:(void *)result]) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls) || shdw_addr_is_restricted((void *)result)) {
         return NULL;
     }
 
@@ -442,7 +442,7 @@ static const char** replaced_objc_copyClassNamesForImageHeader(const struct mach
         return original_objc_copyClassNamesForImageHeader(mh, outCount);
     }
 
-    if(!mh || [_shadow isAddrRestricted:mh]) {
+    if(!mh || shdw_addr_is_restricted(mh)) {
         if(outCount) {
             *outCount = 0;
         }
@@ -482,7 +482,7 @@ static BOOL shdw_caller_is_platform_runtime(void) {
 }
 
 static BOOL shdw_getImageName_proxy(Class cls, const char** outImageName) {
-    if([_shadow isAddrRestricted:(__bridge const void *)cls]) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
         return NO;
     }
 
@@ -496,7 +496,7 @@ static BOOL shdw_getClass_proxy(const char* name, Class* outClass) {
         return NO;
     }
 
-    if(result && [_shadow isAddrRestricted:(__bridge const void *)result]) {
+    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
         return NO;
     }
 
@@ -553,7 +553,7 @@ static IMP replaced_method_getImplementation(Method m) {
     // the returned IMP: a protected Method or IMP must never resolve. NULL,
     // not a fabricated "native-looking" IMP — the header cast was a fake that
     // detectors could still fingerprint (plan Wave 1b).
-    if([_shadow isAddrRestricted:(void *)m] || [_shadow isAddrRestricted:(void *)result]) {
+    if(shdw_addr_is_restricted((void *)m) || shdw_addr_is_restricted((void *)result)) {
         return NULL;
     }
 
@@ -570,7 +570,7 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
 
     // Same policy as replaced_method_getImplementation: the class, and the
     // IMP it resolves to, must both be unprotected.
-    if([_shadow isAddrRestricted:(__bridge const void *)cls] || [_shadow isAddrRestricted:(void *)result]) {
+    if(shdw_addr_is_restricted((__bridge const void *)cls) || shdw_addr_is_restricted((void *)result)) {
         return NULL;
     }
 
@@ -607,7 +607,7 @@ static id replaced_imp_getBlock(IMP anImp) {
 
     shdw_block_layout_t* layout = (__bridge shdw_block_layout_t *)block;
 
-    if([_shadow isAddrRestricted:layout->invoke]) {
+    if(shdw_addr_is_restricted(layout->invoke)) {
         return nil;
     }
 
