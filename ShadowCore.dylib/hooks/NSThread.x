@@ -1,11 +1,12 @@
 #import "hooks.h"
 
-%group shadowhook_NSThread
-%hook NSThread
-+ (NSArray *)callStackReturnAddresses {
-    NSArray* result = %orig;
+// Stack-filter helpers shared by NSThread and NSException: exception stacks
+// leak Shadow/HookKit frames to detectors that trigger or catch exceptions
+// and read their stacks (NSThread's own implementation also funnels through
+// NSException on some OS versions), so both classes use the same filter.
 
-    if(isCallerExternal() && result) {
+static NSArray* shdw_filter_return_addresses(NSArray* result) {
+    if(result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSNumber* ret_addr in result) {
@@ -20,10 +21,8 @@
     return result;
 }
 
-+ (NSArray *)callStackSymbols {
-    NSArray* result = %orig;
-
-    if(isCallerExternal() && result) {
+static NSArray* shdw_filter_stack_symbols(NSArray* result) {
+    if(result) {
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSString* line in result) {
@@ -67,6 +66,73 @@
         }
 
         result = [result_filtered copy];
+    }
+
+    return result;
+}
+
+%group shadowhook_NSThread
+%hook NSThread
++ (NSArray *)callStackReturnAddresses {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_return_addresses(result);
+    }
+
+    return result;
+}
+
++ (NSArray *)callStackSymbols {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_stack_symbols(result);
+    }
+
+    return result;
+}
+%end
+
+%hook NSException
+// Exception stacks leak Shadow/HookKit frames to detectors that trigger or
+// catch exceptions and read their stacks; NSThread's own implementation also
+// funnels through NSException on some OS versions. Same filter as NSThread.
++ (NSArray *)callStackReturnAddresses {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_return_addresses(result);
+    }
+
+    return result;
+}
+
++ (NSArray *)callStackSymbols {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_stack_symbols(result);
+    }
+
+    return result;
+}
+
+- (NSArray *)callStackReturnAddresses {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_return_addresses(result);
+    }
+
+    return result;
+}
+
+- (NSArray *)callStackSymbols {
+    NSArray* result = %orig;
+
+    if(isCallerExternal() && result) {
+        result = shdw_filter_stack_symbols(result);
     }
 
     return result;

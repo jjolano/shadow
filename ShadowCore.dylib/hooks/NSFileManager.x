@@ -43,6 +43,62 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
              kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
 }
 
+// Subtree preflight: a directory that contains a restricted descendant is
+// denied even when the root itself is allowed — copying, moving, removing or
+// replacing such a tree would carry or destroy restricted content. The walk
+// runs inside the internal scope so Shadow's own opendir/readdir hooks pass
+// it through unfiltered. Depth-capped; fails open (NO) on any error, since
+// the site's root check already denied the directly-restricted case.
+static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary* options, int depth) {
+    if(!path || depth > 64) {
+        return NO;
+    }
+
+    shdw_enter_internal();
+
+    BOOL restricted = NO;
+    struct stat st;
+
+    if(lstat(path.UTF8String, &st) == 0 && S_ISDIR(st.st_mode)) {
+        DIR* dir = opendir(path.UTF8String);
+
+        if(dir) {
+            struct dirent* entry;
+
+            while((entry = readdir(dir)) != NULL) {
+                if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0'
+                    || (entry->d_name[1] == '.' && entry->d_name[2] == '\0'))) {
+                    continue;
+                }
+
+                NSString* child = [path stringByAppendingPathComponent:@(entry->d_name)];
+
+                // Any restricted descendant — a file or a directory — denies.
+                if([_shadow isPathRestricted:child options:options]) {
+                    restricted = YES;
+                    break;
+                }
+
+                if(lstat(child.UTF8String, &st) == 0 && S_ISDIR(st.st_mode)
+                    && shdw_has_restricted_descendant_internal(child, options, depth + 1)) {
+                    restricted = YES;
+                    break;
+                }
+            }
+
+            closedir(dir);
+        }
+    }
+
+    shdw_exit_internal();
+
+    return restricted;
+}
+
+static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options) {
+    return shdw_has_restricted_descendant_internal(path, options, 0);
+}
+
 %group shadowhook_NSFileManager
 %hook NSDirectoryEnumerator
 - (NSArray *)allObjects {
@@ -588,9 +644,18 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — replacing a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:newItemURL options:shdw_restriction_write_options()])) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: replacing a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && [originalItemURL isFileURL]
+        && shdw_has_restricted_descendant([originalItemURL path], shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
@@ -602,9 +667,18 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — copying a directory that
-    // contains a restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: copying a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && [srcURL isFileURL]
+        && shdw_has_restricted_descendant([srcURL path], nil)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -616,11 +690,19 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — copying a directory that
-    // contains a restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal()) {
         if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
             || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
+            }
+
+            return NO;
+        }
+
+        // Subtree preflight: copying a directory that contains a restricted
+        // descendant must be denied even when the root itself is allowed.
+        if(shdw_has_restricted_descendant(srcPath, _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath]))) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -633,9 +715,18 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — moving a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: moving a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && [srcURL isFileURL]
+        && shdw_has_restricted_descendant([srcURL path], shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -647,11 +738,19 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — moving a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal()) {
         if([_shadow isPathRestricted:srcPath options:_shdw_writeOptions(self, [srcPath isAbsolutePath])]
             || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
+            }
+
+            return NO;
+        }
+
+        // Subtree preflight: moving a directory that contains a restricted
+        // descendant must be denied even when the root itself is allowed.
+        if(shdw_has_restricted_descendant(srcPath, _shdw_writeOptions(self, [srcPath isAbsolutePath]))) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -891,9 +990,18 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — removing a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && [_shadow isURLRestricted:URL options:shdw_restriction_write_options()]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:URL];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: removing a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && [URL isFileURL]
+        && shdw_has_restricted_descendant([URL path], shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
@@ -905,9 +1013,17 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — removing a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: removing a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && shdw_has_restricted_descendant(path, _shdw_writeOptions(self, [path isAbsolutePath]))) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -919,9 +1035,18 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error {
-    // TODO(plan-wave-C): subtree preflight — trashing a directory with a
-    // restricted descendant requires an unhooked subtree walk.
     if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForURL:url];
+        }
+
+        return NO;
+    }
+
+    // Subtree preflight: trashing a directory that contains a restricted
+    // descendant must be denied even when the root itself is allowed.
+    if(isCallerExternal() && [url isFileURL]
+        && shdw_has_restricted_descendant([url path], shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }

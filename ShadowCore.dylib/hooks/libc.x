@@ -855,7 +855,13 @@ static int replaced_fs_snapshot_list(int dirfd, struct attrlist* attrs, void* bu
             size_t totalBytes = offset;  // byte extent of the records region
             offset = 0;
 
-            for(int record = 0; record < result; record++) {
+            // Offset-driven, not record-indexed: dropping a record slides the
+            // next one into this offset, so a for(record < result) loop with
+            // both record++ and result-- would skip it (the last record then
+            // escapes filtering whenever a drop occurs). Re-read from the
+            // same offset after a drop; pass 1 already validated every record
+            // that can slide in, so the un-bounds-checked reads stay safe.
+            while(offset < totalBytes) {
                 uint32_t recLen;
                 memcpy(&recLen, (char*) buf + offset, sizeof(recLen));
 
@@ -955,6 +961,233 @@ static int replaced_fgetattrlist(int fd, struct attrlist* attrList, void* attrBu
     }
 
     return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
+}
+
+// getattrlistat: the *at variant of getattrlist — dirfd+path classified by
+// the shared resolver (PathPolicy.m), denied with the same ENOENT the
+// path-based getattrlist answers. Absolute paths ignore dirfd; relative
+// paths classify the joined dirfd path + "/" + path (a restricted parent
+// dirfd makes every entry in it restricted). An unresolvable dirfd replays
+// the original call so the kernel reports the genuine EBADF/ENOTDIR.
+static int (*original_getattrlistat)(int dirfd, const char* path, void* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
+static int replaced_getattrlistat(int dirfd, const char* path, void* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    if(!isCallerExternal()) {
+        return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+    }
+
+    char parent[PATH_MAX];
+    shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, path, parent, sizeof(parent));
+
+    if(status == SHADW_DIRFD_ORIGINAL) {
+        return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+    }
+
+    if(status == SHADW_DIRFD_DENY) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if(status == SHADW_DIRFD_ABSOLUTE) {
+        if([_shadow isCPathRestricted:path]) {
+            errno = ENOENT;
+            return -1;
+        }
+    } else {
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", parent, path);
+
+        // Join overflow: can't classify — pass through (kernel answers).
+        if(n > 0 && n < (int) sizeof(joined) && [_shadow isPathRestricted:@(joined) options:nil]) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+}
+
+// getattrlistbulk: directory-entry enumeration (fs_snapshot_list's sibling
+// with the same on-disk record ABI, but the dirfd is app-visible and the
+// records carry no paths). The directory itself is judged first: when the
+// dirfd's path is restricted, report 0 records with the buffer left
+// untouched — the stock empty-directory result (fs_snapshot_list leaves the
+// buffer as-is on an empty listing too, so a cleared buffer would be a
+// fingerprint). When the dirfd is unrestricted, the returned records are
+// post-processed with fs_snapshot_list's shared record ABI: each record's
+// name is resolved, joined onto the dirfd's path, and restricted children
+// are compacted out of the buffer (memmove tail down, count decremented,
+// trailing bytes left untouched — the same compaction fs_snapshot_list
+// performs). Records that don't parse — bad length, no name attribute, or
+// other returned attributes (a multi-attribute record carries its data in
+// request order, so the name reference isn't at the fixed offset) — are
+// kept in place (fail open). Snapshot listings pass through untouched:
+// fs_snapshot_list is getattrlistbulk with FSOPT_LIST_SNAPSHOTS and is
+// hooked separately, owning that case.
+//
+// FSOPT_LIST_SNAPSHOTS is a private flag, absent from the SDK headers
+// (sys/attr.h jumps from FSOPT_PACK_INVAL_ATTRS 0x8 to FSOPT_ATTR_CMN_EXTENDED
+// 0x20); value from XNU bsd/sys/attr.h.
+#define SHADW_FSOPT_LIST_SNAPSHOTS 0x00000010
+static int (*original_getattrlistbulk)(int dirfd, void* attrList, void* attrBuf, size_t attrBufSize, uint64_t flags);
+static int replaced_getattrlistbulk(int dirfd, void* attrList, void* attrBuf, size_t attrBufSize, uint64_t flags) {
+    if(!isCallerExternal()) {
+        return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
+    }
+
+    if(flags & SHADW_FSOPT_LIST_SNAPSHOTS) {
+        return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
+    }
+
+    if(shdw_fd_path_restricted(dirfd)) {
+        return 0;
+    }
+
+    // Resolve the dirfd's own path once for the per-record join — the shared
+    // *at resolver (shdw_resolve_dirfd_path) classifies dirfd+path pairs, so
+    // a bare dirfd is resolved the way that resolver resolves its dirfds:
+    // getcwd for AT_FDCWD, F_GETPATH otherwise. An unresolvable dirfd passes
+    // through unfiltered (fail open — the fd may be a tty/pipe with no path).
+    char dirPath[PATH_MAX];
+
+    if(dirfd == AT_FDCWD) {
+        if(!getcwd(dirPath, sizeof(dirPath))) {
+            return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
+        }
+    } else if(fcntl(dirfd, F_GETPATH, dirPath) == -1) {
+        return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
+    }
+
+    int result = original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
+
+    if(result > 0 && attrBuf) {
+        // Record layout (mirrors replaced_fs_snapshot_list): uint32 length,
+        // attribute_set_t returned attrs, then the name attrreference_t at
+        // 4 + sizeof(attribute_set_t) = 24. The returned bitmap is the
+        // ATTR_CMN_RETURNED_ATTRS data ("always the first attribute in the
+        // return buffer", sys/attr.h), so when the name is the ONLY other
+        // attribute returned its reference sits at that fixed offset.
+        const uint32_t kNameRefOffset = (uint32_t)(sizeof(uint32_t) + sizeof(attribute_set_t));
+
+        // Pass 1 (bounds): walk `result` records to find the extent of the
+        // trusted prefix, stopping at the first record whose length can't be
+        // trusted (header out of range, shorter than the header, or extending
+        // past the buffer). Everything from there on is kept as-is — fail
+        // open, a partially compacted buffer would corrupt the caller's walk.
+        uint32_t offset = 0;
+        size_t totalBytes = 0;
+
+        for(int record = 0; record < result; record++) {
+            if((uint64_t) offset + sizeof(uint32_t) > attrBufSize) {
+                break;
+            }
+
+            uint32_t recLen;
+            memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
+
+            if(recLen < sizeof(uint32_t) + sizeof(attribute_set_t) || (uint64_t) offset + recLen > attrBufSize) {
+                break;
+            }
+
+            offset += recLen;
+            totalBytes = offset;
+        }
+
+        // Pass 2 (compact): walk the trusted prefix again. Every record the
+        // walk reaches is trustworthy (pass 1 verified the lengths), so no
+        // re-validation is needed; a drop shrinks totalBytes by exactly the
+        // bytes the tail shifts, so the loop stops where pass 1 stopped.
+        // Unlike fs_snapshot_list's for-loop this does NOT advance the
+        // record counter on a drop — the record that slides into the dropped
+        // slot must be checked too.
+        offset = 0;
+
+        while(offset < totalBytes) {
+            uint32_t recLen;
+            memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
+
+            // Resolve the name only when the returned bitmap says the name
+            // attribute was returned AND no other attribute shares the
+            // record; otherwise the name reference isn't at offset 24 — keep.
+            attribute_set_t returned;
+            memcpy(&returned, (char*) attrBuf + offset + sizeof(uint32_t), sizeof(returned));
+
+            if(!(returned.commonattr & ATTR_CMN_NAME)) {
+                offset += recLen;  // no name in this record: keep
+                continue;
+            }
+
+            if((returned.commonattr & ~(ATTR_CMN_NAME | ATTR_CMN_RETURNED_ATTRS)) || returned.fileattr || returned.volattr || returned.dirattr) {
+                offset += recLen;  // name not at the fixed offset: keep
+                continue;
+            }
+
+            // The record must be long enough to hold the reference.
+            if(recLen < kNameRefOffset + (uint32_t) sizeof(attrreference_t)) {
+                offset += recLen;  // reference outside the record: keep
+                continue;
+            }
+
+            attrreference_t nameRef;
+            memcpy(&nameRef, (char*) attrBuf + offset + kNameRefOffset, sizeof(nameRef));
+
+            if(nameRef.attr_dataoffset < (int32_t) sizeof(nameRef)) {
+                offset += recLen;  // malformed reference: keep
+                continue;
+            }
+
+            // The NUL-terminated name string must fit inside the record.
+            uint32_t nameOffset = (uint32_t) nameRef.attr_dataoffset;
+
+            if((uint64_t) nameOffset + 1 > (uint64_t) recLen - kNameRefOffset) {
+                offset += recLen;  // name outside the record: keep
+                continue;
+            }
+
+            const char* nameStr = (char*) attrBuf + offset + kNameRefOffset + nameOffset;
+
+            // Bound the scan by the record tail AND the kernel-reported
+            // attribute length; the NUL must be found within the bound
+            // (fs_snapshot_list's check).
+            size_t avail = recLen - kNameRefOffset - nameOffset;
+
+            if(nameRef.attr_length < avail) {
+                avail = nameRef.attr_length;
+            }
+
+            if(strnlen(nameStr, avail) == avail) {
+                offset += recLen;  // no NUL within the bounded name: keep
+                continue;
+            }
+
+            // Join the entry onto the dirfd's path; a restricted child is
+            // compacted out: shift the tail down over the record, the next
+            // record now starts at the same offset (fs_snapshot_list's
+            // compaction; trailing bytes stay untouched).
+            char joined[PATH_MAX * 2];
+            int n = snprintf(joined, sizeof(joined), "%s/%s", dirPath, nameStr);
+
+            if(n <= 0 || n >= (int) sizeof(joined)) {
+                offset += recLen;  // join overflow: can't classify — keep
+                continue;
+            }
+
+            // Per-record pool: @(joined) and the restriction check
+            // autorelease per record; without it raw-pthread callers (no
+            // pool) leak every skipped name (readdir's pattern).
+            @autoreleasepool {
+                if([_shadow isPathRestricted:@(joined) options:nil]) {
+                    memmove((char*) attrBuf + offset, (char*) attrBuf + offset + recLen, totalBytes - (offset + recLen));
+                    totalBytes -= recLen;
+                    result--;
+                    continue;
+                }
+            }
+
+            offset += recLen;
+        }
+    }
+
+    return result;
 }
 
 static int (*original_symlink)(const char* path1, const char* path2);
@@ -1837,6 +2070,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fgetxattr",              (void*)&replaced_fgetxattr,                (void**)&original_fgetxattr,                LIBC,   LIBC },
     { "flistxattr",             (void*)&replaced_flistxattr,               (void**)&original_flistxattr,               LIBC,   LIBC },
     { "fgetattrlist",           (void*)&replaced_fgetattrlist,             (void**)&original_fgetattrlist,             LIBC,   LIBC },
+    { "getattrlistat",          (void*)&replaced_getattrlistat,            (void**)&original_getattrlistat,            LIBC,   LIBC },
+    { "getattrlistbulk",        (void*)&replaced_getattrlistbulk,          (void**)&original_getattrlistbulk,          LIBC,   LIBC },
     { "symlink",                (void*)&replaced_symlink,                  (void**)&original_symlink,                  LIBC,   LIBC },
     { "rename",                 (void*)&replaced_rename,                   (void**)&original_rename,                   LIBC,   LIBC },
     { "remove",                 (void*)&replaced_remove,                   (void**)&original_remove,                   LIBC,   LIBC },
