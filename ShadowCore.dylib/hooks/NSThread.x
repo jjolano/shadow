@@ -9,7 +9,7 @@
         NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:result.count];
 
         for(NSNumber* ret_addr in result) {
-            if(![_shadow isAddrRestricted:[ret_addr pointerValue]]) {
+            if(!shdw_addr_is_restricted([ret_addr pointerValue])) {
                 [result_filtered addObject:ret_addr];
             }
         }
@@ -44,7 +44,7 @@
             if(fields.count >= 3 && [fields[2] hasPrefix:@"0x"] && fields[2].length > 2) {
                 unsigned long long value = strtoull(fields[2].UTF8String, NULL, 16);
 
-                if(value != 0 && [_shadow isAddrRestricted:(void *)(uintptr_t)value]) {
+                if(value != 0 && shdw_addr_is_restricted((void *)(uintptr_t)value)) {
                     continue;
                 }
             }

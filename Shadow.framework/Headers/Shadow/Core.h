@@ -17,6 +17,15 @@
 #define kShadowRestrictionOpRead                @"kShadowRestrictionOpRead"
 #define kShadowRestrictionOpWrite               @"kShadowRestrictionOpWrite"
 
+// C0-5: ruleset generation, bumped on every reload (RulesetStore.m). Exported
+// as a plain atomic — same reasoning as the internal-read flag below, plus one
+// of its own: the dylib's restricted-image range cache reads this on every
+// intercepted call to decide whether its snapshot is still valid, and an
+// ObjC message send (or the store's @synchronized) on that path would give
+// back the cost the cache exists to remove.
+__attribute__((visibility("default")))
+extern _Atomic(uint64_t) shdw_ruleset_generation;
+
 __attribute__((visibility("default")))
 @interface Shadow : NSObject {
     ShadowBackend* backend;

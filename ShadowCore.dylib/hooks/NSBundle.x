@@ -56,7 +56,7 @@ static void shdw_cache_main_bundle(void) {
 }
 
 + (NSBundle *)bundleForClass:(Class)aClass {
-    if(isCallerExternal() && [_shadow isAddrRestricted:(void *)aClass]) {
+    if(isCallerExternal() && shdw_addr_is_restricted((__bridge const void *)aClass)) {
         // Nonnull contract: report the main bundle, never nil.
         return [NSBundle mainBundle];
     }

@@ -221,6 +221,168 @@ shdw_own_ranges_t _shdw_own_ranges_b;
 shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
 static os_unfair_lock _shdw_own_ranges_lock = OS_UNFAIR_LOCK_INIT;
 
+// Restricted image spans (see shdw_addr_is_restricted in hooks.h). Both
+// buffers start stamped with a generation the store can never publish, so
+// every read falls back to -[Shadow isAddrRestricted:] until the first real
+// classification lands — an unseeded table must not read as "nothing is
+// restricted".
+shdw_restricted_ranges_t _shdw_restricted_ranges_a = { .generation = UINT64_MAX };
+shdw_restricted_ranges_t _shdw_restricted_ranges_b = { .generation = UINT64_MAX };
+shdw_restricted_ranges_t* _shdw_restricted_ranges_published = &_shdw_restricted_ranges_a;
+static os_unfair_lock _shdw_restricted_ranges_lock = OS_UNFAIR_LOCK_INIT;
+
+// Union span across an image's segments. Return addresses and the addresses
+// the hooks classify only land inside mapped segments, so the loose union is
+// exact for both range tables.
+static BOOL shdw_image_span(const struct mach_header* mh, intptr_t slide, uintptr_t* outBase, uintptr_t* outEnd) {
+    if(!mh || mh->magic != MH_MAGIC_64) {
+        return NO;
+    }
+
+    uintptr_t base = UINTPTR_MAX, end = 0;
+    const struct load_command* lc = (const void *)((const struct mach_header_64 *)mh + 1);
+
+    for(uint32_t j = 0; j < mh->ncmds; j++) {
+        if(lc->cmd == LC_SEGMENT_64) {
+            const struct segment_command_64* seg = (const void *)lc;
+            uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
+
+            if(s < base) {
+                base = s;
+            }
+
+            if(s + seg->vmsize > end) {
+                end = s + seg->vmsize;
+            }
+        }
+
+        lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+    }
+
+    if(end <= base) {
+        return NO;
+    }
+
+    *outBase = base;
+    *outEnd = end;
+    return YES;
+}
+
+// Publishes `rebuilt` into the inactive buffer. Caller holds the lock.
+static void shdw_restricted_ranges_publish_locked(const shdw_restricted_ranges_t* rebuilt) {
+    shdw_restricted_ranges_t* published = __atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
+    shdw_restricted_ranges_t* other = (published == &_shdw_restricted_ranges_a) ? &_shdw_restricted_ranges_b : &_shdw_restricted_ranges_a;
+
+    *other = *rebuilt;
+    __atomic_store_n(&_shdw_restricted_ranges_published, other, __ATOMIC_RELEASE);
+}
+
+// Classify one image path exactly the way -[Shadow isAddrRestricted:] would
+// after resolving an address to it: isCPathRestricted:, the ruleset predicate.
+// NOT isProtectedImagePath: — that one ORs in the Shadow-artifact basename set
+// and would restrict addresses the current predicate allows.
+static BOOL shdw_image_path_is_restricted(const char* path) {
+    return path && [_shadow isCPathRestricted:path];
+}
+
+// Full reclassification of every loaded image. Only run when the table has no
+// usable verdicts — first seed, or after a ruleset reload changed what counts
+// as restricted. Steady state is maintained incrementally by the add/remove
+// image handlers below, so this walk is not on the per-image-event path.
+static void shdw_restricted_ranges_full_rebuild(void) {
+    uint64_t generation = atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire);
+
+    shdw_restricted_ranges_t rebuilt = { .count = 0, .overflowed = 0, .generation = generation };
+    uint32_t count = _dyld_image_count();
+
+    for(uint32_t i = 0; i < count; i++) {
+        if(!shdw_image_path_is_restricted(_dyld_get_image_name(i))) {
+            continue;
+        }
+
+        uintptr_t base = 0, end = 0;
+
+        if(!shdw_image_span(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i), &base, &end)) {
+            continue;
+        }
+
+        if(rebuilt.count >= SHADOW_RESTRICTED_IMAGE_MAX) {
+            rebuilt.overflowed = 1;
+            break;
+        }
+
+        rebuilt.range[rebuilt.count++] = (shdw_range_t){ .base = base, .end = end };
+    }
+
+    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+    shdw_restricted_ranges_publish_locked(&rebuilt);
+    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+}
+
+// One image was mapped: classify just it and append if restricted. Idempotent
+// — a full rebuild triggered by the same event may already have recorded the
+// span, and the table is small enough that the dedupe scan is free.
+void shdw_restricted_ranges_note_add(const struct mach_header* mh, intptr_t slide, const char* path) {
+    uintptr_t base = 0, end = 0;
+
+    if(!shdw_image_path_is_restricted(path) || !shdw_image_span(mh, slide, &base, &end)) {
+        return;
+    }
+
+    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+
+    shdw_restricted_ranges_t rebuilt = *__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
+    BOOL known = NO;
+
+    for(uint32_t i = 0; i < rebuilt.count; i++) {
+        if(rebuilt.range[i].base == base && rebuilt.range[i].end == end) {
+            known = YES;
+            break;
+        }
+    }
+
+    if(!known) {
+        if(rebuilt.count >= SHADOW_RESTRICTED_IMAGE_MAX) {
+            rebuilt.overflowed = 1;
+        } else {
+            rebuilt.range[rebuilt.count++] = (shdw_range_t){ .base = base, .end = end };
+        }
+
+        shdw_restricted_ranges_publish_locked(&rebuilt);
+    }
+
+    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+}
+
+// One image was unmapped: drop its span so a later image mapped over the same
+// address does not inherit the verdict.
+void shdw_restricted_ranges_note_remove(const struct mach_header* mh, intptr_t slide) {
+    uintptr_t base = 0, end = 0;
+
+    if(!shdw_image_span(mh, slide, &base, &end)) {
+        return;
+    }
+
+    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+
+    shdw_restricted_ranges_t published = *__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
+    shdw_restricted_ranges_t rebuilt = { .count = 0, .overflowed = published.overflowed, .generation = published.generation };
+
+    for(uint32_t i = 0; i < published.count; i++) {
+        if(published.range[i].base == base && published.range[i].end == end) {
+            continue;
+        }
+
+        rebuilt.range[rebuilt.count++] = published.range[i];
+    }
+
+    if(rebuilt.count != published.count) {
+        shdw_restricted_ranges_publish_locked(&rebuilt);
+    }
+
+    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+}
+
 void shdw_own_ranges_refresh(void) {
     // Replay guard: during shadowhook_dyld's add-image registration, dyld
     // synchronously replays EVERY loaded image, and each replay callback
@@ -255,36 +417,9 @@ void shdw_own_ranges_refresh(void) {
             continue;
         }
 
-        const struct mach_header* mh = _dyld_get_image_header(i);
+        uintptr_t base = 0, end = 0;
 
-        if(!mh || mh->magic != MH_MAGIC_64) {
-            continue;
-        }
-
-        // Union span across all segments (return addresses only land in
-        // executable code, so the loose union is exact for our purposes).
-        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-        uintptr_t base = UINTPTR_MAX, end = 0;
-        const struct load_command* lc = (const void *)((const struct mach_header_64 *)mh + 1);
-
-        for(uint32_t j = 0; j < mh->ncmds; j++) {
-            if(lc->cmd == LC_SEGMENT_64) {
-                const struct segment_command_64* seg = (const void *)lc;
-                uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
-
-                if(s < base) {
-                    base = s;
-                }
-
-                if(s + seg->vmsize > end) {
-                    end = s + seg->vmsize;
-                }
-            }
-
-            lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
-        }
-
-        if(end > base) {
+        if(shdw_image_span(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i), &base, &end)) {
             rebuilt.range[rebuilt.count++] = (shdw_range_t){ .base = base, .end = end };
         }
     }
@@ -293,6 +428,20 @@ void shdw_own_ranges_refresh(void) {
     __atomic_store_n(&_shdw_own_ranges_published, other, __ATOMIC_RELEASE);
 
     os_unfair_lock_unlock(&_shdw_own_ranges_lock);
+
+    // The restricted-span table is maintained incrementally by the add/remove
+    // image handlers, so it needs a full reclassification only when its
+    // verdicts no longer apply: the first refresh after install (unseeded), or
+    // a ruleset reload since the last classification.
+    //
+    // ponytail: a reload with no subsequent image event leaves readers on the
+    // slow path until the next dlopen — correct, just uncached, and identical
+    // to the behaviour before this table existed. If that window ever matters,
+    // have RulesetStore's reload call this directly instead of waiting.
+    if(__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE)->generation
+        != atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire)) {
+        shdw_restricted_ranges_full_rebuild();
+    }
 }
 
 // C4: immutable snapshot of the collection for the hot dyld enumeration
@@ -503,7 +652,7 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
     }
 
     // External caller probing a filtered image's address: report no image.
-    if([_shadow isAddrRestricted:addr]) {
+    if(shdw_addr_is_restricted(addr)) {
         return NULL;
     }
 
@@ -526,7 +675,7 @@ static intptr_t replaced_dyld_get_image_slide(const struct mach_header* mh) {
         return original_dyld_get_image_slide(mh);
     }
 
-    if(!mh || [_shadow isAddrRestricted:mh]) {
+    if(!mh || shdw_addr_is_restricted(mh)) {
         return 0;
     }
 
@@ -539,7 +688,7 @@ static bool replaced_dyld_get_image_uuid(const struct mach_header* mh, uuid_t uu
         return original_dyld_get_image_uuid(mh, uuid);
     }
 
-    if(!mh || [_shadow isAddrRestricted:mh]) {
+    if(!mh || shdw_addr_is_restricted(mh)) {
         if(uuid) {
             memset(uuid, 0, sizeof(uuid_t));
         }
@@ -558,7 +707,7 @@ static const char* replaced_dyld_image_get_installname(const struct mach_header*
         return original_dyld_image_get_installname(mh);
     }
 
-    if(!mh || [_shadow isAddrRestricted:mh]) {
+    if(!mh || shdw_addr_is_restricted(mh)) {
         return NULL;
     }
 
@@ -571,7 +720,7 @@ static bool replaced_dyld_find_unwind_sections(void* addr, struct dyld_unwind_se
         return original_dyld_find_unwind_sections(addr, info);
     }
 
-    if(!addr || [_shadow isAddrRestricted:addr]) {
+    if(!addr || shdw_addr_is_restricted(addr)) {
         if(info) {
             memset(info, 0, sizeof(struct dyld_unwind_sections));
         }
@@ -872,6 +1021,11 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
 
     const char* image_path = dyld_image_path_containing_address(mh);
 
+    // Record the span if this image is restricted, so the address-keyed hooks
+    // can answer from the range table instead of re-resolving and re-judging
+    // this path on every intercepted call (see shdw_addr_is_restricted).
+    shdw_restricted_ranges_note_add(mh, vmaddr_slide, image_path);
+
     // Add if safe dylib. Same policy for every image — no blanket /System
     // admission (plan Wave 1c): a protected artifact installed under /System
     // must not leak into the visible snapshot via the path prefix. The
@@ -936,6 +1090,10 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
 
     // ... and cached per-image dlopen handles are stale (indices shifted).
     shdw_dyld_handles_invalidate();
+
+    // Drop the unmapped image's restricted span before anything can be mapped
+    // over the same addresses.
+    shdw_restricted_ranges_note_remove(mh, vmaddr_slide);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSDictionary* dylibToRemove = nil;
@@ -1194,7 +1352,7 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
 
     // Shadow/JB-only symbols (or a handle that resolved into a protected
     // image): deny with the TLS error, and trip the behavioral escalation.
-    if([_shadow isAddrRestricted:addr]) {
+    if(shdw_addr_is_restricted(addr)) {
         if(symbol) {
             NSLog(@"%@: %@: %s", @"dlsym", @"restricted symbol lookup", symbol);
         }
@@ -1228,7 +1386,7 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     // any image" — zero the record and return 0, never a fabricated success
     // with a fake executable path (plan Wave 1c; the RTLD_NEXT re-lookup loop
     // is gone — the fallback it fabricated was a fingerprint).
-    if(result && [_shadow isAddrRestricted:addr]) {
+    if(result && shdw_addr_is_restricted(addr)) {
         if(info) {
             memset(info, 0, sizeof(Dl_info));
         }
@@ -1270,7 +1428,7 @@ static BOOL shdw_cfbundle_denied(CFBundleRef bundle) {
 }
 
 static void* shdw_cfbundle_attributed(void* addr, CFStringRef symbolName) {
-    if(addr && [_shadow isAddrRestricted:addr]) {
+    if(addr && shdw_addr_is_restricted(addr)) {
         return NULL;
     }
 
@@ -1403,7 +1561,7 @@ static void replaced_dyld_images_for_addresses(unsigned count, const void* addre
     }
 
     for(unsigned i = 0; i < count; i++) {
-        if([_shadow isAddrRestricted:addresses[i]]) {
+        if(shdw_addr_is_restricted(addresses[i])) {
             memset(&infos[i], 0, sizeof(infos[i]));
         }
     }
@@ -1756,7 +1914,7 @@ static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, con
         return original_NSLookupSymbolInImage(image, symbolName, options);
     }
 
-    if(!image || [_shadow isAddrRestricted:image]) {
+    if(!image || shdw_addr_is_restricted(image)) {
         return NULL;
     }
 

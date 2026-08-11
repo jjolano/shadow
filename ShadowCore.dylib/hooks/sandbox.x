@@ -104,7 +104,7 @@ static int replaced_sigaction(int sig, const struct sigaction *restrict act, str
     if(isCallerExternal() && result == 0) {
         NSLog(@"%@: %d", @"sigaction", sig);
 
-        if(oact && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
+        if(oact && (shdw_addr_is_restricted((oact->__sigaction_u).__sa_handler) || shdw_addr_is_restricted((oact->__sigaction_u).__sa_sigaction))) {
             memset(oact, 0, sizeof(struct sigaction));
         }
     }
@@ -125,7 +125,7 @@ typedef void (*shdw_sighandler_t)(int);
 // handler sees "no handler"). SIG_ERR (failure) is never an address and
 // passes through.
 static shdw_sighandler_t shdw_signal_sanitize_previous(shdw_sighandler_t previous, BOOL filter) {
-    if(filter && previous != SIG_ERR && [_shadow isAddrRestricted:(void *) previous]) {
+    if(filter && previous != SIG_ERR && shdw_addr_is_restricted((void *) previous)) {
         return SIG_DFL;
     }
 
@@ -152,7 +152,7 @@ static int replaced___sigaction(int sig, const struct sigaction* act, struct sig
     int result = original___sigaction(sig, act, oact);
 
     if(isCallerExternal() && result == 0 && oact
-    && ([_shadow isAddrRestricted:(oact->__sigaction_u).__sa_handler] || [_shadow isAddrRestricted:(oact->__sigaction_u).__sa_sigaction])) {
+    && (shdw_addr_is_restricted((oact->__sigaction_u).__sa_handler) || shdw_addr_is_restricted((oact->__sigaction_u).__sa_sigaction))) {
         memset(oact, 0, sizeof(struct sigaction));
     }
 
