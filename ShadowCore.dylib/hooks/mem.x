@@ -17,7 +17,7 @@ static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address
             return result;
         }
 
-        if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || ![_shadow isAddrRestricted:(void *) *address]) {
+        if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || !shdw_addr_is_restricted((void *) *address)) {
             return result;
         }
 
@@ -47,7 +47,7 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
             return result;
         }
 
-        if(!isCallerExternal() || ![_shadow isAddrRestricted:(void *) *address]) {
+        if(!isCallerExternal() || !shdw_addr_is_restricted((void *) *address)) {
             return result;
         }
 
@@ -77,7 +77,7 @@ static kern_return_t replaced_mach_vm_region(vm_map_read_t target_task, mach_vm_
             return result;
         }
 
-        if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || ![_shadow isAddrRestricted:(void *) *address]) {
+        if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || !shdw_addr_is_restricted((void *) *address)) {
             return result;
         }
 
@@ -104,7 +104,7 @@ static kern_return_t replaced_mach_vm_region_recurse(vm_map_read_t target_task, 
             return result;
         }
 
-        if(!isCallerExternal() || ![_shadow isAddrRestricted:(void *) *address]) {
+        if(!isCallerExternal() || !shdw_addr_is_restricted((void *) *address)) {
             return result;
         }
 

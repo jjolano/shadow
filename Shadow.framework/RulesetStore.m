@@ -13,6 +13,11 @@
 // equivalent to an ivar; kept identical to the old Backend.m gate.)
 static _Atomic(double) lastRulesetCheck = 0.0;
 
+// C0-5: the store's generation, mirrored where cross-binary readers can see it
+// without an ObjC send (declared in Core.h). Starts at 0; _reloadRulesets bumps
+// it in lockstep with _generation.
+_Atomic(uint64_t) shdw_ruleset_generation = 0;
+
 @implementation ShadowRulesetSnapshot
 
 + (instancetype)snapshotWithRulesets:(NSArray<RulesetEngine *>*)rulesets generation:(NSUInteger)generation {
@@ -176,6 +181,11 @@ static _Atomic(double) lastRulesetCheck = 0.0;
         _generation += 1;
         current = [ShadowRulesetSnapshot snapshotWithRulesets:fresh.rulesets generation:_generation];
     }
+
+    // Publish the same bump where lock-free readers can see it (Core.h). After
+    // the swap, so a reader that observes the new generation is guaranteed the
+    // new snapshot is already current.
+    atomic_store_explicit(&shdw_ruleset_generation, (uint64_t) _generation, memory_order_release);
 }
 
 - (ShadowRulesetSnapshot *)currentSnapshot {
