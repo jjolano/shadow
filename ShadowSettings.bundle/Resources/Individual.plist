@@ -151,7 +151,5 @@
 	</array>
 	<key>title</key>
 	<string>INDIVIDUAL_HOOKS</string>
-	<key>StringsTable</key>
-	<string>Hooks</string>
 </dict>
 </plist>

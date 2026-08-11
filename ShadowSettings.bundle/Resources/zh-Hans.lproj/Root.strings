@@ -27,6 +27,8 @@
 "IMPORT_SETTINGS" = "导入设置";
 
 "APPS_ENABLED_FMT" = "%ld 个已启用";
+"APPS_ALL_ENABLED" = "所有应用已启用";
+"APPS_CUSTOMIZED_FMT" = "%ld 个已自定义";
 
 "IMPORT_CONFIRM_TITLE" = "导入设置？";
 "IMPORT_CONFIRM_MSG" = "这将用所选文件替换所有当前设置。";

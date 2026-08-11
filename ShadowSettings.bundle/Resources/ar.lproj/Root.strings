@@ -19,6 +19,8 @@
 "EXPORT_SETTINGS" = "تصدير الإعدادات";
 "IMPORT_SETTINGS" = "استيراد الإعدادات";
 "APPS_ENABLED_FMT" = "%ld مفعّل";
+"APPS_ALL_ENABLED" = "جميع التطبيقات مفعّلة";
+"APPS_CUSTOMIZED_FMT" = "%ld مخصص";
 "IMPORT_CONFIRM_TITLE" = "استيراد الإعدادات؟";
 "IMPORT_CONFIRM_MSG" = "سيستبدل هذا جميع الإعدادات الحالية بالملف المحدد.";
 "IMPORT_CONFIRM" = "استيراد";

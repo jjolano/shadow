@@ -1,0 +1,17 @@
+"INDIVIDUAL_HOOKS" = "個別鉤子";
+"ESSENTIAL_HOOKS" = "基本掛鉤";
+"ESSENTIAL_HOOKS_DESC" = "基本掛鉤涵蓋了常見的越獄偵測方式。";
+"HOOK_FILE_SYSTEM" = "檔案系統";
+"HOOK_URLSCHEME" = "URL 處理";
+"HOOK_ENVVARS" = "環境變數";
+"REC_HOOKS" = "推薦掛鉤";
+"REC_HOOKS_DESC" = "推薦掛鉤涵蓋了越獄偵測可能使用的其他方法。";
+"HOOK_DETECTFMWK" = "偵測框架";
+"HOOK_FOUNDATION" = "Foundation 框架";
+"EXTRA_HOOKS" = "額外掛鉤";
+"EXTRA_HOOKS_DESC" = "額外掛鉤涵蓋了更多的越獄偵測方法，包含私人API。";
+"HOOK_MACH" = "Mach 服務查詢";
+"HOOK_IOKIT" = "IOKit 服務偵測";
+"HOOK_ANTIDBG" = "反偵錯方法";
+"HOOK_SYSCALL" = "私有系統呼叫";
+"HOOK_APPENUM" = "應用程式列舉";

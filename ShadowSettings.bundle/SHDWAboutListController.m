@@ -81,13 +81,13 @@
 
 			NSString* version = nil;
 
-			if(!error) {
-				NSDictionary* json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+			if(!error && [response isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)response statusCode] == 200) {
+				id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
-				if(json) {
+				if([json isKindOfClass:[NSDictionary class]]) {
 					NSString* tag_name = json[@"tag_name"];
 
-					if(tag_name && tag_name.length > 0) {
+					if([tag_name isKindOfClass:[NSString class]] && tag_name.length > 0) {
 						version = [tag_name hasPrefix:@"v"] ? [tag_name substringFromIndex:1] : tag_name;
 					}
 				}

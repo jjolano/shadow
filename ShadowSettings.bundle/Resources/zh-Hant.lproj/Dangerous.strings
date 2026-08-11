@@ -1,0 +1,9 @@
+"DNGR_HOOKS" = "⚠︎ 危險Hook";
+"DNGR_HOOKS_DESC" = "底層屏蔽方法。可能導致應用程式崩潰或系統功能異常。僅在推薦的Hook無法生效時啟用。";
+"HOOK_SANDBOX" = "加強應用程式沙盒";
+"HOOK_LLC" = "底層檔案處理";
+"HOOK_MEM" = "隱藏可執行記憶體";
+"VNODE_HIDING" = "Vnode 級隱藏";
+"MEMORY_LEVEL_HIDING" = "記憶體層級隱藏";
+"HOOK_DYLD_EXTRA" = "提前安裝動態程式庫";
+"HOOK_DYLD_EXTRA_DESC" = "偵測到偵測器證據後，額外的動態程式庫一律會安裝。啟用此項會在啟動時立即安裝。";

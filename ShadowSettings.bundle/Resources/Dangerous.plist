@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>StringsTable</key>
-	<string>Hooks</string>
 	<key>items</key>
 	<array>
 		<dict>
@@ -52,6 +50,18 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
+			<string>MemoryLevelHiding</string>
+			<key>label</key>
+			<string>MEMORY_LEVEL_HIDING</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
 			<string>VnodeHiding</string>
 			<key>label</key>
 			<string>VNODE_HIDING</string>
@@ -66,7 +76,9 @@
 			<key>id</key>
 			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
-			<string>HOOK_DYLD</string>
+			<string>HOOK_DYLD_EXTRA</string>
+			<key>footerText</key>
+			<string>HOOK_DYLD_EXTRA_DESC</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

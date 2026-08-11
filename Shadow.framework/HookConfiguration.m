@@ -15,7 +15,7 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     { "Hook_Filesystem@c",    SHDWHookIDFilesystem,          SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_EnvVars@c",       SHDWHookIDEnvVars,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_EnvVars@objc",    SHDWHookIDEnvVars,             SHDWPhaseTier1,       SHDWCapabilityMessage,     1, 0 },
-    { "Hook_DeviceCheck",     SHDWHookIDDeviceCheck,         SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 0 },
+    { "Hook_DeviceCheck",     SHDWHookIDDeviceCheck,         SHDWPhaseTier1,       SHDWCapabilityMessage,     1, 0 },
     { "Hook_MachBootstrap",   SHDWHookIDMachBootstrap,       SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_IOKit",           SHDWHookIDIOKit,               SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_LowLevelC",       SHDWHookIDLowLevelC,           SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
@@ -153,7 +153,7 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             // filters substrate/substitute/swift out of selection, so these
             // need a message-capable backend.
             SHDWHookIDURLScheme : @"message",
-            SHDWHookIDEnvVars : @"message",      // NSProcessInfo swizzles
+            SHDWHookIDDeviceCheck : @"message",  // descriptor-driven ObjC-method installs
             SHDWHookIDFoundation : @"message",   // NSArray/NSBundle/... + UIImage
             SHDWHookIDHideApps : @"message",     // LSApplicationWorkspace
             // dlopen_internal is a private libdyld symbol: needs ElleKit
@@ -162,8 +162,11 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             // Vnode-layer hiding: needs the krw-capable daemon.
             SHDWVnodeHidingID : @"daemon",
             // C-function groups: any non-Swift backend can run them.
+            // EnvVars' core (libc env filtering) rides the C-function lane;
+            // its NSProcessInfo swizzles are a subMain add-on that fail-softs
+            // without a message backend — gate the group on the C path.
+            SHDWHookIDEnvVars : @"function",
             SHDWHookIDFilesystem : @"function",
-            SHDWHookIDDeviceCheck : @"function",
             SHDWHookIDMachBootstrap : @"function",
             SHDWHookIDIOKit : @"function",
             SHDWHookIDLowLevelC : @"function",

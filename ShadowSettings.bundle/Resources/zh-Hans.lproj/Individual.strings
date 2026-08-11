@@ -1,0 +1,17 @@
+"INDIVIDUAL_HOOKS" = "单独钩子";
+"ESSENTIAL_HOOKS" = "基本Hook";
+"ESSENTIAL_HOOKS_DESC" = "基本Hook包含最常见的越狱检测方法。";
+"HOOK_FILE_SYSTEM" = "文件系统";
+"HOOK_URLSCHEME" = "URL处理";
+"HOOK_ENVVARS" = "环境变量";
+"REC_HOOKS" = "推荐Hook";
+"REC_HOOKS_DESC" = "推荐Hook包含可能使用的其他越狱检测方法。";
+"HOOK_DETECTFMWK" = "检测框架";
+"HOOK_FOUNDATION" = "Foundation框架"; /* Foundation是Apple的框架名称. */
+"EXTRA_HOOKS" = "额外Hook";
+"EXTRA_HOOKS_DESC" = "额外Hook包含可能使用的更多越狱检测方法，包括私有API。";
+"HOOK_MACH" = "Mach服务查找";
+"HOOK_IOKIT" = "IOKit 服务探测";
+"HOOK_ANTIDBG" = "反调试方法";
+"HOOK_SYSCALL" = "私有系统调用";
+"HOOK_APPENUM" = "应用枚举";

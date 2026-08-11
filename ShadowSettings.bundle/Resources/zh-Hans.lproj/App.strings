@@ -1,12 +1,10 @@
 "APP_SETTINGS" = "应用设置";
 "APP_SETTINGS_DESC" = "对此应用启用屏蔽设置。未单独设置的项目将继承全局设置。";
 
-"ENABLE_SHADOW" = "启用Shadow";
 "ENABLED" = "已启用";
 "ENABLED_GLOBAL" = "已启用（全局）";
 
 "FOLLOW_GLOBAL" = "跟随全局设置";
-"FOLLOW_GLOBAL_DESC" = "为此应用使用全局绕过配置。";
 "APP_USES_GLOBAL" = "正在跟随全局设置。关闭以自定义此应用。";
 "APP_DETECTOR_LOG" = "检测器日志";
 "APP_DETECTOR_LOG_DESC" = "此应用中记录的检测器活动。";

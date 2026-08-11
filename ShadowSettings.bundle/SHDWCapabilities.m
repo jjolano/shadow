@@ -42,6 +42,10 @@ static NSString* shdw_localized(NSString* key) {
 
 #define SHDW_STATUS_TIMEOUT_MS 300
 #define SHDW_STATUS_CACHE_SECS  5.0
+// "Starting" is transient (a daemon mid-launch), so it never satisfies the
+// terminal-state cache: re-query on this short throttle until the daemon
+// reports Ready/Unavailable/Disabled.
+#define SHDW_STATUS_STARTING_RECHECK_SECS 2.0
 
 static SHDWDaemonState gDaemonState = SHDWDaemonUnavailable;
 static CFAbsoluteTime gDaemonStateTime = 0;
@@ -124,16 +128,12 @@ SHDWDaemonState SHDWQueryDaemonState(void) {
     return gDaemonState;
 }
 
-void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
-    // Don't re-ping the daemon on every page entry; the state barely changes
-    // during a session. (Fresh queries still land at least this often.)
-    if(CFAbsoluteTimeGetCurrent() - gDaemonStateTime < SHDW_STATUS_CACHE_SECS) {
-        if(completion) {
-            completion(gDaemonState);
-        }
-        return;
-    }
-
+// Query once, store the result, then keep re-querying on the Starting
+// throttle until the daemon reports a terminal state: the controllers only
+// refresh on page load, so a one-shot query would strand the page on a
+// cached "Starting" forever (VnodeHiding stays disabled even after the
+// daemon becomes ready).
+static void shdw_query_daemon_state_async(void (^completion)(SHDWDaemonState state)) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         SHDWDaemonState state = shdw_query_daemon_state();
 
@@ -144,8 +144,39 @@ void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
             if(completion) {
                 completion(state);
             }
+
+            if(state == SHDWDaemonStarting) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SHDW_STATUS_STARTING_RECHECK_SECS * NSEC_PER_SEC)),
+                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    shdw_query_daemon_state_async(completion);
+                });
+            }
         });
     });
+}
+
+void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
+    CFAbsoluteTime age = CFAbsoluteTimeGetCurrent() - gDaemonStateTime;
+
+    // Don't re-ping the daemon on every page entry; terminal states barely
+    // change during a session. (Fresh queries still land at least this
+    // often.) A cached "Starting" is non-terminal: it only satisfies a short
+    // throttle, so the follow-up chain keeps advancing the state.
+    if(gDaemonState != SHDWDaemonStarting && age < SHDW_STATUS_CACHE_SECS) {
+        if(completion) {
+            completion(gDaemonState);
+        }
+        return;
+    }
+
+    if(age < SHDW_STATUS_STARTING_RECHECK_SECS) {
+        if(completion) {
+            completion(gDaemonState);
+        }
+        return;
+    }
+
+    shdw_query_daemon_state_async(completion);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +184,8 @@ void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
 //   - ObjC-message groups install on subMain (ElleKit/Substrate/Substitute,
 //     or native fallback) — the HK_Library pref never configures subMain.
 //   - C-function groups install on subCFunc (pref-selected or fishhook).
-//   - dlopen_internal (Hook_DynamicLibrariesExtra) needs ElleKit inline.
+//   - dlopen_internal (Hook_DynamicLibrariesExtra) needs a private-symbol or
+//     message-capable backend (the ordered PRIVATE_SYMBOL → MESSAGE picker).
 //   - VnodeHiding needs the daemon with krw ready.
 // The Settings picker already filters substrate/substitute/swift out of
 // selection, and every remaining picker lib is C-function-capable, so
@@ -185,14 +217,25 @@ BOOL SHDWHookGroupSupported(NSString* groupID) {
         return SHDWQueryDaemonState() == SHDWDaemonReady;
     }
 
+    NSString* kind = SHDWHookGroupCapabilityKind(groupID);
+
+    // Not a hook group (BypassStatus/BypassPreset/HK_Library) or a
+    // stale+ignored key ("none"): absent from the canonical metadata —
+    // never gated.
+    if(!kind || [kind isEqualToString:@"none"]) {
+        return YES;
+    }
+
     hookkit_lib_t available = shdw_available_types();
 
-    if(shdw_is_message_group(groupID)) {
+    if([kind isEqualToString:@"message"]) {
         return (available & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE | HK_LIB_NATIVE)) != 0;
     }
 
     if([groupID isEqualToString:@"Hook_DynamicLibrariesExtra"]) {
-        return (available & HK_LIB_ELLEKIT) != 0;
+        // dlopen_internal rides the ordered PRIVATE_SYMBOL → MESSAGE picker
+        // (dylib.x/HookCoordinator) — mirror that consumer exactly.
+        return ([HKSubstitutor getAvailableCategories] & (HK_CAT_PRIVATE_SYMBOL | HK_CAT_MESSAGE)) != 0;
     }
 
     // C-function groups: any non-Swift backend can run them.
@@ -256,7 +299,12 @@ void SHDWApplyHookGroupGating(NSArray* specifiers) {
                 reasons = [NSMutableArray new];
                 [groupReasons setObject:reasons forKey:currentGroup];
             }
-            [reasons addObject:reason];
+
+            // Groups with multiple message/function rows share one reason
+            // string — don't repeat it in the footer.
+            if(![reasons containsObject:reason]) {
+                [reasons addObject:reason];
+            }
         }
     }
 

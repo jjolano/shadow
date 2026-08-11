@@ -19,6 +19,8 @@
 "EXPORT_SETTINGS" = "匯出設定";
 "IMPORT_SETTINGS" = "匯入設定";
 "APPS_ENABLED_FMT" = "%ld 個已啟用";
+"APPS_ALL_ENABLED" = "所有應用程式已啟用";
+"APPS_CUSTOMIZED_FMT" = "%ld 個已自訂";
 "IMPORT_CONFIRM_TITLE" = "匯入設定？";
 "IMPORT_CONFIRM_MSG" = "這會用所選檔案取代所有目前設定。";
 "IMPORT_CONFIRM" = "匯入";

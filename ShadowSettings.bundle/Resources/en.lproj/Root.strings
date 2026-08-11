@@ -27,6 +27,8 @@
 "IMPORT_SETTINGS" = "Import Settings";
 
 "APPS_ENABLED_FMT" = "%ld enabled";
+"APPS_ALL_ENABLED" = "All apps enabled";
+"APPS_CUSTOMIZED_FMT" = "%ld customized";
 
 "IMPORT_CONFIRM_TITLE" = "Import Settings?";
 "IMPORT_CONFIRM_MSG" = "This replaces all current settings with the selected file.";
