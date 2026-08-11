@@ -161,8 +161,7 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
 }
 
 // Candidate 5: typed entry point — the facade delegates to the engine
-// (RestrictionEngine.m), which runs the differential (legacy + resolver-based
-// engines, legacy authoritative until the cutover flag flips).
+// (RestrictionEngine.m), which evaluates with the resolver-based engine.
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
     // C0-2 recursion guard: the engine's own path normalization
     // (getStandardizedPath:) constructs NSURLs via +[NSURL fileURLWithPath:],

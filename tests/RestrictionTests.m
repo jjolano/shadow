@@ -14,17 +14,18 @@
 // Virtual FS: fixtures/fs/jb/usr/{bin,sbin} exist (ssh, fstab); libghost
 // doesn't.
 //
-// Two layers:
+// Three layers:
 //   1. Grounded verdicts that hold in BOTH rooted and rootless modes
 //      (write probes skip the existence gates — device-accurate; the read
 //      probes are mode-independent by construction, see each check).
-//   2. Differential-parity asserts: the typed entry must agree with the
-//      legacy dictionary entry on every option shape, and — via KVC access
-//      to the backend's engine (test-only category below) — the NEW engine
-//      and the LEGACY engine inside the differential dispatcher must agree.
-//      The harness builds the framework sources with -DDEBUG, so any engine
-//      divergence ALSO prints "[Shadow] DIFFERENTIAL MISMATCH" to stderr —
-//      the orchestrator can grep the harness output for that string.
+//   2. Parity asserts: the typed entry must agree with the dictionary entry on
+//      every option shape, and both must agree with the engine's own evaluator
+//      reached by KVC (test-only category below) — the option translation and
+//      the decision caches must never change a verdict.
+//   3. The restricted image range table's lookup (RunRestrictedRangeTests).
+//
+// These asserts carried the Candidate 5 cutover: they compared the legacy and
+// resolver engines until parity held, and the legacy engine was then deleted.
 //
 // Returns the number of failures (0 = clean).
 
@@ -34,6 +35,7 @@
 #import <Shadow/RestrictionQuery.h>
 #import <Shadow/Backend.h>
 #import "RestrictionEngine.h"
+#import "ranges.h"
 
 #import <stdio.h>
 
@@ -52,17 +54,55 @@ static NSDictionary* writeOpts(void) {
     return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 }
 
-// Test-only access to the differential internals (implementation methods; the
-// dispatcher runs both engines per query, this lets the test assert agreement
-// directly with the divergence context).
+// Test-only access to the engine's implementation entry point, so a verdict
+// can be asserted against the evaluator directly and not only through the
+// facade's caching/translation layers.
 @interface ShadowRestrictionEngine (RestrictionTestsAccess)
-- (BOOL)_legacyPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 - (BOOL)_newPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 @end
 
 static ShadowRestrictionEngine* engine(void) {
     ShadowBackend* backend = [shdw() valueForKey:@"backend"];
     return [backend valueForKey:@"engine"];
+}
+
+// --- restricted image range table ------------------------------------------
+// The dylib answers -[Shadow isAddrRestricted:] from a snapshot of restricted
+// image spans instead of re-resolving and re-judging the image path on every
+// intercepted call. shdw_ranges_lookup is the whole decision; the dylib only
+// wraps it with the atomics and the fallback. It is plain C over ranges.h, so
+// it is testable here without any of hooks.h's iOS-only dependencies.
+//
+// The two UNKNOWN cases are what matter: both mean "answer from the real
+// predicate instead", and getting either wrong silently under-reports
+// restricted addresses — the unsafe direction.
+static void RunRestrictedRangeTests(void) {
+    shdw_restricted_ranges_t t = { .count = 2, .overflowed = 0, .generation = 7 };
+    t.range[0] = (shdw_range_t){ .base = 0x1000, .end = 0x2000 };
+    t.range[1] = (shdw_range_t){ .base = 0x8000, .end = 0x9000 };
+
+    RCHECK(shdw_ranges_lookup(&t, 7, 0x1000) == SHDW_RANGE_YES, "ranges: first byte of a range is inside");
+    RCHECK(shdw_ranges_lookup(&t, 7, 0x1fff) == SHDW_RANGE_YES, "ranges: last byte of a range is inside");
+    RCHECK(shdw_ranges_lookup(&t, 7, 0x8500) == SHDW_RANGE_YES, "ranges: second range is searched too");
+    RCHECK(shdw_ranges_lookup(&t, 7, 0x2000) == SHDW_RANGE_NO, "ranges: end is exclusive");
+    RCHECK(shdw_ranges_lookup(&t, 7, 0x4000) == SHDW_RANGE_NO, "ranges: address between ranges is outside");
+    RCHECK(shdw_ranges_lookup(&t, 7, 0) == SHDW_RANGE_NO, "ranges: NULL is not restricted");
+
+    // Stale stamp: a ruleset reload can flip an already-loaded image's verdict
+    // without any image event, so entries classified under an older generation
+    // must not be answered from.
+    RCHECK(shdw_ranges_lookup(&t, 8, 0x1000) == SHDW_RANGE_UNKNOWN, "ranges: older generation is unusable");
+    RCHECK(shdw_ranges_lookup(&t, 8, 0x4000) == SHDW_RANGE_UNKNOWN, "ranges: stale table cannot answer misses either");
+
+    // Truncated table: the missing entries would read as "not restricted".
+    shdw_restricted_ranges_t over = t;
+    over.overflowed = 1;
+    RCHECK(shdw_ranges_lookup(&over, 7, 0x4000) == SHDW_RANGE_UNKNOWN, "ranges: overflowed table cannot answer");
+    RCHECK(shdw_ranges_lookup(&over, 7, 0x1000) == SHDW_RANGE_UNKNOWN, "ranges: overflowed table cannot answer hits either");
+
+    shdw_restricted_ranges_t empty = { .count = 0, .overflowed = 0, .generation = 7 };
+    RCHECK(shdw_ranges_lookup(&empty, 7, 0x1000) == SHDW_RANGE_NO, "ranges: empty table restricts nothing");
+    RCHECK(shdw_ranges_lookup(NULL, 7, 0x1000) == SHDW_RANGE_UNKNOWN, "ranges: absent table cannot answer");
 }
 
 // Builds the typed query a legacy options dict translates to (mirrors
@@ -169,13 +209,12 @@ int RunRestrictionTests(void) {
             BOOL viaTyped = [shadow isPathRestrictedQuery:queryFromDict(path, options)];
             RCHECK((viaDict == viaTyped), ([[NSString stringWithFormat:@"dict/typed parity: %@ %@", path, options ?: @"(nil)"] UTF8String]));
 
-            // Differential agreement of the two engines for the same query
-            // (the plan's DEBUG differential, asserted directly; the legacy
-            // engine is authoritative, so a divergence here is a finding).
+            // The facade's answer must be the evaluator's answer: the layers
+            // between them (option translation, the decision caches) must not
+            // change a verdict for any option shape.
             ShadowRestrictionQuery* q = queryFromDict(path, options);
-            BOOL legacy = [eng _legacyPathRestrictedQuery:q];
-            BOOL fresh = [eng _newPathRestrictedQuery:q];
-            RCHECK((legacy == fresh), ([[NSString stringWithFormat:@"engine parity: %@ %@ (legacy=%d fresh=%d)", path, options ?: @"(nil)", legacy, fresh] UTF8String]));
+            BOOL direct = [eng _newPathRestrictedQuery:q];
+            RCHECK((direct == viaTyped), ([[NSString stringWithFormat:@"facade/engine parity: %@ %@ (engine=%d facade=%d)", path, options ?: @"(nil)", direct, viaTyped] UTF8String]));
         }
     }
 
@@ -188,6 +227,8 @@ int RunRestrictionTests(void) {
     ShadowRestrictionQuery* noResolve = [ShadowRestrictionQuery queryWithPath:@"/usr/sbin/fstab"];
     noResolve.flags = 0;
     RCHECK([shadow isPathRestrictedQuery:noResolve] == fstabRestricted, "resolve-off typed query agrees");
+
+    RunRestrictedRangeTests();
 
     printf("RestrictionTests: %d passed, %d failed\n", rg, rf);
     return rf;

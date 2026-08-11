@@ -83,6 +83,7 @@ static NSArray* ExpectedCtorOrder(void) {
         @"Hook_LowLevelC",
         @"Hook_AntiDebugging",
         @"objc",
+        @"objc@methodimpl",
         @"Hook_Syscall",
         @"Hook_Memory",
         @"Hook_Sandbox",
