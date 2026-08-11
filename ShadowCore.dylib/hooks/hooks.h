@@ -184,6 +184,13 @@ static inline BOOL shdw_addr_is_restricted(const void* addr) {
 // image callbacks.
 void shdw_own_ranges_refresh(void);
 
+// Exact-basename artifact matcher for Shadow's own runtime images (ShadowCore,
+// Shadow.dylib, libSandy, substrate/substitute/ellekit, and the framework
+// executable pairs Shadow.framework/Shadow + HookKit.framework/HookKit).
+// Defined in dyld.x; shared with objc.x so the class-hiding path reuses the
+// same artifact set instead of duplicating it.
+BOOL shdw_is_shadow_runtime_image(const char* path);
+
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
 
 #define SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path) \

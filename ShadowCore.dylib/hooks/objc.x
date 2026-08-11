@@ -1,6 +1,188 @@
 #import "hooks.h"
 
+// Captured in shadowhook_objc (see below); declared here so the
+// class-hiding helpers above it can resolve a class's image path.
 static const char* (*original_class_getImageName)(Class cls);
+
+// --- Main-executable exemption (host app classes are never hidden) ----------
+// The class/method/IMP lookups below hide anything whose containing image is
+// restricted. The HOST APP's own executable is never a hiding target: hiding
+// its classes breaks the app itself — UIKit's _UIApplicationMainPreparations
+// resolves the app delegate via NSClassFromString, and rootless jailbreak
+// apps are installed under /private/preboot, which isCPathRestricted: treats
+// as restricted (observed on-device: ShadowHarness aborted with "No class
+// named AppDelegate is loaded" the moment hooks installed). Exempt the main
+// executable BEFORE any range verdict; Shadow's own artifacts (ShadowCore,
+// Shadow.framework, HookKit, libSandy, substrate/substitute/ellekit) remain
+// hidden via the own-ranges check.
+
+// Cached span of the main executable (dyld image 0), built once at first use.
+static BOOL shdw_addr_in_main_image(const void* addr) {
+    if(!addr) {
+        return NO;
+    }
+
+    static uintptr_t mainBase = 0;
+    static uintptr_t mainEnd = 0;
+    static dispatch_once_t once = 0;
+
+    dispatch_once(&once, ^{
+        const struct mach_header* mh = _dyld_get_image_header(0);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+
+        if(!mh) {
+            return;
+        }
+
+        // Walk segment load commands once: the image's resident span is
+        // [min(vmaddr), max(vmaddr+vmsize)) + slide.
+        const struct load_command* lc = (const struct load_command *)((const char *)mh + sizeof(struct mach_header_64));
+        uintptr_t lo = (uintptr_t)-1;
+        uintptr_t hi = 0;
+
+        for(uint32_t i = 0; i < mh->ncmds; i++) {
+            if(lc->cmd == LC_SEGMENT_64) {
+                const struct segment_command_64* seg = (const struct segment_command_64 *)lc;
+                uintptr_t base = (uintptr_t)(seg->vmaddr + slide);
+                uintptr_t end = base + seg->vmsize;
+
+                if(base < lo) {
+                    lo = base;
+                }
+
+                if(end > hi) {
+                    hi = end;
+                }
+            }
+
+            lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+        }
+
+        if(hi > lo) {
+            mainBase = lo;
+            mainEnd = hi;
+        }
+    });
+
+    if(mainEnd == 0) {
+        return NO;
+    }
+
+    uintptr_t a = (uintptr_t)addr;
+    return a >= mainBase && a < mainEnd;
+}
+
+// Hiding predicate for address-keyed ObjC lookups: the host app's own
+// classes/methods/IMPs always resolve; Shadow's own artifacts are always
+// hidden; everything else keeps the existing restricted-image verdict.
+static BOOL shdw_objc_addr_is_hidden(const void* addr) {
+    if(!addr) {
+        return NO;
+    }
+
+    if(shdw_addr_in_main_image(addr)) {
+        return NO;
+    }
+
+    uintptr_t a = (uintptr_t)addr;
+    shdw_own_ranges_t* own = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
+
+    for(uint32_t i = 0; i < own->count; i++) {
+        if(a >= own->range[i].base && a < own->range[i].end) {
+            return YES;
+        }
+    }
+
+    return shdw_addr_is_restricted(addr);
+}
+
+// Same-file check against the main executable: exact string first, then
+// stat device/inode so /var/jb and /private/preboot aliases agree.
+static BOOL shdw_path_is_main_image(const char* path) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    const char* mainPath = _dyld_get_image_name(0);
+
+    if(!mainPath || !mainPath[0]) {
+        return NO;
+    }
+
+    if(strcmp(path, mainPath) == 0) {
+        return YES;
+    }
+
+    struct stat a;
+    struct stat b;
+
+    if(stat(path, &a) == 0 && stat(mainPath, &b) == 0) {
+        return a.st_dev == b.st_dev && a.st_ino == b.st_ino;
+    }
+
+    return NO;
+}
+
+// Hiding predicate for path-keyed ObjC APIs (class_getImageName result,
+// objc_copyImageNames, objc_copyClassNamesForImage, objc_copyClassesForImage):
+// the host app's own image always resolves; Shadow artifacts and other
+// protected images stay hidden.
+static BOOL shdw_objc_image_path_is_hidden(const char* path) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    if(shdw_path_is_main_image(path)) {
+        return NO;
+    }
+
+    return shdw_is_shadow_runtime_image(path) || [_shadow isProtectedImagePath:@(path)];
+}
+
+// Class-object hiding: classify by the class's EXACT image path, never by
+// span-based address ranges. Class metadata in the dyld shared cache lives in
+// split/global ObjC regions whose addresses can fall inside the gaps of a
+// union span (observed on-device: with hooks live,
+// NSClassFromString(@"NSString")/NSClassFromString(@"NSObject") returned nil
+// for external callers, and BoardServices' +[BSMutableServiceInterface
+// interfaceWithIdentifier:] asserted on the nil class → SIGTRAP at startup).
+// The host app's own classes always resolve (C-prime); Shadow artifacts stay
+// hidden via the exact own-ranges spans; everything else is classified by the
+// class's image path through the path-keyed predicate above.
+static BOOL shdw_objc_class_is_hidden(Class cls) {
+    if(!cls) {
+        return NO;
+    }
+
+    const void* addr = (__bridge const void *)cls;
+
+    if(shdw_addr_in_main_image(addr)) {
+        return NO;
+    }
+
+    uintptr_t a = (uintptr_t)addr;
+    shdw_own_ranges_t* own = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
+
+    for(uint32_t i = 0; i < own->count; i++) {
+        if(a >= own->range[i].base && a < own->range[i].end) {
+            return YES;
+        }
+    }
+
+    if(!original_class_getImageName) {
+        return NO;   // no native resolver → fail visible
+    }
+
+    const char* image = original_class_getImageName(cls);
+
+    if(!image || !image[0]) {
+        return NO;   // runtime-native class (no loadable image) → visible
+    }
+
+    return shdw_objc_image_path_is_hidden(image);
+}
+
+
 static const char* replaced_class_getImageName(Class cls) {
     // C0-2: Shadow's own code sees truth; every other caller is filtered.
     if(!isCallerExternal()) {
@@ -9,13 +191,13 @@ static const char* replaced_class_getImageName(Class cls) {
 
     // Protected class (its data lives in a protected image): report "no
     // image" — NULL, never a fake executable path (plan Wave 1c).
-    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
+    if(shdw_objc_class_is_hidden(cls)) {
         return NULL;
     }
 
     const char* result = original_class_getImageName(cls);
 
-    if(result && [_shadow isProtectedImagePath:@(result)]) {
+    if(result && shdw_objc_image_path_is_hidden(result)) {
         return NULL;
     }
 
@@ -64,7 +246,7 @@ static const char * _Nonnull * replaced_objc_copyImageNames(unsigned int *outCou
     for(unsigned int i = 0; i < localCount; i++) {
         const char* name = result[i];
 
-        if(!name || [_shadow isProtectedImagePath:@(name)]) {
+        if(!name || shdw_objc_image_path_is_hidden(name)) {
             continue;
         }
 
@@ -88,7 +270,7 @@ static const char * _Nonnull * replaced_objc_copyClassNamesForImage(const char* 
         return original_objc_copyClassNamesForImage(image, outCount);
     }
 
-    if([_shadow isProtectedImagePath:@(image)]) {
+    if(shdw_objc_image_path_is_hidden(image)) {
         // Zero the count before returning NULL so callers can't misread a
         // stale count (plan Wave 1c).
         if(outCount) {
@@ -110,7 +292,7 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
 
     Class result = original_NSClassFromString(aClassName);
 
-    if(shdw_addr_is_restricted((__bridge const void *)result)) {
+    if(shdw_objc_class_is_hidden(result)) {
         return nil;
     }
 
@@ -134,7 +316,7 @@ static Class replaced_objc_getClass(const char* name) {
 
     Class result = original_objc_getClass(name);
 
-    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
+    if(result && shdw_objc_class_is_hidden(result)) {
         return Nil;
     }
 
@@ -149,7 +331,7 @@ static Class replaced_objc_lookUpClass(const char* name) {
 
     Class result = original_objc_lookUpClass(name);
 
-    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
+    if(result && shdw_objc_class_is_hidden(result)) {
         return Nil;
     }
 
@@ -164,7 +346,7 @@ static Class replaced_objc_getMetaClass(const char* name) {
 
     Class result = original_objc_getMetaClass(name);
 
-    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
+    if(result && shdw_objc_class_is_hidden(result)) {
         return Nil;
     }
 
@@ -196,7 +378,7 @@ static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
     int n = 0;
 
     for(int i = 0; i < filled; i++) {
-        if(shdw_addr_is_restricted((__bridge const void *)all[i])) {
+        if(shdw_objc_class_is_hidden(all[i])) {
             continue;
         }
 
@@ -244,7 +426,7 @@ static Class* replaced_objc_copyClassList(unsigned int* outCount) {
     unsigned int n = 0;
 
     for(int i = 0; i < filled; i++) {
-        if(shdw_addr_is_restricted((__bridge const void *)all[i])) {
+        if(shdw_objc_class_is_hidden(all[i])) {
             continue;
         }
 
@@ -272,7 +454,7 @@ static void replaced_objc_enumerateClasses(const void* image, const char* namePr
     // *stop) and forward everything else with the SAME stop pointer so the
     // caller's stop=YES propagates to the runtime.
     original_objc_enumerateClasses(image, namePrefix, conformingTo, subclassing, ^(Class aClass, BOOL* stop) {
-        if(shdw_addr_is_restricted((__bridge const void *)aClass)) {
+        if(shdw_objc_class_is_hidden(aClass)) {
             return;
         }
 
@@ -295,7 +477,7 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
         return original_class_copyMethodList(cls, outCount);
     }
 
-    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
+    if(shdw_objc_class_is_hidden(cls)) {
         if(outCount) {
             *outCount = 0;
         }
@@ -331,7 +513,11 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
 
         IMP imp = original_method_getImplementation(result[i]);
 
-        if(shdw_addr_is_restricted((void *)result[i]) || shdw_addr_is_restricted((void *)imp)) {
+        // Classify the IMP, not the raw Method pointer: Method metadata lives
+        // in the owning image's data (shared-cache regions for system
+        // classes), where span-based address tests misclassify. The owning
+        // class was already checked above.
+        if(shdw_objc_addr_is_hidden((void *)imp)) {
             continue;
         }
 
@@ -357,9 +543,10 @@ static Method replaced_class_getInstanceMethod(Class cls, SEL name) {
 
     // original_method_getImplementation lives on the rebind lane; a refused
     // hook leaves it NULL — skip the IMP check (fail-soft) rather than crash.
-    if(shdw_addr_is_restricted((__bridge const void *)cls)
-    || shdw_addr_is_restricted((void *)result)
-    || (original_method_getImplementation && shdw_addr_is_restricted((void *)original_method_getImplementation(result)))) {
+    // Classify the owning class and the IMP, not the raw Method pointer
+    // (shared-cache Method metadata misclassifies under span tests).
+    if(shdw_objc_class_is_hidden(cls)
+    || (original_method_getImplementation && shdw_objc_addr_is_hidden((void *)original_method_getImplementation(result)))) {
         return NULL;
     }
 
@@ -375,9 +562,9 @@ static Method replaced_class_getClassMethod(Class cls, SEL name) {
     Method result = original_class_getClassMethod(cls, name);
 
     // Fail-soft like replaced_class_getInstanceMethod (rebind-lane original).
-    if(shdw_addr_is_restricted((__bridge const void *)cls)
-    || shdw_addr_is_restricted((void *)result)
-    || (original_method_getImplementation && shdw_addr_is_restricted((void *)original_method_getImplementation(result)))) {
+    // Classify the owning class and the IMP, not the raw Method pointer.
+    if(shdw_objc_class_is_hidden(cls)
+    || (original_method_getImplementation && shdw_objc_addr_is_hidden((void *)original_method_getImplementation(result)))) {
         return NULL;
     }
 
@@ -393,7 +580,9 @@ static IMP replaced_method_getImplementationAndName(Method m, SEL* nameOut) {
 
     IMP result = original_method_getImplementationAndName(m, nameOut);
 
-    if(shdw_addr_is_restricted((void *)m) || shdw_addr_is_restricted((void *)result)) {
+    // Classify the IMP, not the raw Method pointer (shared-cache Method
+    // metadata misclassifies under span tests).
+    if(shdw_objc_addr_is_hidden((void *)result)) {
         if(nameOut) {
             *nameOut = NULL;
         }
@@ -412,7 +601,7 @@ static IMP replaced_class_getMethodImplementation_stret(Class cls, SEL name) {
 
     IMP result = original_class_getMethodImplementation_stret(cls, name);
 
-    if(shdw_addr_is_restricted((__bridge const void *)cls) || shdw_addr_is_restricted((void *)result)) {
+    if(shdw_objc_class_is_hidden(cls) || shdw_objc_addr_is_hidden((void *)result)) {
         return NULL;
     }
 
@@ -425,7 +614,7 @@ static Class* replaced_objc_copyClassesForImage(const char* image, unsigned int*
         return original_objc_copyClassesForImage(image, outCount);
     }
 
-    if([_shadow isProtectedImagePath:@(image)]) {
+    if(shdw_objc_image_path_is_hidden(image)) {
         if(outCount) {
             *outCount = 0;
         }
@@ -442,7 +631,7 @@ static const char** replaced_objc_copyClassNamesForImageHeader(const struct mach
         return original_objc_copyClassNamesForImageHeader(mh, outCount);
     }
 
-    if(!mh || shdw_addr_is_restricted(mh)) {
+    if(!mh || shdw_objc_addr_is_hidden(mh)) {
         if(outCount) {
             *outCount = 0;
         }
@@ -482,7 +671,7 @@ static BOOL shdw_caller_is_platform_runtime(void) {
 }
 
 static BOOL shdw_getImageName_proxy(Class cls, const char** outImageName) {
-    if(shdw_addr_is_restricted((__bridge const void *)cls)) {
+    if(shdw_objc_class_is_hidden(cls)) {
         return NO;
     }
 
@@ -496,7 +685,7 @@ static BOOL shdw_getClass_proxy(const char* name, Class* outClass) {
         return NO;
     }
 
-    if(result && shdw_addr_is_restricted((__bridge const void *)result)) {
+    if(result && shdw_objc_class_is_hidden(result)) {
         return NO;
     }
 
@@ -549,11 +738,13 @@ static IMP replaced_method_getImplementation(Method m) {
 
     IMP result = original_method_getImplementation(m);
 
-    // Classify the Method (its storage lives in the owning image's data) AND
-    // the returned IMP: a protected Method or IMP must never resolve. NULL,
-    // not a fabricated "native-looking" IMP — the header cast was a fake that
-    // detectors could still fingerprint (plan Wave 1b).
-    if(shdw_addr_is_restricted((void *)m) || shdw_addr_is_restricted((void *)result)) {
+    // Classify the returned IMP: a protected IMP must never resolve. The raw
+    // Method pointer is NOT classified — its storage lives in the owning
+    // image's data (shared-cache regions for system classes), where
+    // span-based address tests misclassify and break legitimate lookups.
+    // NULL, not a fabricated "native-looking" IMP — the header cast was a
+    // fake that detectors could still fingerprint (plan Wave 1b).
+    if(shdw_objc_addr_is_hidden((void *)result)) {
         return NULL;
     }
 
@@ -570,7 +761,7 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
 
     // Same policy as replaced_method_getImplementation: the class, and the
     // IMP it resolves to, must both be unprotected.
-    if(shdw_addr_is_restricted((__bridge const void *)cls) || shdw_addr_is_restricted((void *)result)) {
+    if(shdw_objc_class_is_hidden(cls) || shdw_objc_addr_is_hidden((void *)result)) {
         return NULL;
     }
 
@@ -607,7 +798,7 @@ static id replaced_imp_getBlock(IMP anImp) {
 
     shdw_block_layout_t* layout = (__bridge shdw_block_layout_t *)block;
 
-    if(shdw_addr_is_restricted(layout->invoke)) {
+    if(shdw_objc_addr_is_hidden(layout->invoke)) {
         return nil;
     }
 
