@@ -68,23 +68,15 @@
 #import <stdatomic.h>
 
 #include "../common.h"   // BUNDLE_ID, MACH_SERVICE_NAME, SHADOW_PREFS_PLIST
-#include "../protocol.h" // SHADOWD_MAGIC/VERSION, ops, request/reply structs
+#include "../protocol.h" // SHADOWD_MAGIC/VERSION, ops, statuses, XPC payload structs
 #include "krw.h"         // kernel r/w backends + vnode ops (shadowd/krw.m)
 #include "ledger.h"      // write-ahead ledger + record format/parse (shadowd/ledger.m)
 
-// SDK 16.5's mach/bootstrap.h is a compatibility stub — declare the classic
-// prototype directly (name_t decays to const char *).
-extern kern_return_t bootstrap_check_in(mach_port_t bootstrap_port, const char *service_name, mach_port_t *service_port);
+#import <xpc/xpc.h>
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-// Status codes (errno values): 0 ok | EPERM | ENOTSUP | EBUSY
-#define SHADOWD_STATUS_OK      0
-#define SHADOWD_STATUS_EPERM   EPERM
-#define SHADOWD_STATUS_ENOTSUP ENOTSUP
-#define SHADOWD_STATUS_EBUSY   EBUSY
 
 // Fixed compiled allowlist.  NOTE (review finding): Shadow.dylib itself,
 // shadowd, its plist and the ledger are deliberately NOT hidden — hiding the
@@ -304,30 +296,20 @@ NSMutableDictionary<NSString *, ShadowResource *> *gResources;
 static NSMutableSet<NSString *> *gPendingReleases;   // release retries
 
 // Lease bookkeeping (declared here so owner_gone can clean up; populated in
-// setup_ipc_server): reply port → owner key, and owner key → live port count
-// (A17: an owner is gone only when ALL of its reply ports are dead).
-static NSMutableDictionary<NSNumber *, NSString *> *gLeases;
-static NSMutableDictionary<NSString *, NSNumber *> *gOwnerPortCounts;
+// setup_ipc_server): owner key → XPC connection.  The connection IS the
+// lease — XPC_ERROR_CONNECTION_INVALID on the daemon side replaces the mach
+// dead-name notification as owner-death detection.  The map retains the
+// connection (ARC); removing the entry releases it.  Only ever touched on
+// the server queue.
+static NSMapTable *gLeases;   // NSString * (owner key) → xpc_connection_t
 
 static void owner_gone(NSString *ownerKey);
 
-// Drop every lease/port-count entry belonging to an owner (dead-name or
-// polling detected death).  Deallocation of the port names is owned by the
-// dead-name notification handler (it deallocs on EVERY path, including the
-// unknown-port case, and the armed notification always fires when the port
-// dies) — deallocating here would race in-flight notifications and could
-// hit a recycled name.
+// Drop the owner's lease entry (connection-invalid or polling detected
+// death); ARC releases the connection.  Runs on the server queue (see
+// owner_gone).
 static void drop_owner_leases(NSString *ownerKey) {
-    NSMutableArray<NSNumber *> *deadPorts = [NSMutableArray array];
-    for (NSNumber *port in [gLeases allKeys]) {
-        if ([gLeases[port] isEqualToString:ownerKey]) {
-            [deadPorts addObject:port];
-        }
-    }
-    for (NSNumber *port in deadPorts) {
-        [gLeases removeObjectForKey:port];
-    }
-    [gOwnerPortCounts removeObjectForKey:ownerKey];
+    [gLeases removeObjectForKey:ownerKey];
 }
 
 // A8: restart-adopted resources (fd == -1) are READ-ONLY — the saved vnode
@@ -410,9 +392,9 @@ static bool resource_teardown(ShadowResource *res, NSString *path) {
 }
 
 // Remove one owner everywhere; tear down resources with no owners left.
-// gLeases/gOwnerPortCounts are only ever touched on the SERVER queue
-// (install_lease, dead-name handler), so the lease cleanup is dispatched
-// there — owner_gone itself runs on the kernel queue.
+// gLeases is only ever touched on the SERVER queue (install_lease,
+// connection-invalid handler), so the lease cleanup is dispatched there —
+// owner_gone itself runs on the kernel queue.
 static void owner_gone(NSString *ownerKey) {
     if (gServerQueue) {
         dispatch_async(gServerQueue, ^{
@@ -750,92 +732,73 @@ static bool recover_from_ledger(void) {
 }
 
 // ---------------------------------------------------------------------------
-// IPC server (Mach, synchronous)
+// IPC server (XPC, synchronous request handling)
 // ---------------------------------------------------------------------------
+//
+// Transport: XPC mach-service connection on MACH_SERVICE_NAME (the launchd
+// plist's MachServices entry provides the port).  The raw mach_msg transport
+// was abandoned because the Dopamine-arm64 fork's mach layer is unreliable
+// on some builds (mach_msg receive never wakes, MIG calls segfault), while
+// XPC round-trips work (libjailbreak's jbdInitPPLRW rides the same
+// machinery).  The wire payloads (protocol.h) are unchanged.
+//
+// Leases: the daemon retains the client's CONNECTION as the lease.
+// XPC_ERROR_CONNECTION_INVALID on the daemon side replaces the mach
+// dead-name notification as owner-death detection — no dead-name port.  The
+// poll timer remains only as a pid-based backstop (owner_gone edge cases).
 
-static mach_port_t gServerPort = MACH_PORT_NULL;
-static mach_port_t gNotifyPort = MACH_PORT_NULL;
-// gServerQueue, gLeases / gOwnerPortCounts are declared with the resource
-// model (owner_gone needs them); populated in setup_ipc_server.
+static xpc_connection_t gListener;   // mach-service listener (setup_ipc_server)
 
-// Keep a send right to the client's reply port as the lease; install a
-// dead-name notification; on the client's death the kernel notifies us and
-// the owner's leases are released.  A17: leases are REFERENCE-COUNTED per
-// owner — the owner is only removed when ALL of its reply ports are dead
-// (a client timeout/retry can leave multiple live ports for one owner).
-// A18: the previous notification right returned by the kernel is dropped.
-static void install_lease(mach_port_name_t replyPort, NSString *ownerKey) {
-    if (gLeases[@(replyPort)] != nil) {
-        // A18: this message carried a fresh send right we will not keep —
-        // drop the received uref.
-        shdw_log("lease: port 0x%x already leased — deallocating duplicate send right", replyPort);
-        mach_port_deallocate(mach_task_self(), replyPort);
-        return;
-    }
-    mach_port_name_t previous = MACH_PORT_NULL;
-    kern_return_t kr = mach_port_request_notification(mach_task_self(), replyPort,
-                                                      MACH_NOTIFY_DEAD_NAME, 0,
-                                                      gNotifyPort, MACH_MSG_TYPE_MAKE_SEND_ONCE,
-                                                      &previous);
-    if (previous != MACH_PORT_NULL) {
-        mach_port_deallocate(mach_task_self(), previous);
-    }
-    if (kr != KERN_SUCCESS) {
-        // The lease is already dead (client gone before we could arm the
-        // notification) — this port contributes nothing; the polling
-        // fallback will reap the owner if no other lease survives.
-        // A18: drop the received send right on the failure path too.
-        shdw_log("lease: dead-name request failed (0x%x) for owner %s", kr, ownerKey.UTF8String);
-        mach_port_deallocate(mach_task_self(), replyPort);
-        return;
-    }
-    gLeases[@(replyPort)] = ownerKey;
-    gOwnerPortCounts[ownerKey] = @([gOwnerPortCounts[ownerKey] intValue] + 1);
-    shdw_log("lease: installed for owner %s (reply port 0x%x, count %d)",
-             ownerKey.UTF8String, replyPort, [gOwnerPortCounts[ownerKey] intValue]);
-}
-
-static void send_reply(shadowd_request_t *req, uint32_t status) {
-    shadowd_reply_t reply;
+// Reply to a request on the connection (XPC owns delivery — no bounded-send
+// bookkeeping needed).
+static void shdw_xpc_reply(xpc_connection_t conn, const shadowd_xpc_request_t *req, uint32_t status) {
+    shadowd_xpc_reply_t reply;
     memset(&reply, 0, sizeof(reply));
-    reply.header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0);
-    reply.header.msgh_size = sizeof(shadowd_reply_t);
-    reply.header.msgh_remote_port = req->replyPort.name;
-    reply.header.msgh_local_port = MACH_PORT_NULL;
     reply.magic = SHADOWD_MAGIC;
     reply.version = SHADOWD_VERSION;
     reply.requestId = req->requestId;
     reply.status = status;
 
-    // A19: bounded send — a malicious or full client reply queue must not be
-    // able to block the server queue indefinitely.
-    kern_return_t kr = mach_msg(&reply.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT,
-                                reply.header.msgh_size, 0, MACH_PORT_NULL, 5000, MACH_PORT_NULL);
-    if (kr != KERN_SUCCESS) {
-        shdw_log("reply: mach_msg failed (0x%x)", kr);
+    xpc_object_t dict = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_data(dict, "p", &reply, sizeof(reply));
+    xpc_connection_send_message(conn, dict);   // ARC releases dict
+}
+
+// Keep the connection as the lease: the map retains it (ARC) and records
+// the owner key.  Clients keep one connection per process, so one lease per
+// owner.
+static void install_lease(xpc_connection_t conn, NSString *ownerKey) {
+    if ([gLeases objectForKey:ownerKey] != nil) {
+        shdw_log("lease: owner %s already leased", ownerKey.UTF8String);
+        return;
     }
+    [gLeases setObject:conn forKey:ownerKey];
+    shdw_log("lease: installed for owner %s (connection %p)", ownerKey.UTF8String, conn);
 }
 
-// A5: reply and drop the received reply-port send right (the common
-// handle_request tail).
-static void reply_and_release(shadowd_request_t *req, uint32_t status) {
-    send_reply(req, status);
-    mach_port_deallocate(mach_task_self(), req->replyPort.name);
-}
+// Handle one request message.  Runs on the server queue (serialized per
+// connection AND across connections — the same single-threaded semantics as
+// the old mach server).
+static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
+    size_t len = 0;
+    const void *data = xpc_dictionary_get_data(msg, "p", &len);
+    if (len != sizeof(shadowd_xpc_request_t)) {
+        shdw_log("request: bad payload size %zu", len);
+        return;   // malformed client — no reply (fail-open clients)
+    }
+    const shadowd_xpc_request_t *req = (const shadowd_xpc_request_t *)data;
 
-static void handle_request(shadowd_request_t *req) {
     if (req->magic != SHADOWD_MAGIC) {
         shdw_log("request: bad magic 0x%x", req->magic);
-        mach_msg_destroy(&req->header);
-        return;
+        return;   // no reply
     }
     if (req->version != SHADOWD_VERSION) {
         shdw_log("request: unsupported version %u", req->version);
-        reply_and_release(req, SHADOWD_STATUS_ENOTSUP);
+        shdw_xpc_reply(conn, req, SHADOWD_STATUS_ENOTSUP);
         return;
     }
     if (req->op == SHADOWD_OP_PING) {
-        reply_and_release(req, SHADOWD_STATUS_OK);
+        shdw_xpc_reply(conn, req, SHADOWD_STATUS_OK);
         return;
     }
     // Health query for the Settings bundle: reports krw readiness so the
@@ -856,19 +819,21 @@ static void handle_request(shadowd_request_t *req) {
                 status = SHADOWD_STATUS_ENOTSUP;
                 break;
         }
-        reply_and_release(req, status);
+        shdw_xpc_reply(conn, req, status);
         return;
     }
 
-    // Identity comes ONLY from the kernel-provided audit trailer.
-    mach_msg_audit_trailer_t *trailer =
-        (mach_msg_audit_trailer_t *)((uint8_t *)req + round_msg(req->header.msgh_size));
-    audit_token_t token = trailer->msgh_audit;
+    // Identity comes ONLY from the message's audit token (XPC's equivalent
+    // of the mach audit trailer).  Public API: xpc_dictionary_get_audit_token
+    // on the incoming message (xpc_connection_get_audit_token is private and
+    // misbehaves on some builds).
+    audit_token_t token;
+    xpc_dictionary_get_audit_token(msg, &token);
     pid_t pid = (pid_t)token.val[5];   // audit_token_to_pid layout
     uid_t euid = (uid_t)token.val[1];  // audit_token_to_euid layout
     if (euid == 0 || pid <= 0) {
         shdw_log("request: rejected (pid %d, euid %u)", pid, euid);
-        reply_and_release(req, SHADOWD_STATUS_EPERM);
+        shdw_xpc_reply(conn, req, SHADOWD_STATUS_EPERM);
         return;
     }
 
@@ -878,7 +843,7 @@ static void handle_request(shadowd_request_t *req) {
     uint64_t sec = 0, usec = 0;
     if (!owner_start_time(pid, &sec, &usec)) {
         shdw_log("request: owner start time unavailable for pid %d — rejecting", pid);
-        reply_and_release(req, SHADOWD_STATUS_EBUSY);
+        shdw_xpc_reply(conn, req, SHADOWD_STATUS_EBUSY);
         return;
     }
     NSString *ownerKey = owner_key(pid, sec, usec);
@@ -888,13 +853,11 @@ static void handle_request(shadowd_request_t *req) {
         dispatch_sync(gKernelQueue, ^{
             status = acquire_for_owner(ownerKey);
         });
-        // Reply only after the hide is verified; the reply port becomes the
+        // Reply only after the hide is verified; the connection becomes the
         // lease only on success.
-        send_reply(req, status);
+        shdw_xpc_reply(conn, req, status);
         if (status == SHADOWD_STATUS_OK) {
-            install_lease(req->replyPort.name, ownerKey);
-        } else {
-            mach_port_deallocate(mach_task_self(), req->replyPort.name);
+            install_lease(conn, ownerKey);
         }
         return;
     }
@@ -903,144 +866,66 @@ static void handle_request(shadowd_request_t *req) {
         dispatch_sync(gKernelQueue, ^{
             status = release_for_owner(ownerKey);
         });
-        reply_and_release(req, status);
+        shdw_xpc_reply(conn, req, status);
         return;
     }
     shdw_log("request: unknown op %u", req->op);
-    reply_and_release(req, SHADOWD_STATUS_ENOTSUP);
+    shdw_xpc_reply(conn, req, SHADOWD_STATUS_ENOTSUP);
 }
 
-static void server_receive(void) {
-    static uint8_t gRecvBuf[sizeof(shadowd_request_t) + MAX_TRAILER_SIZE]
-        __attribute__((aligned(16)));
-    shadowd_request_t *req = (shadowd_request_t *)gRecvBuf;
-
-    mach_msg_options_t options = MACH_RCV_MSG |
-        MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0) |
-        MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT);
-    kern_return_t kr = mach_msg(&req->header, options, 0, sizeof(gRecvBuf),
-                                gServerPort, 0, MACH_PORT_NULL);
-    if (kr == MACH_RCV_TIMED_OUT) {
-        return;
-    }
-    if (kr != KERN_SUCCESS) {
-        shdw_log("server: receive failed (0x%x)", kr);
-        return;
-    }
-
-    // A20: strict message validation.  Anything malformed is destroyed
-    // (mach_msg_destroy drops the reply-port send right) and dropped —
-    // never parsed, never replied to.
-    if (req->header.msgh_size != sizeof(shadowd_request_t)) {
-        shdw_log("server: bad message size %u (expected %zu)", req->header.msgh_size, sizeof(shadowd_request_t));
-        if (req->header.msgh_bits & MACH_MSGH_BITS_COMPLEX) mach_msg_destroy(&req->header);
-        return;
-    }
-    if (!(req->header.msgh_bits & MACH_MSGH_BITS_COMPLEX)) {
-        shdw_log("server: message is not complex (no reply port)");
-        return;
-    }
-    if (req->msgh_body.msgh_descriptor_count != 1) {
-        shdw_log("server: descriptor count %u (expected 1)", req->msgh_body.msgh_descriptor_count);
-        mach_msg_destroy(&req->header);
-        return;
-    }
-    // A20: descriptor disposition — the SENDER specifies MACH_MSG_TYPE_MAKE_SEND,
-    // but the RECEIVER sees the realized disposition MACH_MSG_TYPE_PORT_SEND
-    // (the kernel converts MAKE_SEND on delivery).  Accept both so every
-    // valid client request passes.
-    if (req->replyPort.type != MACH_MSG_PORT_DESCRIPTOR ||
-        (req->replyPort.disposition != MACH_MSG_TYPE_PORT_SEND &&
-         req->replyPort.disposition != MACH_MSG_TYPE_MAKE_SEND)) {
-        shdw_log("server: bad reply port descriptor (type %u, disposition %u)",
-                 req->replyPort.type, req->replyPort.disposition);
-        mach_msg_destroy(&req->header);
-        return;
-    }
-    // A20: the received port NAME must be a live name.
-    if (req->replyPort.name == MACH_PORT_NULL || req->replyPort.name == MACH_PORT_DEAD) {
-        shdw_log("server: invalid reply port name 0x%x", req->replyPort.name);
-        mach_msg_destroy(&req->header);
-        return;
-    }
-    // A20: the audit trailer must fit in the receive buffer AND actually be
-    // present with the expected format/size (the receive options request
-    // MACH_RCV_TRAILER_AUDIT; a missing/malformed trailer is rejected).
-    mach_msg_audit_trailer_t *tr = (mach_msg_audit_trailer_t *)((uint8_t *)req + round_msg(req->header.msgh_size));
-    if (round_msg(req->header.msgh_size) + sizeof(mach_msg_audit_trailer_t) > sizeof(gRecvBuf)) {
-        shdw_log("server: audit trailer out of bounds");
-        mach_msg_destroy(&req->header);
-        return;
-    }
-    if (tr->msgh_trailer_type != MACH_MSG_TRAILER_FORMAT_0 ||
-        tr->msgh_trailer_size < sizeof(mach_msg_audit_trailer_t)) {
-        shdw_log("server: audit trailer missing or malformed (type %u, size %u)",
-                 tr->msgh_trailer_type, tr->msgh_trailer_size);
-        mach_msg_destroy(&req->header);
-        return;
-    }
-    handle_request(req);
+// Per-connection event handler: messages are handled synchronously on the
+// server queue; a connection-invalid event means the client died — release
+// the owner's lease (XPC's replacement for the dead-name notification).
+static void handle_connection(xpc_connection_t conn) {
+    xpc_connection_set_event_handler(conn, ^(xpc_object_t obj) {
+        if (obj == XPC_ERROR_CONNECTION_INVALID) {
+            // Find the owner this connection was leased to.
+            NSString *ownerKey = nil;
+            for (NSString *k in gLeases) {
+                if ([gLeases objectForKey:k] == conn) {
+                    ownerKey = k;
+                    break;
+                }
+            }
+            if (ownerKey) {
+                shdw_log("connection %p died — releasing owner %s", conn, ownerKey.UTF8String);
+                [gLeases removeObjectForKey:ownerKey];   // ARC releases the connection
+                dispatch_async(gKernelQueue, ^{
+                    owner_gone(ownerKey);
+                });
+            } else {
+                shdw_log("connection %p died (no lease)", conn);
+            }
+            // No teardown here: the connection is already invalid and the
+            // runtime destroys it once this handler returns (calling
+            // xpc_connection_cancel from inside the invalid handler
+            // re-enters libxpc teardown and crashes).
+        } else if (xpc_get_type(obj) == XPC_TYPE_DICTIONARY) {
+            handle_xpc_message(conn, obj);
+        }
+    });
+    xpc_connection_resume(conn);
 }
 
 static void setup_ipc_server(void) {
     gServerQueue = dispatch_queue_create("me.jjolano.shadowd.server", NULL);
-    gLeases = [NSMutableDictionary dictionary];
-    gOwnerPortCounts = [NSMutableDictionary dictionary];
+    gLeases = [NSMapTable strongToStrongObjectsMapTable];
 
-    kern_return_t kr = bootstrap_check_in(bootstrap_port, MACH_SERVICE_NAME, &gServerPort);
-    if (kr != KERN_SUCCESS) {
-        shdw_log("bootstrap_check_in(%s) failed (0x%x) — serving nothing", MACH_SERVICE_NAME, kr);
+    gListener = xpc_connection_create_mach_service(MACH_SERVICE_NAME, gServerQueue, XPC_CONNECTION_MACH_SERVICE_LISTENER);
+    if (!gListener) {
+        shdw_log("xpc listener creation failed — serving nothing");
         return;
     }
+    xpc_connection_set_event_handler(gListener, ^(xpc_object_t peer) {
+        if (xpc_get_type(peer) == XPC_TYPE_CONNECTION) {
+            xpc_connection_t conn = peer;
+            // Accepted connections inherit the listener's target queue; do
+            // NOT call xpc_connection_set_target_queue on them.
+            handle_connection(conn);
+        }
+    });
+    xpc_connection_resume(gListener);
     shdw_log("service registered: %s", MACH_SERVICE_NAME);
-
-    dispatch_source_t src = dispatch_source_create(DISPATCH_SOURCE_TYPE_MACH_RECV,
-                                                   (uintptr_t)gServerPort, 0, gServerQueue);
-    dispatch_source_set_event_handler(src, ^{
-        server_receive();
-    });
-    dispatch_resume(src);
-
-    // Dead-name notification port.
-    mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &gNotifyPort);
-    dispatch_source_t notifySrc = dispatch_source_create(DISPATCH_SOURCE_TYPE_MACH_RECV,
-                                                         (uintptr_t)gNotifyPort, 0, gServerQueue);
-    dispatch_source_set_event_handler(notifySrc, ^{
-        mach_dead_name_notification_t notif;
-        kern_return_t kr2 = mach_msg(&notif.not_header, MACH_RCV_MSG, 0, sizeof(notif),
-                                     gNotifyPort, 0, MACH_PORT_NULL);
-        if (kr2 == MACH_RCV_TIMED_OUT) return;
-        if (kr2 != KERN_SUCCESS) {
-            shdw_log("dead-name: receive failed (0x%x)", kr2);
-            return;
-        }
-        // This SDK's mach_dead_name_notification_t carries the dead name
-        // directly (mach_port_name_t not_port, after the NDR).
-        mach_port_name_t deadName = notif.not_port;
-        // A18: the dead-name right (and its uref) is consumed by the
-        // notification — deallocate it on EVERY path, including the
-        // unknown-port case, so the name does not leak.
-        mach_port_deallocate(mach_task_self(), deadName);
-        NSString *ownerKey = gLeases[@(deadName)];
-        if (!ownerKey) {
-            shdw_log("dead-name: unknown port 0x%x", deadName);
-            return;
-        }
-        [gLeases removeObjectForKey:@(deadName)];
-        // A17: reference-counted leases — the owner is removed only when ALL
-        // of its reply ports are dead.
-        int remaining = [gOwnerPortCounts[ownerKey] intValue] - 1;
-        shdw_log("dead-name: lease for owner %s died (%d remaining)", ownerKey.UTF8String, remaining);
-        if (remaining <= 0) {
-            [gOwnerPortCounts removeObjectForKey:ownerKey];
-            dispatch_async(gKernelQueue, ^{
-                owner_gone(ownerKey);
-            });
-        } else {
-            gOwnerPortCounts[ownerKey] = @(remaining);
-        }
-    });
-    dispatch_resume(notifySrc);
 }
 
 static void setup_poll_timer(void) {

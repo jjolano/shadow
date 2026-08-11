@@ -3,21 +3,12 @@
 #import <HookKit.h>
 #import <Preferences/Preferences.h>
 
-#import <mach/mach.h>
-#import <bootstrap.h>
+#import <xpc/xpc.h>
 
 #import "../../common.h"
 #import "../../protocol.h"
 
 #import <Shadow/HookConfiguration.h>
-
-// Daemon reply statuses (mirror shadowd/main.m's SHADOWD_STATUS_*).
-#ifndef SHADOWD_STATUS_OK
-#define SHADOWD_STATUS_OK      0
-#define SHADOWD_STATUS_EPERM   EPERM
-#define SHADOWD_STATUS_ENOTSUP ENOTSUP
-#define SHADOWD_STATUS_EBUSY   EBUSY
-#endif
 
 // Bundle anchor: C-function header, so a private class carries the bundle
 // identity for localizedStringForKey:value:table:.
@@ -51,72 +42,55 @@ static SHDWDaemonState gDaemonState = SHDWDaemonUnavailable;
 static CFAbsoluteTime gDaemonStateTime = 0;
 
 SHDWDaemonState shdw_query_daemon_state(void) {
-    mach_port_t service_port = MACH_PORT_NULL;
-    kern_return_t kr = bootstrap_look_up(bootstrap_port, MACH_SERVICE_NAME, &service_port);
-
-    if(kr != KERN_SUCCESS || !MACH_PORT_VALID(service_port)) {
+    static xpc_connection_t conn = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        conn = xpc_connection_create_mach_service(MACH_SERVICE_NAME, NULL, 0);
+        if (conn) {
+            xpc_connection_set_event_handler(conn, ^(xpc_object_t obj) {
+                // Daemon restart etc.: the next query reconnects.
+            });
+            xpc_connection_resume(conn);
+        }
+    });
+    if (!conn) {
         return SHDWDaemonUnavailable;
     }
 
-    mach_port_t reply_port = MACH_PORT_NULL;
-    kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &reply_port);
-
-    if(kr != KERN_SUCCESS) {
-        mach_port_deallocate(mach_task_self(), service_port);
-        return SHDWDaemonUnavailable;
-    }
-
-    shadowd_request_t req;
+    shadowd_xpc_request_t req;
     memset(&req, 0, sizeof(req));
-
-    req.header.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0);
-    req.header.msgh_remote_port = service_port;
-    req.header.msgh_local_port = MACH_PORT_NULL;
-    req.header.msgh_voucher_port = MACH_PORT_NULL;
-    req.header.msgh_size = sizeof(req);
-
-    req.msgh_body.msgh_descriptor_count = 1;
-    req.replyPort.name = reply_port;
-    req.replyPort.disposition = MACH_MSG_TYPE_MAKE_SEND;
-    req.replyPort.type = MACH_MSG_PORT_DESCRIPTOR;
-
     req.magic = SHADOWD_MAGIC;
     req.version = SHADOWD_VERSION;
     req.op = SHADOWD_OP_STATUS;
     req.requestId = 1;
 
-    SHDWDaemonState state = SHDWDaemonUnavailable;
+    xpc_object_t msg = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_data(msg, "p", &req, sizeof(req));
 
-    kr = mach_msg(&req.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof(req), 0, MACH_PORT_NULL, SHDW_STATUS_TIMEOUT_MS, MACH_PORT_NULL);
-
-    if(kr == KERN_SUCCESS) {
-        union {
-            shadowd_reply_t reply;
-            uint8_t buf[sizeof(shadowd_reply_t) + MAX_TRAILER_SIZE];
-        } replyBuf;
-        memset(&replyBuf, 0, sizeof(replyBuf));
-
-        kr = mach_msg(&replyBuf.reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(replyBuf.buf), reply_port, SHDW_STATUS_TIMEOUT_MS, MACH_PORT_NULL);
-
-        if(kr == KERN_SUCCESS) {
-            // Drop the send right the daemon's COPY_SEND reply carried.
-            if(MACH_PORT_VALID(replyBuf.reply.header.msgh_remote_port)) {
-                mach_port_deallocate(mach_task_self(), replyBuf.reply.header.msgh_remote_port);
-            }
-
-            if(replyBuf.reply.magic == SHADOWD_MAGIC && replyBuf.reply.version == SHADOWD_VERSION && replyBuf.reply.requestId == req.requestId) {
-                switch(replyBuf.reply.status) {
-                    case SHADOWD_STATUS_OK:     state = SHDWDaemonReady; break;
-                    case SHADOWD_STATUS_EBUSY:  state = SHDWDaemonStarting; break;
-                    default:                    state = SHDWDaemonDisabled; break;
+    __block SHDWDaemonState state = SHDWDaemonUnavailable;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    xpc_connection_send_message_with_reply(conn, msg, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(xpc_object_t reply) {
+        if (xpc_get_type(reply) != XPC_TYPE_ERROR) {
+            size_t len = 0;
+            const void *data = xpc_dictionary_get_data(reply, "p", &len);
+            if (len == sizeof(shadowd_xpc_reply_t)) {
+                const shadowd_xpc_reply_t *r = (const shadowd_xpc_reply_t *)data;
+                if (r->magic == SHADOWD_MAGIC && r->version == SHADOWD_VERSION && r->requestId == req.requestId) {
+                    switch (r->status) {
+                        case SHADOWD_STATUS_OK:     state = SHDWDaemonReady; break;
+                        case SHADOWD_STATUS_EBUSY:  state = SHDWDaemonStarting; break;
+                        default:                    state = SHDWDaemonDisabled; break;
+                    }
                 }
             }
         }
+        dispatch_semaphore_signal(sem);
+    });
+
+    // Never block the Settings UI on IPC: bounded wait, then unavailable.
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, SHDW_STATUS_TIMEOUT_MS * NSEC_PER_MSEC)) != 0) {
+        return SHDWDaemonUnavailable;
     }
-
-    mach_port_deallocate(mach_task_self(), service_port);
-    mach_port_destruct(mach_task_self(), reply_port, 0, 0);
-
     return state;
 }
 

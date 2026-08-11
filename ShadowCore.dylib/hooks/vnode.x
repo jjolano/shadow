@@ -1,143 +1,127 @@
 #import "hooks.h"
-#import <mach/mach_error.h>
-#import <bootstrap.h>
-
+#import <mach/mach.h>
+#import <xpc/xpc.h>
 
 #import "../../protocol.h"
 
 #import <Shadow/JBPath.h>
-// Vnode-layer file hiding — thin Mach IPC client. All kernel-touching work
+// Vnode-layer file hiding — thin IPC client. All kernel-touching work
 // (krw init, vnode pinning, VISSHADOW, state file) lives in the privileged
 // daemon (shadowd); this strictly-unprivileged client sends acquire/release
-// over the daemon's Mach service. The daemon derives hidden paths from its
-// own allowlist — the client sends no paths, no pid, touches no kernel
-// state. The daemon keeps a send right to our reply port and arms a
-// dead-name notification on it: the lease dies with us, no client-side
+// over the daemon's XPC mach service. The daemon derives hidden paths from
+// its own allowlist — the client sends no paths, no pid, touches no kernel
+// state. The daemon keeps the client's XPC connection as the lease: it dies
+// with us (XPC_ERROR_CONNECTION_INVALID on the daemon side), no client-side
 // cleanup needed. Fail-open: any error logs and returns; the app is never
 // blocked, no hooking is affected. Pure userspace IPC: no arch guards, no
 // hook substitution needed.
 
-// Protocol (protocol.h, shared with shadowd/main.m): request is a complex
-// message carrying the reply port as a MACH_MSG_TYPE_MAKE_SEND descriptor;
-// reply is a plain message. Status is an errno value (0 ok | EPERM | ENOTSUP |
-// EBUSY).
+// Protocol (protocol.h, shared with shadowd/main.m): XPC mach-service
+// connection; payloads are xpc_data blobs of shadowd_xpc_request_t /
+// shadowd_xpc_reply_t. Status is an errno value (0 ok | EPERM | ENOTSUP |
+// EBUSY).  The raw mach_msg transport was abandoned because the
+// Dopamine-arm64 fork's mach layer is unreliable on some builds; XPC
+// round-trips work.
 #define SHADOWD_REPLY_TIMEOUT_MS 2000
 
-// Kept for the process lifetime once acquire succeeds: the service-port send
-// right (our connection) and the reply-port receive right (the daemon's
-// lease is a send right to it, dead-name notified on our death).
-static mach_port_t shdw_service_port = MACH_PORT_NULL;
-static mach_port_t shdw_reply_port = MACH_PORT_NULL;
+// Kept for the process lifetime once acquire succeeds: the XPC connection
+// (the daemon's lease).
+static xpc_connection_t shdw_xpc_conn = NULL;
 static uint32_t shdw_request_id = 0;
+// Reply status written by the reply block; static so a reply arriving after
+// a timeout cannot write into the caller's (already returned) stack frame.
+static int gShdwReplyStatus = 0;
 
-// Send one request on the retained connection; when waitForReply, block up to
-// SHADOWD_REPLY_TIMEOUT_MS for the daemon's reply and validate it.
+static void shdw_xpc_disconnect(void) {
+    if (shdw_xpc_conn) {
+        xpc_connection_cancel(shdw_xpc_conn);   // ARC releases on NULL
+        shdw_xpc_conn = NULL;
+    }
+}
+
+// Send one request on the retained connection; when waitForReply, block up
+// to SHADOWD_REPLY_TIMEOUT_MS for the daemon's reply and validate it.
 static kern_return_t
-shdw_transact(uint32_t op, BOOL waitForReply, int* status) {
-    shadowd_request_t req;
+shdw_xpc_transact(uint32_t op, BOOL waitForReply, int* status) {
+    if (!shdw_xpc_conn) {
+        shdw_xpc_conn = xpc_connection_create_mach_service(MACH_SERVICE_NAME, NULL, 0);
+        if (!shdw_xpc_conn) {
+            NSLog(@"[Shadow] vnode: xpc connection creation failed");
+            return KERN_FAILURE;
+        }
+        xpc_connection_set_event_handler(shdw_xpc_conn, ^(xpc_object_t obj) {
+            if (obj == XPC_ERROR_CONNECTION_INVALID) {
+                NSLog(@"[Shadow] vnode: connection invalidated");
+            }
+        });
+        xpc_connection_resume(shdw_xpc_conn);
+    }
+
+    shadowd_xpc_request_t req;
     memset(&req, 0, sizeof(req));
-
-    uint32_t requestId = ++shdw_request_id;
-
-    req.header.msgh_bits = MACH_MSGH_BITS_COMPLEX | MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0);
-    req.header.msgh_remote_port = shdw_service_port;
-    req.header.msgh_local_port = MACH_PORT_NULL;
-    req.header.msgh_voucher_port = MACH_PORT_NULL;
-    req.header.msgh_size = sizeof(req);
-
-    req.msgh_body.msgh_descriptor_count = 1;
-    req.replyPort.name = shdw_reply_port;
-    req.replyPort.disposition = MACH_MSG_TYPE_MAKE_SEND;
-    req.replyPort.type = MACH_MSG_PORT_DESCRIPTOR;
-
     req.magic = SHADOWD_MAGIC;
     req.version = SHADOWD_VERSION;
     req.op = op;
-    req.requestId = requestId;
+    req.requestId = ++shdw_request_id;
 
-    kern_return_t kr = mach_msg(&req.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof(req), 0, MACH_PORT_NULL, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
-    if(kr != KERN_SUCCESS) {
-        return kr;
-    }
+    xpc_object_t msg = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_dictionary_set_data(msg, "p", &req, sizeof(req));
 
-    if(!waitForReply) {
+    if (!waitForReply) {
+        xpc_connection_send_message(shdw_xpc_conn, msg);
         return KERN_SUCCESS;
     }
 
-    // Reply buffer: message size + the kernel-appended trailer
-    // (MAX_TRAILER_SIZE). An undersized rcv_size makes mach_msg return
-    // MACH_RCV_TOO_LARGE and the reply is never delivered — the acquire
-    // would silently never succeed.
-    union {
-        shadowd_reply_t reply;
-        uint8_t buf[sizeof(shadowd_reply_t) + MAX_TRAILER_SIZE];
-    } replyBuf;
-    memset(&replyBuf, 0, sizeof(replyBuf));
-    kr = mach_msg(&replyBuf.reply.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(replyBuf.buf), shdw_reply_port, SHADOWD_REPLY_TIMEOUT_MS, MACH_PORT_NULL);
-    if(kr != KERN_SUCCESS) {
-        return kr;
-    }
+    __block kern_return_t result = KERN_SUCCESS;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    xpc_connection_send_message_with_reply(shdw_xpc_conn, msg, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(xpc_object_t reply) {
+        if (xpc_get_type(reply) == XPC_TYPE_ERROR) {
+            NSLog(@"[Shadow] vnode: xpc reply error");
+            result = KERN_FAILURE;
+        } else {
+            size_t len = 0;
+            const void *data = xpc_dictionary_get_data(reply, "p", &len);
+            if (len == sizeof(shadowd_xpc_reply_t)) {
+                const shadowd_xpc_reply_t *r = (const shadowd_xpc_reply_t *)data;
+                if (r->magic == SHADOWD_MAGIC && r->version == SHADOWD_VERSION && r->requestId == req.requestId) {
+                    gShdwReplyStatus = (int)r->status;
+                    dispatch_semaphore_signal(sem);
+                    return;
+                }
+            }
+            NSLog(@"[Shadow] vnode: invalid reply (magic/version/requestId mismatch)");
+            result = KERN_FAILURE;
+        }
+        dispatch_semaphore_signal(sem);
+    });
 
-    // The daemon replies with a COPY_SEND of the reply-port send right it
-    // holds — drop our copy so it doesn't leak per transaction.
-    if(MACH_PORT_VALID(replyBuf.reply.header.msgh_remote_port)) {
-        mach_port_deallocate(mach_task_self(), replyBuf.reply.header.msgh_remote_port);
-    }
-
-    if(replyBuf.reply.magic != SHADOWD_MAGIC || replyBuf.reply.version != SHADOWD_VERSION || replyBuf.reply.requestId != requestId) {
-        NSLog(@"[Shadow] vnode: invalid reply (magic/version/requestId mismatch)");
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, SHADOWD_REPLY_TIMEOUT_MS * NSEC_PER_MSEC)) != 0) {
+        NSLog(@"[Shadow] vnode: %s timed out (fail open)", op == SHADOWD_OP_ACQUIRE ? "acquire" : "request");
         return KERN_FAILURE;
     }
-
-    if(status) {
-        *status = (int)replyBuf.reply.status;
+    if (status) {
+        *status = gShdwReplyStatus;
     }
-
-    return KERN_SUCCESS;
+    return result;
 }
 
-// Look up the daemon, allocate the reply port, send acquire, wait for the
-// reply. On success the connection (service port + reply port) is retained
-// as the lease; on any failure everything is torn down and the error
-// returned (fail open).
+// Connect to the daemon, send acquire, wait for the reply.  On success the
+// connection is retained as the lease; on any failure everything is torn
+// down and the error returned (fail open).
 static kern_return_t
 shdw_acquire(void) {
-    kern_return_t kr = bootstrap_look_up(bootstrap_port, MACH_SERVICE_NAME, &shdw_service_port);
-
-    if(kr != KERN_SUCCESS || !MACH_PORT_VALID(shdw_service_port)) {
-        NSLog(@"[Shadow] vnode: bootstrap_look_up(%s) failed: %s", MACH_SERVICE_NAME, mach_error_string(kr));
-        shdw_service_port = MACH_PORT_NULL;
-        return kr ? kr : KERN_FAILURE;
-    }
-
-    kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &shdw_reply_port);
-    if(kr != KERN_SUCCESS) {
-        NSLog(@"[Shadow] vnode: reply port allocation failed: %s", mach_error_string(kr));
-        mach_port_deallocate(mach_task_self(), shdw_service_port);
-        shdw_service_port = MACH_PORT_NULL;
-        return kr;
-    }
-
     int status = 0;
-    kr = shdw_transact(SHADOWD_OP_ACQUIRE, YES, &status);
-    if(kr != KERN_SUCCESS) {
-        NSLog(@"[Shadow] vnode: acquire failed: %s", mach_error_string(kr));
-        // mach_port_destruct: non-deprecated equivalent of mach_port_destroy
-        // (also discards a reply still queued after a timeout).
-        mach_port_destruct(mach_task_self(), shdw_reply_port, 0, 0);
-        mach_port_deallocate(mach_task_self(), shdw_service_port);
-        shdw_reply_port = MACH_PORT_NULL;
-        shdw_service_port = MACH_PORT_NULL;
+    kern_return_t kr = shdw_xpc_transact(SHADOWD_OP_ACQUIRE, YES, &status);
+    if (kr != KERN_SUCCESS) {
+        NSLog(@"[Shadow] vnode: acquire failed");
+        shdw_xpc_disconnect();
         return kr;
     }
 
-    if(status != 0) {
+    if (status != 0) {
         // Daemon rejected the acquire (e.g. ENOTSUP): fail open, no lease.
         NSLog(@"[Shadow] vnode: daemon rejected acquire (status %d)", status);
-        mach_port_destruct(mach_task_self(), shdw_reply_port, 0, 0);
-        mach_port_deallocate(mach_task_self(), shdw_service_port);
-        shdw_reply_port = MACH_PORT_NULL;
-        shdw_service_port = MACH_PORT_NULL;
+        shdw_xpc_disconnect();
         return KERN_FAILURE;
     }
 
@@ -244,9 +228,8 @@ void shadowhook_vnode(HKSubstitutor* hooks) {
         kern_return_t kr = shdw_acquire();
 
         // Connection interruption (daemon may have restarted): one reconnect
-        // attempt with a fresh lookup. Never loop. A failed lookup means the
-        // service isn't registered at all — nothing to reconnect to.
-        if(kr != KERN_SUCCESS && kr != BOOTSTRAP_UNKNOWN_SERVICE) {
+        // attempt with a fresh connection. Never loop.
+        if(kr != KERN_SUCCESS) {
             NSLog(@"[Shadow] vnode: retrying acquire once");
             shdw_acquire();
         }
@@ -255,15 +238,14 @@ void shadowhook_vnode(HKSubstitutor* hooks) {
 
 void shadowhook_vnode_release(void) {
     // Best-effort, no wait: used at deinit. The daemon also notices our
-    // death via its dead-name notification on the reply port, so this is
-    // courtesy only.
-    if(!MACH_PORT_VALID(shdw_service_port)) {
+    // death via the connection invalidation, so this is courtesy only.
+    if(!shdw_xpc_conn) {
         return;
     }
 
     int status = 0;
-    kern_return_t kr = shdw_transact(SHADOWD_OP_RELEASE, NO, &status);
+    kern_return_t kr = shdw_xpc_transact(SHADOWD_OP_RELEASE, NO, &status);
     if(kr != KERN_SUCCESS) {
-        NSLog(@"[Shadow] vnode: release failed: %s", mach_error_string(kr));
+        NSLog(@"[Shadow] vnode: release failed");
     }
 }
