@@ -43,7 +43,7 @@ case "$1" in
         # shdw runs as root from postinst/triggers, so it can still write.
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
 
-        # Fat package (armv7/armv7s + arm64/arm64e in one deb): shadowd is
+        # Rootful package (armv7/armv7s + arm64/arm64e in one deb): shadowd is
         # arm64-only and the rooted dep slices (libsandy/HookKit/AltList)
         # floor at iOS 12.0.
         #  - 32-bit devices: drop the daemon + plist so launchd never tries
@@ -77,7 +77,7 @@ case "$1" in
         esac
 
         # LaunchDaemon: rootful ships /Library/LaunchDaemons, rootless ships
-        # /var/jb/Library/LaunchDaemons (theos install-prefix); the fat
+        # /var/jb/Library/LaunchDaemons (theos install-prefix); the rootful
         # package ships it but the arch guards above strip it where shadowd
         # can't run.
         if [ "$DAEMON_ARCH_OK" = "1" ] && [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then

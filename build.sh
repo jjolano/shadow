@@ -6,7 +6,7 @@ cd $PWD
 
 # Local dev-only dependency variants (rootless/rooted/legacy flavors of
 # HookKit, AltList and the libsandy link stub). On a fresh machine, build
-# those repos first and populate ../prebuilt accordingly. The fat flavor
+# those repos first and populate ../prebuilt accordingly. The rootful flavor
 # lipos the rooted (arm64/arm64e) and legacy (armv7/armv7s) slices into
 # one 4-arch dep set (see stage_deps).
 PB=../prebuilt
@@ -38,7 +38,7 @@ check_deps() { # flavor
     local archs
     case $flavor in
         rootless|rooted|roothide) archs="arm64 arm64e" ;;
-        fat) archs="armv7 armv7s arm64 arm64e" ;;
+        rootful) archs="armv7 armv7s arm64 arm64e" ;;
         *) echo "check_deps: unknown flavor $flavor" >&2; return 1 ;;
     esac
 
@@ -71,7 +71,7 @@ stage_deps() {
     # prebuilt slices into one 4-arch fat file.
     lipo_fat() { "$LIPO" -create "$1" "$2" -output "$3"; }
     case $flavor in
-        fat)
+        rootful)
             # Rooted flavor ships the public headers; legacy is binary-only.
             rm -rf vendor/HookKit.framework
             mkdir -p vendor/HookKit.framework
@@ -84,7 +84,7 @@ stage_deps() {
             lipo_fat $PB/sandy/rooted/libsandy.dylib $PB/sandy/legacy/libsandy.dylib $THEOS/lib/libsandy.dylib
             # Framework link order resolves $THEOS/lib before -F../vendor, so
             # the 4-slice merge must also land there (per-flavor passes got
-            # this from build-deps installing the matching variant; the fat
+            # this from build-deps installing the matching variant; the rootful
             # pass leaves the legacy one behind). HookKit's merge lives in
             # vendor/; AltList/libsandy are already fat above.
             for fw in HookKit; do
@@ -151,15 +151,15 @@ build_rootless() {
     rm -rf $THEOS/lib/Shadow.framework
 }
 
-# build fat ver. — one package, armv7/armv7s + arm64/arm64e, iOS 9+.
+# build rootful ver. — one package, armv7/armv7s + arm64/arm64e, iOS 9+.
 # Replaces the old rooted + legacy debs: 32-bit devices get dylib-only
 # (postinst strips the arm64-only shadowd + its plist there), and on
 # 64-bit iOS < 12 the rooted dep slices (minos 12.0) can't load, so
 # postinst strips injection too — see layout/DEBIAN/postinst.
-build_fat() {
-    stage_deps fat
-    check_deps fat
-    # PID-unique backup: the fat pass mutates control in place; a fixed
+build_rootful() {
+    stage_deps rootful
+    check_deps rootful
+    # PID-unique backup: the rootful pass mutates control in place; a fixed
     # /tmp path collides when two builds run in parallel (CI + local, or two
     # sessions). Restore on exit so a failed pass never leaves control dirty.
     local BAK=/tmp/shadow-control.bak.$$
@@ -202,7 +202,7 @@ build_quick() {
 build_roothide() {
     stage_deps roothide
     check_deps roothide
-    # PID-unique control mutation pattern (same as the fat pass): the
+    # PID-unique control mutation pattern (same as the rootful pass): the
     # roothide bootstrap is iOS 15.0-17.0 only.
     local BAK=/tmp/shadow-control-roothide.bak.$$
     trap "mv $BAK control 2>/dev/null || true" EXIT
@@ -221,10 +221,10 @@ build_roothide() {
 
 case ${1:-all} in
     rootless) build_rootless ;;
-    fat) build_fat ;;
+    rootful) build_rootful ;;
     roothide) build_roothide ;;
     quick) build_quick ;;
     deps) check_deps "${2:-rooted}" ;;
-    all) build_rootless; build_fat; build_roothide ;;
-    *) echo "usage: $0 [all|rootless|fat|roothide|quick|deps <flavor>]" >&2; exit 1 ;;
+    all) build_rootless; build_rootful; build_roothide ;;
+    *) echo "usage: $0 [all|rootless|rootful|roothide|quick|deps <flavor>]" >&2; exit 1 ;;
 esac

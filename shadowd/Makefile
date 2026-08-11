@@ -1,7 +1,7 @@
 # shadowd — root LaunchDaemon owning all vnode-layer kernel read/write for
 # Shadow.  Plain ObjC/C, no Logos, no tweak headers.  arm64/arm64e only —
 # both krw backends (tfp0 pfinder, libjailbreak PPL) are 64-bit-kernel
-# code; the fat rootful pass builds all other subprojects for
+# code; the rootful pass builds all other subprojects for
 # armv7/armv7s too, so override pins the slices the parent ARCHS would
 # otherwise leak in (postinst strips shadowd on 32-bit devices).
 #
