@@ -155,11 +155,10 @@ static inline BOOL shdw_caller_is_external(const void* ra) {
     // (see note above), so also grant truth to a thread in an internal read
     // scope — that keeps the framework's own ruleset/database reads working
     // even before Shadow's images are loaded or the snapshot is refreshed.
-    // Read the framework's exported thread-local directly (Core.m) instead of
-    // an objc_msgSend to +shdwIsInternalRead across the framework boundary:
-    // strictly less work on the ~400 hook entry points that reach here, and it
-    // keeps this classifier a pure inline.
-    return shdw_internal_busy == 0;
+    // Read the framework's thread-local through the exported accessor: this
+    // is the last thing ~400 hook entry points do before deciding, so an
+    // objc_msgSend here is paid at the app's call rate, not Shadow's.
+    return shdwInternalBusy() == 0;
 }
 
 // Is the image containing `addr` restricted? Same verdict as
@@ -307,6 +306,7 @@ extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
 extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
+extern void shadowhook_NSTask(HKSubstitutor* hooks);
 extern void shadowhook_NSThread(HKSubstitutor* hooks);
 extern void shadowhook_NSUserDefaults(HKSubstitutor* hooks);
 extern void shadowhook_iokit(HKSubstitutor* hooks);

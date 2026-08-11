@@ -1034,6 +1034,33 @@ static void shdw_dyld_handles_drain_pending(void) {
     _shdw_dyld_pending_draining = NO;
 }
 
+// dlclose (plan Phase 3 deferred item): the remove-image notifier
+// (shadowhook_dyld_updatelibs_r, registered with real dyld at install) runs
+// INSIDE original_dlclose for images dyld actually unloads and already
+// performs the full remove path — collection removal, mirror rebuild,
+// restricted-span drop, memoized-handle invalidation. This hook repeats only
+// the callback-free piece (shdw_dyld_handles_invalidate is idempotent: it
+// zeroes the memoized table, so a second pass after a notifier-covered
+// unload is a no-op) so the handle cache cannot outlive a dlclose even if
+// the notifier path changes shape. The remove-image callbacks are NOT
+// re-fired here — updatelibs_r already delivered them inside the original
+// call, and double delivery would confuse app code.
+static int (*original_dlclose)(void* handle);
+static int replaced_dlclose(void* handle) {
+    if(!isCallerExternal()) {
+        return original_dlclose(handle);
+    }
+
+    int result = original_dlclose(handle);
+
+    // 0 = unloaded (or no-op); a failed dlclose (bad handle) changes nothing.
+    if(result == 0) {
+        shdw_dyld_handles_invalidate();
+    }
+
+    return result;
+}
+
 void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_slide) {
     if(!mh) {
         return;
@@ -1210,9 +1237,46 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
 static void* replaced_dlsym(void* handle, const char* symbol);
 static int replaced_dladdr(const void* addr, Dl_info* info);
 
+// dyld_process_state values (dyld_process_info.h is macOS-only; the ABI is a
+// plain enum — not_started=0, running=1, done=2). Defined here, before the
+// table, so the process-info prototypes below can use it; the hooks that
+// return it live in the process-snapshot section.
+typedef enum {
+    shdw_dyld_process_state_not_started = 0,
+    shdw_dyld_process_state_running = 1,
+    shdw_dyld_process_state_done = 2
+} shdw_dyld_process_state_t;
+
+// File-scope tags for the process-snapshot types (typedef'd in the
+// process-snapshot section below); a prototype-scoped tag would be a
+// different type from the definition's file-scope one.
+struct _dyld_process_info;
+struct shdw_dyld_process_info_image;
+
+// Process-snapshot family (opaque handles — see the section below).
+static struct _dyld_process_info* replaced_dyld_process_info_create(task_t task, uint64_t timestamp, uint32_t* returnCount);
+static shdw_dyld_process_state_t replaced_dyld_process_info_get_state(struct _dyld_process_info* info);
+static void replaced_dyld_process_info_get_images(struct _dyld_process_info* info, struct shdw_dyld_process_info_image* images, uint32_t* infoCount);
+static void replaced_dyld_process_info_get_image_path(struct _dyld_process_info* info, struct shdw_dyld_process_info_image* image, char* buffer, uint32_t bufferSize);
+static void replaced_dyld_process_info_get_image_uuid(struct _dyld_process_info* info, struct shdw_dyld_process_info_image* image, uuid_t uuid);
+static void replaced_dyld_process_info_destroy(struct _dyld_process_info* info);
+static void replaced_dyld_process_info_release(struct _dyld_process_info* info);
+
+// ObjC-mapped notifier family (slot-array fan-out — see the section below).
+static void replaced_dyld_objc_notify_register(_dyld_objc_notify_mapped mapped, _dyld_objc_notify_init init, _dyld_objc_notify_unmapped unmapped);
+static void replaced_objc_addLoadImageFunc(void (*func)(const struct mach_header* mh));
+
+// Legacy NS* lookup family (macOS-era exports, resolved by name at install).
+static const struct mach_header* replaced_NSAddImage(const char* image_name, uint32_t options);
+static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, const char* symbolName, uint32_t options);
+static int32_t replaced_NSVersionOfRunTimeLibrary(const char* libraryName);
+
 // Sorted by name (strcmp order) for bsearch — keep it sorted when adding
 // entries, or lookups silently miss.
 static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
+    { "NSAddImage", (void *)&replaced_NSAddImage },
+    { "NSLookupSymbolInImage", (void *)&replaced_NSLookupSymbolInImage },
+    { "NSVersionOfRunTimeLibrary", (void *)&replaced_NSVersionOfRunTimeLibrary },
     { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
     { "_dyld_get_image_header", (void *)&replaced_dyld_get_image_header },
     { "_dyld_get_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
@@ -1222,11 +1286,20 @@ static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "_dyld_get_image_vmaddr_slide", (void *)&replaced_dyld_get_image_vmaddr_slide },
     { "_dyld_image_count", (void *)&replaced_dyld_image_count },
     { "_dyld_images_for_addresses", (void *)&replaced_dyld_images_for_addresses },
+    { "_dyld_objc_notify_register", (void *)&replaced_dyld_objc_notify_register },
+    { "_dyld_process_info_create", (void *)&replaced_dyld_process_info_create },
+    { "_dyld_process_info_destroy", (void *)&replaced_dyld_process_info_destroy },
+    { "_dyld_process_info_get_image_path", (void *)&replaced_dyld_process_info_get_image_path },
+    { "_dyld_process_info_get_image_uuid", (void *)&replaced_dyld_process_info_get_image_uuid },
+    { "_dyld_process_info_get_images", (void *)&replaced_dyld_process_info_get_images },
+    { "_dyld_process_info_get_state", (void *)&replaced_dyld_process_info_get_state },
+    { "_dyld_process_info_release", (void *)&replaced_dyld_process_info_release },
     { "_dyld_register_for_bulk_image_loads", (void *)&replaced_dyld_register_for_bulk_image_loads },
     { "_dyld_register_for_image_loads", (void *)&replaced_dyld_register_for_image_loads },
     { "_dyld_register_func_for_add_image", (void *)&replaced_dyld_register_func_for_add_image },
     { "_dyld_register_func_for_remove_image", (void *)&replaced_dyld_register_func_for_remove_image },
     { "dladdr", (void *)&replaced_dladdr },
+    { "dlclose", (void *)&replaced_dlclose },
     { "dlerror", (void *)&replaced_dlerror },
     { "dlopen", (void *)&replaced_dlopen },
     { "dlopen_preflight", (void *)&replaced_dlopen_preflight },
@@ -1234,6 +1307,7 @@ static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "dyld_image_get_installname", (void *)&replaced_dyld_image_get_installname },
     { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
     { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
+    { "objc_addLoadImageFunc", (void *)&replaced_objc_addLoadImageFunc },
 };
 #define SHADOW_SYM_POLICY_COUNT (sizeof(shdw_sym_policy_table) / sizeof(shdw_sym_policy_table[0]))
 
@@ -1861,13 +1935,21 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
     func((unsigned) count, mhs, paths);
 }
 
-// --- Process-snapshot SPI (plan Wave 1c): _dyld_process_info_create /
-// _dyld_process_info_get_images / _dyld_process_info_destroy hand out an
-// opaque snapshot of the task's image list. The struct layout is NOT in the
-// vendored dyld_priv.h (macOS-only dyld_process_info.h; absent from the iOS
-// SDKs here), so a filtered rebuild is impossible — external callers get
-// dyld's documented "no process info" state (NULL create + zero count), a
-// failure path every caller must handle anyway. Truth for Shadow's own code.
+// --- Process-snapshot SPI (plan Wave 1c; Phase 3 deferred item): the
+// _dyld_process_info_* family hands out an opaque snapshot of the task's
+// image list. The struct layout is NOT in the vendored dyld_priv.h
+// (macOS-only dyld_process_info.h; absent from the iOS SDKs here), so a
+// filtered rebuild of the returned handle is impossible without hard-coded
+// offsets (rejected: arm64e-unsafe). Documented SKIP path (per plan):
+// external callers get dyld's "no process info" state (NULL create + zero
+// count), a failure path every caller must handle anyway, and every family
+// accessor is hooked with a NULL-handle guard so no external caller can
+// crash dyld dereferencing the NULL handle our create handed out. Truth for
+// Shadow's own code. External callers that somehow hold a REAL handle
+// (captured before the hook installed) still get their get_images output
+// filtered below. The dyld4-era accessor names (_dyld_process_info_release,
+// _dyld_process_info_get_state, _dyld_process_info_get_image_path/uuid) are
+// resolved by name at install alongside the legacy _dyld_process_info_destroy.
 typedef struct _dyld_process_info* shdw_dyld_process_info_t;
 
 struct shdw_dyld_process_info_image {
@@ -1876,6 +1958,10 @@ struct shdw_dyld_process_info_image {
     const struct mach_header* imageLoadAddress;
     bool inSharedCache;
 };
+
+// Path predicate for the NS* lookup family (defined with it below); used by
+// the process-info output filter above it.
+static BOOL shdw_dyld_path_restricted(const char* path);
 
 static shdw_dyld_process_info_t (*original_dyld_process_info_create)(task_t task, uint64_t timestamp, uint32_t* returnCount);
 static shdw_dyld_process_info_t replaced_dyld_process_info_create(task_t task, uint64_t timestamp, uint32_t* returnCount) {
@@ -1903,6 +1989,32 @@ static void replaced_dyld_process_info_get_images(shdw_dyld_process_info_t info,
     }
 
     original_dyld_process_info_get_images(info, images, infoCount);
+
+    // A REAL handle here means the caller captured it before the hook
+    // installed: filter the output the same way the collection mirror does —
+    // drop restricted/Shadow-owned entries and compact. The caller sized its
+    // buffer from the (pre-hook) count, so shrinking infoCount is always
+    // safe; entries are only ever removed, never added.
+    if(!images || !infoCount) {
+        return;
+    }
+
+    uint32_t kept = 0;
+    uint32_t total = *infoCount;
+
+    for(uint32_t i = 0; i < total; i++) {
+        if(shdw_dyld_path_restricted(images[i].imagePath) || shdw_addr_is_restricted(images[i].imageLoadAddress)) {
+            continue;
+        }
+
+        if(kept != i) {
+            images[kept] = images[i];
+        }
+
+        kept++;
+    }
+
+    *infoCount = kept;
 }
 
 static void (*original_dyld_process_info_destroy)(shdw_dyld_process_info_t info);
@@ -1916,6 +2028,71 @@ static void replaced_dyld_process_info_destroy(shdw_dyld_process_info_t info) {
     }
 
     original_dyld_process_info_destroy(info);
+}
+
+// dyld4-era (iOS 15+) accessors, resolved by name at install. NULL-handle
+// guards: external callers only ever hold the NULL our create returned; the
+// originals would crash dereferencing it.
+static shdw_dyld_process_state_t (*original_dyld_process_info_get_state)(shdw_dyld_process_info_t info);
+static shdw_dyld_process_state_t replaced_dyld_process_info_get_state(shdw_dyld_process_info_t info) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_get_state(info);
+    }
+
+    if(!info) {
+        // dyld's own answer for a live process — a detector reading its own
+        // process state sees the same value from the real API.
+        return shdw_dyld_process_state_running;
+    }
+
+    return original_dyld_process_info_get_state(info);
+}
+
+static void (*original_dyld_process_info_release)(shdw_dyld_process_info_t info);
+static void replaced_dyld_process_info_release(shdw_dyld_process_info_t info) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_release(info);
+    }
+
+    if(!info) {
+        return;
+    }
+
+    original_dyld_process_info_release(info);
+}
+
+static void (*original_dyld_process_info_get_image_path)(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* image, char* buffer, uint32_t bufferSize);
+static void replaced_dyld_process_info_get_image_path(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* image, char* buffer, uint32_t bufferSize) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_get_image_path(info, image, buffer, bufferSize);
+    }
+
+    if(!info) {
+        if(buffer && bufferSize) {
+            buffer[0] = '\0';
+        }
+
+        return;
+    }
+
+    original_dyld_process_info_get_image_path(info, image, buffer, bufferSize);
+}
+
+static void (*original_dyld_process_info_get_image_uuid)(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* image, uuid_t uuid);
+static void replaced_dyld_process_info_get_image_uuid(shdw_dyld_process_info_t info, struct shdw_dyld_process_info_image* image, uuid_t uuid) {
+    if(!isCallerExternal()) {
+        return original_dyld_process_info_get_image_uuid(info, image, uuid);
+    }
+
+    if(!info) {
+        if(uuid) {
+            memset(uuid, 0, sizeof(uuid_t));
+        }
+
+        return;
+    }
+
+    original_dyld_process_info_get_image_uuid(info, image, uuid);
 }
 
 // --- Legacy NS* image/symbol lookup APIs (plan Wave 1c): declared in the
@@ -1958,7 +2135,16 @@ static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, con
         return NULL;
     }
 
-    return original_NSLookupSymbolInImage(image, symbolName, options);
+    void* result = original_NSLookupSymbolInImage(image, symbolName, options);
+
+    // The symbol's own address may sit in a restricted image even when the
+    // lookup target is not (options-dependent resolution) — same
+    // result-address deny as replaced_dlsym.
+    if(result && shdw_addr_is_restricted(result)) {
+        return NULL;
+    }
+
+    return result;
 }
 
 static int32_t (*original_NSVersionOfRunTimeLibrary)(const char* libraryName);
@@ -2459,6 +2645,32 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
         [hooks hookFunction:process_info_destroy_ptr withReplacement:replaced_dyld_process_info_destroy outOldPtr:(void **) &original_dyld_process_info_destroy];
     }
 
+    // dyld4-era accessor names (iOS 15+); resolved by name, skipped silently
+    // on OSes without them — same discipline as the legacy destroy above.
+    void* process_info_get_state_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_get_state"];
+
+    if(process_info_get_state_ptr) {
+        [hooks hookFunction:process_info_get_state_ptr withReplacement:replaced_dyld_process_info_get_state outOldPtr:(void **) &original_dyld_process_info_get_state];
+    }
+
+    void* process_info_get_image_path_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_get_image_path"];
+
+    if(process_info_get_image_path_ptr) {
+        [hooks hookFunction:process_info_get_image_path_ptr withReplacement:replaced_dyld_process_info_get_image_path outOldPtr:(void **) &original_dyld_process_info_get_image_path];
+    }
+
+    void* process_info_get_image_uuid_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_get_image_uuid"];
+
+    if(process_info_get_image_uuid_ptr) {
+        [hooks hookFunction:process_info_get_image_uuid_ptr withReplacement:replaced_dyld_process_info_get_image_uuid outOldPtr:(void **) &original_dyld_process_info_get_image_uuid];
+    }
+
+    void* process_info_release_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_process_info_release"];
+
+    if(process_info_release_ptr) {
+        [hooks hookFunction:process_info_release_ptr withReplacement:replaced_dyld_process_info_release outOldPtr:(void **) &original_dyld_process_info_release];
+    }
+
     // Legacy NS* image/symbol lookup APIs (plan Wave 1c): __API_UNAVAILABLE
     // on iOS in the SDK, resolved by name — skipped silently on OSes that
     // never exported them (modern iOS).
@@ -2504,6 +2716,12 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
         }
     }
 
+    // dlclose pairs with dlopen: a successful external dlclose must not
+    // leave the memoized per-image handles stale (see the hook body — the
+    // remove-image notifier already covers real unloads; this is the
+    // idempotent belt).
+    [hooks hookFunction:dlclose withReplacement:replaced_dlclose outOldPtr:(void **) &original_dlclose];
+
     // [hooks closeImage:libdyldImage];
 }
 
@@ -2547,6 +2765,7 @@ void shadowhook_dyld_extra_verify(void) {
     // excluded here.
     shdw_hook_check_t checks[] = {
         { "dlopen", original_dlopen },
+        { "dlclose", original_dlclose },
     };
 
     shdw_verify_hooks("dyld_extra", checks, sizeof(checks) / sizeof(checks[0]));
