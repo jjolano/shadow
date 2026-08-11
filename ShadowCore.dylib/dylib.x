@@ -323,6 +323,7 @@ static void shdw_install_tier2(void) {
         shadowhook_NSData(_shdw_watcher_main);
         shadowhook_NSThread(_shdw_watcher_main);
         shadowhook_NSUserDefaults(_shdw_watcher_main);
+        shadowhook_NSTask(_shdw_watcher_main);
     }
 
     if(_shdw_pref_fakemac) {
@@ -365,7 +366,7 @@ static void shdw_install_tier2(void) {
 // Multi-function units (row → legacy calls):
 //   symlookup        → shadowhook_dyld_symlookup + shadowhook_dyld_symaddrlookup (both on subSymLookup)
 //   Hook_Filesystem@objc → shadowhook_NSFileManager/NSFileHandle/NSFileVersion/NSFileWrapper (subMain)
-//   Hook_Foundation@objc → shadowhook_NSArray/NSDictionary/NSBundle/NSString/NSURL/NSData/NSThread/NSUserDefaults (subMain)
+//   Hook_Foundation@objc → shadowhook_NSArray/NSDictionary/NSBundle/NSString/NSURL/NSData/NSThread/NSUserDefaults/NSTask (subMain)
 // Verify rows mirror the ctor's verify pass (dylib.x:667-712) per unit.
 // ---------------------------------------------------------------------------
 
@@ -435,6 +436,7 @@ static void shdw_coord_foundation_objc(HKSubstitutor* hooks) {
     shadowhook_NSData(hooks);
     shadowhook_NSThread(hooks);
     shadowhook_NSUserDefaults(hooks);
+    shadowhook_NSTask(hooks);
 }
 
 static void shdw_coord_verify_envvars(void) {

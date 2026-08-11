@@ -175,6 +175,32 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 %end
+
+// C0-3: direct proxy construction — closes the TODO above for the
+// materialization path: a caller that read an allowed install plist can
+// resolve individual proxies by identifier/URL, so nil-out the constructors
+// for restricted apps instead of only filtering the workspace arrays.
+// initWithCoder: is intentionally NOT hooked — the workspace arrays are
+// already filtered, the identifier is stored under private coder keys (no
+// reliable decode without breaking stock unarchiving), and returning nil
+// mid-unarchive can abort LaunchServices internals.
+%hook LSApplicationProxy
++ (instancetype)applicationProxyForIdentifier:(NSString *)identifier {
+    if(isCallerExternal() && identifier && [_shadow isBundleIDRestricted:identifier]) {
+        return nil;
+    }
+
+    return %orig;
+}
+
++ (instancetype)applicationProxyForBundleURL:(NSURL *)url {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+        return nil;
+    }
+
+    return %orig;
+}
+%end
 %end
 
 void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks) {

@@ -3,6 +3,7 @@
 #import "hooks.h"
 
 #import <unistd.h>
+#import <wordexp.h>
 
 // Shared bootstrap-service matcher defined in mach.x (see there); used by
 // the mach-lookup denial below. Deliberately not in hooks.h — only the
@@ -621,12 +622,15 @@ static pid_t replaced_vfork(void) {
     return original_vfork();
 }
 
-// --- system/popen: the executed binary is /bin/sh, so the execve path
-// check cannot fire on the command itself; any whitespace-separated token
-// that names a restricted executable path (contains '/') denies the whole
-// command with the exec family's ENOENT style. ponytail: no shell grammar
-// parsing — quoted paths are not split; add a parser if a detector probes
-// through quoting. ---
+// --- system/popen/wordexp: the executed binary is /bin/sh, so the execve
+// path check cannot fire on the command itself; any whitespace-separated
+// token that looks like a path (starts with '~' or contains '/') and names a
+// restricted path denies the whole command with the exec family's ENOENT
+// style (wordexp uses WRDE_NOSPACE, below). A bare '~' resolves to the
+// caller's own home — for app-origin callers never a restricted path — but
+// the check stays uniform across the three surfaces. ponytail: no shell
+// grammar parsing — quoted paths are not split; add a parser if a detector
+// probes through quoting. ---
 
 static BOOL shdw_command_hides_restricted_path(const char* command) {
     if(!command) {
@@ -646,7 +650,7 @@ static BOOL shdw_command_hides_restricted_path(const char* command) {
     char* save = NULL;
 
     for(char* token = strtok_r(copy, " \t\r\n", &save); token; token = strtok_r(NULL, " \t\r\n", &save)) {
-        if(strchr(token, '/') && [_shadow isCPathRestricted:token]) {
+        if((token[0] == '~' || strchr(token, '/')) && [_shadow isCPathRestricted:token]) {
             denied = YES;
             break;
         }
@@ -681,10 +685,28 @@ static FILE* replaced_popen(const char* command, const char* type) {
     return original_popen(command, type);
 }
 
-// wordexp: intentionally NOT hooked — it only expands shell words and never
-// executes a program, so the exec policy cannot apply; filtering its output
-// would corrupt legitimate expansions. TODO: revisit if a detector probes
-// path existence through it.
+// wordexp: the words string is a command line ("ls /var/jb/usr/bin") whose
+// expansion materializes concrete paths a detector then stats/reads — a
+// restricted path embedded in the words must never expand. Same literal-token
+// pre-scan as system/popen above (tokens are the pre-expansion words; no
+// variable substitution is chased). A restricted token denies the whole
+// expansion with WRDE_NOSPACE — a generic, stock-plausible failure; wordexp
+// does not use errno, and callers treat the return code as an opaque error.
+// The output struct is zeroed so an error-returning call leaves an empty
+// expansion (we_wordc 0), never a partial one.
+static int (*original_wordexp)(const char* words, wordexp_t* pwordexp, int flags);
+static int replaced_wordexp(const char* words, wordexp_t* pwordexp, int flags) {
+    if(isCallerExternal() && shdw_command_hides_restricted_path(words)) {
+        memset(pwordexp, 0, sizeof(wordexp_t));
+        return WRDE_NOSPACE;
+    }
+
+    return original_wordexp(words, pwordexp, flags);
+}
+
+// wordfree: pass-through, not hooked — it only frees a prior successful
+// expansion, and after a denied wordexp the zeroed struct makes any wordfree
+// a no-op (free(NULL)), so there is no surface to filter.
 
 // sandbox_check_by_audit_token: applies the sandbox_check policy only when
 // the token belongs to THIS process (a jailbreak library judging a foreign
@@ -788,6 +810,11 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
         [hooks hookFunction:sym_misc withReplacement:replaced_popen outOldPtr:(void **) &original_popen];
     }
 
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_wordexp"];
+    if(sym_misc) {
+        [hooks hookFunction:sym_misc withReplacement:replaced_wordexp outOldPtr:(void **) &original_wordexp];
+    }
+
     sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sandbox_check_by_audit_token"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_sandbox_check_by_audit_token outOldPtr:(void **) &original_sandbox_check_by_audit_token];
@@ -801,8 +828,8 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
 
 void shadowhook_sandbox_verify(void) {
     // execle/execlp/execl/execv hook with outOldPtr:NULL (no original_* to
-    // check); the runtime-resolved signal/system/popen aliases are excluded
-    // (NULL is expected when the symbol is absent).
+    // check); the runtime-resolved signal/system/popen/wordexp aliases are
+    // excluded (NULL is expected when the symbol is absent).
     shdw_hook_check_t checks[] = {
         { "sandbox_check", original_sandbox_check },
         { "fcntl", original_fcntl },
@@ -825,7 +852,7 @@ void shadowhook_sandbox_verify(void) {
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound sandbox
 // export to its replacement for external callers, so the GOT-vs-dlsym
 // comparison agrees. Guarded by the original pointer: runtime-resolved
-// aliases (signal family, system/popen, sandbox_check_by_audit_token,
+// aliases (signal family, system/popen/wordexp, sandbox_check_by_audit_token,
 // task_get_exception_ports) only resolve to their replacement when actually
 // installed. The exec family hooks with outOldPtr:NULL (no original_* to
 // check) are unconditional — always resolve to their replacement.
@@ -858,6 +885,7 @@ static const shdw_sandbox_sym_policy_entry_t shdw_sandbox_sym_policy_table[] = {
     { "task_get_exception_ports", (void*)&replaced_task_get_exception_ports, (void* const*)&original_task_get_exception_ports },
     { "task_get_special_port", (void*)&replaced_task_get_special_port, (void* const*)&original_task_get_special_port },
     { "vfork", (void*)&replaced_vfork, (void* const*)&original_vfork },
+    { "wordexp", (void*)&replaced_wordexp, (void* const*)&original_wordexp },
     { "__sigaction", (void*)&replaced___sigaction, (void* const*)&original___sigaction },
     { "__signal_nobind", (void*)&replaced___signal_nobind, (void* const*)&original___signal_nobind },
 };

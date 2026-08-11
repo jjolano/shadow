@@ -2,9 +2,81 @@
 
 %group shadowhook_NSFileHandle
 %hook NSFileHandle
-// TODO(plan-wave-C): fd-based surfaces (initWithFileDescriptor:,
-// fileDescriptor, read/write methods) are out of scope — they need an
-// F_GETPATH fd→path resolver; pipes/sockets must pass through untouched.
+// fd-based surfaces: resolve the fd to a path via F_GETPATH. The call
+// fails (EBADF, ENOTSUP) for pipes/sockets/other non-files — those pass
+// through untouched. `options` is the restriction op for the surface:
+// shdw_restriction_write_options() for write surfaces, nil for reads.
+static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
+    char pathname[PATH_MAX];
+
+    if(fcntl(fd, F_GETPATH, pathname) == -1) {
+        return NO;
+    }
+
+    return [_shadow isPathRestricted:@(pathname) options:options];
+}
+
+- (instancetype)initWithFileDescriptor:(int)fd closeOnDealloc:(BOOL)closeOpt {
+    if(isCallerExternal() && shdw_fd_is_restricted(fd, shdw_restriction_write_options())) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (instancetype)initWithFileDescriptor:(int)fd {
+    if(isCallerExternal() && shdw_fd_is_restricted(fd, shdw_restriction_write_options())) {
+        return nil;
+    }
+
+    return %orig;
+}
+
+- (int)fileDescriptor {
+    // %orig is a pure getter; safe to evaluate in the gate and pass through.
+    int fd = %orig;
+
+    if(isCallerExternal() && shdw_fd_is_restricted(fd, shdw_restriction_write_options())) {
+        return -1;
+    }
+
+    return fd;
+}
+
+- (NSData *)readDataToEndOfFile {
+    // [self fileDescriptor] resolves the real fd: the fileDescriptor hook
+    // passes Shadow's own caller (this hook body) through untouched.
+    if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
+        return [NSData data];
+    }
+
+    return %orig;
+}
+
+- (NSData *)readDataOfLength:(NSUInteger)length {
+    if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
+        return [NSData data];
+    }
+
+    return %orig;
+}
+
+- (NSData *)availableData {
+    if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
+        return [NSData data];
+    }
+
+    return %orig;
+}
+
+- (void)writeData:(NSData *)data {
+    if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], shdw_restriction_write_options())) {
+        return;
+    }
+
+    return %orig;
+}
+
 + (instancetype)fileHandleForReadingAtPath:(NSString *)path {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
