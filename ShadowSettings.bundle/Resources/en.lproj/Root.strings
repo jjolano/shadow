@@ -37,3 +37,4 @@
 "IMPORT_BAD_FILE" = "The selected file is not a valid Shadow settings backup.";
 "IMPORT_APPLIED" = "Settings imported. Respring to apply.";
 "IMPORT_OK" = "OK";
+"APPS_EXCLUDED_FMT" = "All apps enabled · %ld excluded";

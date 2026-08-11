@@ -97,6 +97,15 @@ static const NSInteger SHDWPrefsSchemaVersion = 1;
     NSMutableDictionary* result = [defaultSettings mutableCopy];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
 
+    // Per-app kill switch. Distinct from App_Enabled, which means "this app has
+    // per-app overrides" — its NO state is "follow global", so it cannot say
+    // "off". App_Disabled overrides everything including Global_Enabled, and
+    // leaves App_Enabled unset, which is what both ctors gate on: an app the
+    // user has excluded is never hooked at all.
+    if([[app_settings objectForKey:SHDWAppDisabledID] boolValue]) {
+        return [result copy];
+    }
+
     BOOL useAppSettings = [[app_settings objectForKey:@"App_Enabled"] boolValue];
 
     if(useAppSettings || [userDefaults boolForKey:@"Global_Enabled"]) {
