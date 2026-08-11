@@ -158,15 +158,28 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 	}
 
 	if([key isEqualToString:@"ApplicationsSummary"]) {
+		NSInteger excluded = 0;
+		for(id value in [prefs dictionaryRepresentation].allValues) {
+			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:SHDWAppDisabledID] boolValue]) {
+				excluded++;
+			}
+		}
+
 		// Global_Enabled makes every eligible app active, so the summary is
-		// trivial; otherwise count the per-app customizations.
+		// trivial — unless some apps are explicitly excluded, which "all apps
+		// enabled" would misreport.
 		if([prefs boolForKey:@"Global_Enabled"]) {
-			return [self localized:@"APPS_ALL_ENABLED" fallback:@"All apps enabled"];
+			if(excluded == 0) {
+				return [self localized:@"APPS_ALL_ENABLED" fallback:@"All apps enabled"];
+			}
+
+			return [NSString stringWithFormat:[self localized:@"APPS_EXCLUDED_FMT" fallback:@"All apps enabled · %ld excluded"], (long)excluded];
 		}
 
 		NSInteger count = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:@"App_Enabled"] boolValue]) {
+			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:@"App_Enabled"] boolValue]
+				&& ![[value objectForKey:SHDWAppDisabledID] boolValue]) {
 				count++;
 			}
 		}

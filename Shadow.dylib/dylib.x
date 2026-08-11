@@ -64,6 +64,14 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
     NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
     NSDictionary* app_settings = bundleIdentifier ? [defaults objectForKey:bundleIdentifier] : nil;
 
+    // Per-app kill switch (see getPreferencesForIdentifier: in Settings.m).
+    // Checked here rather than left to the payload's own gate so an excluded
+    // app never dlopens ShadowCore at all — the point of the switch is to get
+    // Shadow out of an app's way entirely.
+    if([app_settings[@"App_Disabled"] boolValue]) {
+        return;
+    }
+
     if(![app_settings[@"App_Enabled"] boolValue] && ![defaults boolForKey:@"Global_Enabled"]) {
         return;
     }

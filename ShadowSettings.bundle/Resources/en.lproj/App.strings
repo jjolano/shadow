@@ -8,3 +8,7 @@
 "APP_USES_GLOBAL" = "Following the global settings. Turn off to customize this app.";
 "APP_DETECTOR_LOG" = "Detector Log";
 "APP_DETECTOR_LOG_DESC" = "Detector activity recorded in this app.";
+
+"APP_DISABLE" = "Disable for this App";
+"APP_IS_DISABLED" = "Shadow is not loaded into this application.";
+"DISABLED" = "Disabled";

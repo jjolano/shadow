@@ -8,3 +8,7 @@
 "APP_USES_GLOBAL" = "正在跟随全局设置。关闭以自定义此应用。";
 "APP_DETECTOR_LOG" = "检测器日志";
 "APP_DETECTOR_LOG_DESC" = "此应用中记录的检测器活动。";
+
+"APP_DISABLE" = "对此应用停用";
+"APP_IS_DISABLED" = "Shadow 不会加载到此应用中。";
+"DISABLED" = "已停用";

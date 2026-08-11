@@ -37,3 +37,4 @@
 "IMPORT_BAD_FILE" = "所选文件不是有效的 Shadow 设置备份。";
 "IMPORT_APPLIED" = "设置已导入，重启以生效。";
 "IMPORT_OK" = "好";
+"APPS_EXCLUDED_FMT" = "所有应用已启用 · %ld 个已排除";

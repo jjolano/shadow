@@ -43,6 +43,10 @@
 #define SHDWHookLibraryID          @"HK_Library"
 #define SHDWMemoryLevelHidingID    @"MemoryLevelHiding"
 #define SHDWAppEnabledID           @"App_Enabled"
+// Per-app kill switch: excludes one app from Shadow entirely, overriding
+// Global_Enabled. NOT the inverse of App_Enabled — that key means "this app
+// has per-app overrides", so its NO state is "follow global", not "off".
+#define SHDWAppDisabledID          @"App_Disabled"
 
 // Stale key from older releases: the FakeMac group was removed as inert (its
 // installer installs nothing — answering isMacCatalystApp/isiOSAppOnMac YES
