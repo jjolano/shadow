@@ -107,12 +107,115 @@ static BOOL _shdw_dyld_replay_in_progress = NO;
 // C0-2: truth is granted ONLY to Shadow's own artifacts — Shadow.dylib,
 // Shadow.framework, libSandy.dylib, HookKit.framework
 // and the substrate/substitute/ellekit binaries — so the collector gathers
-// THOSE spans, not the app bundle's. isProtectedImagePath matches by
-// case-insensitive basename prefix, collapsing rootful and rootless
-// (/var/jb) prefixes. Rebuilt from the dyld image list whenever it changes
-// and once at install; the writer serializes on `_shdw_own_ranges_lock` and
-// publishes with one release store, so readers (no lock, one acquire load)
-// never see a torn or half-built snapshot.
+// THOSE spans, not the app bundle's. The predicate is an EXACT basename
+// match against the fixed artifact set: it must NOT use the engine's
+// isProtectedImagePath: (ruleset-restricted OR Shadow artifact) — that
+// predicate admits any ruleset-restricted image (e.g. a detector app
+// installed under /var/jb), which would classify the detector's calls as
+// Shadow-internal and bypass every hook (observed with the hookprobe CLI
+// deployed to /var/jb/usr/bin: stat/open/opendir on /var/jb all returned
+// success because the probe binary itself had entered the own-ranges).
+// Rebuilt from the dyld image list whenever it changes and once at install;
+// the writer serializes on `_shdw_own_ranges_lock` and publishes with one
+// release store, so readers (no lock, one acquire load) never see a torn or
+// half-built snapshot.
+static BOOL shdw_is_shadow_runtime_image(const char* path) {
+    if(!path || !path[0]) {
+        return NO;
+    }
+
+    const char* base = strrchr(path, '/');
+
+    if(base) {
+        base += 1;
+    } else {
+        base = path;
+    }
+
+    // Case-insensitive basename prefix match, mirroring Core.m's
+    // isProtectedImagePath artifact set (WITHOUT the ruleset check). The
+    // framework EXECUTABLES (Shadow.framework/Shadow, HookKit.framework/
+    // HookKit) have bare basenames that would over-trust any "Shadow*"
+    // binary, so they are matched by exact parent/basename pairs below.
+    char lower[256];
+    size_t n = strlen(base);
+
+    if(n >= sizeof(lower)) {
+        return NO;
+    }
+
+    for(size_t i = 0; i < n; i++) {
+        char c = base[i];
+
+        lower[i] = (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
+    }
+
+    lower[n] = '\0';
+
+    static const char* const kShadowArtifacts[] = {
+        "shadow.dylib",
+        "shadowcore",
+        "libsandy.dylib",
+        "substrate",
+        "libsubstrate",
+        "substitute",
+        "libsubstitute",
+        "ellekit",
+        "libellekit",
+        NULL
+    };
+
+    for(size_t i = 0; kShadowArtifacts[i]; i++) {
+        if(strncmp(lower, kShadowArtifacts[i], strlen(kShadowArtifacts[i])) == 0) {
+            return YES;
+        }
+    }
+
+    // Framework executables: trust the exact parent/basename pair, never a
+    // bare basename like "Shadow" or "HookKit" alone.
+    const char* parentBase = NULL;
+    const char* slash = strrchr(path, '/');
+
+    if(slash && slash > path) {
+        const char* p = slash - 1;
+
+        while(p > path && *p != '/') {
+            p -= 1;
+        }
+
+        parentBase = (*p == '/') ? p + 1 : path;
+    }
+
+    if(parentBase) {
+        // Parent length is bounded by the LAST slash (the one before the
+        // basename) — strlen(parentBase) would run past it into the
+        // basename and never match the framework names.
+        size_t pn = (size_t)(slash - parentBase);
+
+        if(pn < sizeof(lower)) {
+            char plower[256];
+
+            for(size_t i = 0; i < pn; i++) {
+                char c = parentBase[i];
+
+                plower[i] = (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
+            }
+
+            plower[pn] = '\0';
+
+            if(strcmp(plower, "shadow.framework") == 0 && strcmp(lower, "shadow") == 0) {
+                return YES;
+            }
+
+            if(strcmp(plower, "hookkit.framework") == 0 && strcmp(lower, "hookkit") == 0) {
+                return YES;
+            }
+        }
+    }
+
+    return NO;
+}
+
 shdw_own_ranges_t _shdw_own_ranges_a;
 shdw_own_ranges_t _shdw_own_ranges_b;
 shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
@@ -146,8 +249,9 @@ void shdw_own_ranges_refresh(void) {
 
         // C0-2: collect only Shadow-owned images (exact-name predicate; the
         // own spans are few and fixed once loaded, so the loose union span is
-        // exact for return-address classification).
-        if(!path || ![_shadow isProtectedImagePath:@(path)]) {
+        // exact for return-address classification). Never the
+        // ruleset-inclusive isProtectedImagePath: — see shdw_is_shadow_runtime_image.
+        if(!path || !shdw_is_shadow_runtime_image(path)) {
             continue;
         }
 

@@ -673,24 +673,22 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         subCFunc = [HKSubstitutor substitutorWithTypes:hooklibs];
     }
 
-    // dlsym/dladdr group: inline-first via category API.
-    // substitutorWithOrderedCategories: tries HK_CAT_FUNCTION_INLINE first
-    // (inline trampolines are denyFishHook-immune, so IOSSecuritySuite's
-    // denyFishHook("dladdr") cannot un-rebind the hide), then falls back
-    // within the category API to HK_CAT_FUNCTION_REBIND (fishhook) before the
-    // subCFunc safety net. The concealment must not depend on knowing a
-    // detector (name-based detection is gone), so the pair never rides on a
-    // detector flag. Behavioral delta: on devices with no inline backend but
-    // a pref-selected substrate/substitute, the fallback now lands on
-    // FUNCTION_REBIND (fishhook) before subCFunc — intended, since
-    // dlsym/dladdr concealment prefers rebind over an unpinned inline-capable
-    // pref backend. Tradeoff: inline trampolines are prologue-detectable.
+    // dlsym/dladdr + identity C-function groups (objc/classes): AUTO-COVER
+    // per-target routing. substitutorWithOrderedCategories: resolves ONE
+    // backend at init and never retries — an inline preflight rejection (tiny
+    // prologue, e.g. dladdr / NSClassFromString / objc_getClass) silently
+    // leaves original_* NULL and the hook dead (observed via hookprobe:
+    // libc hooks filtered but dladdr/class lookups passed through). Auto-cover
+    // evaluates EACH target: routes to inline when the shared preflight
+    // accepts the prologue, falls back to the rebind picker otherwise.
+    // Non-batched: originals publish at hook time (no NULL-original window),
+    // which the identity C-function groups need.
     // B2b: subSymLookup/subDyldExtra are consumed ONLY by the legacy install
     // block (compiled out under SHADOW_LEGACY_COORDINATOR) — the coordinator
     // path resolves its own symlookup/private-symbol backends, so the
     // declarations are excluded with the block (-Werror unused-variable).
     #ifndef SHADOW_LEGACY_COORDINATOR
-    HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]] ?: subCFunc;
+    HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]] ?: subCFunc;
 
     // dlopen_internal is a private libdyld symbol fishhook can't rebind:
     // private-symbol-capable backend only, always (never fishhook).
@@ -861,7 +859,10 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     if([prefs_load[@"Hook_DeviceCheck"] boolValue]) {
         NSLog(@"+ devicecheck");
 
-        shadowhook_DeviceCheck(subCFunc);
+        // Descriptor-driven ObjC-method installs (DeviceCheckHooks.m call
+        // hookMessageInClass: for every row) — the message lane, never the
+        // C-function lane (fishhook has no message API).
+        shadowhook_DeviceCheck(subMain);
     }
 
     if([prefs_load[@"Hook_MachBootstrap"] boolValue]) {
@@ -899,17 +900,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     if(objcBackendAvailable) {
         // libobjc C functions (objc_copyImageNames etc.) are exported symbols
         // fishhook could rebind, but the runtime calls some of them directly
-        // in hot paths — keep them inline via subMain to be safe.
-        shadowhook_objc(subMain);
+        // in hot paths — keep them inline where the prologue allows. The
+        // auto-cover lane (subSymLookup) routes each target inline when the
+        // shared preflight accepts it, and falls back to fishhook when it
+        // doesn't (tiny/early-terminator prologues such as dladdr or the
+        // class-lookup SPIs would be silently declined by subMain's inline
+        // preflight, leaving original_* NULL — observed via hookprobe:
+        // NSClassFromString/objc_getClass passed through unfiltered).
+        shadowhook_objc(subSymLookup);
 
-        // method_getImplementation is a tiny libobjc leaf; subMain's shared
-        // inline preflight refuses targets whose first 20 bytes contain an
-        // early terminator (the hook would be silently declined, leaving
-        // original_method_getImplementation NULL — and the Wave-3
-        // class_copyMethodList/class_getInstanceMethod/class_getClassMethod
-        // replacements all call that cell, so QuartzCore's method walk
-        // SIGSEGVs at PC=0). The rebind lane has no prologue preflight and
-        // intercepts exactly the external callers the hide targets.
+        // method_getImplementation is a tiny libobjc leaf; the rebind lane
+        // has no prologue preflight and intercepts exactly the external
+        // callers the hide targets.
         if(subCFunc && subCFunc != subMain) {
             shadowhook_objc_methodimpl(subCFunc);
         }
@@ -944,8 +946,10 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
 
     if(objcBackendAvailable) {
         // Same reasoning as shadowhook_objc above: C-function hooks in the
-        // runtime path stay on subMain.
-        shadowhook_objc_hidetweakclasses(subMain);
+        // runtime path ride the auto-cover lane (inline where the prologue
+        // allows, fishhook fallback for tiny/early-terminator targets that
+        // subMain's inline preflight would silently decline).
+        shadowhook_objc_hidetweakclasses(subSymLookup);
 
         #ifdef hookkit_h
         _shdw_tweakclasses_installed = YES;

@@ -1205,17 +1205,39 @@ static void krw_init_background(void) {
                 shdw_log("krw: libjailbreak unavailable after %ds — feature disabled", KRW_RETRY_INTERVAL * KRW_RETRY_MAX);
             }
         } else {
-            // arm64 (A8-A11): libkrw first (rootless standard, works on
-            // palera1n where tfp0 is unavailable), tfp0 as fallback.
-            if (krw_init_libkrw_once() == 0) {
-                gKrwMode = KRW_LIBKRW;
-                ok = true;
-                shdw_log("krw: libkrw backend ready");
-            } else if (krw_init_tfp0() == 0) {
-                gKrwMode = KRW_TFP0;
-                ok = true;
-            } else {
-                shdw_log("krw: libkrw + tfp0 init failed — feature disabled");
+            // arm64 (A8-A11): libjailbreak first when the dylib is present
+            // (Dopamine-arm64 forks expose the same jbdInitPPLRW/kreadbuf/
+            // proc_find API as arm64e — proc_find resolves our own proc
+            // WITHOUT the kernel-image pfinder scan the libkrw/tfp0 paths
+            // require, and the libjb physrw primitives read live kernel
+            // objects directly).  An absent dylib (plain palera1n) falls
+            // straight through to libkrw → tfp0.
+            if (krw_libjb_present()) {
+                shdw_log("krw: arm64 libjailbreak present — trying");
+                for (int attempt = 1; attempt <= KRW_RETRY_MAX; attempt++) {
+                    if (krw_init_libjb_once() == 0) {
+                        gKrwMode = KRW_LIBJB;
+                        ok = true;
+                        break;
+                    }
+                    if (attempt < KRW_RETRY_MAX) {
+                        shdw_log("krw: libjailbreak attempt %d/%d failed — retrying in %ds",
+                                 attempt, KRW_RETRY_MAX, KRW_RETRY_INTERVAL);
+                        sleep(KRW_RETRY_INTERVAL);
+                    }
+                }
+            }
+            if (!ok) {
+                if (krw_init_libkrw_once() == 0) {
+                    gKrwMode = KRW_LIBKRW;
+                    ok = true;
+                    shdw_log("krw: libkrw backend ready");
+                } else if (krw_init_tfp0() == 0) {
+                    gKrwMode = KRW_TFP0;
+                    ok = true;
+                } else {
+                    shdw_log("krw: libkrw + tfp0 init failed — feature disabled");
+                }
             }
         }
 

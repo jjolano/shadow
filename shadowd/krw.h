@@ -79,6 +79,11 @@ int krw_init_libjb_once(void);
 int krw_init_libkrw_once(void);
 int krw_init_tfp0(void);
 
+// True when libjailbreak.dylib is installed (Dopamine-family rootless
+// builds; plain palera1n ships libkrw instead).  Also performs the first
+// dlopen, so krw_init_libjb_once reuses the handle.
+bool krw_libjb_present(void);
+
 // Row offsets + t1sz_boot — must be in place before ANY krw work.
 int offset_init(void);
 

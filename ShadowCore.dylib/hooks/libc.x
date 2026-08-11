@@ -1518,6 +1518,24 @@ static DIR* replaced___opendir2(const char* pathname, int flags) {
     return NULL;
 }
 
+// Public opendir: libSystem's public opendir() may call the private
+// __opendir2 internally WITHOUT going through the rebindable PLT entry (the
+// fishhook lane only intercepts import-table references), so hooking only
+// __opendir2 leaves the public API visible to detectors that call opendir()
+// directly (observed via the hookprobe battery: opendir("/var/jb") returned
+// a handle while stat/open on the same path were filtered). Hook the public
+// symbol too; when it is a weak alias of __opendir2 both entries chain to
+// the same replacement, and the guard keeps the redirect idempotent.
+static DIR* (*original_opendir)(const char* pathname);
+static DIR* replaced_opendir(const char* pathname) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_opendir(pathname);
+    }
+
+    errno = ENOENT;
+    return NULL;
+}
+
 // --- stat64 family + protected-open variants ---------------------------------
 // These are legacy/compat exports: the stat64 family and open_dprotected_np/
 // openat_dprotected_np are absent on modern iOS (64-bit stat IS stat64), and
@@ -1849,6 +1867,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // lowlevel group
     { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW },
     { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW },
+    { "opendir",                (void*)&replaced_opendir,                  (void**)&original_opendir,                  LOW,    LOW },
     { "__opendir2",             (void*)&replaced___opendir2,               (void**)&original___opendir2,               LOW,    LOW },
     { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0 },
     { "openat_dprotected_np",   (void*)&replaced_openat_dprotected_np,     (void**)&original_openat_dprotected_np,     LOW,    0 },
