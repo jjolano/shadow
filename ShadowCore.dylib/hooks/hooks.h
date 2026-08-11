@@ -155,7 +155,11 @@ static inline BOOL shdw_caller_is_external(const void* ra) {
     // (see note above), so also grant truth to a thread in an internal read
     // scope — that keeps the framework's own ruleset/database reads working
     // even before Shadow's images are loaded or the snapshot is refreshed.
-    return ![Shadow shdwIsInternalRead];
+    // Read the framework's exported thread-local directly (Core.m) instead of
+    // an objc_msgSend to +shdwIsInternalRead across the framework boundary:
+    // strictly less work on the ~400 hook entry points that reach here, and it
+    // keeps this classifier a pure inline.
+    return shdw_internal_busy == 0;
 }
 
 // Is the image containing `addr` restricted? Same verdict as

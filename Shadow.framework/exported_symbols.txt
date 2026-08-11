@@ -11,6 +11,7 @@ _OBJC_METACLASS_$_SystemRulesGenerator
 _OBJC_CLASS_$_ShadowRestrictionQuery
 _OBJC_METACLASS_$_ShadowRestrictionQuery
 _shdw_ruleset_generation
+_shdw_internal_busy
 _SHDWHookPlan
 _SHDWInstallUnits
 _SHDWDefaultHookSettings
