@@ -22,6 +22,8 @@
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <mach/mach.h>
+#import <bootstrap.h>
+#import <sandbox.h>
 #import <dlfcn.h>
 #import <sys/stat.h>
 #import <sys/types.h>
@@ -154,7 +156,12 @@ static void probeLibc(void) {
 // stores ONLY raw mach_header pointers (no dladdr, no Foundation, no
 // allocation — work inside the callback during dlopen/ctor re-entered the
 // hook machinery and broke installation). ShadowCore is identified AFTER
-// dlopen by parsing each header's LC_ID_DYLIB basename.
+// dlopen by parsing each header's LC_ID_DYLIB basename. If the replay is
+// filtered (Shadow's own hooked registration drops ShadowCore), fall back to
+// the dlopen HANDLE itself: on Darwin the handle dlopen returns for a dylib
+// IS that image's mach_header (documented behavior — dladdr(handle) and
+// dlsym(handle, ...) both rely on it), so the handle doubles as the header
+// without any dyld API call.
 // ---------------------------------------------------------------------------
 
 #define kMaxCapturedImages 64
@@ -169,29 +176,52 @@ static void shadowcore_add_image(const struct mach_header* mh, intptr_t vmaddr_s
     }
 }
 
-static const struct mach_header* findShadowCoreHeader(void) {
-    for(uint32_t i = 0; i < gCapturedCount; i++) {
-        const struct mach_header* mh = gCapturedHeaders[i];
+static BOOL shdw_is_shadowcore_header(const struct mach_header* mh) {
+    if(!mh || mh->magic != MH_MAGIC_64) {
+        return NO;
+    }
 
-        if(!mh || mh->magic != MH_MAGIC_64) {
-            continue;
+    const struct mach_header_64* mh64 = (const void*)mh;
+    const struct load_command* lc = (const void *)(mh64 + 1);
+
+    for(uint32_t j = 0; j < mh64->ncmds; j++) {
+        if(lc->cmd == LC_ID_DYLIB) {
+            const struct dylib_command* dc = (const void*)lc;
+            const char* name = (const char*)dc + dc->dylib.name.offset;
+            const char* base = strrchr(name, '/');
+
+            if(base && strstr(base, "ShadowCore") != NULL) {
+                return YES;
+            }
         }
 
-        const struct mach_header_64* mh64 = (const void*)mh;
-        const struct load_command* lc = (const void *)(mh64 + 1);
+        lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+    }
 
-        for(uint32_t j = 0; j < mh64->ncmds; j++) {
-            if(lc->cmd == LC_ID_DYLIB) {
-                const struct dylib_command* dc = (const void*)lc;
-                const char* name = (const char*)dc + dc->dylib.name.offset;
-                const char* base = strrchr(name, '/');
+    return NO;
+}
 
-                if(base && strstr(base, "ShadowCore") != NULL) {
-                    return mh;
-                }
-            }
+// NOTE: handle may be NULL (dlopen failed) — caller checks.
+static const struct mach_header* shadowcoreHeaderFromHandle(void* handle) {
+    if(!handle) {
+        return NULL;
+    }
 
-            lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
+    // Darwin dlopen returns the image's mach_header as the handle for
+    // dylibs; verify before trusting it.
+    const struct mach_header* h = (const struct mach_header*)handle;
+
+    if(shdw_is_shadowcore_header(h)) {
+        return h;
+    }
+
+    return NULL;
+}
+
+static const struct mach_header* findShadowCoreHeader(void) {
+    for(uint32_t i = 0; i < gCapturedCount; i++) {
+        if(shdw_is_shadowcore_header(gCapturedHeaders[i])) {
+            return gCapturedHeaders[i];
         }
     }
 
@@ -256,8 +286,19 @@ static void probeObjC(void) {
     BOOL nsobjOK = (nsobj != nil) && (nsobj == [NSObject class]);
     report(@"objc", @"NSClassFromString(NSObject)", nsobjOK, nsobj ? @"resolved" : @"NIL");
 
-    Class bsmutable = NSClassFromString(@"BSMutableServiceInterface");
-    report(@"objc", @"NSClassFromString(BSMutableServiceInterface)", bsmutable != nil, bsmutable ? @"resolved" : @"NIL");
+    // BoardServices is a private system framework; a root CLI may not have it
+    // loaded at all, in which case a nil result is a probe artifact, not a
+    // hiding failure. Load it first, then look the class up while loaded,
+    // and only treat nil as FAIL when the framework actually loaded.
+    void* bsHandle = dlopen("/System/Library/PrivateFrameworks/BoardServices.framework/BoardServices", RTLD_NOW | RTLD_LOCAL);
+
+    if(bsHandle) {
+        Class bsmutable = NSClassFromString(@"BSMutableServiceInterface");
+        dlclose(bsHandle);
+        report(@"objc", @"NSClassFromString(BSMutableServiceInterface)", bsmutable != nil, bsmutable ? @"resolved" : @"NIL");
+    } else {
+        skip(@"objc", @"NSClassFromString(BSMutableServiceInterface)", @"BoardServices not loaded in CLI context");
+    }
 
     Class nsclass = objc_getClass("NSString");
     report(@"objc", @"objc_getClass(NSString)", nsclass != nil, nsclass ? @"resolved" : @"NIL");
@@ -459,17 +500,95 @@ static void probeNSUserDefaults(void) {
 // Groups that need a context a CLI cannot provide.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Groups with live hooks but context-sensitive probe surfaces. Pref-gated
+// groups are probed only when the pref enables them; otherwise SKIP with the
+// pref reason (the hook is legitimately not installed).
+// ---------------------------------------------------------------------------
+
+static void probeNSThread(void) {
+    // NSThread.x filters Shadow/HookKit frames out of call stacks. The
+    // battery's own stack (hkcheck) never contains Shadow frames, so the
+    // honest check is that the APIs return well-formed filtered stacks and
+    // no ShadowCore/HookKit symbol leaks into the symbol list.
+    NSArray* addrs = [NSThread callStackReturnAddresses];
+    NSArray* syms = [NSThread callStackSymbols];
+
+    if(!addrs || !syms) {
+        report(@"NSThread", @"callStack*", NO, @"nil result");
+        return;
+    }
+
+    BOOL leaked = NO;
+
+    for(NSString* line in syms) {
+        if([line rangeOfString:@"ShadowCore" options:NSCaseInsensitiveSearch].location != NSNotFound
+            || [line rangeOfString:@"HookKit" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            leaked = YES;
+            break;
+        }
+    }
+
+    report(@"NSThread", @"callStack* filtered", !leaked, [NSString stringWithFormat:@"frames=%lu", (unsigned long)[addrs count]]);
+}
+
+static void probeNSFileVersion(void) {
+    // NSFileVersion.x returns nil for restricted item URLs.
+    NSURL* restricted = [NSURL fileURLWithPath:kShadowCoreBin];
+    NSFileVersion* hidden = [NSFileVersion currentVersionOfItemAtURL:restricted];
+    report(@"NSFileVersion", @"currentVersionOfItemAtURL(restricted)", hidden == nil, hidden ? @"LEAKED" : @"nil (filtered)");
+
+    // Control: an existing unrestricted file must still resolve.
+    NSString* controlPath = @"/System/Library/CoreServices/SystemVersion.plist";
+    NSFileVersion* control = [NSFileVersion currentVersionOfItemAtURL:[NSURL fileURLWithPath:controlPath]];
+    report(@"NSFileVersion", @"currentVersionOfItemAtURL(control)", control != nil, control ? @"resolved" : @"nil");
+}
+
+static void probeNSFileWrapper(void) {
+    // NSFileWrapper.x returns 0/nil for restricted item URLs.
+    NSError* err = nil;
+    NSFileWrapper* hidden = [[NSFileWrapper alloc] initWithURL:[NSURL fileURLWithPath:kShadowCoreBin] options:0 error:&err];
+    report(@"NSFileWrapper", @"initWithURL(restricted)", hidden == nil, hidden ? @"LEAKED" : @"nil (filtered)");
+
+    NSString* controlPath = @"/System/Library/CoreServices/SystemVersion.plist";
+    NSFileWrapper* control = [[NSFileWrapper alloc] initWithURL:[NSURL fileURLWithPath:controlPath] options:0 error:&err];
+    report(@"NSFileWrapper", @"initWithURL(control)", control != nil, control ? @"resolved" : @"nil");
+}
+
+static void probeMachBootstrap(void) {
+    // mach.x hides restricted service names from bootstrap_look_up.
+    mach_port_t hidden = MACH_PORT_NULL;
+    kern_return_t kr = bootstrap_look_up(bootstrap_port, "me.jjolano.shadow.service", &hidden);
+    BOOL hiddenDenied = (kr != KERN_SUCCESS) || (hidden == MACH_PORT_NULL);
+    report(@"mach", @"bootstrap_look_up(restricted service)", hiddenDenied, [NSString stringWithFormat:@"kr=0x%x", kr]);
+
+    // Control: an existing system service must still resolve.
+    mach_port_t ctrl = MACH_PORT_NULL;
+    kr = bootstrap_look_up(bootstrap_port, "com.apple.system.notification_center", &ctrl);
+    BOOL controlOK = (kr == KERN_SUCCESS) && (ctrl != MACH_PORT_NULL);
+    report(@"mach", @"bootstrap_look_up(control service)", controlOK, [NSString stringWithFormat:@"kr=0x%x", kr]);
+
+    if(ctrl != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), ctrl);
+    }
+}
+
+static void probeSandbox(void) {
+    // sandbox.x denies sandbox_check for restricted paths.
+    int r = sandbox_check(getpid(), "file-read-data", SANDBOX_FILTER_PATH, [kRestrictedDir fileSystemRepresentation]);
+    BOOL denied = (r == 1) || (r == -1);
+    report(@"sandbox", @"sandbox_check(restricted)", denied, [NSString stringWithFormat:@"rc=%d", r]);
+
+    int c = sandbox_check(getpid(), "file-read-data", SANDBOX_FILTER_PATH, [kControlDir fileSystemRepresentation]);
+    report(@"sandbox", @"sandbox_check(control)", c == 0, [NSString stringWithFormat:@"rc=%d", c]);
+}
+
 static void probeSkippedGroups(void) {
     skip(@"vnode", @"vnode-layer hiding", @"daemon-mediated; covered by shadowd");
     skip(@"UIApplication", @"canOpenURL", @"requires UIKit app context");
     skip(@"UIImage", @"image loading", @"requires UIKit app context");
-    skip(@"mach", @"bootstrap lookups", @"launchd-context, device-specific");
-    skip(@"sandbox", @"sandbox_check", @"kernel-context, device-specific");
     skip(@"iokit", @"IOService lookups", @"device-specific service classes");
     skip(@"syscall", @"syscall/csops", @"kernel-context, device-specific");
-    skip(@"NSThread", @"thread dictionary", @"covered by file/URL groups");
-    skip(@"NSFileVersion", @"versions", @"covered by NSURL group");
-    skip(@"NSFileWrapper", @"wrappers", @"covered by file groups");
     skip(@"DeviceCheck", @"device checks", @"private API, no stable probe");
     skip(@"LSApplicationWorkspace", @"app enumeration", @"private API, tier-2 gated");
 }
@@ -513,7 +632,14 @@ int main(int argc, char* argv[]) {
         const struct mach_header* shadowCoreHeader = findShadowCoreHeader();
 
         if(!shadowCoreHeader) {
-            NSLog(@"[hookprobe] WARN: ShadowCore header not captured via add-image callback (dyld replay is filtered by Shadow's own hooked registration)");
+            // The add-image replay is filtered by Shadow's own hooked
+            // registration — fall back to the dlopen handle, which IS the
+            // image's mach_header on Darwin.
+            shadowCoreHeader = shadowcoreHeaderFromHandle(handle);
+
+            if(!shadowCoreHeader) {
+                NSLog(@"[hookprobe] WARN: ShadowCore header not captured (add-image replay filtered; dlopen handle did not validate)");
+            }
         }
 
         BOOL hooksLive = probeCanary();
@@ -547,6 +673,17 @@ int main(int argc, char* argv[]) {
             probeNSBundle();
             probeContainerReads();
             probeNSFileHandle();
+            // NSThread rides the Foundation@objc group (dylib.x:369).
+            probeNSThread();
+            // NSFileVersion/NSFileWrapper ride the Filesystem@objc group
+            // (dylib.x:368), which installs with Hook_Filesystem.
+            if(fsOn) {
+                probeNSFileVersion();
+                probeNSFileWrapper();
+            } else {
+                skip(@"NSFileVersion", @"versions", @"Hook_Filesystem disabled");
+                skip(@"NSFileWrapper", @"wrappers", @"Hook_Filesystem disabled");
+            }
         } else {
             skip(@"NSFileManager", @"tier-2 file APIs", @"Hook_Foundation disabled");
             skip(@"NSURL", @"URL APIs", @"Hook_Foundation disabled");
@@ -556,12 +693,27 @@ int main(int argc, char* argv[]) {
             skip(@"NSDictionary", @"dict reads", @"Hook_Foundation disabled");
             skip(@"NSArray", @"array reads", @"Hook_Foundation disabled");
             skip(@"NSFileHandle", @"handle reads", @"Hook_Foundation disabled");
+            skip(@"NSThread", @"callStack*", @"Hook_Foundation disabled");
+            skip(@"NSFileVersion", @"versions", @"Hook_Foundation disabled");
+            skip(@"NSFileWrapper", @"wrappers", @"Hook_Foundation disabled");
         }
 
         if(envvarsOn) {
             probeNSProcessInfo();
         } else {
             skip(@"NSProcessInfo", @"environment", @"Hook_EnvVars disabled");
+        }
+
+        if(prefsEnabled(@"Hook_MachBootstrap")) {
+            probeMachBootstrap();
+        } else {
+            skip(@"mach", @"bootstrap lookups", @"Hook_MachBootstrap disabled");
+        }
+
+        if(prefsEnabled(@"Hook_Sandbox")) {
+            probeSandbox();
+        } else {
+            skip(@"sandbox", @"sandbox_check", @"Hook_Sandbox disabled");
         }
 
         probeNSUserDefaults();
