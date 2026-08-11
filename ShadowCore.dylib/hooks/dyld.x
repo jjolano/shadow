@@ -397,6 +397,14 @@ void shdw_own_ranges_refresh(void) {
         return;
     }
 
+    // Post-replay, this runs from every add/remove-image callback and walks
+    // the WHOLE image list each time — O(N²) across a launch that loads N
+    // images, which is the same shape as the replay problem above, just
+    // spread out. The set it collects can only change when a SHADOW-owned
+    // image is mapped or unmapped, and those all load during the ctor; an
+    // app's own dlopens can never add one. So let the caller tell us whether
+    // this event could possibly matter, and skip the walk when it cannot.
+    // shdw_own_ranges_refresh_if_relevant below is that filter.
     os_unfair_lock_lock(&_shdw_own_ranges_lock);
 
     shdw_own_ranges_t* published = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
@@ -442,6 +450,24 @@ void shdw_own_ranges_refresh(void) {
         != atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire)) {
         shdw_restricted_ranges_full_rebuild();
     }
+}
+
+// Per-image-event entry point: refresh only when this image could change what
+// the tables hold. `path` is the image being mapped or unmapped.
+//
+// The own-ranges set is Shadow's own artifacts, matched by the cheap
+// exact-name predicate — one strrchr plus a handful of strncmps, versus a walk
+// of every loaded image. The restricted table still needs the generation check
+// on every event (a ruleset reload has no image event of its own), but that is
+// two atomic loads.
+static void shdw_own_ranges_refresh_if_relevant(const char* path) {
+    if(path && !shdw_is_shadow_runtime_image(path)
+        && __atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE)->generation
+            == atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire)) {
+        return;
+    }
+
+    shdw_own_ranges_refresh();
 }
 
 // C4: immutable snapshot of the collection for the hot dyld enumeration
@@ -1013,18 +1039,14 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         return;
     }
 
-    // The dyld image list changed: refresh the app-bundle spans.
-    shdw_own_ranges_refresh();
+    const char* image_path = dyld_image_path_containing_address(mh);
+
+    // The dyld image list changed: refresh the app-bundle spans, if this image
+    // is one that can change them.
+    shdw_own_ranges_refresh_if_relevant(image_path);
 
     // ... and cached per-image dlopen handles are stale (indices shifted).
     shdw_dyld_handles_invalidate();
-
-    const char* image_path = dyld_image_path_containing_address(mh);
-
-    // Record the span if this image is restricted, so the address-keyed hooks
-    // can answer from the range table instead of re-resolving and re-judging
-    // this path on every intercepted call (see shdw_addr_is_restricted).
-    shdw_restricted_ranges_note_add(mh, vmaddr_slide, image_path);
 
     // Add if safe dylib. Same policy for every image — no blanket /System
     // admission (plan Wave 1c): a protected artifact installed under /System
@@ -1034,7 +1056,22 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
     if(image_path) {
         NSString* path = [NSString stringWithUTF8String:image_path];
 
-        if(![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}] && ![_shadow isProtectedImagePath:path]) {
+        // isProtectedImagePath: is isCPathRestricted: OR the Shadow-artifact
+        // basename set, so a NO here is a NO for the restricted-span table
+        // too. Asking once and reusing the answer keeps an ordinary system
+        // image at two engine queries per load instead of three — and the
+        // overwhelming majority of the images an app loads are ordinary.
+        BOOL protectedImage = [_shadow isProtectedImagePath:path];
+
+        // Record the span if this image is restricted, so the address-keyed
+        // hooks can answer from the range table instead of re-resolving and
+        // re-judging this path on every intercepted call (see
+        // shdw_addr_is_restricted).
+        if(protectedImage) {
+            shdw_restricted_ranges_note_add(mh, vmaddr_slide, image_path);
+        }
+
+        if(!protectedImage && ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
             if(gDyldDebug) {
                 NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
             }
@@ -1085,14 +1122,17 @@ void shadowhook_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vmaddr_
         return;
     }
 
-    // The dyld image list changed: refresh the app-bundle spans.
-    shdw_own_ranges_refresh();
+    // The dyld image list changed: refresh the app-bundle spans, if this image
+    // is one that can change them. On the remove path the image is already
+    // unmapped, so resolve its path before anything else touches dyld.
+    shdw_own_ranges_refresh_if_relevant(dyld_image_path_containing_address(mh));
 
     // ... and cached per-image dlopen handles are stale (indices shifted).
     shdw_dyld_handles_invalidate();
 
     // Drop the unmapped image's restricted span before anything can be mapped
-    // over the same addresses.
+    // over the same addresses. Unconditional: the span is dropped by address,
+    // so it costs one scan of a tiny table and never re-asks the engine.
     shdw_restricted_ranges_note_remove(mh, vmaddr_slide);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
