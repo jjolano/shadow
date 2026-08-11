@@ -119,7 +119,7 @@ static BOOL _shdw_dyld_replay_in_progress = NO;
 // the writer serializes on `_shdw_own_ranges_lock` and publishes with one
 // release store, so readers (no lock, one acquire load) never see a torn or
 // half-built snapshot.
-static BOOL shdw_is_shadow_runtime_image(const char* path) {
+BOOL shdw_is_shadow_runtime_image(const char* path) {
     if(!path || !path[0]) {
         return NO;
     }
