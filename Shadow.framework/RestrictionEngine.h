@@ -7,10 +7,9 @@
 @class ShadowRulesetStore;
 
 // Candidate 5 engine: evaluation + the single generation-aware decision cache.
-// Hosts BOTH evaluators during the differential migration: the legacy engine
-// (the pre-Candidate-5 pipeline, preserved verbatim) and the new resolver-
-// based engine. -isPathRestrictedQuery: runs both and returns per the
-// SHADOW_NEW_ENGINE_AUTHORITATIVE cutover flag (see RestrictionEngine.m).
+// The resolver-based engine (RestrictionResolver.m) is THE path engine — the
+// Candidate 5 differential (dual legacy/resolver evaluation) was removed once
+// parity held; see RestrictionEngine.m.
 // Framework-internal (hidden visibility, not exported).
 __attribute__((visibility("hidden")))
 @interface ShadowRestrictionEngine : NSObject
