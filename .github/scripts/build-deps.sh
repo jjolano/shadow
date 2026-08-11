@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Build the prebuilt dependency variants (HookKit/AltList/libsandy) from pinned
 # upstream commits into ../prebuilt — the layout build.sh expects. Run from the
-# repo root: bash .github/scripts/build-deps.sh <rootless|rooted|legacy|fat>
+# repo root: bash .github/scripts/build-deps.sh <rootless|rooted|legacy|rootful>
 #
 # The pinned commits must match what the packaged debs (control Depends) ship;
 # bump deliberately. HookKit is jjolano's own fork (Substrate/Substitute
 # backends); AltList/libsandy are opa334's, pinned at upstream HEAD.
-# fat = rooted (arm64/arm64e) + legacy (armv7/armv7s) builds lipo-merged
+# rootful = rooted (arm64/arm64e) + legacy (armv7/armv7s) builds lipo-merged
 # into one 4-arch flavor.
 set -euo pipefail
 
-FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy|fat>}
+FLAVOR=${1:?usage: build-deps.sh <rootless|rooted|legacy|rootful>}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export THEOS=${THEOS:-/opt/theos}
 PB=$ROOT/../prebuilt
@@ -94,26 +94,26 @@ clone_pin opa334/AltList "$ALTLIST" altlist
     echo "deps staged: $FLAVOR"
 }
 
-merge_fat() { # lipo the rooted+legacy prebuilt flavors into .../fat/
+merge_rootful() { # lipo the rooted+legacy prebuilt flavors into .../rootful/
     for dep in hookkit altlist; do
-        rm -rf "$PB/$dep/fat"
-        mkdir -p "$PB/$dep/fat"
-        cp -R "$PB/$dep/rooted/." "$PB/$dep/fat/"
+        rm -rf "$PB/$dep/rootful"
+        mkdir -p "$PB/$dep/rootful"
+        cp -R "$PB/$dep/rooted/." "$PB/$dep/rootful/"
     done
-    mkdir -p "$PB/sandy/fat"
+    mkdir -p "$PB/sandy/rootful"
     "$LIPO" -create "$PB/hookkit/rooted/HookKit.framework/HookKit" "$PB/hookkit/legacy/HookKit.framework/HookKit" \
-        -output "$PB/hookkit/fat/HookKit.framework/HookKit"
+        -output "$PB/hookkit/rootful/HookKit.framework/HookKit"
     "$LIPO" -create "$PB/altlist/rooted/AltList.framework/AltList" "$PB/altlist/legacy/AltList.framework/AltList" \
-        -output "$PB/altlist/fat/AltList.framework/AltList"
+        -output "$PB/altlist/rootful/AltList.framework/AltList"
     "$LIPO" -create "$PB/sandy/rooted/libsandy.dylib" "$PB/sandy/legacy/libsandy.dylib" \
-        -output "$PB/sandy/fat/libsandy.dylib"
+        -output "$PB/sandy/rootful/libsandy.dylib"
 }
 
 case "$FLAVOR" in
-    fat)
+    rootful)
         build_variant rooted
         build_variant legacy
-        merge_fat
+        merge_rootful
         ;;
     *) build_variant "$FLAVOR" ;;
 esac
