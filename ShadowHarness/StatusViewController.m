@@ -5,8 +5,13 @@
 #import <Shadow/Settings.h>
 
 #import <mach-o/dyld.h>
+#import <objc/runtime.h>
 
 #import "Battery.h"
+
+// Private libdyld symbol (declared in dyld_priv.h in ShadowCore, extern here
+// for the IMP-image diagnosis below).
+extern const char* dyld_image_path_containing_address(const void* addr);
 
 // UICellAccessorySwitch is a real public API since iOS 14 but is not declared
 // in this SDK's UICellAccessory.h — declare it locally (same pattern as the
@@ -545,6 +550,37 @@ static NSString* const kHeaderReuseID = @"Header";
 	}
 	if(!count) {
 		[rows addObject:shdw_row(@"dyld images", @"none match Shadow")];
+	}
+
+	// Scheme-hook diagnosis: if the UIApplication group installed,
+	// canOpenURL:'s IMP points inside ShadowCore.dylib. Otherwise it is the
+	// stock UIKit implementation (from the dyld shared cache) and the group
+	// never installed — an install-path bug, not a filtering bug.
+	NSString* uiImp = nil;
+	SEL sel = NSSelectorFromString(@"canOpenURL:");
+	Method m = class_getInstanceMethod([UIApplication class], sel);
+	if(m) {
+		const void* imp = method_getImplementation(m);
+		const char* impImage = dyld_image_path_containing_address(imp);
+		uiImp = impImage ? @(impImage) : @"(unresolved)";
+	} else {
+		uiImp = @"(no such method)";
+	}
+	[rows addObject:shdw_row(@"UIApplication canOpenURL: IMP image", uiImp)];
+
+	// UIKit image names as dyld sees them: the watcher matches
+	// "uikit.framework" in the image path — on iOS 12+ the real binary is
+	// UIKitCore, and a stub-only image list would never match the check.
+	uint32_t uiCount = 0;
+	for(uint32_t i = 0; i < _dyld_image_count() && uiCount < 4; i++) {
+		const char* name = _dyld_get_image_name(i);
+		if(name && strstr(name, "UIKit")) {
+			[rows addObject:shdw_row([NSString stringWithFormat:@"UIKit image %u", (unsigned)i], @(name))];
+			uiCount++;
+		}
+	}
+	if(!uiCount) {
+		[rows addObject:shdw_row(@"UIKit images", @"none found")];
 	}
 
 	return shdw_section(@"Engine debug", rows);
