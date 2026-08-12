@@ -17,6 +17,14 @@ long shdw_raw_unlink(const char* path);    // SYS_unlink(10)
 // the hooks are active.
 BOOL ShdwIsShadowCoreLoaded(void);
 
+// Engine class lookup that survives Shadow's own class hiding: with the
+// payload active, NSClassFromString/objc_getClass are hooked and hide
+// Shadow's classes from external callers — including this harness. Shadow
+// deliberately does NOT hook objc_getRequiredClass (its abort contract is
+// useless to detectors), so it is the internal path. When the payload is
+// inactive no hiding is armed and stock lookup is truthful.
+Class ShdwShadowClass(const char* name);
+
 // Canonical jailbreak-artifact probes (user-facing section). One dict per
 // row: { @"probe": path-or-scheme, @"isScheme": NSNumber(BOOL),
 //        @"verdict": @"hidden"|@"visible"|@"n/a" }.

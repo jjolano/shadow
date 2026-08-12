@@ -1,6 +1,7 @@
 #import "Battery.h"
 
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #import <unistd.h>
 #import <fcntl.h>
 #import <sys/syscall.h>
@@ -28,21 +29,46 @@ BOOL ShdwIsShadowCoreLoaded(void) {
 	return NO;
 }
 
+Class ShdwShadowClass(const char* name) {
+	if(!name || !name[0]) {
+		return nil;
+	}
+	if(ShdwIsShadowCoreLoaded()) {
+		// Hiding group armed: name lookup is filtered for external callers.
+		// The class is guaranteed present (the harness links the framework),
+		// so the abort contract of objc_getRequiredClass cannot fire here.
+		return objc_getRequiredClass(name);
+	}
+	return NSClassFromString(@(name));
+}
+
 // ---------------------------------------------------------------------------
 // Raw syscall probes
 // ---------------------------------------------------------------------------
 
 #if defined(__arm64__)
 // Direct arm64 syscall: `svc #0x80` with the syscall number in x16 and
-// arguments in x0..x5; the return lands in x0 (negative errno on failure).
-// Never goes through libc, so Shadow's access/open/syscall hooks cannot see
-// it — this is the kernel's answer.
-static inline long shdw_raw_syscall(long number, long a0, long a1, long a2) {
+// arguments in x0..x5. On arm64 Darwin the kernel signals errors with the
+// CARRY flag set and the positive errno in x0 (libc's wrapper negates after
+// `b.lo`); x86_64 instead returns negative errno in rax. The probe must not
+// assume the x86 convention — it has never run on arm64 before (host tests
+// are x86 and take the #else branch). `cset` materializes the carry flag so
+// *error is reliable under either convention: with carry-set semantics,
+// error=YES → -1; with negative-errno semantics, ret<0 → the caller's
+// `>= 0` check also reads absent. Success always yields the real fd.
+static inline long shdw_raw_syscall(long number, long a0, long a1, long a2, BOOL* error) {
 	register long x16 __asm__("x16") = number;
 	register long x0 __asm__("x0") = a0;
 	register long x1 __asm__("x1") = a1;
 	register long x2 __asm__("x2") = a2;
-	__asm__ volatile("svc #0x80" : "+r"(x0) : "r"(x16), "r"(x1), "r"(x2) : "memory", "cc");
+	unsigned flag = 0;
+	__asm__ volatile(
+		"svc #0x80\n"
+		"cset %w[flag], cs"
+		: "+r"(x0), [flag] "=r"(flag)
+		: "r"(x16), "r"(x1), "r"(x2)
+		: "memory", "cc");
+	*error = (flag != 0);
 	return x0;
 }
 #endif
@@ -52,8 +78,9 @@ long shdw_raw_open(const char* path) {
 	if(!path) {
 		return -1;
 	}
-	long ret = shdw_raw_syscall(SYS_open, (long)path, O_RDONLY, 0);
-	return ret >= 0 ? ret : -1;
+	BOOL error = NO;
+	long ret = shdw_raw_syscall(SYS_open, (long)path, O_RDONLY, 0, &error);
+	return error ? -1 : ret;
 #else
 	// ponytail: non-arm64 slices (legacy armv7/armv7s, simulators) get no svc
 	// asm — report absent. Raw probing is arm64-only by design.
@@ -66,8 +93,9 @@ long shdw_raw_unlink(const char* path) {
 	if(!path) {
 		return -1;
 	}
-	long ret = shdw_raw_syscall(SYS_unlink, (long)path, 0, 0);
-	return ret >= 0 ? ret : -1;
+	BOOL error = NO;
+	long ret = shdw_raw_syscall(SYS_unlink, (long)path, 0, 0, &error);
+	return error ? -1 : ret;
 #else
 	return -1;
 #endif
@@ -94,7 +122,7 @@ NSArray<NSDictionary*>* ShdwCanonicalProbes(void) {
 	};
 
 	NSMutableArray* rows = [NSMutableArray new];
-	Shadow* shadow = NSClassFromString(@"Shadow") ? [NSClassFromString(@"Shadow") sharedInstance] : nil;
+	Shadow* shadow = ShdwShadowClass("Shadow") ? [ShdwShadowClass("Shadow") sharedInstance] : nil;
 
 	for(NSUInteger i = 0; i < sizeof(kCanonicalPaths) / sizeof(kCanonicalPaths[0]); i++) {
 		NSString* path = [NSString stringWithUTF8String:kCanonicalPaths[i]];
@@ -130,7 +158,7 @@ NSArray<NSDictionary*>* ShdwCanonicalProbes(void) {
 // ---------------------------------------------------------------------------
 
 NSArray<NSDictionary*>* ShdwBatteryRows(void) {
-	Shadow* shadow = NSClassFromString(@"Shadow") ? [NSClassFromString(@"Shadow") sharedInstance] : nil;
+	Shadow* shadow = ShdwShadowClass("Shadow") ? [ShdwShadowClass("Shadow") sharedInstance] : nil;
 	NSMutableArray* rows = [NSMutableArray new];
 
 	// The full probe audit from the ported detector. The writable group is
@@ -203,18 +231,23 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 		} else if(!rawFound) {
 			verdict = @"INFO";
 			reason = @"not on this device (absent or sandboxed)";
-		} else if(rawFound && !filteredFound && engineRestricted) {
+		} else if(rawFound && !filteredFound) {
+			// The filtered surface is the detector-visible answer: if libc
+			// cannot see the path, the probe is defeated regardless of the
+			// engine's raw verdict. The engine may defer (rootless existence
+			// gates: path absent under /var/jb → rulesets not consulted) or
+			// restrict; either way the observable is clean. The engine state
+			// stays in the detail column for diagnostics.
 			verdict = @"PASS";
-			reason = @"raw found, libc clean, engine restricts";
+			reason = engineRestricted
+				? @"raw found, libc clean, engine restricts"
+				: @"raw found, libc clean, engine defers (existence gate)";
 		} else if(rawFound && filteredFound && !engineRestricted) {
 			verdict = @"GAP";
 			reason = @"ruleset missing this path";
-		} else if(engineRestricted && filteredFound) {
+		} else {
 			verdict = @"HOOK-GAP";
 			reason = @"engine restricts but libc still shows it";
-		} else {
-			verdict = @"MIXED";
-			reason = @"raw found, libc clean, engine allows — hidden outside rulesets";
 		}
 
 		[rows addObject:@{

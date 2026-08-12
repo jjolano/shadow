@@ -4,6 +4,8 @@
 #import <Shadow/JBPath.h>
 #import <Shadow/Settings.h>
 
+#import <mach-o/dyld.h>
+
 #import "Battery.h"
 
 // UICellAccessorySwitch is a real public API since iOS 14 but is not declared
@@ -96,7 +98,7 @@ static NSUserDefaults* shdw_prefs(void) {
 }
 
 static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
-	Class settingsClass = NSClassFromString(@"ShadowSettings");
+	Class settingsClass = ShdwShadowClass("ShadowSettings");
 	if(settingsClass && [settingsClass respondsToSelector:@selector(sharedInstance)]) {
 		id settings = [settingsClass sharedInstance];
 		if(settings && [settings respondsToSelector:@selector(getPreferencesForIdentifier:)]) {
@@ -178,6 +180,9 @@ static NSString* const kHeaderReuseID = @"Header";
 	// diagnostics stay fresh.
 	_sections = [self buildSectionsIncludingBattery:NO];
 	[self applySnapshotAnimated:NO];
+	// Automation hook: full diagnostics (incl. battery) to a file in the
+	// app container, readable over SSH for autonomous result capture.
+	[self writeDiagnosticsFile];
 }
 
 #pragma mark - Cells
@@ -206,13 +211,17 @@ static NSString* const kHeaderReuseID = @"Header";
 		// UICellAccessorySwitch is iOS 16+; on older systems the class is
 		// nil, and @[ [[nil alloc] init...] ] raises an NSArray
 		// nil-element exception in cellForItemAtIndexPath. Guard the
-		// accessory (the toggle just doesn't render on iOS < 16).
+		// accessory, and on iOS 14/15 fall back to a plain UISwitch wrapped
+		// in a custom-view accessory (iOS 14+) so dev mode stays reachable.
 		if(switchClass) {
 			cell.accessories = @[ [[switchClass alloc] initWithIsOn:row.on handler:^{
 				[weakSelf devModeToggled];
 			}] ];
 		} else {
-			cell.accessories = @[];
+			UISwitch* toggle = [UISwitch new];
+			toggle.on = row.on;
+			[toggle addTarget:self action:@selector(devModeToggled) forControlEvents:UIControlEventValueChanged];
+			cell.accessories = @[ [[UICellAccessoryCustomView alloc] initWithCustomView:toggle placement:UICellAccessoryPlacementTrailing] ];
 		}
 	} else {
 		cell.accessories = @[];
@@ -265,10 +274,10 @@ static NSString* const kHeaderReuseID = @"Header";
 	// nothing about whether Shadow is actually filtering this process. The
 	// hooks payload (ShadowCore.dylib) is the primary answer.
 	BOOL payloadActive = ShdwIsShadowCoreLoaded();
-	BOOL enginePresent = NSClassFromString(@"Shadow") != nil;
+	BOOL enginePresent = ShdwShadowClass("Shadow") != nil;
 
 	if(payloadActive) {
-		Shadow* shadow = [NSClassFromString(@"Shadow") sharedInstance];
+		Shadow* shadow = [ShdwShadowClass("Shadow") sharedInstance];
 
 		ShdwRow* activeRow = shdw_row(@"Shadow active (hooks payload)", @"YES");
 		activeRow.symbolName = @"checkmark.circle.fill";
@@ -354,7 +363,7 @@ static NSString* const kHeaderReuseID = @"Header";
 - (ShdwSection*)rulesetSection {
 	NSMutableArray* rows = [NSMutableArray new];
 
-	if(!NSClassFromString(@"Shadow")) {
+	if(!ShdwShadowClass("Shadow")) {
 		[rows addObject:shdw_row(@"n/a", @"Shadow not loaded")];
 		return shdw_section(@"Ruleset", rows);
 	}
@@ -363,7 +372,7 @@ static NSString* const kHeaderReuseID = @"Header";
 	NSArray<NSString*>* files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:rulesetsDir error:nil];
 	files = [files sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 
-	Class rulesetEngineClass = NSClassFromString(@"RulesetEngine");
+	Class rulesetEngineClass = ShdwShadowClass("RulesetEngine");
 	NSDateFormatter* dateFormatter = [NSDateFormatter new];
 	dateFormatter.dateStyle = NSDateFormatterMediumStyle;
 	dateFormatter.timeStyle = NSDateFormatterShortStyle;
@@ -485,8 +494,12 @@ static NSString* const kHeaderReuseID = @"Header";
 	[self applySnapshotAnimated:YES];
 }
 
-- (void)copyDiagnostics:(id)sender {
-	NSArray<ShdwSection*>* fullSections = [self buildSectionsIncludingBattery:YES];
+- (NSString *)diagnosticsString {
+	NSMutableArray* fullSections = [[self buildSectionsIncludingBattery:YES] mutableCopy];
+
+	// Ground truth for autonomous engine diagnostics: what's actually loaded
+	// in this process and whether the engine answers.
+	[fullSections addObject:[self engineDebugSection]];
 
 	// ShdwDiagnosticsDump consumes the legacy dict shape {title, rows:[{text,
 	// detail}]}; adapt the typed model back into it. The switch row carries
@@ -502,7 +515,53 @@ static NSString* const kHeaderReuseID = @"Header";
 		[dicts addObject:@{ @"title" : section.title, @"rows" : rows }];
 	}
 
-	[UIPasteboard generalPasteboard].string = ShdwDiagnosticsDump(dicts);
+	return ShdwDiagnosticsDump(dicts);
+}
+
+- (ShdwSection*)engineDebugSection {
+	NSMutableArray* rows = [NSMutableArray new];
+
+	Class shadowClass = ShdwShadowClass("Shadow");
+	[rows addObject:shdw_row(@"Shadow class (internal path)", shadowClass ? @"present" : @"nil")];
+
+	Shadow* instance = shadowClass ? [shadowClass sharedInstance] : nil;
+	[rows addObject:shdw_row(@"sharedInstance", instance ? @"non-nil" : @"nil")];
+	if(instance) {
+		[rows addObject:shdw_row(@"rootless", instance.rootless ? @"yes" : @"no")];
+		[rows addObject:shdw_row(@"hasAppSandbox", instance.hasAppSandbox ? @"yes" : @"no")];
+		[rows addObject:shdw_row(@"bundlePath", instance.bundlePath)];
+		[rows addObject:shdw_row(@"homePath", instance.homePath)];
+		[rows addObject:shdw_row(@"isPathRestricted(/var/jb)", [instance isPathRestricted:@"/var/jb"] ? @"YES" : @"NO")];
+	}
+	[rows addObject:shdw_row(@"RulesetEngine class", ShdwShadowClass("RulesetEngine") ? @"present" : @"nil")];
+
+	NSInteger count = 0;
+	for(uint32_t i = 0; i < _dyld_image_count(); i++) {
+		const char* name = _dyld_get_image_name(i);
+		if(name && strstr(name, "Shadow")) {
+			[rows addObject:shdw_row([NSString stringWithFormat:@"image %u", (unsigned)i], @(name))];
+			count++;
+		}
+	}
+	if(!count) {
+		[rows addObject:shdw_row(@"dyld images", @"none match Shadow")];
+	}
+
+	return shdw_section(@"Engine debug", rows);
+}
+
+// Full dump (battery included) to the app container, for SSH capture.
+- (void)writeDiagnosticsFile {
+	NSString* dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+	if(!dir) {
+		return;
+	}
+	[[self diagnosticsString] writeToFile:[dir stringByAppendingPathComponent:@"ShadowDiagnostics.txt"]
+		atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+- (void)copyDiagnostics:(id)sender {
+	[UIPasteboard generalPasteboard].string = [self diagnosticsString];
 }
 
 @end
