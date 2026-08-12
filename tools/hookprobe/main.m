@@ -13,10 +13,26 @@
 // Prefs-aware: groups the effective global prefs disable are reported SKIP
 // (the hook is legitimately not installed), not FAIL.
 //
-// Groups that cannot be probed from a CLI are reported SKIP with a reason:
-//   vnode (daemon-mediated), UIApplication/UIImage (UIKit context),
-//   mach/sandbox/iokit/syscall (kernel/launchd-context, device-specific),
-//   NSThread/NSFileVersion/NSFileWrapper (covered by the URL/file groups).
+// SKIP groups: UIApplication (no singleton in CLI context), iokit
+// (empty-iterator hide == stock no-match for an absent restricted service
+// class), LSApplicationWorkspace (no restricted app installed — vacuous
+// filter), NSArray (no restricted fixture parses natively as an array —
+// dict-rooted ruleset returns nil natively), and groups the effective
+// global prefs disable (shipped defaults: Syscall/Sandbox/MachBootstrap/
+// Memory/Foundation/IOKit/AntiDebugging/VnodeHiding ship OFF). Probed
+// groups: libc, dyld, objc, mem, vnode, syscall (csops), DeviceCheck,
+// UIImage, NSFileManager/NSURL/NSBundle/NSString/NSData/NSDictionary/
+// NSFileHandle, NSThread, NSFileVersion/NSFileWrapper, NSProcessInfo, mach,
+// sandbox, NSUserDefaults.
+//
+// Load order (Run A, proven on-device): DeviceCheck.framework and
+// UIKit.framework both preload BEFORE dlopen(ShadowCore). The ctor's
+// descriptor install needs DCDevice present at ctor time (absent classes are
+// skipped silently, never retried), and the ctor's UIKit-load watcher replay
+// (dylib.x:1042-1050) installs the UIImage group for already-loaded UIKit.
+// libc probes split by install group: stat/access under Hook_Filesystem
+// (LIBC table group), open/opendir under Hook_LowLevelC (LOW table group,
+// libc.x:2103-2106) — gated separately so neither false-FAILs the other.
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
@@ -37,6 +53,20 @@
 // KERN_INVALID_ARGUMENT; the production mem.x hook had this bug until
 // corrected there).
 extern kern_return_t mach_vm_region(vm_map_read_t target_task, mach_vm_address_t* address, mach_vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
+
+// The 16.5 SDK ships no sys/codesign.h — declare the csops prototype and the
+// CDHASH op manually (CS_OPS_CDHASH == 5 per vendor/apple/codesign.h; 7 is
+// CS_OPS_ENTITLEMENTS_BLOB).
+extern int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
+#define CS_OPS_CDHASH 5
+
+// The DeviceCheck/UIImage probes dispatch via runtime selectors (the tool
+// links only Foundation; a static class ref would need the framework at
+// link time). Runtime selectors trip -Warc-performSelector-leaks, an error
+// under -Werror — suppressed: every performSelector here targets a class or
+// instance we keep alive for the whole run (never a selector the runtime
+// could treat as returning a new object).
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
 
 // ---------------------------------------------------------------------------
 // Result ledger
@@ -73,6 +103,11 @@ static NSString* const kShadowFwk    = @"/var/jb/Library/Frameworks/Shadow.frame
 static NSString* const kShadowFwkBin = @"/var/jb/Library/Frameworks/Shadow.framework/Shadow";
 static NSString* const kControlDir   = @"/var/mobile/Documents";
 
+// The vnode probe target: the daemon's allowlist hides exactly this plist
+// (and ShadowSettings.bundle) — NOT /var/jb — so it is the one path whose
+// kernel-side disappearance proves the vnode layer engaged.
+static NSString* const kShadowPrefsPlist = @"/var/mobile/Library/Preferences/me.jjolano.shadow.plist";
+
 // ---------------------------------------------------------------------------
 // Hooks-live canary: with the hook layer active, stat() on the restricted
 // root must fail with ENOENT. No fallback path (a fallback to a possibly
@@ -91,11 +126,32 @@ static BOOL probeCanary(void) {
 // The plist is in the mobile prefs domain (not /var/jb — that path is
 // restricted and the read itself would be filtered); it must be read BEFORE
 // dlopen so the value is never influenced by the hooks. When the plist is
-// missing, the SHIPPED defaults apply (Foundation/Memory ship OFF — the
-// identity groups are unconditional).
+// missing, the SHIPPED defaults apply (SHDWDefaultHookSettings,
+// HookConfiguration.m): the keys below ship OFF, everything else ships ON.
 // ---------------------------------------------------------------------------
 
 static NSDictionary* gPrefs = nil;
+
+static NSSet* shdw_defaultOffKeys(void) {
+    static NSSet* set = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        set = [NSSet setWithArray:@[
+            @"Hook_Foundation",
+            @"Hook_Memory",
+            @"Hook_Syscall",
+            @"Hook_Sandbox",
+            @"Hook_MachBootstrap",
+            @"Hook_IOKit",
+            @"Hook_AntiDebugging",
+            @"Hook_DynamicLibrariesExtra",
+            @"VnodeHiding"
+        ]];
+    });
+
+    return set;
+}
 
 static BOOL prefsEnabled(NSString* key) {
     id value = [gPrefs objectForKey:key];
@@ -104,18 +160,18 @@ static BOOL prefsEnabled(NSString* key) {
         return [value boolValue];
     }
 
-    if([key isEqualToString:@"Hook_Foundation"] || [key isEqualToString:@"Hook_Memory"]) {
-        return NO;  // shipped default: OFF
-    }
-
-    return YES;
+    return ![shdw_defaultOffKeys() containsObject:key];
 }
 
 // ---------------------------------------------------------------------------
-// libc group (libc.x): stat/access/open/opendir — tier 1, ctor-installed.
+// libc group (libc.x): stat/access are in the LIBC table group (installs
+// under Hook_Filesystem, libc.x:2045/2053); open/opendir are in the LOW
+// table group (installs under Hook_LowLevelC, libc.x:2103-2106, dylib.x:882).
+// Probed separately so a Filesystem-only install does not false-FAIL
+// open/opendir — and vice versa. Tier 1, ctor-installed.
 // ---------------------------------------------------------------------------
 
-static void probeLibc(void) {
+static void probeLibcFilesystem(void) {
     struct stat st;
 
     errno = 0;
@@ -126,6 +182,12 @@ static void probeLibc(void) {
     BOOL accessHidden = access([kRestrictedDir fileSystemRepresentation], F_OK) != 0 && errno == ENOENT;
     report(@"libc", @"access(restricted)", accessHidden, [NSString stringWithFormat:@"errno=%d", errno]);
 
+    errno = 0;
+    BOOL controlVisible = stat([kControlDir fileSystemRepresentation], &st) == 0;
+    report(@"libc", @"stat(control)", controlVisible, [NSString stringWithFormat:@"errno=%d", errno]);
+}
+
+static void probeLibcLowLevel(void) {
     errno = 0;
     int fd = open([kRestrictedDir fileSystemRepresentation], O_RDONLY);
     BOOL openHidden = fd < 0 && errno == ENOENT;
@@ -145,10 +207,6 @@ static void probeLibc(void) {
     }
 
     report(@"libc", @"opendir(restricted)", opendirHidden, [NSString stringWithFormat:@"errno=%d", errno]);
-
-    errno = 0;
-    BOOL controlVisible = stat([kControlDir fileSystemRepresentation], &st) == 0;
-    report(@"libc", @"stat(control)", controlVisible, [NSString stringWithFormat:@"errno=%d", errno]);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,12 +214,11 @@ static void probeLibc(void) {
 // stores ONLY raw mach_header pointers (no dladdr, no Foundation, no
 // allocation — work inside the callback during dlopen/ctor re-entered the
 // hook machinery and broke installation). ShadowCore is identified AFTER
-// dlopen by parsing each header's LC_ID_DYLIB basename. If the replay is
-// filtered (Shadow's own hooked registration drops ShadowCore), fall back to
-// the dlopen HANDLE itself: on Darwin the handle dlopen returns for a dylib
-// IS that image's mach_header (documented behavior — dladdr(handle) and
-// dlsym(handle, ...) both rely on it), so the handle doubles as the header
-// without any dyld API call.
+// dlopen by parsing each header's LC_ID_DYLIB basename. main() discards the
+// registration-time REPLAY (which fills the slots with already-loaded images
+// before ShadowCore loads) so the real notification — fired when dlopen maps
+// ShadowCore — lands in the capture array. The real mapped header DOES carry
+// LC_ID_DYLIB.
 // ---------------------------------------------------------------------------
 
 #define kMaxCapturedImages 64
@@ -201,23 +258,10 @@ static BOOL shdw_is_shadowcore_header(const struct mach_header* mh) {
     return NO;
 }
 
-// NOTE: handle may be NULL (dlopen failed) — caller checks.
-static const struct mach_header* shadowcoreHeaderFromHandle(void* handle) {
-    if(!handle) {
-        return NULL;
-    }
-
-    // Darwin dlopen returns the image's mach_header as the handle for
-    // dylibs; verify before trusting it.
-    const struct mach_header* h = (const struct mach_header*)handle;
-
-    if(shdw_is_shadowcore_header(h)) {
-        return h;
-    }
-
-    return NULL;
-}
-
+// NOTE: handle may be NULL (dlopen failed) — caller checks. There is NO
+// dlopen-handle-as-header fallback: a dyld4 dlopen handle is a Loader*, not
+// the image's mach_header, so the handle can never substitute for the
+// captured header. A NULL result is a setup failure, reported FAIL.
 static const struct mach_header* findShadowCoreHeader(void) {
     for(uint32_t i = 0; i < gCapturedCount; i++) {
         if(shdw_is_shadowcore_header(gCapturedHeaders[i])) {
@@ -231,16 +275,14 @@ static const struct mach_header* findShadowCoreHeader(void) {
 // ---------------------------------------------------------------------------
 // dyld group (dyld.x): dladdr on ShadowCore's mach_header must not resolve
 // to ShadowCore (symlookup hides Shadow images). The header was captured
-// unhooked before the ctor ran.
+// unhooked before the ctor ran. A NULL header is a SETUP FAILURE (the real
+// mapped header carries LC_ID_DYLIB; the capture depends on the callback
+// firing for the dlopen) — reported FAIL, not SKIP.
 // ---------------------------------------------------------------------------
 
 static void probeDyld(const struct mach_header* shadowCoreHeader) {
     if(!shadowCoreHeader) {
-        // Shadow's own hooked _dyld_register_func_for_add_image filters the
-        // replay, so ShadowCore's header is unreachable through the public
-        // dyld API once hooks are live — that IS the hiding behavior under
-        // test, not a probe failure. SKIP instead of FAIL.
-        skip(@"dyld", @"dladdr(shadowcore)", @"ShadowCore header not capturable via public dyld API (filtered — expected)");
+        report(@"dyld", @"dladdr(shadowcore)", NO, @"ShadowCore header not captured (callback replay discard fix ineffective)");
         return;
     }
 
@@ -253,6 +295,18 @@ static void probeDyld(const struct mach_header* shadowCoreHeader) {
         report(@"dyld", @"dladdr(shadowcore)", hidden, fname);
     } else {
         report(@"dyld", @"dladdr(shadowcore)", YES, @"no image info returned");
+    }
+
+    // Control: CFGetTypeID lives in CoreFoundation, not /var/jb. (&main or
+    // a local symbol would be the battery itself, which IS restricted.)
+    memset(&info, 0, sizeof(info));
+
+    if(dladdr((void*)&CFGetTypeID, &info) && info.dli_fname) {
+        NSString* fname = [NSString stringWithUTF8String:info.dli_fname];
+        BOOL clean = [fname rangeOfString:@"ShadowCore" options:NSCaseInsensitiveSearch].location == NSNotFound;
+        report(@"dyld", @"dladdr(CFGetTypeID) control", clean, fname);
+    } else {
+        report(@"dyld", @"dladdr(CFGetTypeID) control", NO, @"no image info returned");
     }
 }
 
@@ -390,6 +444,341 @@ static void probeMem(const struct mach_header* shadowCoreHeader) {
 }
 
 // ---------------------------------------------------------------------------
+// Raw stat64: bypasses the libc stat() interposer (which cannot distinguish
+// the vnode layer from the libc hook). ENOENT from a raw SYS_stat64 proves
+// the daemon-mediated vnode layer engaged. arm64 Darwin BSD convention:
+// syscall number in x16, args in x0-x2, result in x0, and the CARRY flag
+// signals error — on error x0 holds the POSITIVE errno (not a negative
+// return). Carry is bit 29 of NZCV, read after svc.
+// ---------------------------------------------------------------------------
+
+static int shdw_raw_stat64(const char* path, struct stat* st) {
+    unsigned long nzcv = 0;
+    long ret = 0;
+
+    __asm__ __volatile__(
+        "mov x0, %[path]\n\t"
+        "mov x1, %[st]\n\t"
+        "mov x16, #338\n\t"        // SYS_stat64
+        "svc #0x80\n\t"
+        "mov %[ret], x0\n\t"
+        "mrs %[nzcv], nzcv"
+        : [ret] "=r"(ret), [nzcv] "=r"(nzcv)
+        : [path] "r"(path), [st] "r"(st)
+        : "x0", "x1", "x16", "cc", "memory"
+    );
+
+    if(nzcv & (1UL << 29)) {
+        errno = (int)ret;
+        return -1;
+    }
+
+    return (int)ret;
+}
+
+// ---------------------------------------------------------------------------
+// vnode group (vnode.x): kernel-side hiding via the daemon lease. The daemon
+// hides ONLY the prefs plist and ShadowSettings.bundle (its allowlist), NOT
+// /var/jb, so the probe target is the prefs plist itself; control is
+// SystemVersion.plist. The daemon REJECTS root clients — main() drops to
+// uid 501 around dlopen (the lease is acquired synchronously in the ctor).
+// With VnodeHiding enabled and daemon/KRW fail-open, visibility is an honest
+// FAIL, never a skip.
+// ---------------------------------------------------------------------------
+
+static BOOL gVnodeBaselineOK = NO;
+
+static void probeVnodeBaseline(void) {
+    struct stat st;
+
+    errno = 0;
+    int t = shdw_raw_stat64([kShadowPrefsPlist fileSystemRepresentation], &st);
+    int tErrno = errno;
+
+    errno = 0;
+    int c = shdw_raw_stat64("/System/Library/CoreServices/SystemVersion.plist", &st);
+    int cErrno = errno;
+
+    // A failed control is a setup failure (broken asm / missing file), not a
+    // hidden target — FAIL so the probe cannot be silently disabled.
+    if(c != 0) {
+        report(@"vnode", @"baseline control", NO, [NSString stringWithFormat:@"raw stat64 rc=%d errno=%d (expected 0)", c, cErrno]);
+        return;
+    }
+
+    if(t != 0 && tErrno != ENOENT) {
+        report(@"vnode", @"baseline target", NO, [NSString stringWithFormat:@"raw stat64 rc=%d errno=%d (expected 0)", t, tErrno]);
+        return;
+    }
+
+    if(t != 0) {
+        // Control OK + target ENOENT: already hidden pre-dlopen (e.g. a
+        // global vnode lease from another process) — cannot test the layer
+        // from here.
+        skip(@"vnode", @"vnode-layer hiding", @"precondition: target already hidden pre-dlopen");
+        return;
+    }
+
+    gVnodeBaselineOK = YES;
+}
+
+static void probeVnodePost(void) {
+    if(!gVnodeBaselineOK) {
+        return;  // already skipped in baseline
+    }
+
+    struct stat st;
+
+    errno = 0;
+    int t = shdw_raw_stat64([kShadowPrefsPlist fileSystemRepresentation], &st);
+    int tErrno = errno;
+
+    errno = 0;
+    int c = shdw_raw_stat64("/System/Library/CoreServices/SystemVersion.plist", &st);
+    int cErrno = errno;
+
+    errno = 0;
+    int l = stat([kShadowPrefsPlist fileSystemRepresentation], &st);
+    int lErrno = errno;
+
+    BOOL targetHidden = (t != 0) && (tErrno == ENOENT);
+    BOOL controlVisible = (c == 0);
+
+    report(@"vnode", @"vnode-layer hiding", targetHidden && controlVisible,
+           [NSString stringWithFormat:@"raw target rc=%d errno=%d | raw control rc=%d errno=%d | libc stat rc=%d errno=%d",
+            t, tErrno, c, cErrno, l, lErrno]);
+
+    // Informational: libc stat sees the hide too (hooks live, either layer).
+    report(@"vnode", @"stat(prefs plist) via libc", (l != 0) && (lErrno == ENOENT),
+           [NSString stringWithFormat:@"rc=%d errno=%d", l, lErrno]);
+}
+
+// ---------------------------------------------------------------------------
+// syscall group (syscall.x): csops CDHASH hiding. Precondition (unhooked
+// baseline): CDHASH on self succeeds with a NONZERO hash. Post: the hook
+// runs the original first, then converts the success into -1/EBADEXEC (the
+// post buffer may still hold the real hash — only the return is asserted).
+// Control: an invalid op must fail natively with EINVAL both before and
+// after (proves the syscall path works). Never touches CS_OPS_MARKKILL.
+// ---------------------------------------------------------------------------
+
+static BOOL gCdhashBaselineOK = NO;
+static uint8_t gCdhashBuf[20];
+
+static void probeSyscallCsopsBaseline(void) {
+    memset(gCdhashBuf, 0, sizeof(gCdhashBuf));
+    errno = 0;
+    int rc = csops(getpid(), CS_OPS_CDHASH, gCdhashBuf, sizeof(gCdhashBuf));
+
+    BOOL nonzero = NO;
+
+    for(size_t i = 0; i < sizeof(gCdhashBuf); i++) {
+        if(gCdhashBuf[i] != 0) {
+            nonzero = YES;
+            break;
+        }
+    }
+
+    if(rc != 0 || !nonzero) {
+        skip(@"syscall", @"csops(CDHASH)", @"CDHASH precondition failed (unhooked baseline)");
+        return;
+    }
+
+    gCdhashBaselineOK = YES;
+
+    errno = 0;
+    int ctrl = csops(getpid(), 0xFFFF, gCdhashBuf, sizeof(gCdhashBuf));
+    BOOL ctrlOK = (ctrl == -1) && (errno == EINVAL);
+    report(@"syscall", @"csops(invalid op) baseline", ctrlOK, [NSString stringWithFormat:@"rc=%d errno=%d", ctrl, errno]);
+}
+
+static void probeSyscallCsopsPost(void) {
+    if(!gCdhashBaselineOK) {
+        return;  // already skipped in baseline
+    }
+
+    errno = 0;
+    int rc = csops(getpid(), CS_OPS_CDHASH, gCdhashBuf, sizeof(gCdhashBuf));
+    BOOL hidden = (rc == -1) && (errno == EBADEXEC);
+    report(@"syscall", @"csops(CDHASH)", hidden, [NSString stringWithFormat:@"rc=%d errno=%d", rc, errno]);
+
+    errno = 0;
+    int ctrl = csops(getpid(), 0xFFFF, gCdhashBuf, sizeof(gCdhashBuf));
+    BOOL ctrlOK = (ctrl == -1) && (errno == EINVAL);
+    report(@"syscall", @"csops(invalid op) control", ctrlOK, [NSString stringWithFormat:@"rc=%d errno=%d", ctrl, errno]);
+}
+
+// ---------------------------------------------------------------------------
+// DeviceCheck group (DeviceCheck.x): DCDevice.isSupported fails closed (NO)
+// when hooked. The framework MUST be dlopen'ed BEFORE ShadowCore — the ctor's
+// descriptor install silently skips absent classes and never retries.
+// performSelector-based (the tool links only Foundation; a static DCDevice
+// class ref would need DeviceCheck at link time). isSupported returns BOOL
+// in w0 — read the raw value via the pointer cast, NOT boolValue (a BOOL is
+// not an object; messaging it crashes on YES).
+// ---------------------------------------------------------------------------
+
+static id gDCDevice = nil;
+
+static void probeDeviceCheckPre(void) {
+    Class dcClass = NSClassFromString(@"DCDevice");
+
+    if(!dcClass) {
+        skip(@"DeviceCheck", @"DCDevice.isSupported", @"DCDevice class unavailable after framework dlopen");
+        return;
+    }
+
+    gDCDevice = [dcClass performSelector:NSSelectorFromString(@"currentDevice")];
+
+    if(!gDCDevice) {
+        skip(@"DeviceCheck", @"DCDevice.isSupported", @"currentDevice returned nil");
+        return;
+    }
+
+    BOOL pre = (BOOL)(intptr_t)[gDCDevice performSelector:NSSelectorFromString(@"isSupported")];
+
+    if(!pre) {
+        skip(@"DeviceCheck", @"DCDevice.isSupported", @"precondition: isSupported != YES pre-hook");
+        gDCDevice = nil;
+        return;
+    }
+
+    report(@"DeviceCheck", @"DCDevice.isSupported baseline", YES, @"supported (unhooked)");
+}
+
+static void probeDeviceCheckPost(void) {
+    if(!gDCDevice) {
+        return;  // already skipped in pre
+    }
+
+    BOOL post = (BOOL)(intptr_t)[gDCDevice performSelector:NSSelectorFromString(@"isSupported")];
+    report(@"DeviceCheck", @"DCDevice.isSupported", !post, post ? @"YES (not hooked)" : @"NO (hooked)");
+}
+
+// ---------------------------------------------------------------------------
+// UIImage group (UIImage.x, Hook_Foundation@uikit): imageNamed: name-policy
+// hiding. UIKit is dlopen'ed BEFORE ShadowCore (Run A ordering, proven
+// on-device); the ctor's UIKit-load watcher replay (dylib.x:1042-1050)
+// delivers the already-loaded UIKit and installs the UIImage group at ctor
+// time. Baseline first (both fixture names load unhooked — a missing/corrupt
+// protected fixture would otherwise false-PASS as "hidden"), then the post
+// differential: the control image must still load (proves the API works)
+// while the protected name ("Shadow.dylib.png" matches the shadow.dylib
+// artifact pattern) must return nil (proves hiding). The battery is
+// external, so isCallerExternal is satisfied. Fixture setup runs pre-dlopen
+// — reading the icon from /var/jb is unfiltered there.
+// ---------------------------------------------------------------------------
+
+static NSBundle* gFixtureBundle = nil;
+static NSString* const kFixtureBundleDir = @"/var/mobile/Documents/HookProbeAssets.bundle";
+
+static NSString* shdw_fixtureIconSource(void) {
+    for(NSString* path in @[ @"/var/jb/Library/PreferenceBundles/ShadowSettings.bundle",
+                             @"/Library/PreferenceBundles/ShadowSettings.bundle" ]) {
+        NSBundle* bundle = [NSBundle bundleWithPath:path];
+
+        if(!bundle) {
+            continue;
+        }
+
+        // Theos flattens bundle Resources into the bundle root — resolve via
+        // pathForResource (handles both layouts) rather than a hardcoded
+        // Resources/ subpath.
+        NSString* icon = [bundle pathForResource:@"icon" ofType:@"png"];
+
+        if(icon) {
+            return icon;
+        }
+    }
+
+    return nil;
+}
+
+static BOOL shdw_prepareImageFixture(NSString* srcIcon) {
+    NSFileManager* fm = [NSFileManager defaultManager];
+    BOOL isDir = NO;
+    BOOL exists = [fm fileExistsAtPath:kFixtureBundleDir isDirectory:&isDir];
+
+    if(!exists) {
+        NSError* err = nil;
+
+        if(![fm createDirectoryAtPath:kFixtureBundleDir withIntermediateDirectories:NO attributes:nil error:&err]) {
+            return NO;
+        }
+    } else if(!isDir) {
+        return NO;
+    }
+
+    for(NSString* name in @[ @"Shadow.dylib.png", @"control.png" ]) {
+        NSString* dest = [kFixtureBundleDir stringByAppendingPathComponent:name];
+
+        if(![fm fileExistsAtPath:dest]) {
+            NSError* err = nil;
+
+            if(![fm copyItemAtPath:srcIcon toPath:dest error:&err]) {
+                return NO;
+            }
+        }
+    }
+
+    gFixtureBundle = [NSBundle bundleWithPath:kFixtureBundleDir];
+    return gFixtureBundle != nil;
+}
+
+static BOOL shdw_uiImageLoads(NSString* name) {
+    Class uiClass = NSClassFromString(@"UIImage");
+
+    if(!uiClass) {
+        return NO;
+    }
+
+    return [uiClass performSelector:NSSelectorFromString(@"imageNamed:inBundle:")
+                         withObject:name withObject:gFixtureBundle] != nil;
+}
+
+// Pre-dlopen baseline (Run A ordering, proven on-device): UIKit is already
+// loaded when ShadowCore's ctor runs, so the watcher replay installs the
+// UIImage group at ctor time — the baseline below measures the UNHOOKED
+// state. Both fixture names must load: a missing/corrupt protected fixture
+// would otherwise false-PASS as "hidden" post-hook.
+static void probeUIImagePre(void) {
+    NSString* icon = shdw_fixtureIconSource();
+
+    if(!icon) {
+        skip(@"UIImage", @"imageNamed(inBundle:)", @"fixture icon unavailable");
+        return;
+    }
+
+    if(!shdw_prepareImageFixture(icon)) {
+        skip(@"UIImage", @"imageNamed(inBundle:)", @"fixture bundle unavailable");
+        return;
+    }
+
+    BOOL protectedPre = shdw_uiImageLoads(@"Shadow.dylib.png");
+    BOOL controlPre = shdw_uiImageLoads(@"control.png");
+
+    if(!protectedPre || !controlPre) {
+        skip(@"UIImage", @"imageNamed(inBundle:)", @"fixture images unavailable pre-hook");
+        gFixtureBundle = nil;
+        return;
+    }
+
+    report(@"UIImage", @"imageNamed(inBundle:) baseline", YES, @"both fixture images load (unhooked)");
+}
+
+static void probeUIImagePost(void) {
+    if(!gFixtureBundle) {
+        return;  // already skipped in pre
+    }
+
+    BOOL protectedHidden = !shdw_uiImageLoads(@"Shadow.dylib.png");
+    BOOL controlVisible = shdw_uiImageLoads(@"control.png");
+
+    report(@"UIImage", @"imageNamed(inBundle:)", protectedHidden && controlVisible,
+           [NSString stringWithFormat:@"protected=%@ control=%@", protectedHidden ? @"hidden" : @"LEAKED", controlVisible ? @"loaded" : @"nil"]);
+}
+
+// ---------------------------------------------------------------------------
 // NSFileManager group (NSFileManager.x) — tier-2 (detector-gated).
 // ---------------------------------------------------------------------------
 
@@ -449,9 +838,10 @@ static void probeNSBundle(void) {
 // NSString / NSData / NSDictionary / NSArray groups — tier-2. Probes read
 // REAL restricted files with native-readable content (a text/XML ruleset
 // plist and the ShadowCore binary): the native read would SUCCEED and only
-// the hook can produce nil. (UTF-8-reading a Mach-O into a string or
-// parsing a binary as an array returns nil natively — those would be false
-// passes, so NSArray has no valid CLI probe and is skipped.)
+// the hook can produce nil. NSArray has no valid CLI probe: the only
+// restricted plist (StandardRules.plist) is DICT-rooted, so parsing it as an
+// array returns nil NATIVELY — a probe would false-pass. (The ShadowCore
+// Mach-O parses as neither.)
 // ---------------------------------------------------------------------------
 
 static void probeContainerReads(void) {
@@ -584,13 +974,9 @@ static void probeSandbox(void) {
 }
 
 static void probeSkippedGroups(void) {
-    skip(@"vnode", @"vnode-layer hiding", @"daemon-mediated; covered by shadowd");
-    skip(@"UIApplication", @"canOpenURL", @"requires UIKit app context");
-    skip(@"UIImage", @"image loading", @"requires UIKit app context");
-    skip(@"iokit", @"IOService lookups", @"device-specific service classes");
-    skip(@"syscall", @"syscall/csops", @"kernel-context, device-specific");
-    skip(@"DeviceCheck", @"device checks", @"private API, no stable probe");
-    skip(@"LSApplicationWorkspace", @"app enumeration", @"private API, tier-2 gated");
+    skip(@"UIApplication", @"canOpenURL", @"no UIApplication singleton in CLI context");
+    skip(@"iokit", @"IOService lookups", @"hide returns empty iterator == stock no-match for absent restricted service class");
+    skip(@"LSApplicationWorkspace", @"app enumeration", @"no restricted app installed on device (vacuous filter)");
 }
 
 // ---------------------------------------------------------------------------
@@ -607,12 +993,74 @@ int main(int argc, char* argv[]) {
         // restricted roots, but the values gate which groups we probe).
         gPrefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
 
+        BOOL vnodeOn = prefsEnabled(@"VnodeHiding");
+        BOOL syscallOn = prefsEnabled(@"Hook_Syscall");
+        BOOL deviceCheckOn = prefsEnabled(@"Hook_DeviceCheck");
+        // UIImage rides the Hook_Foundation@uikit group (dylib.x:475).
+        BOOL uiImageOn = prefsEnabled(@"Hook_Foundation");
+
+        // Pre-dlopen baselines: these must observe the UNHOOKED state, so
+        // they run before ShadowCore loads.
+        if(vnodeOn) {
+            probeVnodeBaseline();
+        }
+
+        if(syscallOn) {
+            probeSyscallCsopsBaseline();
+        }
+
+        if(deviceCheckOn) {
+            // DeviceCheck must be loaded BEFORE ShadowCore: the ctor's
+            // descriptor install silently skips absent classes — no late
+            // retry. Keep the handle for the whole run (no dlclose).
+            void* dcHandle = dlopen("/System/Library/Frameworks/DeviceCheck.framework/DeviceCheck", RTLD_NOW);
+
+            if(dcHandle) {
+                probeDeviceCheckPre();
+            } else {
+                skip(@"DeviceCheck", @"DCDevice.isSupported", @"DeviceCheck.framework dlopen failed");
+            }
+        }
+
+        if(uiImageOn) {
+            // Run A ordering (proven on-device): UIKit preloads BEFORE
+            // ShadowCore — the ctor's UIKit-load watcher replay installs the
+            // UIImage group for already-loaded UIKit at ctor time. Baseline
+            // measured here, unhooked.
+            void* uiHandle = dlopen("/System/Library/Frameworks/UIKit.framework/UIKit", RTLD_NOW);
+
+            if(uiHandle) {
+                probeUIImagePre();
+            } else {
+                skip(@"UIImage", @"imageNamed(inBundle:)", @"UIKit.framework dlopen failed");
+            }
+        }
+
         // Register the loader-safe add-image callback BEFORE dlopen: it stores
         // only raw mach_header pointers (no dladdr/Foundation/allocation —
         // work inside the callback during dlopen re-entered the hook
         // machinery and broke installation). ShadowCore's header is identified
         // after dlopen via LC_ID_DYLIB.
         _dyld_register_func_for_add_image(shadowcore_add_image);
+
+        // The registration REPLAYS every already-loaded image (Foundation,
+        // UIKit, DeviceCheck...) into the callback before ShadowCore loads,
+        // filling the capture slots — the later ShadowCore notification would
+        // be dropped. Discard the replay; the callback fires again when the
+        // dlopen below maps ShadowCore.
+        gCapturedCount = 0;
+
+        if(vnodeOn) {
+            // The daemon rejects root clients; the vnode lease is acquired
+            // synchronously in the ctor during dlopen, so drop to mobile
+            // (uid 501) for the dlopen and restore right after. A failed
+            // drop is a setup failure — the lease would be rejected and the
+            // probe would fail for the wrong reason.
+            if(seteuid(501) != 0) {
+                NSLog(@"[hookprobe] FATAL: seteuid(501) failed (%d)", errno);
+                return 2;
+            }
+        }
 
         // Load ShadowCore: the ctor installs the hook layer in-process,
         // exactly like ShadowTest. No spawn-injection dependency.
@@ -622,6 +1070,13 @@ int main(int argc, char* argv[]) {
             handle = dlopen("/usr/lib/TweakInject/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
         }
 
+        if(vnodeOn) {
+            if(seteuid(0) != 0) {
+                NSLog(@"[hookprobe] FATAL: seteuid(0) restore failed (%d)", errno);
+                return 2;
+            }
+        }
+
         if(!handle) {
             NSLog(@"[hookprobe] FATAL: cannot dlopen ShadowCore.dylib (%s)", dlerror());
             return 2;
@@ -629,17 +1084,13 @@ int main(int argc, char* argv[]) {
 
         usleep(500 * 1000);
 
+        // NOTE: NULL here is a SETUP FAILURE, not an expected skip — the real
+        // mapped header carries LC_ID_DYLIB and the capture depends on the
+        // callback firing for the dlopen above. The dyld/mem probes FAIL.
         const struct mach_header* shadowCoreHeader = findShadowCoreHeader();
 
         if(!shadowCoreHeader) {
-            // The add-image replay is filtered by Shadow's own hooked
-            // registration — fall back to the dlopen handle, which IS the
-            // image's mach_header on Darwin.
-            shadowCoreHeader = shadowcoreHeaderFromHandle(handle);
-
-            if(!shadowCoreHeader) {
-                NSLog(@"[hookprobe] WARN: ShadowCore header not captured (add-image replay filtered; dlopen handle did not validate)");
-            }
+            NSLog(@"[hookprobe] WARN: ShadowCore header not captured (callback replay discard fix ineffective)");
         }
 
         BOOL hooksLive = probeCanary();
@@ -652,19 +1103,53 @@ int main(int argc, char* argv[]) {
         BOOL foundationOn = prefsEnabled(@"Hook_Foundation");
         BOOL envvarsOn = prefsEnabled(@"Hook_EnvVars");
 
-        if(fsOn) {
-            probeLibc();
+        if(prefsEnabled(@"Hook_Filesystem")) {
+            probeLibcFilesystem();
         } else {
-            skip(@"libc", @"C file hooks", @"Hook_Filesystem/Hook_LowLevelC disabled");
+            skip(@"libc", @"stat/access", @"Hook_Filesystem disabled");
+        }
+
+        if(prefsEnabled(@"Hook_LowLevelC")) {
+            probeLibcLowLevel();
+        } else {
+            skip(@"libc", @"open/opendir", @"Hook_LowLevelC disabled");
         }
 
         probeDyld(shadowCoreHeader);
         probeObjC();
 
         if(shadowCoreHeader) {
-            probeMem(shadowCoreHeader);
+            if(prefsEnabled(@"Hook_Memory")) {
+                probeMem(shadowCoreHeader);
+            } else {
+                skip(@"mem", @"vm_region", @"Hook_Memory disabled");
+            }
         } else {
-            skip(@"mem", @"vm_region", @"ShadowCore header not captured");
+            report(@"mem", @"vm_region", NO, @"ShadowCore header not captured (setup failure)");
+        }
+
+        if(vnodeOn) {
+            probeVnodePost();
+        } else {
+            skip(@"vnode", @"vnode-layer hiding", @"VnodeHiding disabled");
+        }
+
+        if(syscallOn) {
+            probeSyscallCsopsPost();
+        } else {
+            skip(@"syscall", @"csops", @"Hook_Syscall disabled");
+        }
+
+        if(deviceCheckOn) {
+            probeDeviceCheckPost();
+        } else {
+            skip(@"DeviceCheck", @"DCDevice.isSupported", @"Hook_DeviceCheck disabled");
+        }
+
+        if(uiImageOn) {
+            probeUIImagePost();
+        } else {
+            skip(@"UIImage", @"imageNamed(inBundle:)", @"Hook_Foundation disabled");
         }
 
         if(foundationOn) {
@@ -672,6 +1157,10 @@ int main(int argc, char* argv[]) {
             probeNSURL();
             probeNSBundle();
             probeContainerReads();
+            // NSArray.x hooks arrayWithContentsOfFile: etc., but no
+            // restricted fixture parses natively as an array (the ruleset is
+            // dict-rooted) — a nil result would be native, not filtered.
+            skip(@"NSArray", @"array reads", @"no stable CLI probe");
             probeNSFileHandle();
             // NSThread rides the Foundation@objc group (dylib.x:369).
             probeNSThread();
