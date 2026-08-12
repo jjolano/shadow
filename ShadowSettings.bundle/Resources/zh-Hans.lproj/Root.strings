@@ -38,3 +38,4 @@
 "IMPORT_APPLIED" = "设置已导入，重启以生效。";
 "IMPORT_OK" = "好";
 "APPS_EXCLUDED_FMT" = "所有应用已启用 · %ld 个已排除";
+"ROOT_SAFE_MODE" = "安全模式";
