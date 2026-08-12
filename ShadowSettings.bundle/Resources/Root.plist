@@ -168,6 +168,8 @@
 			<string>PSLinkCell</string>
 			<key>detail</key>
 			<string>SHDWSafeModeListController</string>
+			<key>icon</key>
+			<string>IcoSafeMode.png</string>
 			<key>isController</key>
 			<true/>
 			<key>label</key>
