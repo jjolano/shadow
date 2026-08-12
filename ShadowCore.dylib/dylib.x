@@ -799,21 +799,24 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // see shdw_install_tier2.
         shadowhook_libc(subCFunc);
 
-        // Drain the batch immediately: the envvars block below calls libc
-        // functions (NSProcessInfo environment, unsetenv/setenv, dlsym) that
-        // are themselves in the just-installed hook set. While batched, the
-        // replacements' originals are still NULL, so any of those calls
-        // re-enters a replacement that jumps through a NULL original —
-        // SIGSEGV at PC=0. subCFunc is the fishhook lane (batching is a
-        // no-op there: batchingSupported=NO, originals publish at hook
-        // time), so this drain is belt-and-suspenders for the libc lane.
-        // subMain deliberately stays batched here: its runtime hooks
-        // (objc/classes groups) queue below, and HookKit 2.2.5 publishes
-        // originals at batch-apply time — draining now would make them
-        // install immediately, opening the same use-before-publish window
-        // for re-entrant runtime calls. It is drained right after +classes.
+        // Drain the batch here so the libc hooks are LIVE before the envvars
+        // block below calls unsetenv/setenv (members of this set) — a
+        // re-entrant call to a not-yet-applied hook is fine (it hits real
+        // libc), but draining keeps the envvar edits going through the hooked
+        // path exactly as before. subCFunc STAYS batched afterward (no
+        // setBatching:NO): every remaining C-function group (envvar, mach,
+        // iokit, llc, antidebug, method-impl, syscall, memory, sandbox) then
+        // enqueues and is applied together in ONE image walk at the single
+        // drain below — instead of a full ~O(loaded-images) fishhook rebind
+        // scan per hook, which was ~4.8s of launch CPU (per group: sandbox
+        // ~1.74s, syscall ~0.74s, ...). Safe because HookKit's batched
+        // fishhook lane (rebind_symbols_hook_batch, HookKit >= 2.3 with the
+        // batch backend) does not rewrite any slot until the drain and
+        // publishes each caller's original before its slot goes live, so no
+        // use-before-publication window exists across the deferred groups.
+        // subMain likewise stays batched (its runtime hooks queue below) and
+        // is drained right after +classes.
         [subCFunc executeHooks];
-        [subCFunc setBatching:NO];
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
@@ -957,6 +960,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         _shdw_tweakclasses_installed = YES;
         #endif
     }
+
+    // Drain the deferred C-function groups (envvar … sandbox) in ONE batched
+    // fishhook walk — see the libc-drain comment above. Ordered before the
+    // subMain drain; both lanes are independent.
+    [subCFunc executeHooks];
+    [subCFunc setBatching:NO];
 
     // Drain subMain's batch NOW — right after the objc/classes groups queued
     // their runtime hooks — while still in the internal-read scope. HookKit
