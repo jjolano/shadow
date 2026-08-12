@@ -6,10 +6,15 @@
 #import <Preferences/PSSpecifier.h>
 #import <Preferences/PSTableCell.h>
 #import <Shadow/Settings.h>
+#import <AltList/LSApplicationProxy+AltList.h>
 
 @implementation SHDWDetectorLogListController {
 	NSUserDefaults* prefs;
 	NSMutableArray* entrySpecifiers;
+
+	// bundleID -> display name, so a 100-entry reload hits LSApplicationProxy
+	// once per app instead of once per entry.
+	NSMutableDictionary* nameCache;
 }
 
 - (NSArray *)specifiers {
@@ -67,6 +72,58 @@
 	return filtered;
 }
 
+// App display name via AltList (same lookup the Apps page uses for its
+// title), falling back to the raw bundle identifier.
+- (NSString *)displayNameForBundleID:(NSString *)bundleID {
+	NSString* name = nameCache[bundleID];
+
+	if(!name) {
+		name = [LSApplicationProxy applicationProxyForIdentifier:bundleID].atl_fastDisplayName;
+		if(name.length == 0) {
+			name = bundleID;
+		}
+		nameCache[bundleID] = name;
+	}
+
+	return name;
+}
+
+// One specifier per log line. A clean 3-field entry becomes a structured row
+// (title = reason, subtitle = timestamp, rendered by cellForRow below);
+// anything that doesn't split exactly keeps the raw string as its title and
+// renders as a plain static-text row like before.
+- (PSSpecifier *)entrySpecifierForRawEntry:(NSString *)raw {
+	PSSpecifier* entry = [PSSpecifier preferenceSpecifierNamed:raw target:self set:NULL get:NULL detail:nil cell:PSStaticTextCell edit:nil];
+	[entry setProperty:@"SHDWDetectorLogEntry" forKey:@"id"];
+	[entry setProperty:@YES forKey:@"enabled"];
+
+	NSArray* fields = [raw componentsSeparatedByString:@"  "];
+	if(fields.count == 3 && [fields[0] length] > 0 && [fields[1] length] > 0 && [fields[2] length] > 0) {
+		[entry setName:fields[1]];
+		[entry setProperty:fields[0] forKey:@"entryDetail"];
+	}
+
+	return entry;
+}
+
+// Structured rows get a subtitle cell; everything else (the empty state,
+// unparseable entries) uses the standard static-text cell from super.
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+	PSSpecifier* specifier = [self specifierAtIndexPath:indexPath];
+	NSString* detail = [specifier propertyForKey:@"entryDetail"];
+
+	if(detail) {
+		PSTableCell* cell = [[PSTableCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"SHDWDetectorLogEntryCell" specifier:specifier];
+		cell.textLabel.text = [specifier name];
+		cell.textLabel.numberOfLines = 0;
+		cell.detailTextLabel.text = detail;
+		cell.selectionStyle = UITableViewCellSelectionStyleNone;
+		return cell;
+	}
+
+	return [super tableView:tableView cellForRowAtIndexPath:indexPath];
+}
+
 // Rebuilds the log-entry cells from the prefs array. The static specifiers
 // (group header + clear button) come from DetectorLog.plist; the entries are
 // dynamic, so they are inserted after the header group.
@@ -90,14 +147,48 @@
 		return;
 	}
 
-	// Newest first: iterate oldest-to-newest so each insert at index 1
-	// pushes the previous entry down.
-	for(NSInteger i = 0; i < log.count; i++) {
-		PSSpecifier* entry = [PSSpecifier preferenceSpecifierNamed:log[i] target:self set:NULL get:NULL detail:nil cell:PSStaticTextCell edit:nil];
-		[entry setProperty:@"SHDWDetectorLogEntry" forKey:@"id"];
-		[entry setProperty:@YES forKey:@"enabled"];
-		[entrySpecifiers addObject:entry];
-		[self insertSpecifier:entry atIndex:1];
+	NSMutableArray* ordered = [NSMutableArray new];
+
+	if(self.filterBundleID) {
+		// Per-app page: the app is implied by where the user came from, so a
+		// flat list of entries, newest first.
+		for(NSString* entry in [log reverseObjectEnumerator]) {
+			[ordered addObject:[self entrySpecifierForRawEntry:entry]];
+		}
+	} else {
+		// Global page: group entries under per-app headers. Walking the log
+		// newest-first yields groups ordered by most recent activity, with
+		// the newest entry first inside each group.
+		NSMutableArray* groupOrder = [NSMutableArray new];
+		NSMutableDictionary* groups = [NSMutableDictionary new];
+
+		for(NSString* entry in [log reverseObjectEnumerator]) {
+			NSString* bundleID = [[entry componentsSeparatedByString:@"  "] lastObject];
+			if(bundleID.length == 0) {
+				bundleID = entry;
+			}
+
+			NSMutableArray* group = groups[bundleID];
+			if(!group) {
+				group = [NSMutableArray new];
+				groups[bundleID] = group;
+				[groupOrder addObject:bundleID];
+			}
+			[group addObject:[self entrySpecifierForRawEntry:entry]];
+		}
+
+		for(NSString* bundleID in groupOrder) {
+			[ordered addObject:[PSSpecifier groupSpecifierWithName:[self displayNameForBundleID:bundleID]]];
+			[ordered addObjectsFromArray:groups[bundleID]];
+		}
+	}
+
+	// Insert after the static header group; the Share/Clear buttons are
+	// pushed down below the entries.
+	NSInteger index = 1;
+	for(PSSpecifier* spec in ordered) {
+		[entrySpecifiers addObject:spec];
+		[self insertSpecifier:spec atIndex:index++];
 	}
 }
 
@@ -145,6 +236,7 @@
 	if((self = [super init])) {
 		prefs = [[ShadowSettings sharedInstance] userDefaults];
 		entrySpecifiers = [NSMutableArray new];
+		nameCache = [NSMutableDictionary new];
 	}
 
 	return self;
