@@ -123,14 +123,18 @@ static BOOL probeCanary(void) {
 
 // ---------------------------------------------------------------------------
 // Effective global prefs: groups the global settings disable are SKIPped.
-// The plist is in the mobile prefs domain (not /var/jb — that path is
-// restricted and the read itself would be filtered); it must be read BEFORE
-// dlopen so the value is never influenced by the hooks. When the plist is
-// missing, the SHIPPED defaults apply (SHDWDefaultHookSettings,
-// HookConfiguration.m): the keys below ship OFF, everything else ships ON.
+// gEffectivePrefs is the battery's replication of ShadowCore's ctor-time
+// resolution (ShadowSettings getPreferencesForIdentifier: for a nil bundle
+// ID, Settings.m:92-128): shipped defaults (SHDWDefaultHookSettings,
+// HookConfiguration.m:55-82) overlaid with the stored suite values when
+// Global_Enabled — read pre-dlopen through the NSUserDefaults suite, the
+// same cfprefsd mediation the ctor uses (no hooks installed yet, so the
+// reads are unhooked). gPrefs is the RAW plist read, kept only as a
+// fallback when the suite resolution is unavailable.
 // ---------------------------------------------------------------------------
 
 static NSDictionary* gPrefs = nil;
+static NSDictionary* gEffectivePrefs = nil;  // resolved pre-dlopen in main()
 
 static NSSet* shdw_defaultOffKeys(void) {
     static NSSet* set = nil;
@@ -153,7 +157,47 @@ static NSSet* shdw_defaultOffKeys(void) {
     return set;
 }
 
+// Mirror of SHDWDefaultHookSettings (HookConfiguration.m:55-82) — the single
+// source of truth. Built from shdw_defaultOffKeys (→ NO) plus every other
+// key the battery queries (→ YES) so the two cannot drift: a key shipping
+// ON that this mirror misses would silently untest its group.
+static NSDictionary* shdw_defaultSettings(void) {
+    static NSDictionary* dict = nil;
+    static dispatch_once_t onceToken = 0;
+
+    dispatch_once(&onceToken, ^{
+        NSMutableDictionary* d = [NSMutableDictionary dictionaryWithDictionary:@{
+            @"Hook_Filesystem" : @YES,
+            @"Hook_URLScheme"  : @YES,
+            @"Hook_EnvVars"    : @YES,
+            @"Hook_DeviceCheck": @YES,
+            @"Hook_LowLevelC"  : @YES,
+            @"Hook_HideApps"   : @YES,
+            @"MemoryLevelHiding" : @YES
+        }];
+
+        for(NSString* key in shdw_defaultOffKeys()) {
+            d[key] = @NO;
+        }
+
+        dict = [d copy];
+    });
+
+    return dict;
+}
+
 static BOOL prefsEnabled(NSString* key) {
+    if(gEffectivePrefs) {
+        // ShadowCore's effective resolution; the dict always contains every
+        // defaultSettings key. A missing key is unexpected — fall through to
+        // the raw model as a safety net.
+        id value = [gEffectivePrefs objectForKey:key];
+
+        if(value) {
+            return [value boolValue];
+        }
+    }
+
     id value = [gPrefs objectForKey:key];
 
     if(value) {
@@ -993,6 +1037,37 @@ int main(int argc, char* argv[]) {
         // restricted roots, but the values gate which groups we probe).
         gPrefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
 
+        // Resolve the EFFECTIVE settings the way ShadowCore's ctor does —
+        // pre-dlopen, plain Foundation. The suite (initWithSuiteName:
+        // kShadowPrefsPlist, same string ShadowSettings uses at Settings.m:
+        // 24-25) reads the plist through cfprefsd, and registerDefaults
+        // supplies the shipped defaults. This replicates
+        // getPreferencesForIdentifier: (Settings.m:92-128) for a nil bundle
+        // ID: shipped defaults, overlaid with stored suite values only when
+        // Global_Enabled. Both baseline gating and probe gating use this one
+        // model — the raw-plist model diverges from the ctor's resolution
+        // on-device (URLScheme/EnvVars/DeviceCheck/LowLevelC/HideApps resolve
+        // 0 in the CLI context), and a post-dlopen ShadowSettings query is
+        // impossible from the battery (Shadow's NSClassFromString hiding,
+        // objc.x:286-300, filters external callers).
+        NSUserDefaults* ud = [[NSUserDefaults alloc] initWithSuiteName:kShadowPrefsPlist];
+        [ud registerDefaults:shdw_defaultSettings()];
+        NSMutableDictionary* eff = [shdw_defaultSettings() mutableCopy];
+
+        if([ud boolForKey:@"Global_Enabled"]) {
+            eff[@"App_Enabled"] = @YES;
+
+            for(NSString* key in shdw_defaultSettings()) {
+                id value = [ud objectForKey:key];
+
+                if(value) {
+                    eff[key] = value;  // stored ?? registered default (Settings.m:120)
+                }
+            }
+        }
+
+        gEffectivePrefs = [eff copy];
+
         BOOL vnodeOn = prefsEnabled(@"VnodeHiding");
         BOOL syscallOn = prefsEnabled(@"Hook_Syscall");
         BOOL deviceCheckOn = prefsEnabled(@"Hook_DeviceCheck");
@@ -1067,6 +1142,7 @@ int main(int argc, char* argv[]) {
         void* handle = dlopen("/var/jb/usr/lib/TweakInject/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
 
         if(!handle) {
+            NSLog(@"[hookprobe] WARN: primary ShadowCore dlopen failed (%s)", dlerror());
             handle = dlopen("/usr/lib/TweakInject/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
         }
 
@@ -1099,6 +1175,9 @@ int main(int argc, char* argv[]) {
             NSLog(@"[hookprobe] hooks not active: restricted root is visible. Check Shadow is enabled for this bundle (prefs gate).");
         }
 
+        // Effective settings were resolved pre-dlopen (see main() top):
+        // every prefsEnabled() below — including the post-dlopen probe
+        // gating — consults that same model.
         BOOL fsOn = prefsEnabled(@"Hook_Filesystem") || prefsEnabled(@"Hook_LowLevelC");
         BOOL foundationOn = prefsEnabled(@"Hook_Foundation");
         BOOL envvarsOn = prefsEnabled(@"Hook_EnvVars");
@@ -1128,25 +1207,28 @@ int main(int argc, char* argv[]) {
             report(@"mem", @"vm_region", NO, @"ShadowCore header not captured (setup failure)");
         }
 
-        if(vnodeOn) {
+        // Post-dlopen gating consults the same pre-dlopen effective model as
+        // the baselines (prefsEnabled → gEffectivePrefs): one model, both
+        // sides — a group ShadowCore did not install can never false-FAIL.
+        if(prefsEnabled(@"VnodeHiding")) {
             probeVnodePost();
         } else {
             skip(@"vnode", @"vnode-layer hiding", @"VnodeHiding disabled");
         }
 
-        if(syscallOn) {
+        if(prefsEnabled(@"Hook_Syscall")) {
             probeSyscallCsopsPost();
         } else {
             skip(@"syscall", @"csops", @"Hook_Syscall disabled");
         }
 
-        if(deviceCheckOn) {
+        if(prefsEnabled(@"Hook_DeviceCheck")) {
             probeDeviceCheckPost();
         } else {
             skip(@"DeviceCheck", @"DCDevice.isSupported", @"Hook_DeviceCheck disabled");
         }
 
-        if(uiImageOn) {
+        if(prefsEnabled(@"Hook_Foundation")) {
             probeUIImagePost();
         } else {
             skip(@"UIImage", @"imageNamed(inBundle:)", @"Hook_Foundation disabled");
