@@ -11,6 +11,13 @@
 
 #import "../common.h"   // SHADOW_CRASH_THRESHOLD, SHADOW_CRASH_DECAY_SECS
 
+// Private UIKit SPI for an app's home-screen icon by bundle ID — the standard
+// way to render app icons in a settings row (AltList's category exposes names,
+// not icons). format 2 is the small (~settings-row-sized) variant.
+@interface UIImage (SHDWAppIcon)
++ (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleID format:(int)format scale:(CGFloat)scale;
+@end
+
 // Prefix of the per-app crash-counter keys the watchdog writes
 // (shdw_crash_counter_key in common.h: "CrashCount.<bundleID>").
 static NSString* const kCrashCountPrefix = @"CrashCount.";
@@ -19,6 +26,7 @@ static NSString* const kCrashCountPrefix = @"CrashCount.";
 	NSUserDefaults* prefs;
 	NSMutableArray* entrySpecifiers;
 	NSMutableDictionary* nameCache;
+	NSMutableDictionary* iconCache;
 }
 
 - (NSArray *)specifiers {
@@ -59,6 +67,21 @@ static NSString* const kCrashCountPrefix = @"CrashCount.";
 	return name;
 }
 
+- (UIImage *)iconForBundleID:(NSString *)bundleID {
+	UIImage* icon = iconCache[bundleID];
+
+	if(!icon) {
+		if([UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)]) {
+			icon = [UIImage _applicationIconImageForBundleIdentifier:bundleID format:2 scale:[UIScreen mainScreen].scale];
+		}
+		if(icon) {
+			iconCache[bundleID] = icon;
+		}
+	}
+
+	return icon;
+}
+
 // One (bundleID, count, skipped) record per crash-counter key. Mirrors the
 // watchdog's own read (Shadow.dylib): parse "count:timestamp", treat a counter
 // older than the decay window as stale (the watchdog would reset it on the next
@@ -87,6 +110,13 @@ static NSString* const kCrashCountPrefix = @"CrashCount.";
 		long long ts = [parts[1] longLongValue];
 		BOOL stale = (ts > 0 && (long long)time(NULL) - ts > SHADOW_CRASH_DECAY_SECS);
 		int effective = stale ? 0 : count;
+
+		// Only apps with active crashes belong here. A decayed counter reads as
+		// 0 and the watchdog resets it on the next launch anyway, so listing it
+		// (as "0/3") is noise.
+		if(effective <= 0) {
+			continue;
+		}
 
 		[records addObject:@{
 			@"key" : key,
@@ -142,6 +172,15 @@ static NSString* const kCrashCountPrefix = @"CrashCount.";
 		cell.textLabel.text = [specifier name];
 		cell.textLabel.numberOfLines = 0;
 		cell.detailTextLabel.text = detail;
+		NSString* bundleID = [specifier propertyForKey:@"crashBundleID"];
+		if(bundleID) {
+			UIImage* icon = [self iconForBundleID:bundleID];
+			if(icon) {
+				cell.imageView.image = icon;
+				cell.imageView.layer.cornerRadius = 6.0;
+				cell.imageView.layer.masksToBounds = YES;
+			}
+		}
 		// Selectable (tap clears the counter) only for real entries; the empty
 		// state carries no crashKey and stays inert.
 		cell.selectionStyle = [specifier propertyForKey:@"crashKey"] ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
@@ -237,6 +276,7 @@ static NSString* const kCrashCountPrefix = @"CrashCount.";
 		prefs = [[ShadowSettings sharedInstance] userDefaults];
 		entrySpecifiers = [NSMutableArray new];
 		nameCache = [NSMutableDictionary new];
+		iconCache = [NSMutableDictionary new];
 	}
 
 	return self;
