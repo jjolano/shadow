@@ -708,6 +708,17 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     [subFish setBatching:YES];
     [subInline setBatching:YES];
     [subCFunc setBatching:YES];
+    // Auto-cover lane: batch it too (HookKit >= 2.4 batched auto-cover — the
+    // per-hook router runs at enqueue, executeHooks groups by backend class).
+    // The identity groups (objc/hidetweakclasses/symlookup) request originals,
+    // so on an after-activation inline provider (ElleKit) every one falls back
+    // to rebind; unbatched, that was ~187ms of one-image-walk-per-hook at spawn.
+    // Batching coalesces the whole lane into a single walk. Only a distinct
+    // instance: when auto-cover is unavailable subSymLookup IS subCFunc (already
+    // batched/drained below), so don't touch it twice.
+    if(subSymLookup != subCFunc) {
+        [subSymLookup setBatching:YES];
+    }
     HKEnableBatching();
     #else
     HKSubstitutor* subMain = NULL;
@@ -1027,6 +1038,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     [subFish setBatching:NO];
     [subInline executeHooks];
     [subInline setBatching:NO];
+    // Drain the auto-cover lane in one shot (all its installs — objc,
+    // hidetweakclasses, symlookup, symaddrlookup — are queued by now). Ordered
+    // here, before the internal-read scope closes and the image replay, so the
+    // identity hooks are live+published before any of that runs. The batch
+    // publishes each original before its slot goes live (rebind publish_cells /
+    // before-activation inline providers), so no NULL-original window despite
+    // deferring go-live to this drain. Skipped when subSymLookup fell back to
+    // subCFunc (already drained above).
+    if(subSymLookup != subCFunc) {
+        [subSymLookup executeHooks];
+        [subSymLookup setBatching:NO];
+    }
     HKExecuteBatch();
     HKDisableBatching();
 
