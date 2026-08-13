@@ -799,24 +799,20 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // see shdw_install_tier2.
         shadowhook_libc(subCFunc);
 
-        // Drain the batch here so the libc hooks are LIVE before the envvars
-        // block below calls unsetenv/setenv (members of this set) — a
-        // re-entrant call to a not-yet-applied hook is fine (it hits real
-        // libc), but draining keeps the envvar edits going through the hooked
-        // path exactly as before. subCFunc STAYS batched afterward (no
-        // setBatching:NO): every remaining C-function group (envvar, mach,
-        // iokit, llc, antidebug, method-impl, syscall, memory, sandbox) then
-        // enqueues and is applied together in ONE image walk at the single
-        // drain below — instead of a full ~O(loaded-images) fishhook rebind
-        // scan per hook, which was ~4.8s of launch CPU (per group: sandbox
-        // ~1.74s, syscall ~0.74s, ...). Safe because HookKit's batched
-        // fishhook lane (rebind_symbols_hook_batch, HookKit >= 2.3 with the
-        // batch backend) does not rewrite any slot until the drain and
-        // publishes each caller's original before its slot goes live, so no
-        // use-before-publication window exists across the deferred groups.
-        // subMain likewise stays batched (its runtime hooks queue below) and
-        // is drained right after +classes.
-        [subCFunc executeHooks];
+        // Do NOT drain here. subCFunc stays batched and drains ONCE below
+        // (line ~987) with every other C group. The file hooks (stat/open/
+        // access/fstat/...) going live EARLY was measured to cost ~325ms of
+        // launch: the always-on objc/classes install that runs before the
+        // final drain does dlopen/dladdr/stat-heavy work, and once file hooks
+        // are live every one of those syscalls routes through a replacement
+        // (Filesystem arm objc-install 131ms -> 452ms; whole arm 0.82s ->
+        // 1.21s). Deferring to the single final drain keeps that install on
+        // real libc. Behavior: the envvars block below calls unsetenv/setenv
+        // through real libc during the ctor instead of the not-yet-live hooks
+        // — which the old early-drain comment already noted is fine (the env
+        // var is still removed; the replacements' PATH-cache bookkeeping is a
+        // runtime concern, built lazily on first access). subCFunc STAYS
+        // batched (no setBatching:NO) exactly as before.
     }
 
     if([prefs_load[@"Hook_EnvVars"] boolValue]) {
