@@ -1,8 +1,5 @@
-"HK_LIB_DESC" = "Controls the hooking library used for C-function hooks. Objective-C hooks always use the runtime's default library (ElleKit, Substrate, Substitute or the native Objective-C runtime). Some hooking libraries may provide a bypass improvement, but may also affect app stability.";
-
-"HOOKING_LIBRARY" = "Hooking Library";
-"HK_LIB_SELECT" = "This is a list of hooking libraries available to use on your device. Select \"Automatic\" to allow HookKit to choose the best hooking library for your device.";
-"AUTOMATIC" = "Automatic";
+"TROUBLESHOOTING" = "Troubleshooting";
+"TROUBLESHOOTING_DESC" = "Advanced options for resolving app compatibility problems.";
 
 "ESSENTIAL_HOOKS" = "Essential Hooks";
 "ESSENTIAL_HOOKS_DESC" = "Essential hooks cover the most common jailbreak detection methods.";
@@ -55,7 +52,7 @@
 
 "VNODE_UNAVAILABLE_REASON" = "Vnode hiding requires the shadowd daemon with kernel read/write access.";
 "VNODE_STARTING_REASON" = "Vnode hiding is unavailable while the shadowd daemon is still starting.";
-"UNSUPPORTED_ELLEKIT_REASON" = "Requires the ElleKit hooking library.";
+"UNSUPPORTED_ELLEKIT_REASON" = "Requires a private-symbol-capable hooking backend.";
 "UNSUPPORTED_MSG_REASON" = "Requires an Objective-C-capable hooking library (ElleKit, Substrate, Substitute or the native Objective-C runtime).";
 "UNSUPPORTED_FUNC_REASON" = "Requires a C-function-capable hooking library.";
 "BYPASS_PRESET" = "Bypass Preset";

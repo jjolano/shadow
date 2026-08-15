@@ -62,6 +62,9 @@ jobs:
       - name: Hook→engine matrix drift check
         run: sh tests/verify-hook-matrix.sh
 
+      - name: Settings information architecture check
+        run: sh tests/verify-settings-structure.sh
+
   macos-foundation:
     runs-on: macos-latest
     steps:

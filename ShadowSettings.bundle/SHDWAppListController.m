@@ -1,5 +1,4 @@
 #import "SHDWAppListController.h"
-#import "SHDWHookLibs.h"
 #import "SHDWPrefs.h"
 #import "SHDWCapabilities.h"
 
@@ -24,9 +23,6 @@
 	// Same reason as hookSpecifiers: the kill switch removes this row from the
 	// table, so specifierForID: can no longer find it to put it back.
 	PSSpecifier* followGlobalSpecifier;
-
-	NSMutableArray* hk_lib_values;
-	NSMutableArray* hk_lib_titles;
 
 	NSMutableArray* preset_values;
 	NSMutableArray* preset_titles;
@@ -351,28 +347,9 @@
 	return YES;
 }
 
-- (NSArray *)getValues:(PSSpecifier *)specifier {
-	return [hk_lib_values copy];
-}
-
-- (NSArray *)getTitles:(PSSpecifier *)specifier {
-	return [hk_lib_titles copy];
-}
-
 - (instancetype)init {
 	if((self = [super init])) {
 		prefs = [[ShadowSettings sharedInstance] userDefaults];
-
-		hk_lib_values = [NSMutableArray new];
-		hk_lib_titles = [NSMutableArray new];
-
-		[hk_lib_values addObject:@"auto"];
-		[hk_lib_titles addObject:[[NSBundle bundleForClass:[self class]] localizedStringForKey:@"AUTOMATIC" value:@"Automatic" table:@"Hooks"]];
-
-        for(NSDictionary* hooklib_info in SHDWAvailableHookLibs()) {
-			[hk_lib_values addObject:hooklib_info[@"id"]];
-			[hk_lib_titles addObject:hooklib_info[@"name"]];
-        }
 
 		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
 		preset_values = [NSMutableArray new];
