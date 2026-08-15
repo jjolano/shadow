@@ -1,0 +1,13 @@
+Package: com.opa334.libsandy.legacy
+Name: libSandy (Legacy Rootful)
+Version: 1.1.6-4
+Architecture: iphoneos-arm
+Depends: firmware (>= 9.0), firmware (<< 14.0)
+Provides: com.opa334.libsandy
+Replaces: com.opa334.libsandy
+Conflicts: com.opa334.libsandy
+Description: Securely extend the sandbox on rootful iOS 9 through 13
+Maintainer: opa334
+Author: opa334
+Section: System
+Tag: role::developer

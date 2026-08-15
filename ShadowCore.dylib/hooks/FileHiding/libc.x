@@ -1,8 +1,8 @@
 #import "hooks.h"
 #import "filters.h"
-#import "../policy/EnvironmentPolicy.h"
-#import "../policy/PathPolicy.h"
-#import "../policy/ProcessPolicy.h"
+#import "../../policy/EnvironmentPolicy.h"
+#import "../../policy/PathPolicy.h"
+#import "../../policy/ProcessPolicy.h"
 
 #import <string.h>
 #import <stdlib.h>
@@ -10,16 +10,6 @@
 #import <sys/resource.h>
 #import <sys/attr.h>
 #import <sys/snapshot.h>
-
-// Trip on the attempt, before any restricted-path filtering: the probe is the
-// caller touching a JB indicator, independent of how the filter answers it.
-// isCallerExternal() reads the return address, so it must expand inline at the
-// hook site — never route it through a helper function. The probe predicate
-// itself lives in policy/PathPolicy.m.
-#define SHADOW_TRIP(pathname, kind, ext) \
-    if(ext && shdw_is_jb_probe(pathname)) { \
-        shdw_detector_detected(kind); \
-    }
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
@@ -1455,554 +1445,6 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
-// getenv: hidden names answer NULL and PATH is sanitized — shared policy
-// (policy/EnvironmentPolicy.m) so the getenv, *environ and NSProcessInfo
-// channels agree.
-static char* (*original_getenv)(const char* name);
-static char* replaced_getenv(const char* name) {
-    if(!isCallerExternal()) {
-        return original_getenv(name);
-    }
-
-    char* result = original_getenv(name);
-
-    if(!result || !name || !name[0]) {
-        return result;
-    }
-
-    // Stock iOS never has these set; their presence is the jailbreak signal
-    // a detector reads back from getenv.
-    if(shdw_env_name_hidden(name)) {
-        return NULL;
-    }
-
-    if(strcmp(name, "PATH") == 0) {
-        return shdw_env_sanitized_path(result);
-    }
-
-    return result;
-}
-
-static int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
-static int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
-    if(_request == PT_DENY_ATTACH) {
-        return 0;
-    }
-
-    return original_ptrace(_request, _pid, _addr, _data);
-}
-
-// libproc.h isn't shipped in the theos SDK; declare the symbols we need
-// (all stable libSystem exports).
-extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
-extern int proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
-extern int proc_listallpids(void* buffer, int buffersize);
-extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
-
-// libproc.h isn't shipped in the theos SDK either, so declare the two pieces
-// of the PROC_PIDTBSDINFO query we mask. proc_bsdinfo is a stable public ABI;
-// the prefix layout matches it exactly (pbi_ppid at offset 0x10). Only that
-// field is ever written.
-#define SHADOW_PROC_PIDTBSDINFO 3
-
-struct shdw_proc_bsdinfo_prefix {
-    uint32_t pbi_flags;    /* 0x00 */
-    uint32_t pbi_status;   /* 0x04 */
-    uint32_t pbi_xstatus;  /* 0x08 */
-    uint32_t pbi_pid;      /* 0x0c */
-    uint32_t pbi_ppid;     /* 0x10 */
-};
-
-// Process classification/filtering shared with syscall.x lives in
-// policy/ProcessPolicy.m: the kinfo cache, the filtered KERN_PROC_ALL
-// enumeration, the libproc pid filter and the MIB classification
-// (shdw_proc_mib_kind) that drives this hook's branches.
-static int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
-
-static int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
-    if(name == NULL || namelen == 0) {
-        return original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
-    }
-
-    shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(name, namelen);
-
-    // Per-pid queries of a jailbreak daemon must answer ENOENT, the same
-    // hiding the KERN_PROC_ALL filter applies to the list (a pid-scanning
-    // detector steps the MIB pid by pid).
-    if(kind == SHADW_PROC_MIB_PID_OTHER) {
-        if(shdw_pid_is_restricted(name[3])) {
-            errno = ENOENT;
-            return -1;
-        }
-    } else if(kind == SHADW_PROC_MIB_ARGS2_OTHER) {
-        if(shdw_pid_is_restricted(name[2])) {
-            errno = ENOENT;
-            return -1;
-        }
-    }
-
-    int ret;
-
-    if(kind == SHADW_PROC_MIB_ALL && newp == NULL && oldlenp != NULL) {
-        // Filtered KERN_PROC_ALL enumeration: restricted processes removed,
-        // self trace flags cleared, stock size semantics preserved. The
-        // libc surface's original calls cannot re-enter the raw-syscall
-        // dispatch, so no in-progress guard (reentrant = NO).
-        ret = shdw_proc_all_filtered(original_sysctl, oldp, oldlenp, NO);
-    } else {
-        ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
-    }
-
-    // Remove trace flags from our own process record — only on valid success
-    // and only when the caller's buffer actually carries the record.
-    if(ret == 0 && kind == SHADW_PROC_MIB_PID_SELF && oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
-        shdw_proc_sanitize_self_record((struct kinfo_proc*) oldp);
-    }
-
-    // Own KERN_PROCARGS2: the kernel payload is the raw launch argv/envp;
-    // rebuild it to agree with the filtered NSProcessInfo/getenv views.
-    if(ret == 0 && kind == SHADW_PROC_MIB_ARGS2_SELF && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
-        shdw_procargs2_filter(oldp, oldlenp);
-    }
-
-    return ret;
-}
-
-static pid_t (*original_getppid)(void);
-static pid_t replaced_getppid(void) {
-    if(!isCallerExternal()) {
-        // Shadow-internal callers get the real parent; the app/detector
-        // sees the stock answer for a process without a debugger parent.
-        return original_getppid();
-    }
-
-    return 1;
-}
-
-// getrusage(RUSAGE_CHILDREN): a detector spawns a child to test execution
-// and measures its CPU usage to infer a jailbreak. Zero the child-accounting
-// fields for external callers so the probe sees a child that never ran.
-// RUSAGE_SELF is untouched — it is the caller's own accounting and carries
-// no jailbreak signal.
-static int (*original_getrusage)(int who, struct rusage* usage);
-static int replaced_getrusage(int who, struct rusage* usage) {
-    int result = original_getrusage(who, usage);
-
-    if(result == 0 && isCallerExternal() && who == RUSAGE_CHILDREN && usage) {
-        memset(usage, 0, sizeof(*usage));
-    }
-
-    return result;
-}
-
-// getrlimit: pass-through (conservative). RLIMIT probes are not a reliable
-// jailbreak signal — legitimate apps set/read limits routinely — so no
-// fabrication here; the hook exists for coverage and to keep the symbol in
-// the dlsym policy table (GOT-vs-dlsym agreement).
-static int (*original_getrlimit)(int resource, struct rlimit* rlp);
-static int replaced_getrlimit(int resource, struct rlimit* rlp) {
-    return original_getrlimit(resource, rlp);
-}
-
-// libproc enumeration (proc_listpids/proc_listallpids/proc_pidinfo) is the
-// second process-list surface after sysctl KERN_PROC: detectors enumerate
-// pids and query per-pid details to find jailbreak daemons. The sysctl hook
-// filters the kinfo_proc list; these hooks filter the libproc views of the
-// same processes. Classification and the pid-list compaction live in
-// policy/ProcessPolicy.m (shdw_pid_is_restricted / shdw_proc_pids_filtered).
-
-static int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
-static int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
-    int count = original_proc_listpids(type, typeinfo, buffer, buffersize);
-
-    if(count <= 0 || !buffer || !isCallerExternal()) {
-        return count;
-    }
-
-    return shdw_proc_pids_filtered((pid_t*) buffer, count);
-}
-
-static int (*original_proc_listallpids)(void* buffer, int buffersize);
-static int replaced_proc_listallpids(void* buffer, int buffersize) {
-    int count = original_proc_listallpids(buffer, buffersize);
-
-    if(count <= 0 || !buffer || !isCallerExternal()) {
-        return count;
-    }
-
-    return shdw_proc_pids_filtered((pid_t*) buffer, count);
-}
-
-static int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
-static int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
-    if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
-        // Jailbreak daemon: deny the per-pid query the same way the pid
-        // list filters deny enumeration. EPERM matches what an unprivileged
-        // caller sees for processes it may not inspect.
-        errno = EPERM;
-        return 0;
-    }
-
-    int ret = original_proc_pidinfo(pid, flavor, arg, buffer, buffersize);
-
-    // Cross-API consistency: getppid() reports parent 1, so the own
-    // process's BSD info must say the same — a detector comparing
-    // getppid() against pbi_ppid would otherwise see the real parent.
-    if(ret > 0 && isCallerExternal() && pid == getpid() && flavor == SHADOW_PROC_PIDTBSDINFO
-    && buffer && buffersize >= sizeof(struct shdw_proc_bsdinfo_prefix)) {
-        ((struct shdw_proc_bsdinfo_prefix*) buffer)->pbi_ppid = 1;
-    }
-
-    return ret;
-}
-
-// freeRASP rootless probe (.jbroot write): the classifier lives in
-// policy/PathPolicy.m (shdw_is_jbroot_write_probe), shared with the open
-// family hooks below.
-
-static int (*original_open)(const char *pathname, int oflag, ...);
-static int replaced_open(const char *pathname, int oflag, ...) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(pathname, "open", ext);
-
-    mode_t mode = 0;
-
-    // open() only receives a mode argument when O_CREAT is set; reading the
-    // vararg unconditionally would pull a non-existent argument off the
-    // stack (the mode slot holds garbage the caller never passed).
-    if(oflag & O_CREAT) {
-        va_list args;
-        va_start(args, oflag);
-        // mode_t is unsigned short: through `...` it promotes to int, so read
-        // the promoted slot (va_arg on the un-promoted type is UB per clang).
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
-
-    if(ext && shdw_is_jbroot_write_probe(pathname, oflag)) {
-        // Stock fails with ENOENT since .jbroot doesn't exist there; must match
-        // exactly so the probe can't distinguish us via a different errno.
-        errno = ENOENT;
-        return -1;
-    }
-
-    if(!ext || ![_shadow isCPathRestricted:pathname]) {
-        if(oflag & O_CREAT) {
-            return original_open(pathname, oflag, mode);
-        }
-
-        return original_open(pathname, oflag);
-    }
-
-    errno = ENOENT;
-    return -1;
-}
-
-static int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
-static int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(pathname, "openat", ext);
-
-    mode_t mode = 0;
-
-    // openat() only receives a mode argument when O_CREAT is set (see open).
-    if(oflag & O_CREAT) {
-        va_list args;
-        va_start(args, oflag);
-        // mode_t is unsigned short: through `...` it promotes to int, so read
-        // the promoted slot (va_arg on the un-promoted type is UB per clang).
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
-
-    if(!ext) {
-        if(oflag & O_CREAT) {
-            return original_openat(dirfd, pathname, oflag, mode);
-        }
-
-        return original_openat(dirfd, pathname, oflag);
-    }
-
-    if(shdw_is_jbroot_write_probe(pathname, oflag)) {
-        // Stock fails with ENOENT since .jbroot doesn't exist there; must match
-        // exactly so the probe can't distinguish us via a different errno.
-        errno = ENOENT;
-        return -1;
-    }
-
-    if(shdw_at_path_denied(dirfd, pathname)) {
-        return -1;
-    }
-
-    if(oflag & O_CREAT) {
-        return original_openat(dirfd, pathname, oflag, mode);
-    }
-
-    return original_openat(dirfd, pathname, oflag);
-}
-
-static DIR* (*original___opendir2)(const char* pathname, int flags);
-static DIR* replaced___opendir2(const char* pathname, int flags) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
-        return original___opendir2(pathname, flags);
-    }
-
-    errno = ENOENT;
-    return NULL;
-}
-
-// Public opendir: libSystem's public opendir() may call the private
-// __opendir2 internally WITHOUT going through the rebindable PLT entry (the
-// fishhook lane only intercepts import-table references), so hooking only
-// __opendir2 leaves the public API visible to detectors that call opendir()
-// directly (observed via the hookprobe battery: opendir("/var/jb") returned
-// a handle while stat/open on the same path were filtered). Hook the public
-// symbol too; when it is a weak alias of __opendir2 both entries chain to
-// the same replacement, and the guard keeps the redirect idempotent.
-static DIR* (*original_opendir)(const char* pathname);
-static DIR* replaced_opendir(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
-        return original_opendir(pathname);
-    }
-
-    errno = ENOENT;
-    return NULL;
-}
-
-// --- stat64 family + protected-open variants ---------------------------------
-// These are legacy/compat exports: the stat64 family and open_dprotected_np/
-// openat_dprotected_np are absent on modern iOS (64-bit stat IS stat64), and
-// openat_authenticated_np is not in the SDK at all. All seven are resolved at
-// runtime and skipped cleanly when libSystem doesn't export them; policies
-// mirror their stat/lstat/fd/*at/open/openat counterparts with the 64-bit
-// struct layouts, and the protection args pass through untouched.
-
-struct ad_open_auth;  // <sys/open.h> is not in the theos SDK
-
-// struct stat64 is not visible in this build configuration: the SDK guards it
-// behind feature macros and omits it entirely on LP64 platforms where struct
-// stat already IS the 64-bit layout. Define the 32-bit layout ourselves
-// (mirrors xnu's __DARWIN_STRUCT_STAT64) and alias struct stat on LP64.
-#if defined(__LP64__)
-#define shdw_stat64_t struct stat
-#else
-struct shdw_stat64 {
-    __int32_t    st_dev;
-    __uint16_t   st_mode;
-    __uint16_t   st_nlink;
-    __uint64_t   st_ino;
-    __uint32_t   st_uid;
-    __uint32_t   st_gid;
-    __int32_t    st_rdev;
-    struct timespec st_atimespec;
-    struct timespec st_mtimespec;
-    struct timespec st_ctimespec;
-    struct timespec st_birthtimespec;
-    __int64_t    st_size;
-    __int64_t    st_blocks;
-    __int32_t    st_blksize;
-    __uint32_t   st_flags;
-    __uint32_t   st_gen;
-    __int32_t    st_lspare;
-    __int64_t    st_qspare[2];
-};
-#define shdw_stat64_t struct shdw_stat64
-#endif
-
-static int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
-static int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(pathname, "stat64", ext);
-
-    int result = original_stat64(pathname, buf);
-
-    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
-        if(buf) {
-            memset(buf, 0, sizeof(shdw_stat64_t));
-        }
-
-        errno = ENOENT;
-        return -1;
-    }
-
-    return result;
-}
-
-static int (*original_lstat64)(const char* pathname, shdw_stat64_t* buf);
-static int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(pathname, "lstat64", ext);
-
-    if(!ext) {
-        return original_lstat64(pathname, buf);
-    }
-
-    // NULL caller buffer keeps stock semantics (EFAULT from the kernel);
-    // replay before classification.
-    if(buf == NULL) {
-        return original_lstat64(pathname, NULL);
-    }
-
-    shdw_stat64_t _buf;
-    int result = original_lstat64(pathname, &_buf);
-
-    if(result == 0) {
-        NSString* path = [NSString stringWithUTF8String:pathname];
-
-        // Only use resolve flag if target is not a symlink (link-LOCATION
-        // check, same policy as lstat).
-        if([_shadow isPathRestricted:path options:@{
-            kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode)),
-            kShadowRestrictionNoFollow : @YES
-        }]) {
-            errno = ENOENT;
-            return -1;
-        }
-
-        // Only copy on success: on failure _buf is uninitialized stack.
-        memcpy(buf, &_buf, sizeof(shdw_stat64_t));
-    }
-
-    return result;
-}
-
-static int (*original_fstat64)(int fd, shdw_stat64_t* buf);
-static int replaced_fstat64(int fd, shdw_stat64_t* buf) {
-    if(!isCallerExternal()) {
-        return original_fstat64(fd, buf);
-    }
-
-    if(shdw_fd_path_restricted(fd)) {
-        errno = EBADF;
-        return -1;
-    }
-
-    return original_fstat64(fd, buf);
-}
-
-static int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
-static int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(pathname, "fstatat64", ext);
-
-    if(!ext) {
-        return original_fstatat64(dirfd, pathname, buf, flags);
-    }
-
-    if(shdw_at_path_denied(dirfd, pathname)) {
-        return -1;
-    }
-
-    return original_fstatat64(dirfd, pathname, buf, flags);
-}
-
-static int (*original_open_dprotected_np)(const char* path, int flags, int class, int dpflags, ...);
-static int replaced_open_dprotected_np(const char* path, int flags, int class, int dpflags, ...) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(path, "open_dprotected_np", ext);
-
-    mode_t mode = 0;
-
-    // Same vararg rule as open: the mode argument exists only with O_CREAT.
-    if(flags & O_CREAT) {
-        va_list args;
-        va_start(args, dpflags);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
-
-    if(ext && shdw_is_jbroot_write_probe(path, flags)) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if(!ext || ![_shadow isCPathRestricted:path]) {
-        if(flags & O_CREAT) {
-            return original_open_dprotected_np(path, flags, class, dpflags, mode);
-        }
-
-        return original_open_dprotected_np(path, flags, class, dpflags);
-    }
-
-    errno = ENOENT;
-    return -1;
-}
-
-static int (*original_openat_dprotected_np)(int dirfd, const char* path, int flags, int class, int dpflags, ...);
-static int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int class, int dpflags, ...) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(path, "openat_dprotected_np", ext);
-
-    mode_t mode = 0;
-
-    if(flags & O_CREAT) {
-        va_list args;
-        va_start(args, dpflags);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
-
-    if(!ext) {
-        if(flags & O_CREAT) {
-            return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
-        }
-
-        return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
-    }
-
-    if(shdw_is_jbroot_write_probe(path, flags)) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if(shdw_at_path_denied(dirfd, path)) {
-        return -1;
-    }
-
-    if(flags & O_CREAT) {
-        return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
-    }
-
-    return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
-}
-
-static int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
-static int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...) {
-    BOOL ext = isCallerExternal();
-    SHADOW_TRIP(path, "openat_authenticated_np", ext);
-
-    mode_t mode = 0;
-
-    if(flags & O_CREAT) {
-        va_list args;
-        va_start(args, flags);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
-
-    if(!ext) {
-        if(flags & O_CREAT) {
-            return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
-        }
-
-        return original_openat_authenticated_np(dirfd, path, auth, flags);
-    }
-
-    if(shdw_is_jbroot_write_probe(path, flags)) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if(shdw_at_path_denied(dirfd, path)) {
-        return -1;
-    }
-
-    if(flags & O_CREAT) {
-        return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
-    }
-
-    return original_openat_authenticated_np(dirfd, path, auth, flags);
-}
 // One descriptor array is the SINGLE source of truth for every libc hook's
 // install (which group hooks it), post-install verification (which group
 // treats a NULL original as a failure) and the dlsym symbol policy (every
@@ -2020,13 +1462,6 @@ static int replaced_openat_authenticated_np(int dirfd, const char* path, struct 
 //   - utimensat is installed but excluded from verify (it was iOS-11-gated
 //     with an @available check; dlsym is that check now);
 //   - the optional runtime-resolved families are installed, never verified.
-typedef enum {
-    SHADW_HOOK_GROUP_LIBC       = 1 << 0,
-    SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
-    SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
-    SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
-} shdw_hook_group_t;
-
 typedef struct {
     const char* symbol;     // dlsym name (C identifier, unmangled)
     void* replacement;      // the hook replacement
@@ -2131,7 +1566,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 #undef LOW
 #undef ANTIDBG
 
-static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
+void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
     // resolution (dyld image walk) and Foundation file APIs call
     // getppid/getrusage/sysctl/stat/fopen — which are themselves hooked by
@@ -2160,6 +1595,22 @@ static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
             continue;
         }
 
+        // Optional compatibility exports may resolve to a modern alias
+        // (stat64 -> stat) or an interior/private address. Installing a
+        // second fishhook entry under the alias name can never match the
+        // requested symbol and only reports a false backend failure.
+        if(d->verifyGroups == 0) {
+            Dl_info info;
+            if(!dladdr(target, &info) || !info.dli_sname || info.dli_saddr != target) {
+                continue;
+            }
+
+            const char* resolved = info.dli_sname[0] == '_' ? info.dli_sname + 1 : info.dli_sname;
+            if(strcmp(resolved, d->symbol) != 0) {
+                continue;
+            }
+        }
+
         [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
 
         if(strcmp(d->symbol, "close") == 0) {
@@ -2169,7 +1620,7 @@ static void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
     [Shadow shdwExitInternalRead];
 }
 
-static void shdw_libc_verify_group(const char* group, uint32_t mask) {
+void shdw_libc_verify_group(const char* group, uint32_t mask) {
     for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
         const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
 
@@ -2183,18 +1634,6 @@ void shadowhook_libc(HKSubstitutor* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LIBC);
 }
 
-void shadowhook_libc_envvar(HKSubstitutor* hooks) {
-    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ENVVAR);
-}
-
-void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
-    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LOWLEVEL);
-}
-
-void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
-    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ANTIDEBUG);
-}
-
 // Post-install verification: a hook that failed to install (backend error,
 // symbol unresolvable) leaves its original_* NULL and the restriction
 // silently unenforced. The ctor calls these after executeHooks for the groups
@@ -2203,18 +1642,6 @@ void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
 // getmntinfo_r_np, libproc, utimensat) are excluded — NULL there is expected.
 void shadowhook_libc_verify(void) {
     shdw_libc_verify_group("libc", SHADW_HOOK_GROUP_LIBC);
-}
-
-void shadowhook_libc_envvar_verify(void) {
-    shdw_libc_verify_group("libc_envvar", SHADW_HOOK_GROUP_ENVVAR);
-}
-
-void shadowhook_libc_lowlevel_verify(void) {
-    shdw_libc_verify_group("libc_lowlevel", SHADW_HOOK_GROUP_LOWLEVEL);
-}
-
-void shadowhook_libc_antidebugging_verify(void) {
-    shdw_libc_verify_group("libc_antidebugging", SHADW_HOOK_GROUP_ANTIDEBUG);
 }
 
 // Symbol policy for the libc C-function groups (see dyld.x's

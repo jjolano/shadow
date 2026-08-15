@@ -5,12 +5,12 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = ShadowCore
 
-ShadowCore_FILES = $(wildcard hooks/*.x) hooks/DeviceCheckHooks.m $(wildcard policy/*.m) dylib.x HookCoordinator.m
+ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m $(wildcard policy/*.m) dylib.x HookCoordinator.m
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
-ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
+ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_CFLAGS += -DSHADOW_ROOTHIDE
 endif

@@ -16,10 +16,8 @@
 #import "../common.h"
 #import <Shadow/JBPath.h>
 
-#ifndef _SYS_SNAPSHOT_H_
-extern int fs_snapshot_list(int fd, struct attrlist* alist, void* buf, size_t bufsize, uint32_t flags);
-extern int fs_snapshot_mount(int fd, const char* dir, const char* name, uint32_t flags);
-#endif
+extern int fs_snapshot_list(int fd, struct attrlist* alist, void* buf, size_t bufsize, uint32_t flags) __attribute__((weak_import));
+extern int fs_snapshot_mount(int fd, const char* dir, const char* name, uint32_t flags) __attribute__((weak_import));
 
 @implementation SystemRulesGenerator
 
@@ -219,6 +217,10 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 // closes); returns nil (fail soft) if the volume root cannot be opened or the
 // list call fails.
 + (NSString*)_findSnapshotNameWithFd:(int*)outFd {
+    if(!fs_snapshot_list) {
+        return nil;
+    }
+
     int fd = open("/", O_RDONLY | O_DIRECTORY);
 
     if(fd < 0) {
@@ -398,7 +400,8 @@ static BOOL IsCryptexZone(NSString* zonePath) {
             NSString* mountpoint = JBPath(@"/tmp/ShadowSnapshot");
             [fm createDirectoryAtPath:mountpoint withIntermediateDirectories:YES attributes:nil error:NULL];
 
-            BOOL mounted = (fs_snapshot_mount(fd, [mountpoint UTF8String], [snapshotName UTF8String], 0) == 0);
+            BOOL mounted = fs_snapshot_mount &&
+                (fs_snapshot_mount(fd, [mountpoint UTF8String], [snapshotName UTF8String], 0) == 0);
 
             if(mounted) {
                 snapshotUsed = YES;

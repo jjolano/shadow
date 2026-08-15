@@ -8,7 +8,7 @@
 #import "../hooks/hooks.h"
 
 #import <string.h>
-#import <os/lock.h>
+#import <pthread.h>
 #import <sys/stat.h>
 #import <limits.h>
 
@@ -25,7 +25,7 @@ typedef struct {
 
 static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
 static NSUInteger shdw_fd_cache_next = 0;
-static os_unfair_lock shdw_fd_cache_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t shdw_fd_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
@@ -125,7 +125,7 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
         CFDictionaryRef options = NULL;
         NSUInteger hit = SHADW_FD_CACHE_SIZE; // index of the dirfd's entry, when found
 
-        os_unfair_lock_lock(&shdw_fd_cache_lock);
+        pthread_mutex_lock(&shdw_fd_cache_lock);
 
         for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
             if(shdw_fd_cache[i].fd == dirfd) {
@@ -162,7 +162,7 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
             options = CFRetain((__bridge CFDictionaryRef)fresh);
         }
 
-        os_unfair_lock_unlock(&shdw_fd_cache_lock);
+        pthread_mutex_unlock(&shdw_fd_cache_lock);
 
         NSString* path = [NSString stringWithUTF8String:pathname];
         BOOL restricted = [_shadow isPathRestricted:path options:(__bridge NSDictionary*)options];
@@ -197,7 +197,7 @@ BOOL shdw_fd_path_restricted(int fd) {
     char pathname[PATH_MAX];
     BOOL valid = NO;
 
-    os_unfair_lock_lock(&shdw_fd_cache_lock);
+    pthread_mutex_lock(&shdw_fd_cache_lock);
 
     for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
         if(shdw_fd_cache[i].fd == fd) {
@@ -207,7 +207,7 @@ BOOL shdw_fd_path_restricted(int fd) {
                 strlcpy(pathname, shdw_fd_cache[i].path, sizeof(pathname));
             }
 
-            os_unfair_lock_unlock(&shdw_fd_cache_lock);
+            pthread_mutex_unlock(&shdw_fd_cache_lock);
             return valid ? [_shadow isCPathRestricted:pathname] : NO;
         }
     }
@@ -229,13 +229,13 @@ BOOL shdw_fd_path_restricted(int fd) {
         strlcpy(shdw_fd_cache[slot].path, pathname, sizeof(shdw_fd_cache[slot].path));
     }
 
-    os_unfair_lock_unlock(&shdw_fd_cache_lock);
+    pthread_mutex_unlock(&shdw_fd_cache_lock);
 
     return valid ? [_shadow isCPathRestricted:pathname] : NO;
 }
 
 void shdw_fd_cache_invalidate(int fd) {
-    os_unfair_lock_lock(&shdw_fd_cache_lock);
+    pthread_mutex_lock(&shdw_fd_cache_lock);
 
     for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
         if(shdw_fd_cache[i].fd == fd) {
@@ -251,7 +251,7 @@ void shdw_fd_cache_invalidate(int fd) {
         }
     }
 
-    os_unfair_lock_unlock(&shdw_fd_cache_lock);
+    pthread_mutex_unlock(&shdw_fd_cache_lock);
 }
 
 // readdir/readdir_r used to resolve the DIR*'s parent path (dirfd + F_GETPATH)
@@ -272,7 +272,7 @@ typedef struct {
 static shdw_readdir_cache_entry_t shdw_readdir_cache[SHADW_READDIR_CACHE_SIZE];
 
 static NSUInteger shdw_readdir_cache_next = 0;
-static os_unfair_lock shdw_readdir_cache_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t shdw_readdir_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void shdw_readdir_cache_clear_locked(DIR* dirp) {
     for(NSUInteger i = 0; i < SHADW_READDIR_CACHE_SIZE; i++) {
@@ -295,7 +295,7 @@ static void shdw_readdir_cache_clear_locked(DIR* dirp) {
 // hidden (fail closed). *denied is never set for an invalid DIR* — the
 // original readdir fails on its own with the genuine EBADF.
 NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied) {
-    os_unfair_lock_lock(&shdw_readdir_cache_lock);
+    pthread_mutex_lock(&shdw_readdir_cache_lock);
 
     *denied = NO;
     NSDictionary* result = nil;
@@ -343,14 +343,14 @@ NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied) {
         shdw_readdir_cache[slot].denied = deniedEntry;
     }
 
-    os_unfair_lock_unlock(&shdw_readdir_cache_lock);
+    pthread_mutex_unlock(&shdw_readdir_cache_lock);
     return result;
 }
 
 void shdw_readdir_cache_clear(DIR* dirp) {
-    os_unfair_lock_lock(&shdw_readdir_cache_lock);
+    pthread_mutex_lock(&shdw_readdir_cache_lock);
     shdw_readdir_cache_clear_locked(dirp);
-    os_unfair_lock_unlock(&shdw_readdir_cache_lock);
+    pthread_mutex_unlock(&shdw_readdir_cache_lock);
 }
 
 // Classifies a readlink result: absolute targets are checked directly;

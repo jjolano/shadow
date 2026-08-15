@@ -1,9 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
-if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
-then
-    DPKG_ROOT="/var/jb"
-fi
+DPKG_ROOT=""
+case "$DPKG_MAINTSCRIPT_ARCH" in
+    iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
+esac
 
 # SIGTERM the daemon and wait for a verified exit so it can unhide every
 # VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
@@ -17,26 +17,30 @@ shadowd_stop() {
     # kill for the rare already-booted-out orphan.
     launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
         || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
-    for _ in $(seq 1 20); do
+    remaining=20
+    while [ "$remaining" -gt 0 ]; do
         pgrep -x shadowd > /dev/null 2>&1 || return 0
         sleep 0.5
+        remaining=$((remaining - 1))
     done
     return 1
 }
 
 case "$1" in
     remove|upgrade)
-        if ! shadowd_stop; then
-            # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL
-            # and do NOT bootout: terminating a daemon that still holds
-            # VISSHADOW-flagged vnodes leaves them hidden until reboot.
-            # Abort the removal — dpkg keeps the package installed and the
-            # daemon running (non-zero prerm aborts remove/upgrade).
-            echo "shadowd: did not exit after SIGTERM; ABORTING removal. REBOOT REQUIRED to fully restore hidden state." >&2
-            exit 1
+        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
+            if ! shadowd_stop; then
+                # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL
+                # and do NOT bootout: terminating a daemon that still holds
+                # VISSHADOW-flagged vnodes leaves them hidden until reboot.
+                # Abort the removal — dpkg keeps the package installed and the
+                # daemon running (non-zero prerm aborts remove/upgrade).
+                echo "shadowd: did not exit after SIGTERM; ABORTING removal. REBOOT REQUIRED to fully restore hidden state." >&2
+                exit 1
+            fi
+            launchctl bootout system/me.jjolano.shadow 2> /dev/null \
+                || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
         fi
-        launchctl bootout system/me.jjolano.shadow 2> /dev/null \
-            || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
 
         # The ruleset watcher is stateless (no kernel flags to clear) — plain
         # bootout; failure to stop it must not abort the removal.

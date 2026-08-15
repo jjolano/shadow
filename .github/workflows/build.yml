@@ -4,72 +4,72 @@ on:
   push:
   pull_request:
 
+env:
+  THEOS: /opt/theos
+
 jobs:
-  build:
+  legacy:
+    name: rootful-legacy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos and old-ABI toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential fakeroot rsync curl perl xz-utils git libxml2 libtinfo6
+          sudo git clone --recursive --quiet https://github.com/theos/theos.git "$THEOS"
+
+          mkdir -p "$RUNNER_TEMP/oldabi/toolchain" "$RUNNER_TEMP/oldabi/sdks" "$THEOS/sdks"
+          curl -fL -o "$RUNNER_TEMP/oldabi/toolchain.tar.xz" \
+            https://github.com/L1ghtmann/llvm-project/releases/download/test-210562a/iOSToolchain-x86_64.tar.xz
+          echo 'a72a7a577e2fbe2838b6b5e9c72034fa7d114af96f0e1d4b016f18730ce4056e  '"$RUNNER_TEMP/oldabi/toolchain.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/oldabi/toolchain.tar.xz" -C "$RUNNER_TEMP/oldabi/toolchain"
+
+          curl -fL -o "$RUNNER_TEMP/oldabi/iPhoneOS13.7.sdk.tar.xz" \
+            https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS13.7.sdk.tar.xz
+          echo '661d1a8c518025f084d8c1e70dd8767581fb5730fb5950378f0915d840a7b5c3  '"$RUNNER_TEMP/oldabi/iPhoneOS13.7.sdk.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/oldabi/iPhoneOS13.7.sdk.tar.xz" -C "$RUNNER_TEMP/oldabi/sdks"
+
+          curl -fL -o "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" \
+            https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz
+          echo '1c998a5ee7eb8c29e39f0d8c83add9cad1a954342ca0d86204d1b4fe08a921b9  '"$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" | sha256sum -c -
+          sudo tar -xJf "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" -C "$THEOS/sdks"
+
+      - name: Build and verify
+        env:
+          OLDABI_TOOLCHAIN: ${{ runner.temp }}/oldabi/toolchain/linux/iphone
+          OLDABI_SDKS: ${{ runner.temp }}/oldabi/sdks
+        run: |
+          .github/scripts/build-deps.sh rootful-legacy
+          ./build.sh rootful-legacy
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-rootful-legacy
+          path: build/*.deb
+
+  modern:
     name: ${{ matrix.flavor }}
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
-        flavor: [rootless, rootful]
-    env:
-      THEOS: /opt/theos
+        flavor: [rootful-modern, rootless, roothide]
     steps:
-      # vendor/ frameworks are built by build-deps.sh (the submodule checkouts
-      # are source repos, not built frameworks), so no submodule checkout here.
       - uses: actions/checkout@v4
-
-      - name: Verify dep pins track upstream master
-        run: |
-          set -euo pipefail
-          cd .github/scripts
-          for dep in HOOKKIT:jjolano/HookKit \
-                     ALTLIST:opa334/AltList LIBSANDY:opa334/libSandy; do
-            var=${dep%%:*}; repo=${dep#*:}
-            pin=$(grep "^$var=" build-deps.sh | cut -d= -f2)
-            master=$(git ls-remote "https://github.com/$repo.git" HEAD | cut -f1)
-            if [[ "$pin" != "$master" ]]; then
-              echo "stale $var pin: pinned $pin, master $master"
-              echo "bump: sed -i 's/^$var=.*/$var=$master/' build-deps.sh + gitlink update"
-              exit 1
-            fi
-            echo "$var pin current"
-          done
 
       - name: Install Theos
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential fakeroot rsync curl perl zip git libxml2 libtinfo6
-          sudo git clone --recursive --quiet https://github.com/theos/theos.git $THEOS
-          # kabiroberai's swift toolchain: ships clang 13 (apple/llvm-project,
-          # same compiler as the project's local environment) plus the darwin
-          # compiler-rt libs L1ghtmann's builds omit (needed for the
-          # ___isOSVersionAtLeast shim on iOS < 12 deployment targets).
-          curl -sL -o /tmp/swift-tc.tar.xz \
-            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/swift-5.8-ubuntu22.04.tar.xz
-          sudo tar -xJf /tmp/swift-tc.tar.xz -C $THEOS/toolchain/
-          sudo mkdir -p $THEOS/sdks
-          for sdk in iPhoneOS16.5.sdk iPhoneOS14.5.sdk; do
-            curl -sL -o /tmp/$sdk.tar.xz \
-              https://github.com/theos/sdks/releases/download/master-146e41f/$sdk.tar.xz
-            sudo tar -xJf /tmp/$sdk.tar.xz -C $THEOS/sdks
-          done
+          brew install dpkg ldid
+          sudo git clone --recursive --quiet https://github.com/roothide/theos.git "$THEOS"
 
-      - name: Vendor xpc headers (missing from theos SDKs; libsandy needs them)
+      - name: Build and verify
         run: |
-          curl -sL https://github.com/Cryptiiiic/libjbdrw/archive/73fa4bb1bbd515ad11a96141ee9e8478f6146a15.tar.gz \
-            | tar -xz -C /tmp
-          sudo cp -R /tmp/libjbdrw-73fa4bb1bbd515ad11a96141ee9e8478f6146a15/include/xpc \
-            $THEOS/sdks/iPhoneOS16.5.sdk/usr/include/
-          sudo cp -R /tmp/libjbdrw-73fa4bb1bbd515ad11a96141ee9e8478f6146a15/include/xpc \
-            $THEOS/sdks/iPhoneOS14.5.sdk/usr/include/
-
-      - name: Build dependency variants
-        run: bash .github/scripts/build-deps.sh ${{ matrix.flavor }}
-
-      - name: Build Shadow
-        run: ./build.sh ${{ matrix.flavor }}
+          .github/scripts/build-deps.sh "${{ matrix.flavor }}"
+          ./build.sh "${{ matrix.flavor }}"
 
       - uses: actions/upload-artifact@v4
         with:

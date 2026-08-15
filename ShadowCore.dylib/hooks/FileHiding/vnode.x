@@ -2,7 +2,7 @@
 #import <mach/mach.h>
 #import <xpc/xpc.h>
 
-#import "../../protocol.h"
+#import "../../../protocol.h"
 
 #import <Shadow/JBPath.h>
 // Vnode-layer file hiding — thin IPC client. All kernel-touching work

@@ -271,10 +271,6 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 %end
 %end
 
-// Disabled: Firebase Performance and similar SDKs instrument NSURLSession at
-// launch; chaining another method instrumentor here makes their selector
-// registry abort. Keep the implementation for a later late-install design.
-#if 0
 %group shadowhook_NSURLSession
 %hook NSURLSession
 // Blocked-task helper (C0-3): create a REAL suspended task via %orig, wrap
@@ -445,10 +441,8 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 }
 %end
 %end
-#endif
 
 void shadowhook_NSURL(HKSubstitutor* hooks) {
     %init(shadowhook_NSURL);
-    // ponytail: NSURLSession hiding is disabled; add a post-instrumentation
-    // install path if preserving this coverage becomes necessary.
+    %init(shadowhook_NSURLSession);
 }

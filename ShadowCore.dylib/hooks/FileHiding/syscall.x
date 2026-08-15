@@ -1,9 +1,9 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "hooks.h"
-#import "../policy/EnvironmentPolicy.h"
-#import "../policy/PathPolicy.h"
-#import "../policy/ProcessPolicy.h"
+#import "../../policy/EnvironmentPolicy.h"
+#import "../../policy/PathPolicy.h"
+#import "../../policy/ProcessPolicy.h"
 
 #import <unistd.h>
 
@@ -777,7 +777,10 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
     void* sym___syscall = [hooks findSymbolInImage:NULL symbolName:@"___syscall"];
-    if(sym___syscall) {
+    // Some iOS builds export syscall and __syscall as the same entry point.
+    // Address-based rebinders already cover every slot for that address; a
+    // second replacement cannot coexist and only reports a false failure.
+    if(sym___syscall && sym___syscall != (void *)syscall) {
         [hooks hookFunction:sym___syscall withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
     }
 

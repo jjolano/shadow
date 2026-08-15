@@ -908,28 +908,6 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     return %orig;
 }
 
-- (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(isCallerExternal()) {
-        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
-            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
-            return NO;
-        }
-    }
-
-    return %orig;
-}
-
-- (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(isCallerExternal()) {
-        if([_shadow isPathRestricted:src options:_shdw_writeOptions(self, [src isAbsolutePath])]
-            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
-            return NO;
-        }
-    }
-
-    return %orig;
-}
-
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
@@ -941,17 +919,6 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (BOOL)changeFileAttributes:(NSDictionary *)attributes atPath:(NSString *)path {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
-    }
-
-    return %orig;
-}
-
-- (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
-    if(isCallerExternal()) {
-        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
-            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
-            return NO;
-        }
     }
 
     return %orig;
@@ -1137,6 +1104,50 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 %end
 %end
 
+%group shadowhook_NSFileManagerDeprecatedPaths
+%hook NSFileManager
+- (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(isCallerExternal()) {
+        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
+            return NO;
+        }
+    }
+
+    return %orig;
+}
+
+- (BOOL)movePath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(isCallerExternal()) {
+        if([_shadow isPathRestricted:src options:_shdw_writeOptions(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
+            return NO;
+        }
+    }
+
+    return %orig;
+}
+
+- (BOOL)linkPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
+    if(isCallerExternal()) {
+        if([_shadow isPathRestricted:src options:_shdw_optionsForAbsolute(self, [src isAbsolutePath])]
+            || [_shadow isPathRestricted:dest options:_shdw_writeOptions(self, [dest isAbsolutePath])]) {
+            return NO;
+        }
+    }
+
+    return %orig;
+}
+%end
+%end
+
 void shadowhook_NSFileManager(HKSubstitutor* hooks) {
     %init(shadowhook_NSFileManager);
+
+    Class fileManager = [NSFileManager class];
+    if(class_getInstanceMethod(fileManager, @selector(copyPath:toPath:handler:))
+    && class_getInstanceMethod(fileManager, @selector(movePath:toPath:handler:))
+    && class_getInstanceMethod(fileManager, @selector(linkPath:toPath:handler:))) {
+        %init(shadowhook_NSFileManagerDeprecatedPaths);
+    }
 }

@@ -1,0 +1,30 @@
+diff --git a/ATLApplicationListControllerBase.m b/ATLApplicationListControllerBase.m
+index c930a68..46b8a2b 100644
+--- a/ATLApplicationListControllerBase.m
++++ b/ATLApplicationListControllerBase.m
+@@ -181,9 +181,9 @@
+ 		_searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
+ 		_searchController.searchResultsUpdater = self;
+-		if (@available(iOS 9.1, *)) _searchController.obscuresBackgroundDuringPresentation = NO;
+-		if (@available(iOS 11.0, *))
++		if ([[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){9, 1, 0}]) _searchController.obscuresBackgroundDuringPresentation = NO;
++		if ([[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){11, 0, 0}])
+ 		{
+-			if(@available(iOS 13.0, *))
++			if([[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){13, 0, 0}])
+ 			{
+ 				_searchController.hidesNavigationBarDuringPresentation = YES;
+ 			}
+diff --git a/ATLApplicationSubtitleCell.m b/ATLApplicationSubtitleCell.m
+index b42486f..cf42a40 100644
+--- a/ATLApplicationSubtitleCell.m
++++ b/ATLApplicationSubtitleCell.m
+@@ -26,7 +26,7 @@
+ 
+ 		_customValueLabel.numberOfLines = 1;
+ 
+-		if(@available(iOS 13, *))
++		if([[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){13, 0, 0}])
+ 		{
+ 			_customValueLabel.textColor = [UIColor secondaryLabelColor];
+ 		}

@@ -10,7 +10,7 @@
 
 #import <string.h>
 #import <stdlib.h>
-#import <os/lock.h>
+#import <pthread.h>
 #import <time.h>
 #import <sys/sysctl.h>
 
@@ -33,7 +33,7 @@ typedef struct {
 
 static shdw_proc_cache_entry_t shdw_proc_cache[SHADW_PROC_CACHE_SIZE];
 static NSUInteger shdw_proc_cache_next = 0;
-static os_unfair_lock shdw_proc_cache_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t shdw_proc_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
     pid_t pid = p->kp_proc.p_pid;
@@ -41,7 +41,7 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
     suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
     time_t now = time(NULL);
 
-    os_unfair_lock_lock(&shdw_proc_cache_lock);
+    pthread_mutex_lock(&shdw_proc_cache_lock);
 
     for(NSUInteger i = 0; i < SHADW_PROC_CACHE_SIZE; i++) {
         const shdw_proc_cache_entry_t* e = &shdw_proc_cache[i];
@@ -51,12 +51,12 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
         && e->start_usec == start_usec
         && now - e->stamp < SHADW_PROC_CACHE_TTL) {
             BOOL verdict = e->restricted;
-            os_unfair_lock_unlock(&shdw_proc_cache_lock);
+            pthread_mutex_unlock(&shdw_proc_cache_lock);
             return verdict;
         }
     }
 
-    os_unfair_lock_unlock(&shdw_proc_cache_lock);
+    pthread_mutex_unlock(&shdw_proc_cache_lock);
 
     char path[PATH_MAX];
     BOOL restricted = NO;
@@ -65,7 +65,7 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
         restricted = [_shadow isCPathRestricted:path];
     }
 
-    os_unfair_lock_lock(&shdw_proc_cache_lock);
+    pthread_mutex_lock(&shdw_proc_cache_lock);
 
     NSUInteger slot = shdw_proc_cache_next;
     shdw_proc_cache_next = (shdw_proc_cache_next + 1) % SHADW_PROC_CACHE_SIZE;
@@ -76,7 +76,7 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
     shdw_proc_cache[slot].stamp = now;
     shdw_proc_cache[slot].restricted = restricted;
 
-    os_unfair_lock_unlock(&shdw_proc_cache_lock);
+    pthread_mutex_unlock(&shdw_proc_cache_lock);
     return restricted;
 }
 
@@ -115,24 +115,24 @@ typedef struct {
 
 static shdw_pid_cache_entry_t shdw_pid_cache[SHADW_PID_CACHE_SIZE];
 static NSUInteger shdw_pid_cache_next = 0;
-static os_unfair_lock shdw_pid_cache_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t shdw_pid_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 BOOL shdw_pid_is_restricted(pid_t pid) {
     time_t now = time(NULL);
 
-    os_unfair_lock_lock(&shdw_pid_cache_lock);
+    pthread_mutex_lock(&shdw_pid_cache_lock);
 
     for(NSUInteger i = 0; i < SHADW_PID_CACHE_SIZE; i++) {
         const shdw_pid_cache_entry_t* e = &shdw_pid_cache[i];
 
         if(e->pid == pid && now - e->stamp < SHADW_PID_CACHE_TTL) {
             BOOL verdict = e->restricted;
-            os_unfair_lock_unlock(&shdw_pid_cache_lock);
+            pthread_mutex_unlock(&shdw_pid_cache_lock);
             return verdict;
         }
     }
 
-    os_unfair_lock_unlock(&shdw_pid_cache_lock);
+    pthread_mutex_unlock(&shdw_pid_cache_lock);
 
     char path[PATH_MAX];
     BOOL restricted = NO;
@@ -141,7 +141,7 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
         restricted = [_shadow isCPathRestricted:path];
     }
 
-    os_unfair_lock_lock(&shdw_pid_cache_lock);
+    pthread_mutex_lock(&shdw_pid_cache_lock);
 
     NSUInteger slot = shdw_pid_cache_next;
     shdw_pid_cache_next = (shdw_pid_cache_next + 1) % SHADW_PID_CACHE_SIZE;
@@ -150,7 +150,7 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
     shdw_pid_cache[slot].stamp = now;
     shdw_pid_cache[slot].restricted = restricted;
 
-    os_unfair_lock_unlock(&shdw_pid_cache_lock);
+    pthread_mutex_unlock(&shdw_pid_cache_lock);
     return restricted;
 }
 

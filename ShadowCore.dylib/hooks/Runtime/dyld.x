@@ -1,5 +1,5 @@
 #import "hooks.h"
-#import <os/lock.h>
+#import <pthread.h>
 #import <mach/vm_region.h>
 #import <CoreFoundation/CoreFoundation.h>
 
@@ -36,7 +36,7 @@ static struct dyld_all_image_infos* _shdw_all_image_infos = NULL;
 // pointers stay valid forever); a grow path must publish a NEW vm_allocate'd
 // generation and retire the old one only after a quiescent window.
 
-static os_unfair_lock _shdw_dyld_mirror_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t _shdw_dyld_mirror_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct dyld_image_info* _shdw_dyld_info_buffers[2] = {NULL, NULL};
 static struct dyld_image_info* _shdw_dyld_info_published = NULL;
 static struct dyld_uuid_info* _shdw_dyld_uuid_buffers[2] = {NULL, NULL};
@@ -219,7 +219,7 @@ BOOL shdw_is_shadow_runtime_image(const char* path) {
 shdw_own_ranges_t _shdw_own_ranges_a;
 shdw_own_ranges_t _shdw_own_ranges_b;
 shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
-static os_unfair_lock _shdw_own_ranges_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t _shdw_own_ranges_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Restricted image spans (see shdw_addr_is_restricted in hooks.h). Both
 // buffers start stamped with a generation the store can never publish, so
@@ -229,7 +229,7 @@ static os_unfair_lock _shdw_own_ranges_lock = OS_UNFAIR_LOCK_INIT;
 shdw_restricted_ranges_t _shdw_restricted_ranges_a = { .generation = UINT64_MAX };
 shdw_restricted_ranges_t _shdw_restricted_ranges_b = { .generation = UINT64_MAX };
 shdw_restricted_ranges_t* _shdw_restricted_ranges_published = &_shdw_restricted_ranges_a;
-static os_unfair_lock _shdw_restricted_ranges_lock = OS_UNFAIR_LOCK_INIT;
+static pthread_mutex_t _shdw_restricted_ranges_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Union span across an image's segments. Return addresses and the addresses
 // the hooks classify only land inside mapped segments, so the loose union is
@@ -314,9 +314,9 @@ static void shdw_restricted_ranges_full_rebuild(void) {
         rebuilt.range[rebuilt.count++] = (shdw_range_t){ .base = base, .end = end };
     }
 
-    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_lock(&_shdw_restricted_ranges_lock);
     shdw_restricted_ranges_publish_locked(&rebuilt);
-    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_unlock(&_shdw_restricted_ranges_lock);
 }
 
 // One image was mapped: classify just it and append if restricted. Idempotent
@@ -329,7 +329,7 @@ void shdw_restricted_ranges_note_add(const struct mach_header* mh, intptr_t slid
         return;
     }
 
-    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_lock(&_shdw_restricted_ranges_lock);
 
     shdw_restricted_ranges_t rebuilt = *__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
     BOOL known = NO;
@@ -351,7 +351,7 @@ void shdw_restricted_ranges_note_add(const struct mach_header* mh, intptr_t slid
         shdw_restricted_ranges_publish_locked(&rebuilt);
     }
 
-    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_unlock(&_shdw_restricted_ranges_lock);
 }
 
 // One image was unmapped: drop its span so a later image mapped over the same
@@ -363,7 +363,7 @@ void shdw_restricted_ranges_note_remove(const struct mach_header* mh, intptr_t s
         return;
     }
 
-    os_unfair_lock_lock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_lock(&_shdw_restricted_ranges_lock);
 
     shdw_restricted_ranges_t published = *__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
     shdw_restricted_ranges_t rebuilt = { .count = 0, .overflowed = published.overflowed, .generation = published.generation };
@@ -380,7 +380,7 @@ void shdw_restricted_ranges_note_remove(const struct mach_header* mh, intptr_t s
         shdw_restricted_ranges_publish_locked(&rebuilt);
     }
 
-    os_unfair_lock_unlock(&_shdw_restricted_ranges_lock);
+    pthread_mutex_unlock(&_shdw_restricted_ranges_lock);
 }
 
 void shdw_own_ranges_refresh(void) {
@@ -405,7 +405,7 @@ void shdw_own_ranges_refresh(void) {
     // app's own dlopens can never add one. So let the caller tell us whether
     // this event could possibly matter, and skip the walk when it cannot.
     // shdw_own_ranges_refresh_if_relevant below is that filter.
-    os_unfair_lock_lock(&_shdw_own_ranges_lock);
+    pthread_mutex_lock(&_shdw_own_ranges_lock);
 
     shdw_own_ranges_t* published = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
     shdw_own_ranges_t* other = (published == &_shdw_own_ranges_a) ? &_shdw_own_ranges_b : &_shdw_own_ranges_a;
@@ -435,7 +435,7 @@ void shdw_own_ranges_refresh(void) {
     *other = rebuilt;
     __atomic_store_n(&_shdw_own_ranges_published, other, __ATOMIC_RELEASE);
 
-    os_unfair_lock_unlock(&_shdw_own_ranges_lock);
+    pthread_mutex_unlock(&_shdw_own_ranges_lock);
 
     // The restricted-span table is maintained incrementally by the add/remove
     // image handlers, so it needs a full reclassification only when its
@@ -498,6 +498,15 @@ static shdw_dyld_snapshot_t* _shdw_dyld_snapshot_buffers[2] = {NULL, NULL};
 
 static void shadowhook_dyld_rebuild_dyldinfo(void);
 
+// dyld publishes a fresh real infoArray after its add/remove callbacks, then
+// calls this debugger notification. Re-apply the mirror at that stable point
+// so the live TASK_DYLD_INFO struct cannot be overwritten by the same load.
+static void (*original_dyld_image_notification)(enum dyld_image_mode mode, uint32_t infoCount, const struct dyld_image_info info[]);
+static void replaced_dyld_image_notification(enum dyld_image_mode mode, uint32_t infoCount, const struct dyld_image_info info[]) {
+    shadowhook_dyld_rebuild_dyldinfo();
+    original_dyld_image_notification(mode, infoCount, info);
+}
+
 // todo: maybe hook this private symbol
 // extern void call_funcs_for_add_image(struct mach_header *mh, unsigned long vmaddr_slide);
 
@@ -508,12 +517,12 @@ static void shadowhook_dyld_rebuild_dyldinfo(void);
 // when no snapshot has ever been published (allocation failed); callers then
 // fall back to the old collection path.
 static shdw_dyld_snapshot_t* shdw_dyld_snapshot_begin(void) {
-    os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
+    pthread_mutex_lock(&_shdw_dyld_mirror_lock);
     return _shdw_dyld_snapshot;
 }
 
 static void shdw_dyld_snapshot_end(void) {
-    os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+    pthread_mutex_unlock(&_shdw_dyld_mirror_lock);
 }
 
 static uint32_t (*original_dyld_image_count)();
@@ -1088,7 +1097,8 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         // too. Asking once and reusing the answer keeps an ordinary system
         // image at two engine queries per load instead of three — and the
         // overwhelming majority of the images an app loads are ordinary.
-        BOOL protectedImage = [_shadow isProtectedImagePath:path];
+        BOOL protectedImage = shdw_is_shadow_runtime_image(image_path)
+            || [_shadow isProtectedImagePath:path];
 
         // Record the span if this image is restricted, so the address-keyed
         // hooks can answer from the range table instead of re-resolving and
@@ -1135,6 +1145,10 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
                     func(mh, vmaddr_slide);
                 }
             }
+        } else if(!_shdw_dyld_replay_in_progress) {
+            // dyld republishes its real arrays for every load. Re-apply our
+            // unchanged filtered collection when the new image is hidden too.
+            shadowhook_dyld_rebuild_dyldinfo();
         }
     }
 }
@@ -2228,7 +2242,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     // mirror publication into dyld's own notifier path (no collection copy,
     // no lock hop) is the target shape once the add/remove surface is
     // replaced by tail-branch thunks.
-    os_unfair_lock_lock(&_shdw_dyld_mirror_lock);
+    pthread_mutex_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSUInteger count = MIN([_dyld_collection count], SHADOW_DYLD_MIRROR_CAPACITY);
@@ -2271,7 +2285,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     // No struct to patch (pre-modern iOS): the API-level enumeration hooks
     // above still hide images (fail soft).
     if(!_shdw_all_image_infos) {
-        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+        pthread_mutex_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
 
@@ -2286,7 +2300,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
             shdw_dyld_mirror_restore_originals();
         }
 
-        os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+        pthread_mutex_unlock(&_shdw_dyld_mirror_lock);
         return;
     }
 
@@ -2455,7 +2469,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
         }
     }
 
-    os_unfair_lock_unlock(&_shdw_dyld_mirror_lock);
+    pthread_mutex_unlock(&_shdw_dyld_mirror_lock);
 }
 
 void shadowhook_dyld(HKSubstitutor* hooks) {
@@ -2484,16 +2498,38 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // sync on every add/remove) before any hook below can fire.
     shdw_own_ranges_refresh();
 
-    [hooks hookFunction:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
-    [hooks hookFunction:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
-    [hooks hookFunction:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
-    [hooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
-    [hooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
-    [hooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
+    // Fishhook accepts these dyld imports but only installs them partially on
+    // iOS 15's protected sections. Litehook uses the same clean import-slot
+    // strategy and covers the slots; retain the supplied backend as fallback.
+    HKSubstitutor* publicHooks = [HKSubstitutor substitutorWithTypes:HK_LIB_LITEHOOK];
+    if(publicHooks.activeType == HK_LIB_NONE) {
+        publicHooks = hooks;
+    }
 
-    // Resolve the exported dyld_all_image_infos global so we can patch its
-    // arrays directly.
-    _shdw_all_image_infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    [publicHooks hookFunction:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
+    [publicHooks hookFunction:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
+    [publicHooks hookFunction:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
+    [publicHooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
+    [publicHooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
+    [publicHooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
+
+    // TASK_DYLD_INFO is the authoritative live struct. dyld4 may expose a
+    // same-named private symbol that is not the address the kernel publishes.
+    task_dyld_info_data_t taskInfo = {0};
+    mach_msg_type_number_t taskInfoCount = TASK_DYLD_INFO_COUNT;
+
+    if(task_info(mach_task_self(), TASK_DYLD_INFO,
+        (task_info_t)&taskInfo, &taskInfoCount) == KERN_SUCCESS
+    && taskInfoCount >= TASK_DYLD_INFO_COUNT
+    && taskInfo.all_image_info_addr
+    && taskInfo.all_image_info_size >= sizeof(struct dyld_all_image_infos)) {
+        _shdw_all_image_infos = (struct dyld_all_image_infos *)(uintptr_t)taskInfo.all_image_info_addr;
+    }
+
+    // Legacy fallback for kernels that do not publish TASK_DYLD_INFO.
+    if(!_shdw_all_image_infos) {
+        _shdw_all_image_infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    }
 
     if(!_shdw_all_image_infos) {
         HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
@@ -2504,9 +2540,25 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     }
 
     if(_shdw_all_image_infos) {
+        HKSubstitutor* notificationHooks = [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE];
+
+        if(!_shdw_all_image_infos->notification
+        || [notificationHooks hookFunction:_shdw_all_image_infos->notification
+                           withReplacement:replaced_dyld_image_notification
+                                  outOldPtr:(void **) &original_dyld_image_notification] != HK_OK) {
+            NSLog(@"[Shadow] dyld debugger notification hook unavailable; memory hiding may be overwritten");
+        }
+
         // Patching active: filter the arrays (initial rebuild — the collection
         // is already populated by the registration above).
         shadowhook_dyld_rebuild_dyldinfo();
+        if(gDyldDebug) {
+            fprintf(stderr, "[Shadow] dyld state memory=%d resolved=%p info=%p count=%u patched=%d protect_failed=%d collection=%lu\n",
+                shdw_memory_hiding_enabled, _shdw_all_image_infos,
+                _shdw_all_image_infos->infoArray, _shdw_all_image_infos->infoArrayCount,
+                _shdw_mirror_currently_patched, _shdw_mirror_protect_failed,
+                (unsigned long)[_shdw_dyld_collection count]);
+        }
     } else {
         // dyld_all_image_infos unresolvable (pre-modern iOS): memory hiding
         // stays off (fail soft) — the API-level hooks above still hide images.
@@ -2515,8 +2567,8 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
 
     // Directly linkable — declared in vendor/apple/dyld_priv.h (Core.m calls
     // it the same way); no findSymbolInImage needed.
-    [hooks hookFunction:dyld_image_path_containing_address withReplacement:replaced_dyld_image_path_containing_address outOldPtr:(void **) &original_dyld_image_path_containing_address];
-    [hooks hookFunction:dyld_image_header_containing_address withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_image_header_containing_address];
+    [publicHooks hookFunction:dyld_image_path_containing_address withReplacement:replaced_dyld_image_path_containing_address outOldPtr:(void **) &original_dyld_image_path_containing_address];
+    [publicHooks hookFunction:dyld_image_header_containing_address withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_image_header_containing_address];
 
     // Address-attribution siblings (plan Wave 1c): the slide pair is ancient
     // and directly linkable; _dyld_find_unwind_sections is SJLJ-guarded (not
@@ -2524,11 +2576,11 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // alias (dyld4, iOS 15+), _dyld_get_image_uuid (iOS 10+) and
     // dyld_image_get_installname (dyld3/4) are resolved by name below so the
     // legacy (iOS 9) build doesn't link against symbols it lacks.
-    [hooks hookFunction:_dyld_get_image_slide withReplacement:replaced_dyld_get_image_slide outOldPtr:(void **) &original_dyld_get_image_slide];
+    [publicHooks hookFunction:_dyld_get_image_slide withReplacement:replaced_dyld_get_image_slide outOldPtr:(void **) &original_dyld_get_image_slide];
 
-    [hooks hookFunction:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
+    [publicHooks hookFunction:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
 
-    [hooks hookFunction:dlerror withReplacement:replaced_dlerror outOldPtr:(void **) &original_dlerror];
+    [publicHooks hookFunction:dlerror withReplacement:replaced_dlerror outOldPtr:(void **) &original_dlerror];
 
     // Modern dyld SPIs (iOS 12+/13+). Resolved by name via findSymbolInImage: so the
     // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
@@ -2697,10 +2749,17 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // dlopen hook code from Choicy
     HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
     void* libdyldHandle = dlopen("/usr/lib/system/libdyld.dylib", RTLD_NOW);
+    // The private dlopen entry point needs the supplied native/private-symbol
+    // backend. Public dlopen/dlclose use litehook's address-based import scan:
+    // fishhook finds their named slots but only installs them partially on
+    // iOS 15's protected dyld sections, while litehook covers them cleanly.
+    HKSubstitutor* publicHooks = hooks.activeType == HK_LIB_NATIVE
+        ? [HKSubstitutor substitutorWithTypes:HK_LIB_LITEHOOK]
+        : hooks;
 
     void* dlopen_global_var_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZN5dyld45gDyldE"];
 
-    [hooks hookFunction:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
+    [publicHooks hookFunction:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
 
     if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1 && !dlopen_global_var_ptr) {
         void* dlopen_internal_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZL15dlopen_internalPKciPv"];
@@ -2720,7 +2779,7 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // leave the memoized per-image handles stale (see the hook body — the
     // remove-image notifier already covers real unloads; this is the
     // idempotent belt).
-    [hooks hookFunction:dlclose withReplacement:replaced_dlclose outOldPtr:(void **) &original_dlclose];
+    [publicHooks hookFunction:dlclose withReplacement:replaced_dlclose outOldPtr:(void **) &original_dlclose];
 
     // [hooks closeImage:libdyldImage];
 }

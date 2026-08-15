@@ -1,9 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
-if [[ $DPKG_MAINTSCRIPT_ARCH == "iphoneos-arm64" ]]
-then
-    DPKG_ROOT="/var/jb"
-fi
+DPKG_ROOT=""
+ROOTFS_ROOT=""
+case "$DPKG_MAINTSCRIPT_ARCH" in
+    iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
+    iphoneos-arm64e) ROOTFS_ROOT="/rootfs" ;;
+esac
 
 # SIGTERM the daemon and wait for a verified exit so it can unhide every
 # VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
@@ -17,9 +19,11 @@ shadowd_stop() {
     # kill for the rare already-booted-out orphan.
     launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
         || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
-    for _ in $(seq 1 20); do
+    remaining=20
+    while [ "$remaining" -gt 0 ]; do
         pgrep -x shadowd > /dev/null 2>&1 || return 0
         sleep 0.5
+        remaining=$((remaining - 1))
     done
     return 1
 }
@@ -29,10 +33,10 @@ case "$1" in
         # Prefs plist: root-owned 0644 so apps (running as mobile) cannot write
         # their own hiding config; cfprefsd (root) still writes via the Settings
         # UI. Same path on rootful and rootless (/var/mobile exists on both).
-        mkdir -p /var/mobile/Library/Preferences
-        touch /var/mobile/Library/Preferences/me.jjolano.shadow.plist
-        chown root:wheel /var/mobile/Library/Preferences/me.jjolano.shadow.plist
-        chmod 0644 /var/mobile/Library/Preferences/me.jjolano.shadow.plist
+        mkdir -p "$ROOTFS_ROOT/var/mobile/Library/Preferences"
+        touch "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+        chown root:wheel "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+        chmod 0644 "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
         # Ruleset tree: root-owned, dirs 0755 / files 0644 (X grants execute
         # on directories only). World-writable mobile-owned rulesets let any
@@ -43,44 +47,9 @@ case "$1" in
         # shdw runs as root from postinst/triggers, so it can still write.
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
 
-        # Rootful package (armv7/armv7s + arm64/arm64e in one deb): shadowd is
-        # arm64-only and the rooted dep slices (libsandy/HookKit/AltList)
-        # floor at iOS 12.0.
-        #  - 32-bit devices: drop the daemon + plist so launchd never tries
-        #    to exec an arm64-only binary (exec-fail respawn loop).
-        #  - 64-bit on iOS < 12: the injected dylib chain can't load (deps
-        #    are minos 12.0) — dyld would abort every app launch; drop the
-        #    daemon and the injection files, leaving an inert install.
-        DAEMON_ARCH_OK=1
-        case "$(uname -m)" in
-            armv7|armv7s)
-                DAEMON_ARCH_OK=0
-                rm -f "$DPKG_ROOT/usr/libexec/shadowd" \
-                      "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" \
-                      "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null
-                ;;
-            arm64|arm64e)
-                OS_MAJOR=$(sw_vers -productVersion | cut -d. -f1)
-                if [ "${OS_MAJOR:-0}" -lt 12 ]; then
-                    DAEMON_ARCH_OK=0
-                    rm -f "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib" \
-                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/Shadow.plist" \
-                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib" \
-                          "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.plist" \
-                          "$DPKG_ROOT/Library/Frameworks/Shadow.framework" \
-                          "$DPKG_ROOT/usr/libexec/shadowd" \
-                          "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" \
-                          "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null
-                    rm -rf "$DPKG_ROOT/Library/Frameworks/Shadow.framework"
-                fi
-                ;;
-        esac
-
-        # LaunchDaemon: rootful ships /Library/LaunchDaemons, rootless ships
-        # /var/jb/Library/LaunchDaemons (theos install-prefix); the rootful
-        # package ships it but the arch guards above strip it where shadowd
-        # can't run.
-        if [ "$DAEMON_ARCH_OK" = "1" ] && [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
+        # shadowd is absent from the legacy package. Modern packages keep its
+        # lifecycle independent from the stateless ruleset watcher.
+        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ] && [ -f "$DPKG_ROOT/usr/libexec/shadowd" ]; then
             chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
             chown root:wheel "$DPKG_ROOT/usr/libexec/shadowd"
@@ -106,9 +75,11 @@ case "$1" in
             launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null \
                 || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
 
-            # Ruleset watcher: shdw -d regenerates the installed-apps ruleset
-            # on app install/uninstall (stateless, no shutdown dance needed —
-            # unlike shadowd it holds no kernel state).
+        fi
+
+        # Ruleset watcher: shdw -d regenerates the installed-apps ruleset on
+        # app install/uninstall. It is useful on every supported package lane.
+        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" ] && [ -f "$DPKG_ROOT/usr/local/bin/shdw" ]; then
             chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
             chown root:wheel "$DPKG_ROOT/usr/local/bin/shdw"

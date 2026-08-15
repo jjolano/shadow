@@ -1,6 +1,6 @@
 # Shadow
 
-A modern jailbreak detection bypass for iOS 12.0 and later, with fine-grained per-app control over bypass strength.
+A modern jailbreak detection bypass with rootful support back to iOS 9 and fine-grained per-app control over bypass strength.
 
 ## Features and Components
 
@@ -10,7 +10,7 @@ The Shadow package (`me.jjolano.shadow`, version 4.0.0) ships the following comp
 * **Shadow.dylib** and **ShadowCore.dylib** — the injection entry point and the hook layer that intercepts detection APIs.
 * **ShadowSettings.bundle** — preferences UI in the Settings app.
 * **shdw** — a command-line tool installed to `/usr/local/bin`. Its `-d` watcher mode regenerates the installed-apps ruleset whenever apps are installed or uninstalled (debounced), and it is also used for ruleset maintenance.
-* **shadowd** — an XPC daemon (arm64 only, iOS 15+) that maintains system rules; it is installed as a LaunchDaemon on supported devices.
+* **shadowd** — an arm64 XPC daemon included in modern packages. Its vnode-hiding backend activates only on iOS 15.0–16.6.1 and fails closed elsewhere.
 
 ## Installation
 
@@ -30,10 +30,14 @@ After installation, settings are available in the Settings app. You may configur
 
 ## Compatibility
 
-* iOS 12.0 or later (per package dependencies).
-* Rootful, rootless, and roothide build flavors.
-* The `shadowd` daemon is arm64-only and requires iOS 15+; on other devices it is not installed.
-* Shadow is not guaranteed to work on all apps.
+| Lane | Package architecture | Supported system | Binary slices |
+| --- | --- | --- | --- |
+| Rootful legacy | `iphoneos-arm` | iOS 9–13 | armv7/armv7s/arm64 at iOS 9; old-ABI arm64e at iOS 12 |
+| Rootful modern | `iphoneos-arm` | iOS 14+ | arm64 and new-ABI arm64e at iOS 14 |
+| Rootless | `iphoneos-arm64` | iOS 15+ | arm64 and new-ABI arm64e at iOS 15 |
+| RootHide | `iphoneos-arm64e` | iOS 15–17 | arm64 and new-ABI arm64e at iOS 15 |
+
+The legacy Shadow package and its HookKit, AltList, and libSandy dependencies use separate `.legacy` package IDs so old- and new-ABI arm64e binaries can never be mixed. Modern rootful, rootless, and RootHide packages keep the normal IDs and are selected by package architecture. Shadow is not guaranteed to work on every app.
 
 ## Troubleshooting
 
@@ -48,13 +52,16 @@ If Shadow does not work with a particular app, here are some ideas to try:
 
 ## Building and Development
 
-Building requires a [Theos](https://theos.dev) toolchain with the iOS SDKs. From the repository root:
+Building requires [Theos](https://theos.dev). Build pinned dependencies first, then the matching package lane:
 
-* `./build.sh all` — builds the rootless, rootful, and roothide flavors into `build/`. Individual flavors: `./build.sh rootless`, `./build.sh rootful`, `./build.sh roothide`; `./build.sh quick` compiles the framework and dylibs without packaging for fast iteration.
-* `make` — theos aggregate build with the default (rooted) flavor.
-* The roothide flavor requires the roothide Theos fork and libroothide.
+```sh
+.github/scripts/build-deps.sh rootful-modern
+./build.sh rootful-modern
+```
 
-Continuous integration builds the rootless and rootful flavors on every push and pull request (`.github/workflows/build.yml`).
+The available lanes are `rootful-legacy`, `rootful-modern`, `rootless`, and `roothide`; `rootful` builds both rootful packages when both toolchains are available. Legacy Linux builds default to `$THEOS/toolchain/oldabi/linux/iphone` (Clang 11) and `$THEOS/sdks/iPhoneOS13.7.sdk`; `OLDABI_TOOLCHAIN` and `OLDABI_SDKS` can override those locations. Modern lanes require macOS/Xcode 12 or newer for the new arm64e ABI, and RootHide uses the [RootHide Theos fork](https://github.com/roothide/theos). Every package is rejected if its architecture set, deployment targets, ABI marker, metadata, loader paths, or required payload is wrong.
+
+Continuous integration builds and verifies the legacy lane on Ubuntu and all three modern lanes on macOS (`.github/workflows/build.yml`).
 
 A host-side test harness for the decision engine — no device, no Theos, no simulator — lives in `tests/`. Run it with `make -C tests test|detect|adversary|detector|benign|coverage|fuzz|afuzz|fuzz-smoke`; it runs in Docker on Linux (see `tests/Dockerfile`) or natively on macOS. See `tests/README.md` for details. The harness runs on every push and pull request (`.github/workflows/tests.yml`). The `tools/` directory contains on-device probes (`dyldprobe`, `hookprobe`) used for QA.
 
