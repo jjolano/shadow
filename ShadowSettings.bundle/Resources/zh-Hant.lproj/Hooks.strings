@@ -4,10 +4,8 @@
 "ESSENTIAL_HOOKS_DESC" = "基本掛鉤涵蓋了常見的越獄偵測方式。";
 "EXTRA_HOOKS" = "額外掛鉤";
 "EXTRA_HOOKS_DESC" = "額外掛鉤涵蓋了更多的越獄偵測方法，包含私人API。";
-"HK_LIB_SELECT" = "這是可在設備上使用的掛鉤函式庫列表。選擇「自動」以允許HookKit為您的設備選擇最佳的掛鉤函式庫。";
-"AUTOMATIC" = "自動";
-
-"HOOKING_LIBRARY" = "掛鉤函式庫";
+"TROUBLESHOOTING" = "疑難排解";
+"TROUBLESHOOTING_DESC" = "用於解決應用程式相容性問題的進階選項。";
 "HOOK_ANTIDBG" = "反偵錯方法";
 "HOOK_ANTIDBG_DESC" = "隱藏偵錯器狀態和越獄相關的背景程序。";
 "HOOK_APPENUM" = "應用程式列舉";
@@ -47,7 +45,7 @@
 "STATUS_HDR" = "狀態";
 "VNODE_UNAVAILABLE_REASON" = "Vnode 隱藏需要具備核心讀寫能力的 shadowd 守護進程。";
 "VNODE_STARTING_REASON" = "shadowd 守護進程仍在啟動，Vnode 隱藏暫無法使用。";
-"UNSUPPORTED_ELLEKIT_REASON" = "需要 ElleKit 掛鉤函式庫。";
+"UNSUPPORTED_ELLEKIT_REASON" = "需要支援私有符號的掛鉤後端。";
 "UNSUPPORTED_MSG_REASON" = "需要支援 Objective-C 訊息掛鉤的掛鉤函式庫（ElleKit、Substrate、Substitute 或原生 Objective-C 運行時）。";
 "UNSUPPORTED_FUNC_REASON" = "需要支援 C 函式掛鉤的掛鉤函式庫。";
 "BYPASS_PRESET" = "繞過預設";
@@ -55,4 +53,3 @@
 "PRESET_STANDARD" = "標準";
 "PRESET_MAXIMUM" = "最大";
 "PRESET_CUSTOM" = "自訂";
-"HK_LIB_DESC" = "控制 C 函式掛鉤所使用的掛鉤函式庫。Objective-C 掛鉤始終使用運行時的預設函式庫（ElleKit、Substrate、Substitute 或原生 Objective-C 運行時）。某些掛鉤函式庫可能提供更好的防越獄偵測能力，但也可能影響應用程式穩定性。";

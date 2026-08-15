@@ -36,32 +36,6 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>HK_LIB_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkListCell</string>
-			<key>id</key>
-			<string>HK_Library</string>
-			<key>label</key>
-			<string>HOOKING_LIBRARY</string>
-			<key>detail</key>
-			<string>PSListItemsController</string>
-			<key>staticTextMessage</key>
-			<string>HK_LIB_SELECT</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-			<key>valuesDataSource</key>
-			<string>getValues:</string>
-			<key>titlesDataSource</key>
-			<string>getTitles:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
 			<string>INDIVIDUAL_HOOKS_DESC</string>
 			<key>label</key>
 			<string>INDIVIDUAL_HOOKS</string>
@@ -91,6 +65,22 @@
 			<true/>
 			<key>label</key>
 			<string>DNGR_HOOKS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>TROUBLESHOOTING_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>SHDWTroubleshootingListController</string>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>TROUBLESHOOTING</string>
 		</dict>
 	</array>
 </dict>

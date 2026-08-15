@@ -71,12 +71,13 @@
     }
 
     if(privSym.activeType == HK_LIB_NONE) {
-        privSym = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]];
+        privSym = [HKSubstitutor substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL];
     }
-    // activeType == HK_LIB_NONE means the category resolved no backend.
+
+    hookkit_cat_t categories = [HKSubstitutor getAvailableCategories];
     SHDWCapabilities caps = 0;
 
-    if(message.activeType != HK_LIB_NONE) {
+    if(categories & HK_CAT_MESSAGE) {
         caps |= SHDWCapMessage;
     }
 
@@ -84,7 +85,7 @@
         caps |= SHDWCapFunction;
     }
 
-    if([HKSubstitutor getAvailableCategories] & HK_CAT_FUNCTION_INLINE) {
+    if(categories & HK_CAT_FUNCTION_INLINE) {
         caps |= SHDWCapInline;
     }
 
@@ -146,8 +147,8 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 
 // Map each install-unit capability to its dedicated backend lane.
 - (HKSubstitutor*)backendForUnit:(const SHDWInstallUnit*)unit {
-    // These C-runtime identity groups require a message-capable provider to
-    // be present, but their individual targets use inline-first auto-cover.
+    // These message-gated C-runtime identity groups use inline-first
+    // auto-cover for their individual targets.
     if(strcmp(unit->unitID, "objc") == 0 || strcmp(unit->unitID, "classes") == 0) {
         return self.backends.symlookup;
     }
