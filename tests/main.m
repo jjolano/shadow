@@ -1,7 +1,7 @@
 // Shadow decision-engine test harness (host, no device).
 //
-// Builds the real Shadow.framework decision sources (Core, Backend, Ruleset,
-// Core+Utilities) against the host Foundation with a path shim, then
+// Builds the real Shadow.framework decision sources against the host
+// Foundation with a path shim, then
 // stages itself into a temp dir shaped like an app on a jailbroken device:
 //
 //   <work>/Harness.app/harness          the running binary (bundlePath ends
@@ -31,6 +31,9 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow.h>
+#import "Ruleset.h"
+#import <Shadow/SystemRulesGenerator.h>
+#import <stdatomic.h>
 #import "ShdwPathShim.h"
 #import "fsinterpose.h"
 
@@ -643,10 +646,9 @@ static void testHookFilters(void) {
     CHECK(shdw_snapshot_is_jb(NULL) == 0, "snapshot: NULL kept");
 }
 
-// generateDatabase: builds a ruleset dict from the dpkg info database.
 // Coverage-gap tests: the branches the unit groups don't reach (from the
 // gcov report) — isURLRestricted's nil/reference-URL paths,
-// getStandardizedPath's slow-path triggers, the backend's reload gate and
+// getStandardizedPath's slow-path triggers, the engine's reload gate and
 // dir-add detection, and RulesetEngine's cache-restore and exception paths.
 static void testCoverageGaps(void) {
     printf("[tests] coverage gaps\n");
@@ -676,14 +678,14 @@ static void testCoverageGaps(void) {
 
     CHECK([[Shadow getStandardizedPath:pct] isEqualToString:pct], "standardize stable after first pass");
 
-    // Backend reload gate: rapid repeat queries must NOT bump the ruleset
+    // Reload gate: rapid repeat queries must NOT bump the ruleset
     // generation (the 1s scan gate).
-    ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
-    NSUInteger genBefore = [backend rulesetGeneration];
+    uint64_t genBefore = atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire);
 
     (void)[shdw() isPathRestricted:@"/usr/sbin/fstab"];
     (void)[shdw() isPathRestricted:@"/usr/sbin/fstab"];
-    CHECK([backend rulesetGeneration] == genBefore, "reload gate: no scan on rapid queries");
+    CHECK(atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire) == genBefore,
+        "reload gate: no scan on rapid queries");
 
     // Decision-cache TTL expiry: after the 2s TTL the entry is recomputed
     // (the age>TTL branch) and must yield the same verdict.
@@ -712,9 +714,10 @@ static void testCoverageGaps(void) {
         [NSThread sleepForTimeInterval:1.3];
 
         // A cache-MISS query triggers the scan + reload (a cached path
-        // would skip the backend entirely); only then does the gen bump.
+        // would skip evaluation entirely); only then does the gen bump.
         CHECK([shdw() isPathRestricted:@"/usr/sbin/dpkg-tool"], "added ruleset applies");
-        CHECK([backend rulesetGeneration] > genBefore, "dir-add reload bumps generation");
+        CHECK(atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire) > genBefore,
+            "dir-add reload bumps generation");
 
         [[NSFileManager defaultManager] removeItemAtPath:[rulesetsDir stringByAppendingPathComponent:@"007-Added.plist"] error:nil];
         [NSThread sleepForTimeInterval:1.3];
@@ -994,9 +997,12 @@ static void testDatabase(void) {
     // NOTE: the probe path is deliberately NOT queried before the database
     // ruleset is applied — a pre-reload verdict would sit in the decision
     // cache under the same generation and be served after the reload.
-    NSDictionary* db = [Shadow generateDatabase];
+    NSInteger result = [SystemRulesGenerator writeDpkgRuleset];
+    NSString* dbPath = [[harnessWorkDir() stringByAppendingPathComponent:@"jb/Library/Shadow/Rulesets"]
+        stringByAppendingPathComponent:@"dpkgInstalled.plist"];
+    NSDictionary* db = [NSDictionary dictionaryWithContentsOfFile:dbPath];
 
-    CHECK(db != nil, "generateDatabase produces a ruleset");
+    CHECK(result == 1 && db != nil, "dpkg generator writes a ruleset");
 
     if(db) {
         NSArray* blacklist = [db objectForKey:@"BlacklistExactPaths"];
@@ -1009,18 +1015,10 @@ static void testDatabase(void) {
         CHECK(![blacklist containsObject:@"/var/lib/apt/lists"], "db blacklist skips base.list entries");
         CHECK([schemes containsObject:@"fakejb"], "db schemes harvested from installed app bundles");
 
-        // End-to-end: the generated database applied back through the
-        // engine (the shadowd flow) — write it as a ruleset, reload, and
-        // the dpkg-installed paths become restricted.
-        NSString* rulesetsDir = [[harnessWorkDir() stringByAppendingPathComponent:@"jb/Library/Shadow"]
-            stringByAppendingPathComponent:@"Rulesets"];
-
-        if([db writeToFile:[rulesetsDir stringByAppendingPathComponent:@"009-Database.plist"] atomically:YES]) {
-            [NSThread sleepForTimeInterval:1.3];
-            // Fresh cache-miss path triggers the scan + reload.
-            (void)[shdw() isPathRestricted:@"/tmp/fresh-trigger"];
-            CHECK([shdw() isPathRestricted:dpkgProbe], "generated database ruleset restricts dpkg paths");
-        }
+        [NSThread sleepForTimeInterval:1.3];
+        // Fresh cache-miss path triggers the scan + reload.
+        (void)[shdw() isPathRestricted:@"/tmp/fresh-trigger"];
+        CHECK([shdw() isPathRestricted:dpkgProbe], "generated database ruleset restricts dpkg paths");
     }
 }
 
@@ -1040,6 +1038,7 @@ static void testReload(void) {
     NSString* minimal = @"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
         "<plist version=\"1.0\"><dict><key>RulesetInfo</key><dict><key>Name</key><string>Reload</string><key>Author</key><string>harness</string></dict></dict></plist>";
+    NSString* original = [NSString stringWithContentsOfFile:ruleset encoding:NSUTF8StringEncoding error:nil];
 
     // staged 005-Reload.plist blacklists the probe path (see below)
     expectRestrictedWrite(@"reload: baseline restricted", probe);
@@ -1047,6 +1046,16 @@ static void testReload(void) {
     [minimal writeToFile:ruleset atomically:YES encoding:NSUTF8StringEncoding error:nil];
     [NSThread sleepForTimeInterval:1.3];
     expectAllowedOpts(@"reload: rule removal observed (generation invalidation)", probe, writeOptions());
+
+    // In-place writes do not change the directory mtime. This specifically
+    // exercises per-file tracking after .shadowcache artifacts exist.
+    [original writeToFile:ruleset atomically:NO encoding:NSUTF8StringEncoding error:nil];
+    [NSThread sleepForTimeInterval:1.3];
+    expectRestrictedWrite(@"reload: in-place rewrite observed with caches present", probe);
+
+    [minimal writeToFile:ruleset atomically:NO encoding:NSUTF8StringEncoding error:nil];
+    [NSThread sleepForTimeInterval:1.3];
+    expectAllowedOpts(@"reload: second in-place rewrite observed", probe, writeOptions());
 
     [@"not a plist at all {{{" writeToFile:ruleset atomically:YES encoding:NSUTF8StringEncoding error:nil];
     [NSThread sleepForTimeInterval:1.3];

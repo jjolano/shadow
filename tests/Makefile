@@ -1,7 +1,7 @@
 # Host test harness for Shadow's decision engine (no device required).
 
-# Builds the REAL Shadow.framework decision sources (Core.m, Backend.m,
-# Ruleset.m, Core+Utilities.m) against a host Foundation with a path shim.
+# Builds the real Shadow.framework decision sources against a host Foundation
+# with a path shim.
 # Nothing here touches the theos/device toolchain.
 #
 # Platform split:
@@ -26,15 +26,14 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m ShadowdShims.m detecto
        ../shadowd/ledger.m \
        ../shadowd/recovery.m \
        $(FRAMEWORK)/Core.m \
-       $(FRAMEWORK)/Backend.m \
        $(FRAMEWORK)/Ruleset.m \
        $(FRAMEWORK)/Core+Utilities.m \
-       $(FRAMEWORK)/RestrictionResolver.m \
+       $(FRAMEWORK)/DpkgRulesGenerator.m \
        $(FRAMEWORK)/RestrictionEngine.m \
        $(FRAMEWORK)/RulesetCompiler.m \
        $(FRAMEWORK)/RulesetStore.m \
        RestrictionTests.m \
-       PolicyTests.m \
+       PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
        CoordinatorTests.m
 

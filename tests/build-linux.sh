@@ -26,11 +26,12 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m tests/shadowd/RecoveryHarness.m \
   shadowd/ledger.m shadowd/recovery.m \
-  Shadow.framework/Core.m Shadow.framework/Backend.m Shadow.framework/Ruleset.m \
+  Shadow.framework/Core.m Shadow.framework/Ruleset.m \
   Shadow.framework/Core+Utilities.m \
-  Shadow.framework/RestrictionResolver.m Shadow.framework/RestrictionEngine.m \
+  Shadow.framework/DpkgRulesGenerator.m \
+  Shadow.framework/RestrictionEngine.m \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
-  tests/RestrictionTests.m tests/PolicyTests.m \
+  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m \
   Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
   $BASE_LIBS -o tests/harness

@@ -21,12 +21,12 @@ __attribute__((visibility("hidden")))
 + (instancetype)snapshotWithRulesets:(NSArray<RulesetEngine *>*)rulesets generation:(NSUInteger)generation;
 @end
 
-// Atomic ruleset store (Candidate 5): owns scanning JBPath(@SHADOW_RULESETS),
+// Atomic ruleset store: owns scanning JBPath(@SHADOW_RULESETS),
 // the 1s change gate, reloads and the generation counter, and serves one
 // immutable snapshot for path, scheme and bundle-ID queries. Last-known-good
 // at snapshot level: a reload that yields no rulesets while a previous
 // non-empty snapshot exists keeps the previous snapshot. Replaces the
-// load/reload machinery previously in Backend.m. Framework-internal.
+// Framework-internal.
 __attribute__((visibility("hidden")))
 @interface ShadowRulesetStore : NSObject
 

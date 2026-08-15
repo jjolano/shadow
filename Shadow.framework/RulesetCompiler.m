@@ -1,4 +1,4 @@
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 #import "RulesetPrivate.h"
 #import "RulesetCompiler.h"
 
@@ -247,13 +247,13 @@ static id shdwCacheUnwrapNil(id value) {
     // After _compile the full payload is dead weight: the compiled lookup
     // tables are the working set (their strings are shared with the payload,
     // so nothing is lost by releasing the container shells), and the only
-    // remaining consumer is Backend's load log, which reads the small
+    // remaining consumer is the store's load log, which reads the small
     // RulesetInfo sub-dict. Archive that reduced payload — the old cache
     // embedded the whole FileSystemStructure twice (raw + compiled) — and
     // shrink the live ruleset's retained payload to match, releasing the
     // MB-scale container shells of a generated SystemRules for the process
     // lifetime. A ruleset without RulesetInfo keeps an empty payload, which
-    // Backend logs identically (its objectForKey: then returns nil, the same
+    // The store logs identically (its objectForKey: then returns nil, the same
     // as before).
     NSDictionary* info = [ruleset.payloadDictionary objectForKey:@"RulesetInfo"];
     NSDictionary* reducedPayload = info ? @{@"RulesetInfo" : info} : @{};

@@ -29,6 +29,8 @@
 // A hard crash (SEGV) kills the process — the last printed seed+iteration
 // is the repro; the parent's exit code reports the failure.
 
+#import <stdatomic.h>
+
 #import <Foundation/Foundation.h>
 #import <Shadow.h>
 
@@ -228,16 +230,8 @@ static void fz_probe(NSString* path) {
                     [NSString stringWithFormat:@"path=%d urlPath=\"%@\" direct=%d viaURL=%d refURL=%d",
                         r1, urlPath, urlPathDirect, urlVerdict, [url isFileReferenceURL]]);
 
-                // Cache forensics: the backend's own verdict and generation at
-                // finding time (the decision cache is a private ivar, not
-                // KVC-accessible).
-                ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
-
-                if(backend) {
-                    printf("    backend gen=%lu direct=%d\n",
-                        (unsigned long)[backend rulesetGeneration],
-                        [backend isPathRestricted:path]);
-                }
+                printf("    ruleset gen=%llu\n", (unsigned long long)
+                    atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire));
 
                 fz_dumpTrace();
                 return;
@@ -342,16 +336,12 @@ int shdw_fuzz_run(NSUInteger iters, unsigned seed) {
         // Reload-cycle check: the ruleset generation must be stable across
         // the 1s scan gate. If it bumps every second, the GNUstep marker
         // scheme (cache always rejected -> recompile -> cache rewrite ->
-        // dir-mtime churn) keeps the backend reloading forever.
-        ShadowBackend* backend = [[Shadow sharedInstance] valueForKey:@"backend"];
-
-        if(backend) {
-            NSUInteger g1 = [backend rulesetGeneration];
-            [NSThread sleepForTimeInterval:1.4];
-            NSUInteger g2 = [backend rulesetGeneration];
-            printf("[fuzz] ruleset generation: %lu -> %lu (%s)\n",
-                (unsigned long)g1, (unsigned long)g2, g1 == g2 ? "stable" : "RELOAD CYCLE");
-        }
+        // dir-mtime churn) keeps the engine reloading forever.
+        uint64_t g1 = atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire);
+        [NSThread sleepForTimeInterval:1.4];
+        uint64_t g2 = atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire);
+        printf("[fuzz] ruleset generation: %llu -> %llu (%s)\n",
+            (unsigned long long)g1, (unsigned long long)g2, g1 == g2 ? "stable" : "RELOAD CYCLE");
     }
 
     return gFindings ? 1 : 0;

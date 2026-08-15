@@ -1,7 +1,9 @@
 #import <Shadow/Core.h>
 #import <Shadow/Core+Utilities.h>
-#import <Shadow/Backend.h>
 #import <Shadow/JBPath.h>
+
+#import "RestrictionEngine.h"
+#import "RestrictionQuery.h"
 
 #import <dlfcn.h>
 #import <pwd.h>
@@ -26,6 +28,13 @@
 // through the PLT is still far cheaper than the objc_msgSend the class
 // methods cost, and it crosses the .tbd cleanly.
 static _Thread_local NSUInteger shdw_internal_busy = 0;
+
+@interface Shadow () {
+    ShadowRestrictionEngine* engine;
+}
+
+- (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
+@end
 
 __attribute__((visibility("default")))
 NSUInteger shdwInternalBusy(void) {
@@ -67,7 +76,13 @@ NSUInteger shdwInternalBusy(void) {
         hasAppSandbox = [[bundlePath pathExtension] isEqualToString:@"app"];
         rootless = JBIsRootless();
 
-        backend = [ShadowBackend new];
+        ShadowRestrictionContext context = {
+            .hasAppSandbox = hasAppSandbox,
+            .rootless = rootless,
+            .bundlePath = bundlePath,
+            .homePath = homePath,
+        };
+        engine = [[ShadowRestrictionEngine alloc] initWithContext:context];
     }
 
     return self;
@@ -131,10 +146,7 @@ NSUInteger shdwInternalBusy(void) {
     return [self isPathRestricted:path options:nil];
 }
 
-// Candidate 5: legacy dictionary -> typed query translation. Only the four
-// published keys are read; unknown keys were never read by the pipeline (they
-// only disabled the decision cache via [options count] > 0, which the typed
-// pipeline preserves by caching only default-shaped queries).
+// Translate the public option dictionary once at the facade boundary.
 static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary<NSString*, id>* options) {
     ShadowRestrictionQuery* query = [ShadowRestrictionQuery queryWithPath:path];
     query.flags = ShadowRestrictionFlagResolve;
@@ -167,13 +179,10 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
     return query;
 }
 
-// Candidate 5: the dictionary methods translate to the typed entry point.
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options {
     return [self isPathRestrictedQuery:shdwQueryFromOptions(path, options)];
 }
 
-// Candidate 5: typed entry point — the facade delegates to the engine
-// (RestrictionEngine.m), which evaluates with the resolver-based engine.
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
     // C0-2 recursion guard: the engine's own path normalization
     // (getStandardizedPath:) constructs NSURLs via +[NSURL fileURLWithPath:],
@@ -188,7 +197,7 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
     BOOL restricted = NO;
 
     SHADOW_INTERNAL_SCOPE {
-        restricted = [backend isPathRestrictedQuery:query];
+        restricted = [engine isPathRestrictedQuery:query];
     }
 
     return restricted;
@@ -226,10 +235,9 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
-    // Backend's check allocates (lowercaseString) inside this call, and the
     // URL-scheme hooks call this directly on possibly pool-less threads.
     @autoreleasepool {
-        return [backend isSchemeRestricted:scheme];
+        return [engine isSchemeRestricted:scheme];
     }
 }
 
@@ -269,7 +277,7 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
             return YES;
         }
 
-        return [backend isBundleIDRestricted:bundleID];
+        return [engine isBundleIDRestricted:bundleID];
     }
 }
 

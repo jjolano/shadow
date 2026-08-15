@@ -5,13 +5,9 @@
 #import <notify.h>
 
 #import <Shadow.h>
-#import <Shadow/Core+Utilities.h>
 #import <Shadow/SystemRulesGenerator.h>
 
 
-
-#import "../common.h"
-#import <Shadow/JBPath.h>
 
 // Watcher daemon (-d): regenerates the installed-apps ruleset when apps are
 // installed or uninstalled. App installs arrive in bursts (restores), so each
@@ -96,25 +92,10 @@ int main(int argc, char *argv[], char *envp[]) {
         }
 
         if(regenerateDb) {
-            NSDictionary* ruleset_dpkg = [Shadow generateDatabase];
-            BOOL dpkg_ok = NO;
+            NSInteger dpkg_result = [SystemRulesGenerator writeDpkgRuleset];
 
-            if(ruleset_dpkg) {
-                NSString* db_path = JBPath(@(SHADOW_DB_PLIST));
-                // Atomic: serialize to a temp file in the same directory, then
-                // rename() over the target. A crash mid-write leaves the
-                // previous dpkg ruleset intact instead of a truncated plist.
-                NSString* tmp_path = [db_path stringByAppendingString:@".tmp"];
-
-                if([ruleset_dpkg writeToFile:tmp_path atomically:NO]) {
-                    dpkg_ok = (rename([tmp_path UTF8String], [db_path UTF8String]) == 0);
-                }
-
-                if(dpkg_ok) {
-                    printf("successfully regenerated dpkg ruleset\n");
-                } else {
-                    fprintf(stderr, "error: failed to save generated ruleset\n");
-                }
+            if(dpkg_result == 1) {
+                printf("successfully regenerated dpkg ruleset\n");
             } else {
                 fprintf(stderr, "error: could not generate ruleset\n");
             }
@@ -137,7 +118,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
             // Fail-soft: exit status reflects the dpkg ruleset only; postinst
             // depends on -g succeeding even if SystemRules generation fails.
-            return dpkg_ok ? 0 : -1;
+            return dpkg_result == 1 ? 0 : -1;
         }
 
         Shadow* shadow = [Shadow sharedInstance];

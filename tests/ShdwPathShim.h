@@ -8,7 +8,7 @@
 
 // jbPath: fixture jbroot directory, or nil for rooted mode.
 // rulesetsDir: staged rulesets directory (both modes).
-void shdw_harness_set_jbpath(NSString* _Nullable jbPath, NSString* rulesetsDir);
+void shdw_harness_set_jbpath(NSString* _Nullable jbPath, NSString* _Nonnull rulesetsDir);
 
 BOOL shdw_harness_rootless(void);
 
