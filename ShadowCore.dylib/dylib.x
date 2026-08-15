@@ -158,11 +158,13 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
 // trip firing from inside a hook being installed no-ops.
 void shdw_detector_detected(const char* reason) {
     #ifdef hookkit_h
+    // Never touch preferences here: detector hooks can run while CFPrefs
+    // already owns its non-recursive source lock.
     // C1: the coordinator path (SHADOW_LEGACY_COORDINATOR defined) routes the
     // INSTALL response through the coordinator — planner-driven escalation
     // install, idempotent via the coordinator's _escalated flag + installed-
-    // state bitset. Evidence bookkeeping (detector log, shdw_detector_present,
-    // vnode re-arm) is mirrored here verbatim so the coordinator path behaves
+        // state bitset. Evidence bookkeeping (shdw_detector_present and vnode
+        // re-arm) is mirrored here so the coordinator path behaves
     // identically. The legacy path compiles this block out entirely and runs
     // the original body below byte-identical.
     #ifdef SHADOW_LEGACY_COORDINATOR
@@ -170,25 +172,6 @@ void shdw_detector_detected(const char* reason) {
         NSLog(@"[Shadow] detector probe: %s", reason ?: "unknown");
 
         shdw_detector_present = YES;
-
-        // Detector activity log (diagnostic) — mirror of the legacy block.
-        @try {
-            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-            NSMutableArray* log = [[defaults arrayForKey:@"DetectorLog"] mutableCopy] ?: [NSMutableArray new];
-
-            NSDateFormatter* fmt = [NSDateFormatter new];
-            fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-            [log addObject:[NSString stringWithFormat:@"%@  %@  %@", [fmt stringFromDate:[NSDate date]], [NSString stringWithUTF8String:reason ?: "unknown"], [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"]];
-
-            if(log.count > 100) {
-                [log removeObjectsInRange:NSMakeRange(0, log.count - 100)];
-            }
-
-            [defaults setObject:log forKey:@"DetectorLog"];
-            [defaults synchronize];
-        } @catch (NSException* e) {
-            // Never let diagnostics break the bypass.
-        }
 
         // Vnode client re-arm (same as legacy): a detector that appeared
         // after the ctor's gate check still triggers the acquire.
@@ -211,28 +194,6 @@ void shdw_detector_detected(const char* reason) {
     NSLog(@"[Shadow] detector probe: %s", reason ?: "unknown");
 
     shdw_detector_present = YES;
-
-    // Detector activity log (diagnostic): append the probe to the prefs
-    // suite so the settings pane can show recent hits. Best-effort — a
-    // prefs failure must never break the escalation below. Capped at 100
-    // entries, newest last.
-    @try {
-        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-        NSMutableArray* log = [[defaults arrayForKey:@"DetectorLog"] mutableCopy] ?: [NSMutableArray new];
-
-        NSDateFormatter* fmt = [NSDateFormatter new];
-        fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-        [log addObject:[NSString stringWithFormat:@"%@  %@  %@", [fmt stringFromDate:[NSDate date]], [NSString stringWithUTF8String:reason ?: "unknown"], [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"]];
-
-        if(log.count > 100) {
-            [log removeObjectsInRange:NSMakeRange(0, log.count - 100)];
-        }
-
-        [defaults setObject:log forKey:@"DetectorLog"];
-        [defaults synchronize];
-    } @catch (NSException* e) {
-        // Never let diagnostics break the bypass.
-    }
 
     // Detector escalation also arms the vnode client: its gate re-evaluates
     // per call, so a detector that appeared after the ctor's gate check
@@ -259,14 +220,6 @@ void shdw_detector_detected(const char* reason) {
         if(!_shdw_objc_installed) {
             NSLog(@"+ objc (installed on detector evidence)");
             shadowhook_objc(_shdw_watcher_main);
-
-            // method_getImplementation rides the rebind lane even on the
-            // escalation path (same tiny-prologue preflight constraint; see
-            // shadowhook_objc_methodimpl). _shdw_watcher_cfunc is the legacy
-            // subCFunc (fishhook lane, or subMain when no rebind backend).
-            if(_shdw_watcher_cfunc && _shdw_watcher_cfunc != _shdw_watcher_main) {
-                shadowhook_objc_methodimpl(_shdw_watcher_cfunc);
-            }
 
             _shdw_objc_installed = YES;
         }
@@ -648,12 +601,11 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         NSLog(@"[Shadow] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
     }
 
-    // subFish: function-rebind backend via category API. substitutorWithCategory:
-    // picks the first available backend that supports HK_CAT_FUNCTION_REBIND
-    // (fishhook by priority — clean prologues, no trampoline detection surface).
-    // C-function hooks that detectors call route through this. Falls to NULL
-    // when no rebind-capable backend is available.
-    HKSubstitutor* subFish = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
+    // Automatic C-function routing stays on clean import-slot rebinding:
+    // fishhook first, then litehook only when its read-only preflight finds a
+    // slot fishhook cannot address. Explicit HK_Library choices still replace
+    // subCFunc below and therefore remain pinned exactly as requested.
+    HKSubstitutor* subFish = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_REBIND)]];
 
     // subInline: function-inline backend via category API. Installs trampolines
     // in function prologues (ldr x16, #imm; br x16), so amIMSHooked-style
@@ -675,6 +627,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         subCFunc = [HKSubstitutor substitutorWithTypes:hooklibs];
     }
 
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    // The coordinator owns its own backend set; these locals remain only to
+    // keep the compile-time rollback block mechanically intact.
+    (void) subInline;
+    (void) subCFunc;
+    #endif
+
     // dlsym/dladdr + identity C-function groups (objc/classes): AUTO-COVER
     // per-target routing. substitutorWithOrderedCategories: resolves ONE
     // backend at init and never retries — an inline preflight rejection (tiny
@@ -692,15 +651,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     #ifndef SHADOW_LEGACY_COORDINATOR
     HKSubstitutor* subSymLookup = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]] ?: subCFunc;
 
-    // dlopen_internal is a private libdyld symbol fishhook can't rebind:
-    // private-symbol-capable backend only, always (never fishhook).
-    // substitutorWithOrderedCategories: tries HK_CAT_PRIVATE_SYMBOL first,
-    // then HK_CAT_MESSAGE (message-capable backends can also reach private
-    // symbols), before falling back to subMain — the guard below skips the
-    // group when no such backend exists.
-    HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]] ?: subMain;
+    // HookKit's native backend resolves private symbols and publishes the
+    // trampoline before activation. ElleKit publishes function originals
+    // after activation, so HookKit correctly refuses every dlopen-family
+    // hook that requests %orig. Prefer native; older architectures fall back
+    // to the provider-backed private-symbol category.
+    HKSubstitutor* subDyldExtra = [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE];
+    if(subDyldExtra.activeType == HK_LIB_NONE) {
+        subDyldExtra = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]] ?: subMain;
+    }
     #endif
 
+    #ifndef SHADOW_LEGACY_COORDINATOR
     // Batching must be enabled per instance; the HK*Batching macros below
     // only touch the default substitutor (subMain). subCFunc may be a fresh
     // pref-selected instance — setBatching: is idempotent, so no dedup needed.
@@ -720,6 +682,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         [subSymLookup setBatching:YES];
     }
     HKEnableBatching();
+    #endif
     #else
     HKSubstitutor* subMain = NULL;
     HKSubstitutor* subCFunc = NULL;
@@ -752,9 +715,15 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
     // behavioral (tripwires call shdw_detector_detected directly), so a
     // watcher with nothing left to do stays disabled.
     _shdw_watcher_enabled = objcBackendAvailable && (_shdw_pref_urlscheme || _shdw_pref_foundation);
+    #ifdef SHADOW_LEGACY_COORDINATOR
+    _shdw_watcher_main = shdw_coordinator_instance.backends.message;
+    _shdw_watcher_cfunc = shdw_coordinator_instance.backends.rebind;
+    _shdw_watcher_inline = shdw_coordinator_instance.backends.privateSym;
+    #else
     _shdw_watcher_main = subMain;
     _shdw_watcher_cfunc = subCFunc;
-    _shdw_watcher_inline = subInline;
+    _shdw_watcher_inline = subDyldExtra;
+    #endif
 
     // shdw_detector_present cannot be YES here: only shdw_detector_detected
     // sets it, and no hook body can run before the installs below complete.
@@ -921,12 +890,8 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs_load) {
         // NSClassFromString/objc_getClass passed through unfiltered).
         shadowhook_objc(subSymLookup);
 
-        // method_getImplementation is a tiny libobjc leaf; the rebind lane
-        // has no prologue preflight and intercepts exactly the external
-        // callers the hide targets.
-        if(subCFunc && subCFunc != subMain) {
-            shadowhook_objc_methodimpl(subCFunc);
-        }
+        // method_getImplementation remains native; the class/method metadata
+        // hooks retain the declaring-Class context needed for safe filtering.
 
         #ifdef hookkit_h
         _shdw_objc_installed = YES;

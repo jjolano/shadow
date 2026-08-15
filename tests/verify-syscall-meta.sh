@@ -26,9 +26,9 @@
 set -e
 
 HOOKDIR=ShadowCore.dylib/hooks
-DEF="$HOOKDIR/RawSyscalls.def"
-SYSCALL="$HOOKDIR/syscall.x"
-LIBC="$HOOKDIR/libc.x"
+DEF="$HOOKDIR/FileHiding/RawSyscalls.def"
+SYSCALL="$HOOKDIR/FileHiding/syscall.x"
+LIBC="$HOOKDIR/FileHiding/libc.x"
 rc=0
 
 fail() {

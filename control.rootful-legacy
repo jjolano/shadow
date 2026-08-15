@@ -1,0 +1,15 @@
+Package: me.jjolano.shadow.legacy
+Name: Shadow (Legacy Rootful)
+Pre-Depends: dpkg
+Depends: firmware (>= 9.0), firmware (<< 14.0), com.opa334.altlist.legacy, com.opa334.libsandy.legacy, me.jjolano.fmwk.hookkit.legacy (>= 2.4.0)
+Suggests: com.ps.injectionfoundation
+Recommends: mobilesubstrate, preferenceloader
+Provides: me.jjolano.shadow, me.jjolano.shadow.beta
+Replaces: me.jjolano.shadow, me.jjolano.shadow.beta
+Conflicts: me.jjolano.shadow, me.jjolano.shadow.beta
+Version: 4.0.0
+Architecture: iphoneos-arm
+Description: A jailbreak detection bypass for rootful iOS 9 through 13.
+Maintainer: jjolano
+Author: jjolano
+Section: System

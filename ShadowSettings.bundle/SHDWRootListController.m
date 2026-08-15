@@ -12,10 +12,8 @@
 #import <Shadow/JBPath.h>
 
 #import <UIKit/UIKit.h>
-// Both UTIs are needed: kUTTypePropertyList (CoreServices) for the iOS 12
-// fallback, UTTypePropertyList (UniformTypeIdentifiers) on iOS 14+.
+// kUTTypePropertyList keeps the document picker compatible with iOS 9.
 #import <CoreServices/CoreServices.h>
-#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 // Preset profiles: batch values for every hook toggle. "standard" mirrors the
 // shipped defaults; "maximum" enables everything including dangerous hooks.
@@ -274,13 +272,7 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 }
 
 - (void)importSettings:(id)sender {
-	// Modern initializer on iOS 14+; the old one stays for the iOS 12
-	// baseline (the project's minimum).
-	if(@available(iOS 14.0, *)) {
-		activePicker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypePropertyList] asCopy:YES];
-	} else {
-		activePicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[(NSString *)kUTTypePropertyList] inMode:UIDocumentPickerModeImport];
-	}
+	activePicker = [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[(NSString *)kUTTypePropertyList] inMode:UIDocumentPickerModeImport];
 	activePicker.delegate = self;
 	[self presentViewController:activePicker animated:YES completion:nil];
 }

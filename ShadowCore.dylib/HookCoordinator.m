@@ -15,7 +15,6 @@
 @property (nonatomic, readwrite) HKSubstitutor* inlineCover;
 @property (nonatomic, readwrite) HKSubstitutor* symlookup;
 @property (nonatomic, readwrite) HKSubstitutor* privateSym;
-@property (nonatomic, readwrite) HKSubstitutor* batch;
 @property (nonatomic, readwrite) SHDWCapabilities capabilities;
 @end
 
@@ -60,18 +59,16 @@
     SHDWInstallUnits(&unitMetaCount);
     _unitCount = unitMetaCount;
 
-    // One-shot v2 backend resolution (the category pickers are
-    // availability-cached by HookKit at first probe; the instances pin their
-    // backend at init). The batch instance must NOT be an auto-cover
-    // instance: batches must not split across backends (Compat.h), and
-    // batch hooks route to the pinned first-available category backend.
+    // One-shot v2 backend resolution. Auto-cover routes each function target
+    // and HookKit groups batched operations by the backend that won.
     HKSubstitutor* message   = [HKSubstitutor substitutorWithCategory:HK_CAT_MESSAGE];
-    HKSubstitutor* rebind    = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
+    HKSubstitutor* rebind    = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_REBIND)]];
     HKSubstitutor* inlineCov = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
-    HKSubstitutor* symlookup = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
-    HKSubstitutor* privSym   = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]];
-    HKSubstitutor* batch     = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_FUNCTION_REBIND), @(HK_CAT_FUNCTION_INLINE), @(HK_CAT_MESSAGE)]];
-
+    HKSubstitutor* symlookup = inlineCov;
+    HKSubstitutor* privSym   = [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE];
+    if(privSym.activeType == HK_LIB_NONE) {
+        privSym = [HKSubstitutor substitutorWithOrderedCategories:@[@(HK_CAT_PRIVATE_SYMBOL), @(HK_CAT_MESSAGE)]];
+    }
     // activeType == HK_LIB_NONE means the category resolved no backend.
     SHDWCapabilities caps = 0;
 
@@ -99,7 +96,6 @@
     set.inlineCover = inlineCov;
     set.symlookup = symlookup;
     set.privateSym = privSym;
-    set.batch = batch;
     set.capabilities = caps;
     self.backends = set;
 
@@ -150,8 +146,8 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 // Maps a unit's capability kind to the backend the legacy ctor would have
 // passed. Mirrors dylib.x exactly: function groups ride the rebind backend
 // (subCFunc = subFish, never subMain unless no rebind backend resolved),
-// message groups ride the message backend, symlookup rides the ordered
-// inline-first instance, private-symbol groups ride the ordered
+// message groups ride the message backend, symlookup rides the auto-cover
+// inline-first instance, private-symbol groups ride the
 // private-symbol instance.
 - (HKSubstitutor*)backendForUnit:(const SHDWInstallUnit*)unit {
     switch(unit->capability) {
@@ -216,12 +212,8 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 
 #pragma mark - Batch commit
 
-// Executes the batch and handles HK_ERR_PARTIAL / HK_ERR by running the
-// verify functions of the units just attempted (mirrors the legacy
-// post-install verify pass — the verify functions log exactly which hooks
-// missed). When no batching-capable backend resolved, setBatching: is
-// accepted but ignored and hooks installed immediately (Compat.h), so this
-// path is always safe.
+// Drains the same substitutor instances handed to installers, then runs the
+// legacy per-unit verification if any lane reports a failure.
 //
 // B2a parity: %hook groups expand to HKHookMessage/HKHookFunction, which
 // route to [HKSubstitutor defaultSubstitutor] — NOT the instance the
@@ -234,24 +226,20 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
     // Legacy global batch drain (HKExecuteBatch/HKDisableBatching): covers
     // every %hook/%function Logos group, which queue on the default
     // substitutor regardless of the instance passed to the installer.
-    HKExecuteBatch();
+    BOOL failed = HKExecuteBatch() != HK_OK;
     HKDisableBatching();
 
-    if(!unitIDs.count) {
+    for(HKSubstitutor* lane in @[self.backends.message, self.backends.rebind,
+                                 self.backends.symlookup, self.backends.privateSym]) {
+        failed |= [lane executeHooks] != HK_OK;
+        [lane setBatching:NO];
+    }
+
+    if(!failed || !unitIDs.count) {
         return;
     }
 
-    [self.backends.batch setBatching:YES];
-
-    hookkit_status_t status = [self.backends.batch executeHooks];
-
-    [self.backends.batch setBatching:NO];
-
-    if(status == HK_OK) {
-        return;
-    }
-
-    NSLog(@"[Shadow][coordinator] executeHooks returned %d — running per-unit verify", (int) status);
+    NSLog(@"[Shadow][coordinator] batch install failed — running per-unit verify");
 
     for(NSString* unitID in unitIDs) {
         const SHDWHookInstaller* installer = [self installerForUnitID:unitID];
@@ -283,6 +271,12 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 
     NSMutableArray<NSString*>* attempted = [NSMutableArray new];
     NSUInteger localInstalled = 0;
+
+    HKEnableBatching();
+    for(HKSubstitutor* lane in @[self.backends.message, self.backends.rebind,
+                                 self.backends.symlookup, self.backends.privateSym]) {
+        [lane setBatching:YES];
+    }
 
     for(NSString* unitID in plan) {
         NSUInteger index = [self unitIndexForID:unitID];
@@ -323,13 +317,7 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
         [attempted addObject:unitID];
     }
 
-    // One batch per lifecycle event. Batch hooks go through the pinned batch
-    // backend, which is the same instance the installers were handed (all
-    // non-auto-cover instances share the pinned batch backend — the
-    // auto-cover instance is never used for batching).
-    if(attempted.count) {
-        [self commitBatch:attempted];
-    }
+    [self commitBatch:attempted];
 
     return localInstalled;
 }

@@ -1,0 +1,39 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -15,6 +15,9 @@ libsandy_CFLAGS = -fobjc-arc -Iheaders -framework CydiaSubstrate
+ libsandy_LDFLAGS = -Xlinker -not_for_dyld_shared_cache
+ ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+ libsandy_LDFLAGS += -install_name @rpath/libsandy.dylib
++else ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
++libsandy_CFLAGS += -DLIBSANDY_ROOTHIDE -DTHEOS_PACKAGE_SCHEME_ROOTHIDE
++libsandy_LDFLAGS += -lroothide
+ else
+ libsandy_CFLAGS += -D XINA_SUPPORT=1
+ endif
+diff --git a/libSandy.m b/libSandy.m
+--- a/libSandy.m
++++ b/libSandy.m
+@@ -3,7 +3,11 @@
+ #import <xpc/xpc.h>
+ #import <mach-o/dyld.h>
+ #import <sandbox_private.h>
++#ifdef LIBSANDY_ROOTHIDE
++#import <roothide.h>
++#else
+ #import <libroot.h>
++#endif
+ #import <sandyd.h>
+ #import <substrate.h>
+ #import "HBLogWeak.h"
+@@ -55,6 +59,10 @@ bool consumeSandydGlobalExtensions(void)
+ {
+ 	if (!sandydCommunicationWorks()) {
++#ifdef LIBSANDY_ROOTHIDE
++		NSString *plistPath = jbroot(@"/usr/lib/sandyd_global.plist");
++#else
+ 		NSString *plistPath = JBROOT_PATH_NSSTRING(@"/usr/lib/sandyd_global.plist");
++#endif
+ 		if (![[NSFileManager defaultManager] fileExistsAtPath:plistPath]) {
+ 			NSLog(@"[libSandy consumeSandydGlobalExtensions] FATAL ERROR: %@ does not exist", plistPath);
+ 			return NO;

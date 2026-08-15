@@ -31,13 +31,13 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
         return;
     }
 
-    // The harness verification app is its own test subject: it installs to
+    // The verification apps are their own test subjects: they install to
     // /Applications (rooted) or /var/jb/Applications (rootless) — both
-    // denied below — so without this exception it can never be hooked and
-    // its battery would always read all-GAP on-device.
-    BOOL isShadowHarness = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"];
+    // denied below — so without these exact exceptions they cannot be hooked.
+    BOOL isVerificationApp = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]
+        || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"];
 
-    if(!isShadowHarness && ([executablePath hasPrefix:@"/Applications"]
+    if(!isVerificationApp && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
     || [executablePath hasPrefix:@"/private/preboot"]
     || [executablePath hasPrefix:@"/var/jb"])) {

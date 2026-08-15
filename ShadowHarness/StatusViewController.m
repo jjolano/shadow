@@ -187,7 +187,7 @@ static NSString* const kHeaderReuseID = @"Header";
 	[self applySnapshotAnimated:NO];
 	// Automation hook: full diagnostics (incl. battery) to a file in the
 	// app container, readable over SSH for autonomous result capture.
-	[self writeDiagnosticsFile];
+	[StatusViewController writeStealthReport];
 }
 
 #pragma mark - Cells
@@ -586,14 +586,37 @@ static NSString* const kHeaderReuseID = @"Header";
 	return shdw_section(@"Engine debug", rows);
 }
 
-// Full dump (battery included) to the app container, for SSH capture.
-- (void)writeDiagnosticsFile {
-	NSString* dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-	if(!dir) {
-		return;
+// Nonce-bound machine report to the app container, for SSH capture.
++ (BOOL)writeStealthReport {
+	NSString* dir = ShdwDocumentsDirectory();
+	NSString* contextPath = dir ?
+		[dir stringByAppendingPathComponent:@".ShadowStealthContext.json"] : nil;
+	NSData* contextData = contextPath ? ShdwReadEvidenceData(contextPath) : nil;
+	NSDictionary* context = contextData ?
+		[NSJSONSerialization JSONObjectWithData:contextData options:0 error:nil] : nil;
+	NSDictionary* report = ShdwStealthReport();
+	if(!report && [context isKindOfClass:[NSDictionary class]]) {
+		NSString* mode = context[@"requested_mode"];
+		NSString* canary = [mode isEqualToString:@"uninjected"] ? @"CONTROL-INACTIVE" : @"FAIL";
+		report = @{
+			@"schema_version" : @1, @"producer" : @"ShadowHarness",
+			@"run_id" : context[@"run_id"] ?: @"", @"row_id" : context[@"row_id"] ?: @"",
+			@"row_type" : @"jailbroken", @"requested_mode" : mode ?: @"",
+			@"nonce" : context[@"nonce"] ?: @"",
+			@"probe_revision" : context[@"probe_revision"] ?: @"",
+			@"canary" : canary,
+			@"observations" : @{ @"aggregate" : @"SETUP-FAIL", @"error" : @"report generation failed" },
+			@"producer_exit" : @2,
+		};
 	}
-	[[self diagnosticsString] writeToFile:[dir stringByAppendingPathComponent:@"ShadowDiagnostics.txt"]
-		atomically:YES encoding:NSUTF8StringEncoding error:nil];
+	NSString* nonce = report[@"nonce"];
+	if(!report || !dir || !nonce.length || ![NSJSONSerialization isValidJSONObject:report]) {
+		return NO;
+	}
+	NSData* data = [NSJSONSerialization dataWithJSONObject:report options:0 error:nil];
+	NSString* path = [dir stringByAppendingPathComponent:
+		[NSString stringWithFormat:@"ShadowDiagnostics-%@.json", nonce]];
+	return ShdwWriteEvidenceData(data, path);
 }
 
 - (void)copyDiagnostics:(id)sender {

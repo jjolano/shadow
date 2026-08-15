@@ -2,31 +2,29 @@
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <stdlib.h>
 #import <unistd.h>
 #import <fcntl.h>
 #import <sys/syscall.h>
-#import <mach-o/dyld.h>
 
 #import <Shadow.h>
 
 #import "ShadowDetector.h"
+
+NSString* ShdwDocumentsDirectory(void) {
+	return @"/var/mobile/Documents";
+}
 
 // ---------------------------------------------------------------------------
 // Hooks-payload presence
 // ---------------------------------------------------------------------------
 
 BOOL ShdwIsShadowCoreLoaded(void) {
-	// The stub (Shadow.dylib) dlopens ShadowCore.dylib beside itself when
-	// the ctor gate passes; scan dyld's image list for it. ponytail: plain
-	// strstr — a false positive needs a sibling image whose path contains
-	// "ShadowCore", which the harness's own bundle path does not.
-	for(uint32_t i = 0; i < _dyld_image_count(); i++) {
-		const char* name = _dyld_get_image_name(i);
-		if(name && strstr(name, "ShadowCore")) {
-			return YES;
-		}
-	}
-	return NO;
+	// ShadowCore deliberately hides its images from the public dyld list, so
+	// an image scan is circular. Its always-on class-identity hooks suppress
+	// Shadow.framework classes from ordinary lookup, while the deliberately
+	// unhooked fatal lookup still returns this known-present class.
+	return objc_getRequiredClass("Shadow") && !objc_getClass("Shadow");
 }
 
 Class ShdwShadowClass(const char* name) {
@@ -101,6 +99,22 @@ long shdw_raw_unlink(const char* path) {
 #endif
 }
 
+NSData* ShdwReadEvidenceData(NSString* path) {
+	NSData* data = nil;
+	SHADOW_INTERNAL_SCOPE {
+		data = [NSData dataWithContentsOfFile:path options:0 error:nil];
+	}
+	return data;
+}
+
+BOOL ShdwWriteEvidenceData(NSData* data, NSString* path) {
+	BOOL written = NO;
+	SHADOW_INTERNAL_SCOPE {
+		written = [data writeToFile:path options:NSDataWritingAtomic error:nil];
+	}
+	return written;
+}
+
 // ---------------------------------------------------------------------------
 // Canonical probes
 // ---------------------------------------------------------------------------
@@ -159,6 +173,7 @@ NSArray<NSDictionary*>* ShdwCanonicalProbes(void) {
 
 NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 	Shadow* shadow = ShdwShadowClass("Shadow") ? [ShdwShadowClass("Shadow") sharedInstance] : nil;
+	UIApplication* application = [UIApplication sharedApplication];
 	NSMutableArray* rows = [NSMutableArray new];
 
 	// The full probe audit from the ported detector. The writable group is
@@ -190,9 +205,13 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 		if(isScheme) {
 			// No syscall exists for URL schemes; the filtered column
 			// (canOpenURL) is the only reachability signal.
-			NSString* urlString = [NSString stringWithFormat:@"%@://", detail];
-			filteredFound = [[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:urlString]];
-			filteredResult = filteredFound ? @"YES" : @"NO";
+			if(application) {
+				NSString* urlString = [NSString stringWithFormat:@"%@://", detail];
+				filteredFound = [application canOpenURL:[NSURL URLWithString:urlString]];
+				filteredResult = filteredFound ? @"YES" : @"NO";
+			} else {
+				filteredResult = @"unavailable";
+			}
 			if(shadow) {
 				engineRestricted = [shadow isSchemeRestricted:detail];
 			}
@@ -211,7 +230,10 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 
 		NSString* verdict;
 		NSString* reason;
-		if(!shadow) {
+		if(isScheme && !application) {
+			verdict = @"INFO";
+			reason = @"UIApplication not initialized";
+		} else if(!shadow) {
 			verdict = @"INFO";
 			reason = @"Shadow not loaded — engine n/a";
 		} else if(isScheme) {
@@ -263,6 +285,111 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 	}
 
 	return rows;
+}
+
+NSDictionary* ShdwStealthReport(void) {
+	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
+	NSString* documents = ShdwDocumentsDirectory();
+	NSData* contextData = documents ? ShdwReadEvidenceData(
+		[documents stringByAppendingPathComponent:@".ShadowStealthContext.json"]) : nil;
+	NSDictionary* fileContext = contextData ?
+		[NSJSONSerialization JSONObjectWithData:contextData options:0 error:nil] : nil;
+	NSDictionary* context = [fileContext isKindOfClass:[NSDictionary class]] ? @{
+		@"_StealthRunID" : fileContext[@"run_id"] ?: @"",
+		@"_StealthRowID" : fileContext[@"row_id"] ?: @"",
+		@"_StealthMode" : fileContext[@"requested_mode"] ?: @"",
+		@"_StealthNonce" : fileContext[@"nonce"] ?: @"",
+		@"_StealthProbeRevision" : fileContext[@"probe_revision"] ?: @"",
+	} : nil;
+	if(!context) {
+		NSUserDefaults* defaults = [[NSUserDefaults alloc]
+			initWithSuiteName:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
+		context = bundleID ? [defaults dictionaryForKey:bundleID] : nil;
+	}
+	NSArray<NSString*>* contextKeys = @[
+		@"_StealthRunID", @"_StealthRowID", @"_StealthMode",
+		@"_StealthNonce", @"_StealthProbeRevision",
+	];
+	for(NSString* key in contextKeys) {
+		if(![context[key] isKindOfClass:[NSString class]] || ![context[key] length]) {
+			return nil;
+		}
+	}
+
+	NSString* mode = context[@"_StealthMode"];
+	if(![mode isEqualToString:@"uninjected"] && ![mode isEqualToString:@"injected"]) {
+		return nil;
+	}
+	NSString* forcedFailureID = [fileContext[@"force_failure_id"] isKindOfClass:[NSString class]] ?
+		fileContext[@"force_failure_id"] : nil;
+
+	NSArray<NSDictionary*>* batteryRows = ShdwBatteryRows();
+	NSMutableArray* observations = [NSMutableArray arrayWithCapacity:batteryRows.count];
+	NSUInteger pass = 0, fail = 0, skip = 0;
+	BOOL forcedFailureMatched = NO;
+	for(NSDictionary* row in batteryRows) {
+		NSString* verdict = row[@"verdict"];
+		NSString* status;
+		BOOL forcedFailure = forcedFailureID.length && [forcedFailureID isEqualToString:row[@"name"]];
+		if(forcedFailure) {
+			status = @"FAIL";
+			fail++;
+			forcedFailureMatched = YES;
+		} else if([verdict isEqualToString:@"PASS"]) {
+			status = @"PASS";
+			pass++;
+		} else if([verdict isEqualToString:@"INFO"]) {
+			status = @"SKIP";
+			skip++;
+		} else {
+			status = @"FAIL";
+			fail++;
+		}
+		[observations addObject:@{
+			@"id" : row[@"name"] ?: @"(unnamed)",
+			@"group" : row[@"group"] ?: @"unknown",
+			@"status" : status,
+			@"raw" : row[@"raw"] ?: [NSNull null],
+			@"filtered" : row[@"filtered"] ?: [NSNull null],
+			@"engine" : row[@"engine"] ?: [NSNull null],
+			@"reason" : forcedFailure ? @"forced failure control" : (row[@"reason"] ?: @""),
+		}];
+	}
+
+	BOOL loaded = ShdwIsShadowCoreLoaded();
+	BOOL setupFailure = batteryRows.count == 0 ||
+		(forcedFailureID.length && !forcedFailureMatched) ||
+		([mode isEqualToString:@"injected"] && !loaded) ||
+		([mode isEqualToString:@"uninjected"] && loaded);
+	NSString* aggregate = setupFailure ? @"SETUP-FAIL" :
+		([mode isEqualToString:@"uninjected"] ? @"CONTROL-INACTIVE" :
+		 (fail ? @"FAIL" : @"PASS"));
+	NSInteger producerExit = setupFailure ? 2 : fail ? 1 : 0;
+	id canary = [mode isEqualToString:@"uninjected"] ? @"CONTROL-INACTIVE" : @{
+		@"status" : loaded ? @"PASS" : @"FAIL",
+		@"shadow_core_loaded" : @(loaded),
+	};
+
+	return @{
+		@"schema_version" : @1,
+		@"producer" : @"ShadowHarness",
+		@"run_id" : context[@"_StealthRunID"],
+		@"row_id" : context[@"_StealthRowID"],
+		@"row_type" : @"jailbroken",
+		@"requested_mode" : mode,
+		@"nonce" : context[@"_StealthNonce"],
+		@"probe_revision" : context[@"_StealthProbeRevision"],
+		@"canary" : canary,
+		@"observations" : @{
+			@"aggregate" : aggregate,
+			@"summary" : @{
+				@"pass" : @(pass), @"fail" : @(fail), @"skip" : @(skip),
+				@"setup_fail" : @(setupFailure ? 1 : 0),
+			},
+			@"rows" : observations,
+		},
+		@"producer_exit" : @(producerExit),
+	};
 }
 
 // ---------------------------------------------------------------------------

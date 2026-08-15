@@ -10,6 +10,9 @@ ShadowSettings_EXTRA_FRAMEWORKS = Shadow AltList HookKit MobileCoreServices
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
 ShadowSettings_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
+ifeq ($(SHADOW_LANE),rootful-legacy)
+ShadowSettings_CFLAGS += -Wno-unguarded-availability-new
+endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowSettings_CFLAGS += -DSHADOW_ROOTHIDE
 endif

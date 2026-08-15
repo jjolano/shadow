@@ -1,5 +1,8 @@
 # Shadow v5 — Plan
 
+> Historical plan. Remaining stealth work and release gates are maintained in
+> [`STEALTH-HARDENING-PLAN.md`](STEALTH-HARDENING-PLAN.md).
+
 Next major version of Shadow. Rootless-first architecture with equal-weight dual (rootless + rootful) support. AI-assisted development.
 
 ## Context (research, 2026-08-06)
