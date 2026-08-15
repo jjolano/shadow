@@ -5,10 +5,7 @@
 
 #pragma mark - Install units
 
-// Canonical ordered install-unit table. Order = the legacy dylib.x ctor
-// install order, preserved exactly (units with ctorInstall are walked in
-// this order by the ctor pass; the verify pass and the escalation pass use
-// the same array order, matching the legacy flow).
+// Canonical ordered install-unit table. Every lifecycle pass walks this order.
 static const SHDWInstallUnit kSHDWInstallUnits[] = {
     // Identity concealment — unconditional, installed for every enabled app.
     { "dyld",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 1 },
@@ -30,7 +27,7 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     { "classes",              NULL,                          SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
     { "symlookup",            NULL,                          SHDWPhaseAlways,      SHDWCapabilitySymlookup,   1, 1 },
     // dlopen_internal: ctor installs it pref-gated; detector escalation
-    // installs it unconditionally (coordinator gates on the backend).
+    // installs it unconditionally (the coordinator gates on the backend).
     { "Hook_DynamicLibrariesExtra", SHDWHookIDDynamicLibrariesExtra,
                                                                   SHDWPhaseEscalation, SHDWCapabilityPrivateSym, 1, 1 },
     // Tier-2: ObjC-method swizzles install on first detector evidence.
@@ -192,7 +189,7 @@ static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit,
     }
 
     // dylibex: escalation installs it whether or not the pref is on (the
-    // coordinator gates on the backend, as legacy did).
+    // coordinator gates on the resolved private-symbol backend).
     if(event == SHDWEventDetectorEscalation && unit->phase == SHDWPhaseEscalation) {
         return YES;
     }
@@ -200,14 +197,11 @@ static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit,
     return [prefs[unit->prefKey] boolValue];
 }
 
-// Legacy gating: only the ObjC-message groups and the dlopen_internal group
-// were backend-gated at install time (objc/classes/tier-2/uikit on a
-// message backend; dylibex in the coordinator). C-function groups install
-// unconditionally on their pref (subCFunc always resolves to something).
+// ObjC-message groups require a message backend. dlopen_internal is gated by
+// the coordinator because its private-symbol backend is resolved there.
 static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) {
     if(unit->phase == SHDWPhaseEscalation) {
-        // dlopen_internal backend gate lives in the coordinator (it mirrors
-        // the legacy subDyldExtra/subInline checks and its skip logs).
+        // dlopen_internal's backend gate and skip log live in the coordinator.
         return YES;
     }
 

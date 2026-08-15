@@ -57,7 +57,7 @@
 
 #pragma mark - Lifecycle phases
 
-// When an install unit is installed. Mirrors the legacy dylib.x flow:
+// When an install unit is installed:
 //   always     — ctor, unconditional (identity-concealment groups)
 //   tier1      — ctor, preference-gated C-function groups
 //   tier2      — first detector escalation, pref-gated ObjC-method groups
@@ -109,7 +109,7 @@ typedef struct {
     unsigned verify : 1;            // has a verify function the ctor runs
 } SHDWInstallUnit;
 
-// Canonical ordered install-unit table — the exact legacy install order.
+// Canonical ordered install-unit table.
 // The ctor pass walks this array in order and installs every unit whose
 // ctorInstall flag is set and whose prefKey (if any) is enabled.
 SHDW_EXPORT const SHDWInstallUnit* SHDWInstallUnits(NSUInteger* outCount);
@@ -139,13 +139,13 @@ SHDW_EXPORT NSString* SHDWHookGroupCapabilityKind(NSString* groupID);
 // effective preferences and the available backend capabilities. Returns an
 // ordered NSArray<NSString*> of install-unit IDs; no state; host-runnable.
 //
-// Gating rules (mirror the legacy dylib.x flow exactly):
+// Gating rules:
 //   - ctor: units with ctorInstall, pref-gated where prefKey != NULL
 //   - UIKit load: phase==uikit units, pref-gated, message backend required
 //   - detector escalation: dylibex (unconditional, phase==escalation) then
 //     the tier-2 units in canonical order, pref-gated, message backend
 //     required. dylibex capability gating happens in the coordinator (its
-//     skip decision mirrors the legacy subDyldExtra/subInline checks).
+//     private-symbol backend is resolved there).
 SHDW_EXPORT NSArray<NSString*>* SHDWHookPlan(NSDictionary<NSString*, id>* prefs,
                                              SHDWCapabilities caps,
                                              SHDWLifecycleEvent event);

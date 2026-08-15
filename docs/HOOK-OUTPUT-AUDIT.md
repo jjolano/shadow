@@ -1,5 +1,9 @@
 # Hook Output-Correctness Audit
 
+> Historical audit snapshot from 2026-08-08. Paths reflect the source layout
+> at that date; current release verification lives in
+> [`STEALTH-HARDENING-PLAN.md`](STEALTH-HARDENING-PLAN.md).
+
 Adversarial audit of the tweak's hooks from a **detector's** lens: every output our
 hooks produce that is *wrong, self-inconsistent, or impossible on stock iOS* is a
 fingerprint a jailbreak detector can cross-check. Fixes applied; residuals documented.

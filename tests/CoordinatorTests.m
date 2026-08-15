@@ -69,8 +69,8 @@ static NSDictionary* AllOnPrefs(void) {
     return prefs;
 }
 
-// The exact expected ctor order — mirrors the canonical table order (the
-// legacy dylib.x install order) restricted to ctorInstall units.
+// The exact expected ctor order: canonical table order, restricted to
+// ctorInstall units.
 static NSArray* ExpectedCtorOrder(void) {
     return @[
         @"dyld",
@@ -134,7 +134,7 @@ static void TestPlannerUIKit(void) {
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventUIKitLoaded);
     CHECK(([plan isEqualToArray:@[ @"Hook_URLScheme", @"Hook_Foundation@uikit" ]]), "uikit plan == the two UIKit-class units, in order");
 
-    // Message backend required (mirror legacy watcher gate).
+    // Message backend required by the UIKit groups.
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventUIKitLoaded);
     CHECK(planFish.count == 0, "no message backend: uikit plan empty");
 
@@ -173,7 +173,7 @@ static void TestPlannerEscalation(void) {
     CHECK([plan isEqualToArray:SHDWHookPlan(AllOnPrefs(), full, SHDWEventDetectorEscalation)], "escalation plan idempotent");
 
     // No message backend: tier-2 ObjC units drop, dylibex stays (its
-    // capability gate lives in the coordinator, mirroring legacy).
+    // capability gate lives in the coordinator).
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventDetectorEscalation);
     CHECK(IDInPlan(planFish, "Hook_DynamicLibrariesExtra"), "fishhook-only: dylibex still named (coordinator gates it)");
     CHECK(!IDInPlan(planFish, "Hook_Filesystem@objc"), "fishhook-only: tier-2 ObjC dropped");

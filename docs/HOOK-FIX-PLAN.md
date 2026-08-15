@@ -1,5 +1,8 @@
 # Shadow Hook Hardening Plan
 
+> Historical implementation snapshot from 2026-08-07. For current release
+> work, see [`STEALTH-HARDENING-PLAN.md`](STEALTH-HARDENING-PLAN.md).
+
 Adversarial fix plan: every change is justified by an attacker technique it closes.
 Triage buckets per finding: **FIX** (real leak, repair), **REMOVE** (dead/wrong/fingerprinting
 hook — a wrong or detectable hook is a liability, not a hook), **CONSOLIDATE** (share one
