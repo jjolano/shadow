@@ -1,4 +1,4 @@
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 #import "RulesetPrivate.h"
 #import "RulesetCompiler.h"
 

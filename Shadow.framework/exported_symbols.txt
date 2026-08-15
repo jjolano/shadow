@@ -1,15 +1,9 @@
 _OBJC_CLASS_$_Shadow
 _OBJC_METACLASS_$_Shadow
-_OBJC_CLASS_$_ShadowBackend
-_OBJC_METACLASS_$_ShadowBackend
 _OBJC_CLASS_$_ShadowSettings
 _OBJC_METACLASS_$_ShadowSettings
-_OBJC_CLASS_$_RulesetEngine
-_OBJC_METACLASS_$_RulesetEngine
 _OBJC_CLASS_$_SystemRulesGenerator
 _OBJC_METACLASS_$_SystemRulesGenerator
-_OBJC_CLASS_$_ShadowRestrictionQuery
-_OBJC_METACLASS_$_ShadowRestrictionQuery
 _shdw_ruleset_generation
 _shdwInternalBusy
 _SHDWHookPlan

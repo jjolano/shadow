@@ -1,6 +1,6 @@
 #import <Shadow/SystemRulesGenerator.h>
 #import <Shadow/Core+Utilities.h>
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 
 
 #import <MobileCoreServices/LSApplicationWorkspace.h>
@@ -19,7 +19,7 @@
 extern int fs_snapshot_list(int fd, struct attrlist* alist, void* buf, size_t bufsize, uint32_t flags) __attribute__((weak_import));
 extern int fs_snapshot_mount(int fd, const char* dir, const char* name, uint32_t flags) __attribute__((weak_import));
 
-@implementation SystemRulesGenerator
+@implementation SystemRulesGenerator (SystemRules)
 
 // Curated-ruleset engine cache for generateInstalledAppsRuleset, keyed by
 // file path -> @[mtime, engine]. The harvest re-runs on every app

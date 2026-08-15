@@ -8,7 +8,6 @@
 + (NSString *)getStandardizedPath:(NSString *)path;
 + (NSString *)getExecutablePath;
 + (NSString *)getBundleIdentifier;
-+ (NSDictionary *)generateDatabase;
 + (NSArray *)filterPathArray:(NSArray *)array restricted:(BOOL)restricted options:(NSDictionary<NSString *, id> *)options;
 
 // C0-3: Cocoa error factory for the file layer. Produces NSCocoaErrorDomain

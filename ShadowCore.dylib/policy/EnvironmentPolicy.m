@@ -10,7 +10,11 @@
 
 #import "EnvironmentPolicy.h"
 
-#import "../hooks/hooks.h"
+#import "../HookRuntime.h"
+
+#ifndef SHADOW_TEST_HARNESS
+#import <HookKit.h>
+#endif
 
 #import <string.h>
 #import <stdlib.h>
@@ -150,6 +154,7 @@ char* shdw_env_sanitized_path(const char* value) {
     return shdw_env_path_storage;
 }
 
+#ifndef SHADOW_TEST_HARNESS
 // setenv/unsetenv can change the value behind the getenv hook's PATH
 // sanitization. The input comparison above self-heals a changed value; these
 // hooks clear this thread's cache entry so a setenv with the SAME content
@@ -179,6 +184,7 @@ void shadowhook_envpolicy(HKSubstitutor* hooks) {
     [hooks hookFunction:setenv withReplacement:replaced_setenv outOldPtr:(void **) &original_setenv];
     [hooks hookFunction:unsetenv withReplacement:replaced_unsetenv outOldPtr:(void **) &original_unsetenv];
 }
+#endif
 
 // Sanitizes a "PATH=..." entry: jailbreak components dropped, other
 // components preserved. Returns NULL when nothing needed removing (the
@@ -276,10 +282,6 @@ NSArray<NSString*>* shdw_env_sanitized_argv(NSArray<NSString*>* result) {
     for(NSUInteger i = 1; i < result.count; i++) {
         NSString* arg = result[i];
 
-        if([_shadow isPathRestricted:arg]) {
-            continue;
-        }
-
         if([arg isEqualToString:@"-dylib"]
         || [arg isEqualToString:@"-insert"]
         || [arg isEqualToString:@"-load"]
@@ -290,6 +292,12 @@ NSArray<NSString*>* shdw_env_sanitized_argv(NSArray<NSString*>* result) {
                 i++;
             }
 
+            continue;
+        }
+
+        // Arbitrary argument values are not paths. Resolving them against a
+        // restricted current directory would erase benign flags/values.
+        if([arg isAbsolutePath] && [_shadow isPathRestricted:arg]) {
             continue;
         }
 

@@ -1,10 +1,6 @@
 #import <Shadow/Core+Utilities.h>
-#import <Shadow/Ruleset.h>
-
 
 #import "../vendor/apple/dyld_priv.h"
-#import "../common.h"
-#import <Shadow/JBPath.h>
 
 extern char*** _NSGetArgv();
 
@@ -93,128 +89,6 @@ extern char*** _NSGetArgv();
 + (NSString *)getBundleIdentifier {
     CFBundleRef mainBundle = CFBundleGetMainBundle();
     return mainBundle ? (__bridge NSString *)CFBundleGetIdentifier(mainBundle) : nil;
-}
-
-+ (NSDictionary *)generateDatabase {
-    // C0-2: this is Shadow's own dpkg-database read (dir listing, file
-    // contents, bundle plists) — the internal scope keeps the tweak's own
-    // hooks from filtering it, exactly like Backend's ruleset loads.
-    // NOTE: the macro is a for-loop — the braced body is the scope; the
-    // early return stays inside (a real exit path), the final value is
-    // assigned to a local and returned after the scope (the compiler can't
-    // prove the for body executes).
-    NSDictionary* database = nil;
-
-    SHADOW_INTERNAL_SCOPE {
-
-    // Determine dpkg info database path.
-    NSArray* dpkgInfoPaths = @[
-        @"/Library/dpkg/info",
-        @"/var/lib/dpkg/info"
-    ];
-
-    NSString* dpkgInfoPath = nil;
-
-    for(NSString* path in dpkgInfoPaths) {
-        NSString* path_r = JBPath(path);
-
-        if([[NSFileManager defaultManager] fileExistsAtPath:path_r]) {
-            dpkgInfoPath = path_r;
-            break;
-        }
-    }
-
-    if(!dpkgInfoPath) {
-        return nil;
-    }
-
-    NSArray* db_list_skip = @[@"base.list", @"firmware-sbin.list"];
-
-    NSMutableSet* db_installed = [NSMutableSet new];
-    NSMutableSet* db_exception = [NSMutableSet new];
-    NSMutableSet* schemes = [NSMutableSet new];
-
-    // Iterate all list files in database.
-    NSArray* db_files = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dpkgInfoPath isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
-
-    for(NSURL* db_file in db_files) {
-        if([[db_file pathExtension] isEqualToString:@"list"]) {
-            NSString* content = [NSString stringWithContentsOfURL:db_file encoding:NSUTF8StringEncoding error:nil];
-
-            if(content) {
-                // Read all lines
-                NSArray* lines = [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-
-                for(NSString* line in lines) {
-                    NSString* path = [self getStandardizedPath:line];
-
-                    if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
-                        continue;
-                    }
-
-                    if([[path pathExtension] isEqualToString:@"app"]) {
-                        NSBundle* appBundle = [NSBundle bundleWithPath:JBPath(path)];
-
-                        if(appBundle) {
-                            NSDictionary* plist = [appBundle infoDictionary];
-                            NSDictionary* urltypes = [plist objectForKey:@"CFBundleURLTypes"];
-
-                            if(urltypes) {
-                                for(NSDictionary* type in urltypes) {
-                                    NSArray* urlschemes = [type objectForKey:@"CFBundleURLSchemes"];
-
-                                    if(urlschemes) {
-                                        [schemes addObjectsFromArray:urlschemes];
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if([db_list_skip containsObject:[db_file lastPathComponent]]) {
-                        [db_exception addObject:path];
-                    } else {
-                        [db_installed addObject:path];
-                    }
-                }
-            }
-        }
-    }
-
-    // filter installed ruleset
-    NSArray* filter_names = @[
-        @"/.",
-        @"/Library/Application Support",
-        @"/usr/lib",
-        @"/usr/libexec",
-        @"/usr/lib/system",
-        @"/var/mobile/Library/Caches",
-        @"/var/mobile/Media",
-        @"/System/Library/PrivateFrameworks/CoreEmoji.framework",
-        @"/System/Library/PrivateFrameworks/CoreEmoji.framework/SearchEngineOverrideLists",
-        @"/System/Library/PrivateFrameworks/CoreEmoji.framework/SearchModel-en",
-        @"/System/Library/PrivateFrameworks/TextInput.framework"
-    ];
-
-    [db_exception addObjectsFromArray:filter_names];
-    [db_installed minusSet:db_exception];
-
-    NSPredicate* emoji = [NSPredicate predicateWithFormat:@"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
-    NSPredicate* not_emoji = [NSCompoundPredicate notPredicateWithSubpredicate:emoji];
-    
-    [db_installed filterUsingPredicate:not_emoji];
-
-    database = @{
-        @"RulesetInfo" : @{
-            @"Name" : @"dpkg installed files",
-            @"Author" : @"Shadow Service"
-        },
-        @"BlacklistExactPaths" : [db_installed allObjects],
-        @"BlacklistURLSchemes" : [schemes allObjects]
-    };
-    }
-
-    return database;
 }
 
 + (NSArray *)filterPathArray:(NSArray *)array restricted:(BOOL)restricted options:(NSDictionary<NSString *, id> *)options {

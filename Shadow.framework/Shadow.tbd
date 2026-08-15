@@ -6,9 +6,9 @@ current-version:       0
 compatibility-version: 0
 exports:
   - archs:                [ armv7, armv7s, arm64, arm64e ]
-    objc-classes:         [ _Shadow, _ShadowBackend,
-                            _ShadowSettings, _RulesetEngine,
-                            _SystemRulesGenerator, _ShadowRestrictionQuery ]
+    objc-classes:         [ _Shadow,
+                            _ShadowSettings,
+                            _SystemRulesGenerator ]
     symbols:              [ _SHDWHookPlan, _SHDWInstallUnits,
                             _SHDWDefaultHookSettings, _SHDWPresetStandard,
                             _SHDWPresetMaximum, _SHDWHookGroupCapabilityKind,
