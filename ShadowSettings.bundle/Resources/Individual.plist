@@ -8,7 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>ESSENTIAL_HOOKS_DESC</string>
+			<string>HOOK_FILE_SYSTEM_DESC</string>
 			<key>label</key>
 			<string>ESSENTIAL_HOOKS</string>
 		</dict>
@@ -26,6 +26,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_URLSCHEME_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
@@ -35,6 +41,12 @@
 			<string>HOOK_URLSCHEME</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_ENVVARS_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -52,7 +64,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>REC_HOOKS_DESC</string>
+			<string>HOOK_DETECTFMWK_DESC</string>
 			<key>label</key>
 			<string>REC_HOOKS</string>
 		</dict>
@@ -70,6 +82,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_FOUNDATION_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
@@ -84,7 +102,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>EXTRA_HOOKS_DESC</string>
+			<string>HOOK_MACH_DESC</string>
 			<key>label</key>
 			<string>EXTRA_HOOKS</string>
 		</dict>
@@ -102,6 +120,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_IOKIT_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
@@ -111,6 +135,12 @@
 			<string>HOOK_IOKIT</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_ANTIDBG_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -126,6 +156,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_SYSCALL_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
@@ -135,6 +171,12 @@
 			<string>HOOK_SYSCALL</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_APPENUM_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
