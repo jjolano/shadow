@@ -9,23 +9,33 @@
 "ESSENTIAL_HOOKS_DESC" = "基本Hook包含最常见的越狱检测方法。";
 
 "HOOK_FILE_SYSTEM" = "文件系统";
+"HOOK_FILE_SYSTEM_DESC" = "从常见的文件系统检查中隐藏越狱文件和文件夹。";
 "HOOK_URLSCHEME" = "URL处理";
+"HOOK_URLSCHEME_DESC" = "让越狱应用使用的 URL Scheme 显示为不可用。";
 "HOOK_ENVVARS" = "环境变量";
+"HOOK_ENVVARS_DESC" = "从应用环境中移除越狱和插件注入痕迹。";
 
 "REC_HOOKS" = "推荐Hook";
 "REC_HOOKS_DESC" = "推荐Hook包含可能使用的其他越狱检测方法。";
 
 "HOOK_DETECTFMWK" = "检测框架";
+"HOOK_DETECTFMWK_DESC" = "绕过安全和设备检测框架内置的常见越狱检查。";
 "HOOK_FOUNDATION" = "Foundation框架"; /* Foundation是Apple的框架名称. */
+"HOOK_FOUNDATION_DESC" = "将隐藏范围扩展到检查文件、Bundle、数据和图像的 Foundation 与 UIKit API。";
 
 "EXTRA_HOOKS" = "额外Hook";
 "EXTRA_HOOKS_DESC" = "额外Hook包含可能使用的更多越狱检测方法，包括私有API。";
 
 "HOOK_MACH" = "Mach服务查找";
+"HOOK_MACH_DESC" = "让已知的越狱相关 Mach 服务显示为不可用。";
 "HOOK_IOKIT" = "IOKit 服务探测";
+"HOOK_IOKIT_DESC" = "在 IOKit 搜索中隐藏越狱相关的内核服务。";
 "HOOK_ANTIDBG" = "反调试方法";
+"HOOK_ANTIDBG_DESC" = "隐藏调试器状态和越狱相关的后台进程。";
 "HOOK_SYSCALL" = "私有系统调用";
+"HOOK_SYSCALL_DESC" = "过滤可能暴露隐藏文件、进程或代码签名状态的直接系统调用。";
 "HOOK_APPENUM" = "应用枚举";
+"HOOK_APPENUM_DESC" = "从已安装应用查询中移除已知的越狱应用。";
 
 "INDIVIDUAL_HOOKS" = "单独钩子";
 "INDIVIDUAL_HOOKS_DESC" = "单独微调每个钩子。预设可一次性应用推荐配置。";
@@ -34,9 +44,15 @@
 "DNGR_HOOKS_DESC" = "底层屏蔽方法。可能导致应用崩溃或系统功能异常。仅在推荐的Hook无法生效时启用。";
 
 "HOOK_SANDBOX" = "增强应用沙盒";
+"HOOK_SANDBOX_DESC" = "让特权操作和仅越狱环境存在的服务像在普通应用沙盒中一样失败。\n\n这些底层 Hook 可能导致应用崩溃或系统功能异常。仅在推荐 Hook 无效时使用。";
 "HOOK_LLC" = "底层文件处理";
+"HOOK_LLC_DESC" = "在底层文件打开和目录 API 中隐藏越狱路径。";
 "HOOK_MEM" = "隐藏可执行内存";
+"HOOK_MEM_DESC" = "过滤虚拟内存查询，避免暴露注入的可执行内存区域。";
 "VNODE_HIDING" = "Vnode 级隐藏";
+"VNODE_HIDING_DESC" = "通过 Shadow 服务在 vnode 层隐藏越狱路径，位置低于常规文件 API。";
+"MEMORY_LEVEL_HIDING_DESC" = "从 dyld 的内存映像列表中移除注入的动态库。如果应用不稳定，请关闭此选项。";
+"HOOK_DYLD_EXTRA_DESC" = "在应用启动时启用额外的动态库防护，而不是等待检测到越狱检查。";
 
 "VNODE_UNAVAILABLE_REASON" = "Vnode 隐藏需要具备内核读写能力的 shadowd 守护进程。";
 "VNODE_STARTING_REASON" = "shadowd 守护进程仍在启动，Vnode 隐藏暂不可用。";

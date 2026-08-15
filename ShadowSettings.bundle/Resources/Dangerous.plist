@@ -8,7 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>DNGR_HOOKS_DESC</string>
+			<string>HOOK_SANDBOX_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -24,6 +24,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_LLC_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
 			<string>Hook_LowLevelC</string>
@@ -33,6 +39,12 @@
 			<string>readPreferenceValue:</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_MEM_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -48,6 +60,12 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>MEMORY_LEVEL_HIDING_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
 			<string>MemoryLevelHiding</string>
@@ -57,6 +75,12 @@
 			<string>readPreferenceValue:</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>VNODE_HIDING_DESC</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -72,13 +96,17 @@
 		</dict>
 		<dict>
 			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOK_DYLD_EXTRA_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
 			<string>Hook_DynamicLibrariesExtra</string>
 			<key>label</key>
 			<string>HOOK_DYLD_EXTRA</string>
-			<key>footerText</key>
-			<string>HOOK_DYLD_EXTRA_DESC</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>
