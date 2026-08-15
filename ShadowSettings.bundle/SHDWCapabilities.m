@@ -155,11 +155,11 @@ void SHDWRefreshDaemonStateAsync(void (^completion)(SHDWDaemonState state)) {
 
 // ---------------------------------------------------------------------------
 // Hook-group capability matrix. Mirrors ShadowCore.dylib/dylib.x routing:
-//   - ObjC-message groups install on subMain (ElleKit/Substrate/Substitute,
-//     or native fallback) — the HK_Library pref never configures subMain.
+//   - ObjC-message groups use HookKit's runtime facade — the HK_Library pref
+//     never configures them.
 //   - C-function groups install on subCFunc (pref-selected or fishhook).
-//   - dlopen_internal (Hook_DynamicLibrariesExtra) needs a private-symbol or
-//     message-capable backend (the ordered PRIVATE_SYMBOL → MESSAGE picker).
+//   - dlopen_internal (Hook_DynamicLibrariesExtra) needs a private-symbol
+//     backend.
 //   - VnodeHiding needs the daemon with krw ready.
 // The Settings picker already filters substrate/substitute/swift out of
 // selection, and every remaining picker lib is C-function-capable, so
@@ -200,19 +200,16 @@ BOOL SHDWHookGroupSupported(NSString* groupID) {
         return YES;
     }
 
-    hookkit_lib_t available = shdw_available_types();
-
     if([kind isEqualToString:@"message"]) {
-        return (available & (HK_LIB_ELLEKIT | HK_LIB_SUBSTRATE | HK_LIB_SUBSTITUTE | HK_LIB_NATIVE)) != 0;
+        return ([HKSubstitutor getAvailableCategories] & HK_CAT_MESSAGE) != 0;
     }
 
     if([groupID isEqualToString:@"Hook_DynamicLibrariesExtra"]) {
-        // dlopen_internal rides the ordered PRIVATE_SYMBOL → MESSAGE picker
-        // (dylib.x/HookCoordinator) — mirror that consumer exactly.
-        return ([HKSubstitutor getAvailableCategories] & (HK_CAT_PRIVATE_SYMBOL | HK_CAT_MESSAGE)) != 0;
+        return ([HKSubstitutor getAvailableCategories] & HK_CAT_PRIVATE_SYMBOL) != 0;
     }
 
     // C-function groups: any non-Swift backend can run them.
+    hookkit_lib_t available = shdw_available_types();
     return (available & ~HK_LIB_SWIFT) != 0;
 }
 

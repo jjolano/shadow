@@ -1,0 +1,5 @@
+"TROUBLESHOOTING" = "疑難排解";
+"HOOKING_OVERRIDE" = "掛鉤後端覆寫";
+"HOOKING_OVERRIDE_DESC" = "僅在應用程式崩潰或繞過失敗時變更此項。測試後請恢復為「自動」。";
+"HOOKING_OVERRIDE_SELECT" = "「自動」會讓 Shadow 選擇掛鉤方式。僅在疑難排解時選擇特定後端。";
+"AUTOMATIC" = "自動（建議）";

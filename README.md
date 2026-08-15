@@ -20,7 +20,7 @@ Dependencies are pulled in automatically. You may need additional repositories f
 
 * `AltList` from [opa334's repository](https://opa334.github.io) — application listing in preferences.
 * `libSandy` from [opa334's repository](https://opa334.github.io) — sandboxed preference loading.
-* `HookKit` (>= 2.4.0) from [jjolano's repository](https://ios.jjolano.me) — hooking, including the change-hooking-library feature.
+* `HookKit` (>= 2.5.0) from [jjolano's repository](https://ios.jjolano.me) — hooking, including the change-hooking-library feature.
 
 `Injection Foundation` from [PoomSmart's repository](https://poomsmart.github.io/repo) is recommended but not required; it ensures Shadow is injected properly into certain apps.
 

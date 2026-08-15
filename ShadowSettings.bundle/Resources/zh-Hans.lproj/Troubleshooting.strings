@@ -1,0 +1,5 @@
+"TROUBLESHOOTING" = "故障排除";
+"HOOKING_OVERRIDE" = "钩子后端覆盖";
+"HOOKING_OVERRIDE_DESC" = "仅在应用崩溃或绕过失败时更改此项。测试后请恢复为“自动”。";
+"HOOKING_OVERRIDE_SELECT" = "“自动”会让 Shadow 选择钩子方式。仅在故障排除时选择特定后端。";
+"AUTOMATIC" = "自动（推荐）";

@@ -1,7 +1,5 @@
-"HK_LIB_DESC" = "التحكم في مكتبة الخطافات المستخدمة لخطافات دوال C. تستخدم خطافات Objective-C دائمًا المكتبة الافتراضية لوقت التشغيل (ElleKit أو Substrate أو Substitute أو وقت التشغيل الأصلي). قد توفر بعض المكتبات تحسينًا للتخطي، ولكنها قد تؤثر أيضًا على استقرار التطبيق.";
-"HOOKING_LIBRARY" = "مكتبة الخطافات";
-"HK_LIB_SELECT" = "هذه لائحة بمكتبات الخطافات المتاحة للاستخدام على جهازك. حدد \"تلقائي\" للسماح لـ HookKit باختيار أفضل مكتبة خطافات لجهازك.";
-"AUTOMATIC" = "تلقائي";
+"TROUBLESHOOTING" = "استكشاف الأخطاء وإصلاحها";
+"TROUBLESHOOTING_DESC" = "خيارات متقدمة لحل مشكلات توافق التطبيقات.";
 "ESSENTIAL_HOOKS" = "الخطافات الأساسية";
 "ESSENTIAL_HOOKS_DESC" = "تغطي الخطافات الأساسية معظم طرق كشف الجيلبريك الأكثر شيوعًا.";
 "HOOK_FILE_SYSTEM" = "ملف النظام";
@@ -45,7 +43,7 @@
 
 "VNODE_UNAVAILABLE_REASON" = "يتطلب إخفاء الملفات على مستوى النواة وجود shadowd مع صلاحيات قراءة/كتابة النواة.";
 "VNODE_STARTING_REASON" = "إخفاء الملفات على مستوى النواة غير متاح بينما لا يزال shadowd قيد البدء.";
-"UNSUPPORTED_ELLEKIT_REASON" = "يتطلب مكتبة ElleKit.";
+"UNSUPPORTED_ELLEKIT_REASON" = "يتطلب واجهة خلفية للربط تدعم الرموز الخاصة.";
 "UNSUPPORTED_MSG_REASON" = "يتطلب مكتبة خطافات تدعم Objective-C (ElleKit أو Substrate أو Substitute أو وقت التشغيل الأصلي).";
 "UNSUPPORTED_FUNC_REASON" = "يتطلب مكتبة خطافات تدعم دوال C.";
 "BYPASS_PRESET" = "إعداد مسبق للتجاوز";

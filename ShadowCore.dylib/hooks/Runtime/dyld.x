@@ -2536,6 +2536,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
 
         if(libdyldImage) {
             _shdw_all_image_infos = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_all_image_infos"];
+            [hooks closeImage:libdyldImage];
         }
     }
 
@@ -2723,6 +2724,10 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
         [hooks hookFunction:process_info_release_ptr withReplacement:replaced_dyld_process_info_release outOldPtr:(void **) &original_dyld_process_info_release];
     }
 
+    if(libdyldImage) {
+        [hooks closeImage:libdyldImage];
+    }
+
     // Legacy NS* image/symbol lookup APIs (plan Wave 1c): __API_UNAVAILABLE
     // on iOS in the SDK, resolved by name — skipped silently on OSes that
     // never exported them (modern iOS).
@@ -2781,7 +2786,9 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // idempotent belt).
     [publicHooks hookFunction:dlclose withReplacement:replaced_dlclose outOldPtr:(void **) &original_dlclose];
 
-    // [hooks closeImage:libdyldImage];
+    if(libdyldImage) {
+        [hooks closeImage:libdyldImage];
+    }
 }
 
 void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {

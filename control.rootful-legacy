@@ -1,7 +1,7 @@
 Package: me.jjolano.shadow.legacy
 Name: Shadow (Legacy Rootful)
 Pre-Depends: dpkg
-Depends: firmware (>= 9.0), firmware (<< 14.0), com.opa334.altlist.legacy, com.opa334.libsandy.legacy, me.jjolano.fmwk.hookkit.legacy (>= 2.4.0)
+Depends: firmware (>= 9.0), firmware (<< 14.0), com.opa334.altlist.legacy, com.opa334.libsandy.legacy, me.jjolano.fmwk.hookkit.legacy (>= 2.5.0)
 Suggests: com.ps.injectionfoundation
 Recommends: mobilesubstrate, preferenceloader
 Provides: me.jjolano.shadow, me.jjolano.shadow.beta

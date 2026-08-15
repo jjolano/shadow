@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>HOOKING_OVERRIDE_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>id</key>
+			<string>HK_Library</string>
+			<key>label</key>
+			<string>HOOKING_OVERRIDE</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+			<key>staticTextMessage</key>
+			<string>HOOKING_OVERRIDE_SELECT</string>
+			<key>titlesDataSource</key>
+			<string>getTitles:</string>
+			<key>valuesDataSource</key>
+			<string>getValues:</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>TROUBLESHOOTING</string>
+</dict>
+</plist>

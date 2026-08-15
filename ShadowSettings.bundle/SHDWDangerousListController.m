@@ -14,10 +14,10 @@
 		_specifiers = [self loadSpecifiersFromPlistName:@"Dangerous" target:self];
 
 		// VnodeHiding needs the shadowd daemon with krw ready;
-		// Hook_DynamicLibrariesExtra needs ElleKit. Disable + explain when
-		// the runtime backend is missing. Gate instantly with cached state,
-		// then re-gate when the async daemon refresh lands (never block the
-		// initial render on Mach IPC).
+		// Hook_DynamicLibrariesExtra needs private-symbol lookup. Disable +
+		// explain when the runtime backend is missing. Gate instantly with
+		// cached state, then re-gate when the async daemon refresh lands
+		// (never block the initial render on Mach IPC).
 		SHDWApplyHookGroupGating(_specifiers);
 		[self refreshDaemonStateAndRegate];
 	}
