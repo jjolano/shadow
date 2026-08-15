@@ -121,16 +121,13 @@ for rel in paths:
     if scope and not any(rel == item or (item.endswith('/') and rel.startswith(item)) for item in scope):
         continue
     path = root / rel
-    status = subprocess.check_output(
-        ['git', '-C', str(root), 'status', '--porcelain=v1', '--untracked-files=all', '--', rel]
-    ).decode('utf-8', 'replace').strip() or '  '
     if path.is_file():
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     elif path.exists():
         continue
     else:
         digest = 'DELETED'
-    rows.append(f'{status[:2]}\t{digest}\t{rel}\n')
+    rows.append(f'{digest}\t{rel}\n')
 data = ''.join(rows).encode()
 output.parent.mkdir(parents=True, exist_ok=True)
 tmp = output.with_name(output.name + f'.tmp.{os.getpid()}')
@@ -1216,7 +1213,7 @@ verification_documents_dir() {
 }
 
 cmd_launch() {
-	local bundle=$1 transition=$2 nonce=$3 executable mode pre='' pre_original='' post='' launch_event='' post_pid post_lstart post_comm container documents launch_remote
+	local bundle=$1 transition=$2 nonce=$3 executable mode pre='' pre_original='' pre_state='' post='' launch_event='' post_pid post_lstart post_comm container documents launch_remote
     validate_bundle_id "$bundle"
     case "$transition" in cold|warm) ;; *) die 'launch transition must be cold or warm' ;; esac
     [[ $nonce =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'invalid nonce'
@@ -1228,12 +1225,16 @@ cmd_launch() {
     pre=$(find_process_exact "$executable") || die 'process discovery failed or ambiguous'
     pre_original=$pre
     if [ "$transition" = warm ]; then
-        if [ -z "$pre" ] || [[ $(printf '%s' "$pre" | cut -f3) != *T* ]]; then
-            write_manifest launch "$nonce" "$mode" UNSUPPORTED 0 0 ''
-            patch_launch_manifest "$CAPTURE_DIR/manifest.json" warm "$pre" "$pre" UNSUPPORTED
-            printf '%s\n' "$CAPTURE_DIR/manifest.json"
-            return
-        fi
+		pre_state=$(printf '%s' "$pre" | cut -f3)
+		case "$pre_state" in
+			*T*) ;;
+			*)
+				write_manifest launch "$nonce" "$mode" UNSUPPORTED 0 0 ''
+				patch_launch_manifest "$CAPTURE_DIR/manifest.json" warm "$pre" "$pre" UNSUPPORTED
+				printf '%s\n' "$CAPTURE_DIR/manifest.json"
+				return
+				;;
+		esac
     else
         [ -z "$pre" ] || terminate_exact_process "$pre"
     fi

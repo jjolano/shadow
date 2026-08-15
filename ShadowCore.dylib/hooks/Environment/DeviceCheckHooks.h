@@ -8,9 +8,7 @@
 // and, for every row whose class exists and whose method's runtime type
 // encoding matches the row's accepted return encoding, swaps in the matching
 // replacement IMP via the passed message-capable HKSubstitutor (the same
-// instance DeviceCheck.x's shadowhook_DeviceCheck receives — the
-// coordinator-independent install path; the legacy Logos %init blocks still
-// install through HookKit's global default substitutor). Rows whose
+// instance DeviceCheck.x's shadowhook_DeviceCheck receives). Rows whose
 // class/method is absent or whose encoding is not accepted are skipped; a
 // skipped row with an UNKNOWN encoding is logged once (fail open — the real
 // method is left untouched).
