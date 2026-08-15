@@ -1,5 +1,7 @@
 "DETECTOR_LOG" = "检测器日志";
 "DETECTOR_LOG_DESC" = "Shadow 检测到的近期越狱检测探测。条目仅存储在设备本地。";
+"APPLICATIONS" = "应用";
+"ACTIVITY" = "活动";
 "CLEAR_LOG" = "清除日志";
 "NO_ACTIVITY" = "未记录到检测器活动";
 "SHARE_LOG" = "分享日志";
