@@ -2,7 +2,7 @@ include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = Shadow
 
-Shadow_FILES = Core.m Core+Utilities.m Backend.m Ruleset.m RulesetCompiler.m RulesetStore.m RestrictionResolver.m RestrictionEngine.m Settings.m SystemRulesGenerator.m HookConfiguration.m
+Shadow_FILES = Core.m Core+Utilities.m Ruleset.m RulesetCompiler.m RulesetStore.m RestrictionEngine.m Settings.m DpkgRulesGenerator.m SystemRulesGenerator.m HookConfiguration.m
 Shadow_FRAMEWORKS = Foundation CoreFoundation
 Shadow_PRIVATE_FRAMEWORKS = MobileCoreServices
 Shadow_INSTALL_PATH = /Library/Frameworks

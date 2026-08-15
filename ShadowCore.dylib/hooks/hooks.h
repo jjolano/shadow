@@ -30,6 +30,7 @@
 
 #import "../../common.h"
 #import <Shadow.h>
+#import "../HookRuntime.h"
 
 #import <HookKit.h>
 
@@ -43,29 +44,6 @@
 #import "../../vendor/apple/dyld_priv.h"
 #import "../../vendor/apple/codesign.h"
 #import "../../vendor/apple/ptrace.h"
-
-// `_shadow` is evaluated on every intercepted call; cache the initialized
-// singleton behind a single atomic load instead of a dispatch_once check.
-// (dispatch_once is still used on the first call per file.) The pointer is
-// cached in a plain-C uintptr_t: this toolchain's clang rejects __atomic
-// builtins on ObjC pointer types (and _Atomic-wrapped pointers) under ARC,
-// but accepts them on plain integers. void* casts are ARC-exempt, and the
-// singleton is immortal (retained by +sharedInstance), so the borrowed
-// pointer never dangles.
-static inline Shadow* shdw_shadow_instance(void) {
-    static uintptr_t instance = 0;
-
-    Shadow* cached = (__bridge Shadow *)(void *) __atomic_load_n(&instance, __ATOMIC_ACQUIRE);
-
-    if(!cached) {
-        cached = [Shadow sharedInstance];
-        __atomic_store_n(&instance, (uintptr_t)(__bridge void *) cached, __ATOMIC_RELEASE);
-    }
-
-    return cached;
-}
-
-#define _shadow                 shdw_shadow_instance()
 
 // C0-2 caller classification for isCallerExternal(): YES = this caller must
 // be shown FILTERED results (app code, embedded/static detectors, system

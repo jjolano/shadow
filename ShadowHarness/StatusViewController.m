@@ -120,7 +120,6 @@ static NSDictionary* shdw_shadow_settings_for(NSString* bundleID) {
 // not re-read (disk read + plist parse + compile) on every refresh; see
 // rulesetSection. Dev mode does not change ruleset semantics, so the toggle
 // leaves the cache alone.
-static NSMutableDictionary* shdw_rulesetCountCache;
 
 @interface StatusViewController () <UICollectionViewDelegate>
 @end
@@ -377,18 +376,12 @@ static NSString* const kHeaderReuseID = @"Header";
 	NSArray<NSString*>* files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:rulesetsDir error:nil];
 	files = [files sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 
-	Class rulesetEngineClass = ShdwShadowClass("RulesetEngine");
 	NSDateFormatter* dateFormatter = [NSDateFormatter new];
 	dateFormatter.dateStyle = NSDateFormatterMediumStyle;
 	dateFormatter.timeStyle = NSDateFormatterShortStyle;
 
-	if(rulesetEngineClass && !shdw_rulesetCountCache) {
-		shdw_rulesetCountCache = [NSMutableDictionary new];
-	}
-
 	for(NSString* file in files) {
-		// Compiled-ruleset caches (RulesetEngine writes these next to each
-		// ruleset plist) are not rulesets.
+		// Compiled caches next to ruleset plists are not rulesets.
 		if([file hasSuffix:@"shadowcache"]) {
 			continue;
 		}
@@ -397,21 +390,7 @@ static NSString* const kHeaderReuseID = @"Header";
 		NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:fullPath error:nil];
 		NSString* mtime = attrs[NSFileModificationDate] ? [dateFormatter stringFromDate:attrs[NSFileModificationDate]] : @"?";
 
-		NSUInteger ruleCount = 0;
-		if(rulesetEngineClass) {
-			// Cache hit when the file is unchanged (path + mtime key); the
-			// count must refresh when the file changes.
-			NSString* cacheKey = [NSString stringWithFormat:@"%@|%f", fullPath, [attrs[NSFileModificationDate] timeIntervalSince1970]];
-			NSNumber* cachedCount = shdw_rulesetCountCache[cacheKey];
-
-			if(cachedCount) {
-				ruleCount = cachedCount.unsignedIntegerValue;
-			} else {
-				RulesetEngine* ruleset = [rulesetEngineClass rulesetWithURL:[NSURL fileURLWithPath:fullPath]];
-				ruleCount = ruleset.payloadDictionary.count;
-				shdw_rulesetCountCache[cacheKey] = @(ruleCount);
-			}
-		}
+		NSUInteger ruleCount = [[NSDictionary dictionaryWithContentsOfFile:fullPath] count];
 
 		[rows addObject:shdw_row(file, [NSString stringWithFormat:@"%@ — %lu rules", mtime, (unsigned long)ruleCount])];
 	}
@@ -538,7 +517,6 @@ static NSString* const kHeaderReuseID = @"Header";
 		[rows addObject:shdw_row(@"homePath", instance.homePath)];
 		[rows addObject:shdw_row(@"isPathRestricted(/var/jb)", [instance isPathRestricted:@"/var/jb"] ? @"YES" : @"NO")];
 	}
-	[rows addObject:shdw_row(@"RulesetEngine class", ShdwShadowClass("RulesetEngine") ? @"present" : @"nil")];
 
 	NSInteger count = 0;
 	for(uint32_t i = 0; i < _dyld_image_count(); i++) {

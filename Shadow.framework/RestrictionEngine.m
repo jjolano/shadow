@@ -1,25 +1,12 @@
 #import "RestrictionEngine.h"
-#import "RestrictionResolver.h"
 #import "RulesetStore.h"
 #import <Shadow/Core.h>
 #import <Shadow/Core+Utilities.h>
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 #import <Shadow/JBPath.h>
 
 #import <limits.h>
 #import <unistd.h>
-
-// The Candidate 5 cutover is done: the resolver-based engine is THE path
-// engine. It ran alongside the legacy evaluator in shadow mode — every query
-// answered by both, divergences logged — until parity held across the harness
-// (RestrictionTests 214/214 rooted and rootless, 20,000 fuzz iterations, zero
-// mismatches), at which point the legacy evaluator and its two caches were
-// deleted. Running both in production cost 2x on the hottest path in the
-// tweak, which is a launch-watchdog-sized amount of work (see
-// shdw_addr_is_restricted in ShadowCore's hooks.h for the other half).
-//
-// tests/RestrictionTests.m still asserts every verdict this pipeline produces;
-// it just no longer has a second engine to compare against.
 
 // How long a cached decision is honored (see the cache notes below).
 // Trimmed from 2.0s (plan C0-1): a "not restricted" verdict for a
@@ -79,21 +66,37 @@ static BOOL shdwIsPathInRestrictedRoot(NSString* path) {
 #endif
 }
 
-// Per-process context from the Shadow facade, captured lazily: the engine is
-// created during +[Shadow init] (via the backend), so reading
-// +[Shadow sharedInstance] eagerly would deadlock the dispatch_once.
-static BOOL shdw_context_ready = NO;
-static ShadowRestrictionContext shdw_ctx;
+// realpath is hooked and can re-enter this engine on the same thread.
+static _Thread_local BOOL shdw_resolving = NO;
 
-static void shdwEnsureContext(void) {
-    if(!shdw_context_ready) {
-        Shadow* shadow = [Shadow sharedInstance];
-        shdw_ctx.hasAppSandbox = shadow.hasAppSandbox;
-        shdw_ctx.rootless = shadow.rootless;
-        shdw_ctx.bundlePath = shadow.bundlePath;
-        shdw_ctx.homePath = shadow.homePath;
-        shdw_context_ready = YES;
+static NSString* shdwExpandTilde(NSString* path) {
+    path = [path stringByExpandingTildeInPath];
+    return [path characterAtIndex:0] == '~' ? nil : path;
+}
+
+static NSString* shdwJoinWorkingDirectory(NSString* path, NSString* wd) {
+    if(!wd || ![wd isAbsolutePath]) {
+        wd = [[NSFileManager defaultManager] currentDirectoryPath];
     }
+
+    return [wd stringByAppendingPathComponent:path];
+}
+
+static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path) {
+    return context.hasAppSandbox
+        && ([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]);
+}
+
+static NSString* shdwResolveTarget(NSString* path) {
+    if(shdw_resolving) {
+        return nil;
+    }
+
+    shdw_resolving = YES;
+    char resolved[PATH_MAX];
+    BOOL ok = realpath([path fileSystemRepresentation], resolved) != NULL;
+    shdw_resolving = NO;
+    return ok ? [NSString stringWithUTF8String:resolved] : nil;
 }
 
 // Ruleset passes against one immutable snapshot: pass 1 compliance (hard
@@ -128,16 +131,14 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
 @implementation ShadowRestrictionEngine {
     ShadowRulesetStore* store;
-    ShadowRestrictionResolver* resolver; // lazy (needs shdwEnsureContext)
+    ShadowRestrictionContext _context;
 
-    // The SINGLE generation-aware decision cache (Candidate 5: replaces both
-    // the old Core.m decisionCache and Backend.m cache_restricted). Split per
-    // tier so no per-probe key namespacing is needed:
+    // One generation-aware decision cache split by responsibility:
     //   - sharedCache (tier 1, top-level verdicts): key = raw query path, or
     //     a length-prefixed joined workingDir+entry string for the
     //     working-dir composite (same key shapes as the old decisionCache;
     //     the resolved abs path is also probed under the tier-2 entries).
-    //   - backendCache (tier 2, backend evaluation incl. parent recursion):
+    //   - rulesetCache (tier 2, ruleset evaluation incl. parent recursion):
     //     key = plain normalized absolute path, gen-checked like the old
     //     cache_restricted but with the same TTL as tier 1 — a strictly
     //     smaller staleness window than the old generation-only backend
@@ -146,28 +147,20 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     // NSNumber instead of two) and are honored only within
     // kShadowDecisionCacheTTL and while the generation matches.
     NSCache* sharedCache;
-    NSCache* backendCache;
+    NSCache* rulesetCache;
 }
 
-- (instancetype)initWithStore:(ShadowRulesetStore *)rulesetStore {
+- (instancetype)initWithContext:(ShadowRestrictionContext)context {
     if((self = [super init])) {
-        store = rulesetStore;
+        _context = context;
+        store = [ShadowRulesetStore new];
         sharedCache = [NSCache new];
         [sharedCache setCountLimit:1024];
-        backendCache = [NSCache new];
-        [backendCache setCountLimit:1024];
+        rulesetCache = [NSCache new];
+        [rulesetCache setCountLimit:1024];
     }
 
     return self;
-}
-
-- (ShadowRestrictionResolver *)_resolver {
-    if(!resolver) {
-        shdwEnsureContext();
-        resolver = [[ShadowRestrictionResolver alloc] initWithContext:shdw_ctx];
-    }
-
-    return resolver;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,12 +169,8 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query {
     @autoreleasepool {
-        return [self _newPathRestrictedQuery:query];
+        return [self _pathRestrictedQuery:query];
     }
-}
-
-- (BOOL)isPathRestricted:(NSString *)path {
-    return [self isPathRestrictedQuery:[ShadowRestrictionQuery queryWithPath:path]];
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
@@ -236,14 +225,6 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     return NO;
 }
 
-- (NSUInteger)rulesetGeneration {
-    return [store generation];
-}
-
-// ---------------------------------------------------------------------------
-// NEW engine (resolver + snapshot evaluation + single cache)
-// ---------------------------------------------------------------------------
-
 // Single-cache probe: -1 = miss (or stale), else the cached verdict (0/1).
 // Both tiers use the same @[time, packed(generation << 1 | verdict)] entry
 // shape; the packed NSNumber is decoded in place, so a hit allocates nothing.
@@ -271,19 +252,17 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     [cache setObject:@[@([NSDate timeIntervalSinceReferenceDate]), @(((unsigned long long)gen << 1) | (verdict ? 1 : 0))] forKey:key];
 }
 
-// The new top-level pipeline: resolver stages (tilde, working-dir join,
+// Top-level pipeline: resolution stages (tilde, working-dir join,
 // standardization, sandbox exemption, resolve-before-exempt alias, no-follow)
 // feeding the new evaluation; structurally identical to the legacy flow so
 // the differential's only degrees of freedom are the resolution helpers and
 // the cache.
-- (BOOL)_newPathRestrictedQuery:(ShadowRestrictionQuery *)query {
+- (BOOL)_pathRestrictedQuery:(ShadowRestrictionQuery *)query {
     @autoreleasepool {
         if(!query) {
             return NO;
         }
 
-        shdwEnsureContext();
-        ShadowRestrictionResolver* r = [self _resolver];
         NSString* path = query.path;
 
         if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
@@ -318,7 +297,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         BOOL restricted = NO;
 
         // Tilde: deny on unresolvable user; expand otherwise.
-        NSString* expanded = [r expandTilde:path];
+        NSString* expanded = shdwExpandTilde(path);
 
         if(!expanded) {
             return NO;
@@ -328,25 +307,25 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
         // Relative paths join the working directory (or process cwd).
         if(![path isAbsolutePath]) {
-            path = [r joinWorkingDirectory:path workingDirectory:query.workingDirectory];
+            path = shdwJoinWorkingDirectory(path, query.workingDirectory);
         }
 
         // Standardize.
-        path = [r standardizePath:path];
+        path = [Shadow getStandardizedPath:path];
 
         // Run checks if path is outside the app sandbox.
-        BOOL shouldCheckPath = ![r isSandboxExempt:path];
+        BOOL shouldCheckPath = !shdwIsSandboxExempt(_context, path);
 
-        // Resolve-before-exempt (see the legacy comment above). The resolver
-        // owns the per-thread realpath guard, so no check is needed here.
+        // Resolve-before-exempt. shdwResolveTarget owns the per-thread
+        // realpath guard, so no check is needed here.
         BOOL noFollow = (query.flags & ShadowRestrictionFlagNoFollow) != 0;
 
         if(!shouldCheckPath && !noFollow) {
-            NSString* resolved = [r resolveTarget:path];
+            NSString* resolved = shdwResolveTarget(path);
 
             if(resolved) {
                 BOOL resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
-                    || [self _newEvaluatePathRestriction:resolved query:query];
+                    || [self _evaluatePathRestriction:resolved query:query];
 
                 if(resolvedRestricted) {
                     restricted = YES;
@@ -356,7 +335,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         if(shouldCheckPath) {
-            if([self _newEvaluatePathRestriction:path query:query]) {
+            if([self _evaluatePathRestriction:path query:query]) {
                 restricted = YES;
                 goto done;
             }
@@ -373,7 +352,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
                 sub.operation = query.operation;
                 sub.flags = query.flags & ~ShadowRestrictionFlagResolve;
 
-                if([self _newPathRestrictedQuery:sub]) {
+                if([self _pathRestrictedQuery:sub]) {
                     restricted = YES;
                     goto done;
                 }
@@ -389,12 +368,11 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     }
 }
 
-// The new gate + backend stage: rootless fast-paths, existence gates, then
-// the snapshot evaluation. Mirrors the legacy evaluatePathRestriction: 1:1.
-- (BOOL)_newEvaluatePathRestriction:(NSString *)path query:(ShadowRestrictionQuery *)query {
+// Rootless fast-paths and existence gates before ruleset evaluation.
+- (BOOL)_evaluatePathRestriction:(NSString *)path query:(ShadowRestrictionQuery *)query {
     BOOL isWrite = (query.operation == ShadowRestrictionOperationWrite);
 
-    if(shdw_ctx.rootless) {
+    if(_context.rootless) {
         if(shdwIsPathInRestrictedRoot(path)) {
             return YES;
         }
@@ -415,7 +393,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
                 }
             }
 
-            if([self _newBackendPathRestricted:path]) {
+            if([self _rulesetDeniesPath:path]) {
                 NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
                 return YES;
             }
@@ -429,7 +407,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
             int errno_old = errno;
             NSString* check_path = path;
 
-            if(shdw_ctx.rootless) {
+            if(_context.rootless) {
                 check_path = [@"/var/jb" stringByAppendingString:path];
             }
 
@@ -440,7 +418,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
     }
 
-    if([self _newBackendPathRestricted:path]) {
+    if([self _rulesetDeniesPath:path]) {
         NSLog(@"[Shadow] isPathRestricted: restricted path: %@", path);
         return YES;
     }
@@ -448,11 +426,8 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     return NO;
 }
 
-// The new backend evaluation: shared passes over one snapshot, parent
-// recursion, all behind the tier-2 cache (a dedicated NSCache, so the plain
-// absolute path is the key — no per-probe "b|" string namespacing, and a
-// cache hit allocates nothing).
-- (BOOL)_newBackendPathRestricted:(NSString *)path {
+// Ruleset passes and parent recursion behind the tier-2 cache.
+- (BOOL)_rulesetDeniesPath:(NSString *)path {
     if(!path || [path length] == 0 || [path isEqualToString:@"/"] || ![path isAbsolutePath]) {
         return NO;
     }
@@ -462,7 +437,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     ShadowRulesetSnapshot* snapshot = [store currentSnapshot];
     NSUInteger gen = snapshot.generation;
 
-    NSInteger cached = [self _cachedVerdictForKey:path generation:gen cache:backendCache];
+    NSInteger cached = [self _cachedVerdictForKey:path generation:gen cache:rulesetCache];
 
     if(cached >= 0) {
         return (BOOL)cached;
@@ -471,10 +446,10 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     BOOL restricted = shdwSnapshotDeniesPath(snapshot, path);
 
     if(!restricted) {
-        restricted = [self _newBackendPathRestricted:[path stringByDeletingLastPathComponent]];
+        restricted = [self _rulesetDeniesPath:[path stringByDeletingLastPathComponent]];
     }
 
-    [self _storeVerdict:restricted forKey:path generation:gen cache:backendCache];
+    [self _storeVerdict:restricted forKey:path generation:gen cache:rulesetCache];
     return restricted;
 }
 @end

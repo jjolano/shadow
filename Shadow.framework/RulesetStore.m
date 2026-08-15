@@ -1,4 +1,4 @@
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 #import <Shadow/Core.h>
 #import "RulesetStore.h"
 
@@ -9,8 +9,7 @@
 
 // Last time the ruleset dir was scanned. Atomic: multiple hook threads race the
 // 1s gate, and a plain double lets several of them scan the same interval.
-// (There is one store per process — the backend singleton — so a static is
-// equivalent to an ivar; kept identical to the old Backend.m gate.)
+// There is one store per process, so a static is equivalent to an ivar.
 static _Atomic(double) lastRulesetCheck = 0.0;
 
 // C0-5: the store's generation, mirrored where cross-binary readers can see it
@@ -33,20 +32,16 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     ShadowRulesetSnapshot* current;
     // Current ruleset generation; bumped on every snapshot swap (C0-5).
     NSUInteger _generation;
-    // Sorted ruleset URLs from the last load; the per-second change check
-    // stats these cached URLs instead of re-enumerating + re-sorting the dir.
-    // Transferred verbatim from Backend.m INCLUDING the quirk that this list
-    // also contains .shadowcache files while the per-file mtime list below
-    // only covers non-cache files — index alignment is preserved so the
-    // change-detection cadence is byte-for-byte the same as before.
-    NSArray<NSURL *>* rulesetURLs;
+    // Ruleset path -> mtime from the last load. Keeping each path with its
+    // own timestamp avoids parallel-array drift when compiled .shadowcache
+    // files sit between rulesets in directory order.
+    NSDictionary<NSString *, NSNumber *>* rulesetFileMtimes;
     double rulesetDirMtime;
-    NSArray<NSNumber *>* rulesetFileMtimes;
     // Compiled engines from the last load, keyed by file path -> @[mtime,
     // engine]. A reload only re-reads/compiles the file(s) whose mtime
     // changed; unchanged files reuse their engine from here, so a one-file
     // edit no longer re-unarchives and re-parses every ruleset. Swapped in
-    // _loadSnapshot together with the URL/mtime arrays.
+    // _loadSnapshot together with the path/mtime map.
     NSDictionary<NSString *, NSArray *>* rulesetEngines;
 }
 
@@ -65,11 +60,7 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     return mod_date ? [mod_date timeIntervalSinceReferenceDate] : 0.0;
 }
 
-// Full directory scan + compile pipeline. Verbatim move of Backend.m's
-// _loadRulesets (log lines, cache-suffix skip and mtime bookkeeping all
-// preserved); wrapped in one immutable snapshot. The snapshot is published by
-// the caller (reload); a scan that produced nothing is used as-is on first
-// load and rejected by the last-known-good guard in _reloadRulesets.
+// Full directory scan + compile pipeline, published as one immutable snapshot.
 - (ShadowRulesetSnapshot *)_loadSnapshot {
     // C0-2: these are Shadow's own file reads (dir listing, plist loads,
     // mtime stats). Without the internal scope the tweak's own
@@ -85,7 +76,7 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     SHADOW_INTERNAL_SCOPE {
 
     NSMutableArray<RulesetEngine *>* result = [NSMutableArray new];
-    NSMutableArray<NSNumber *>* mtimes = [NSMutableArray new];
+    NSMutableDictionary<NSString *, NSNumber *>* mtimes = [NSMutableDictionary new];
 
     NSFileManager* fm = [NSFileManager defaultManager];
     NSString* dir = JBPath(@SHADOW_RULESETS);
@@ -99,8 +90,6 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
         ruleset_urls = [ruleset_urls sortedArrayUsingComparator:^NSComparisonResult(NSURL* a, NSURL* b) {
             return [[a lastPathComponent] compare:[b lastPathComponent]];
         }];
-
-        rulesetURLs = ruleset_urls;
 
         // Engines from the previous load: an unchanged file reuses its
         // compiled engine instead of re-unarchiving/re-parsing it, so a
@@ -132,19 +121,19 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
                 NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
 
                 if(info) {
-                    NSLog(@"[Backend] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
+                    NSLog(@"[Shadow] loaded ruleset: '%@' by %@ (%@)", [info objectForKey:@"Name"], [info objectForKey:@"Author"], url);
                 } else {
-                    NSLog(@"[Backend] loaded ruleset: %@", url);
+                    NSLog(@"[Shadow] loaded ruleset: %@", url);
                 }
 
                 [result addObject:ruleset];
                 [nextEngines setObject:@[@(mtime), ruleset] forKey:path];
             } else {
-                NSLog(@"[Backend] failed to load ruleset: %@", url);
+                NSLog(@"[Shadow] failed to load ruleset: %@", url);
             }
 
             // Snapshot every file in the dir (all plists load; a stray non-plist is still tracked so its rewrite is caught).
-            [mtimes addObject:@(mtime)];
+            [mtimes setObject:@(mtime) forKey:path];
         }
 
         rulesetEngines = [nextEngines copy];
@@ -170,7 +159,7 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     ShadowRulesetSnapshot* fresh = [self _loadSnapshot];
 
     if([fresh.rulesets count] == 0 && [previous.rulesets count] > 0) {
-        NSLog(@"[Backend] rulesets reload produced an empty set; keeping last-known-good snapshot");
+        NSLog(@"[Shadow] rulesets reload produced an empty set; keeping last-known-good snapshot");
         return;
     }
 
@@ -198,9 +187,7 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     return [[self currentSnapshot] generation];
 }
 
-// 1s-gated change check. Verbatim move of Backend.m's _checkRulesetChanges
-// (including the index alignment of the per-file mtime scan, see the ivar
-// comment above) — the ruleset-reload cadence is unchanged.
+// 1s-gated directory and per-file change check.
 - (void)checkForChanges {
     // C0-2: the dir/file mtime stats are Shadow's own reads — see
     // _loadSnapshot. _reloadRulesets nests a _loadSnapshot scope; the depth
@@ -233,28 +220,15 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
         return;
     }
 
-    // Snapshot the URL/mtime arrays under the lock: a concurrent reload
-    // (ruleset file changed) swaps both arrays as one unit, so the snapshot
-    // stays internally consistent and outlives the iteration.
-    NSArray<NSURL*>* urls;
-    NSArray<NSNumber*>* mtimes;
+    // Snapshot the path/mtime map so it outlives the iteration.
+    NSDictionary<NSString*, NSNumber*>* mtimes;
 
     @synchronized(self) {
-        urls = rulesetURLs;
         mtimes = rulesetFileMtimes;
     }
 
-    for(NSUInteger i = 0; i < [urls count]; i++) {
-        // The mtime list only tracks ruleset files (compiled .shadowcache
-        // artifacts are skipped at load), so skip them here too — with cache
-        // files present the original misaligned indexing reported a change on
-        // every pass, forcing a full reload each second instead of only when
-        // a ruleset actually changed.
-        if([[[urls objectAtIndex:i] lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
-            continue;
-        }
-
-        if([self _fileMtime:[[urls objectAtIndex:i] path]] != [[mtimes objectAtIndex:i] doubleValue]) {
+    for(NSString* path in mtimes) {
+        if([self _fileMtime:path] != [[mtimes objectForKey:path] doubleValue]) {
             [self _reloadRulesets];
             return;
         }

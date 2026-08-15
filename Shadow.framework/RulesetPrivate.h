@@ -1,7 +1,7 @@
 #ifndef shadow_ruleset_private_h
 #define shadow_ruleset_private_h
 
-#import <Shadow/Ruleset.h>
+#import "Ruleset.h"
 
 // Framework-internal RulesetEngine layout, shared by Ruleset.m (matching only)
 // and ShadowRulesetCompiler.m (parse/compile/cache/persist). All ivars moved
@@ -30,5 +30,7 @@
     NSPredicate* pred_whitelist;
     NSPredicate* pred_blacklist;
 }
+
+@property (copy, nonatomic, readwrite) NSDictionary* payloadDictionary;
 @end
 #endif

@@ -35,8 +35,11 @@ BOOL shdw_harness_rootless(void) {
 }
 
 NSString* shdw_harness_jbpath(NSString* path) {
-    if(path && [path isEqualToString:@SHADOW_RULESETS]) {
-        return gRulesetsDir;
+    NSString* rulesets = @SHADOW_RULESETS;
+
+    if(path && ([path isEqualToString:rulesets]
+        || [path hasPrefix:[rulesets stringByAppendingString:@"/"]])) {
+        return [gRulesetsDir stringByAppendingString:[path substringFromIndex:[rulesets length]]];
     }
 
     // Mirrors the legacy RootBridge behavior (and the production seam's
