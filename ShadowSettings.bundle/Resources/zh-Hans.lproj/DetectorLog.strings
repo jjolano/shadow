@@ -7,3 +7,11 @@
 "CLEAR_CONFIRM_MSG" = "这将删除所有已记录的检测器活动。此操作无法撤销。";
 "CLEAR_CANCEL" = "取消";
 "CLEAR_CONFIRM" = "清除";
+"NO_APP_ACTIVITY" = "未记录此应用的检测器活动";
+"EVENT_COUNT_ONE" = "1 个事件";
+"EVENT_COUNT_MANY" = "%lu 个事件";
+"OPEN_APP_HINT" = "显示此应用的检测器活动";
+"OPEN_EVENT_HINT" = "显示事件详情";
+"EVENT_DETAIL_FORMAT" = "应用：%@\n软件包标识符：%@\n检测时间：%@";
+"COPY_EVENT" = "复制";
+"DONE" = "完成";

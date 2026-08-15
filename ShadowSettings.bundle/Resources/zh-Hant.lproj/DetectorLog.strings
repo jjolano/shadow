@@ -7,3 +7,11 @@
 "CLEAR_CONFIRM_MSG" = "這將刪除所有已記錄的偵測器活動。此操作無法復原。";
 "CLEAR_CANCEL" = "取消";
 "CLEAR_CONFIRM" = "清除";
+"NO_APP_ACTIVITY" = "尚無此 App 的偵測器活動紀錄";
+"EVENT_COUNT_ONE" = "1 個事件";
+"EVENT_COUNT_MANY" = "%lu 個事件";
+"OPEN_APP_HINT" = "顯示此 App 的偵測器活動";
+"OPEN_EVENT_HINT" = "顯示事件詳細資訊";
+"EVENT_DETAIL_FORMAT" = "App：%@\n套件識別碼：%@\n偵測時間：%@";
+"COPY_EVENT" = "拷貝";
+"DONE" = "完成";

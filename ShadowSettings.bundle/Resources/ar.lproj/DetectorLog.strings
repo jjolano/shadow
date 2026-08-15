@@ -7,3 +7,11 @@
 "CLEAR_CONFIRM_MSG" = "سيؤدي هذا إلى إزالة كل نشاط الكشف المسجل. لا يمكن التراجع عن هذا.";
 "CLEAR_CANCEL" = "إلغاء";
 "CLEAR_CONFIRM" = "مسح";
+"NO_APP_ACTIVITY" = "لا يوجد نشاط كشف مسجل لهذا التطبيق";
+"EVENT_COUNT_ONE" = "حدث واحد";
+"EVENT_COUNT_MANY" = "%lu أحداث";
+"OPEN_APP_HINT" = "يعرض نشاط الكاشف لهذا التطبيق";
+"OPEN_EVENT_HINT" = "يعرض تفاصيل الحدث";
+"EVENT_DETAIL_FORMAT" = "التطبيق: %@\nمعرّف الحزمة: %@\nوقت الكشف: %@";
+"COPY_EVENT" = "نسخ";
+"DONE" = "تم";
