@@ -9,3 +9,8 @@ tests/harness.d
 tests/*.gcno
 tests/*.gcda
 tests/*.gcov
+artifacts/
+core
+core.*
+__pycache__/
+*.py[cod]
