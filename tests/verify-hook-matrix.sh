@@ -64,4 +64,21 @@ if sed -n '/^void shdw_detector_detected/,/^}$/p' ShadowCore.dylib/dylib.x |
     exit 1
 fi
 
+if grep -q SHADOW_LEGACY_COORDINATOR ShadowCore.dylib/dylib.x; then
+    echo 'COORDINATOR DRIFT: rollback install path returned'
+    exit 1
+fi
+
+ctor=$(sed -n '/^%ctor {/,/^%dtor {/p' ShadowCore.dylib/dylib.x)
+if ! printf '%s\n' "$ctor" | grep -q shdw_coordinator_ctor ||
+   printf '%s\n' "$ctor" | grep -Eq 'shadowhook_(dyld|libc|objc)\('; then
+    echo 'COORDINATOR DRIFT: ctor no longer installs exclusively through the coordinator'
+    exit 1
+fi
+
+if grep -q 'outOldPtr:&' ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m; then
+    echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
+    exit 1
+fi
+
 exit $rc

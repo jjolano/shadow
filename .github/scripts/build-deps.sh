@@ -10,7 +10,7 @@ WORK_BASE=${WORK:-/tmp}
 RUN=$(mktemp -d "$WORK_BASE/shadow-deps.XXXXXX")
 trap 'rm -rf "$RUN"' EXIT
 
-HOOKKIT=9ed289b3c49e74035aa8aa847ad7e8e698a1b205
+HOOKKIT=062437b437adf4d00cde7b703d9d78edf9888656
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -133,6 +133,7 @@ legacy_make_args() {
     major=$("$toolchain/bin/clang" -dumpversion)
     major=${major%%.*}
     [ "$major" -lt 12 ] || { echo "old-ABI lane requires Clang older than 12" >&2; exit 1; }
+    export OLDABI_TOOLCHAIN=$toolchain OLDABI_SDKS=$sdks
 
     local xpc=${XPC_HEADERS:-$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/xpc}
     [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; exit 1; }
@@ -159,10 +160,8 @@ build_hookkit() {
 
         clone_pin jjolano/HookKit "$HOOKKIT" hookkit
         local source=$RUN/hookkit deb
-        git -C "$source" apply "$ROOT/.github/patches/hookkit-legacy.patch"
-        (cd "$source" && make clean && make package FINALPACKAGE=1 HOOKKIT_LEGACY=1 \
-            "${MAKE_ARGS[@]}" "_THEOS_DEB_PACKAGE_CONTROL_PATH=$ROOT/.github/controls/hookkit-legacy")
-        deb=$(package_path "$source")
+        (cd "$source" && ./build.sh rootful-legacy)
+        deb=$source/build/hookkit-rootful-legacy.deb
         stage_package hookkit "$deb"
         return
     fi

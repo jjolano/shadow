@@ -5,10 +5,8 @@
 // Descriptor-driven install for the DeviceCheck group's ABI-sensitive
 // third-party rooted/jailbroken property hooks (see the header).
 //
-// Legacy behavior preserved exactly (DeviceCheck.x shdw_install_probe_abi):
-//   - class absent at install  -> skip silently (late classes are a later
-//                                 step; the log-once only applies to a
-//                                 PRESENT class with an unknown encoding)
+// Install behavior:
+//   - class absent at install  -> skip silently
 //   - method absent            -> skip silently
 //   - encoding 'B' or 'c'      -> BOOL-returning hook (row policy false/true)
 //   - encoding '@'             -> object-returning hook (nil)
@@ -18,13 +16,10 @@
 // The two probes each get TWO descriptor rows (scalar-family + object) so a
 // single row carries exactly one accepted return encoding; at install only
 // the row matching the method's runtime encoding fires — the other row
-// skips. That mirrors the legacy if/else-if dispatch exactly.
+// skips.
 //
 // Install route: the passed message-capable HKSubstitutor (shadowhook_DeviceCheck
-// receives it from dylib.x), NOT the global HKHookMessage default — the
-// group's substitutor is the coordinator-independent install path. The
-// legacy code stored originals into static out-params that were never read;
-// a local out-param preserves the call shape without dead statics.
+// receives it from the coordinator), NOT the global HKHookMessage default.
 
 // One logged-unknown guard shared by every row: once a class+selector with an
 // unrecognized return encoding is seen, note it and move on.
@@ -32,19 +27,15 @@ static char s_loggedUnknown[256] = { 0 };
 
 // Descriptor table. Step 1: the two ABI-sensitive probes. Each probe gets
 // TWO rows — a scalar-family row (accepted 'B'/'c', policy false) and an
-// object row (accepted '@', policy nil) — mirroring the legacy
-// if(encoding[0]=='B'||'c') ... else if(encoding[0]=='@') dispatch: exactly
-// one row matches any given runtime encoding, the other skips. Both probes
-// are zero-argument instance methods.
+// object row (accepted '@', policy nil). Exactly one row matches any given
+// runtime encoding. Both probes are zero-argument instance methods.
 const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, '@', 0, DCHPolicyFalse },
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, '@', 0, DCHPolicyFalse },
 
-    // Step 2, batch 1: Apple/device classes (migrated from DeviceCheck.x
-    // %hook blocks; every row preserves the legacy block's exact class,
-    // selector, kind, and result policy).
+    // Step 2, batch 1: Apple/device classes.
     { "DCDevice",                 "isSupported",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "DCAppAttestService",       "isSupported",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "UIDevice",                 "isJailbroken",         DCHMethodClass,    'B', 0, DCHPolicyFalse },
@@ -74,7 +65,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "FCRSystemMetadata",        "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
 
     // Step 2, batch 4: VOS detector + misc classes. AWMyDeviceGeneralInfo
-    // is the one TRUE policy row (legacy returned true).
+    // is the one TRUE policy row.
     { "v_VDMap",                  "isJailbrokenDetected",        DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "v_VDMap",                  "isJailBrokenDetectedByVOS",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "v_VDMap",                  "isDFPHookedDetecedByVOS",     DCHMethodInstance, 'B', 0, DCHPolicyFalse },
@@ -146,7 +137,7 @@ NSUInteger shdw_devicecheck_install_hooks(HKSubstitutor* hooks) {
         Class cls = objc_getClass(desc->className);
 
         if(!cls) {
-            continue;   // late-loading class: legacy behavior is silent skip
+            continue;   // Late-loaded classes are skipped until a later install.
         }
 
         SEL sel = sel_registerName(desc->selector);
@@ -155,7 +146,7 @@ NSUInteger shdw_devicecheck_install_hooks(HKSubstitutor* hooks) {
             : class_getInstanceMethod(cls, sel);
 
         if(!method) {
-            continue;   // legacy behavior: silent skip
+            continue;
         }
 
         const char* encoding = method_getTypeEncoding(method);
@@ -192,8 +183,7 @@ NSUInteger shdw_devicecheck_install_hooks(HKSubstitutor* hooks) {
             continue;
         }
 
-        void* orig = NULL;
-        [hooks hookMessageInClass:cls withSelector:sel withReplacement:shdw_dch_replacement_imp(desc) outOldPtr:&orig];
+        [hooks hookMessageInClass:cls withSelector:sel withReplacement:shdw_dch_replacement_imp(desc) outOldPtr:NULL];
         installed++;
     }
 

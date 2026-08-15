@@ -141,23 +141,8 @@ void shadowhook_NSUserDefaults(HKSubstitutor* hooks) {
 %end
 %end
 
-// --- FakeMac group REMOVED (hook-output audit) ---
-//
-// The old group answered isMacCatalystApp/isiOSAppOnMac = YES to every
-// external caller. That was a universal fingerprint: stock iOS never answers
-// either with YES, so a detector could prove the hook from the value alone
-// without any jailbreak probe, and any app legitimately branching on
-// Mac-ness would misbehave. There is no truthful way to fake these reliably,
-// so the group installs nothing. The installer stays as a linkable no-op so
-// dylib.x's pref-gated call (Hook_FakeMac) keeps building; the toggle is
-// inert.
-
 void shadowhook_NSProcessInfo(HKSubstitutor* hooks) {
     %init(shadowhook_NSProcessInfo);
-}
-
-void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks) {
-    (void) hooks;  // FakeMac removed: nothing to install.
 }
 
 #import <MobileCoreServices/LSApplicationWorkspace.h>

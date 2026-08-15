@@ -406,7 +406,6 @@ void* shdw_sym_policy_lookup_mem(const char* name);
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).
 extern void shdw_sandbox_invalidate_cwd(void);
-extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
 // Shared across the objc satellites (Runtime/objc.x defines; Runtime/objc_hidetweakclasses.x
