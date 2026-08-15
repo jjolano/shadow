@@ -47,8 +47,8 @@ report() { # file, gcov pattern, label, hook groups
     echo "  $3: $pct  [$4]"
 }
 
-report Core.m "isCPathRestricted" "isCPathRestricted" "libc, dyld, sandbox, syscall"
-report Core.m "isPathRestricted:options" "isPathRestricted:options:" "libc, dyld, sandbox, syscall, NSFileManager, NSString, NSData, NSArray, NSDictionary, NSFileHandle, NSBundle, NSProcessInfo, UIImage"
+report Core.m "isCPathRestricted" "isCPathRestricted" "libc, libc_lowlevel, dyld, sandbox, syscall"
+report Core.m "isPathRestricted:options" "isPathRestricted:options:" "libc, libc_lowlevel, dyld, sandbox, syscall, NSFileManager, NSString, NSData, NSArray, NSDictionary, NSFileHandle, NSBundle, NSProcessInfo, UIImage"
 report Core.m "isURLRestricted:options" "isURLRestricted:options:" "NSFileManager, NSURL, NSString, NSData, NSArray, NSDictionary, NSFileHandle, NSFileVersion, NSFileWrapper, NSBundle, LSApplicationWorkspace, UIApplication"
 report Core.m "isSchemeRestricted" "isSchemeRestricted" "LSApplicationWorkspace"
 report Core.m "isBundleIDRestricted" "isBundleIDRestricted" "LSApplicationWorkspace"

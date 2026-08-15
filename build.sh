@@ -1,230 +1,155 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-PWD=$(dirname -- "$0")
-cd $PWD
+ROOT=$(cd "$(dirname "$0")" && pwd)
+cd "$ROOT"
+: "${THEOS:?THEOS must point to Theos}"
+PB=${PREBUILT_ROOT:-$ROOT/../prebuilt}
+CONTROL_VAR=_THEOS_DEB_PACKAGE_CONTROL_PATH
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/shadow-build.XXXXXX")
+LIBRARY_PATH=$STAGE/lib
+INCLUDE_PATH=$STAGE/include
+MAKE_PATHS=("THEOS_LIBRARY_PATH=$LIBRARY_PATH" "THEOS_INCLUDE_PATH=$INCLUDE_PATH")
+trap 'rm -rf "$STAGE"' EXIT
 
-# Local dev-only dependency variants (rootless/rooted/legacy flavors of
-# HookKit, AltList and the libsandy link stub). On a fresh machine, build
-# those repos first and populate ../prebuilt accordingly. The rootful flavor
-# lipos the rooted (arm64/arm64e) and legacy (armv7/armv7s) slices into
-# one 4-arch dep set (see stage_deps).
-PB=../prebuilt
+rm -rf "$ROOT/build"
+mkdir -p "$ROOT/build"
 
-# Dep slice validation. stage_deps overwrites the shared dep locations, so a
-# concurrent or stale staging leaves wrong slices behind and `make` fails at
-# link time with confusing "missing required architecture" errors. check_deps
-# verifies the slices the flavor needs and re-stages once on mismatch, then
-# fails fast with a clear message instead of a linker error.
-LIPO=${LIPO:-$THEOS/toolchain/linux/iphone/bin/lipo}
-
-has_slices() { # file arch...
-    local f=$1
-    shift
-    [ -f "$f" ] || return 1
-    local info
-    info=$("$LIPO" -info "$f" 2>/dev/null) || return 1
-    local archs
-    archs=$(echo "$info" | tr ':' ' ')
-    local a
-    for a in "$@"; do
-        echo "$archs" | grep -qw "$a" || return 1
-    done
-    return 0
-}
-
-check_deps() { # flavor
-    local flavor=$1
-    local archs
-    case $flavor in
-        rootless|rooted|roothide) archs="arm64 arm64e" ;;
-        rootful) archs="armv7 armv7s arm64 arm64e" ;;
-        *) echo "check_deps: unknown flavor $flavor" >&2; return 1 ;;
+stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
+    local profile=$1 source_profile=$1 scheme=
+    case "$profile" in
+        rootful-legacy|rootful-modern) ;;
+        rootless) scheme=rootless ;;
+        roothide) scheme=roothide ;;
+        *) echo "unknown dependency profile: $profile" >&2; return 2 ;;
     esac
 
-    local deps=(vendor/HookKit.framework/HookKit "$THEOS/lib/libsandy.dylib" "$THEOS/lib/AltList.framework/AltList")
-    local bad=0
-    local dep
-    for dep in "${deps[@]}"; do
-        if ! has_slices "$dep" $archs; then
-            echo "deps: $dep missing [$archs] — re-staging $flavor deps" >&2
-            bad=1
-        fi
-    done
+    local hookkit="$PB/hookkit/$source_profile/HookKit.framework"
+    local altlist="$PB/altlist/$source_profile/AltList.framework"
+    local sandy="$PB/sandy/$source_profile/libsandy.dylib"
+    [ -f "$hookkit/HookKit" ] && [ -f "$altlist/AltList" ] && [ -f "$sandy" ] || {
+        echo "missing $source_profile dependencies; run .github/scripts/build-deps.sh $source_profile" >&2
+        return 1
+    }
 
-    if [ $bad -eq 1 ]; then
-        stage_deps "$flavor"
+    rm -rf vendor/HookKit.framework "$LIBRARY_PATH" "$INCLUDE_PATH"
+    mkdir -p vendor "$LIBRARY_PATH" "$INCLUDE_PATH"
+    cp -R "$hookkit" vendor/HookKit.framework
+    cp -R "$hookkit" "$LIBRARY_PATH/HookKit.framework"
+    cp -R "$altlist" "$LIBRARY_PATH/AltList.framework"
+    cp "$sandy" "$LIBRARY_PATH/libsandy.dylib"
+    if [ -f "$PB/sandy/$source_profile/libSandy.h" ]; then
+        cp "$PB/sandy/$source_profile/libSandy.h" "$INCLUDE_PATH/libSandy.h"
+    fi
+    if [ "$profile" = rootful-legacy ]; then
+        local xpc=${XPC_HEADERS:-$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/xpc}
+        [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; return 1; }
+        cp -R "$xpc" "$INCLUDE_PATH/"
     fi
 
-    # Fail fast if staging couldn't fix it (missing ../prebuilt flavor).
-    for dep in "${deps[@]}"; do
-        if ! has_slices "$dep" $archs; then
-            echo "deps: $dep still wrong after staging ($flavor) — check ../prebuilt" >&2
-            exit 1
-        fi
-    done
+    if [ -n "$scheme" ]; then
+        mkdir -p "$LIBRARY_PATH/iphone/$scheme"
+        cp -R "$hookkit" "$LIBRARY_PATH/iphone/$scheme/HookKit.framework"
+        cp -R "$altlist" "$LIBRARY_PATH/iphone/$scheme/AltList.framework"
+        cp "$sandy" "$LIBRARY_PATH/iphone/$scheme/libsandy.dylib"
+    fi
+
+    scripts/check-binary-compat.sh "$profile" \
+        vendor/HookKit.framework/HookKit "$LIBRARY_PATH/AltList.framework/AltList" "$LIBRARY_PATH/libsandy.dylib"
 }
 
-stage_deps() {
-    local flavor=$1
-    # lipo the disjoint rooted (arm64/arm64e) + legacy (armv7/armv7s)
-    # prebuilt slices into one 4-arch fat file.
-    lipo_fat() { "$LIPO" -create "$1" "$2" -output "$3"; }
-    case $flavor in
-        rootful)
-            # Rooted flavor ships the public headers; legacy is binary-only.
-            rm -rf vendor/HookKit.framework
-            mkdir -p vendor/HookKit.framework
-            cp -R $PB/hookkit/rooted/HookKit.framework/* vendor/HookKit.framework/
-            lipo_fat $PB/hookkit/rooted/HookKit.framework/HookKit $PB/hookkit/legacy/HookKit.framework/HookKit vendor/HookKit.framework/HookKit
-            mkdir -p $THEOS/lib
-            rm -rf $THEOS/lib/AltList.framework
-            cp -R $PB/altlist/rooted/AltList.framework $THEOS/lib/
-            lipo_fat $PB/altlist/rooted/AltList.framework/AltList $PB/altlist/legacy/AltList.framework/AltList $THEOS/lib/AltList.framework/AltList
-            lipo_fat $PB/sandy/rooted/libsandy.dylib $PB/sandy/legacy/libsandy.dylib $THEOS/lib/libsandy.dylib
-            # Framework link order resolves $THEOS/lib before -F../vendor, so
-            # the 4-slice merge must also land there (per-flavor passes got
-            # this from build-deps installing the matching variant; the rootful
-            # pass leaves the legacy one behind). HookKit's merge lives in
-            # vendor/; AltList/libsandy are already fat above.
-            for fw in HookKit; do
-                rm -rf $THEOS/lib/$fw.framework
-                cp -R vendor/$fw.framework $THEOS/lib/
-            done
-            ;;
-        rootless|rooted|roothide)
-            rm -rf vendor/HookKit.framework
-            mkdir -p vendor/HookKit.framework
-            # roothide shares the rootless arm64/arm64e HookKit slices; there is
-            # no roothide prebuilt flavor, so reuse the rootless one.
-            HKFLAVOR=$([ "$flavor" = "roothide" ] && echo rootless || echo $flavor)
-            cp -R $PB/hookkit/$HKFLAVOR/HookKit.framework/* vendor/HookKit.framework/
-            # The rootless prebuilt HookKit flavor ships binary-only; the
-            # public headers are identical across flavors, so seed them from rooted.
-            if [ ! -f vendor/HookKit.framework/Headers/HookKit.h ]; then
-                cp -R $PB/hookkit/rooted/HookKit.framework/Headers vendor/HookKit.framework/
-            fi
-            mkdir -p $THEOS/lib
-            rm -rf $THEOS/lib/AltList.framework
-            cp -R $PB/altlist/$HKFLAVOR/AltList.framework $THEOS/lib/
-            cp $PB/sandy/$HKFLAVOR/libsandy.dylib $THEOS/lib/
-            # The rootless/roothide schemes run with their own
-            # THEOS_PACKAGE_SCHEME, which makes theos search only
-            # $THEOS/lib/iphone/<scheme>; mirror AltList/libsandy there.
-            if [ "$flavor" = "rootless" ] || [ "$flavor" = "roothide" ]; then
-                SCHEME=$flavor
-                rm -rf $THEOS/lib/iphone/$SCHEME
-                mkdir -p $THEOS/lib/iphone/$SCHEME
-                rm -rf $THEOS/lib/iphone/$SCHEME/AltList.framework
-                cp -R $PB/altlist/rootless/AltList.framework $THEOS/lib/iphone/$SCHEME/
-                cp $PB/sandy/rootless/libsandy.dylib $THEOS/lib/iphone/$SCHEME/
-            fi
-            ;;
-        *) echo "stage_deps: unknown flavor $flavor" >&2; return 1 ;;
+legacy_args() {
+    local toolchain=${OLDABI_TOOLCHAIN:-$THEOS/toolchain/oldabi/linux/iphone}
+    local sdks=${OLDABI_SDKS:-$THEOS/sdks}
+    [ -x "$toolchain/bin/clang" ] || { echo "missing old-ABI toolchain: $toolchain" >&2; return 1; }
+    [ -d "$sdks/iPhoneOS13.7.sdk" ] || { echo "missing iPhoneOS13.7.sdk under $sdks" >&2; return 1; }
+    LEGACY_ARGS=(
+        "SDKBINPATH=$toolchain/bin"
+        "THEOS_SDKS_PATH=$sdks"
+        "ADDITIONAL_CFLAGS=-fmodules-cache-path=$STAGE/module-cache"
+        "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=$STAGE/module-cache"
+    )
+}
+
+prepare_scheme_framework() { # rootless|roothide
+    local lane=$1
+    make -C Shadow.framework "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
+    rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
+    mkdir -p "$LIBRARY_PATH/iphone/$lane"
+    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
+}
+
+last_package() {
+    local package
+    package=$(<.theos/last_package)
+    case "$package" in
+        /*) printf '%s\n' "$package" ;;
+        *) printf '%s/%s\n' "$ROOT" "$package" ;;
     esac
 }
 
-# create fresh build directory
-rm -rf $PWD/build
-mkdir -p $PWD/build
-
-# build main project (rootless ver., iOS 15+)
-build_rootless() {
-    stage_deps rootless
-    check_deps rootless
-    make clean &&
-    # The rootless scheme never installs Shadow.framework into $THEOS/lib/iphone/rootless
-    # on this theos (rooted scheme installs to $THEOS/lib fine), so build the framework
-    # first and stage it explicitly — otherwise the tweak links against a stale copy.
-    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make -C Shadow.framework &&
-    rm -rf $THEOS/lib/iphone/rootless/Shadow.framework &&
-    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework $THEOS/lib/iphone/rootless/ &&
-    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
-
-    # On-device verification harness (separate package). Same scheme/archs
-    # as this flavor; the rootless scheme sets THEOS_PACKAGE_INSTALL_PREFIX
-    # (/var/jb) itself, so no extra env is needed.
-    THEOS_PACKAGE_SCHEME=rootless ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:15.0 make -C ShadowHarness package FINALPACKAGE=1 &&
-    cp -p ShadowHarness/packages/*.deb $PWD/build/
-
-    rm -rf $THEOS/lib/Shadow.framework
+copy_dependency_packages() { # profile
+    local package
+    [ -d "$PB/packages/$1" ] || return 0
+    for package in "$PB/packages/$1"/*.deb; do
+        [ -f "$package" ] && cp -p "$package" "$ROOT/build/"
+    done
 }
 
-# build rootful ver. — one package, armv7/armv7s + arm64/arm64e, iOS 9+.
-# Replaces the old rooted + legacy debs: 32-bit devices get dylib-only
-# (postinst strips the arm64-only shadowd + its plist there), and on
-# 64-bit iOS < 12 the rooted dep slices (minos 12.0) can't load, so
-# postinst strips injection too — see layout/DEBIAN/postinst.
-build_rootful() {
-    stage_deps rootful
-    check_deps rootful
-    # PID-unique backup: the rootful pass mutates control in place; a fixed
-    # /tmp path collides when two builds run in parallel (CI + local, or two
-    # sessions). Restore on exit so a failed pass never leaves control dirty.
-    local BAK=/tmp/shadow-control.bak.$$
-    trap "mv $BAK control 2>/dev/null || true" EXIT
-    cp control "$BAK"
-    sed 's/firmware (>= 12.0)/firmware (>= 9.0)/' control > control.tmp && mv control.tmp control
+build_lane() { # profile
+    local lane=$1 control="$ROOT/control.$1" package destination
+    if [ "$lane" != rootful-legacy ] && [ "$(uname -s)" != Darwin ]; then
+        echo "$lane requires macOS/Xcode for the new arm64e ABI" >&2
+        return 1
+    fi
+    stage_deps "$lane"
+    make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
 
-    make clean &&
-    ARCHS="armv7 armv7s arm64 arm64e" TARGET=iphone:clang:latest:9.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/me.jjolano.shadow_4.0.0_iphoneos-arm.deb
+    case "$lane" in
+        rootful-legacy)
+            legacy_args
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}" "${LEGACY_ARGS[@]}"
+            ;;
+        rootful-modern)
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            ;;
+        rootless|roothide)
+            prepare_scheme_framework "$lane"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            ;;
+    esac
 
-    # On-device verification harness (separate package). Modern-only since
-    # the redesign: the UI (scene lifecycle, list layouts, SF Symbols) needs
-    # iOS 14+ and armv7 can't run it, so the harness ships its own 14.0
-    # target with arm64/arm64e slices — rooted iOS 14+ devices get it, older
-    # ones don't (the harness control declares firmware >= 14.0).
-    ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:14.0 make -C ShadowHarness package FINALPACKAGE=1 &&
-    cp -p ShadowHarness/packages/*.deb $PWD/build/
-
-    rm -rf $THEOS/lib/Shadow.framework
+    package=$(last_package)
+    destination="$ROOT/build/$(basename "$package")"
+    cp -p "$package" "$destination"
+    scripts/check-compat.sh "$lane" "$destination"
+    copy_dependency_packages "$lane"
 }
 
-# Fast iteration for agent/subagent work: no packaging, no clean — compile
-# framework + dylib only, with rooted deps verified. The full aggregate
-# `make` from the repo root is the final gate before packaging.
+build_harness() { # rootful-modern|rootless
+    local lane=$1
+    case "$lane" in
+        rootful-modern) make -C ShadowHarness package FINALPACKAGE=1 ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:14.0 "${MAKE_PATHS[@]}" ;;
+        rootless) make -C ShadowHarness package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:15.0 "${MAKE_PATHS[@]}" ;;
+    esac
+    cp -p ShadowHarness/packages/*.deb "$ROOT/build/"
+}
+
 build_quick() {
-    check_deps rooted
-    # Pin ARCHS: the subproject Makefiles don't declare it, so a bare
-    # `make -C` defaults to including armv7, which cannot link against the
-    # rooted 2-slice deps. arm64/arm64e = the rooted flavor's slices.
-    make -C Shadow.framework ARCHS="arm64 arm64e" &&
-    make -C Shadow.dylib ARCHS="arm64 arm64e" &&
-    make -C ShadowCore.dylib ARCHS="arm64 arm64e"
-}
-
-# roothide flavor — iOS 15-17, random-named jbroot (no /var/jb). Requires the
-# roothide theos fork (THEOS_PACKAGE_SCHEME=roothide) and libroothide; the
-# path seam (Shadow/JBPath.h) uses jbroot() and the Makefiles link libroothide
-# under this scheme.
-build_roothide() {
-    stage_deps roothide
-    check_deps roothide
-    # PID-unique control mutation pattern (same as the rootful pass): the
-    # roothide bootstrap is iOS 15.0-17.0 only.
-    local BAK=/tmp/shadow-control-roothide.bak.$$
-    trap "mv $BAK control 2>/dev/null || true" EXIT
-    cp control "$BAK"
-    sed -e 's/firmware (>= 12.0)/firmware (>= 15.0)/' control > control.tmp && mv control.tmp control
-
-    make clean &&
-    THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make -C Shadow.framework &&
-    rm -rf $THEOS/lib/iphone/roothide/Shadow.framework &&
-    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework $THEOS/lib/iphone/roothide/ &&
-    THEOS_PACKAGE_SCHEME=roothide ARCHS="arm64 arm64e" TARGET=iphone:clang:latest:17.0 make package FINALPACKAGE=1 &&
-    cp -p "`ls -dtr1 packages/* | tail -1`" $PWD/build/
-
-    rm -rf $THEOS/lib/Shadow.framework
+    stage_deps rootful-modern
+    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
+    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
+    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
 }
 
 case ${1:-all} in
-    rootless) build_rootless ;;
-    rootful) build_rootful ;;
-    roothide) build_roothide ;;
+    rootful-legacy) build_lane rootful-legacy ;;
+    rootful-modern) build_lane rootful-modern; build_harness rootful-modern ;;
+    rootful) build_lane rootful-legacy; build_lane rootful-modern; build_harness rootful-modern ;;
+    rootless) build_lane rootless; build_harness rootless ;;
+    roothide) build_lane roothide ;;
     quick) build_quick ;;
-    deps) check_deps "${2:-rooted}" ;;
-    all) build_rootless; build_rootful; build_roothide ;;
-    *) echo "usage: $0 [all|rootless|rootful|roothide|quick|deps <flavor>]" >&2; exit 1 ;;
+    deps) stage_deps "${2:-rootful-modern}" ;;
+    all) build_lane rootless; build_harness rootless; build_lane rootful-legacy; build_lane rootful-modern; build_harness rootful-modern; build_lane roothide ;;
+    *) echo "usage: $0 [all|rootful|rootful-legacy|rootful-modern|rootless|roothide|quick|deps PROFILE]" >&2; exit 2 ;;
 esac

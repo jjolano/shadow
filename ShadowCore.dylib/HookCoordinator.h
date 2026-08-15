@@ -15,11 +15,10 @@
 //                          @[HK_CAT_FUNCTION_INLINE, HK_CAT_FUNCTION_REBIND]
 //                          (v2: per-hook preflight routing instead of a pinned
 //                          single-technique backend)
-//   - symlookup backend ←  substitutorWithOrderedCategories:
+//   - symlookup backend ←  substitutorWithAutoCoverCategories:
 //                          @[HK_CAT_FUNCTION_INLINE, HK_CAT_FUNCTION_REBIND]
 //                          (legacy: subSymLookup — same priority, v2 API)
-//   - private-symbol    ←  substitutorWithOrderedCategories:
-//                          @[HK_CAT_PRIVATE_SYMBOL, HK_CAT_MESSAGE]
+//   - private-symbol    ←  native, then PRIVATE_SYMBOL/MESSAGE fallback
 //                          (legacy: subDyldExtra)
 //
 // The resolved backend set is computed ONCE at init and mirrored in
@@ -41,11 +40,8 @@
 // executeHooks means some-but-not-all operations installed; the coordinator
 // logs it and the per-unit verify functions (legacy shadowhook_*_verify)
 // surface exactly which hooks missed, mirroring the legacy post-install
-// verify pass. Batch hooks use the batchCapable backend (non-auto-cover
-// instance, pinned at init — batches must not split across backends); when
-// no batching-capable backend resolves, installs run immediately
-// (setBatching: is accepted but ignored by backends without batching — see
-// Compat.h — so the batch API is always safe to call).
+// verify pass. Each backend instance handed to an installer owns and drains
+// its queue; HookKit groups auto-cover operations by their winning backend.
 //
 // State: installed-state bitset (one bit per install unit, indexed by unit
 // index in the SHDWInstallUnits() table) + a serial lifecycle dispatch queue
@@ -94,9 +90,8 @@ typedef struct {
 @property (nonatomic, readonly) HKSubstitutor* message;        // HK_CAT_MESSAGE
 @property (nonatomic, readonly) HKSubstitutor* rebind;         // HK_CAT_FUNCTION_REBIND (subFish)
 @property (nonatomic, readonly) HKSubstitutor* inlineCover;    // auto-cover: FUNCTION_INLINE → FUNCTION_REBIND
-@property (nonatomic, readonly) HKSubstitutor* symlookup;      // ordered: FUNCTION_INLINE → FUNCTION_REBIND
-@property (nonatomic, readonly) HKSubstitutor* privateSym;     // ordered: PRIVATE_SYMBOL → MESSAGE
-@property (nonatomic, readonly) HKSubstitutor* batch;          // pinned non-auto-cover backend for batching
+@property (nonatomic, readonly) HKSubstitutor* symlookup;      // auto-cover: FUNCTION_INLINE → FUNCTION_REBIND
+@property (nonatomic, readonly) HKSubstitutor* privateSym;     // native, then PRIVATE_SYMBOL → MESSAGE
 @property (nonatomic, readonly) SHDWCapabilities capabilities; // planner view of the same backends
 @end
 

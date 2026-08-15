@@ -1,0 +1,13 @@
+diff --git a/Makefile b/Makefile
+index c633ad4..c7f0551 100644
+--- a/Makefile
++++ b/Makefile
+@@ -21,5 +21,8 @@ AltList_PRIVATE_FRAMEWORKS = Preferences
+ after-AltList-stage::
+ 	@ln -s $(THEOS_PACKAGE_INSTALL_PREFIX)/Library/Frameworks/AltList.framework $(THEOS_STAGING_DIR)/Library/PreferenceBundles/AltList.bundle
+ 
++before-AltList-stage::
++	@mkdir -p $(THEOS_STAGING_DIR)/Library/PreferenceBundles
++
+ include $(THEOS_MAKE_PATH)/framework.mk
+ ifeq ($(PACKAGE_BUILDNAME),debug)

@@ -11,6 +11,11 @@
 long shdw_raw_open(const char* path);      // SYS_open(5), O_RDONLY
 long shdw_raw_unlink(const char* path);    // SYS_unlink(10)
 
+// Evidence I/O uses Shadow's internal-read scope so the hooks under test do
+// not hide their own nonce context or output report.
+NSData* ShdwReadEvidenceData(NSString* path);
+BOOL ShdwWriteEvidenceData(NSData* data, NSString* path);
+
 // YES when Shadow's hooks payload (ShadowCore.dylib) is loaded into this
 // process — the stub dlopens it when its ctor path gate passes. The harness
 // links Shadow.framework directly, so class presence alone does not mean
@@ -25,6 +30,9 @@ BOOL ShdwIsShadowCoreLoaded(void);
 // inactive no hiding is armed and stock lookup is truthful.
 Class ShdwShadowClass(const char* name);
 
+// Writable Documents path for this jailbreak platform app.
+NSString* ShdwDocumentsDirectory(void);
+
 // Canonical jailbreak-artifact probes (user-facing section). One dict per
 // row: { @"probe": path-or-scheme, @"isScheme": NSNumber(BOOL),
 //        @"verdict": @"hidden"|@"visible"|@"n/a" }.
@@ -37,6 +45,10 @@ NSArray<NSDictionary*>* ShdwCanonicalProbes(void);
 //   @"verdict": @"PASS"|@"GAP"|@"HOOK-GAP"|@"INFO"|@"MIXED",
 //   @"reason": NSString }.
 NSArray<NSDictionary*>* ShdwBatteryRows(void);
+
+// Current machine-readable producer report. Returns nil when the driver did
+// not install a complete nonce-bound run context in Shadow's preferences.
+NSDictionary* ShdwStealthReport(void);
 
 // Plain-text dump of a section model (as built by StatusViewController) for
 // the "Copy diagnostics" button.

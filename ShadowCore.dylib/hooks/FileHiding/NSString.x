@@ -258,7 +258,11 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 
     return %orig;
 }
+%end
+%end
 
+%group shadowhook_NSAttributedStringHTMLLoader
+%hook NSAttributedString
 + (void)loadFromHTMLWithFileURL:(NSURL *)fileURL options:(NSDictionary<NSAttributedStringDocumentReadingOptionKey, id> *)options completionHandler:(NSAttributedStringCompletionHandler)completionHandler {
     if(isCallerExternal() && [_shadow isURLRestricted:fileURL]) {
         if(completionHandler) {
@@ -337,4 +341,11 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 void shadowhook_NSString(HKSubstitutor* hooks) {
     %init(shadowhook_NSString);
     %init(shadowhook_NSCharacterSet);
+
+    Class attributedString = [NSAttributedString class];
+    if(class_getClassMethod(attributedString, @selector(loadFromHTMLWithFileURL:options:completionHandler:))
+    && class_getClassMethod(attributedString, @selector(loadFromHTMLWithRequest:options:completionHandler:))
+    && class_getClassMethod(attributedString, @selector(loadFromHTMLWithString:options:completionHandler:))) {
+        %init(shadowhook_NSAttributedStringHTMLLoader);
+    }
 }

@@ -1,8 +1,15 @@
 #import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
 #import <mach-o/dyld_images.h>
+#import <mach/mach.h>
+#import <mach/task_info.h>
 #import <dlfcn.h>
+#import <errno.h>
 #import <stdatomic.h>
+#import <stdlib.h>
+#import <string.h>
+#import <sys/stat.h>
+#import <unistd.h>
 
 // dyldprobe — on-device verification probe for Shadow.
 // Shows the jailbreak the way detectors see it, from four angles:
@@ -39,9 +46,211 @@ static BOOL probe_is_foreign_image(NSString* p, NSString* appPath) {
     return ![p hasPrefix:@"/System"] && ![p hasPrefix:appPath];
 }
 
+typedef struct {
+    kern_return_t result;
+    mach_msg_type_number_t count;
+    task_dyld_info_data_t taskInfo;
+    struct dyld_all_image_infos* infos;
+    unsigned retries;
+    BOOL valid;
+} ProbeTaskDyldInfo;
+
+static ProbeTaskDyldInfo probe_task_dyld_info(void) {
+    ProbeTaskDyldInfo probe = {0};
+    probe.count = TASK_DYLD_INFO_COUNT;
+    probe.result = task_info(mach_task_self(), TASK_DYLD_INFO,
+        (task_info_t)&probe.taskInfo, &probe.count);
+    if(probe.result != KERN_SUCCESS || probe.count < TASK_DYLD_INFO_COUNT ||
+       probe.taskInfo.all_image_info_addr == 0 ||
+       probe.taskInfo.all_image_info_size < sizeof(struct dyld_all_image_infos) ||
+       probe.taskInfo.all_image_info_format != TASK_DYLD_ALL_IMAGE_INFO_64) {
+        return probe;
+    }
+    probe.infos = (struct dyld_all_image_infos*)(uintptr_t)probe.taskInfo.all_image_info_addr;
+    for(probe.retries = 0; probe.retries < 4 && !probe.infos->infoArray; probe.retries++) {
+        usleep(1000);
+    }
+    probe.valid = probe.infos->infoArray != NULL;
+    return probe;
+}
+
+static struct dyld_all_image_infos* probe_direct_infos(void) {
+    ProbeTaskDyldInfo probe = probe_task_dyld_info();
+    return probe.valid ? probe.infos : NULL;
+}
+
+static NSArray<NSString*>* probe_hidden_markers(void) {
+    return @[
+        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
+        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader",
+        @"ShadowCore", @"Shadow.dylib", @"Shadow.framework", @"HookKit", @"libSandy"
+    ];
+}
+
+static NSArray<NSString*>* probe_hidden_images(const struct dyld_image_info* images,
+                                               uint32_t count,
+                                               NSString* appPath) {
+    NSMutableArray<NSString*>* hidden = [NSMutableArray new];
+    NSArray<NSString*>* markers = probe_hidden_markers();
+    for(uint32_t i = 0; images && i < count; i++) {
+        NSString* path = images[i].imageFilePath ? @(images[i].imageFilePath) : @"";
+        if([path hasPrefix:appPath]) {
+            continue;
+        }
+        for(NSString* marker in markers) {
+            if([path containsString:marker]) {
+                [hidden addObject:path];
+                break;
+            }
+        }
+    }
+    return hidden;
+}
+
+static NSArray<NSString*>* probe_public_hidden_images(NSString* appPath) {
+    NSMutableArray<NSString*>* hidden = [NSMutableArray new];
+    NSArray<NSString*>* markers = probe_hidden_markers();
+    uint32_t count = _dyld_image_count();
+    for(uint32_t i = 0; i < count; i++) {
+        const char* name = _dyld_get_image_name(i);
+        NSString* path = name ? @(name) : @"";
+        if([path hasPrefix:appPath]) {
+            continue;
+        }
+        for(NSString* marker in markers) {
+            if([path containsString:marker]) {
+                [hidden addObject:path];
+                break;
+            }
+        }
+    }
+    return hidden;
+}
+
+static NSString* probe_documents_directory(void) {
+    const char* home = getenv("CFFIXED_USER_HOME");
+    if(!home || home[0] != '/') home = getenv("HOME");
+    return home && home[0] == '/' ?
+        [[NSString stringWithUTF8String:home] stringByAppendingPathComponent:@"Documents"] : nil;
+}
+
+static BOOL probe_write_machine_report(void) {
+    NSString* documents = probe_documents_directory();
+    NSData* contextData = documents ? [NSData dataWithContentsOfFile:
+        [documents stringByAppendingPathComponent:@".ShadowStealthContext.json"]] : nil;
+    NSDictionary* context = contextData ?
+        [NSJSONSerialization JSONObjectWithData:contextData options:0 error:nil] : nil;
+    if(!documents || ![context isKindOfClass:[NSDictionary class]]) {
+        return NO;
+    }
+
+    for(NSString* key in @[@"run_id", @"row_id", @"requested_mode", @"nonce", @"probe_revision"]) {
+        if(![context[key] isKindOfClass:[NSString class]] || ![context[key] length]) {
+            return NO;
+        }
+    }
+    NSString* mode = context[@"requested_mode"];
+    if(![mode isEqualToString:@"uninjected"] && ![mode isEqualToString:@"injected"]) {
+        return NO;
+    }
+
+    ProbeTaskDyldInfo taskProbe = probe_task_dyld_info();
+    vm_region_basic_info_data_64_t regionInfo = {0};
+    mach_msg_type_number_t regionInfoCount = VM_REGION_BASIC_INFO_COUNT_64;
+    vm_address_t regionAddress = (vm_address_t)(uintptr_t)taskProbe.infos;
+    vm_size_t regionSize = 0;
+    mach_port_t regionObject = MACH_PORT_NULL;
+    kern_return_t regionResult = taskProbe.valid ? vm_region_64(mach_task_self(),
+        &regionAddress, &regionSize, VM_REGION_BASIC_INFO_64,
+        (vm_region_info_t)&regionInfo, &regionInfoCount, &regionObject) : KERN_INVALID_ADDRESS;
+    if(regionObject != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), regionObject);
+    NSString* appPath = [NSBundle mainBundle].bundlePath;
+    NSArray<NSString*>* directHidden = taskProbe.valid ?
+        probe_hidden_images(taskProbe.infos->infoArray, taskProbe.infos->infoArrayCount, appPath) : @[];
+    NSArray<NSString*>* publicHidden = probe_public_hidden_images(appPath);
+    void* publicSymbol = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+
+    struct stat canaryStat;
+    errno = 0;
+    int statResult = stat("/var/jb", &canaryStat);
+    int statErrno = errno;
+    BOOL injected = [mode isEqualToString:@"injected"];
+    BOOL canaryPassed = statResult == -1 && statErrno == ENOENT;
+    BOOL setupFailure = !taskProbe.valid || (injected && !canaryPassed);
+    BOOL leaked = injected && (directHidden.count || publicHidden.count);
+    NSInteger producerExit = setupFailure ? 2 : leaked ? 1 : 0;
+    NSString* aggregate = setupFailure ? @"SETUP-FAIL" :
+        (injected ? (leaked ? @"FAIL" : @"PASS") : @"CONTROL-INACTIVE");
+    id canary = injected ? @{
+        @"status" : canaryPassed ? @"PASS" : @"FAIL",
+        @"probe" : @"stat(/var/jb)",
+        @"result" : @(statResult),
+        @"errno" : @(statErrno),
+    } : @"CONTROL-INACTIVE";
+
+    NSDictionary* report = @{
+        @"schema_version" : @1,
+        @"producer" : @"dyldprobe",
+        @"run_id" : context[@"run_id"],
+        @"row_id" : context[@"row_id"],
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : mode,
+        @"nonce" : context[@"nonce"],
+        @"probe_revision" : context[@"probe_revision"],
+        @"canary" : canary,
+        @"observations" : @{
+            @"aggregate" : aggregate,
+            @"task_dyld_info" : @{
+                @"kern_return" : @(taskProbe.result),
+                @"count" : @(taskProbe.count),
+                @"address" : [NSString stringWithFormat:@"0x%llx",
+                    (unsigned long long)taskProbe.taskInfo.all_image_info_addr],
+                @"info_array_address" : [NSString stringWithFormat:@"%p",
+                    taskProbe.valid ? taskProbe.infos->infoArray : NULL],
+                @"size" : @((unsigned long long)taskProbe.taskInfo.all_image_info_size),
+                @"format" : @(taskProbe.taskInfo.all_image_info_format),
+                @"null_info_array_retries" : @(taskProbe.retries),
+                @"valid" : @(taskProbe.valid),
+                @"region" : @{
+                    @"kern_return" : @(regionResult),
+                    @"protection" : @(regionInfo.protection),
+                    @"max_protection" : @(regionInfo.max_protection),
+                    @"size" : @((unsigned long long)regionSize),
+                },
+            },
+            @"direct_memory_view" : @{
+                @"image_count" : taskProbe.valid ? @(taskProbe.infos->infoArrayCount) : @0,
+                @"hidden_images" : directHidden,
+            },
+            @"public_api_view" : @{
+                @"image_count" : @(_dyld_image_count()),
+                @"hidden_images" : publicHidden,
+            },
+            @"public_symbol_observation" : @{
+                @"symbol" : @"dyld_all_image_infos",
+                @"address" : [NSString stringWithFormat:@"%p", publicSymbol],
+            },
+        },
+        @"producer_exit" : @(producerExit),
+    };
+    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:0 error:nil];
+    NSString* path = [documents stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"dyldprobe-%@.json", context[@"nonce"]]];
+    return data && [data writeToFile:path options:NSDataWritingAtomic error:nil];
+}
+
 static void probe_section_1(NSMutableString* out, NSString* appPath) {
-    [out appendString:@"== 1. dyld_all_image_infos (direct memory read) ==\n"];
-    struct dyld_all_image_infos* infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    [out appendString:@"== 1. TASK_DYLD_INFO direct memory read ==\n"];
+    ProbeTaskDyldInfo taskProbe = probe_task_dyld_info();
+    struct dyld_all_image_infos* infos = taskProbe.valid ? taskProbe.infos : NULL;
+    void* publicSymbol = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    [out appendFormat:@"task_info kr=%d count=%u addr=0x%llx size=%llu format=%d retries=%u valid=%@\n",
+        taskProbe.result, taskProbe.count,
+        (unsigned long long)taskProbe.taskInfo.all_image_info_addr,
+        (unsigned long long)taskProbe.taskInfo.all_image_info_size,
+        taskProbe.taskInfo.all_image_info_format, taskProbe.retries,
+        taskProbe.valid ? @"YES" : @"NO"];
+    [out appendFormat:@"public dlsym(dyld_all_image_infos) = %p\n", publicSymbol];
 
     if(infos && infos->infoArray) {
         [out appendFormat:@"infoArrayCount = %lu\n", (unsigned long)infos->infoArrayCount];
@@ -133,7 +342,7 @@ static NSMutableArray* probe_section_5(NSMutableString* out, NSArray* hiddenMark
     //     hidden dlsym result (NULL) can never suppress the dladdr probe.
     //  B. dlsym per candidate symbol, independently; a NULL result only
     //     reports that symbol.
-    struct dyld_all_image_infos* infos5 = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    struct dyld_all_image_infos* infos5 = probe_direct_infos();
     NSMutableArray* hiddenAddrs = [NSMutableArray new];
 
     if(infos5 && infos5->infoArray) {
@@ -247,7 +456,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
         // loadable/unloadable on-disk image. Hidden-domain paths (restricted
         // by Shadow) are excluded — tracking can't be verified for them.
         [out appendString:@"  shipped test dylib not found; probing for an on-disk dylib...\n"];
-        struct dyld_all_image_infos* pre = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        struct dyld_all_image_infos* pre = probe_direct_infos();
         NSMutableSet* preloaded = [NSMutableSet set];
 
         if(pre && pre->infoArray) {
@@ -298,7 +507,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
     if(!stressPath) {
         [out appendString:@"  SKIPPED: no unloadable on-disk dylib found (install shdwtestlib with the app)\n"];
     } else {
-        struct dyld_all_image_infos* base = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+        struct dyld_all_image_infos* base = probe_direct_infos();
         uint32_t baseCount = (base && base->infoArray) ? base->infoArrayCount : 0;
         [out appendFormat:@"  baseline infoArrayCount = %u (expected range [%u, %u] while stressing)\n", baseCount, baseCount, baseCount + 1];
 
@@ -313,7 +522,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
 
         dispatch_async(readerQueue, ^{
             while(!atomic_load_explicit(&readerStop, memory_order_relaxed)) {
-                struct dyld_all_image_infos* infos = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+                struct dyld_all_image_infos* infos = probe_direct_infos();
 
                 if(!infos || !infos->infoArray || infos->infoArrayCount == 0) {
                     continue;
@@ -366,7 +575,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
 
             // Confirm the handle really is OUR dylib, not a cached image.
             void* marker = dlsym(handle, "shdwtestlib_probe_marker");
-            struct dyld_all_image_infos* live = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+            struct dyld_all_image_infos* live = probe_direct_infos();
             BOOL seenLoaded = NO;
 
             if(live && live->infoArray) {
@@ -396,7 +605,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
 
             dlclose(handle);
 
-            struct dyld_all_image_infos* after = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+            struct dyld_all_image_infos* after = probe_direct_infos();
             BOOL stillLoaded = NO;
 
             if(after && after->infoArray) {
@@ -439,7 +648,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
 static void probe_section_7(NSMutableString* out) {
     [out appendString:@"\n== 7. uuid / infoArrayChangeTimestamp invariants ==\n"];
 
-    struct dyld_all_image_infos* invariants = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    struct dyld_all_image_infos* invariants = probe_direct_infos();
 
     if(invariants) {
         [out appendFormat:@"  version = %u\n", invariants->version];
@@ -582,10 +791,7 @@ static NSString* ProbeReport(void) {
 
     // Markers used to recognize jailbreak-path images in the direct reads
     // (shared by sections 5 and 6).
-    NSArray* hiddenMarkers = @[
-        @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
-        @"libellekit", @"MobileSubstrate", @"pspawn_payload", @"tweakloader"
-    ];
+    NSArray* hiddenMarkers = probe_hidden_markers();
 
     NSMutableArray* hiddenAddrs = probe_section_5(out, hiddenMarkers);
     probe_section_6(out, fm, hiddenMarkers);
@@ -606,14 +812,9 @@ static NSString* ProbeReport(void) {
 }
 
 - (void)_refresh {
+    probe_write_machine_report();
     _textView.text = ProbeReport();
-    // Instrumentation for SSH-driven verification: dump the full report to
-    // stderr AND persist it to a known-writable path so any launch path
-    // makes it retrievable without screen capture. NSDocumentDirectory
-    // resolution can fail in launch contexts, so use the mobile home dir.
     fprintf(stderr, "%s\n", [_textView.text UTF8String]);
-    [[_textView.text dataUsingEncoding:NSUTF8StringEncoding]
-        writeToFile:@"/var/mobile/Documents/dyldprobe-report.txt" atomically:YES];
 }
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
@@ -621,10 +822,11 @@ static NSString* ProbeReport(void) {
     // UI initialization stalls (headless/SSH-launched contexts).
     NSString* report;
     @autoreleasepool {
+        // Capture the clean launch state before the human-only stress report
+        // deliberately rebinds GOT slots in sections 8 and 9.
+        probe_write_machine_report();
         report = ProbeReport();
         fprintf(stderr, "%s\n", [report UTF8String]);
-        [[report dataUsingEncoding:NSUTF8StringEncoding]
-            writeToFile:@"/var/mobile/Documents/dyldprobe-report.txt" atomically:YES];
     }
     CGRect frame = [[UIScreen mainScreen] bounds];
     self.window = [[UIWindow alloc] initWithFrame:frame];
@@ -654,6 +856,18 @@ static NSString* ProbeReport(void) {
 
 int main(int argc, char* argv[]) {
     @autoreleasepool {
+        BOOL headless = NO;
+        for(int i = 1; i < argc; i++) {
+            if(strcmp(argv[i], "--shadow-headless-producer") == 0) {
+                headless = YES;
+                break;
+            }
+        }
+        BOOL written = probe_write_machine_report();
+        if(headless) {
+            if(!written) return 2;
+            for(;;) pause();
+        }
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
     }
 }

@@ -1,5 +1,9 @@
 #import "hooks.h"
 
+#ifndef VM_MAP_READ_NULL
+typedef vm_map_t vm_map_read_t;
+#endif
+
 // vm_region policy: a returned region whose start address lies inside a
 // restricted image interval is SKIPPED — the original is re-called to
 // advance to the next region — instead of having its protection bits

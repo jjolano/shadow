@@ -1,0 +1,14 @@
+Package: com.opa334.altlist.legacy
+Name: AltList (Legacy Rootful)
+Depiction: https://moreinfo.thebigboss.org/moreinfo/depiction.php?file=altlistDp
+Version: 1.0.11
+Architecture: iphoneos-arm
+Depends: firmware (>= 9.0), firmware (<< 14.0)
+Provides: com.opa334.altlist
+Replaces: com.opa334.altlist
+Conflicts: com.opa334.altlist
+Description: A modern AppList alternative for rootful iOS 9 through 13
+Maintainer: opa334
+Author: opa334
+Section: System
+Tag: role::developer

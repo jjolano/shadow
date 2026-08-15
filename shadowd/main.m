@@ -751,7 +751,8 @@ static xpc_connection_t gListener;   // mach-service listener (setup_ipc_server)
 
 // Reply to a request on the connection (XPC owns delivery — no bounded-send
 // bookkeeping needed).
-static void shdw_xpc_reply(xpc_connection_t conn, const shadowd_xpc_request_t *req, uint32_t status) {
+static void shdw_xpc_reply(xpc_connection_t conn, xpc_object_t request,
+                           const shadowd_xpc_request_t *req, uint32_t status) {
     shadowd_xpc_reply_t reply;
     memset(&reply, 0, sizeof(reply));
     reply.magic = SHADOWD_MAGIC;
@@ -759,7 +760,11 @@ static void shdw_xpc_reply(xpc_connection_t conn, const shadowd_xpc_request_t *r
     reply.requestId = req->requestId;
     reply.status = status;
 
-    xpc_object_t dict = xpc_dictionary_create(NULL, NULL, 0);
+    xpc_object_t dict = xpc_dictionary_create_reply(request);
+    if (!dict) {
+        shdw_log("reply: request has no reply context");
+        return;
+    }
     xpc_dictionary_set_data(dict, "p", &reply, sizeof(reply));
     xpc_connection_send_message(conn, dict);   // ARC releases dict
 }
@@ -794,11 +799,11 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
     }
     if (req->version != SHADOWD_VERSION) {
         shdw_log("request: unsupported version %u", req->version);
-        shdw_xpc_reply(conn, req, SHADOWD_STATUS_ENOTSUP);
+        shdw_xpc_reply(conn, msg, req, SHADOWD_STATUS_ENOTSUP);
         return;
     }
     if (req->op == SHADOWD_OP_PING) {
-        shdw_xpc_reply(conn, req, SHADOWD_STATUS_OK);
+        shdw_xpc_reply(conn, msg, req, SHADOWD_STATUS_OK);
         return;
     }
     // Health query for the Settings bundle: reports krw readiness so the
@@ -819,7 +824,7 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
                 status = SHADOWD_STATUS_ENOTSUP;
                 break;
         }
-        shdw_xpc_reply(conn, req, status);
+        shdw_xpc_reply(conn, msg, req, status);
         return;
     }
 
@@ -833,7 +838,7 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
     uid_t euid = (uid_t)token.val[1];  // audit_token_to_euid layout
     if (euid == 0 || pid <= 0) {
         shdw_log("request: rejected (pid %d, euid %u)", pid, euid);
-        shdw_xpc_reply(conn, req, SHADOWD_STATUS_EPERM);
+        shdw_xpc_reply(conn, msg, req, SHADOWD_STATUS_EPERM);
         return;
     }
 
@@ -843,7 +848,7 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
     uint64_t sec = 0, usec = 0;
     if (!owner_start_time(pid, &sec, &usec)) {
         shdw_log("request: owner start time unavailable for pid %d — rejecting", pid);
-        shdw_xpc_reply(conn, req, SHADOWD_STATUS_EBUSY);
+        shdw_xpc_reply(conn, msg, req, SHADOWD_STATUS_EBUSY);
         return;
     }
     NSString *ownerKey = owner_key(pid, sec, usec);
@@ -855,7 +860,7 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
         });
         // Reply only after the hide is verified; the connection becomes the
         // lease only on success.
-        shdw_xpc_reply(conn, req, status);
+        shdw_xpc_reply(conn, msg, req, status);
         if (status == SHADOWD_STATUS_OK) {
             install_lease(conn, ownerKey);
         }
@@ -866,11 +871,11 @@ static void handle_xpc_message(xpc_connection_t conn, xpc_object_t msg) {
         dispatch_sync(gKernelQueue, ^{
             status = release_for_owner(ownerKey);
         });
-        shdw_xpc_reply(conn, req, status);
+        shdw_xpc_reply(conn, msg, req, status);
         return;
     }
     shdw_log("request: unknown op %u", req->op);
-    shdw_xpc_reply(conn, req, SHADOWD_STATUS_ENOTSUP);
+    shdw_xpc_reply(conn, msg, req, SHADOWD_STATUS_ENOTSUP);
 }
 
 // Per-connection event handler: messages are handled synchronously on the

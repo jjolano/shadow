@@ -288,6 +288,110 @@ extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
 // query. Defined in libc.x (static elsewhere), extern here for syscall.x.
 void shdw_procargs2_filter(void* oldp, size_t* oldlenp);
 
+// --- libc split shared surface ---------------------------------------------
+// libc.x owns the single shdw_libc_hooks descriptor table and the
+// install/verify machinery; the envvar / lowlevel / antidebugging bodies live
+// in their own files (libc_envvar.x, libc_lowlevel.x, libc_antidebugging.x)
+// and call back into the shared installer/verifier here.
+
+// Trip on the attempt, before any restricted-path filtering: the probe is the
+// caller touching a JB indicator, independent of how the filter answers it.
+// isCallerExternal() reads the return address, so it must expand inline at the
+// hook site — never route it through a helper function. The probe predicate
+// itself lives in policy/PathPolicy.m.
+#define SHADOW_TRIP(pathname, kind, ext) \
+    if(ext && shdw_is_jb_probe(pathname)) { \
+        shdw_detector_detected(kind); \
+    }
+
+typedef enum {
+    SHADW_HOOK_GROUP_LIBC       = 1 << 0,
+    SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
+    SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
+    SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
+} shdw_hook_group_t;
+
+void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group);
+void shdw_libc_verify_group(const char* group, uint32_t mask);
+
+// struct stat64 is not visible in this build configuration: the SDK guards it
+// behind feature macros and omits it entirely on LP64 platforms where struct
+// stat already IS the 64-bit layout. Define the 32-bit layout ourselves
+// (mirrors xnu's __DARWIN_STRUCT_STAT64) and alias struct stat on LP64.
+#if defined(__LP64__)
+#define shdw_stat64_t struct stat
+#else
+struct shdw_stat64 {
+    __int32_t    st_dev;
+    __uint16_t   st_mode;
+    __uint16_t   st_nlink;
+    __uint64_t   st_ino;
+    __uint32_t   st_uid;
+    __uint32_t   st_gid;
+    __int32_t    st_rdev;
+    struct timespec st_atimespec;
+    struct timespec st_mtimespec;
+    struct timespec st_ctimespec;
+    struct timespec st_birthtimespec;
+    __int64_t    st_size;
+    __int64_t    st_blocks;
+    __int32_t    st_blksize;
+    __uint32_t   st_flags;
+    __uint32_t   st_gen;
+    __int32_t    st_lspare;
+    __int64_t    st_qspare[2];
+};
+#define shdw_stat64_t struct shdw_stat64
+#endif
+
+struct ad_open_auth;  // <sys/open.h> is not in the theos SDK
+
+// The descriptor table in libc.x addresses the group bodies by symbol; the
+// bodies themselves live in the group files, so the pairs are extern here.
+// envvar group (libc_envvar.x)
+extern char* (*original_getenv)(const char* name);
+extern char* replaced_getenv(const char* name);
+// lowlevel group (libc_lowlevel.x)
+extern int (*original_open)(const char *pathname, int oflag, ...);
+extern int replaced_open(const char *pathname, int oflag, ...);
+extern int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
+extern int replaced_openat(int dirfd, const char *pathname, int oflag, ...);
+extern DIR* (*original___opendir2)(const char* pathname, int flags);
+extern DIR* replaced___opendir2(const char* pathname, int flags);
+extern DIR* (*original_opendir)(const char* pathname);
+extern DIR* replaced_opendir(const char* pathname);
+extern int (*original_open_dprotected_np)(const char* path, int flags, int class, int dpflags, ...);
+extern int replaced_open_dprotected_np(const char* path, int flags, int class, int dpflags, ...);
+extern int (*original_openat_dprotected_np)(int dirfd, const char* path, int flags, int class, int dpflags, ...);
+extern int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int class, int dpflags, ...);
+extern int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
+extern int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
+extern int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
+extern int replaced_stat64(const char* pathname, shdw_stat64_t* buf);
+extern int (*original_lstat64)(const char* pathname, shdw_stat64_t* buf);
+extern int replaced_lstat64(const char* pathname, shdw_stat64_t* buf);
+extern int (*original_fstat64)(int fd, shdw_stat64_t* buf);
+extern int replaced_fstat64(int fd, shdw_stat64_t* buf);
+extern int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
+extern int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
+// antidebugging group (libc_antidebugging.x)
+extern int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
+extern int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data);
+extern int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+extern int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+extern pid_t (*original_getppid)(void);
+extern pid_t replaced_getppid(void);
+extern int (*original_getrusage)(int who, struct rusage* usage);
+extern int replaced_getrusage(int who, struct rusage* usage);
+extern int (*original_getrlimit)(int resource, struct rlimit* rlp);
+extern int replaced_getrlimit(int resource, struct rlimit* rlp);
+extern int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
+extern int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
+extern int (*original_proc_listallpids)(void* buffer, int buffersize);
+extern int replaced_proc_listallpids(void* buffer, int buffersize);
+extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+
 // Symbol policy lookups for the C-function hook groups (libc/mach/sandbox/
 // mem). The dlsym hook in dyld.x consults these after its own table misses,
 // so every fishhook-rebound export resolves to its replacement for external
@@ -305,6 +409,13 @@ extern void shdw_sandbox_invalidate_cwd(void);
 extern void shadowhook_NSProcessInfo_fakemac(HKSubstitutor* hooks);
 extern void shadowhook_mem(HKSubstitutor* hooks);
 extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
+// Shared across the objc satellites (Runtime/objc.x defines; Runtime/objc_hidetweakclasses.x
+// and Runtime/objc_methodimpl.x consume): class/address/image hiding predicates and the
+// method_getImplementation original cell (rebind lane, defined in objc_methodimpl.x).
+extern BOOL shdw_objc_addr_is_hidden(const void* addr);
+extern BOOL shdw_objc_image_path_is_hidden(const char* path);
+extern BOOL shdw_objc_class_is_hidden(Class cls);
+extern IMP (*original_method_getImplementation)(Method m);
 extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
 extern void shadowhook_NSTask(HKSubstitutor* hooks);
 extern void shadowhook_NSThread(HKSubstitutor* hooks);

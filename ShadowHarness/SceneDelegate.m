@@ -19,4 +19,10 @@
 	[self.window makeKeyAndVisible];
 }
 
+- (void)sceneDidBecomeActive:(UIScene*)scene {
+	// A warm uiopen reuses the existing process, so main/viewDidLoad do not
+	// run again. Consume the driver's new nonce when this scene is reactivated.
+	[StatusViewController writeStealthReport];
+}
+
 @end
