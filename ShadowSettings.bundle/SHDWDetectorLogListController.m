@@ -291,6 +291,9 @@
 
 - (void)reloadLogEntries {
 	NSArray* records = self.filterBundleID ? [self filteredRecords] : [self applicationSummaries];
+	PSSpecifier* entriesGroup = [self specifierForID:@"DetectorLogEntriesGroup"];
+	entriesGroup.name = [self localized:self.filterBundleID ? @"ACTIVITY" : @"APPLICATIONS"
+		fallback:self.filterBundleID ? @"Activity" : @"Applications"];
 
 	for(PSSpecifier* spec in entrySpecifiers) {
 		[self removeSpecifier:spec];

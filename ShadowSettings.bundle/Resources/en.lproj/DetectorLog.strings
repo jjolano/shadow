@@ -1,5 +1,7 @@
 "DETECTOR_LOG" = "Detector Log";
 "DETECTOR_LOG_DESC" = "Recent jailbreak detection probes Shadow has intercepted. Entries are stored on-device only.";
+"APPLICATIONS" = "Applications";
+"ACTIVITY" = "Activity";
 "CLEAR_LOG" = "Clear Log";
 "NO_ACTIVITY" = "No detector activity recorded";
 "SHARE_LOG" = "Share Log";
