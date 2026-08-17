@@ -12,6 +12,16 @@ static NSMutableArray<NSValue *>* _shdw_dyld_remove_image = nil;
 // another thread's dlerror.
 static _Thread_local const char* _shdw_dyld_error_tls = NULL;
 
+static kern_return_t (*original_task_info)(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_count);
+static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t flavor, task_info_t task_info_out, mach_msg_type_number_t *task_info_count) {
+    BOOL ext = isCallerExternal();
+    if(ext && flavor == TASK_DYLD_INFO && target_task == mach_task_self()) {
+        shdw_detector_detected("task_info");
+    }
+    kern_return_t kr = original_task_info(target_task, flavor, task_info_out, task_info_count);
+    return kr;
+}
+
 // Real dyld_all_image_infos global (resolved in shadowhook_dyld). When set,
 // we patch its arrays directly. When NULL (very old iOS), memory hiding stays
 // off (fail soft); the API-level enumeration hooks still hide images.
@@ -30,11 +40,10 @@ static struct dyld_all_image_infos* _shdw_all_image_infos = NULL;
 // `_shdw_dyld_path_pool` for the lifetime of the process so
 // fileSystemRepresentation pointers never dangle after a collection removal.
 #define SHADOW_DYLD_MIRROR_CAPACITY 4096   // beyond any real process's image count
-// TODO (device-test territory, not attempted): mirror grow-on-demand past the
-// fixed capacity — a process that somehow exceeds 4096 images would over-run
-// the published buffers. Fixed capacity is deliberate (never-reallocated
-// pointers stay valid forever); a grow path must publish a NEW vm_allocate'd
-// generation and retire the old one only after a quiescent window.
+// ponytail: fixed buffers + warning near capacity; grow-on-demand would require
+// a new vm_allocate'd generation published after a quiescent window (never-
+// reallocated pointers must stay valid). Implemented warning + truncation fail-
+// soft; grow path deferred until a process actually exceeds 4096.
 
 static pthread_mutex_t _shdw_dyld_mirror_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct dyld_image_info* _shdw_dyld_info_buffers[2] = {NULL, NULL};
@@ -1322,6 +1331,7 @@ static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "dyld_image_header_containing_address", (void *)&replaced_dyld_image_header_containing_address },
     { "dyld_image_path_containing_address", (void *)&replaced_dyld_image_path_containing_address },
     { "objc_addLoadImageFunc", (void *)&replaced_objc_addLoadImageFunc },
+    { "task_info", (void *)&replaced_task_info },
 };
 #define SHADOW_SYM_POLICY_COUNT (sizeof(shdw_sym_policy_table) / sizeof(shdw_sym_policy_table[0]))
 
@@ -2245,7 +2255,12 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     pthread_mutex_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
-    NSUInteger count = MIN([_dyld_collection count], SHADOW_DYLD_MIRROR_CAPACITY);
+    NSUInteger rawCount = [_dyld_collection count];
+    NSUInteger count = MIN(rawCount, (NSUInteger) SHADOW_DYLD_MIRROR_CAPACITY);
+    if(rawCount > 4000) {
+        static BOOL warnedCap = NO;
+        if(!warnedCap) { warnedCap = YES; NSLog(@"shadow: dyld: image count %lu %s mirror capacity %d%s", (unsigned long)rawCount, rawCount > SHADOW_DYLD_MIRROR_CAPACITY ? "exceeds" : "near", SHADOW_DYLD_MIRROR_CAPACITY, rawCount > SHADOW_DYLD_MIRROR_CAPACITY ? ", truncating (grow-on-demand TODO)" : ""); }
+    }
 
     // C4: refresh the hot-path snapshot (always). Fill the inactive buffer,
     // then publish it. On allocation failure nothing is published — the
@@ -2306,11 +2321,12 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
 
     // The patch is unconditional (no pref gate): untrusted callers reading
     // dyld_all_image_infos directly — task_info TASK_DYLD_INFO /
-    // _dyld_get_all_image_infos — always see the filtered mirror. There is
-    // no task_info hook here: the mirror is the ONLY all-image surface, and
-    // no code in this file ever dereferences a remote task's
-    // all_image_info_addr (non-self tasks must be passed through untouched —
-    // device-test territory if a task_info hook is ever added).
+    // _dyld_get_all_image_infos — always see the filtered mirror. The
+    // replaced_task_info hook complements the mirror: it detects external
+    // TASK_DYLD_INFO probes on mach_task_self() (isCallerExternal) and
+    // escalates via shdw_detector_detected while still returning the filtered
+    // mirror; non-self tasks are passed through untouched (device-test
+    // territory for remote task handling).
 
     // Allocate the fixed-capacity generation buffers once (lazily).
     // vm_allocate'd, never freed or reallocated: the published pointers can't
@@ -2512,6 +2528,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     [publicHooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
     [publicHooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
     [publicHooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
+    [publicHooks hookFunction:task_info withReplacement:replaced_task_info outOldPtr:(void **)&original_task_info];
 
     // TASK_DYLD_INFO is the authoritative live struct. dyld4 may expose a
     // same-named private symbol that is not the address the kernel publishes.
@@ -2821,6 +2838,7 @@ void shadowhook_dyld_verify(void) {
         { "_dyld_get_image_slide", original_dyld_get_image_slide },
         { "dlopen_preflight", original_dlopen_preflight },
         { "dlerror", original_dlerror },
+        { "task_info", original_task_info },
     };
 
     shdw_verify_hooks("dyld", checks, sizeof(checks) / sizeof(checks[0]));

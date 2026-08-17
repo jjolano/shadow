@@ -1,9 +1,13 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "hooks.h"
+#import "../../policy/PseudoSandboxPolicy.h"
 
 #import <unistd.h>
 #import <wordexp.h>
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
 
 // Shared bootstrap-service matcher defined in mach.x (see there); used by
 // the mach-lookup denial below. Deliberately not in hooks.h — only the
@@ -244,7 +248,13 @@ static BOOL shdw_sandbox_check_file_denied(const char* operation, const char* pa
         return NO;
     }
 
-    return [_shadow isPathRestricted:pathString options:options];
+    BOOL belt = [_shadow isPathRestricted:pathString options:options];
+    if(shdw_pseudo_enabled()) {
+        shdw_pseudo_audit_log(path, belt, operation);
+        // Strict enforce is central in RestrictionEngine — isPathRestricted
+        // already returns pseudo deny when strict+allowed check fails.
+    }
+    return belt;
 }
 
 // Shared name/path inspection for sandbox_check and
@@ -756,6 +766,43 @@ static kern_return_t replaced_task_get_exception_ports(task_t task, exception_ma
     return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
 }
 
+// connect: block loopback Frida port-scans (ISS ReverseEngineeringToolsChecker).
+// Only external callers are affected; internal Shadow reads pass through.
+// Tripwire B: external loopback+listed-port fires shdw_detector_detected("connect")
+// before denial so Tier-2 escalates even if detector never touches a JB file path.
+static int (*original_connect)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    if(!isCallerExternal()) {
+        return original_connect(sockfd, addr, addrlen);
+    }
+
+    if(addr) {
+        if(addr->sa_family == AF_INET) {
+            const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
+            if(sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
+                uint16_t port = ntohs(sin->sin_port);
+                if(port == 27042 || port == 4444 || port == 22) {
+                    shdw_detector_detected("connect");
+                    errno = ECONNREFUSED;
+                    return -1;
+                }
+            }
+        } else if(addr->sa_family == AF_INET6) {
+            const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
+            if(IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) {
+                uint16_t port = ntohs(sin6->sin6_port);
+                if(port == 27042 || port == 4444 || port == 22) {
+                    shdw_detector_detected("connect");
+                    errno = ECONNREFUSED;
+                    return -1;
+                }
+            }
+        }
+    }
+
+    return original_connect(sockfd, addr, addrlen);
+}
+
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
 
@@ -824,12 +871,18 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     }
+
+    // connect: runtime-resolved like _signal/_system; absent on exotic OS → skip.
+    void* sym_connect = [hooks findSymbolInImage:NULL symbolName:@"_connect"];
+    if(sym_connect) {
+        [hooks hookFunction:sym_connect withReplacement:replaced_connect outOldPtr:(void **) &original_connect];
+    }
 }
 
 void shadowhook_sandbox_verify(void) {
     // execle/execlp/execl/execv hook with outOldPtr:NULL (no original_* to
-    // check); the runtime-resolved signal/system/popen/wordexp aliases are
-    // excluded (NULL is expected when the symbol is absent).
+    // check); the runtime-resolved signal/system/popen/wordexp/connect aliases
+    // are excluded (NULL is expected when the symbol is absent).
     shdw_hook_check_t checks[] = {
         { "sandbox_check", original_sandbox_check },
         { "fcntl", original_fcntl },
@@ -864,6 +917,7 @@ typedef struct {
 
 static const shdw_sandbox_sym_policy_entry_t shdw_sandbox_sym_policy_table[] = {
     { "bsd_signal", (void*)&replaced_bsd_signal, (void* const*)&original_bsd_signal },
+    { "connect", (void*)&replaced_connect, (void* const*)&original_connect },
     { "execl", (void*)&replaced_execl, NULL },
     { "execle", (void*)&replaced_execle, NULL },
     { "execlp", (void*)&replaced_execlp, NULL },

@@ -62,20 +62,22 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         // C0-4: identity groups (dyld/objc/classes/symlookup) are forced
         // on unconditionally — off-by-default = that vector is 100% exposed
         // on a default install (detectors enumerate the dyld/objc surface
-        // before any pref can be flipped). The remaining groups stay opt-in
-        // (defaults below): the blanket denial groups (Sandbox, Memory,
-        // Syscall, AntiDebugging) break legitimate apps.
-        // Hook_IOKit is explicitly NO (the ctor defaulted to NO via a
-        // missing key; make the intent explicit in metadata).
+        // before any pref can be flipped). Sandbox, Memory, and
+        // AntiDebugging are now ON by default (safe blanket denials);
+        // Syscall remains opt-in due to raw svc risk. IOKit and
+        // MachBootstrap remain NO (explicit intent; ctor defaulted via
+        // missing key before metadata existed).
         SHDWHookIDIOKit : @(NO),
         SHDWHookIDLowLevelC : @(YES),
-        SHDWHookIDAntiDebugging : @(NO),
+        SHDWHookIDAntiDebugging : @(YES),
         SHDWHookIDDynamicLibrariesExtra : @(NO),
         SHDWHookIDSyscall : @(NO),
-        SHDWHookIDSandbox : @(NO),
-        SHDWHookIDMemory : @(NO),
+        SHDWHookIDSandbox : @(YES),
+        SHDWHookIDMemory : @(YES),
         SHDWHookIDHideApps : @(YES),
         SHDWVnodeHidingID : @(NO),
+        SHDWPseudoSandboxID : @(NO),
+        SHDWPseudoSandboxStrictID : @(NO),
         // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
         // patch is unconditional by default (untrusted callers read the raw
         // struct), but a misbehaving patch on a new iOS must be disableable
@@ -96,7 +98,7 @@ static NSArray<NSString*>* SHDWPresetKeys(void) {
         NSMutableArray* mutableKeys = [NSMutableArray new];
 
         for(NSString* key in SHDWDefaultHookSettings()) {
-            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID]) {
+            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID] || [key isEqualToString:SHDWPseudoSandboxID] || [key isEqualToString:SHDWPseudoSandboxStrictID]) {
                 [mutableKeys addObject:key];
             }
         }
@@ -171,6 +173,10 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             SHDWHookIDSyscall : @"function",
             SHDWHookIDSandbox : @"function",
             SHDWHookIDMemory : @"function",
+            // Pseudo sandbox: policy inside RestrictionEngine, pref-driven, not an
+            // install unit — no backend requirement (keeps diff minimal).
+            SHDWPseudoSandboxID : @"none",
+            SHDWPseudoSandboxStrictID : @"none",
             // Removed as inert; accepted-but-ignored stale key.
             SHDWStaleFakeMacID : @"none",
         };
