@@ -15,6 +15,9 @@
 #import <dlfcn.h>
 #import <sys/sysctl.h>
 #import <sys/types.h>
+#import <sys/stat.h>
+#import <fcntl.h>
+#import <errno.h>
 #import <unistd.h>
 #import <string.h>
 #import <stdlib.h>
@@ -43,6 +46,7 @@ static uint32_t off_p_pfd = 0;
 static uint32_t off_fp_fglob = 0;
 static uint32_t off_fg_data = 0;
 static unsigned long long t1sz_boot = 0;
+bool resolve_vnode_for_fd(int fd, uint64_t *outVnode, uint64_t *outVId);
 
 bool is_arm64e(void) {
     // A27: FAIL CLOSED — initialize to a known non-arm64e value and CHECK the
@@ -58,7 +62,9 @@ bool is_arm64e(void) {
     return (subtype == 2 /* CPU_SUBTYPE_ARM64E */);
 }
 
-// t1sz_boot + row dispatch (kernel.m verbatim).
+// t1sz_boot + tentative row dispatch — hard table replaced by runtime discovery.
+// offset_init only assigns tentative values; krw_resolve_offsets() validates via
+// probe fd → proc_find/gOurProc → kread+resolve, else brute-force scan.
 int offset_init(void) {
     if (is_arm64e()) {
         char kern_version[512] = {};
@@ -72,36 +78,88 @@ int offset_init(void) {
         t1sz_boot = 0;
     }
 
-    // iOS 15.2+ is split by Darwin major (A1): p_pid is 0x68 on iOS 15
-    // (Darwin 21) and 0x60 only on iOS 16 (Darwin 22).
+    // Tentative assignment — table-driven Darwin→iOS, validated later.
     if (gDarwinMajor == 22) {
-        // ios 16.x — p_pid 0x60 per Dopamine libjailbreak info.c
-        shdw_log("offsets: iOS 16 (p_pid 0x60, p_pfd 0xf8)");
-        off_p_pid = 0x60;
-        off_p_pfd = 0xf8;
-        off_fp_fglob = 0x10;
-        off_fg_data = 0x38;
+        shdw_log("offsets: tentative iOS 16 (p_pid 0x60, p_pfd 0xf8)");
+        off_p_pid = 0x60; off_p_pfd = 0xf8; off_fp_fglob = 0x10; off_fg_data = 0x38;
+        return 0;
+    }
+    if (gDarwinMajor >= 23) {
+        // iOS 17-20 and future: same layout tentatively, resolved at runtime
+        int ios = gDarwinMajor - 6;
+        if (gDarwinMajor > 26) ios = gDarwinMajor - 6;
+        shdw_log("offsets: tentative Darwin %d (iOS %d) p_pid 0x60, p_pfd 0xf8 — runtime resolve will decide", gDarwinMajor, ios);
+        off_p_pid = 0x60; off_p_pfd = 0xf8; off_fp_fglob = 0x10; off_fg_data = 0x38;
         return 0;
     }
     if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_2) {
-        // ios 15.2 ~ 15.7.x — p_pid 0x68 (Darwin 21)
-        shdw_log("offsets: iOS 15.2+ (p_pid 0x68, p_pfd 0xf8)");
-        off_p_pid = 0x68;
-        off_p_pfd = 0xf8;
-        off_fp_fglob = 0x10;
-        off_fg_data = 0x38;
+        shdw_log("offsets: tentative iOS 15.2+ (p_pid 0x68, p_pfd 0xf8)");
+        off_p_pid = 0x68; off_p_pfd = 0xf8; off_fp_fglob = 0x10; off_fg_data = 0x38;
         return 0;
     }
     if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_15_0) {
-        // ios 15.0-15.1.1
-        shdw_log("offsets: iOS 15.0-15.1.1 (p_pid 0x68, p_pfd 0x100)");
-        off_p_pid = 0x68;
-        off_p_pfd = 0x100;
-        off_fp_fglob = 0x10;
-        off_fg_data = 0x38;
+        shdw_log("offsets: tentative iOS 15.0-15.1.1 (p_pid 0x68, p_pfd 0x100)");
+        off_p_pid = 0x68; off_p_pfd = 0x100; off_fp_fglob = 0x10; off_fg_data = 0x38;
         return 0;
     }
+    // Low bound (<15) still handled, but version_gate already fails closed.
+    // Keep tentative for completeness — validation will still run if reached.
+    shdw_log("offsets: tentative fallback (CF %.3f) p_pid 0x68, p_pfd 0xf8", kCFCoreFoundationVersionNumber);
+    off_p_pid = 0x68; off_p_pfd = 0xf8; off_fp_fglob = 0x10; off_fg_data = 0x38;
+    return 0;
+}
+
+// ponytail: brute-force window is small (pid 5 * pfd 7 * 2*3 = 210 tries, one kread+resolve each)
+int krw_resolve_offsets(void) {
+#ifdef SHADOW_TEST_HARNESS
+    return 0;
+#else
+    // Probe with a REGULAR file: vnode_plausible accepts only VREG/VDIR/VLNK,
+    // and /dev/null is VCHR — the tentative offsets would always "fail" here.
+    int fd = open("/System/Library/CoreServices/SystemVersion.plist", O_RDONLY);
+    if (fd < 0) fd = open("/", O_RDONLY);
+    if (fd < 0) {
+        shdw_log("krw_resolve_offsets: probe open failed (%s) — FAIL CLOSED", strerror(errno));
+        return -1;
+    }
+    uint64_t vnode = 0, vId = 0;
+    if (resolve_vnode_for_fd(fd, &vnode, &vId)) {
+        shdw_log("krw_resolve_offsets: tentative validated (p_pid 0x%x p_pfd 0x%x fglob 0x%x fg_data 0x%x)", off_p_pid, off_p_pfd, off_fp_fglob, off_fg_data);
+        close(fd);
+        return 0;
+    }
+    shdw_log("krw_resolve_offsets: tentative failed — brute-force scanning");
+
+    uint32_t orig_pid = off_p_pid, orig_pfd = off_p_pfd, orig_fglob = off_fp_fglob, orig_gd = off_fg_data;
+    static const uint32_t pid_cands[] = {0x60, 0x68, 0x70, 0x58, 0x78};
+    static const uint32_t pfd_cands[] = {0xf8, 0x100, 0xf0, 0xe8, 0x108, 0x110, 0xe0};
+    static const uint32_t fg_cands[] = {0x10, 0x08};
+    static const uint32_t gd_cands[] = {0x38, 0x30, 0x40};
+    for (size_t i = 0; i < sizeof(pid_cands)/sizeof(pid_cands[0]); i++) {
+        for (size_t j = 0; j < sizeof(pfd_cands)/sizeof(pfd_cands[0]); j++) {
+            for (size_t k = 0; k < sizeof(fg_cands)/sizeof(fg_cands[0]); k++) {
+                for (size_t l = 0; l < sizeof(gd_cands)/sizeof(gd_cands[0]); l++) {
+                    off_p_pid = pid_cands[i];
+                    off_p_pfd = pfd_cands[j];
+                    off_fp_fglob = fg_cands[k];
+                    off_fg_data = gd_cands[l];
+                    // skip the already-tried tentative combo
+                    if (off_p_pid == orig_pid && off_p_pfd == orig_pfd && off_fp_fglob == orig_fglob && off_fg_data == orig_gd) continue;
+                    if (resolve_vnode_for_fd(fd, &vnode, &vId)) {
+                        shdw_log("krw_resolve_offsets: discovered p_pid 0x%x p_pfd 0x%x fglob 0x%x fg_data 0x%x (vnode 0x%llx)", off_p_pid, off_p_pfd, off_fp_fglob, off_fg_data, vnode);
+                        close(fd);
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+    // restore tentative before failing closed (keeps logs coherent)
+    off_p_pid = orig_pid; off_p_pfd = orig_pfd; off_fp_fglob = orig_fglob; off_fg_data = orig_gd;
+    shdw_log("krw_resolve_offsets: all candidates failed — FAIL CLOSED");
+    close(fd);
     return -1;
+#endif
 }
 
 // ---------------------------------------------------------------------------
