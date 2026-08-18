@@ -204,11 +204,47 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
                                                       count:sizeof(kSHDWCoordinatorInstallers) / sizeof(kSHDWCoordinatorInstallers[0])
                                                       prefs:prefs];
 
-    if(shdw_coordinator_instance) {
-        [shdw_coordinator_instance installEvent:SHDWEventCtor];
-    } else {
+    if(!shdw_coordinator_instance) {
         NSLog(@"[Shadow][coordinator] init failed — continuing unhooked");
+        return;
     }
+
+    // Defer the install out of the dyld initializer context. ShadowCore is
+    // dlopen'd from Shadow.dylib's ctor, which runs inside
+    // dyld4::Loader::findAndRunAllInitializers. Running the install
+    // synchronously there is unsafe: the installers call into ElleKit's
+    // substitutor, whose exception-handler setup (Swift print + DispatchQueue
+    // in ellekit/Exception.swift startPortLoop) aborts mid-initializer
+    // because the Swift runtime is not ready (observed: SIGABRT, address
+    // size fault in the Swift print dispatch). Dispatching async lets dyld
+    // finish initializing before any hook work happens.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        [shdw_coordinator_instance installEvent:SHDWEventCtor];
+
+        // Watcher replay must run after the install (it depends on the
+        // coordinator's backends being resolved). Moved inside the deferred
+        // block so the main thread never blocks on the lifecycle queue.
+        _shdw_watcher_enabled = shdw_coordinator_instance
+            && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
+            && ([prefs[@"Hook_URLScheme"] boolValue] || [prefs[@"Hook_Foundation"] boolValue]);
+
+        if(_shdw_watcher_enabled) {
+            uint32_t count = _dyld_image_count();
+
+            for(uint32_t i = 0; i < count; i++) {
+                shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
+            }
+        }
+
+        NSString* counterKey = shdw_crash_counter_key();
+        if(counterKey) {
+            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+            [defaults removeObjectForKey:counterKey];
+            [defaults synchronize];
+        }
+
+        NSLog(@"completed hooks");
+    });
 }
 
 %ctor {
@@ -252,31 +288,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         } @finally {
             [Shadow shdwExitInternalRead];
         }
-
-        _shdw_watcher_enabled = shdw_coordinator_instance
-            && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
-            && ([prefs[@"Hook_URLScheme"] boolValue] || [prefs[@"Hook_Foundation"] boolValue]);
-
-        if(_shdw_watcher_enabled) {
-            uint32_t count = _dyld_image_count();
-
-            for(uint32_t i = 0; i < count; i++) {
-                shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
-            }
-        }
     } @catch (NSException* e) {
         NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
         return;
     }
 
-    NSString* counterKey = shdw_crash_counter_key();
-    if(counterKey) {
-        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-        [defaults removeObjectForKey:counterKey];
-        [defaults synchronize];
-    }
-
-    NSLog(@"completed hooks");
+    NSLog(@"ctor returned (install deferred)");
 }
 
 %dtor {
