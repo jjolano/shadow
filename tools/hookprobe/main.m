@@ -97,7 +97,7 @@ static void skip(NSString* group, NSString* name, NSString* reason) {
 // ---------------------------------------------------------------------------
 
 static NSString* const kRestrictedDir = @"/var/jb";
-static NSString* const kShadowCoreBin = @"/var/jb/usr/lib/TweakInject/ShadowCore.dylib";
+static NSString* const kShadowCoreBin = @"/var/jb/usr/lib/ShadowCore.dylib";
 static NSString* const kShadowRuleset = @"/var/jb/Library/Shadow/Rulesets/StandardRules.plist";
 static NSString* const kShadowFwk    = @"/var/jb/Library/Frameworks/Shadow.framework";
 static NSString* const kShadowFwkBin = @"/var/jb/Library/Frameworks/Shadow.framework/Shadow";
@@ -1138,12 +1138,14 @@ int main(int argc, char* argv[]) {
         }
 
         // Load ShadowCore: the ctor installs the hook layer in-process,
-        // exactly like ShadowTest. No spawn-injection dependency.
-        void* handle = dlopen("/var/jb/usr/lib/TweakInject/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
+        // exactly like ShadowTest. No spawn-injection dependency. The payload
+        // lives at /usr/lib (rootless: /var/jb/usr/lib) — it is NOT a
+        // DynamicLibraries tweak and must load only through this fixed path.
+        void* handle = dlopen([kShadowCoreBin UTF8String], RTLD_NOW | RTLD_LOCAL);
 
         if(!handle) {
             NSLog(@"[hookprobe] WARN: primary ShadowCore dlopen failed (%s)", dlerror());
-            handle = dlopen("/usr/lib/TweakInject/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
+            handle = dlopen("/usr/lib/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
         }
 
         if(vnodeOn) {

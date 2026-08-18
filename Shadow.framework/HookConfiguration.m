@@ -77,6 +77,11 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWHookIDHideApps : @(YES),
         SHDWVnodeHidingID : @(NO),
         SHDWPseudoSandboxModeID : @(0),
+        // PathRewrite: natural-ENOENT path-buffer rewrite (svc trampoline +
+        // libc hooks). Default OFF — the rewrite munges the caller's path
+        // buffer in place (propagation win, but the munged string is visible
+        // to the app's own logging/UI).
+        SHDWPathRewriteID : @(NO),
         // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
         // patch is unconditional by default (untrusted callers read the raw
         // struct), but a misbehaving patch on a new iOS must be disableable

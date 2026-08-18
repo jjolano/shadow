@@ -38,6 +38,7 @@
 #define SHDWHookIDHideApps         @"Hook_HideApps"
 #define SHDWVnodeHidingID          @"VnodeHiding"
 #define SHDWPseudoSandboxModeID    @"PseudoSandboxMode"
+#define SHDWPathRewriteID          @"PathRewrite"
 
 // Non-hook preferences (kept for completeness; not hook groups).
 #define SHDWGlobalEnabledID        @"Global_Enabled"

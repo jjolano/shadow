@@ -1074,24 +1074,25 @@ static void shutdown_daemon(void) {
     exit(1);
 }
 
+// Signal handler: dispatch shutdown to gKernelQueue. A plain sigaction is
+// used instead of a dispatch signal source — kernel-backed dispatch sources
+// (TIMER/SIGNAL) never fire on this jailbreak (observed on-device: DATA_ADD
+// and dispatch_async work, TIMER/SIGNAL sources do not), so the daemon would
+// ignore SIGTERM/SIGINT forever.
+static void shdw_signal_handler(int sig) {
+    (void) sig;
+    dispatch_async(gKernelQueue, ^{
+        shutdown_daemon();
+    });
+}
+
 static void setup_signal_handlers(void) {
-    // Dispatch sources need the default action out of the way.
-    signal(SIGTERM, SIG_IGN);
-    signal(SIGINT, SIG_IGN);
-
-    dispatch_source_t term = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,
-                                                    SIGTERM, 0, gKernelQueue);
-    dispatch_source_set_event_handler(term, ^{
-        shutdown_daemon();
-    });
-    dispatch_resume(term);
-
-    dispatch_source_t intr = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,
-                                                    SIGINT, 0, gKernelQueue);
-    dispatch_source_set_event_handler(intr, ^{
-        shutdown_daemon();
-    });
-    dispatch_resume(intr);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = shdw_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 }
 
 // ---------------------------------------------------------------------------
