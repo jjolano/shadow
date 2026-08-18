@@ -825,54 +825,54 @@ void shadowhook_sandbox(HKSubstitutor* hooks) {
     [hooks hookFunction:vfork withReplacement:replaced_vfork outOldPtr:(void **) &original_vfork];
 
     // Signal aliases: runtime-resolved, skipped cleanly when absent.
-    void* sym_signal = dlsym(RTLD_DEFAULT, "signal");
+    void* sym_signal = [hooks findSymbolInImage:NULL symbolName:@"_signal"];
     if(sym_signal) {
         [hooks hookFunction:sym_signal withReplacement:replaced_signal outOldPtr:(void **) &original_signal];
     }
 
-    sym_signal = dlsym(RTLD_DEFAULT, "bsd_signal");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"_bsd_signal"];
     if(sym_signal) {
         [hooks hookFunction:sym_signal withReplacement:replaced_bsd_signal outOldPtr:(void **) &original_bsd_signal];
     }
 
-    sym_signal = dlsym(RTLD_DEFAULT, "___signal_nobind");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"____signal_nobind"];
     if(sym_signal) {
         [hooks hookFunction:sym_signal withReplacement:replaced___signal_nobind outOldPtr:(void **) &original___signal_nobind];
     }
 
-    sym_signal = dlsym(RTLD_DEFAULT, "__sigaction");
+    sym_signal = [hooks findSymbolInImage:NULL symbolName:@"___sigaction"];
     if(sym_signal) {
         [hooks hookFunction:sym_signal withReplacement:replaced___sigaction outOldPtr:(void **) &original___sigaction];
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    void* sym_misc = dlsym(RTLD_DEFAULT, "system");
+    void* sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_system"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_system outOldPtr:(void **) &original_system];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "popen");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_popen"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_popen outOldPtr:(void **) &original_popen];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "wordexp");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_wordexp"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_wordexp outOldPtr:(void **) &original_wordexp];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "sandbox_check_by_audit_token");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sandbox_check_by_audit_token"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_sandbox_check_by_audit_token outOldPtr:(void **) &original_sandbox_check_by_audit_token];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "task_get_exception_ports");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_task_get_exception_ports"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     }
 
     // connect: runtime-resolved like _signal/_system; absent on exotic OS → skip.
-    void* sym_connect = dlsym(RTLD_DEFAULT, "connect");
+    void* sym_connect = [hooks findSymbolInImage:NULL symbolName:@"_connect"];
     if(sym_connect) {
         [hooks hookFunction:sym_connect withReplacement:replaced_connect outOldPtr:(void **) &original_connect];
     }

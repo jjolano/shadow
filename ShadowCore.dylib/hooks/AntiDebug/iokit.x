@@ -156,7 +156,7 @@ void shadowhook_iokit(HKSubstitutor* hooks) {
     // IOServiceGetMatchingService is a stable export; resolve at runtime and
     // skip cleanly when absent (same pattern as the libproc loop in libc.x).
     // dlsym — findSymbolInImage:NULL is pathologically slow for some symbols.
-    void* sym = dlsym(RTLD_DEFAULT, "IOServiceGetMatchingService");
+    void* sym = [hooks findSymbolInImage:NULL symbolName:@"_IOServiceGetMatchingService"];
 
     if(sym) {
         [hooks hookFunction:sym withReplacement:replaced_IOServiceGetMatchingService outOldPtr:(void **) &original_IOServiceGetMatchingService];
