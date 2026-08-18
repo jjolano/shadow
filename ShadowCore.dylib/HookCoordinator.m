@@ -229,6 +229,18 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 #pragma mark - Event install
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event {
+    // Re-entrancy guard lives HERE (before dispatch_sync), not just in
+    // installEventSync: the installers dlopen dylibs, which fires dyld
+    // add-image callbacks that call back into installEvent on this same
+    // lifecycle-queue thread. A dispatch_sync to the queue we are already
+    // executing on would deadlock before installEventSync's own guard ever
+    // ran (observed: hang in _dispatch_sync_f_slow during the dyld unit's
+    // install). A nested install is a no-op: the outer pass installs
+    // everything the plan needs.
+    if(_installing) {
+        return 0;
+    }
+
     __block NSUInteger installed = 0;
 
     dispatch_sync(self.lifecycleQueue, ^{
@@ -239,12 +251,8 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 }
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
-    // Re-entrancy guard: install runs on a serial queue, but the installers
-    // themselves can dlopen dylibs, which fires dyld add-image callbacks that
-    // call back into installEvent (e.g. SHDWEventUIKitLoaded) on this same
-    // queue thread. Without the guard that nests installs (and can recurse
-    // into a hang or an ElleKit abort mid-initialization). A nested install
-    // is a no-op here: the outer pass installs everything the plan needs.
+    // Belt-and-suspenders: installEventSync can also be reached directly
+    // (escalateWithReason). Same no-op for a nested install.
     if(_installing) {
         return 0;
     }

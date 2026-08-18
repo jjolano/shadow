@@ -2626,9 +2626,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* getInstallnamePtr = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_image_get_installname"];
 
     if(getInstallnamePtr) {
-        // HookKit 2.5.0's rebind backend SIGTRAPs on this dyld cache symbol;
-        // route through the litehook substitutor (publicHooks) instead.
-        [publicHooks hookFunction:getInstallnamePtr withReplacement:replaced_dyld_image_get_installname outOldPtr:(void **) &original_dyld_image_get_installname];
+        [hooks hookFunction:getInstallnamePtr withReplacement:replaced_dyld_image_get_installname outOldPtr:(void **) &original_dyld_image_get_installname];
     }
 
     void* images_for_addresses_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_images_for_addresses"];
@@ -2693,9 +2691,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* objc_add_load_image_ptr = dlsym(RTLD_DEFAULT, "objc_addLoadImageFunc");
 
     if(objc_add_load_image_ptr) {
-        // HookKit 2.5.0's rebind backend SIGTRAPs on this libobjc cache
-        // symbol; route through the litehook substitutor (publicHooks).
-        [publicHooks hookFunction:objc_add_load_image_ptr withReplacement:replaced_objc_addLoadImageFunc outOldPtr:(void **) &original_objc_addLoadImageFunc];
+        [hooks hookFunction:objc_add_load_image_ptr withReplacement:replaced_objc_addLoadImageFunc outOldPtr:(void **) &original_objc_addLoadImageFunc];
     }
 
     // Process-snapshot SPI (plan Wave 1c): opaque handles; external callers
@@ -2767,9 +2763,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* nsversion_ptr = dlsym(RTLD_DEFAULT, "NSVersionOfRunTimeLibrary");
 
     if(nsversion_ptr) {
-        // HookKit 2.5.0's rebind backend SIGTRAPs on this dyld cache symbol;
-        // route through the litehook substitutor (publicHooks).
-        [publicHooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
+        [hooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
     }
 }
 

@@ -183,34 +183,27 @@ void shadowhook_mach(HKSubstitutor* hooks) {
     [hooks hookFunction:bootstrap_check_in withReplacement:replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
     [hooks hookFunction:bootstrap_look_up withReplacement:replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 
-    // Runtime-resolve the private siblings; skip cleanly when absent. Target
-    // libsystem_kernel explicitly — findSymbolInImage:NULL is pathologically
-    // slow for some of these (multi-second full-image scans).
-    HKImageRef libsysKernel = [hooks openImage:@"/usr/lib/system/libsystem_kernel.dylib"];
-    void* sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_bootstrap_check_in2"] : NULL;
+    // Runtime-resolve the private siblings; skip cleanly when absent.
+    void* sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_check_in2"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in2 outOldPtr:(void **) &original_bootstrap_check_in2];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_bootstrap_check_in3"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_check_in3"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in3 outOldPtr:(void **) &original_bootstrap_check_in3];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_bootstrap_look_up2"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up2"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up2 outOldPtr:(void **) &original_bootstrap_look_up2];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_bootstrap_look_up3"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up3"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up3 outOldPtr:(void **) &original_bootstrap_look_up3];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_bootstrap_look_up_per_user"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_bootstrap_look_up_per_user"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up_per_user outOldPtr:(void **) &original_bootstrap_look_up_per_user];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_pid_for_task"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_pid_for_task"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_pid_for_task outOldPtr:(void **) &original_pid_for_task];
 
-    sym = libsysKernel ? [hooks findSymbolInImage:libsysKernel symbolName:@"_mach_port_names"] : NULL;
+    sym = [hooks findSymbolInImage:NULL symbolName:@"_mach_port_names"];
     if(sym) [hooks hookFunction:sym withReplacement:replaced_mach_port_names outOldPtr:(void **) &original_mach_port_names];
-
-    if(libsysKernel) {
-        [hooks closeImage:libsysKernel];
-    }
 }
 
 void shadowhook_mach_verify(void) {

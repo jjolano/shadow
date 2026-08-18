@@ -767,7 +767,7 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     [hooks hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
-    void* sym___syscall = dlsym(RTLD_DEFAULT, "__syscall");
+    void* sym___syscall = [hooks findSymbolInImage:NULL symbolName:@"___syscall"];
     // Some iOS builds export syscall and __syscall as the same entry point.
     // Address-based rebinders already cover every slot for that address; a
     // second replacement cannot coexist and only reports a false failure.
@@ -776,22 +776,22 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    void* sym_misc = dlsym(RTLD_DEFAULT, "sysctlbyname");
+    void* sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sysctlbyname"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "__sysctlbyname");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"___sysctlbyname"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "csops_audittoken");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_csops_audittoken"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
     }
 
-    sym_misc = dlsym(RTLD_DEFAULT, "NSGetEnviron");
+    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_NSGetEnviron"];
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
