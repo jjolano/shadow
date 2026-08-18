@@ -102,11 +102,25 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
+			<string>PSSegmentCell</string>
 			<key>id</key>
-			<string>PseudoSandboxEnabled</string>
+			<string>PseudoSandboxMode</string>
 			<key>label</key>
 			<string>PSEUDO_SANDBOX</string>
+			<key>default</key>
+			<integer>0</integer>
+			<key>validValues</key>
+			<array>
+				<integer>0</integer>
+				<integer>1</integer>
+				<integer>2</integer>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>PSEUDO_SANDBOX_OFF</string>
+				<string>PSEUDO_SANDBOX_AUDIT</string>
+				<string>PSEUDO_SANDBOX_STRICT</string>
+			</array>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

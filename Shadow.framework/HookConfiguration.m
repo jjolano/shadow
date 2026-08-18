@@ -78,6 +78,7 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWVnodeHidingID : @(NO),
         SHDWPseudoSandboxID : @(NO),
         SHDWPseudoSandboxStrictID : @(NO),
+        SHDWPseudoSandboxModeID : @(0),
         // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
         // patch is unconditional by default (untrusted callers read the raw
         // struct), but a misbehaving patch on a new iOS must be disableable
@@ -98,7 +99,7 @@ static NSArray<NSString*>* SHDWPresetKeys(void) {
         NSMutableArray* mutableKeys = [NSMutableArray new];
 
         for(NSString* key in SHDWDefaultHookSettings()) {
-            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID] || [key isEqualToString:SHDWPseudoSandboxID] || [key isEqualToString:SHDWPseudoSandboxStrictID]) {
+            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID] || [key isEqualToString:SHDWPseudoSandboxID] || [key isEqualToString:SHDWPseudoSandboxStrictID] || [key isEqualToString:SHDWPseudoSandboxModeID]) {
                 [mutableKeys addObject:key];
             }
         }
@@ -177,6 +178,7 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             // install unit — no backend requirement (keeps diff minimal).
             SHDWPseudoSandboxID : @"none",
             SHDWPseudoSandboxStrictID : @"none",
+            SHDWPseudoSandboxModeID : @"none",
             // Removed as inert; accepted-but-ignored stale key.
             SHDWStaleFakeMacID : @"none",
         };
