@@ -42,6 +42,12 @@ int replaced_open(const char *pathname, int oflag, ...) {
         return original_open(pathname, oflag);
     }
 
+    // Natural-ENOENT rewrite: only without O_CREAT (the munged path would
+    // otherwise be CREATED as a side effect).
+    if(!(oflag & O_CREAT) && shdw_libc_try_rewrite(pathname)) {
+        return original_open(pathname, oflag);   // natural ENOENT
+    }
+
     errno = ENOENT;
     return -1;
 }
@@ -80,6 +86,12 @@ int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
 
     if(shdw_at_path_denied(dirfd, pathname)) {
         return -1;
+    }
+
+    // Natural-ENOENT rewrite: only without O_CREAT (the munged path would
+    // otherwise be CREATED as a side effect).
+    if(!(oflag & O_CREAT) && shdw_libc_try_rewrite(pathname)) {
+        return original_openat(dirfd, pathname, oflag);   // natural ENOENT
     }
 
     if(oflag & O_CREAT) {

@@ -518,7 +518,6 @@ void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
     }
 
     void* setHookGetClassPtr = dlsym(RTLD_DEFAULT, "objc_setHook_getClass");
-
     if(setHookGetClassPtr) {
         objc_hook_getClass native = NULL;
         ((void (*)(objc_hook_getClass, objc_hook_getClass *))setHookGetClassPtr)(shdw_getClass_proxy, &native);

@@ -30,9 +30,47 @@
 
 #import "../../common.h"
 #import <Shadow.h>
+#import <Shadow/HookConfiguration.h>
 #import "../HookRuntime.h"
 
 #import <HookKit.h>
+
+#import "FileHiding/path_rewrite.h"
+
+// PathRewrite pref: gates the natural-ENOENT path-buffer rewrite (svc
+// trampoline + libc hooks). Default OFF — the rewrite munges the caller's
+// path buffer in place (propagation win, but the munged string is visible to
+// the app's own logging/UI). Cached at first read; prefs are read at install
+// time anyway, so a mid-process toggle is not expected.
+static inline BOOL shdw_path_rewrite_enabled(void) {
+    static int cached = -1;
+
+    if(cached == -1) {
+        NSUserDefaults* ud = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        cached = [ud boolForKey:SHDWPathRewriteID] ? 1 : 0;
+    }
+
+    return cached;
+}
+
+// Natural-ENOENT rewrite for libc path hooks: munge the caller's buffer and
+// let the real function fail with the kernel's own ENOENT. Returns YES when
+// the rewrite happened (the caller returns the original's result directly).
+// Falls back to the synthetic deny when the pref is off or the buffer is not
+// writable (e.g. a __TEXT string constant).
+static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
+    if(!shdw_path_rewrite_enabled()) {
+        return NO;
+    }
+
+    size_t moff = shdw_path_munge_offset(pathname);
+
+    if(moff == (size_t)-1 || !shdw_path_buf_writable(pathname + moff)) {
+        return NO;
+    }
+
+    return shdw_path_munge_path((char*)pathname);
+}
 
 // Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks, and
 // there is no Logos generator that targets HookKit directly. Route that
@@ -249,6 +287,32 @@ extern void shadowhook_objc(HKSubstitutor* hooks);
 extern void shadowhook_objc_methodimpl(HKSubstitutor* hooks);
 extern void shadowhook_sandbox(HKSubstitutor* hooks);
 extern void shadowhook_syscall(HKSubstitutor* hooks);
+
+// Raw-syscall policy categories (hooks/FileHiding/syscall.x dispatch;
+// shared with the svc-patch trampoline in hooks/FileHiding/svc_patch.x).
+typedef enum {
+    SHADW_RAW_CAT_NONE = 0,      // forwarded, never inspected (access_extended)
+    SHADW_RAW_CAT_PTRACE,        // PT_DENY_ATTACH short-circuit
+    SHADW_RAW_CAT_PATH,          // single pathname inspection
+    SHADW_RAW_CAT_AT,            // dirfd-aware *at inspection
+    SHADW_RAW_CAT_SYSCTL,        // KERN_PROC/KERN_PROCARGS2 policy
+    SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
+    SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
+    SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
+} shdw_raw_syscall_category_t;
+
+shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
+
+// Raw svc #0x80 interception (hooks/FileHiding/svc_patch.x): scans loaded
+// images' __TEXT for inline svc sites and redirects them through a naked
+// trampoline that applies the same path policy as the syscall(2) dispatch
+// (synthetic ENOENT for restricted paths, original svc otherwise). Called
+// from shadowhook_syscall, so the Hook_Syscall pref gates it. Idempotent.
+void shdw_svc_patch_install(void);
+
+// Scan [addr, addr+size) for svc sites (JIT regions). Called by the libc.x
+// mprotect hook after a range becomes executable; no-op until install ran.
+void shdw_svc_scan_range(uintptr_t addr, size_t size);
 extern void shadowhook_UIApplication(HKSubstitutor* hooks);
 extern void shadowhook_UIImage(HKSubstitutor* hooks);
 extern void shadowhook_libc_envvar(HKSubstitutor* hooks);

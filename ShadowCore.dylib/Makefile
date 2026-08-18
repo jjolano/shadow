@@ -1,11 +1,14 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
-# LOGOS_DEFAULT_GENERATOR = internal
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = ShadowCore
+# The payload is a plain library, not a DynamicLibraries tweak: it must load
+# only through the stub's gated dlopen, never through the runtime's own
+# injection. library.mk stages it to /usr/lib (no filter plist required) and
+# the stub dlopens @THEOS_PACKAGE_INSTALL_PREFIX /usr/lib/ShadowCore.dylib.
+LIBRARY_NAME = ShadowCore
 
-ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m $(wildcard policy/*.m) dylib.x HookCoordinator.m
+ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m hooks/FileHiding/path_rewrite.c $(wildcard policy/*.m) shadowcore.x HookCoordinator.m
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
@@ -20,4 +23,4 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_LDFLAGS += -lroothide
 endif
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/library.mk

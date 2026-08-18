@@ -8,10 +8,6 @@
 // least side effects possible — see Core+Utilities.m).
 extern char*** _NSGetArgv();
 
-// Marker symbol for dladdr: the payload (ShadowCore.dylib) is installed
-// beside this stub, and dladdr on this symbol resolves the stub's own path.
-__attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
-
 %ctor {
     // Determine the application we're injected into.
     NSString* bundleIdentifier = [NSBundle mainBundle].bundleIdentifier;
@@ -106,16 +102,14 @@ __attribute__((visibility("default"))) void _shdw_payload_entry(void) {}
         [defaults synchronize];
     }
 
-    // Load the payload (ShadowCore.dylib) from the same directory as this
-    // stub. dladdr on our own symbol gives the stub's path; the payload is
-    // installed beside it. On failure: log and return, never crash.
-    Dl_info info;
-    if(dladdr((void *)&_shdw_payload_entry, &info) && info.dli_fname) {
-        NSString *dir = [[NSString stringWithUTF8String:info.dli_fname] stringByDeletingLastPathComponent];
-        NSString *payloadPath = [dir stringByAppendingPathComponent:@"ShadowCore.dylib"];
+    // Load the payload (ShadowCore.dylib) from its fixed install path:
+    // /usr/lib, prefixed by the package scheme (rootless/roothide stage
+    // under /var/jb). The payload is NOT a DynamicLibraries tweak — it must
+    // load only through this gated dlopen, never through the runtime's own
+    // injection. On failure: log and return, never crash.
+    NSString* payloadPath = [@THEOS_PACKAGE_INSTALL_PREFIX stringByAppendingString:@"/usr/lib/ShadowCore.dylib"];
 
-        if(!dlopen([payloadPath UTF8String], RTLD_NOW)) {
-            NSLog(@"[Shadow] payload load failed: %s", dlerror());
-        }
+    if(!dlopen([payloadPath UTF8String], RTLD_NOW)) {
+        NSLog(@"[Shadow] payload load failed: %s", dlerror());
     }
 }

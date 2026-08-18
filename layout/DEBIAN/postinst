@@ -15,10 +15,13 @@ esac
 # exactly the restart hazard this architecture exists to avoid (launchd
 # respawns a half-cleaned daemon, or the vnodes stay hidden until reboot).
 shadowd_stop() {
-    # Send SIGTERM via launchd when the service exists; fall back to a raw
-    # kill for the rare already-booted-out orphan.
-    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
-        || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+    # Send SIGTERM via launchd when the service exists, AND a raw kill to any
+    # shadowd process. Both fire unconditionally: on some Dopamine builds
+    # `launchctl kill` returns 0 without actually delivering the signal, so a
+    # `||` fallback would never run and the daemon would keep polling a live
+    # process until the upgrade aborts.
+    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null || true
+    kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
     remaining=20
     while [ "$remaining" -gt 0 ]; do
         pgrep -x shadowd > /dev/null 2>&1 || return 0
@@ -37,6 +40,13 @@ case "$1" in
         touch "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         chown root:wheel "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         chmod 0644 "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+
+        # v6: the payload moved out of the injector's scan directory to
+        # /usr/lib (loaded only via the stub's gated dlopen). Remove stale
+        # copies from the legacy MobileSubstrate dir and Dopamine's
+        # TweakInject dir so an old payload can never be injected directly.
+        rm -f "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib" \
+              "$DPKG_ROOT/usr/lib/TweakInject/ShadowCore.dylib"
 
         # Ruleset tree: root-owned, dirs 0755 / files 0644 (X grants execute
         # on directories only). World-writable mobile-owned rulesets let any

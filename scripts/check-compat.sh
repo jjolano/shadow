@@ -66,7 +66,7 @@ find_one() { # find arguments
 
 SHADOW=$(find_one -type f -path '*/Shadow.framework/Shadow')
 TWEAK=$(find_one -type f -path '*/DynamicLibraries/Shadow.dylib')
-CORE=$(find_one -type f -path '*/DynamicLibraries/ShadowCore.dylib')
+CORE=$(find_one -type f -path '*/usr/lib/ShadowCore.dylib')
 SETTINGS=$(find_one -type f -path '*/PreferenceBundles/ShadowSettings.bundle/ShadowSettings')
 SHDW=$(find_one -type f -path '*/usr/local/bin/shdw')
 
