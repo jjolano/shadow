@@ -19,6 +19,7 @@
     NSUInteger _installerCount;
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
+    BOOL _installing;                 // re-entrancy guard (see installEventSync:)
 }
 @property (nonatomic, readwrite) SHDWBackendSet* backends;
 @property (nonatomic, readwrite, copy) NSDictionary<NSString*, id>* prefs;
@@ -238,6 +239,17 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 }
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
+    // Re-entrancy guard: install runs on a serial queue, but the installers
+    // themselves can dlopen dylibs, which fires dyld add-image callbacks that
+    // call back into installEvent (e.g. SHDWEventUIKitLoaded) on this same
+    // queue thread. Without the guard that nests installs (and can recurse
+    // into a hang or an ElleKit abort mid-initialization). A nested install
+    // is a no-op here: the outer pass installs everything the plan needs.
+    if(_installing) {
+        return 0;
+    }
+
+    _installing = YES;
     NSArray<NSString*>* plan = SHDWHookPlan(self.prefs, self.backends.capabilities, event);
 
     if(!plan.count) {
@@ -287,6 +299,7 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
     }
 
     [self commitBatch:attempted];
+    _installing = NO;
 
     return localInstalled;
 }
