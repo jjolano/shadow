@@ -56,8 +56,8 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
 - (double)_fileMtime:(NSString *)path {
     NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
     NSDate* mod_date = [attrs fileModificationDate];
-
-    return mod_date ? [mod_date timeIntervalSinceReferenceDate] : 0.0;
+    // ns mtime: iOS gives ns; host harness may be 1s-granularity but we still store ns
+    return mod_date ? [mod_date timeIntervalSince1970] * 1e9 : 0.0;
 }
 
 // Full directory scan + compile pipeline, published as one immutable snapshot.
@@ -97,6 +97,15 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
         NSDictionary* engines = rulesetEngines;
         NSMutableDictionary* nextEngines = [NSMutableDictionary new];
 
+        // prune stale .shadowcache: ruleset .shadowcache without matching plist (ns check via compiler)
+        for(NSURL* cUrl in ruleset_urls) {
+            if([[cUrl lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
+                NSString *plistPath = [[cUrl path] stringByReplacingOccurrencesOfString:kShadowRulesetCacheSuffix withString:@""];
+                if(![[NSFileManager defaultManager] fileExistsAtPath:plistPath]) {
+                    @try { [[NSFileManager defaultManager] removeItemAtPath:[cUrl path] error:nil]; } @catch(NSException *e) {}
+                }
+            }
+        }
         for(NSURL* url in ruleset_urls) {
             // RulesetEngine's own compiled caches live here too; they are not
             // rulesets, so never track or load them (their rewrites are still

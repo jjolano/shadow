@@ -7,6 +7,35 @@
 
 #import <limits.h>
 #import <unistd.h>
+#import <dlfcn.h>
+#import <string.h>
+
+// Ponytail: central strict enforce via dlsym + TLS guard (no PseudoSandboxPolicy header import)
+static _Thread_local BOOL _inPseudoEval = NO;
+
+static BOOL shdwPseudoShouldDeny(const char *cpath) {
+    if(!cpath || !cpath[0]) return NO;
+    if(_inPseudoEval) return NO;
+#ifndef SHADOW_TEST_HARNESS
+    static BOOL (*fn)(const char*) = NULL;
+    static BOOL didLookup = NO;
+    if(!didLookup) {
+        didLookup = YES;
+        fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_should_deny");
+        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_enforce_should_deny");
+        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdwPseudoEnforceShouldDeny");
+        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_denies_path");
+        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_is_restricted");
+    }
+    if(!fn) return NO;
+    _inPseudoEval = YES;
+    BOOL r = fn(cpath);
+    _inPseudoEval = NO;
+    return r;
+#else
+    return NO;
+#endif
+}
 
 // How long a cached decision is honored (see the cache notes below).
 // Trimmed from 2.0s (plan C0-1): a "not restricted" verdict for a
@@ -15,55 +44,9 @@
 // via the generation tag; this shrinks the filesystem-appearance window.
 static const NSTimeInterval kShadowDecisionCacheTTL = 0.5;
 
-// Restricted roots that never hold legitimate app data: the rootless /var/jb
-// fast-path, its canonical target (/var/jb is a symlink to
-// /private/preboot/<hash>/jb on rootless) and rooted /cores crash dumps.
-// On roothide there is no /var/jb at all — the jailbreak root is a
-// random-named jbroot resolved through jbroot() — so that prefix check is
-// replaced by a live-jbroot check. Moved verbatim from Core.m.
+// Restricted roots single source via JBPath (shdw_is_restricted_root).
 static BOOL shdwIsPathInRestrictedRoot(NSString* path) {
-#ifdef SHADOW_ROOTHIDE
-    // roothide: jbroot() already returns the full jailbreak root path for
-    // the current process; resolve it once and prefix-check it.
-    static NSString* roothideRoot = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        NSString* root = jbroot(@"/");
-        roothideRoot = [root hasSuffix:@"/"] ? root : [root stringByAppendingString:@"/"];
-    });
-
-    if(path && roothideRoot && [path hasPrefix:roothideRoot]) {
-        return YES;
-    }
-
-    return NO;
-#else
-    // Canonical rootless jbroot target, resolved once. nil when not rootless
-    // (realpath("/var/jb") fails), so the jbroot check is a no-op there.
-    static NSString* jbrootTarget = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        char resolved[PATH_MAX];
-
-        if(realpath("/var/jb", resolved)) {
-            jbrootTarget = [NSString stringWithUTF8String:resolved];
-        }
-    });
-
-    if([path hasPrefix:@"/var/jb"]
-        || [path hasPrefix:@"/cores/"]
-        || [path hasPrefix:@"/private/preboot"]) {
-        return YES;
-    }
-
-    if(jbrootTarget && [path hasPrefix:jbrootTarget]) {
-        return YES;
-    }
-
-    return NO;
-#endif
+    return path ? shdw_is_path_in_restricted_root(path) : NO;
 }
 
 // realpath is hooked and can re-enter this engine on the same thread.
@@ -83,8 +66,24 @@ static NSString* shdwJoinWorkingDirectory(NSString* path, NSString* wd) {
 }
 
 static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path) {
-    return context.hasAppSandbox
-        && ([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]);
+    if(!context.hasAppSandbox) return NO;
+    if([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]) return YES;
+    for(NSString *gc in context.groupContainerPaths) {
+        if(gc && [path hasPrefix:gc]) return YES;
+    }
+    return NO;
+}
+
+// Group containers: exempt when inside any group container (central strict enforce helper)
+static BOOL shdwIsSandboxExemptGroup(ShadowRestrictionContext context, NSString* path) {
+    if(!context.hasAppSandbox) return NO;
+    for(NSString *gc in context.groupContainerPaths) {
+        if(gc && [path hasPrefix:gc]) return YES;
+    }
+    return NO;
+}
+static BOOL shdwIsGroupContainerPath(ShadowRestrictionContext context, NSString* path) {
+    return shdwIsSandboxExemptGroup(context, path);
 }
 
 static NSString* shdwResolveTarget(NSString* path) {
@@ -295,9 +294,32 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         BOOL restricted = NO;
+        NSString* expanded = nil;
+
+        // Central strict enforce: before tilde/workdir, check raw craw (+ joined form for relative)
+        // Harness-safe via dlsym + _inPseudoEval TLS guard; stdRaw exempt group containers.
+        {
+            NSString *craw = path;
+            if(!_inPseudoEval && craw) {
+                BOOL isRel = ![craw isAbsolutePath] && ![craw hasPrefix:@"~"];
+                BOOL crawExempt = shdwIsGroupContainerPath(_context, craw);
+                if(!crawExempt) {
+                    const char *ccraw = [craw fileSystemRepresentation];
+                    if(ccraw && shdwPseudoShouldDeny(ccraw)) { restricted = YES; goto done; }
+                    if(isRel) {
+                        NSString *joinedRaw = shdwJoinWorkingDirectory(craw, query.workingDirectory);
+                        joinedRaw = [Shadow getStandardizedPath:joinedRaw];
+                        if(!shdwIsGroupContainerPath(_context, joinedRaw)) {
+                            const char *cj = [joinedRaw fileSystemRepresentation];
+                            if(cj && shdwPseudoShouldDeny(cj)) { restricted = YES; goto done; }
+                        }
+                    }
+                }
+            }
+        }
 
         // Tilde: deny on unresolvable user; expand otherwise.
-        NSString* expanded = shdwExpandTilde(path);
+        expanded = shdwExpandTilde(path);
 
         if(!expanded) {
             return NO;

@@ -54,6 +54,9 @@ __attribute__((visibility("default")))
 + (void)shdwExitInternalRead;
 + (BOOL)shdwIsInternalRead;
 
++ (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid dataRoot:(NSString *)dataRoot;
++ (NSArray<NSString *> *)shdwGroupContainersUnderRoot:(NSString *)root;
+
 - (BOOL)isAddrRestricted:(const void *)addr;
 
 - (BOOL)isCPathRestricted:(const char *)path;

@@ -6,6 +6,8 @@
 #import "PathPolicy.h"
 
 #import "../hooks/hooks.h"
+#import "PseudoSandboxPolicy.h"
+#import <Shadow/JBPath.h>
 
 #import <string.h>
 #import <pthread.h>
@@ -32,13 +34,19 @@ static pthread_mutex_t shdw_fd_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 // statically linked into the app binary (which has no image name at all for
 // the watcher's name scan to see). High-signal set: stock devices never have
 // these paths and app code never touches them except to probe.
+// ponytail: jb-root prefixes centralized via JBPath shdw_path_contains_restricted_root_c (single source)
 BOOL shdw_is_jb_probe(const char* path) {
     if(!path || !path[0]) {
         return NO;
     }
 
-    return strstr(path, "/var/jb") != NULL
-        || strstr(path, "/var/binpack") != NULL
+    // Centralized jb-root prefix check (single source: JBPath). Covers
+    // /var/jb, /private/preboot, /preboot, /cores and the dynamic jbroot.
+    if(shdw_path_contains_restricted_root_c(path)) {
+        return YES;
+    }
+
+    return strstr(path, "/var/binpack") != NULL
         || strstr(path, "/jbroot") != NULL
         || strstr(path, "/.installed_") != NULL
         || strstr(path, "/.bootstrapped_") != NULL
@@ -107,7 +115,11 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
 
     if(status == SHADW_DIRFD_ABSOLUTE) {
-        if([_shadow isCPathRestricted:pathname]) {
+        BOOL belt = [_shadow isCPathRestricted:pathname];
+        if(shdw_pseudo_enabled()) {
+            shdw_pseudo_audit_log(pathname, belt, "at_check");
+        }
+        if(belt) {
             errno = ENOENT;
             return YES;
         }

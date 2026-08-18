@@ -9,6 +9,7 @@ typedef struct {
     BOOL rootless;
     NSString* bundlePath;
     NSString* homePath;
+    NSArray<NSString *> *groupContainerPaths;
 } ShadowRestrictionContext;
 
 // Complete restriction engine: resolution, ruleset storage/evaluation and

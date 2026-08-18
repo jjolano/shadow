@@ -61,44 +61,59 @@ NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
     return [[dict objectForKey:[parent stringByDeletingLastPathComponent]] containsObject:parent];
 }
 
+// Binary search over a sorted flat array of paths.
+- (BOOL)_structureContains:(NSArray*)array path:(NSString*)path {
+    if(!array || !path) return NO;
+    NSUInteger idx = [array indexOfObject:path inSortedRange:NSMakeRange(0, [array count]) options:NSBinarySearchingFirstEqual usingComparator:^NSComparisonResult(id a, id b) {
+        return [(NSString*)a compare:(NSString*)b];
+    }];
+    return idx != NSNotFound;
+}
+
 - (BOOL)isPathCompliant:(NSString *)path {
-    NSDictionary* structure = dict_structure;
+    NSArray* dirs = array_structure_dirs;
+    NSArray* paths = array_structure_paths;
 
     // Skip checks if ruleset doesn't define a structure or if path is a key.
-    if(!structure || [structure objectForKey:path]) {
+    if(!dirs || !paths || [self _structureContains:paths path:path]) {
         return YES;
     }
 
-    // Find the closest key in the structure.
-    NSString* path_tmp = path;
-    NSSet* structure_base = nil;
+    // Walk up strict ancestors to the deepest structure key (dir), then check
+    // the next component after it against the full path set — the exact old
+    // dict semantics (deepest key + children lookup) with binary search.
+    NSString* tmp = [path stringByDeletingLastPathComponent];
 
-    do {
-        path_tmp = [path_tmp stringByDeletingLastPathComponent];
-        structure_base = [structure objectForKey:path_tmp];
-    } while(!structure_base && ![path_tmp isEqualToString:@"/"]);
+    while(tmp.length > 0) {
+        if([self _structureContains:dirs path:tmp]) {
+            // Relative-root key (""): match-all iff the structure marks it
+            // (a "/" child). Absolute structures never reach "" — the walk
+            // stops at "/".
+            if(tmp.length == 0) {
+                return [self _structureContains:paths path:@"/"];
+            }
 
-    // A child matches iff it is the next path component after the key, so one
-    // component extraction plus one set lookup replaces the per-child scan.
-    if(structure_base) {
-        // Under the relative-root key ("") stringByAppendingPathComponent adds
-        // no separator, so an empty or "/" child yields a match-all prefix.
-        if([path_tmp length] == 0 && ([structure_base containsObject:@""] || [structure_base containsObject:@"/"])) {
-            return YES;
+            // Offset past the key plus its separator. The empty key (relative
+            // root) has no separator, so the next component starts at 0.
+            NSUInteger base = (tmp.length <= 1) ? tmp.length : tmp.length + 1;
+            NSRange slash = [path rangeOfString:@"/" options:0 range:NSMakeRange(base, [path length] - base)];
+            NSString* component = (slash.location == NSNotFound)
+                ? [path substringFromIndex:base]
+                : [path substringWithRange:NSMakeRange(base, slash.location - base)];
+
+            return [self _structureContains:paths path:[tmp stringByAppendingPathComponent:component]];
         }
 
-        // Offset past the key plus its separator. The empty key (relative
-        // root) has no separator, so the next component starts at 0.
-        NSUInteger base = ([path_tmp length] <= 1) ? [path_tmp length] : [path_tmp length] + 1;
-        NSRange slash = [path rangeOfString:@"/" options:0 range:NSMakeRange(base, [path length] - base)];
-        NSString* component = (slash.location == NSNotFound)
-            ? [path substringFromIndex:base]
-            : [path substringWithRange:NSMakeRange(base, slash.location - base)];
+        NSString* parent = [tmp stringByDeletingLastPathComponent];
 
-        return [structure_base containsObject:component];
+        if([parent isEqualToString:tmp]) {
+            break;   // reached "/" or ""
+        }
+
+        tmp = parent;
     }
 
-    return YES;
+    return YES;   // no stock ancestor: paths outside the zones stay visible
 }
 
 - (BOOL)isPathWhitelisted:(NSString *)path {

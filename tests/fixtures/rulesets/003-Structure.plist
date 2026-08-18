@@ -11,37 +11,39 @@
 	</dict>
 	<key>FileSystemStructure</key>
 	<dict>
-		<key>/</key>
+		<key>dirs</key>
 		<array>
-			<string>Applications</string>
-			<string>Library</string>
-			<string>System</string>
-			<string>bin</string>
-			<string>cores</string>
-			<string>dev</string>
-			<string>etc</string>
-			<string>private</string>
-			<string>sbin</string>
-			<string>tmp</string>
-			<string>usr</string>
-			<string>var</string>
+			<string>/</string>
+			<string>/var/mobile</string>
+			<string>/var/mobile/Media</string>
 		</array>
-		<key>/var/mobile</key>
+		<key>paths</key>
 		<array>
-			<string>Applications</string>
-			<string>Backups</string>
-			<string>Containers</string>
-			<string>Documents</string>
-			<string>Downloads</string>
-			<string>Library</string>
-			<string>Media</string>
-		</array>
-		<key>/var/mobile/Media</key>
-		<array>
-			<string>DCIM</string>
-			<string>EvilDir</string>
-			<string>Photos</string>
-			<string>Recordings</string>
+			<string>/</string>
+			<string>/Applications</string>
+			<string>/Library</string>
+			<string>/System</string>
+			<string>/bin</string>
+			<string>/cores</string>
+			<string>/dev</string>
+			<string>/etc</string>
+			<string>/private</string>
+			<string>/sbin</string>
+			<string>/tmp</string>
+			<string>/usr</string>
+			<string>/var</string>
+			<string>/var/mobile</string>
+			<string>/var/mobile/Applications</string>
+			<string>/var/mobile/Backups</string>
+			<string>/var/mobile/Containers</string>
+			<string>/var/mobile/Documents</string>
+			<string>/var/mobile/Downloads</string>
+			<string>/var/mobile/Library</string>
+			<string>/var/mobile/Media</string>
+			<string>/var/mobile/Media/DCIM</string>
+			<string>/var/mobile/Media/EvilDir</string>
+			<string>/var/mobile/Media/Photos</string>
+			<string>/var/mobile/Media/Recordings</string>
 		</array>
 	</dict>
 </dict>
