@@ -187,6 +187,22 @@ static NSString* const kHeaderReuseID = @"Header";
 	// Automation hook: full diagnostics (incl. battery) to a file in the
 	// app container, readable over SSH for autonomous result capture.
 	[StatusViewController writeStealthReport];
+
+	// ShadowCore's install is deferred out of the dyld initializer context
+	// (see shadowcore.x shdw_coordinator_ctor) and completes on a background
+	// queue shortly after launch. The first viewWillAppear can run before the
+	// install finishes, so the "Shadow active" row would show a stale NO.
+	// Re-run the probes once the install has had time to complete.
+	__weak __typeof(self) weakSelf = self;
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+		__strong __typeof(weakSelf) strongSelf = weakSelf;
+		if(!strongSelf) {
+			return;
+		}
+		strongSelf->_sections = [strongSelf buildSectionsIncludingBattery:NO];
+		[strongSelf applySnapshotAnimated:NO];
+		[StatusViewController writeStealthReport];
+	});
 }
 
 #pragma mark - Cells
