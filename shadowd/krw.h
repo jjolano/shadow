@@ -86,6 +86,10 @@ bool krw_libjb_present(void);
 
 // Row offsets + t1sz_boot — must be in place before ANY krw work.
 int offset_init(void);
+// Runtime offset discovery: validates tentative offsets via probe fd →
+ // proc_find/gOurProc → kread + resolve_vnode_for_fd, else brute-force scan.
+// Fail closed on miss; SHADOW_TEST_HARNESS stub returns 0.
+int krw_resolve_offsets(void);
 
 bool is_arm64e(void);
 

@@ -4,6 +4,7 @@
 #import "../common.h"
 #import <Shadow/JBPath.h>
 #import "hooks/hooks.h"
+#import "policy/PseudoSandboxPolicy.h"
 
 #import <Shadow.h>
 #import <Shadow/Settings.h>
@@ -239,6 +240,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
 
         [Shadow sharedInstance];
         shdw_own_ranges_refresh();
+        shdw_pseudo_init(prefs);
 
         shdw_vnode_set_pref_enabled([prefs[@"VnodeHiding"] boolValue]);
         shadowhook_vnode(NULL);

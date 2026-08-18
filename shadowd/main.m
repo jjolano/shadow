@@ -60,6 +60,7 @@
 #import <sys/types.h>
 #import <sys/stat.h>
 #import <sys/time.h>
+#import <sys/utsname.h>
 #import <unistd.h>
 #import <fcntl.h>
 #import <errno.h>
@@ -167,68 +168,97 @@ bool gIsRootless = false;
 
 // Parse "Darwin Kernel Version 22.6.0: ..." from kern.version.  The result is
 // cached in gDarwinMajor/gDarwinMinor — offset_init dispatches off the Darwin
-// major (A1), and version_gate FAILS CLOSED when it is unavailable (A4).
+// major (A1), and version_gate FAILS CLOSED only for low bound (CF <15) (A4).
+// Table-driven Darwin→iOS mapping: 21=15, 22=16, 23=17, 24=18, 25=19, 26=20,
+// >26 future. Unknown/future logs WARNING and proceeds if krw can resolve.
 int gDarwinMajor = 0;
 int gDarwinMinor = 0;
 
 static bool darwin_version(void) {
     char kern_version[512] = {};
     size_t size = sizeof(kern_version);
-    if (sysctlbyname("kern.version", &kern_version, &size, NULL, 0) != 0) {
-        return false;
+    if (sysctlbyname("kern.version", &kern_version, &size, NULL, 0) == 0) {
+        if (sscanf(kern_version, "Darwin Kernel Version %d.%d", &gDarwinMajor, &gDarwinMinor) == 2) {
+            return true;
+        }
     }
-    return sscanf(kern_version, "Darwin Kernel Version %d.%d", &gDarwinMajor, &gDarwinMinor) == 2;
+    // ponytail: kern.version unavailable — fallback to uname.release ("22.6.0")
+    struct utsname u;
+    if (uname(&u) == 0) {
+        if (sscanf(u.release, "%d.%d", &gDarwinMajor, &gDarwinMinor) == 2) {
+            return true;
+        }
+    }
+    return false;
 }
 
-// Hard ceiling gate: iOS 15.0–16.6.1 ONLY.  FAIL CLOSED: if Darwin/version
-// information is unavailable, the feature is DISABLED — no CF-only fallback
-// (A4).  Darwin 21 = iOS 15 (entire line supported); Darwin 22 = iOS 16, and
-// because Darwin 22.6 also covers 16.7.x, the exact ceiling is bound via
-// kern.osproductversion (≤ 16.6.1).
+// Table-driven version gate: low bound CF<15 still FAIL CLOSED; all other
+// Darwin majors are soft-fail (warn+proceed) — krw offset resolution decides.
 static bool version_gate(void) {
     double cf = kCFCoreFoundationVersionNumber;
 
     shdw_log("kCFCoreFoundationVersionNumber: %.3f", cf);
-    if (!darwin_version()) {
-        shdw_log("UNSUPPORTED: kern.version unavailable — FAIL CLOSED, feature disabled");
-        return false;
-    }
-    shdw_log("Darwin %d.%d", gDarwinMajor, gDarwinMinor);
-
     if (cf < kCFCoreFoundationVersionNumber_iOS_15_0) {
         shdw_log("UNSUPPORTED: iOS < 15.0 (CF %.3f) — feature disabled", cf);
         return false;
     }
-    if (cf >= kCFCoreFoundationVersionNumber_iOS_17_0) {
-        shdw_log("UNSUPPORTED: iOS >= 17.0 (CF %.3f) — feature disabled", cf);
-        return false;
-    }
 
+    bool haveDarwin = darwin_version();
+    if (!haveDarwin) {
+        shdw_log("WARNING: kern.version/uname unavailable — proceeding, krw resolution will decide");
+        return true;
+    }
+    shdw_log("Darwin %d.%d", gDarwinMajor, gDarwinMinor);
+
+    // Darwin 21 = iOS 15.x — whole line supported
     if (gDarwinMajor == 21) {
-        // iOS 15.x — the whole line is inside the supported range.
         shdw_log("version gate: supported (Darwin 21 = iOS 15.x)");
         return true;
     }
     if (gDarwinMajor == 22) {
-        // iOS 16.x — must bound to 16.6.1 (Darwin 22.6 also covers 16.7.x).
+        // iOS 16.x — patch check now warn+proceed (was FAIL CLOSED for 16.7.x)
         char pv[64] = {0};
         size_t pvsz = sizeof(pv);
-        if (sysctlbyname("kern.osproductversion", pv, &pvsz, NULL, 0) != 0 || pv[0] == '\0') {
-            shdw_log("UNSUPPORTED: Darwin 22 but kern.osproductversion unavailable — FAIL CLOSED");
-            return false;
+        if (sysctlbyname("kern.osproductversion", pv, &pvsz, NULL, 0) == 0 && pv[0] != '\0') {
+            int maj = 0, min = 0, pat = 0;
+            int n = sscanf(pv, "%d.%d.%d", &maj, &min, &pat);
+            if (n >= 2 && maj == 16 && (min > 6 || (min == 6 && n >= 3 && pat > 1))) {
+                shdw_log("WARNING: iOS %s > 16.6.1 — proceeding, krw resolution will decide", pv);
+            } else if (n >= 2) {
+                shdw_log("version gate: supported (Darwin 22 = iOS %s)", pv);
+            } else {
+                shdw_log("WARNING: could not parse kern.osproductversion '%s' — proceeding", pv);
+            }
+        } else {
+            shdw_log("WARNING: kern.osproductversion unavailable for Darwin 22 — proceeding");
         }
-        int maj = 0, min = 0, pat = 0;
-        int n = sscanf(pv, "%d.%d.%d", &maj, &min, &pat);
-        if (n < 2 || maj != 16 || min > 6 || (min == 6 && n >= 3 && pat > 1)) {
-            shdw_log("UNSUPPORTED: iOS %s (need <= 16.6.1) — feature disabled", pv);
-            return false;
-        }
-        shdw_log("version gate: supported (Darwin 22 = iOS %s)", pv);
         return true;
     }
-
-    shdw_log("UNSUPPORTED: Darwin %d.%d — feature disabled", gDarwinMajor, gDarwinMinor);
-    return false;
+    // Darwin 23-26 = iOS 17-20
+    if (gDarwinMajor >= 23 && gDarwinMajor <= 26) {
+        int ios = gDarwinMajor - 6; // 23→17 etc
+        char pv[64] = {0};
+        size_t pvsz = sizeof(pv);
+        if (sysctlbyname("kern.osproductversion", pv, &pvsz, NULL, 0) == 0 && pv[0] != '\0') {
+            shdw_log("version gate: supported (Darwin %d = iOS %d.x / %s) — krw resolution will decide", gDarwinMajor, ios, pv);
+        } else {
+            shdw_log("version gate: supported (Darwin %d = iOS %d.x) — krw resolution will decide", gDarwinMajor, ios);
+        }
+        return true;
+    }
+    if (gDarwinMajor > 26) {
+        char pv[64] = {0};
+        size_t pvsz = sizeof(pv);
+        if (sysctlbyname("kern.osproductversion", pv, &pvsz, NULL, 0) == 0 && pv[0] != '\0') {
+            shdw_log("WARNING: unknown future Darwin %d.%d (iOS %s) — proceeding, krw resolution will decide", gDarwinMajor, gDarwinMinor, pv);
+        } else {
+            shdw_log("WARNING: unknown future Darwin %d.%d — proceeding, krw resolution will decide", gDarwinMajor, gDarwinMinor);
+        }
+        return true;
+    }
+    // Darwin <21 but CF already passed low bound (inconsistent) — warn+proceed
+    shdw_log("WARNING: unknown Darwin %d.%d — proceeding, krw resolution will decide", gDarwinMajor, gDarwinMinor);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,6 +1162,11 @@ static void krw_init_background(void) {
         }
 
         if (ok) {
+            if (krw_resolve_offsets() != 0) {
+                shdw_log("krw: offset resolution failed — FAIL CLOSED, feature disabled");
+                atomic_store(&gKrwState, KRW_DISABLED);
+                return;
+            }
             // A13: publish READY only AFTER ledger recovery has COMPLETED
             // DURABLY — recovery runs synchronously on the kernel queue first
             // (deadlock-safe: acquires return EBUSY immediately, A22).  On

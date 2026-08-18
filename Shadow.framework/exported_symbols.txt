@@ -12,3 +12,10 @@ _SHDWDefaultHookSettings
 _SHDWPresetStandard
 _SHDWPresetMaximum
 _SHDWHookGroupCapabilityKind
+_JBPath
+_JBIsRootless
+_shdw_is_restricted_root
+_shdw_is_restricted_root_c
+_shdw_path_contains_restricted_root_c
+_shdw_is_path_in_restricted_root
+_shdw_jbroot_prefix

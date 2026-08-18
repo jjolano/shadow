@@ -471,7 +471,25 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 
     NSMutableDictionary* ruleset = [NSMutableDictionary new];
     [ruleset setObject:ruleset_info forKey:@"RulesetInfo"];
-    [ruleset setObject:structure forKey:@"FileSystemStructure"];
+
+    // Flatten dict-of-dir→children to {dirs, paths} sorted flat arrays: dirs
+    // = the structure keys, paths = keys + children. The flat form loads in a
+    // fraction of the time (one array of strings vs ~100K dict/array objects),
+    // which is what keeps the 25MB SystemRules load inside the app-launch
+    // watchdog window.
+    NSMutableSet* dirSet = [NSMutableSet setWithArray:[structure allKeys]];
+    NSMutableSet* pathSet = [NSMutableSet setWithArray:[structure allKeys]];
+
+    for(NSString* dir in structure) {
+        for(NSString* child in [structure objectForKey:dir]) {
+            [pathSet addObject:[dir stringByAppendingPathComponent:child]];
+        }
+    }
+
+    [ruleset setObject:@{
+        @"dirs" : [[dirSet allObjects] sortedArrayUsingSelector:@selector(compare:)],
+        @"paths" : [[pathSet allObjects] sortedArrayUsingSelector:@selector(compare:)]
+    } forKey:@"FileSystemStructure"];
 
     if([exact count] > 0 || [dirs count] > 0) {
         // Overlapping zones (/System vs /System/Library) produce duplicates; dedupe before the cap.
@@ -480,20 +498,6 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 
         [exact sortUsingSelector:@selector(compare:)];
         [dirs sortUsingSelector:@selector(compare:)];
-
-        NSInteger total = [exact count] + [dirs count];
-
-        if(total > 5000) {
-            fprintf(stderr, "warning: SystemRules: diff produced %ld entries, truncating to 5000\n", (long)total);
-
-            if([exact count] >= 5000) {
-                [exact removeObjectsInRange:NSMakeRange(5000, [exact count] - 5000)];
-                [dirs removeAllObjects];
-            } else {
-                NSInteger room = 5000 - [exact count];
-                [dirs removeObjectsInRange:NSMakeRange(room, [dirs count] - room)];
-            }
-        }
 
         if([exact count] > 0) {
             [ruleset setObject:exact forKey:@"BlacklistExactPaths"];

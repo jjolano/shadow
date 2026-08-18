@@ -28,6 +28,10 @@
 "HOOK_MEM_DESC" = "過濾虛擬記憶體查詢，避免暴露注入的可執行記憶體區域。";
 "VNODE_HIDING" = "Vnode 級隱藏";
 "VNODE_HIDING_DESC" = "透過 Shadow 服務在 vnode 層隱藏越獄路徑，位置低於一般檔案 API。";
+"PSEUDO_SANDBOX" = "Pseudo Sandbox (Audit)";
+"PSEUDO_SANDBOX_DESC" = "Restores the app's stock sandbox view (container + stock system + shared carve-outs). Audit mode logs divergences without hiding — enforce stays off until carve-outs are proven. Enable for 1 week on test apps, then check Detector Log.";
+"PSEUDO_SANDBOX_STRICT" = "Pseudo Sandbox Strict";
+"PSEUDO_SANDBOX_STRICT_DESC" = "Enforce fail-closed outside the allowlist. Requires audit toggle — only enable after carve-outs are validated.";
 "HOOK_SANDBOX" = "加強應用程式沙盒";
 "HOOK_SANDBOX_DESC" = "讓特權操作和僅越獄環境存在的服務像在一般應用程式沙盒中一樣失敗。\n\n這些底層 Hook 可能導致應用程式崩潰或系統功能異常。僅在推薦 Hook 無效時使用。";
 "HOOK_SYSCALL" = "私有系統呼叫";
