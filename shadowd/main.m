@@ -84,6 +84,13 @@
 // recovery dylib creates a respring deadlock; dyld-level filtering already
 // covers the dylib name.
 //
+// The Shadow prefs plist is ALSO not hidden: the app's own NSUserDefaults
+// writes (CrashCount removal, DetectorLog, PseudoAuditLog) target that same
+// file, and kernel-level VISSHADOW hiding breaks them (the app holds the
+// lease while it writes). The plist stays concealed from non-jailbroken
+// processes by the jbroot itself; only jailbroken-process visibility is
+// traded away, which the userspace isCallerExternal gating already covers.
+//
 // KNOWN RESIDUAL (raw syscall probes): VISSHADOW is a kernel-global vnode
 // flag — there is no per-process visibility. Extending this list to
 // jailbreak indicator paths (/var/jb, /var/lib/dpkg, libhooker/libellekit,
@@ -100,8 +107,6 @@
 // anti-cheat). The userspace libc-vs-syscall mismatch this creates is the
 // standard tradeoff of every userspace-only bypass (Liberty-class).
 static NSString *const kAllowlist[] = {
-    @(SHADOW_PREFS_PLIST),                                          // /var/mobile/... (rootful AND rootless)
-    @"/var/jb/var/mobile/Library/Preferences/" BUNDLE_ID ".plist",  // rootless-prefixed variant
     @"/Library/PreferenceBundles/ShadowSettings.bundle",            // rootful
     @"/var/jb/Library/PreferenceBundles/ShadowSettings.bundle",     // rootless
 };
