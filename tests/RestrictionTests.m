@@ -320,23 +320,17 @@ static void TestPseudoAllowlist(void) {
     RCHECK(!shdw_pseudo_is_allowed("/var/jb/usr/bin/tool"), "pseudo outside stock not allowed");
     RCHECK(!shdw_pseudo_is_allowed("/private/var/mobile/evil"), "pseudo outside not allowed");
 
-    shdw_pseudo_refresh(@{@"PseudoSandboxEnabled": @YES, @"PseudoSandboxStrict": @YES});
-    RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo enabled strict");
+    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(2)});
+    RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo mode 2 = strict");
     RCHECK(shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo strict outside denied");
     RCHECK(shdw_pseudo_should_deny("/private/var/mobile/evil"), "pseudo strict outside denied2");
     RCHECK(!shdw_pseudo_should_deny("/usr/bin/ssh"), "pseudo strict inside stock not denied (overlay NO)");
     RCHECK(!shdw_pseudo_should_deny("/var/mobile/Library/Preferences/.GlobalPreferences.plist"), "pseudo strict carveout not denied");
     RCHECK(!shdw_pseudo_should_deny([homeFile UTF8String]), "pseudo strict container not denied");
     RCHECK(!shdw_pseudo_should_deny("/Applications/Cydia.app"), "pseudo overlay harness always NO inside allow");
-    shdw_pseudo_refresh(@{@"PseudoSandboxEnabled": @YES, @"PseudoSandboxStrict": @NO});
-    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo audit only not denied");
-    // Segmented mode key: 0=Off, 1=Audit, 2=Strict
     shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(1)});
     RCHECK(shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 1 = audit");
-    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo mode audit not denied");
-    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(2)});
-    RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo mode 2 = strict");
-    RCHECK(shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo mode strict denied");
+    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo audit only not denied");
     shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(0)});
     RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 0 = off");
     shdw_pseudo_refresh(nil);
