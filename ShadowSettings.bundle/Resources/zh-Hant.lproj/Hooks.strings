@@ -28,12 +28,6 @@
 "HOOK_MEM_DESC" = "過濾虛擬記憶體查詢，避免暴露注入的可執行記憶體區域。";
 "VNODE_HIDING" = "Vnode 級隱藏";
 "VNODE_HIDING_DESC" = "透過 Shadow 服務在 vnode 層隱藏越獄路徑，位置低於一般檔案 API。";
-"PSEUDO_SANDBOX" = "偽沙盒（稽核）";
-"PSEUDO_SANDBOX_DESC" = "恢復應用程式的原生沙盒檢視（容器 + 系統目錄 + 共享區域）。稽核模式僅記錄差異而不隱藏——在共享區域驗證前保持關閉。在測試應用程式上啟用一週，然後檢查偵測器日誌。";
-"PSEUDO_SANDBOX_OFF" = "關閉";
-"PSEUDO_SANDBOX_AUDIT" = "稽核";
-"PSEUDO_SANDBOX_STRICT" = "嚴格";
-"PSEUDO_SANDBOX_STRICT_DESC" = "在允許清單之外強制失敗關閉。需要先啟用稽核——僅在共享區域驗證後啟用。";
 "HOOK_SANDBOX" = "加強應用程式沙盒";
 "HOOK_SANDBOX_DESC" = "讓特權操作和僅越獄環境存在的服務像在一般應用程式沙盒中一樣失敗。\n\n這些底層 Hook 可能導致應用程式崩潰或系統功能異常。僅在推薦 Hook 無效時使用。";
 "HOOK_SYSCALL" = "私有系統呼叫";

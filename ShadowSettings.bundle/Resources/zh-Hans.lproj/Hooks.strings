@@ -48,12 +48,6 @@
 "HOOK_MEM_DESC" = "过滤虚拟内存查询，避免暴露注入的可执行内存区域。";
 "VNODE_HIDING" = "Vnode 级隐藏";
 "VNODE_HIDING_DESC" = "通过 Shadow 服务在 vnode 层隐藏越狱路径，位置低于常规文件 API。";
-"PSEUDO_SANDBOX" = "伪沙盒（审计）";
-"PSEUDO_SANDBOX_DESC" = "恢复应用的原生沙盒视图（容器 + 系统目录 + 共享区域）。审计模式仅记录差异而不隐藏——在共享区域验证前保持关闭。在测试应用上启用一周，然后检查检测器日志。";
-"PSEUDO_SANDBOX_OFF" = "关闭";
-"PSEUDO_SANDBOX_AUDIT" = "审计";
-"PSEUDO_SANDBOX_STRICT" = "严格";
-"PSEUDO_SANDBOX_STRICT_DESC" = "在允许列表之外强制失败关闭。需要先启用审计——仅在共享区域验证后启用。";
 "MEMORY_LEVEL_HIDING_DESC" = "从 dyld 的内存映像列表中移除注入的动态库。如果应用不稳定，请关闭此选项。";
 "HOOK_DYLD_EXTRA_DESC" = "在应用启动时启用额外的动态库防护，而不是等待检测到越狱检查。";
 
