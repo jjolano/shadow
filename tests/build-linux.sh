@@ -29,9 +29,9 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/Core.m Shadow.framework/Ruleset.m \
   Shadow.framework/Core+Utilities.m \
   Shadow.framework/DpkgRulesGenerator.m \
-  Shadow.framework/RestrictionEngine.m \
+  Shadow.framework/RestrictionEngine.m Shadow.framework/JBPath.m \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
-  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m \
+  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
   Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
   $BASE_LIBS -o tests/harness

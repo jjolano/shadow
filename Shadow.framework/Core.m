@@ -58,6 +58,44 @@ NSUInteger shdwInternalBusy(void) {
     return shdw_internal_busy > 0;
 }
 
++ (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid dataRoot:(NSString *)dataRoot {
+    if (!bid || !dataRoot) return nil;
+    NSArray *children = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dataRoot error:nil];
+    NSString *matched = nil;
+    NSUInteger matchCount = 0;
+    for (NSString *child in children) {
+        NSString *meta = [[dataRoot stringByAppendingPathComponent:child] stringByAppendingPathComponent:@".com.apple.mobile_container_manager.metadata.plist"];
+        NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:meta];
+        if ([[d objectForKey:@"MCMMetadataIdentifier"] isEqualToString:bid]) {
+            matched = [dataRoot stringByAppendingPathComponent:child];
+            matchCount++;
+            if (matchCount > 1) break;
+        }
+    }
+    if (matchCount == 1 && matched) {
+        NSString *candidate = [matched stringByResolvingSymlinksInPath];
+        if (candidate) {
+            return [[self class] getStandardizedPath:candidate];
+        }
+    }
+    return nil;
+}
+
++ (NSArray<NSString *> *)shdwGroupContainersUnderRoot:(NSString *)root {
+    if (!root) return @[];
+    NSArray *groups = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:root error:nil];
+    NSMutableArray *found = [NSMutableArray array];
+    for (NSString *g in groups) {
+        NSString *full = [root stringByAppendingPathComponent:g];
+        BOOL isDir = NO;
+        if ([[NSFileManager defaultManager] fileExistsAtPath:full isDirectory:&isDir] && isDir) {
+            NSString *std = [[self class] getStandardizedPath:full];
+            if (std) [found addObject:std];
+        }
+    }
+    return [found copy];
+}
+
 - (instancetype)init {
     if((self = [super init])) {
         bundlePath = [[[self class] getExecutablePath] stringByDeletingLastPathComponent];
@@ -74,13 +112,38 @@ NSUInteger shdwInternalBusy(void) {
         realHomePath = [[self class] getStandardizedPath:realHomePath];
 
         hasAppSandbox = [[bundlePath pathExtension] isEqualToString:@"app"];
+        // hasAppSandbox fix: appex inside .app is still sandboxed
+        if(!hasAppSandbox && [bundlePath containsString:@".app/"]) {
+            hasAppSandbox = YES;
+        }
+#ifndef SHADOW_TEST_HARNESS
+        if(!hasAppSandbox) {
+            NSString* bid = [[self class] getBundleIdentifier];
+            if(bid) {
+                SHADOW_INTERNAL_SCOPE {
+                    NSString* mcmPath = [[self class] shdwMCMContainerPathForBundleID:bid dataRoot:@"/var/mobile/Containers/Data/Application"];
+                    if(mcmPath) {
+                        homePath = mcmPath;
+                        hasAppSandbox = YES;
+                    }
+                }
+            }
+        }
+#endif
         rootless = JBIsRootless();
-
+        NSMutableArray* groupContainers = [NSMutableArray array];
+#ifndef SHADOW_TEST_HARNESS
+        SHADOW_INTERNAL_SCOPE {
+            NSArray *found = [[self class] shdwGroupContainersUnderRoot:@"/private/var/mobile/Containers/Shared/AppGroup"];
+            [groupContainers addObjectsFromArray:found];
+        }
+#endif
         ShadowRestrictionContext context = {
             .hasAppSandbox = hasAppSandbox,
             .rootless = rootless,
             .bundlePath = bundlePath,
             .homePath = homePath,
+            .groupContainerPaths = [groupContainers copy],
         };
         engine = [[ShadowRestrictionEngine alloc] initWithContext:context];
     }
@@ -114,13 +177,8 @@ NSUInteger shdwInternalBusy(void) {
         return NO;
     }
 
-    // C fast-path: the restricted roots are exact prefix checks (the
-    // /private/preboot prefix also covers the resolved rootless jbroot
-    // target). Every hooked open/stat/access hits this; detector probes of
-    // these roots skip the NSString alloc + full pipeline.
-    if(strncmp(path, "/var/jb", 7) == 0
-        || strncmp(path, "/cores/", 7) == 0
-        || strncmp(path, "/private/preboot", 16) == 0) {
+    // C fast-path: single-source predicate shdw_is_restricted_root
+    if(shdw_is_restricted_root(path)) {
         return YES;
     }
 

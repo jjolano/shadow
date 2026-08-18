@@ -7,10 +7,10 @@
 // last-known-good and the compiled-cache read/write, v2 format untouched)
 // lives here. Framework-internal: not exported, not in exported_symbols.txt.
 
-// Bumped to 2: v2 archives the reduced RulesetInfo-only payload instead of
-// the full payload graph (old v1 cache files are rejected by the version
-// check and rebuilt).
-static const NSInteger kShadowRulesetCacheVersion = 2;
+// Bumped to 5: v5 structure is a {dirs, paths} pair of sorted flat arrays
+// (was dict-of-dir→children; v4's single flat array broke shallow structures
+// where a path's ancestor is a non-key child).
+static const NSInteger kShadowRulesetCacheVersion = 5;
 
 @implementation ShadowRulesetCompiler
 
@@ -135,12 +135,18 @@ static id shdwCacheUnwrapNil(id value) {
     }
 #pragma clang diagnostic pop
 
-    // The cache is only reusable while the plist it was compiled from is
-    // byte-identical, as evidenced by an unchanged mtime and size.
+    // v3: ns mtime only (no size); NSFileModificationDate resolution is ns on iOS.
+    // Older caches lack ns key → miss (rebuilt on next compile).
+    NSNumber *nsMtime = (NSNumber*)[plistAttrs objectForKey:NSFileModificationDate] ? @([[plistAttrs fileModificationDate] timeIntervalSince1970] * 1e9) : nil;
+    if(!nsMtime) {
+        // Fallback: reference-date ns (harness)
+        nsMtime = @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate] * 1e9);
+    }
     if(![cached isKindOfClass:[NSDictionary class]]
         || ![[cached objectForKey:@"version"] isEqualToNumber:@(kShadowRulesetCacheVersion)]
-        || ![[cached objectForKey:@"mtime"] isEqualToNumber:@([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate])]
-        || ![[cached objectForKey:@"size"] isEqualToNumber:@([plistAttrs fileSize])]) {
+        || ![[cached objectForKey:@"nsMtime"] isEqualToNumber:nsMtime]) {
+        // prune stale cache file
+        @try { [[NSFileManager defaultManager] removeItemAtPath:[plistPath stringByAppendingString:kShadowRulesetCacheSuffix] error:nil]; } @catch(NSException *e) {}
         return nil;
     }
 
@@ -180,7 +186,7 @@ static id shdwCacheUnwrapNil(id value) {
         }
     }
 
-    for(NSString* key in @[@"whitelist_prefixes", @"blacklist_prefixes", @"structure"]) {
+    for(NSString* key in @[@"whitelist_prefixes", @"blacklist_prefixes"]) {
         id value = [cached objectForKey:key];
 
         if(![value isKindOfClass:[NSDictionary class]]) {
@@ -210,6 +216,31 @@ static id shdwCacheUnwrapNil(id value) {
         }
     }
 
+    // structure is now a {dirs, paths} pair of sorted flat string arrays (v5).
+    {
+        id value = [cached objectForKey:@"structure"];
+
+        if(![value isKindOfClass:[NSNull class]]) {
+            if(![value isKindOfClass:[NSDictionary class]]) {
+                return NO;
+            }
+
+            for(NSString* key in @[@"dirs", @"paths"]) {
+                id arr = [value objectForKey:key];
+
+                if(![arr isKindOfClass:[NSArray class]]) {
+                    return NO;
+                }
+
+                for(id member in (NSArray*)arr) {
+                    if(![member isKindOfClass:[NSString class]]) {
+                        return NO;
+                    }
+                }
+            }
+        }
+    }
+
     for(NSString* key in @[@"pred_whitelist", @"pred_blacklist"]) {
         id value = [cached objectForKey:key];
 
@@ -230,7 +261,11 @@ static id shdwCacheUnwrapNil(id value) {
     ruleset->set_bundleids = shdwCacheUnwrapNil([cached objectForKey:@"bundleids"]);
     ruleset->dict_whitelist = shdwCacheUnwrapNil([cached objectForKey:@"whitelist_prefixes"]);
     ruleset->dict_blacklist = shdwCacheUnwrapNil([cached objectForKey:@"blacklist_prefixes"]);
-    ruleset->dict_structure = shdwCacheUnwrapNil([cached objectForKey:@"structure"]);
+    {
+        NSDictionary* structure = shdwCacheUnwrapNil([cached objectForKey:@"structure"]);
+        ruleset->array_structure_dirs = [structure objectForKey:@"dirs"];
+        ruleset->array_structure_paths = [structure objectForKey:@"paths"];
+    }
     ruleset->pred_whitelist = shdwCacheUnwrapNil([cached objectForKey:@"pred_whitelist"]);
     ruleset->pred_blacklist = shdwCacheUnwrapNil([cached objectForKey:@"pred_blacklist"]);
     ruleset->whitelist_match_all = [[cached objectForKey:@"whitelist_match_all"] boolValue];
@@ -266,10 +301,10 @@ static id shdwCacheUnwrapNil(id value) {
         return;
     }
 
+    NSNumber *nsMtime2 = (NSNumber*)[plistAttrs objectForKey:NSFileModificationDate] ? @([[plistAttrs fileModificationDate] timeIntervalSince1970] * 1e9) : @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate] * 1e9);
     NSDictionary* cached = @{
         @"version" : @(kShadowRulesetCacheVersion),
-        @"mtime" : @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate]),
-        @"size" : @([plistAttrs fileSize]),
+        @"nsMtime" : nsMtime2,
         @"payload" : reducedPayload,
         @"schemes" : ruleset->set_urlschemes ?: [NSNull null],
         @"whitelist" : ruleset->set_whitelist ?: [NSNull null],
@@ -277,7 +312,10 @@ static id shdwCacheUnwrapNil(id value) {
         @"bundleids" : ruleset->set_bundleids ?: [NSNull null],
         @"whitelist_prefixes" : ruleset->dict_whitelist ?: [NSNull null],
         @"blacklist_prefixes" : ruleset->dict_blacklist ?: [NSNull null],
-        @"structure" : ruleset->dict_structure ?: [NSNull null],
+        @"structure" : (ruleset->array_structure_dirs || ruleset->array_structure_paths)
+            ? @{@"dirs" : ruleset->array_structure_dirs ?: [NSNull null],
+                @"paths" : ruleset->array_structure_paths ?: [NSNull null]}
+            : [NSNull null],
         @"pred_whitelist" : ruleset->pred_whitelist ?: [NSNull null],
         @"pred_blacklist" : ruleset->pred_blacklist ?: [NSNull null],
         @"whitelist_match_all" : @(ruleset->whitelist_match_all),
@@ -325,13 +363,15 @@ static id shdwCacheUnwrapNil(id value) {
     return result;
 }
 
-// Filters FileSystemStructure to a dict of arrays of strings; anything else is
-// logged and skipped. Verbatim move of the old -[RulesetEngine
-// _validatedStructure:].
+// Filters FileSystemStructure to a {dirs, paths} pair of sorted flat string
+// arrays; anything else is logged and skipped (malformed rulesets never
+// crash). dirs = the structure keys, paths = keys + children. Old dict
+// payloads are ignored: isPathCompliant then returns YES (hardening off until
+// the ruleset is regenerated).
 + (NSDictionary*)validatedStructure:(id)value {
     if(![value isKindOfClass:[NSDictionary class]]) {
         if(value) {
-            NSLog(@"[Ruleset] invalid FileSystemStructure: expected dictionary, got %@; ignoring", [value class]);
+            NSLog(@"[Ruleset] invalid FileSystemStructure: expected {dirs, paths} dictionary, got %@; ignoring", [value class]);
         }
 
         return nil;
@@ -339,30 +379,40 @@ static id shdwCacheUnwrapNil(id value) {
 
     NSMutableDictionary* result = [NSMutableDictionary new];
 
-    for(id key in value) {
-        id children = [value objectForKey:key];
+    for(NSString* key in @[@"dirs", @"paths"]) {
+        id arr = [value objectForKey:key];
 
-        if(![key isKindOfClass:[NSString class]]) {
-            NSLog(@"[Ruleset] invalid FileSystemStructure key (got %@); skipping", [key class]);
-            continue;
+        if(![arr isKindOfClass:[NSArray class]]) {
+            NSLog(@"[Ruleset] invalid FileSystemStructure %@ (got %@); ignoring", key, [arr class]);
+            return nil;
         }
 
-        if(![children isKindOfClass:[NSArray class]]) {
-            NSLog(@"[Ruleset] invalid FileSystemStructure value for '%@' (got %@); skipping", key, [children class]);
-            continue;
-        }
+        NSMutableArray* strings = [NSMutableArray arrayWithCapacity:[(NSArray*)arr count]];
 
-        NSMutableArray* strings = [NSMutableArray new];
-
-        for(id child in children) {
-            if([child isKindOfClass:[NSString class]]) {
-                [strings addObject:child];
+        for(id entry in (NSArray*)arr) {
+            if([entry isKindOfClass:[NSString class]]) {
+                [strings addObject:entry];
             } else {
-                NSLog(@"[Ruleset] invalid FileSystemStructure child under '%@' (got %@); skipping", key, [child class]);
+                NSLog(@"[Ruleset] invalid FileSystemStructure %@ entry (got %@); skipping", key, [entry class]);
             }
         }
 
-        [result setObject:strings forKey:key];
+        // Verify sortedness; if unsorted, sort (defensive for hand-written
+        // fixtures).
+        BOOL sorted = YES;
+
+        for(NSUInteger i = 1; i < [strings count]; i++) {
+            if([[strings objectAtIndex:i - 1] compare:[strings objectAtIndex:i]] == NSOrderedDescending) {
+                sorted = NO;
+                break;
+            }
+        }
+
+        if(!sorted) {
+            strings = [[strings sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
+        }
+
+        [result setObject:[strings copy] forKey:key];
     }
 
     return result;
@@ -418,13 +468,8 @@ static id shdwCacheUnwrapNil(id value) {
     NSDictionary* structure = [self validatedStructure:[payload objectForKey:@"FileSystemStructure"]];
 
     if(structure) {
-        NSMutableDictionary* compiled = [NSMutableDictionary dictionaryWithCapacity:[structure count]];
-
-        for(NSString* key in structure) {
-            [compiled setObject:[NSSet setWithArray:[structure objectForKey:key]] forKey:key];
-        }
-
-        ruleset->dict_structure = [compiled copy];
+        ruleset->array_structure_dirs = [structure objectForKey:@"dirs"];
+        ruleset->array_structure_paths = [structure objectForKey:@"paths"];
     }
 
     // C0-3: bundle-ID blacklist, normalized to lowercase at load (matches the

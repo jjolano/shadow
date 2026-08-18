@@ -11,6 +11,7 @@
 #import "EnvironmentPolicy.h"
 
 #import "../HookRuntime.h"
+#import <Shadow/JBPath.h>
 
 #ifndef SHADOW_TEST_HARNESS
 #import <HookKit.h>
@@ -90,9 +91,8 @@ char* shdw_env_sanitized_path(const char* value) {
     NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
     for(NSString* part in parts) {
-        if([part hasPrefix:@"/var/jb"]
-        || [part hasPrefix:@"/private/preboot"]
-        || [part hasPrefix:@"/preboot"]) {
+        // ponytail: single-source JB root predicate
+        if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
             continue;
         }
 
@@ -199,9 +199,7 @@ char* shdw_env_sanitized_path_entry(const char* var, char** storage, size_t* cap
     NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
     for(NSString* part in parts) {
-        if([part hasPrefix:@"/var/jb"]
-        || [part hasPrefix:@"/private/preboot"]
-        || [part hasPrefix:@"/preboot"]) {
+        if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
             continue;
         }
 
@@ -255,9 +253,7 @@ NSDictionary* shdw_env_sanitized_dictionary(NSDictionary* result) {
         NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
         for(NSString* part in parts) {
-            if([part hasPrefix:@"/var/jb"]
-            || [part hasPrefix:@"/private/preboot"]
-            || [part hasPrefix:@"/preboot"]) {
+            if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
                 continue;
             }
 
