@@ -12,6 +12,8 @@
 #import <HookKit.h>
 
 #include <time.h>
+#include <dlfcn.h>
+#include <mach/mach.h>
 
 #import "HookCoordinator.h"
 #import "../vendor/apple/dyld_priv.h"
@@ -209,42 +211,42 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         return;
     }
 
-    // Defer the install out of the dyld initializer context. ShadowCore is
-    // dlopen'd from Shadow.dylib's ctor, which runs inside
-    // dyld4::Loader::findAndRunAllInitializers. Running the install
-    // synchronously there is unsafe: the installers call into ElleKit's
-    // substitutor, whose exception-handler setup (Swift print + DispatchQueue
-    // in ellekit/Exception.swift startPortLoop) aborts mid-initializer
-    // because the Swift runtime is not ready (observed: SIGABRT, address
-    // size fault in the Swift print dispatch). Dispatching async lets dyld
-    // finish initializing before any hook work happens.
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        [shdw_coordinator_instance installEvent:SHDWEventCtor];
+    // Install synchronously: Shadow must be active before the app's main()
+    // runs (the stub loader's whole point). The installers call into
+    // ElleKit's substitutor, whose JIT-less exception-based hooking path
+    // (brk #1) needs the exception handler up before any brk-patched hook
+    // can fire. Pre-initialize it here so those hooks are handled instead of
+    // trapping (observed: EXC_BREAKPOINT SIGTRAP during the dyld unit's
+    // install when isPathRestricted re-enters a brk-patched function).
+    void* ekLaunch = dlsym(RTLD_DEFAULT, "EKLaunchExceptionHandler");
+    if(ekLaunch) {
+        ((mach_port_t (*)(void))ekLaunch)();
+    }
 
-        // Watcher replay must run after the install (it depends on the
-        // coordinator's backends being resolved). Moved inside the deferred
-        // block so the main thread never blocks on the lifecycle queue.
-        _shdw_watcher_enabled = shdw_coordinator_instance
-            && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
-            && ([prefs[@"Hook_URLScheme"] boolValue] || [prefs[@"Hook_Foundation"] boolValue]);
+    [shdw_coordinator_instance installEvent:SHDWEventCtor];
 
-        if(_shdw_watcher_enabled) {
-            uint32_t count = _dyld_image_count();
+    // Watcher replay runs after the install (it depends on the coordinator's
+    // backends being resolved).
+    _shdw_watcher_enabled = shdw_coordinator_instance
+        && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
+        && ([prefs[@"Hook_URLScheme"] boolValue] || [prefs[@"Hook_Foundation"] boolValue]);
 
-            for(uint32_t i = 0; i < count; i++) {
-                shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
-            }
+    if(_shdw_watcher_enabled) {
+        uint32_t count = _dyld_image_count();
+
+        for(uint32_t i = 0; i < count; i++) {
+            shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
         }
+    }
 
-        NSString* counterKey = shdw_crash_counter_key();
-        if(counterKey) {
-            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-            [defaults removeObjectForKey:counterKey];
-            [defaults synchronize];
-        }
+    NSString* counterKey = shdw_crash_counter_key();
+    if(counterKey) {
+        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        [defaults removeObjectForKey:counterKey];
+        [defaults synchronize];
+    }
 
-        NSLog(@"completed hooks");
-    });
+    NSLog(@"completed hooks");
 }
 
 %ctor {
