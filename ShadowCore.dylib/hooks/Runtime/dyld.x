@@ -2626,7 +2626,9 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* getInstallnamePtr = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_image_get_installname"];
 
     if(getInstallnamePtr) {
-        [hooks hookFunction:getInstallnamePtr withReplacement:replaced_dyld_image_get_installname outOldPtr:(void **) &original_dyld_image_get_installname];
+        // HookKit 2.5.0's rebind backend SIGTRAPs on this dyld cache symbol;
+        // route through the litehook substitutor (publicHooks) instead.
+        [publicHooks hookFunction:getInstallnamePtr withReplacement:replaced_dyld_image_get_installname outOldPtr:(void **) &original_dyld_image_get_installname];
     }
 
     void* images_for_addresses_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_images_for_addresses"];
@@ -2691,7 +2693,9 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* objc_add_load_image_ptr = dlsym(RTLD_DEFAULT, "objc_addLoadImageFunc");
 
     if(objc_add_load_image_ptr) {
-        [hooks hookFunction:objc_add_load_image_ptr withReplacement:replaced_objc_addLoadImageFunc outOldPtr:(void **) &original_objc_addLoadImageFunc];
+        // HookKit 2.5.0's rebind backend SIGTRAPs on this libobjc cache
+        // symbol; route through the litehook substitutor (publicHooks).
+        [publicHooks hookFunction:objc_add_load_image_ptr withReplacement:replaced_objc_addLoadImageFunc outOldPtr:(void **) &original_objc_addLoadImageFunc];
     }
 
     // Process-snapshot SPI (plan Wave 1c): opaque handles; external callers
@@ -2763,14 +2767,22 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     void* nsversion_ptr = dlsym(RTLD_DEFAULT, "NSVersionOfRunTimeLibrary");
 
     if(nsversion_ptr) {
-        [hooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
+        // HookKit 2.5.0's rebind backend SIGTRAPs on this dyld cache symbol;
+        // route through the litehook substitutor (publicHooks).
+        [publicHooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
     }
 }
 
 void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // dlopen hook code from Choicy
     HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
-    void* libdyldHandle = dlopen("/usr/lib/system/libdyld.dylib", RTLD_NOW);
+    // libdyld is always loaded (it IS the dyld library); RTLD_NOLOAD returns
+    // the existing handle without a fresh load. A plain dlopen here would
+    // fire the dyld add-image callback (shadowhook_dyld_updatelibs) on this
+    // install thread, whose image-list walk re-enters the hooked
+    // _dyld_image_count/_dyld_get_image_name and recurses (observed: launch
+    // hang, 9k+ updatelibs(add) libdyld cycles).
+    void* libdyldHandle = dlopen("/usr/lib/system/libdyld.dylib", RTLD_NOLOAD | RTLD_NOW);
     // The private dlopen entry point needs the supplied native/private-symbol
     // backend. Public dlopen/dlclose use litehook's address-based import scan:
     // fishhook finds their named slots but only installs them partially on

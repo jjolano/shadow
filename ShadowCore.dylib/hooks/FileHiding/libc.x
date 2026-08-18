@@ -16,6 +16,10 @@ static int replaced_access(const char* pathname, int mode) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
 
+    if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_access(pathname, mode);   // natural ENOENT
+    }
+
     int result = original_access(pathname, mode);
 
     if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
@@ -30,6 +34,10 @@ static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufs
 static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize) {
     if(!isCallerExternal()) {
         return original_readlink(pathname, buf, bufsize);
+    }
+
+    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_readlink(pathname, buf, bufsize);   // natural ENOENT
     }
 
     NSString* path = [NSString stringWithUTF8String:pathname];
@@ -470,6 +478,10 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat", ext);
 
+    if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_stat(pathname, buf);   // natural ENOENT
+    }
+
     int result = original_stat(pathname, buf);
 
     if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
@@ -498,6 +510,10 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     // answered with the stock EFAULT for the malformed call, not ENOENT.
     if(buf == NULL) {
         return original_lstat(pathname, NULL);
+    }
+
+    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_lstat(pathname, buf);   // natural ENOENT
     }
 
     struct stat _buf;
@@ -547,6 +563,10 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
+    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_fstatat(dirfd, pathname, buf, flags);   // natural ENOENT
+    }
+
     if(shdw_at_path_denied(dirfd, pathname)) {
         return -1;
     }
@@ -561,6 +581,10 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
 
     if(!ext) {
         return original_faccessat(dirfd, pathname, mode, flags);
+    }
+
+    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        return original_faccessat(dirfd, pathname, mode, flags);   // natural ENOENT
     }
 
     if(shdw_at_path_denied(dirfd, pathname)) {
@@ -1445,6 +1469,23 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
+// JIT gap: when the app makes a range executable, scan it for raw svc sites
+// immediately (the svc patcher's periodic VM re-scan would otherwise race
+// the detector's first probe). The scan itself is a no-op unless the
+// Hook_Syscall-gated patcher installed. Non-path svc sites pass through the
+// trampoline untouched, so JIT engines that emit svc (e.g. JSC) are
+// unaffected beyond a per-call trampoline hop.
+static int (*original_mprotect)(void* addr, size_t len, int prot);
+static int replaced_mprotect(void* addr, size_t len, int prot) {
+    int ret = original_mprotect(addr, len, prot);
+
+    if(ret == 0 && (prot & PROT_EXEC)) {
+        shdw_svc_scan_range((uintptr_t)addr, len);
+    }
+
+    return ret;
+}
+
 // One descriptor array is the SINGLE source of truth for every libc hook's
 // install (which group hooks it), post-install verification (which group
 // treats a NULL original as a failure) and the dlsym symbol policy (every
@@ -1526,6 +1567,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC },
     { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC },
     { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC },
+    { "mprotect",               (void*)&replaced_mprotect,                 (void**)&original_mprotect,                 LIBC,   LIBC },
 
     // installed-only (verification excluded, matching the old code's exempt lists)
     { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0 },   // iOS 11+ gate: dlsym is the availability check

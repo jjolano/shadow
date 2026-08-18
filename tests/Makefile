@@ -1,5 +1,12 @@
 # Host test harness for Shadow's decision engine (no device required).
 
+# Pure-C check for the svc path-munging logic (path_rewrite.c — no
+# Foundation, so it compiles and runs on any host, macOS or Linux).
+verify-path-rewrite:
+	$(CC) -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test \
+		verify-path-rewrite.c ../ShadowCore.dylib/hooks/FileHiding/path_rewrite.c
+	/tmp/opencode/rewrite-test
+
 # Builds the real Shadow.framework decision sources against a host Foundation
 # with a path shim.
 # Nothing here touches the theos/device toolchain.
@@ -121,4 +128,4 @@ clean:
 
 endif
 
-.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean
+.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite

@@ -368,7 +368,7 @@ job_pid=$(printf '%s\n' "$job" | sed -n 's/^[[:space:]]*pid = //p' | head -1)
 case "$job_pid" in ''|*[!0-9]*) shadowd_pid=false ;; *) shadowd_pid=true ;; esac
 printf 'SHADOWD_JOB_PID\t%s\n' "$job_pid"
 emit_file shadowd me.jjolano.shadow /var/jb/usr/libexec/shadowd "$shadowd_pid"
-emit_file ShadowCore me.jjolano.shadow /var/jb/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib false
+emit_file ShadowCore me.jjolano.shadow /var/jb/usr/lib/ShadowCore.dylib false
 emit_file harness me.jjolano.shadow.harness /var/jb/Applications/ShadowHarness.app/ShadowHarness false
 emit_file dyldprobe me.jjolano.dyldprobe /var/jb/Applications/dyldprobe.app/dyldprobe false
 emit_file hookprobe none /var/jb/usr/bin/hookprobe false
@@ -964,7 +964,7 @@ cmd_install_hookprobe() {
 
 install_component_spec() {
     case "$1" in
-        ShadowCore) printf '/var/jb/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib\t0755\n' ;;
+        ShadowCore) printf '/var/jb/usr/lib/ShadowCore.dylib\t0755\n' ;;
         ShadowStub) printf '/var/jb/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib\t0755\n' ;;
         DyldProbe) printf '/var/jb/Applications/dyldprobe.app/dyldprobe\t0755\n' ;;
         *) return 1 ;;
@@ -1674,7 +1674,7 @@ EOF
        [ "$(bundle_report_relative me.jjolano.dyldprobe nonce)" != dyldprobe-nonce.json ]; then
         printf 'FAIL launch report filename mapping\n'; failed=1
     fi
-	if [ "$(install_component_spec ShadowCore)" != $'/var/jb/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib\t0755' ] ||
+	if [ "$(install_component_spec ShadowCore)" != $'/var/jb/usr/lib/ShadowCore.dylib\t0755' ] ||
 	   [ "$(install_component_spec ShadowStub)" != $'/var/jb/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib\t0755' ] ||
 	   [ "$(install_component_spec DyldProbe)" != $'/var/jb/Applications/dyldprobe.app/dyldprobe\t0755' ] ||
 	   install_component_spec unknown >/dev/null 2>&1; then

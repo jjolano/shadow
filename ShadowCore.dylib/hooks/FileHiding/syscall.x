@@ -240,19 +240,10 @@ static int shdw_raw_sysctl_original(int* name, u_int namelen, void* oldp, size_t
 }
 
 // Policy categories for the intercepted set (from hooks/RawSyscalls.def):
-// each category maps to one inspection branch in the dispatch below.
-typedef enum {
-    SHADW_RAW_CAT_NONE = 0,      // forwarded, never inspected (access_extended)
-    SHADW_RAW_CAT_PTRACE,        // PT_DENY_ATTACH short-circuit
-    SHADW_RAW_CAT_PATH,          // single pathname inspection
-    SHADW_RAW_CAT_AT,            // dirfd-aware *at inspection
-    SHADW_RAW_CAT_SYSCTL,        // KERN_PROC/KERN_PROCARGS2 policy
-    SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
-    SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
-    SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
-} shdw_raw_syscall_category_t;
-
-static shdw_raw_syscall_category_t shdw_raw_syscall_category(int number) {
+// each category maps to one inspection branch in the dispatch below. The
+// enum lives in hooks.h (shared with the svc-patch trampoline in
+// svc_patch.x).
+shdw_raw_syscall_category_t shdw_raw_syscall_category(int number) {
     switch(number) {
 #define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) case NUM: return SHADW_RAW_CAT_##CAT;
 #include "RawSyscalls.def"
@@ -776,7 +767,7 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     [hooks hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
-    void* sym___syscall = [hooks findSymbolInImage:NULL symbolName:@"___syscall"];
+    void* sym___syscall = dlsym(RTLD_DEFAULT, "__syscall");
     // Some iOS builds export syscall and __syscall as the same entry point.
     // Address-based rebinders already cover every slot for that address; a
     // second replacement cannot coexist and only reports a false failure.
@@ -785,25 +776,31 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    void* sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_sysctlbyname"];
+    void* sym_misc = dlsym(RTLD_DEFAULT, "sysctlbyname");
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
     }
 
-    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"___sysctlbyname"];
+    sym_misc = dlsym(RTLD_DEFAULT, "__sysctlbyname");
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
     }
 
-    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_csops_audittoken"];
+    sym_misc = dlsym(RTLD_DEFAULT, "csops_audittoken");
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
     }
 
-    sym_misc = [hooks findSymbolInImage:NULL symbolName:@"_NSGetEnviron"];
+    sym_misc = dlsym(RTLD_DEFAULT, "NSGetEnviron");
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
+
+    // Raw svc #0x80 interception (svc_patch.x): scans loaded images' __TEXT
+    // for inline svc sites and redirects them through a trampoline applying
+    // the same path policy as this dispatch. Gated by this unit's pref like
+    // everything else here.
+    shdw_svc_patch_install();
 }
 
 void shadowhook_syscall_verify(void) {
