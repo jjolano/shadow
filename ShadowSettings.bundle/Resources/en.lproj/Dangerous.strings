@@ -12,3 +12,9 @@
 "MEMORY_LEVEL_HIDING_DESC" = "Removes injected libraries from dyld's in-memory image list. Turn this off if an app becomes unstable.";
 "HOOK_DYLD_EXTRA" = "Install Dynamic Libraries Early";
 "HOOK_DYLD_EXTRA_DESC" = "Starts the extra dynamic-library protections at launch instead of waiting until jailbreak detection is observed.";
+"PSEUDO_SANDBOX" = "Pseudo Sandbox (Audit)";
+"PSEUDO_SANDBOX_DESC" = "Restores the app's stock sandbox view (container + stock system + shared carve-outs). Audit mode logs divergences without hiding — enforce stays off until carve-outs are proven. Enable for 1 week on test apps, then check Detector Log.";
+"PSEUDO_SANDBOX_OFF" = "Off";
+"PSEUDO_SANDBOX_AUDIT" = "Audit";
+"PSEUDO_SANDBOX_STRICT" = "Strict";
+"PSEUDO_SANDBOX_STRICT_DESC" = "Enforce fail-closed outside the allowlist. Requires audit toggle — only enable after carve-outs are validated.";
