@@ -1,7 +1,7 @@
 // Pseudo-sandbox policy: per-app fail-closed allowlist ("overlay") evaluated
-// alongside the belt. OFF by default (PseudoSandboxEnabled=0). Audit mode
-// (strict=NO) records divergence only; strict mode denies paths outside the
-// allowlist. The audit ring buffer lives in the Shadow prefs plist under
+// alongside the belt. OFF by default (PseudoSandboxMode=0). Audit mode
+// (mode=1) records divergence only; strict mode (mode=2) denies paths outside
+// the allowlist. The audit ring buffer lives in the Shadow prefs plist under
 // PseudoAuditLog (100 newest, dedup path|op per launch, serial queue).
 #import "PseudoSandboxPolicy.h"
 #import <Shadow.h>
@@ -89,17 +89,10 @@ BOOL shdw_pseudo_strict(void) {
 
 static void shdwPseudoApplyPrefs(NSDictionary* prefs) {
     pthread_mutex_lock(&_pseudoLock);
-    NSNumber* mode = prefs[@"PseudoSandboxMode"];
-    if(mode) {
-        // Segmented control: 0=Off, 1=Audit, 2=Strict.
-        NSInteger m = [mode integerValue];
-        _pseudoEnabled = (m >= 1);
-        _pseudoStrict = (m >= 2);
-    } else {
-        // Legacy keys (pre-segment UI / direct prefs).
-        _pseudoEnabled = [prefs[@"PseudoSandboxEnabled"] boolValue] || [prefs[@"PseudoSandboxAudit"] boolValue];
-        _pseudoStrict = [prefs[@"PseudoSandboxStrict"] boolValue];
-    }
+    // Segmented control: 0=Off, 1=Audit, 2=Strict.
+    NSInteger m = [prefs[@"PseudoSandboxMode"] integerValue];
+    _pseudoEnabled = (m >= 1);
+    _pseudoStrict = (m >= 2);
     pthread_mutex_unlock(&_pseudoLock);
 }
 
