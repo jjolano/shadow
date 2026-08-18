@@ -330,6 +330,15 @@ static void TestPseudoAllowlist(void) {
     RCHECK(!shdw_pseudo_should_deny("/Applications/Cydia.app"), "pseudo overlay harness always NO inside allow");
     shdw_pseudo_refresh(@{@"PseudoSandboxEnabled": @YES, @"PseudoSandboxStrict": @NO});
     RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo audit only not denied");
+    // Segmented mode key: 0=Off, 1=Audit, 2=Strict
+    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(1)});
+    RCHECK(shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 1 = audit");
+    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo mode audit not denied");
+    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(2)});
+    RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo mode 2 = strict");
+    RCHECK(shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo mode strict denied");
+    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(0)});
+    RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 0 = off");
     shdw_pseudo_refresh(nil);
     RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo reset OFF");
     RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo OFF not denied");

@@ -39,6 +39,7 @@
 #define SHDWVnodeHidingID          @"VnodeHiding"
 #define SHDWPseudoSandboxID        @"PseudoSandboxEnabled"
 #define SHDWPseudoSandboxStrictID  @"PseudoSandboxStrict"
+#define SHDWPseudoSandboxModeID    @"PseudoSandboxMode"
 
 // Non-hook preferences (kept for completeness; not hook groups).
 #define SHDWGlobalEnabledID        @"Global_Enabled"

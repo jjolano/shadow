@@ -50,7 +50,9 @@
 "VNODE_HIDING_DESC" = "通过 Shadow 服务在 vnode 层隐藏越狱路径，位置低于常规文件 API。";
 "PSEUDO_SANDBOX" = "Pseudo Sandbox (Audit)";
 "PSEUDO_SANDBOX_DESC" = "Restores the app's stock sandbox view (container + stock system + shared carve-outs). Audit mode logs divergences without hiding — enforce stays off until carve-outs are proven. Enable for 1 week on test apps, then check Detector Log.";
-"PSEUDO_SANDBOX_STRICT" = "Pseudo Sandbox Strict";
+"PSEUDO_SANDBOX_OFF" = "Off";
+"PSEUDO_SANDBOX_AUDIT" = "Audit";
+"PSEUDO_SANDBOX_STRICT" = "Strict";
 "PSEUDO_SANDBOX_STRICT_DESC" = "Enforce fail-closed outside the allowlist. Requires audit toggle — only enable after carve-outs are validated.";
 "MEMORY_LEVEL_HIDING_DESC" = "从 dyld 的内存映像列表中移除注入的动态库。如果应用不稳定，请关闭此选项。";
 "HOOK_DYLD_EXTRA_DESC" = "在应用启动时启用额外的动态库防护，而不是等待检测到越狱检查。";

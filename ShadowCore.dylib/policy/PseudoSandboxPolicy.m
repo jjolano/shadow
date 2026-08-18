@@ -89,8 +89,17 @@ BOOL shdw_pseudo_strict(void) {
 
 static void shdwPseudoApplyPrefs(NSDictionary* prefs) {
     pthread_mutex_lock(&_pseudoLock);
-    _pseudoEnabled = [prefs[@"PseudoSandboxEnabled"] boolValue] || [prefs[@"PseudoSandboxAudit"] boolValue];
-    _pseudoStrict = [prefs[@"PseudoSandboxStrict"] boolValue];
+    NSNumber* mode = prefs[@"PseudoSandboxMode"];
+    if(mode) {
+        // Segmented control: 0=Off, 1=Audit, 2=Strict.
+        NSInteger m = [mode integerValue];
+        _pseudoEnabled = (m >= 1);
+        _pseudoStrict = (m >= 2);
+    } else {
+        // Legacy keys (pre-segment UI / direct prefs).
+        _pseudoEnabled = [prefs[@"PseudoSandboxEnabled"] boolValue] || [prefs[@"PseudoSandboxAudit"] boolValue];
+        _pseudoStrict = [prefs[@"PseudoSandboxStrict"] boolValue];
+    }
     pthread_mutex_unlock(&_pseudoLock);
 }
 
