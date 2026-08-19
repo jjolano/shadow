@@ -31,6 +31,7 @@
 #import "../../common.h"
 #import <Shadow.h>
 #import <Shadow/HookConfiguration.h>
+#import <Shadow/JBPath.h>
 #import "../HookRuntime.h"
 
 #import <HookKit.h>

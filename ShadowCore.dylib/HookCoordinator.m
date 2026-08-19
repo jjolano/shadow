@@ -20,6 +20,7 @@
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
     BOOL _installing;                 // re-entrancy guard (see installEventSync:)
+    BOOL _escalating;                 // re-entrancy guard for escalateWithReason:
 }
 @property (nonatomic, readwrite) SHDWBackendSet* backends;
 @property (nonatomic, readwrite, copy) NSDictionary<NSString*, id>* prefs;
@@ -229,17 +230,19 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 #pragma mark - Event install
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event {
-    // Re-entrancy guard lives HERE (before dispatch_sync), not just in
-    // installEventSync: the installers dlopen dylibs, which fires dyld
+    // Re-entrancy guard: the installers dlopen dylibs, which fires dyld
     // add-image callbacks that call back into installEvent on this same
-    // lifecycle-queue thread. A dispatch_sync to the queue we are already
-    // executing on would deadlock before installEventSync's own guard ever
-    // ran (observed: hang in _dispatch_sync_f_slow during the dyld unit's
-    // install). A nested install is a no-op: the outer pass installs
-    // everything the plan needs.
+    // lifecycle-queue thread. dispatch_sync to the queue we are already
+    // executing on would deadlock (observed: "_dispatch_sync_f_slow: called on
+    // queue already owned by current thread" — the ShadowHarness crash).
+    // _installing is set BEFORE dispatch_sync so the dyld callback's
+    // installEvent call is caught by this guard. A nested install is a no-op:
+    // _installedBits makes installEventSync idempotent per unit.
     if(_installing) {
         return 0;
     }
+
+    _installing = YES;  // Set BEFORE dispatch_sync to catch dyld callbacks
 
     __block NSUInteger installed = 0;
 
@@ -247,17 +250,19 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
         installed = [self installEventSync:event];
     });
 
+    _installing = NO;
+
     return installed;
 }
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
-    // Belt-and-suspenders: installEventSync can also be reached directly
-    // (escalateWithReason). Same no-op for a nested install.
-    if(_installing) {
-        return 0;
-    }
-
-    _installing = YES;
+    // Worker function for installEvent / escalateWithReason. Runs on the
+    // lifecycle queue (or inline from escalateWithReason when already on the
+    // queue). Does NOT manage _installing — that flag is owned by installEvent:
+    // and escalateWithReason: to decide whether dispatch_sync is needed.
+    // Idempotency is handled by _installedBits: a unit already installed by an
+    // earlier event is skipped, so a re-entrant call from a detector trip
+    // during an install is a no-op for already-installed units.
     NSArray<NSString*>* plan = SHDWHookPlan(self.prefs, self.backends.capabilities, event);
 
     if(!plan.count) {
@@ -307,7 +312,6 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
     }
 
     [self commitBatch:attempted];
-    _installing = NO;
 
     return localInstalled;
 }
@@ -315,14 +319,36 @@ static const SHDWInstallUnit* SHDWUnitAt(NSUInteger index) {
 - (void)escalateWithReason:(NSString*)reason {
     (void) reason;
 
+    // Re-entrancy guard: a detector trip (shdw_detector_detected → escalate)
+    // can fire while installEventSync is already executing — either during
+    // installEvent's dispatch_sync (caught by _installing below, since
+    // installEvent sets _installing before dispatch_sync) or during an
+    // escalation's own installEventSync (caught by _escalating, since the
+    // escalation path calls installEventSync directly on the lifecycle queue).
+    // dispatch_sync to the queue we already own deadlocks (_dispatch_sync_f_slow:
+    // "called on queue already owned by current thread" — the observed
+    // ShadowHarness crash). When either flag is set we are on the lifecycle
+    // queue, so call installEventSync directly: _installedBits makes it
+    // idempotent for already-installed units, and the escalation plan
+    // (SHDWEventDetectorEscalation) installs only Tier-2 units not yet
+    // installed by the ctor plan.
+    if(_installing || _escalating) {
+        _escalated = YES;
+        [self installEventSync:SHDWEventDetectorEscalation];
+        return;
+    }
+
+    _escalating = YES;
     dispatch_sync(self.lifecycleQueue, ^{
         if(_escalated) {
+            _escalating = NO;
             return;
         }
 
         _escalated = YES;
         [self installEventSync:SHDWEventDetectorEscalation];
     });
+    _escalating = NO;
 }
 
 @end

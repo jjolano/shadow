@@ -22,9 +22,15 @@ static int replaced_access(const char* pathname, int mode) {
 
     int result = original_access(pathname, mode);
 
-    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
-        errno = ENOENT;
-        return -1;
+    // Restricted-root paths (e.g. /var/jb) are always jailbreak indicators —
+    // deny unconditionally. Other restricted paths respect the external-caller
+    // gate so Shadow's own code can still access them when needed.
+    if(result != -1) {
+        BOOL restricted = [_shadow isCPathRestricted:pathname];
+        if(restricted && (shdw_is_restricted_root(pathname) || ext)) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     return result;
@@ -591,7 +597,18 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return -1;
     }
 
-    return original_faccessat(dirfd, pathname, mode, flags);
+    int result = original_faccessat(dirfd, pathname, mode, flags);
+
+    // Restricted-root paths: deny unconditionally for external callers
+    if(result != -1) {
+        BOOL restricted = [_shadow isCPathRestricted:pathname];
+        if(restricted && (shdw_is_restricted_root(pathname) || ext)) {
+            errno = ENOENT;
+            return -1;
+        }
+    }
+
+    return result;
 }
 
 // readdir/readdir_r filtering: the DIR* cache (parent path + options dict,

@@ -12,7 +12,8 @@
 #import "ShadowDetector.h"
 
 NSString* ShdwDocumentsDirectory(void) {
-	return @"/var/mobile/Documents";
+	NSArray* paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+	return paths.count ? paths[0] : @"/var/mobile/Documents";
 }
 
 // ---------------------------------------------------------------------------

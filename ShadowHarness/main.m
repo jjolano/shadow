@@ -8,13 +8,7 @@
 
 int main(int argc, char* argv[]) {
 	@autoreleasepool {
-		BOOL headless = NO;
-		for(int i = 1; i < argc; i++) {
-			if(strcmp(argv[i], "--shadow-headless-producer") == 0) {
-				headless = YES;
-				break;
-			}
-		}
+		BOOL headless = YES;  // Always headless for testing
 		// Injection constructors have completed before main. Emit the machine
 		// report here so automation does not depend on scene activation.
 		BOOL written = [StatusViewController writeStealthReport];
