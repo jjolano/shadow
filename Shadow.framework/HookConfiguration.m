@@ -141,6 +141,7 @@ NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
     preset[SHDWHookIDSandbox] = @(YES);
     preset[SHDWHookIDMemory] = @(YES);
     preset[SHDWVnodeHidingID] = @(YES);
+    preset[SHDWPathRewriteID] = @(YES);
 
     return preset;
 }
