@@ -144,6 +144,24 @@
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>PATH_REWRITE_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>id</key>
+			<string>PathRewrite</string>
+			<key>label</key>
+			<string>PATH_REWRITE</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>DNGR_HOOKS</string>

@@ -18,3 +18,5 @@
 "PSEUDO_SANDBOX_AUDIT" = "稽核";
 "PSEUDO_SANDBOX_STRICT" = "嚴格";
 "PSEUDO_SANDBOX_STRICT_DESC" = "在允許清單之外強制失敗關閉。需要先啟用稽核——僅在共享區域驗證後啟用。";
+"PATH_REWRITE" = "重寫越獄路徑";
+"PATH_REWRITE_DESC" = "在系統呼叫和 libc 層面重寫呼叫端緩衝區中的越獄路徑，使檔案操作自然以 ENOENT 失敗。重寫後的字串對應用程式自身的日誌和介面可見。";
