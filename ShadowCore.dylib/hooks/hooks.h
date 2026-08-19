@@ -38,6 +38,29 @@
 
 #import "FileHiding/path_rewrite.h"
 
+// Resolve a libsystem C export by its Mach-O symbol name (e.g. "_signal") for
+// the hand-written C-function groups (sandbox/syscall/mach/iokit). Use this
+// instead of [hooks findSymbolInImage:NULL symbolName:@"_x"]: the vendored
+// HookKit's NULL-image lookup falls back to an O(~600 loaded images)
+// dlopen(RTLD_NOLOAD)+dlsym walk, and each MISS (a private symbol that no image
+// exports, e.g. "____signal_nobind") walks the whole list — ~4.6s per miss on
+// an iPhone 7, which is the entire Hook_Sandbox (9.3s, 2 misses) + Hook_Syscall
+// (4.6s, 1 miss) ctor cost. dlsym(RTLD_DEFAULT) hits dyld's export hash in
+// O(1): found symbols resolve identically (all these live in the global
+// libsystem namespace), and misses fail instantly instead of walking. Shadow's
+// own dlsym hook short-circuits internal callers to original_dlsym (see
+// replaced_dlsym), so this stays a real, unfiltered lookup during the ctor.
+// findSymbolInImage takes the Mach-O name (leading '_'); dlsym wants the C name.
+static inline void* shdw_resolve_libsystem(const char* mach_symbol) {
+    if(!mach_symbol || !mach_symbol[0]) {
+        return NULL;
+    }
+
+    const char* c_name = (mach_symbol[0] == '_') ? mach_symbol + 1 : mach_symbol;
+
+    return dlsym(RTLD_DEFAULT, c_name);
+}
+
 // PathRewrite pref: gates the natural-ENOENT path-buffer rewrite (svc
 // trampoline + libc hooks). Default OFF — the rewrite munges the caller's
 // path buffer in place (propagation win, but the munged string is visible to
