@@ -12,8 +12,17 @@
 #import "ShadowDetector.h"
 
 NSString* ShdwDocumentsDirectory(void) {
-	NSArray* paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	return paths.count ? paths[0] : @"/var/mobile/Documents";
+	// The verification driver (tests/stealth-device.sh) stages the launch
+	// context to and reads the diagnostics report from a fixed
+	// /var/mobile/Documents for this bundle, in every launch mode. Do NOT use
+	// NSSearchPathForDirectoriesInDomains here: under a sandboxed SpringBoard
+	// launch it resolves to the app's data container, and under the direct
+	// producer launch it resolves to $CFFIXED_USER_HOME/Documents — neither
+	// matches where the driver put the context, so the read returns nothing
+	// and the headless producer exits(2) without a report. The harness is a
+	// system app on the jailbroken test rig and can reach /var/mobile/Documents
+	// in both modes (verified on device).
+	return @"/var/mobile/Documents";
 }
 
 // ---------------------------------------------------------------------------
