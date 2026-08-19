@@ -2558,13 +2558,47 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     }
 
     if(_shdw_all_image_infos) {
-        HKSubstitutor* notificationHooks = [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE];
+        // Intercept dyld's image-notification callback by swapping the
+        // dyld_all_image_infos.notification function pointer, NOT by
+        // inline-patching the notifier's code. dyld invokes the notifier
+        // through this struct field (the classic gdb/lldb rendezvous), so the
+        // pointer swap routes every notification through
+        // replaced_dyld_image_notification, which chains to the original.
+        //
+        // The rejected alternative — an HK_LIB_NATIVE inline trampoline into
+        // the notifier (dyld's lldb_image_notifier) — is fatal: that function
+        // shares a 16KB dyld __TEXT page with hot API thunks, including
+        // _dyld_get_image_name's block. Writing the trampoline COW-breaks the
+        // whole page; dyld then SIGBUSes (KERN_PROTECTION_FAILURE) executing
+        // the code-signing-invalidated copy the instant it calls one of those
+        // thunks during launch-time dlopen initializer runs. The field lives
+        // at the top of the struct (same page as its base), so one vm_protect
+        // covers it; the write is a plain pointer store on arm64.
+        // ponytail: arm64 (no PAC) only — on arm64e the notification field may
+        // be ptrauth-signed; sign replaced_ with the field's discriminator
+        // before storing. Untested there; the reproduced crash is arm64.
+        if(_shdw_all_image_infos->notification) {
+            mach_vm_address_t npage = (mach_vm_address_t) _shdw_all_image_infos & ~(mach_vm_address_t) (vm_page_size - 1);
+            vm_prot_t nprot = VM_PROT_READ | VM_PROT_WRITE;
+            vm_region_basic_info_data_64_t ninfo;
+            mach_msg_type_number_t ninfo_count = VM_REGION_BASIC_INFO_COUNT_64;
+            vm_address_t nregion = npage;
+            vm_size_t nregion_size = 0;
+            mach_port_t nobject = MACH_PORT_NULL;
 
-        if(!_shdw_all_image_infos->notification
-        || [notificationHooks hookFunction:_shdw_all_image_infos->notification
-                           withReplacement:replaced_dyld_image_notification
-                                  outOldPtr:(void **) &original_dyld_image_notification] != HK_OK) {
-            NSLog(@"[Shadow] dyld debugger notification hook unavailable; memory hiding may be overwritten");
+            if(vm_region_64(mach_task_self(), &nregion, &nregion_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &ninfo, &ninfo_count, &nobject) == KERN_SUCCESS) {
+                nprot = ninfo.protection;
+            }
+
+            if(vm_protect(mach_task_self(), npage, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+                original_dyld_image_notification = _shdw_all_image_infos->notification;
+                _shdw_all_image_infos->notification = replaced_dyld_image_notification;
+                vm_protect(mach_task_self(), npage, vm_page_size, FALSE, nprot);
+            } else {
+                NSLog(@"[Shadow] dyld notification pointer swap failed; memory hiding may be overwritten");
+            }
+        } else {
+            NSLog(@"[Shadow] dyld debugger notification unavailable; memory hiding may be overwritten");
         }
 
         // Patching active: filter the arrays (initial rebuild — the collection
