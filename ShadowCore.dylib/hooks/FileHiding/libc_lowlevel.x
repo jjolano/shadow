@@ -98,6 +98,12 @@ int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         return original_openat(dirfd, pathname, oflag, mode);
     }
 
+    // Restricted-root paths: deny unconditionally for external callers
+    if([_shadow isCPathRestricted:pathname] && (shdw_is_restricted_root(pathname) || ext)) {
+        errno = ENOENT;
+        return -1;
+    }
+
     return original_openat(dirfd, pathname, oflag);
 }
 
