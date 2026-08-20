@@ -805,12 +805,25 @@ static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t a
 
 void shadowhook_sandbox(HKSubstitutor* hooks) {
     // %init(shadowhook_sandbox);
+    // host_get_special_port/task_get_special_port/task_for_pid are raw Mach
+    // trap wrappers — the same structural class as syscall/csops (see
+    // syscall.x's shadowhook_syscall comment): reached by most callers
+    // through a direct/pre-resolved branch into the dyld shared cache rather
+    // than a GOT/import slot, so HookKit's auto-cover [INLINE, REBIND] lane
+    // can silently fall back to litehook's inline prologue patch, which races
+    // any other thread executing through the same hot function. Not
+    // reproduced with these three specifically (unlike syscall/csops, which
+    // crashed deterministically), but the hazard shape is identical and the
+    // cost of being wrong is a process kill — hook them rebind-only, same
+    // "skip cleanly when unhookable" tradeoff as the syscall.x fix.
+    HKSubstitutor* rebindOnly = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
+
     [hooks hookFunction:sandbox_check withReplacement:replaced_sandbox_check outOldPtr:(void **) &original_sandbox_check];
     [hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
-    [hooks hookFunction:host_get_special_port withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
-    [hooks hookFunction:task_get_special_port withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
+    [rebindOnly hookFunction:host_get_special_port withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
+    [rebindOnly hookFunction:task_get_special_port withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
     // [hooks hookFunction:task_get_exception_ports withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
-    [hooks hookFunction:task_for_pid withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
+    [rebindOnly hookFunction:task_for_pid withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
     [hooks hookFunction:sigaction withReplacement:replaced_sigaction outOldPtr:(void **) &original_sigaction];
 
     [hooks hookFunction:execle withReplacement:replaced_execle outOldPtr:NULL];
