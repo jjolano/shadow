@@ -762,9 +762,35 @@ static char*** replaced_NSGetEnviron(void) {
 }
 
 // todo: research on "supervised syscalls"
+//
+// syscall/__syscall/csops are hooked on a REBIND-ONLY lane, not `hooks`
+// (auto-cover [INLINE, REBIND]). These libsystem_kernel exports are reached
+// by most callers through a direct/pre-resolved branch inside the dyld
+// shared cache rather than a rebindable GOT/import slot, so litehook's rebind
+// backend finds zero matched slots and auto-cover falls back to
+// HKStrategyInline: litehook_hook_memory patches the LIVE target's own
+// prologue (unprotect -> memcpy 20 non-atomic bytes -> reprotect), with no
+// synchronization against other threads. syscall()/csops() are among the
+// hottest, most concurrently-called functions in any process; another thread
+// reliably calls one of them during that exact write window and faults
+// EXC_BAD_ACCESS/SIGBUS KERN_PROTECTION_FAILURE on the still-non-executable
+// page. Reproduced deterministically on-device (co.communico.brampton,
+// 3/3 launches, same signature) — this is a HookKit-level inline-patch race,
+// not specific to these replacement functions; flagged upstream.
+// A rebind-only substitutor never attempts the inline fallback: a
+// zero-match target just fails HK_ERR_NOT_SUPPORTED, which these three calls
+// already treat as "skip cleanly" (return value unchecked, matching the
+// runtime-resolved siblings below). Coverage loss (raw syscall dispatch
+// filtering / csops self-mark protection go unhooked on devices where these
+// symbols aren't GOT-rebindable) is preferable to crashing the target app.
+// Revert to `hooks` once HookKit's inline-patch path is made safe against
+// concurrent execution of the target (thread suspension during the write, or
+// an atomically-visible single-instruction redirect into an out-of-line stub).
 void shadowhook_syscall(HKSubstitutor* hooks) {
-    [hooks hookFunction:syscall withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
-    [hooks hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
+    HKSubstitutor* rebindOnly = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
+
+    [rebindOnly hookFunction:syscall withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
+    [rebindOnly hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
     void* sym___syscall = shdw_resolve_libsystem("___syscall");
@@ -772,35 +798,54 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     // Address-based rebinders already cover every slot for that address; a
     // second replacement cannot coexist and only reports a false failure.
     if(sym___syscall && sym___syscall != (void *)syscall) {
-        [hooks hookFunction:sym___syscall withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
+        [rebindOnly hookFunction:sym___syscall withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
+    // Also on rebindOnly (bisection isolation, see the note above): these are
+    // fewer/colder than syscall/csops but still direct-branch libsystem_kernel
+    // exports, so leaving them on the inline-capable lane is the same hazard.
     void* sym_misc = shdw_resolve_libsystem("_sysctlbyname");
     if(sym_misc) {
-        [hooks hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
+        [rebindOnly hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
     }
 
     sym_misc = shdw_resolve_libsystem("___sysctlbyname");
     if(sym_misc) {
-        [hooks hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
+        [rebindOnly hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
     }
 
     sym_misc = shdw_resolve_libsystem("_csops_audittoken");
     if(sym_misc) {
-        [hooks hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
+        [rebindOnly hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
     }
 
     sym_misc = shdw_resolve_libsystem("_NSGetEnviron");
     if(sym_misc) {
-        [hooks hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
+        [rebindOnly hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
 
     // Raw svc #0x80 interception (svc_patch.x): scans loaded images' __TEXT
     // for inline svc sites and redirects them through a trampoline applying
-    // the same path policy as this dispatch. Gated by this unit's pref like
-    // everything else here.
-    shdw_svc_patch_install();
+    // the same path policy as this dispatch.
+    //
+    // DISABLED (same live-code-patch hazard as the rebind-only note above,
+    // and worse): shdw_svc_patch_install does an unprotect/memcpy/reprotect
+    // dance over each loaded image's WHOLE __TEXT segment (svc_patch.x
+    // shdw_svc_patch_image), with no synchronization against other threads
+    // executing that same code — and it doesn't stop after ctor: the add-image
+    // callback re-runs it for every later dlopen, plus a dispatch_source timer
+    // re-scans all executable memory every 3 seconds for the app's entire
+    // lifetime (svc_patch.x shdw_svc_rescan_exec), each pass repeating the
+    // same unprotect/write/reprotect race across live, actively-executing
+    // code. Reproduced deterministically (co.communico.brampton): dies
+    // ~3-4s post-launch, matching the first periodic rescan's timing, with
+    // the identical EXC_BAD_ACCESS/SIGBUS KERN_PROTECTION_FAILURE signature
+    // as the litehook inline-patch hazard above. Unlike that one this is
+    // Shadow's own code, not HookKit's — the fix (thread suspension around
+    // each image/region's patch write, or narrowing each write to a single
+    // atomically-visible instruction) belongs here whenever this is revived.
+    // shdw_svc_patch_install();
 }
 
 void shadowhook_syscall_verify(void) {
