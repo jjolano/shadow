@@ -27,6 +27,12 @@
 // scanned. Shadow's own images are skipped too (the trampolines' own svc
 // sites must never be re-patched, and Shadow's code sees truth anyway).
 //
+// Every live-code write is serialized and wrapped in a stop-the-world window:
+// task_threads() snapshots the process, every other thread is suspended for
+// vm_protect/write/reprotect, then resumed. A concurrent trigger waits on the
+// same recursive lock; a thread created after the snapshot can still run, so
+// the patch remains fail-soft if the protection change cannot be made.
+//
 // Ceilings (ponytail): (1) only PATH/AT categories are filtered — raw-svc
 // ptrace PT_DENY_ATTACH and sysctl probes still bypass (pre-existing
 // exposure, separate vector); (2) sites farther than ±128MB from the
@@ -49,6 +55,7 @@
 #import "path_rewrite.h"
 
 #import <libkern/OSCacheControl.h>
+#import <pthread.h>
 #import <sys/syscall.h>
 #import <fcntl.h>
 
@@ -271,7 +278,10 @@ static BOOL shdw_svc_skip_image(const char* path) {
 // Redirects one svc site to the matching trampoline. Shared by the image
 // scan and the JIT region scan. Idempotent: a patched site is a bl
 // instruction, so a re-scan never matches it.
+static _Atomic BOOL shdw_svc_far_site_seen = NO;
+
 static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* where) {
+    (void)where;
     uintptr_t target = 0;
 
     if(insn == 0xD4001001) {          // svc #0x80
@@ -285,18 +295,210 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* w
     int64_t delta = (int64_t)target - (int64_t)(site + 4);
 
     if(delta < -0x8000000LL || delta > 0x7FFFFFCLL) {
-        static BOOL warnedFar = NO;
-
-        if(!warnedFar) {
-            warnedFar = YES;
-            NSLog(@"[Shadow][svc] svc site out of bl range in %s, skipped (fail soft)", where);
-        }
-
+        // Logging while every other thread is stopped can deadlock on a
+        // runtime lock held by one of those threads. The caller reports this
+        // once after the stop-the-world window instead.
+        atomic_store_explicit(&shdw_svc_far_site_seen, YES, memory_order_relaxed);
         return;
     }
 
     *(uint32_t*)site = 0x94000000 | ((uint32_t)(delta >> 2) & 0x3FFFFFF);
     sys_icache_invalidate((void*)site, 4);
+}
+
+// All three entry paths (dyld callback, timer, mprotect hook) converge here.
+// The recursive lock handles an unusual same-thread callback without
+// deadlocking; nested stop/resume pairs preserve the outer suspension counts.
+static pthread_mutex_t shdw_svc_patch_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
+
+static BOOL shdw_svc_range_has_site(uintptr_t addr, size_t size) {
+    if(size < 4 || addr > UINTPTR_MAX - size) {
+        return NO;
+    }
+
+    const uint32_t* words = (const uint32_t*)addr;
+    size_t nwords = size / 4;
+
+    for(size_t w = 0; w < nwords; w++) {
+        if(words[w] == 0xD4001001 || words[w] == 0xD4000001) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static void shdw_svc_dispose_thread_list(thread_act_array_t threads,
+                                         mach_msg_type_number_t count,
+                                         mach_port_t current) {
+    for(mach_msg_type_number_t i = 0; i < count; i++) {
+        mach_port_deallocate(mach_task_self(), threads[i]);
+    }
+
+    vm_deallocate(mach_task_self(), (vm_address_t)threads,
+                  (vm_size_t)count * sizeof(thread_t));
+
+    if(current != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), current);
+    }
+}
+
+// Suspend exactly the threads whose thread_suspend call succeeded. This
+// avoids accidentally decrementing a pre-existing suspend count if a thread
+// exits between task_threads() and the loop.
+static BOOL shdw_svc_suspend_others(thread_act_array_t* threads_out,
+                                    mach_msg_type_number_t* count_out,
+                                    mach_port_t* current_out) {
+    thread_act_array_t threads = NULL;
+    mach_msg_type_number_t count = 0;
+    mach_port_t current = mach_thread_self();
+
+    if(current == MACH_PORT_NULL) {
+        return NO;
+    }
+
+    kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
+
+    if(kr != KERN_SUCCESS || !threads) {
+        if(threads) {
+            shdw_svc_dispose_thread_list(threads, count, current);
+        } else {
+            mach_port_deallocate(mach_task_self(), current);
+        }
+
+        return NO;
+    }
+
+    mach_msg_type_number_t suspended_through = 0;
+
+    for(; suspended_through < count; suspended_through++) {
+        if(threads[suspended_through] == current) {
+            continue;
+        }
+
+        if(thread_suspend(threads[suspended_through]) != KERN_SUCCESS) {
+            for(mach_msg_type_number_t i = 0; i < suspended_through; i++) {
+                if(threads[i] != current) {
+                    thread_resume(threads[i]);
+                }
+            }
+
+            shdw_svc_dispose_thread_list(threads, count, current);
+            return NO;
+        }
+    }
+
+    *threads_out = threads;
+    *count_out = count;
+    *current_out = current;
+    return YES;
+}
+
+static void shdw_svc_resume_others(thread_act_array_t threads,
+                                   mach_msg_type_number_t count,
+                                   mach_port_t current) {
+    for(mach_msg_type_number_t i = 0; i < count; i++) {
+        if(threads[i] != current) {
+            thread_resume(threads[i]);
+        }
+    }
+}
+
+// Patch one executable range. The read-only preflight happens while other
+// threads run; only the final vm_protect/write/reprotect sequence stops them.
+// scan_size may be smaller than protect_size for a Mach-O __TEXT segment.
+static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
+                                  size_t protect_size, vm_prot_t original_prot,
+                                  const char* where) {
+    if(!shdw_svc_range_has_site(addr, scan_size)) {
+        return;
+    }
+
+    pthread_mutex_lock(&shdw_svc_patch_lock);
+
+    // Another scanner may have patched the site while this caller waited.
+    if(!shdw_svc_range_has_site(addr, scan_size)) {
+        pthread_mutex_unlock(&shdw_svc_patch_lock);
+        return;
+    }
+
+    thread_act_array_t threads = NULL;
+    mach_msg_type_number_t thread_count = 0;
+    mach_port_t current = MACH_PORT_NULL;
+
+    if(!shdw_svc_suspend_others(&threads, &thread_count, &current)) {
+        pthread_mutex_unlock(&shdw_svc_patch_lock);
+        return;
+    }
+
+    vm_prot_t restore_prot = original_prot;
+    vm_region_basic_info_data_64_t current_info;
+    mach_msg_type_number_t current_info_count = VM_REGION_BASIC_INFO_COUNT_64;
+    vm_address_t current_region = addr;
+    vm_size_t current_region_size = 0;
+    mach_port_t current_object = MACH_PORT_NULL;
+
+    kern_return_t current_kr = vm_region_64(mach_task_self(), &current_region,
+                                            &current_region_size,
+                                            VM_REGION_BASIC_INFO_64,
+                                            (vm_region_info_t)&current_info,
+                                            &current_info_count, &current_object);
+
+    if(current_object != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), current_object);
+    }
+
+    if(current_kr == KERN_SUCCESS) {
+        if(!(current_info.protection & VM_PROT_EXECUTE)) {
+            shdw_svc_resume_others(threads, thread_count, current);
+            shdw_svc_dispose_thread_list(threads, thread_count, current);
+            pthread_mutex_unlock(&shdw_svc_patch_lock);
+            return;
+        }
+
+        // Re-read protection after stopping the world so a racing mprotect
+        // cannot be undone by restoring stale preflight state.
+        restore_prot = current_info.protection;
+    }
+
+    BOOL protected_for_write = vm_protect(mach_task_self(), addr, protect_size,
+                                          FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS;
+    BOOL restore_failed = NO;
+
+    if(protected_for_write) {
+        uint32_t* words = (uint32_t*)addr;
+        size_t nwords = scan_size / 4;
+
+        for(size_t w = 0; w < nwords; w++) {
+            uint32_t insn = words[w];
+
+            if(insn == 0xD4001001 || insn == 0xD4000001) {
+                shdw_svc_try_patch_site(addr + w * 4, insn, where);
+            }
+        }
+
+        // Restore execute permission before any other thread can run again.
+        if(vm_protect(mach_task_self(), addr, protect_size, FALSE, restore_prot) != KERN_SUCCESS) {
+            restore_failed = YES;
+            // Keep a failed exact restore from leaving an executable page
+            // permanently non-executable. The fallback intentionally favors
+            // liveness over preserving an unusual extra protection bit.
+            vm_protect(mach_task_self(), addr, protect_size, FALSE,
+                       VM_PROT_READ | VM_PROT_EXECUTE);
+        }
+    }
+
+    shdw_svc_resume_others(threads, thread_count, current);
+    shdw_svc_dispose_thread_list(threads, thread_count, current);
+    pthread_mutex_unlock(&shdw_svc_patch_lock);
+
+    if(restore_failed) {
+        NSLog(@"[Shadow][svc] protection restore failed in %s (fallback RX)", where);
+    }
+
+    if(atomic_exchange_explicit(&shdw_svc_far_site_seen, NO, memory_order_relaxed)) {
+        NSLog(@"[Shadow][svc] svc site out of bl range in %s, skipped (fail soft)", where);
+    }
 }
 
 // Scans one image's __TEXT for svc sites and redirects them to the matching
@@ -330,29 +532,7 @@ static void shdw_svc_patch_image(const struct mach_header* mh, intptr_t slide, c
                     original_prot = info.protection;
                 }
 
-                if(vm_protect(mach_task_self(), base, seg->vmsize, FALSE, VM_PROT_READ | VM_PROT_WRITE) != KERN_SUCCESS) {
-                    static BOOL warned = NO;
-
-                    if(!warned) {
-                        warned = YES;
-                        NSLog(@"[Shadow][svc] vm_protect failed on %s, raw svc sites unpatched (fail soft)", path);
-                    }
-
-                    return;
-                }
-
-                uint32_t* words = (uint32_t*)base;
-                size_t nwords = size / 4;
-
-                for(size_t w = 0; w < nwords; w++) {
-                    uint32_t insn = words[w];
-
-                    if(insn == 0xD4001001 || insn == 0xD4000001) {
-                        shdw_svc_try_patch_site(base + w * 4, insn, path);
-                    }
-                }
-
-                vm_protect(mach_task_self(), base, seg->vmsize, FALSE, original_prot);
+                shdw_svc_patch_memory(base, size, seg->vmsize, original_prot, path);
                 return;
             }
         }
@@ -444,22 +624,7 @@ static void shdw_svc_scan_region(uintptr_t addr, size_t size) {
         return;
     }
 
-    if(vm_protect(mach_task_self(), addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE) != KERN_SUCCESS) {
-        return;
-    }
-
-    uint32_t* words = (uint32_t*)addr;
-    size_t nwords = size / 4;
-
-    for(size_t w = 0; w < nwords; w++) {
-        uint32_t insn = words[w];
-
-        if(insn == 0xD4001001 || insn == 0xD4000001) {
-            shdw_svc_try_patch_site(addr + w * 4, insn, "jit");
-        }
-    }
-
-    vm_protect(mach_task_self(), addr, size, FALSE, info.protection);
+    shdw_svc_patch_memory(addr, size, size, info.protection, "jit");
 }
 
 // One full pass over the process's executable regions. Called periodically
