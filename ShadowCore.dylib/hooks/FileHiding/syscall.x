@@ -825,27 +825,10 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
         [rebindOnly hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
 
-    // Raw svc #0x80 interception (svc_patch.x): scans loaded images' __TEXT
-    // for inline svc sites and redirects them through a trampoline applying
-    // the same path policy as this dispatch.
-    //
-    // DISABLED (same live-code-patch hazard as the rebind-only note above,
-    // and worse): shdw_svc_patch_install does an unprotect/memcpy/reprotect
-    // dance over each loaded image's WHOLE __TEXT segment (svc_patch.x
-    // shdw_svc_patch_image), with no synchronization against other threads
-    // executing that same code — and it doesn't stop after ctor: the add-image
-    // callback re-runs it for every later dlopen, plus a dispatch_source timer
-    // re-scans all executable memory every 3 seconds for the app's entire
-    // lifetime (svc_patch.x shdw_svc_rescan_exec), each pass repeating the
-    // same unprotect/write/reprotect race across live, actively-executing
-    // code. Reproduced deterministically (co.communico.brampton): dies
-    // ~3-4s post-launch, matching the first periodic rescan's timing, with
-    // the identical EXC_BAD_ACCESS/SIGBUS KERN_PROTECTION_FAILURE signature
-    // as the litehook inline-patch hazard above. Unlike that one this is
-    // Shadow's own code, not HookKit's — the fix (thread suspension around
-    // each image/region's patch write, or narrowing each write to a single
-    // atomically-visible instruction) belongs here whenever this is revived.
-    // shdw_svc_patch_install();
+    // Raw svc #0x80 interception (svc_patch.x): every image/region write is
+    // serialized and stop-the-world, so the add-image, periodic, and
+    // mprotect-triggered paths share the same live-code safety guarantee.
+    shdw_svc_patch_install();
 }
 
 void shadowhook_syscall_verify(void) {
