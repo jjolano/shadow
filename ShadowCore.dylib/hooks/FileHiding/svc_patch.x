@@ -343,6 +343,13 @@ static void shdw_svc_dispose_thread_list(thread_act_array_t threads,
     }
 }
 
+static void shdw_svc_dispose_object(mach_port_t* object_name) {
+    if(object_name && *object_name != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), *object_name);
+        *object_name = MACH_PORT_NULL;
+    }
+}
+
 // Suspend exactly the threads whose thread_suspend call succeeded. This
 // avoids accidentally decrementing a pre-existing suspend count if a thread
 // exits between task_threads() and the loop.
@@ -528,7 +535,10 @@ static void shdw_svc_patch_image(const struct mach_header* mh, intptr_t slide, c
                 mach_port_t object_name = MACH_PORT_NULL;
                 vm_prot_t original_prot = VM_PROT_READ | VM_PROT_EXECUTE;
 
-                if(vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name) == KERN_SUCCESS) {
+                kern_return_t region_kr = vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name);
+                shdw_svc_dispose_object(&object_name);
+
+                if(region_kr == KERN_SUCCESS) {
                     original_prot = info.protection;
                 }
 
@@ -605,7 +615,10 @@ static void shdw_svc_scan_region(uintptr_t addr, size_t size) {
     vm_size_t region_size = 0;
     mach_port_t object_name = MACH_PORT_NULL;
 
-    if(vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name) != KERN_SUCCESS) {
+    kern_return_t region_kr = vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name);
+    shdw_svc_dispose_object(&object_name);
+
+    if(region_kr != KERN_SUCCESS) {
         return;
     }
 
@@ -632,12 +645,13 @@ static void shdw_svc_scan_region(uintptr_t addr, size_t size) {
 static void shdw_svc_rescan_exec(void) {
     vm_address_t addr = 0;
     vm_size_t size = 0;
-    mach_port_t object_name = MACH_PORT_NULL;
-
     while(1) {
         vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+        mach_port_t object_name = MACH_PORT_NULL;
         kern_return_t kr = vm_region_64(mach_task_self(), &addr, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name);
+
+        shdw_svc_dispose_object(&object_name);
 
         if(kr != KERN_SUCCESS) {
             break;
