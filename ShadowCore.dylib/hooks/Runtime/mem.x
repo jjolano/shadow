@@ -66,7 +66,7 @@ static kern_return_t replaced_vm_region_recurse_64(vm_map_read_t target_task, vm
 // same skip policy (a returned region inside a restricted interval is
 // SKIPPED and the original re-called to advance). The SDK's mach_vm.h is a
 // stub, so the prototypes are declared here. NOTE: mach_vm_region takes the
-// flavor BY VALUE (see shadowd/krw.m — the pointer flavor claimed in an
+// flavor BY VALUE (the ABI requires a value, not a pointer — a pointer
 // earlier revision was an ABI bug: the hook passed a pointer where the
 // kernel expects the int flavor, so the original call returned
 // KERN_INVALID_ARGUMENT and the hiding never engaged, and callers of

@@ -53,36 +53,10 @@ static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 
 		// Disable hook groups whose backend capability is missing on this
 		// device (message/function/inline), with a footer note per group.
-		// Gate instantly with cached state, then re-gate when the async
-		// daemon refresh lands (never block the initial render on IPC).
 		SHDWApplyHookGroupGating(_specifiers);
-		[self refreshDaemonStateAndRegate];
 	}
 
 	return _specifiers;
-}
-
-- (void)refreshDaemonStateAndRegate {
-	// Capture the state the current specifiers were rendered with. reloadSpecifiers
-	// clears _specifiers and re-enters this method through the getter; the async
-	// refresh's completion must not reload when the state is unchanged, or the
-	// synchronous cache path recurses (reload → getter → refresh → reload…).
-	SHDWDaemonState renderedState = SHDWQueryDaemonState();
-	__weak typeof(self) weakSelf = self;
-
-	SHDWRefreshDaemonStateAsync(^(SHDWDaemonState state) {
-		typeof(self) self = weakSelf;
-		if(!self) {
-			return;
-		}
-
-		if(state == renderedState) {
-			return;
-		}
-
-		SHDWApplyHookGroupGating(self->_specifiers);
-		[self reloadSpecifiers];
-	});
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {

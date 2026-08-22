@@ -26,8 +26,6 @@
 "HOOK_IOKIT_DESC" = "在 IOKit 搜尋中隱藏越獄相關的核心服務。";
 "HOOK_MEM" = "隱藏可執行記憶體";
 "HOOK_MEM_DESC" = "過濾虛擬記憶體查詢，避免暴露注入的可執行記憶體區域。";
-"VNODE_HIDING" = "Vnode 級隱藏";
-"VNODE_HIDING_DESC" = "透過 Shadow 服務在 vnode 層隱藏越獄路徑，位置低於一般檔案 API。";
 "HOOK_SANDBOX" = "加強應用程式沙盒";
 "HOOK_SANDBOX_DESC" = "讓特權操作和僅越獄環境存在的服務像在一般應用程式沙盒中一樣失敗。\n\n這些底層 Hook 可能導致應用程式崩潰或系統功能異常。僅在推薦 Hook 無效時使用。";
 "HOOK_SYSCALL" = "私有系統呼叫";
@@ -43,8 +41,6 @@
 "STATUS_FMT" = "%ld 個鉤子已啟用 · %@";
 "STATUS_FMT_SINGULAR" = "1 個鉤子已啟用 · %@";
 "STATUS_HDR" = "狀態";
-"VNODE_UNAVAILABLE_REASON" = "Vnode 隱藏需要具備核心讀寫能力的 shadowd 守護進程。";
-"VNODE_STARTING_REASON" = "shadowd 守護進程仍在啟動，Vnode 隱藏暫無法使用。";
 "UNSUPPORTED_ELLEKIT_REASON" = "需要支援私有符號的掛鉤後端。";
 "UNSUPPORTED_MSG_REASON" = "需要支援 Objective-C 訊息掛鉤的掛鉤函式庫（ElleKit、Substrate、Substitute 或原生 Objective-C 運行時）。";
 "UNSUPPORTED_FUNC_REASON" = "需要支援 C 函式掛鉤的掛鉤函式庫。";

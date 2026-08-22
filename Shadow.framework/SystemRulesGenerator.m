@@ -25,7 +25,7 @@ extern int fs_snapshot_mount(int fd, const char* dir, const char* name, uint32_t
 // file path -> @[mtime, engine]. The harvest re-runs on every app
 // install/uninstall event; an unchanged ruleset file reuses its compiled
 // engine instead of re-reading and re-compiling every curated ruleset each
-// time. The generator is a class-method utility (shadowd calls it directly),
+// time. The generator is a class-method utility,
 // so a static is the instance.
 static NSMutableDictionary* shdwCuratedRulesetEngines = nil;
 

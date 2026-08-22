@@ -1,6 +1,4 @@
-// Host shim for Linux builds: glibc >= 2.32 removed sys/sysctl.h. The
-// ledger's get_boot_uuid can never succeed on the host anyway (the battery
-// drives gBootUUID directly; ShadowdShims.m stubs sysctlbyname). macOS
+// Host shim for Linux builds: glibc >= 2.32 removed sys/sysctl.h. macOS
 // builds use the real header (the Darwin Makefile branch does not include
 // this directory).
 #ifndef SYS_SYSCTL_H

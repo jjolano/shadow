@@ -30,31 +30,14 @@ SUBPROJECTS += Shadow.dylib
 SUBPROJECTS += ShadowCore.dylib
 SUBPROJECTS += ShadowSettings.bundle
 SUBPROJECTS += shdw
-# shadowd is unavailable in the iOS 9-13 legacy package.
-ifneq ($(SHADOW_LANE),rootful-legacy)
-ifneq ($(findstring arm64,$(ARCHS)),)
-SUBPROJECTS += shadowd
-endif
-endif
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
-# LaunchDaemon plist selection. The rootless scheme stages the whole layout/
-# under /var/jb (THEOS_PACKAGE_INSTALL_PREFIX), so one shared layout carries
-# both flavors' plists; pick the matching one here, after staging, before
-# packaging. Mirrors the sandyd .rootless.plist convention.
+# The rootless scheme stages the whole layout/ under /var/jb. Select the
+# matching ruleset-watcher plist after staging, before packaging.
 before-package::
 ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
-	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.plist"$(ECHO_END)
-	$(ECHO_NOTHING)test -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.rootless.plist" && mv "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.rootless.plist" "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.plist" || true$(ECHO_END)
 	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"$(ECHO_END)
 	$(ECHO_NOTHING)test -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.rootless.plist" && mv "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.rootless.plist" "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" || true$(ECHO_END)
 else
-ifeq ($(SHADOW_LANE),rootful-legacy)
-# Legacy keeps the stateless ruleset watcher but omits shadowd and its plist.
-	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.plist" "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.rootless.plist"$(ECHO_END)
 	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.rootless.plist"$(ECHO_END)
-else
-	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.rootless.plist"$(ECHO_END)
-	$(ECHO_NOTHING)rm -f "$(THEOS_STAGING_DIR)/Library/LaunchDaemons/me.jjolano.shadow.watcher.rootless.plist"$(ECHO_END)
-endif
 endif

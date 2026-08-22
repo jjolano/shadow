@@ -10,6 +10,71 @@
 // isAddrRestricted:] fallback.
 
 #include <stdint.h>
+#include <string.h>
+
+// Caller truth is deliberately narrower than the image-hiding policy. Only
+// the binaries shipped by this package, at literal package paths, may
+// contribute an internal caller range. Aliases, symlinks, basenames, prefixes,
+// case variants, and dependency frameworks are external callers unless they
+// enter an explicit SHADOW_INTERNAL_SCOPE.
+static inline int shdw_is_canonical_shadow_runtime_path(const char* path) {
+    static const char* const paths[] = {
+        "/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib",
+        "/var/jb/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib",
+        "/Library/Frameworks/Shadow.framework/Shadow",
+        "/var/jb/Library/Frameworks/Shadow.framework/Shadow",
+        "/usr/lib/ShadowCore.dylib",
+        "/var/jb/usr/lib/ShadowCore.dylib",
+        NULL,
+    };
+
+    if(!path || !path[0]) {
+        return 0;
+    }
+
+    for(unsigned int i = 0; paths[i]; i++) {
+        if(strcmp(path, paths[i]) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+// dyld reports rootless images through /var/jb's resolved physical root, not
+// necessarily through the /var/jb alias. Keep that form exact as well: the
+// caller supplies the one runtime-resolved root, and only package suffixes
+// listed here are trusted.
+static inline int shdw_is_canonical_shadow_runtime_path_under_root(const char* path, const char* root) {
+    static const char* const suffixes[] = {
+        "/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib",
+        "/Library/Frameworks/Shadow.framework/Shadow",
+        "/usr/lib/ShadowCore.dylib",
+        NULL,
+    };
+
+    if(!path || !path[0] || !root || !root[0]) {
+        return 0;
+    }
+
+    size_t rootLength = strlen(root);
+
+    while(rootLength > 1 && root[rootLength - 1] == '/') {
+        rootLength -= 1;
+    }
+
+    for(unsigned int i = 0; suffixes[i]; i++) {
+        size_t suffixLength = strlen(suffixes[i]);
+
+        if(strlen(path) == rootLength + suffixLength &&
+           strncmp(path, root, rootLength) == 0 &&
+           strcmp(path + rootLength, suffixes[i]) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 typedef struct {
     uintptr_t base, end;

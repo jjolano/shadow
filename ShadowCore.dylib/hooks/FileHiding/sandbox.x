@@ -310,23 +310,6 @@ static int replaced_sandbox_check(pid_t pid, const char *operation, enum sandbox
         va_end(inspect);
     }
 
-    // The tweak's own mach-lookup of its daemon service is always allowed:
-    // the app sandbox would otherwise deny the vnode client's
-    // bootstrap_look_up (sandbox_check is called regardless of caller).
-    if(!isCallerExternal() && operation && strcmp(operation, "mach-lookup") == 0
-    && (((int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK) == SANDBOX_FILTER_GLOBAL_NAME
-    || ((int) type & SHADOW_SANDBOX_FILTER_TYPE_MASK) == SANDBOX_FILTER_LOCAL_NAME)) {
-        va_list inspect;
-        va_copy(inspect, args);
-        const char* name = va_arg(inspect, const char *);
-        va_end(inspect);
-
-        if(name && strcmp(name, MACH_SERVICE_NAME) == 0) {
-            va_end(args);
-            return 0;
-        }
-    }
-
     // Forward the exact varargs for the filter type: NONE takes none, the
     // path/name family takes one string. (Int-taking filters from newer
     // runtimes fall into default: the slot round-trip preserves the value

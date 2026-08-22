@@ -36,11 +36,10 @@
 // Ceilings (ponytail): (1) only PATH/AT categories are filtered — raw-svc
 // ptrace PT_DENY_ATTACH and sysctl probes still bypass (pre-existing
 // exposure, separate vector); (2) sites farther than ±128MB from the
-// trampoline (bl range) are skipped fail-soft; (3) JIT'd svc stubs are
-// caught by a periodic re-scan of executable non-image VM regions plus an
-// mprotect hook (libc.x) — a detector that compiles a stub and probes
-// within the 3s scan window can slip one probe past, and executable regions
-// whose max protection forbids write are skipped fail-soft; (4) arm64-only:
+// trampoline (bl range) are skipped fail-soft; (3) JIT'd and anonymous
+// executable mappings are intentionally not patched: live scanning can
+// destabilize an app, so raw-svc coverage is limited to loaded images; (4)
+// arm64-only:
 // the rootful-legacy armv7 lane gets an empty installer (the svc #0x80
 // convention and this file's encoding scan are arm64 — an armv7 port would
 // need the Thumb/ARM-mode encodings).
@@ -241,10 +240,6 @@ SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_0, "0")
 
 // --- Scanner ----------------------------------------------------------------
 
-// Set by install; gates the mprotect-hook scan path so the Hook_Syscall pref
-// cannot be bypassed through libc.x.
-static BOOL shdw_svc_installed = NO;
-
 // Images that must never be patched (see the file header: recursion safety
 // and trampoline self-protection).
 static BOOL shdw_svc_skip_image(const char* path) {
@@ -275,9 +270,8 @@ static BOOL shdw_svc_skip_image(const char* path) {
     return NO;
 }
 
-// Redirects one svc site to the matching trampoline. Shared by the image
-// scan and the JIT region scan. Idempotent: a patched site is a bl
-// instruction, so a re-scan never matches it.
+// Redirects one image svc site to the matching trampoline. Idempotent: a
+// patched site is a bl instruction, so a re-scan never matches it.
 static _Atomic BOOL shdw_svc_far_site_seen = NO;
 
 static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* where) {
@@ -306,9 +300,9 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* w
     sys_icache_invalidate((void*)site, 4);
 }
 
-// All three entry paths (dyld callback, timer, mprotect hook) converge here.
-// The recursive lock handles an unusual same-thread callback without
-// deadlocking; nested stop/resume pairs preserve the outer suspension counts.
+// All image callbacks converge here. The recursive lock handles an unusual
+// same-thread callback without deadlocking; nested stop/resume pairs preserve
+// the outer suspension counts.
 static pthread_mutex_t shdw_svc_patch_lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 
 static BOOL shdw_svc_range_has_site(uintptr_t addr, size_t size) {
@@ -551,131 +545,6 @@ static void shdw_svc_patch_image(const struct mach_header* mh, intptr_t slide, c
     }
 }
 
-// --- JIT region scan --------------------------------------------------------
-// The image scan only sees dyld images. Executable memory created at runtime
-// (mprotect'd JIT stubs) is invisible to it, so a periodic VM walk re-scans
-// every executable region that is NOT a dyld image's __TEXT. Dyld images are
-// excluded because the add-image callback already covers them, and system /
-// Shadow images must never be touched (recursion safety — the trampolines'
-// own svc sites live in ShadowCore's __TEXT).
-
-// True when [addr, addr+size) intersects any loaded image's __TEXT mapping.
-static BOOL shdw_svc_range_is_image(uintptr_t addr, size_t size) {
-    uint32_t count = _dyld_image_count();
-
-    for(uint32_t i = 0; i < count; i++) {
-        const struct mach_header* mh = _dyld_get_image_header(i);
-
-        if(mh->magic != MH_MAGIC_64 || mh->cputype != CPU_TYPE_ARM64) {
-            continue;
-        }
-
-        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-        const struct load_command* lc = (const struct load_command*)((const char*)mh + sizeof(struct mach_header_64));
-
-        for(uint32_t j = 0; j < mh->ncmds; j++) {
-            if(lc->cmd == LC_SEGMENT_64) {
-                const struct segment_command_64* seg = (const struct segment_command_64*)lc;
-
-                if(strcmp(seg->segname, "__TEXT") == 0) {
-                    uintptr_t seg_addr = (uintptr_t)seg->vmaddr + (uintptr_t)slide;
-                    uintptr_t seg_end = seg_addr + seg->vmsize;
-
-                    if(addr < seg_end && addr + size > seg_addr) {
-                        return YES;
-                    }
-
-                    break;
-                }
-            }
-
-            lc = (const struct load_command*)((const char*)lc + lc->cmdsize);
-        }
-    }
-
-    return NO;
-}
-
-// Scans one executable non-image region for svc sites. Same vm_protect dance
-// as the image scan; regions whose max protection forbids write are skipped
-// fail-soft (the app couldn't have written them either — a separate writable
-// mapping would be a different region and gets scanned on its own).
-static void shdw_svc_scan_region(uintptr_t addr, size_t size) {
-    if(size < 4 || size > 0x10000000ULL) {   // ponytail: 256MB cap per region
-        return;
-    }
-
-    if(shdw_svc_range_is_image(addr, size)) {
-        return;
-    }
-
-    vm_region_basic_info_data_64_t info;
-    mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
-    vm_address_t region = addr;
-    vm_size_t region_size = 0;
-    mach_port_t object_name = MACH_PORT_NULL;
-
-    kern_return_t region_kr = vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name);
-    shdw_svc_dispose_object(&object_name);
-
-    if(region_kr != KERN_SUCCESS) {
-        return;
-    }
-
-    if(!(info.protection & VM_PROT_EXECUTE)) {
-        return;
-    }
-
-    if(!(info.max_protection & VM_PROT_WRITE)) {
-        static BOOL warnedRO = NO;
-
-        if(!warnedRO) {
-            warnedRO = YES;
-            NSLog(@"[Shadow][svc] executable region at 0x%lx is read-only, svc sites unpatched (fail soft)", (unsigned long)addr);
-        }
-
-        return;
-    }
-
-    shdw_svc_patch_memory(addr, size, size, info.protection, "jit");
-}
-
-// One full pass over the process's executable regions. Called periodically
-// (install) and from the mprotect hook (libc.x) for the affected range.
-static void shdw_svc_rescan_exec(void) {
-    vm_address_t addr = 0;
-    vm_size_t size = 0;
-    while(1) {
-        vm_region_basic_info_data_64_t info;
-        mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
-        mach_port_t object_name = MACH_PORT_NULL;
-        kern_return_t kr = vm_region_64(mach_task_self(), &addr, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_count, &object_name);
-
-        shdw_svc_dispose_object(&object_name);
-
-        if(kr != KERN_SUCCESS) {
-            break;
-        }
-
-        if(info.protection & VM_PROT_EXECUTE) {
-            shdw_svc_scan_region((uintptr_t)addr, (size_t)size);
-        }
-
-        addr += size;
-    }
-}
-
-// Exported for the libc.x mprotect hook: scan the range the app just made
-// executable, closing the periodic scan's race window for the libc path.
-// No-op until install ran (the Hook_Syscall pref gates the whole patcher).
-void shdw_svc_scan_range(uintptr_t addr, size_t size) {
-    if(!shdw_svc_installed) {
-        return;
-    }
-
-    shdw_svc_scan_region(addr, size);
-}
-
 // Add-image callback: resolve the image path (the callback only carries the
 // header), apply the skip rule, scan. Registered through the REAL dyld
 // registration (the dyld.x hook passes Shadow-internal callers through), so
@@ -705,33 +574,14 @@ void shdw_svc_patch_install(void) {
     }
 
     installed = YES;
-    shdw_svc_installed = YES;
     _dyld_register_func_for_add_image(shdw_svc_image_add);
-
-    // Periodic re-scan for JIT'd svc stubs (mprotect'd executable memory is
-    // invisible to the image scan). 3s interval: a detector that compiles a
-    // stub and probes within the same window can slip one probe past; the
-    // mprotect hook (libc.x) closes that race for the libc path.
-    static dispatch_source_t timer = NULL;
-    dispatch_queue_t q = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
-
-    timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
-    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), 3 * NSEC_PER_SEC, NSEC_PER_SEC);
-    dispatch_source_set_event_handler(timer, ^{
-        shdw_svc_rescan_exec();
-    });
-    dispatch_resume(timer);
 }
 
 #else   // !__arm64__
 
 // Rootful-legacy armv7 lane: no svc #0x80 interception (arm64-only
-// encoding scan; see the file header). The stubs keep the syscall.x and
-// libc.x calls linkable.
+// encoding scan; see the file header). The stub keeps syscall.x linkable.
 void shdw_svc_patch_install(void) {
-}
-
-void shdw_svc_scan_range(uintptr_t addr, size_t size) {
 }
 
 #endif  // __arm64__

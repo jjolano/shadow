@@ -112,10 +112,9 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 // frameworks, Foundation forwarding acting on their behalf); NO = Shadow's
 // own code, which sees truth. The old model ("any image outside the app
 // bundle is a tweak → truth") let every system frame and embedded detector
-// bypass filtering; the new model grants truth ONLY to explicit Shadow
-// internals: a return address inside one of Shadow's own images
-// (Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit,
-// substrate/substitute/ellekit) or a thread inside an internal read scope
+// bypass filtering; the new model grants truth ONLY to a return address in an
+// exact installed Shadow package image, or a thread inside an internal read
+// scope
 // (SHADOW_INTERNAL_SCOPE, which sets the +[Shadow shdwIsInternalRead] flag —
 // see Core.h; the flag lives in the framework because a C TLS symbol cannot
 // cross the framework's -exported_symbols_list).
@@ -130,15 +129,11 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 // torn buffer. dyld.x refreshes the snapshot at install — before any hook
 // group installs — and on every add/remove image callback, so the published
 // set is never stale in practice.
-// NOTE: the collector in dyld.x gathers ONLY the Shadow-owned spans above —
-// Shadow.dylib, Shadow.framework, libSandy.dylib, HookKit, and
-// substrate/substitute/ellekit, matched by case-insensitive basename via
-// isProtectedImagePath — and rebuilds the snapshot at install and on every
-// add/remove image callback, so the published set tracks Shadow's loaded
-// images. The internal-read scope flag (SHADOW_INTERNAL_SCOPE) remains the
-// operative truth signal for Shadow-owned code whose images are not yet
-// loaded or refreshed; outside those spans and scopes everyone classifies as
-// external, which is the safe (fail-closed) direction.
+// NOTE: the collector in dyld.x gathers only literal package paths for the
+// Shadow stub, framework, and ShadowCore payload. It rebuilds at install and
+// on every add/remove image callback, so the published set tracks those mapped
+// images. The internal-read scope remains the truth signal before a range
+// refresh; outside ranges and scopes everyone is external.
 // The tables themselves, and the pure lookup over them, live in ranges.h so
 // the host harness can test the lookup without this file's iOS-only headers.
 #import "ranges.h"
@@ -227,11 +222,9 @@ static inline BOOL shdw_addr_is_restricted(const void* addr) {
 // image callbacks.
 void shdw_own_ranges_refresh(void);
 
-// Exact-basename artifact matcher for Shadow's own runtime images (ShadowCore,
-// Shadow.dylib, libSandy, substrate/substitute/ellekit, and the framework
-// executable pairs Shadow.framework/Shadow + HookKit.framework/HookKit).
-// Defined in dyld.x; shared with objc.x so the class-hiding path reuses the
-// same artifact set instead of duplicating it.
+// Exact canonical package-path matcher for Shadow's runtime images. Defined
+// in dyld.x and shared with objc.x; it is intentionally not the broader
+// protected-image hiding predicate.
 BOOL shdw_is_shadow_runtime_image(const char* path);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
@@ -333,10 +326,6 @@ shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
 // (synthetic ENOENT for restricted paths, original svc otherwise). Called
 // from shadowhook_syscall, so the Hook_Syscall pref gates it. Idempotent.
 void shdw_svc_patch_install(void);
-
-// Scan [addr, addr+size) for svc sites (JIT regions). Called by the libc.x
-// mprotect hook after a range becomes executable; no-op until install ran.
-void shdw_svc_scan_range(uintptr_t addr, size_t size);
 extern void shadowhook_UIApplication(HKSubstitutor* hooks);
 extern void shadowhook_UIImage(HKSubstitutor* hooks);
 extern void shadowhook_libc_envvar(HKSubstitutor* hooks);
@@ -488,15 +477,6 @@ extern void shadowhook_NSUserDefaults(HKSubstitutor* hooks);
 extern void shadowhook_iokit(HKSubstitutor* hooks);
 extern void shadowhook_iokit_verify(void);
 extern void* shdw_sym_policy_lookup_iokit(const char* name);
-extern void shadowhook_vnode(HKSubstitutor* hooks);
-extern void shadowhook_vnode_release(void);
-
-// B2c: vnode receives the resolved effective VnodeHiding preference from
-// dylib.x (the ctor already holds prefs_load) instead of re-reading the
-// plist. Call before shadowhook_vnode(NULL) when a resolved pref is
-// available; vnode.x falls back to its own plist read when not called.
-extern void shdw_vnode_set_pref_enabled(BOOL enabled);
-
 extern void shadowhook_libc_verify(void);
 extern void shadowhook_libc_envvar_verify(void);
 extern void shadowhook_libc_lowlevel_verify(void);

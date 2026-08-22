@@ -45,13 +45,9 @@
 "HOOK_LLC_DESC" = "Hides jailbreak paths from low-level file-opening and directory APIs.";
 "HOOK_MEM" = "Hide Executable Memory";
 "HOOK_MEM_DESC" = "Filters virtual-memory queries so injected executable regions are not exposed.";
-"VNODE_HIDING" = "Vnode-Level Hiding";
-"VNODE_HIDING_DESC" = "Hides jailbreak paths at the vnode layer through Shadow's daemon, below normal file APIs.";
 "MEMORY_LEVEL_HIDING_DESC" = "Removes injected libraries from dyld's in-memory image list. Turn this off if an app becomes unstable.";
 "HOOK_DYLD_EXTRA_DESC" = "Starts the extra dynamic-library protections at launch instead of waiting until jailbreak detection is observed.";
 
-"VNODE_UNAVAILABLE_REASON" = "Vnode hiding requires the shadowd daemon with kernel read/write access.";
-"VNODE_STARTING_REASON" = "Vnode hiding is unavailable while the shadowd daemon is still starting.";
 "UNSUPPORTED_ELLEKIT_REASON" = "Requires a private-symbol-capable hooking backend.";
 "UNSUPPORTED_MSG_REASON" = "Requires an Objective-C-capable hooking library (ElleKit, Substrate, Substitute or the native Objective-C runtime).";
 "UNSUPPORTED_FUNC_REASON" = "Requires a C-function-capable hooking library.";

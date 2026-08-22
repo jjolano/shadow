@@ -4,9 +4,8 @@
 // file and for the sandbox_check mach-lookup denial in sandbox.x (extern
 // declared at the top of that file — deliberately NOT in hooks.h). Only
 // VERIFIED jailbreak service names/prefixes match; the overbroad "com.ex"
-// prefix is gone. The tweak's own "me.jjolano" umbrella is included: a
-// detector's lookup of the daemon service is denied, while the tweak's own
-// lookups are exempt via isCallerExternal() == NO at each hook site.
+// prefix is gone. The tweak's own "me.jjolano" umbrella is included so its
+// package namespace is not exposed to external callers.
 BOOL shdw_bootstrap_service_restricted(const char* name) {
     if(!name) {
         return NO;
@@ -53,11 +52,6 @@ static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* ser
 
 static kern_return_t (*original_bootstrap_look_up)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* service_name, mach_port_t* sp) {
-    // MACH_SERVICE_NAME ("me.jjolano.shadow.service") falls under the
-    // "me.jjolano" blocklist umbrella: detectors' lookups are hidden, while
-    // the tweak's own lookups pass (isCallerExternal() == NO) straight
-    // through to the original — the vnode client relies on this for its
-    // bootstrap_look_up.
     if(!isCallerExternal()) {
         return original_bootstrap_look_up(bp, service_name, sp);
     }

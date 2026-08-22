@@ -33,7 +33,7 @@ NSUInteger SHDWCountEnabledHooks(NSUserDefaults *prefs, NSString *appID) {
 	NSUInteger count = 0;
 
 	// The canonical hook-key set is the preset keys (every Hook_* toggle plus
-	// VnodeHiding); Global_Enabled / HK_Library / MemoryLevelHiding are not
+	// PseudoSandboxMode); Global_Enabled / HK_Library / MemoryLevelHiding are not
 	// user-facing hook toggles and must not inflate the count.
 	for(NSString* key in SHDWPresetStandard()) {
 		BOOL enabled = appID

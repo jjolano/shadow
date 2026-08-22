@@ -46,13 +46,9 @@
 "HOOK_LLC_DESC" = "在底层文件打开和目录 API 中隐藏越狱路径。";
 "HOOK_MEM" = "隐藏可执行内存";
 "HOOK_MEM_DESC" = "过滤虚拟内存查询，避免暴露注入的可执行内存区域。";
-"VNODE_HIDING" = "Vnode 级隐藏";
-"VNODE_HIDING_DESC" = "通过 Shadow 服务在 vnode 层隐藏越狱路径，位置低于常规文件 API。";
 "MEMORY_LEVEL_HIDING_DESC" = "从 dyld 的内存映像列表中移除注入的动态库。如果应用不稳定，请关闭此选项。";
 "HOOK_DYLD_EXTRA_DESC" = "在应用启动时启用额外的动态库防护，而不是等待检测到越狱检查。";
 
-"VNODE_UNAVAILABLE_REASON" = "Vnode 隐藏需要具备内核读写能力的 shadowd 守护进程。";
-"VNODE_STARTING_REASON" = "shadowd 守护进程仍在启动，Vnode 隐藏暂不可用。";
 "UNSUPPORTED_ELLEKIT_REASON" = "需要支持私有符号的钩子后端。";
 "UNSUPPORTED_MSG_REASON" = "需要支持 Objective-C 消息钩子的钩子库（ElleKit、Substrate、Substitute 或原生 Objective-C 运行时）。";
 "UNSUPPORTED_FUNC_REASON" = "需要支持 C 函数钩子的钩子库。";

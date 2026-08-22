@@ -28,56 +28,6 @@ static BOOL _shdw_watcher_enabled = NO;
 static BOOL _shdw_uikit_installed = NO;
 static SHDWHookCoordinator* shdw_coordinator_instance = nil;
 
-// Persist one row per detector category per app launch. Detector hooks can
-// fire repeatedly on hot paths; deduping here keeps diagnostics useful and
-// avoids turning observation into a new timing fingerprint.
-static void shdw_record_detector_event(const char* reason) {
-    static dispatch_queue_t queue;
-    static NSMutableSet* recordedReasons;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        queue = dispatch_queue_create("me.jjolano.shadow.detector-log", DISPATCH_QUEUE_SERIAL);
-        recordedReasons = [NSMutableSet new];
-    });
-
-    NSString* reasonString = reason ? [NSString stringWithUTF8String:reason] : @"unknown";
-    NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
-    if(reasonString.length == 0 || bundleID.length == 0) {
-        return;
-    }
-
-    @synchronized(recordedReasons) {
-        if([recordedReasons containsObject:reasonString]) {
-            return;
-        }
-        [recordedReasons addObject:reasonString];
-    }
-
-    dispatch_async(queue, ^{
-        time_t now = time(NULL);
-        struct tm localTime;
-        char timestamp[20];
-        if(!localtime_r(&now, &localTime)
-            || strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &localTime) == 0) {
-            return;
-        }
-
-        NSString* entry = [NSString stringWithFormat:@"%s  %@  %@", timestamp, reasonString, bundleID];
-        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-        NSMutableArray* log = [[defaults arrayForKey:@"DetectorLog"] mutableCopy] ?: [NSMutableArray new];
-
-        // Keep the newest 100 entries in the existing Shadow preferences
-        // file. ponytail: cross-process RMW can lose a simultaneous append;
-        // move ownership to shadowd only if real log volume makes that matter.
-        if(log.count >= 100) {
-            [log removeObjectsInRange:NSMakeRange(0, log.count - 99)];
-        }
-        [log addObject:entry];
-        [defaults setObject:log forKey:@"DetectorLog"];
-        [defaults synchronize];
-    });
-}
-
 // UIKit may not exist when the payload is injected at process spawn. Install
 // UIKit-class groups only after dyld reports that the framework is loaded.
 static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_slide) {
@@ -104,42 +54,17 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
 }
 
 void shdw_detector_detected(const char* reason) {
+    (void) reason;
+
     if(!shdw_coordinator_instance) {
         return;
     }
 
-    NSLog(@"[Shadow] detector probe: %s", reason ?: "unknown");
-    shdw_record_detector_event(reason);
     shdw_detector_present = YES;
-
-    // The vnode gate re-evaluates its preference and detector state per call.
-    shadowhook_vnode(NULL);
-    [shdw_coordinator_instance escalateWithReason:reason ? [NSString stringWithUTF8String:reason] : @"unknown"];
+    [shdw_coordinator_instance escalateWithReason:nil];
 }
 
 static void shdw_coord_envvars_c(HKSubstitutor* hooks) {
-    NSProcessInfo* procInfo = [NSProcessInfo processInfo];
-    NSDictionary* procEnv = [procInfo environment];
-    NSArray* safeEnvvars = @[
-        @"CFFIXED_USER_HOME",
-        @"HOME",
-        @"LOGNAME",
-        @"PATH",
-        @"SHELL",
-        @"TMPDIR",
-        @"USER",
-        @"XPC_FLAGS",
-        @"XPC_SERVICE_NAME",
-        @"__CF_USER_TEXT_ENCODING"
-    ];
-
-    for(NSString* envvar in procEnv) {
-        if(![safeEnvvars containsObject:envvar]) {
-            NSLog(@"+ removing envvar: %@", envvar);
-            unsetenv([envvar UTF8String]);
-        }
-    }
-
     setenv("SHELL", "/bin/sh", 1);
     shadowhook_libc_envvar(hooks);
     shadowhook_envpolicy(hooks);
@@ -280,9 +205,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         shdw_own_ranges_refresh();
         shdw_pseudo_init(prefs);
 
-        shdw_vnode_set_pref_enabled([prefs[@"VnodeHiding"] boolValue]);
-        shadowhook_vnode(NULL);
-
         NSLog(@"starting hooks");
         [Shadow shdwEnterInternalRead];
         @try {
@@ -296,8 +218,4 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
     }
 
     NSLog(@"ctor returned (install deferred)");
-}
-
-%dtor {
-    shadowhook_vnode_release();
 }

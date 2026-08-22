@@ -825,9 +825,8 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
         [rebindOnly hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
 
-    // Raw svc #0x80 interception (svc_patch.x): every image/region write is
-    // serialized and stop-the-world, so the add-image, periodic, and
-    // mprotect-triggered paths share the same live-code safety guarantee.
+    // Raw svc #0x80 interception (svc_patch.x): loaded-image writes are
+    // serialized and stop-the-world before app code can execute them.
     shdw_svc_patch_install();
 }
 

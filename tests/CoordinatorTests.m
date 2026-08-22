@@ -248,7 +248,7 @@ static void TestPresetConsistency(void) {
     NSDictionary* standard = SHDWPresetStandard();
 
     for(NSString* key in defaults) {
-        if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID]) {
+        if([key hasPrefix:@"Hook_"]) {
             CHECK([standard[key] isEqual:defaults[key]], "standard preset matches defaults for hook key");
         }
     }
@@ -283,7 +283,7 @@ static void TestNoDeadGroups(void) {
 
     for(NSString* key in defaults) {
         if(![key hasPrefix:@"Hook_"]) {
-            continue;   // VnodeHiding, Global_Enabled, HK_Library, ... are
+            continue;   // Global_Enabled, HK_Library, ... are
                         // not install units
         }
 
