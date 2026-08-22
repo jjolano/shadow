@@ -38,7 +38,6 @@ scheduled deep-fuzz workflow raises the iteration counts for both fuzzers.
 - Symlink resolution, path normalization, directory filtering, and error shapes.
 - Independent detector and benign-app differential batteries.
 - Mutation fuzzing and semantic-equivalence evasion fuzzing.
-- `shadowd` ledger and recovery behavior that can run without kernel access.
 - Hook-configuration and coordinator planning through the real framework code.
 
 The harness builds the production decision sources listed in `tests/Makefile`
@@ -59,8 +58,6 @@ SHADW_AFUZZ_SEED=123 SHADW_AFUZZ_ITERS=20000 make -C tests afuzz
 - HookKit interposition, Darwin-only APIs, and injected-process behavior require
   on-device probes.
 - Rooted `/usr/lib` reads use the host filesystem; rootless reads use fixtures.
-- Kernel primitives, vnode resolution, and the `shadowd` Mach service are
-  device-only.
 
 Use `tools/dyldprobe`, `tools/hookprobe`, `ShadowHarness`, and
 `tests/stealth-device.sh` for device validation.
@@ -71,6 +68,5 @@ Use `tools/dyldprobe`, `tools/hookprobe`, `ShadowHarness`, and
 - `fixtures/` — rulesets and fake jailbreak filesystem
 - `ShdwPathShim.*`, `fsinterpose.*`, `ShadowFilter.m` — host/device seams
 - `detectors/` — independent detector implementation
-- `shadowd/` — daemon recovery harness
 - `Dockerfile`, `build-linux.sh` — Linux toolchain
 - `coverage-report.sh`, `verify-hook-matrix.sh` — coverage and drift checks

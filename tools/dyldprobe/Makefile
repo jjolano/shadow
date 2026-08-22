@@ -19,7 +19,7 @@ dyldprobe_CODESIGN_FLAGS = -Sentitlements.plist
 # rootless (the /usr/lib and /var/jb/usr/lib copies also serve as fallback
 # copy sources).
 LIBRARY_NAME = shdwtestlib
-shdwtestlib_FILES = testlib.m
+shdwtestlib_FILES = testlib.c
 shdwtestlib_INSTALL_PATH = /Applications/dyldprobe.app
 
 include $(THEOS_MAKE_PATH)/application.mk

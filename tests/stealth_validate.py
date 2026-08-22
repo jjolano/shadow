@@ -34,8 +34,6 @@ MANIFEST_KEYS = {
 }
 COMPONENT_KEYS = {"shadowd", "ShadowCore", "harness", "dyldprobe", "hookprobe"}
 ALLOWLIST = {
-    "/var/mobile/Library/Preferences/me.jjolano.shadow.plist",
-    "/var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist",
     "/Library/PreferenceBundles/ShadowSettings.bundle",
     "/var/jb/Library/PreferenceBundles/ShadowSettings.bundle",
 }
@@ -221,9 +219,40 @@ def observations_dict(raw: dict[str, Any]) -> dict[str, Any]:
     return raw["observations"]
 
 
+def validate_vnode_enumeration(observation: Any, expected_paths: set[str] | None) -> None:
+    require(isinstance(observation, dict), "vnode observation detail missing")
+    row = observation.get("getdirentries64")
+    require(isinstance(row, dict) and row.get("supported") is True, "raw getdirentries64 unavailable")
+    paths = row.get("paths")
+    require(isinstance(paths, list) and paths, "raw enumeration paths missing")
+    seen = set()
+    for path_row in paths:
+        require(isinstance(path_row, dict) and isinstance(path_row.get("path"), str), "bad raw enumeration path")
+        seen.add(path_row["path"])
+        result = path_row.get("result")
+        require(isinstance(result, dict) and result.get("supported") is True, "raw enumeration result unavailable")
+        require(result.get("coherent") is True and result.get("eof") is True, "raw enumeration coherence failure")
+        records, batches = result.get("records"), result.get("batches")
+        require(isinstance(records, list) and records and isinstance(batches, list) and batches, "raw enumeration records missing")
+        for batch in batches:
+            require(isinstance(batch, dict) and isinstance(batch.get("bytes"), int) and batch["bytes"] > 0 and
+                    isinstance(batch.get("input_cookie"), int) and isinstance(batch.get("output_cookie"), int),
+                    "raw enumeration batch ABI incomplete")
+        for record in records:
+            require(isinstance(record, dict) and isinstance(record.get("offset"), int) and
+                    isinstance(record.get("reclen"), int) and record["reclen"] > 0 and
+                    isinstance(record.get("name"), str) and isinstance(record.get("input_cookie"), int) and
+                    isinstance(record.get("output_cookie"), int), "raw enumeration record ABI incomplete")
+    if expected_paths is None:
+        require(len(seen) == 1, "unrelated raw enumeration target drift")
+    else:
+        require(seen == expected_paths, "raw enumeration target drift")
+
+
 def validate_activation(scope_path: str, root: str) -> dict[str, Any]:
     scope = load_scope(scope_path)
-    reports = [(raw, man) for raw, man in scoped_reports(scope, root) if raw["requested_mode"] == "injected"]
+    reports = [(raw, man) for raw, man in scoped_reports(scope, root)
+               if raw["requested_mode"] == "injected" and isinstance(observations_dict(raw).get("activation"), dict)]
     require(len(reports) == 10, "activation requires exactly ten injected reports")
     fingerprints = []
     cases = set()
@@ -250,8 +279,8 @@ def validate_dyld(scope_path: str, directories: list[str]) -> dict[str, Any]:
             require(raw["requested_mode"] == expected_mode, "dyld lane mode mismatch")
             dyld = observations_dict(raw).get("dyld")
             require(isinstance(dyld, dict), "dyld observation missing")
-            require({"case_id", "views", "task_dyld_info", "callbacks", "concurrency", "address_uuid"} <= set(dyld), "dyld observation incomplete")
-            require(len(dyld["callbacks"]) >= 9 and passing(dyld["concurrency"]) and passing(dyld["address_uuid"]), "dyld callback/coherence failure")
+            require({"case_id", "views", "task_dyld_info", "callbacks", "concurrency", "address_uuid", "stress"} <= set(dyld), "dyld observation incomplete")
+            require(len(dyld["callbacks"]) >= 9 and passing(dyld["concurrency"]) and passing(dyld["address_uuid"]) and passing(dyld["stress"]), "dyld callback/coherence failure")
             info = dyld["task_dyld_info"]
             require(isinstance(info, dict) and info.get("address") and info.get("size", 0) > 0 and info.get("format") is not None and passing(info.get("retry")), "TASK_DYLD_INFO failure")
             views = dyld["views"]
@@ -272,12 +301,21 @@ def validate_vnode(root: str) -> dict[str, Any]:
         if not isinstance(vnode, dict):
             continue
         require(set(vnode.get("allowlist", [])) == ALLOWLIST, "vnode allowlist drift")
+        active = vnode.get("active_targets")
+        require(isinstance(active, list) and active and set(active) <= ALLOWLIST, "vnode active-target drift")
+        require(vnode.get("raw_enumeration") == "SUPPORTED", "raw enumeration claim blocked")
+        require(vnode.get("classification") in {"ineffective", "global", "per-process-observer-visible"}, "vnode classification missing")
         apis = vnode.get("apis")
         require(isinstance(apis, dict) and set(apis) == {"open", "openat", "stat", "access", "getdirentries64"}, "vnode API coverage drift")
         for name, row in apis.items():
             require(isinstance(row, dict) and all(passing(row.get(key)) for key in ("before", "held_target", "held_unrelated", "after")), f"vnode transition failed: {name}")
         enum = apis["getdirentries64"]
         require(all(passing(enum.get(key)) for key in ("packed_records", "record_lengths", "offsets_or_cookies", "eof", "small_buffer")), "getdirentries64 ABI incomplete")
+        details = vnode.get("details")
+        require(isinstance(details, dict), "vnode detail rows missing")
+        for phase in ("before", "held_target", "after"):
+            validate_vnode_enumeration(details.get(phase), set(active))
+        validate_vnode_enumeration(details.get("held_unrelated"), None)
         found += 1
     require(found > 0, "vnode observation missing")
     return {"status": "PASS", "reports": found}
@@ -439,7 +477,7 @@ def selftest() -> dict[str, Any]:
 
         # dyld
         dyld_scope = make_scope(root / "dyld-scope.json", ["dyld"], [], ["stock-row", "row"])
-        dyld_observation = {"case_id": "dyld", "views": {"public": ["A"], "memory": ["A"]}, "task_dyld_info": {"address": 1, "size": 8, "format": 64, "retry": "PASS"}, "callbacks": list(range(9)), "concurrency": "PASS", "address_uuid": "PASS"}
+        dyld_observation = {"case_id": "dyld", "views": {"public": ["A"], "memory": ["A"]}, "task_dyld_info": {"address": 1, "size": 8, "format": 64, "retry": "PASS"}, "callbacks": list(range(9)), "concurrency": "PASS", "address_uuid": "PASS", "stress": "PASS"}
         stock_pair = make_pair(root / "dyld" / "stock", {"dyld": dyld_observation}, mode="stock", row_id="stock-row", stock=True)
         make_pair(root / "dyld" / "uninjected", {"dyld": dyld_observation}, mode="uninjected")
         make_pair(root / "dyld" / "injected", {"dyld": dyld_observation})
@@ -456,12 +494,31 @@ def selftest() -> dict[str, Any]:
         try: validate_dyld(str(dyld_scope), [str(root / "dyld" / lane) for lane in ("stock", "uninjected", "injected")])
         except Invalid: pass
         else: raise AssertionError("dyld callback omission accepted")
+        dyld_raw["observations"]["dyld"].update(callbacks=list(range(9)), stress="FAIL"); write_json(root / "dyld" / "injected" / "raw.json", dyld_raw)
+        dyld_manifest["artifacts"][0]["sha256"] = digest(root / "dyld" / "injected" / "raw.json"); write_json(root / "dyld" / "injected" / "manifest.json", dyld_manifest)
+        try: validate_dyld(str(dyld_scope), [str(root / "dyld" / lane) for lane in ("stock", "uninjected", "injected")])
+        except Invalid: pass
+        else: raise AssertionError("dyld stress failure accepted")
 
         # vnode
         transition = {key: "PASS" for key in ("before", "held_target", "held_unrelated", "after")}
         vnode_apis = {name: copy.deepcopy(transition) for name in ("open", "openat", "stat", "access", "getdirentries64")}
         vnode_apis["getdirentries64"].update({key: "PASS" for key in ("packed_records", "record_lengths", "offsets_or_cookies", "eof", "small_buffer")})
-        make_pair(root / "vnode", {"vnode": {"allowlist": sorted(ALLOWLIST), "apis": vnode_apis}})
+        def enum_detail(paths: list[str]) -> dict[str, Any]:
+            return {"getdirentries64": {"supported": True, "paths": [
+                {"path": path, "result": {"supported": True, "coherent": True, "eof": True,
+                    "records": [{"offset": 0, "reclen": 24, "name": ".", "input_cookie": 0, "output_cookie": 24}],
+                    "batches": [{"bytes": 24, "input_cookie": 0, "output_cookie": 24}]}}
+                for path in paths
+            ]}}
+        active = ["/var/jb/Library/PreferenceBundles/ShadowSettings.bundle"]
+        vnode_details = {
+            "before": enum_detail(active), "held_target": enum_detail(active), "after": enum_detail(active),
+            "held_unrelated": enum_detail(["/System/Library/CoreServices/SystemVersion.plist"]),
+        }
+        make_pair(root / "vnode", {"vnode": {"allowlist": sorted(ALLOWLIST), "active_targets": active,
+            "raw_enumeration": "SUPPORTED", "classification": "global", "apis": vnode_apis,
+            "details": vnode_details}})
         validate_vnode(str(root / "vnode"))
         vnode_raw = read_json(root / "vnode" / "raw.json"); vnode_raw["observations"]["vnode"]["apis"]["getdirentries64"]["small_buffer"] = "FAIL"; write_json(root / "vnode" / "raw.json", vnode_raw)
         vnode_manifest = read_json(root / "vnode" / "manifest.json"); vnode_manifest["artifacts"][0]["sha256"] = digest(root / "vnode" / "raw.json"); write_json(root / "vnode" / "manifest.json", vnode_manifest)

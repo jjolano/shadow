@@ -15,9 +15,6 @@ BOOL shdw_pseudo_enabled(void);
 BOOL shdw_pseudo_strict(void);
 BOOL shdw_pseudo_is_allowed(const char* path);
 BOOL shdw_pseudo_should_deny(const char* path);
-BOOL shdw_pseudo_denies_path(const char* path);
-BOOL shdw_pseudo_is_restricted(const char* path);
-BOOL shdw_pseudo_enforce_should_deny(const char* path);
 void shdw_pseudo_audit_log(const char* path, BOOL belt, const char* op);
 
 #endif

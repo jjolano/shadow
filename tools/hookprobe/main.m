@@ -19,8 +19,8 @@
 // filter), NSArray (no restricted fixture parses natively as an array —
 // dict-rooted ruleset returns nil natively), and groups the effective
 // global prefs disable (shipped defaults: Syscall/Sandbox/MachBootstrap/
-// Memory/Foundation/IOKit/AntiDebugging/VnodeHiding ship OFF). Probed
-// groups: libc, dyld, objc, mem, vnode, syscall (csops), DeviceCheck,
+// Memory/Foundation/IOKit/AntiDebugging ship OFF). Probed groups: libc, dyld,
+// objc, mem, syscall (csops), DeviceCheck,
 // UIImage, NSFileManager/NSURL/NSBundle/NSString/NSData/NSDictionary/
 // NSFileHandle, NSThread, NSFileVersion/NSFileWrapper, NSProcessInfo, mach,
 // sandbox, NSUserDefaults.
@@ -35,17 +35,23 @@
 // libc.x:2103-2106) — gated separately so neither false-FAILs the other.
 
 #import <Foundation/Foundation.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
 #import <mach/mach.h>
 #import <bootstrap.h>
 #import <sandbox.h>
 #import <dlfcn.h>
+#import <ctype.h>
 #import <sys/stat.h>
 #import <sys/types.h>
-#import <fcntl.h>
 #import <dirent.h>
+#import <fcntl.h>
 #import <unistd.h>
+#import <stdlib.h>
+#import <string.h>
+
+#import "identity_fixture.h"
 
 // The 16.5 SDK stubs out mach_vm.h ("unsupported") — declare the prototype
 // manually. The flavor is BY VALUE (a pointer-form prototype passes a
@@ -75,19 +81,155 @@ extern int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 static int gPass = 0;
 static int gFail = 0;
 static int gSkip = 0;
+static NSMutableArray* gProbeRows = nil;
+
+// The host ledger owns the detailed source-level contract for each ID.  This
+// table names the on-device witness that proves the corresponding installed
+// hook group is live on the frozen candidate.  A witness is deliberately
+// concrete (rather than an aggregate score): a changed or skipped probe makes
+// every dependent canonical row fail visibly.
+typedef struct {
+    const char* identifier;
+    const char* witnesses[5];
+} CanonicalRegression;
+
+static const CanonicalRegression kCanonicalRegressions[] = {
+    { "C-01",    { "libc|open(restricted)", "libc|opendir(restricted)" } },
+    { "C-02",    { "libc|stat(restricted)" } },
+    { "C-03",    { "libc|stat(restricted)" } },
+    { "C-04",    { "libc|open(restricted)" } },
+    { "C-05",    { "libc|opendir(restricted)" } },
+    { "C-06",    { "libc|getenv(DYLD_INSERT_LIBRARIES)", "NSProcessInfo|environment sanitized" } },
+    { "C-07",    { "syscall|csops(CDHASH)" } },
+    { "C-08",    { "syscall|csops(invalid op) control" } },
+    { "C-09",    { "libc|stat(restricted)", "libc|open(restricted)" } },
+    { "C-10",    { "syscall|csops(CDHASH)", "syscall|csops(invalid op) control" } },
+    { "C-11",    { "mem|vm_region hides ShadowCore" } },
+    { "C-12",    { "mach|bootstrap_look_up(restricted service)", "mach|bootstrap_look_up(control service)" } },
+    { "C-13",    { "sandbox|sandbox_check(restricted)", "sandbox|sandbox_check(control)" } },
+    { "C-14",    { "libc|open(restricted)" } },
+    { "C-15",    { "sandbox|sandbox_check(control)" } },
+    { "C-16",    { "syscall|csops(CDHASH)" } },
+    { "C-17",    { "libc|getenv(DYLD_INSERT_LIBRARIES)", "mach|bootstrap_look_up(restricted service)", "sandbox|sandbox_check(restricted)", "syscall|csops(CDHASH)" } },
+    { "CORE-01", { "libc|stat(restricted)", "libc|open(restricted)" } },
+    { "CORE-02", { "dyld|dladdr(shadowcore)", "objc|NSClassFromString(Shadow)" } },
+    { "CORE-03", { "NSFileManager|attributesOfItemAtPath(restricted)", "NSURL|checkResourceIsReachable(restricted)" } },
+    { "CORE-04", { "LSApplicationWorkspace|applicationsAvailableForHandlingURLScheme(restricted)" } },
+    { "CORE-05", { "LSApplicationWorkspace|applicationProxyForIdentifier(restricted)", "objc|NSClassFromString(Shadow)" } },
+    { "CORE-06", { "objc|NSClassFromString(Shadow)", "objc|objc_getClass(Shadow)" } },
+    { "CORE-07", { "NSProcessInfo|environment sanitized", "NSUserDefaults|standard defaults roundtrip" } },
+    { "CORE-08", { "libc|stat(restricted)", "libc|opendir(restricted)" } },
+    { "CORE-09", { "NSFileManager|fileExistsAtPath(restricted)", "libc|stat(restricted)" } },
+    { "DY-01",  { "dyld|dladdr(shadowcore)", "mem|vm_region hides ShadowCore" } },
+    { "DY-02",  { "objc|NSClassFromString(Shadow)" } },
+    { "DY-03",  { "objc|objc_getClass(Shadow)" } },
+    { "DY-04",  { "objc|NSClassFromString(Shadow)", "objc|objc_getClass(Shadow)" } },
+    { "DY-05",  { "dyld|dladdr(shadowcore)" } },
+    { "DY-06",  { "dyld|dladdr(shadowcore)" } },
+    { "DY-07",  { "dyld|dladdr(CFGetTypeID) control" } },
+    { "DY-08",  { "dyld|dladdr(shadowcore)", "mem|vm_region hides ShadowCore" } },
+    { "DY-09",  { "objc|NSClassFromString(Shadow)" } },
+    { "DY-10",  { "NSBundle|bundleWithPath(shadowfwk)", "dyld|dladdr(shadowcore)" } },
+    { "DY-11",  { "objc|objc_getClass(Shadow)" } },
+    { "DY-12",  { "dyld|dladdr(shadowcore)" } },
+    { "FILE-01", { "NSFileManager|attributesOfItemAtPath(restricted)" } },
+    { "FILE-02", { "NSFileManager|fileExistsAtPath(restricted)", "NSFileManager|isReadableFileAtPath(restricted)", "NSFileManager|contentsOfDirectoryAtPath(restricted)" } },
+    { "FILE-03", { "NSFileManager|contentsOfDirectoryAtPath(restricted)" } },
+    { "FILE-04", { "libc|stat(restricted)", "NSFileManager|fileExistsAtPath(restricted)" } },
+    { "FILE-05", { "NSURL|checkResourceIsReachable(restricted)", "NSURL|fileReferenceURL(restricted)", "NSURL|filePathURL(restricted)" } },
+    { "FILE-06", { "NSURL|checkResourceIsReachable(restricted)" } },
+    { "FILE-07", { "NSURL|checkResourceIsReachable(control)" } },
+    { "FILE-08", { "NSFileVersion|currentVersionOfItemAtURL(restricted)", "NSFileVersion|currentVersionOfItemAtURL(control)" } },
+    { "FILE-09", { "NSFileManager|fileExistsAtPath(restricted)", "NSURL|checkResourceIsReachable(restricted)" } },
+    { "FILE-10", { "NSString|stringWithContentsOfFile(ruleset)", "NSData|dataWithContentsOfFile(shadowcore)", "NSDictionary|dictionaryWithContentsOfFile(ruleset)" } },
+    { "N-01",   { "NSThread|callStack* filtered" } },
+    { "N-02",   { "NSProcessInfo|environment sanitized", "libc|getenv(DYLD_INSERT_LIBRARIES)" } },
+    { "N-03",   { "LSApplicationWorkspace|applicationProxyForIdentifier(restricted)" } },
+    { "N-04",   { "NSFileVersion|currentVersionOfItemAtURL(restricted)" } },
+    { "N-05",   { "DeviceCheck|DCDevice.isSupported baseline", "DeviceCheck|DCDevice.isSupported" } },
+    { "N-06",   { "LSApplicationWorkspace|applicationsAvailableForHandlingURLScheme(restricted)" } },
+    { "N-07",   { "UIImage|imageNamed(inBundle:) baseline", "UIImage|imageNamed(inBundle:)" } },
+    { "N-08",   { "NSBundle|bundleWithPath(shadowfwk)", "NSBundle|mainBundle(control)" } },
+    { "N-09",   { "NSString|stringWithContentsOfFile(ruleset)" } },
+    { "N-10",   { "NSData|dataWithContentsOfFile(shadowcore)", "NSDictionary|dictionaryWithContentsOfFile(ruleset)" } },
+};
+
+static NSDictionary* probeForWitness(const char* witness) {
+    NSString* needle = [NSString stringWithUTF8String:witness];
+
+    for(NSDictionary* probe in gProbeRows) {
+        NSString* key = [NSString stringWithFormat:@"%@|%@", probe[@"group"], probe[@"name"]];
+
+        if([key isEqualToString:needle]) {
+            return probe;
+        }
+    }
+
+    return nil;
+}
+
+static NSArray* canonicalRegressionRows(BOOL* complete) {
+    NSMutableArray* rows = [NSMutableArray array];
+    NSMutableSet* identifiers = [NSMutableSet set];
+    BOOL valid = YES;
+
+    for(NSUInteger i = 0; i < sizeof(kCanonicalRegressions) / sizeof(kCanonicalRegressions[0]); i++) {
+        const CanonicalRegression* mapping = &kCanonicalRegressions[i];
+        NSString* identifier = @(mapping->identifier);
+        NSMutableArray* witnesses = [NSMutableArray array];
+        BOOL passed = mapping->identifier[0] != '\0' && ![identifiers containsObject:identifier];
+
+        [identifiers addObject:identifier];
+
+        for(NSUInteger j = 0; j < sizeof(mapping->witnesses) / sizeof(mapping->witnesses[0]); j++) {
+            const char* witness = mapping->witnesses[j];
+
+            if(!witness) {
+                break;
+            }
+
+            NSDictionary* probe = probeForWitness(witness);
+            NSString* status = probe[@"status"] ?: @"MISSING";
+            [witnesses addObject:@{ @"probe" : @(witness), @"status" : status }];
+            passed = passed && [status isEqualToString:@"PASS"];
+        }
+
+        valid = valid && witnesses.count > 0;
+        [rows addObject:@{ @"id" : identifier, @"status" : passed ? @"PASS" : @"FAIL",
+                           @"witnesses" : witnesses }];
+    }
+
+    valid = valid && rows.count == 58 && identifiers.count == 58;
+
+    if(complete) {
+        *complete = valid;
+    }
+
+    return rows;
+}
+
+static void recordProbe(NSString* group, NSString* name, NSString* status, NSString* detail) {
+    if(gProbeRows) {
+        [gProbeRows addObject:@{ @"group" : group, @"name" : name,
+                                 @"status" : status, @"detail" : detail }];
+    }
+}
 
 static void report(NSString* group, NSString* name, BOOL ok, NSString* detail) {
     if(ok) {
         gPass += 1;
+        recordProbe(group, name, @"PASS", detail);
         NSLog(@"[hookprobe] PASS %@::%@ %@", group, name, detail);
     } else {
         gFail += 1;
+        recordProbe(group, name, @"FAIL", detail);
         NSLog(@"[hookprobe] FAIL %@::%@ %@", group, name, detail);
     }
 }
 
 static void skip(NSString* group, NSString* name, NSString* reason) {
     gSkip += 1;
+    recordProbe(group, name, @"SKIP", reason);
     NSLog(@"[hookprobe] SKIP %@::%@ (%@)", group, name, reason);
 }
 
@@ -103,9 +245,7 @@ static NSString* const kShadowFwk    = @"/var/jb/Library/Frameworks/Shadow.frame
 static NSString* const kShadowFwkBin = @"/var/jb/Library/Frameworks/Shadow.framework/Shadow";
 static NSString* const kControlDir   = @"/var/mobile/Documents";
 
-// The vnode probe target: the daemon's allowlist hides exactly this plist
-// (and ShadowSettings.bundle) — NOT /var/jb — so it is the one path whose
-// kernel-side disappearance proves the vnode layer engaged.
+// Shared preference suite used to resolve the effective hook configuration.
 static NSString* const kShadowPrefsPlist = @"/var/mobile/Library/Preferences/me.jjolano.shadow.plist";
 
 // ---------------------------------------------------------------------------
@@ -149,8 +289,7 @@ static NSSet* shdw_defaultOffKeys(void) {
             @"Hook_MachBootstrap",
             @"Hook_IOKit",
             @"Hook_AntiDebugging",
-            @"Hook_DynamicLibrariesExtra",
-            @"VnodeHiding"
+            @"Hook_DynamicLibrariesExtra"
         ]];
     });
 
@@ -488,116 +627,6 @@ static void probeMem(const struct mach_header* shadowCoreHeader) {
 }
 
 // ---------------------------------------------------------------------------
-// Raw stat64: bypasses the libc stat() interposer (which cannot distinguish
-// the vnode layer from the libc hook). ENOENT from a raw SYS_stat64 proves
-// the daemon-mediated vnode layer engaged. arm64 Darwin BSD convention:
-// syscall number in x16, args in x0-x2, result in x0, and the CARRY flag
-// signals error — on error x0 holds the POSITIVE errno (not a negative
-// return). Carry is bit 29 of NZCV, read after svc.
-// ---------------------------------------------------------------------------
-
-static int shdw_raw_stat64(const char* path, struct stat* st) {
-    unsigned long nzcv = 0;
-    long ret = 0;
-
-    __asm__ __volatile__(
-        "mov x0, %[path]\n\t"
-        "mov x1, %[st]\n\t"
-        "mov x16, #338\n\t"        // SYS_stat64
-        "svc #0x80\n\t"
-        "mov %[ret], x0\n\t"
-        "mrs %[nzcv], nzcv"
-        : [ret] "=r"(ret), [nzcv] "=r"(nzcv)
-        : [path] "r"(path), [st] "r"(st)
-        : "x0", "x1", "x16", "cc", "memory"
-    );
-
-    if(nzcv & (1UL << 29)) {
-        errno = (int)ret;
-        return -1;
-    }
-
-    return (int)ret;
-}
-
-// ---------------------------------------------------------------------------
-// vnode group (vnode.x): kernel-side hiding via the daemon lease. The daemon
-// hides ONLY the prefs plist and ShadowSettings.bundle (its allowlist), NOT
-// /var/jb, so the probe target is the prefs plist itself; control is
-// SystemVersion.plist. The daemon REJECTS root clients — main() drops to
-// uid 501 around dlopen (the lease is acquired synchronously in the ctor).
-// With VnodeHiding enabled and daemon/KRW fail-open, visibility is an honest
-// FAIL, never a skip.
-// ---------------------------------------------------------------------------
-
-static BOOL gVnodeBaselineOK = NO;
-
-static void probeVnodeBaseline(void) {
-    struct stat st;
-
-    errno = 0;
-    int t = shdw_raw_stat64([kShadowPrefsPlist fileSystemRepresentation], &st);
-    int tErrno = errno;
-
-    errno = 0;
-    int c = shdw_raw_stat64("/System/Library/CoreServices/SystemVersion.plist", &st);
-    int cErrno = errno;
-
-    // A failed control is a setup failure (broken asm / missing file), not a
-    // hidden target — FAIL so the probe cannot be silently disabled.
-    if(c != 0) {
-        report(@"vnode", @"baseline control", NO, [NSString stringWithFormat:@"raw stat64 rc=%d errno=%d (expected 0)", c, cErrno]);
-        return;
-    }
-
-    if(t != 0 && tErrno != ENOENT) {
-        report(@"vnode", @"baseline target", NO, [NSString stringWithFormat:@"raw stat64 rc=%d errno=%d (expected 0)", t, tErrno]);
-        return;
-    }
-
-    if(t != 0) {
-        // Control OK + target ENOENT: already hidden pre-dlopen (e.g. a
-        // global vnode lease from another process) — cannot test the layer
-        // from here.
-        skip(@"vnode", @"vnode-layer hiding", @"precondition: target already hidden pre-dlopen");
-        return;
-    }
-
-    gVnodeBaselineOK = YES;
-}
-
-static void probeVnodePost(void) {
-    if(!gVnodeBaselineOK) {
-        return;  // already skipped in baseline
-    }
-
-    struct stat st;
-
-    errno = 0;
-    int t = shdw_raw_stat64([kShadowPrefsPlist fileSystemRepresentation], &st);
-    int tErrno = errno;
-
-    errno = 0;
-    int c = shdw_raw_stat64("/System/Library/CoreServices/SystemVersion.plist", &st);
-    int cErrno = errno;
-
-    errno = 0;
-    int l = stat([kShadowPrefsPlist fileSystemRepresentation], &st);
-    int lErrno = errno;
-
-    BOOL targetHidden = (t != 0) && (tErrno == ENOENT);
-    BOOL controlVisible = (c == 0);
-
-    report(@"vnode", @"vnode-layer hiding", targetHidden && controlVisible,
-           [NSString stringWithFormat:@"raw target rc=%d errno=%d | raw control rc=%d errno=%d | libc stat rc=%d errno=%d",
-            t, tErrno, c, cErrno, l, lErrno]);
-
-    // Informational: libc stat sees the hide too (hooks live, either layer).
-    report(@"vnode", @"stat(prefs plist) via libc", (l != 0) && (lErrno == ENOENT),
-           [NSString stringWithFormat:@"rc=%d errno=%d", l, lErrno]);
-}
-
-// ---------------------------------------------------------------------------
 // syscall group (syscall.x): csops CDHASH hiding. Precondition (unhooked
 // baseline): CDHASH on self succeeds with a NONZERO hash. Post: the hook
 // runs the original first, then converts the success into -1/EBADEXEC (the
@@ -918,6 +947,12 @@ static void probeNSProcessInfo(void) {
     report(@"NSProcessInfo", @"environment sanitized", noInsertLibraries, [NSString stringWithFormat:@"keys=%lu", (unsigned long)[env count]]);
 }
 
+static void probeEnvironment(void) {
+    const char* inserted = getenv("DYLD_INSERT_LIBRARIES");
+    report(@"libc", @"getenv(DYLD_INSERT_LIBRARIES)", inserted == NULL,
+           inserted ? [NSString stringWithUTF8String:inserted] : @"nil (filtered)");
+}
+
 // ---------------------------------------------------------------------------
 // NSUserDefaults group (NSUserDefaults.x) — control: normal keys must work.
 // ---------------------------------------------------------------------------
@@ -1027,11 +1062,592 @@ static void probeSkippedGroups(void) {
 // main
 // ---------------------------------------------------------------------------
 
-int main(int argc, char* argv[]) {
-    (void) argc;
-    (void) argv;
+static const char* optionValue(int argc, char* argv[], const char* option) {
+    for(int i = 1; i + 1 < argc; i++) {
+        if(strcmp(argv[i], option) == 0) {
+            return argv[i + 1];
+        }
+    }
 
+    return NULL;
+}
+
+static void writeJSON(NSDictionary* value) {
+    NSError* error = nil;
+    NSData* data = [NSJSONSerialization dataWithJSONObject:value options:0 error:&error];
+
+    if(!data) {
+        fprintf(stderr, "hookprobe: failed to encode JSON: %s\n", error.localizedDescription.UTF8String);
+        return;
+    }
+
+    fwrite(data.bytes, 1, data.length, stdout);
+    fputc('\n', stdout);
+    fflush(stdout);
+}
+
+static BOOL reportArguments(int argc, char* argv[], const char** runID, const char** rowID,
+                            const char** nonce, const char** revision, const char** requestedMode) {
+    *runID = optionValue(argc, argv, "--run-id");
+    *rowID = optionValue(argc, argv, "--row-id");
+    *nonce = optionValue(argc, argv, "--nonce");
+    *revision = optionValue(argc, argv, "--probe-revision");
+    *requestedMode = optionValue(argc, argv, "--requested-mode");
+    return *runID && *rowID && *nonce && *revision && *requestedMode;
+}
+
+static int reportModeNotRun(int argc, char* argv[], const char* mode) {
+    const char *runID, *rowID, *nonce, *revision, *requestedMode;
+
+    if(!reportArguments(argc, argv, &runID, &rowID, &nonce, &revision, &requestedMode)) {
+        fprintf(stderr, "hookprobe: %s requires run, row, nonce, revision, and mode\n", mode);
+        return 64;
+    }
+
+    NSDictionary* observations;
+
+    if(strncmp(mode, "lifecycle-", strlen("lifecycle-")) == 0 || strcmp(mode, "vnode-held-lease") == 0) {
+        observations = @{ @"lifecycle" : @[ @{ @"id" : @(mode), @"status" : @"NOT-RUN",
+                                                   @"restore" : @"NOT-RUN",
+                                                   @"reason" : @"backend lifecycle was removed" } ] };
+    } else {
+        observations = @{ @"mode" : @{ @"id" : @(mode), @"status" : @"NOT-RUN",
+                                          @"reason" : @"mode has no device implementation" } };
+    }
+
+    writeJSON(@{
+        @"schema_version" : @1,
+        @"producer" : @"hookprobe-mode-not-run",
+        @"run_id" : @(runID),
+        @"row_id" : @(rowID),
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : @(requestedMode),
+        @"nonce" : @(nonce),
+        @"probe_revision" : @(revision),
+        @"canary" : @{ @"status" : @"NOT-RUN" },
+        @"observations" : observations,
+        @"producer_exit" : @1,
+    });
+    return 1;
+}
+
+static int reportRegressionMatrix(int argc, char* argv[], BOOL hooksLive) {
+    const char *runID, *rowID, *nonce, *revision, *requestedMode;
+
+    if(!reportArguments(argc, argv, &runID, &rowID, &nonce, &revision, &requestedMode)) {
+        fprintf(stderr, "hookprobe: regression-matrix requires run, row, nonce, revision, and mode\n");
+        return 64;
+    }
+
+    struct stat st;
+    BOOL unrelated = stat([kControlDir fileSystemRepresentation], &st) == 0;
+    NSDictionary* controls = @{ @"positive" : hooksLive ? @"PASS" : @"FAIL",
+                                @"unrelated" : unrelated ? @"PASS" : @"FAIL" };
+    BOOL canonicalComplete = NO;
+    NSArray* regression = canonicalRegressionRows(&canonicalComplete);
+    BOOL passed = hooksLive && unrelated && gFail == 0 && canonicalComplete;
+    NSDictionary* observations = @{
+        @"probes" : gProbeRows ? [gProbeRows copy] : @[],
+        @"regression" : regression,
+        @"controls" : controls,
+        @"coverage" : @{ @"status" : canonicalComplete ? @"PASS" : @"FAIL",
+                           @"canonical_count" : @(regression.count),
+                           @"device_evidence" : @"named installed-hook witnesses; detailed contract assertions remain in the host ledger",
+                           @"probe_summary" : @{ @"pass" : @(gPass), @"fail" : @(gFail), @"skip" : @(gSkip) } },
+    };
+
+    writeJSON(@{
+        @"schema_version" : @1,
+        @"producer" : @"hookprobe-regression-matrix",
+        @"run_id" : @(runID),
+        @"row_id" : @(rowID),
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : @(requestedMode),
+        @"nonce" : @(nonce),
+        @"probe_revision" : @(revision),
+        @"canary" : @{ @"status" : hooksLive ? @"PASS" : @"FAIL" },
+        @"observations" : observations,
+        @"producer_exit" : @(passed ? 0 : 1),
+    });
+    return passed ? 0 : 1;
+}
+
+static BOOL isBackendAbsenceMode(const char* mode) {
+    return mode && (strcmp(mode, "lifecycle-backend-absent") == 0 ||
+                    strcmp(mode, "lifecycle-backend-absent-springboard-restart") == 0 ||
+                    strcmp(mode, "lifecycle-backend-absent-userspace-reboot") == 0);
+}
+
+static BOOL missingPath(const char* path, int* outErrno) {
+    errno = 0;
+    BOOL missing = access(path, F_OK) != 0 && errno == ENOENT;
+
+    if(outErrno) {
+        *outErrno = errno;
+    }
+
+    return missing;
+}
+
+static int reportBackendAbsence(int argc, char* argv[], const char* mode) {
+    const char* runID = optionValue(argc, argv, "--run-id");
+    const char* rowID = optionValue(argc, argv, "--row-id");
+    const char* nonce = optionValue(argc, argv, "--nonce");
+    const char* revision = optionValue(argc, argv, "--probe-revision");
+    const char* requestedMode = optionValue(argc, argv, "--requested-mode");
+
+    if(!runID || !rowID || !nonce || !revision || !requestedMode) {
+        fprintf(stderr, "hookprobe: lifecycle-backend-absent requires run, row, nonce, revision, and mode\n");
+        return 64;
+    }
+
+    int rootlessErrno = 0, rootfulErrno = 0, rootlessLedgerErrno = 0, rootfulLedgerErrno = 0;
+    int rootlessLogErrno = 0, rootfulLogErrno = 0;
+    BOOL rootlessMissing = missingPath("/var/jb/usr/libexec/shadowd", &rootlessErrno);
+    BOOL rootfulMissing = missingPath("/usr/libexec/shadowd", &rootfulErrno);
+    BOOL rootlessLedgerMissing = missingPath("/var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger", &rootlessLedgerErrno);
+    BOOL rootfulLedgerMissing = missingPath("/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger", &rootfulLedgerErrno);
+    BOOL rootlessLogMissing = missingPath("/var/jb/var/log/shadowd.log", &rootlessLogErrno);
+    BOOL rootfulLogMissing = missingPath("/var/log/shadowd.log", &rootfulLogErrno);
+    mach_port_t service = MACH_PORT_NULL;
+    kern_return_t serviceResult = bootstrap_look_up(bootstrap_port, "me.jjolano.shadow.service", &service);
+    BOOL serviceMissing = serviceResult == BOOTSTRAP_UNKNOWN_SERVICE && service == MACH_PORT_NULL;
+    BOOL restartMode = strcmp(mode, "lifecycle-backend-absent") != 0;
+    const char* reconnect = optionValue(argc, argv, "--reconnect");
+    BOOL reconnectPassed = !restartMode || (reconnect && strcmp(reconnect, "PASS") == 0);
+
+    if(service != MACH_PORT_NULL) {
+        mach_port_deallocate(mach_task_self(), service);
+    }
+
+    BOOL passed = rootlessMissing && rootfulMissing && rootlessLedgerMissing && rootfulLedgerMissing &&
+                  rootlessLogMissing && rootfulLogMissing && serviceMissing && reconnectPassed;
+    NSArray* checks = @[
+        @{ @"id" : @"rootless-payload", @"status" : rootlessMissing ? @"PASS" : @"FAIL", @"errno" : @(rootlessErrno) },
+        @{ @"id" : @"rootful-payload", @"status" : rootfulMissing ? @"PASS" : @"FAIL", @"errno" : @(rootfulErrno) },
+        @{ @"id" : @"rootless-ledger", @"status" : rootlessLedgerMissing ? @"PASS" : @"FAIL", @"errno" : @(rootlessLedgerErrno) },
+        @{ @"id" : @"rootful-ledger", @"status" : rootfulLedgerMissing ? @"PASS" : @"FAIL", @"errno" : @(rootfulLedgerErrno) },
+        @{ @"id" : @"rootless-activation-log", @"status" : rootlessLogMissing ? @"PASS" : @"FAIL", @"errno" : @(rootlessLogErrno) },
+        @{ @"id" : @"rootful-activation-log", @"status" : rootfulLogMissing ? @"PASS" : @"FAIL", @"errno" : @(rootfulLogErrno) },
+        @{ @"id" : @"mach-service", @"status" : serviceMissing ? @"PASS" : @"FAIL", @"kern_return" : @(serviceResult) },
+    ];
+    NSMutableDictionary* lifecycle = [@{ @"id" : @(mode), @"status" : passed ? @"PASS" : @"FAIL",
+                                         @"restore" : @"PASS", @"checks" : checks } mutableCopy];
+
+    if(restartMode) {
+        lifecycle[@"reconnect"] = reconnectPassed ? @"PASS" : @"FAIL";
+    }
+
+    NSDictionary* report = @{
+        @"schema_version" : @1,
+        @"producer" : @"hookprobe-backend-absence",
+        @"run_id" : @(runID),
+        @"row_id" : @(rowID),
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : @(requestedMode),
+        @"nonce" : @(nonce),
+        @"probe_revision" : @(revision),
+        @"canary" : @{ @"status" : passed ? @"PASS" : @"FAIL" },
+        @"observations" : @{ @"lifecycle" : @[ lifecycle ] },
+        @"producer_exit" : @(passed ? 0 : 1),
+    };
+
+    writeJSON(report);
+    return passed ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// Caller-identity battery
+// ---------------------------------------------------------------------------
+
+typedef int (*IdentityFixtureProbe)(const char*, const char*, shdw_identity_fixture_result_t*);
+typedef NSDictionary* (*IdentitySnapshotMessage)(id, SEL, id, id);
+typedef NSDictionary* (*IdentityImageMessage)(id, SEL, id);
+typedef void (*IdentityScopeMessage)(id, SEL);
+
+typedef struct {
+    const char* id;
+    const char* relativePath;
+} IdentityFixtureVariant;
+
+static const IdentityFixtureVariant kIdentityFixtureVariants[] = {
+    { "copied", "copied.dylib" },
+    { "symlinked", "symlinked.dylib" },
+    { "matching-basename", "Shadow.dylib" },
+    { "embedded", "Frameworks/Shadow.framework/Shadow" },
+    { "case", "shadowcore.dylib" },
+    { "prefix", "ShadowCoreCompat.dylib" },
+    // Load this last so it is a true post-install, post-escalation image.
+    { "late-loaded", "late.dylib" },
+};
+
+static NSDictionary* identityDictionary(id value) {
+    return [value isKindOfClass:[NSDictionary class]] ? value : nil;
+}
+
+static BOOL identityBool(NSDictionary* dictionary, NSString* key) {
+    id value = dictionary[key];
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+}
+
+static NSInteger identityInteger(NSDictionary* dictionary, NSString* key, NSInteger fallback) {
+    id value = dictionary[key];
+    return [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : fallback;
+}
+
+static NSString* identityStatus(BOOL passed) {
+    return passed ? @"PASS" : @"FAIL";
+}
+
+static void appendIdentityRegression(NSMutableArray* rows, NSString* variant, NSString* surface, NSString* status) {
+    [rows addObject:@{ @"id" : [NSString stringWithFormat:@"identity.%@.%@", variant, surface],
+                       @"status" : status }];
+}
+
+static BOOL identityFixtureDirectoryIsSafe(const char* path) {
+    static const char prefix[] = "/var/jb/usr/lib/.shadow-hookprobe-identity-";
+    size_t prefixLength = sizeof(prefix) - 1;
+
+    if(!path || strncmp(path, prefix, prefixLength) != 0 || !path[prefixLength]) {
+        return NO;
+    }
+
+    for(const unsigned char* cursor = (const unsigned char*)path + prefixLength; *cursor; cursor++) {
+        if(!isalnum(*cursor) && *cursor != '.' && *cursor != '_' && *cursor != '-') {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
+static NSDictionary* identityCoreSnapshot(NSString* bundleID, NSString* scheme) {
+    Class coordinator = objc_getRequiredClass("SHDWHookCoordinator");
+    SEL selector = sel_registerName("shdw_identitySnapshotForBundleID:scheme:");
+
+    if(!coordinator || ![coordinator respondsToSelector:selector]) {
+        return nil;
+    }
+
+    id value = ((IdentitySnapshotMessage)objc_msgSend)((id)coordinator, selector, bundleID, scheme);
+    return identityDictionary(value);
+}
+
+static NSDictionary* identityCoreImageForAddress(uintptr_t address) {
+    Class coordinator = objc_getRequiredClass("SHDWHookCoordinator");
+    SEL selector = sel_registerName("shdw_identityImageForAddress:");
+
+    if(!coordinator || !address || ![coordinator respondsToSelector:selector]) {
+        return nil;
+    }
+
+    id value = ((IdentityImageMessage)objc_msgSend)((id)coordinator, selector,
+                                                     [NSValue valueWithPointer:(const void*)address]);
+    return identityDictionary(value);
+}
+
+// `dlopen`/`dlsym` must run under the existing explicit internal scope only
+// to stage filenames which the loader correctly hides from external callers.
+// The scope exits before the fixture invokes any observed API, so its caller
+// remains external and cannot borrow Shadow's truth privilege.
+static IdentityFixtureProbe identityLoadFixture(NSString* path) {
+    Class shadow = objc_getRequiredClass("Shadow");
+    SEL enter = sel_registerName("shdwEnterInternalRead");
+    SEL exit = sel_registerName("shdwExitInternalRead");
+    IdentityFixtureProbe probe = NULL;
+
+    if(!shadow || ![shadow respondsToSelector:enter] || ![shadow respondsToSelector:exit]) {
+        return NULL;
+    }
+
+    ((IdentityScopeMessage)objc_msgSend)((id)shadow, enter);
+    @try {
+        void* handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
+
+        if(handle) {
+            probe = (IdentityFixtureProbe)dlsym(handle, "shdw_identity_fixture_probe");
+
+            if(!probe) {
+                const char* error = dlerror();
+                NSLog(@"[hookprobe] identity fixture symbol lookup failed %@: %s", path,
+                      error ? error : "unknown error");
+            }
+        } else {
+            const char* error = dlerror();
+            NSLog(@"[hookprobe] identity fixture load failed %@: %s", path,
+                  error ? error : "unknown error");
+        }
+    } @finally {
+        ((IdentityScopeMessage)objc_msgSend)((id)shadow, exit);
+    }
+
+    return probe;
+}
+
+static NSString* identityBundleID(void) {
+    NSArray<NSString*>* candidates = @[
+        @"com.opa334.jailbreak", @"org.coolstar.sileo", @"xyz.willy.zebra",
+        @"com.saurik.Cydia", @"science.xnu.underscore", @"com.llsc12.palera1nLoader"
+    ];
+
+    for(NSString* candidate in candidates) {
+        NSDictionary* app = identityDictionary(identityCoreSnapshot(candidate, @"sileo")[@"app"]);
+
+        if(identityBool(app, @"supported") && identityBool(app, @"present")) {
+            return candidate;
+        }
+    }
+
+    return candidates.firstObject;
+}
+
+static NSString* identityScheme(NSString* bundleID) {
+    NSArray<NSString*>* candidates = @[@"sileo", @"zbra", @"cydia", @"filza", @"undecimus"];
+
+    for(NSString* candidate in candidates) {
+        NSDictionary* scheme = identityDictionary(identityCoreSnapshot(bundleID, candidate)[@"url_scheme"]);
+
+        if(identityBool(scheme, @"supported") && identityInteger(scheme, @"result_count", 0) > 0) {
+            return candidate;
+        }
+    }
+
+    return candidates.firstObject;
+}
+
+static void probeLaunchServices(void) {
+    NSString* bundleID = identityBundleID();
+    NSString* scheme = identityScheme(bundleID);
+    NSDictionary* canonical = identityCoreSnapshot(bundleID, scheme);
+    NSDictionary* app = identityDictionary(canonical[@"app"]);
+    NSDictionary* urlScheme = identityDictionary(canonical[@"url_scheme"]);
+    Class proxyClass = objc_getRequiredClass("LSApplicationProxy");
+    SEL proxySelector = sel_registerName("applicationProxyForIdentifier:");
+
+    if(identityBool(app, @"supported") && identityBool(app, @"present") && proxyClass &&
+       class_getClassMethod(proxyClass, proxySelector)) {
+        typedef id (*ProxyMessage)(id, SEL, id);
+        id proxy = ((ProxyMessage)objc_msgSend)((id)proxyClass, proxySelector, bundleID);
+        report(@"LSApplicationWorkspace", @"applicationProxyForIdentifier(restricted)", proxy == nil,
+               proxy ? @"restricted proxy leaked" : @"nil (filtered)");
+    } else {
+        skip(@"LSApplicationWorkspace", @"applicationProxyForIdentifier(restricted)",
+             @"no internally visible restricted application fixture");
+    }
+
+    Class workspaceClass = objc_getRequiredClass("LSApplicationWorkspace");
+    SEL workspaceSelector = sel_registerName("defaultWorkspace");
+    SEL schemeSelector = sel_registerName("applicationsAvailableForHandlingURLScheme:");
+
+    if(identityBool(urlScheme, @"supported") && identityInteger(urlScheme, @"result_count", 0) > 0 &&
+       workspaceClass && class_getClassMethod(workspaceClass, workspaceSelector)) {
+        typedef id (*WorkspaceMessage)(id, SEL);
+        typedef id (*SchemeMessage)(id, SEL, id);
+        id workspace = ((WorkspaceMessage)objc_msgSend)((id)workspaceClass, workspaceSelector);
+        id values = workspace && [workspace respondsToSelector:schemeSelector]
+            ? ((SchemeMessage)objc_msgSend)(workspace, schemeSelector, scheme) : nil;
+        report(@"LSApplicationWorkspace", @"applicationsAvailableForHandlingURLScheme(restricted)",
+               values && [values count] == 0,
+               values ? [NSString stringWithFormat:@"count=%lu", (unsigned long)[values count]] : @"nil");
+    } else {
+        skip(@"LSApplicationWorkspace", @"applicationsAvailableForHandlingURLScheme(restricted)",
+             @"no internally visible restricted URL-scheme fixture");
+    }
+}
+
+static int reportIdentitySetupFailure(const char* runID, const char* rowID, const char* nonce,
+                                      const char* revision, const char* requestedMode, NSString* reason) {
+    writeJSON(@{
+        @"schema_version" : @1,
+        @"producer" : @"hookprobe-identity",
+        @"run_id" : @(runID),
+        @"row_id" : @(rowID),
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : @(requestedMode),
+        @"nonce" : @(nonce),
+        @"probe_revision" : @(revision),
+        @"canary" : @{ @"status" : @"FAIL" },
+        @"observations" : @{ @"identity" : @{ @"case_id" : @"identity", @"status" : @"FAIL", @"reason" : reason },
+                              @"regression" : @[],
+                              @"controls" : @{ @"positive" : @"FAIL", @"unrelated" : @"FAIL" } },
+        @"producer_exit" : @1,
+    });
+    return 1;
+}
+
+static int reportIdentity(int argc, char* argv[], BOOL hooksLive) {
+    const char *runID, *rowID, *nonce, *revision, *requestedMode;
+    const char* fixtureDirectory = optionValue(argc, argv, "--identity-fixture-dir");
+
+    if(!reportArguments(argc, argv, &runID, &rowID, &nonce, &revision, &requestedMode)) {
+        fprintf(stderr, "hookprobe: identity requires run, row, nonce, revision, and mode\n");
+        return 64;
+    }
+
+    if(!identityFixtureDirectoryIsSafe(fixtureDirectory)) {
+        return reportIdentitySetupFailure(runID, rowID, nonce, revision, requestedMode,
+                                          @"invalid identity fixture directory");
+    }
+
+    NSString* directory = [NSString stringWithUTF8String:fixtureDirectory];
+    NSString* bundleID = identityBundleID();
+    NSString* scheme = identityScheme(bundleID);
+    NSMutableArray* variants = [NSMutableArray array];
+    NSMutableArray* regression = [NSMutableArray array];
+    NSMutableSet* callerAddresses = [NSMutableSet set];
+
+    for(NSUInteger index = 0; index < sizeof(kIdentityFixtureVariants) / sizeof(kIdentityFixtureVariants[0]); index++) {
+        const IdentityFixtureVariant variant = kIdentityFixtureVariants[index];
+        NSString* identifier = @(variant.id);
+        NSString* requestedPath = [directory stringByAppendingPathComponent:@(variant.relativePath)];
+        shdw_identity_fixture_result_t fixture = {0};
+        IdentityFixtureProbe probe = identityLoadFixture(requestedPath);
+        int fixtureRC = probe ? probe(bundleID.UTF8String, scheme.UTF8String, &fixture) : -1;
+        NSDictionary* canonical = identityCoreSnapshot(bundleID, scheme);
+        NSDictionary* image = fixtureRC == 0 ? identityCoreImageForAddress(fixture.caller_address) : nil;
+        NSDictionary* canonicalIdentity = identityDictionary(canonical[@"identity"]);
+        NSDictionary* canonicalFilesystem = identityDictionary(canonical[@"filesystem"]);
+        NSDictionary* canonicalDyld = identityDictionary(canonical[@"dyld"]);
+        NSDictionary* canonicalObjC = identityDictionary(canonical[@"objc"]);
+        NSDictionary* canonicalProcess = identityDictionary(canonical[@"process"]);
+        NSDictionary* canonicalApp = identityDictionary(canonical[@"app"]);
+        NSDictionary* canonicalScheme = identityDictionary(canonical[@"url_scheme"]);
+        BOOL canonicalFilesystemPass = identityInteger(canonicalFilesystem, @"result", -1) == 0;
+        BOOL canonicalDyldPass = identityInteger(canonicalDyld, @"image_count", 0) > 0 &&
+                                 identityInteger(canonicalDyld, @"runtime_image_count", 0) > 0;
+        BOOL canonicalObjCPass = identityBool(canonicalObjC, @"shadow_present");
+        BOOL canonicalProcessPass = identityBool(canonicalProcess, @"dyld_insert_present");
+        BOOL appApplicable = identityBool(canonicalApp, @"supported") && identityBool(canonicalApp, @"present");
+        BOOL schemeApplicable = identityBool(canonicalScheme, @"supported") &&
+                                identityInteger(canonicalScheme, @"result_count", 0) > 0;
+        BOOL filesystemPass = fixtureRC == 0 && canonicalFilesystemPass &&
+                              fixture.stat_result != 0 && fixture.stat_errno == ENOENT;
+        BOOL dyldPass = fixtureRC == 0 && canonicalDyldPass &&
+                        fixture.dyld_image_count < (uint32_t)identityInteger(canonicalDyld, @"image_count", 0);
+        BOOL objcPass = fixtureRC == 0 && canonicalObjCPass && fixture.objc_shadow_present == 0;
+        BOOL processPass = fixtureRC == 0 && canonicalProcessPass && fixture.dyld_insert_present == 0;
+        BOOL appPass = fixtureRC == 0 && appApplicable && fixture.bundle_proxy_present == 0;
+        BOOL schemePass = fixtureRC == 0 && schemeApplicable && fixture.scheme_result_count == 0;
+        NSMutableDictionary* surfaces = [@{
+            @"filesystem" : identityStatus(filesystemPass),
+            @"dyld" : identityStatus(dyldPass),
+            @"objc" : identityStatus(objcPass),
+            @"process" : identityStatus(processPass),
+            @"app" : appApplicable ? identityStatus(appPass) : @"N/A",
+            @"url-scheme" : schemeApplicable ? identityStatus(schemePass) : @"N/A",
+        } mutableCopy];
+        NSDictionary* fixtureResult = @{
+            @"return" : @(fixtureRC),
+            @"stat_result" : @(fixture.stat_result),
+            @"stat_errno" : @(fixture.stat_errno),
+            @"dyld_image_count" : @(fixture.dyld_image_count),
+            @"objc_shadow_present" : @(fixture.objc_shadow_present),
+            @"dyld_insert_present" : @(fixture.dyld_insert_present),
+            @"bundle_proxy_present" : @(fixture.bundle_proxy_present),
+            @"scheme_result_count" : @(fixture.scheme_result_count),
+            @"caller_address" : [NSString stringWithFormat:@"0x%llx", (unsigned long long)fixture.caller_address],
+        };
+        NSMutableDictionary* row = [@{
+            @"id" : identifier,
+            @"requested_path" : requestedPath,
+            @"image" : image ?: [NSNull null],
+            @"canonical" : canonical ?: [NSNull null],
+            @"fixture" : fixtureResult,
+            @"surfaces" : surfaces,
+        } mutableCopy];
+
+        // Prove that every loaded variant got its own actual caller address;
+        // a dyld de-duplication would otherwise make a filename-only test lie.
+        BOOL mapped = [image[@"image_path"] isKindOfClass:[NSString class]] &&
+                      identityDictionary(image[@"mapped_range"]) != nil &&
+                      [image[@"caller_address"] isKindOfClass:[NSString class]] &&
+                      !identityBool(image, @"canonical_runtime");
+        NSString* caller = image[@"caller_address"];
+        BOOL unique = mapped && ![callerAddresses containsObject:caller];
+
+        if(unique) {
+            [callerAddresses addObject:caller];
+        }
+
+        surfaces[@"provenance"] = identityStatus(unique);
+        row[@"surfaces"] = surfaces;
+        [variants addObject:row];
+        appendIdentityRegression(regression, identifier, @"provenance", surfaces[@"provenance"]);
+        appendIdentityRegression(regression, identifier, @"filesystem", surfaces[@"filesystem"]);
+        appendIdentityRegression(regression, identifier, @"dyld", surfaces[@"dyld"]);
+        appendIdentityRegression(regression, identifier, @"objc", surfaces[@"objc"]);
+        appendIdentityRegression(regression, identifier, @"process", surfaces[@"process"]);
+
+        if(appApplicable) {
+            appendIdentityRegression(regression, identifier, @"app", surfaces[@"app"]);
+        }
+
+        if(schemeApplicable) {
+            appendIdentityRegression(regression, identifier, @"url-scheme", surfaces[@"url-scheme"]);
+        }
+
+        if(!identityBool(canonicalIdentity, @"canonical_runtime")) {
+            surfaces[@"canonical"] = @"FAIL";
+        } else {
+            surfaces[@"canonical"] = @"PASS";
+        }
+    }
+
+    BOOL unrelated = stat(kControlDir.fileSystemRepresentation, &(struct stat){0}) == 0;
+    BOOL passed = hooksLive && unrelated;
+
+    for(NSDictionary* row in variants) {
+        NSDictionary* surfaces = identityDictionary(row[@"surfaces"]);
+
+        for(NSString* surface in @[ @"provenance", @"canonical", @"filesystem", @"dyld", @"objc", @"process" ]) {
+            passed = passed && [surfaces[surface] isEqualToString:@"PASS"];
+        }
+
+        for(NSString* surface in @[ @"app", @"url-scheme" ]) {
+            NSString* status = surfaces[surface];
+            passed = passed && ([status isEqualToString:@"PASS"] || [status isEqualToString:@"N/A"]);
+        }
+    }
+
+    NSDictionary* finalCanonical = identityCoreSnapshot(bundleID, scheme);
+    writeJSON(@{
+        @"schema_version" : @1,
+        @"producer" : @"hookprobe-identity",
+        @"run_id" : @(runID),
+        @"row_id" : @(rowID),
+        @"row_type" : @"jailbroken",
+        @"requested_mode" : @(requestedMode),
+        @"nonce" : @(nonce),
+        @"probe_revision" : @(revision),
+        @"canary" : @{ @"status" : passed ? @"PASS" : @"FAIL" },
+        @"observations" : @{
+            @"identity" : @{ @"case_id" : @"identity", @"fixture_directory" : directory,
+                              @"bundle_id" : bundleID, @"scheme" : scheme,
+                              @"canonical" : finalCanonical ?: [NSNull null], @"variants" : variants },
+            @"regression" : regression,
+            @"controls" : @{ @"positive" : hooksLive ? @"PASS" : @"FAIL",
+                              @"unrelated" : unrelated ? @"PASS" : @"FAIL" },
+        },
+        @"producer_exit" : @(passed ? 0 : 1),
+    });
+    return passed ? 0 : 1;
+}
+
+int main(int argc, char* argv[]) {
     @autoreleasepool {
+        const char* mode = optionValue(argc, argv, "--mode");
+        BOOL identityMode = mode && strcmp(mode, "identity") == 0;
+
+        if(isBackendAbsenceMode(mode)) {
+            return reportBackendAbsence(argc, argv, mode);
+        }
+
+        if(mode && strcmp(mode, "regression-matrix") != 0 && !identityMode) {
+            return reportModeNotRun(argc, argv, mode);
+        }
+
+        gProbeRows = [NSMutableArray array];
+
         // Read the effective global prefs BEFORE any hook can influence the
         // read (the prefs plist lives in the mobile domain, outside the
         // restricted roots, but the values gate which groups we probe).
@@ -1068,7 +1684,6 @@ int main(int argc, char* argv[]) {
 
         gEffectivePrefs = [eff copy];
 
-        BOOL vnodeOn = prefsEnabled(@"VnodeHiding");
         BOOL syscallOn = prefsEnabled(@"Hook_Syscall");
         BOOL deviceCheckOn = prefsEnabled(@"Hook_DeviceCheck");
         // UIImage rides the Hook_Foundation@uikit group (dylib.x:475).
@@ -1076,10 +1691,6 @@ int main(int argc, char* argv[]) {
 
         // Pre-dlopen baselines: these must observe the UNHOOKED state, so
         // they run before ShadowCore loads.
-        if(vnodeOn) {
-            probeVnodeBaseline();
-        }
-
         if(syscallOn) {
             probeSyscallCsopsBaseline();
         }
@@ -1125,17 +1736,11 @@ int main(int argc, char* argv[]) {
         // dlopen below maps ShadowCore.
         gCapturedCount = 0;
 
-        if(vnodeOn) {
-            // The daemon rejects root clients; the vnode lease is acquired
-            // synchronously in the ctor during dlopen, so drop to mobile
-            // (uid 501) for the dlopen and restore right after. A failed
-            // drop is a setup failure — the lease would be rejected and the
-            // probe would fail for the wrong reason.
-            if(seteuid(501) != 0) {
-                NSLog(@"[hookprobe] FATAL: seteuid(501) failed (%d)", errno);
-                return 2;
-            }
-        }
+        // This is process-local evidence input, not an injection mechanism:
+        // dyld reads DYLD_INSERT_LIBRARIES only at exec.  Both the canonical
+        // matrix and the identity fixture prove that external getenv callers
+        // are filtered while canonical Core code still sees the actual value.
+        setenv("DYLD_INSERT_LIBRARIES", kShadowCoreBin.UTF8String, 1);
 
         // Load ShadowCore: the ctor installs the hook layer in-process,
         // exactly like ShadowTest. No spawn-injection dependency. The payload
@@ -1148,15 +1753,14 @@ int main(int argc, char* argv[]) {
             handle = dlopen("/usr/lib/ShadowCore.dylib", RTLD_NOW | RTLD_LOCAL);
         }
 
-        if(vnodeOn) {
-            if(seteuid(0) != 0) {
-                NSLog(@"[hookprobe] FATAL: seteuid(0) restore failed (%d)", errno);
-                return 2;
-            }
-        }
-
         if(!handle) {
             NSLog(@"[hookprobe] FATAL: cannot dlopen ShadowCore.dylib (%s)", dlerror());
+            if(mode) {
+                if(identityMode) {
+                    return reportIdentity(argc, argv, NO);
+                }
+                return reportRegressionMatrix(argc, argv, NO);
+            }
             return 2;
         }
 
@@ -1175,6 +1779,10 @@ int main(int argc, char* argv[]) {
 
         if(!hooksLive) {
             NSLog(@"[hookprobe] hooks not active: restricted root is visible. Check Shadow is enabled for this bundle (prefs gate).");
+        }
+
+        if(identityMode) {
+            return reportIdentity(argc, argv, hooksLive);
         }
 
         // Effective settings were resolved pre-dlopen (see main() top):
@@ -1212,12 +1820,6 @@ int main(int argc, char* argv[]) {
         // Post-dlopen gating consults the same pre-dlopen effective model as
         // the baselines (prefsEnabled → gEffectivePrefs): one model, both
         // sides — a group ShadowCore did not install can never false-FAIL.
-        if(prefsEnabled(@"VnodeHiding")) {
-            probeVnodePost();
-        } else {
-            skip(@"vnode", @"vnode-layer hiding", @"VnodeHiding disabled");
-        }
-
         if(prefsEnabled(@"Hook_Syscall")) {
             probeSyscallCsopsPost();
         } else {
@@ -1272,8 +1874,10 @@ int main(int argc, char* argv[]) {
         }
 
         if(envvarsOn) {
+            probeEnvironment();
             probeNSProcessInfo();
         } else {
+            skip(@"libc", @"getenv(DYLD_INSERT_LIBRARIES)", @"Hook_EnvVars disabled");
             skip(@"NSProcessInfo", @"environment", @"Hook_EnvVars disabled");
         }
 
@@ -1290,9 +1894,21 @@ int main(int argc, char* argv[]) {
         }
 
         probeNSUserDefaults();
+
+        if(prefsEnabled(@"Hook_HideApps") || prefsEnabled(@"Hook_URLScheme")) {
+            probeLaunchServices();
+        } else {
+            skip(@"LSApplicationWorkspace", @"application proxy", @"Hook_HideApps and Hook_URLScheme disabled");
+            skip(@"LSApplicationWorkspace", @"URL-scheme lookup", @"Hook_HideApps and Hook_URLScheme disabled");
+        }
+
         probeSkippedGroups();
 
         NSLog(@"[hookprobe] SUMMARY pass=%d fail=%d skip=%d hooksLive=%d", gPass, gFail, gSkip, hooksLive);
+
+        if(mode) {
+            return reportRegressionMatrix(argc, argv, hooksLive);
+        }
 
         if(!hooksLive) {
             return 2;

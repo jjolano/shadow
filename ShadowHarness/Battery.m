@@ -2,14 +2,33 @@
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <stdlib.h>
 #import <unistd.h>
 #import <fcntl.h>
 #import <sys/syscall.h>
+#import <mach/mach_time.h>
 
 #import <Shadow.h>
 
 #import "ShadowDetector.h"
+
+static uint64_t gHarnessProbeStart = 0;
+static mach_timebase_info_data_t gHarnessTimebase = {0, 0};
+
+__attribute__((constructor)) static void shdw_harness_probe_clock_start(void) {
+	gHarnessProbeStart = mach_continuous_time();
+	mach_timebase_info(&gHarnessTimebase);
+}
+
+static uint64_t shdw_harness_elapsed_ns(uint64_t end) {
+	if(!gHarnessProbeStart || !gHarnessTimebase.denom || end < gHarnessProbeStart) {
+		return 0;
+	}
+	uint64_t ticks = end - gHarnessProbeStart;
+	return (ticks / gHarnessTimebase.denom) * gHarnessTimebase.numer +
+		((ticks % gHarnessTimebase.denom) * gHarnessTimebase.numer) / gHarnessTimebase.denom;
+}
 
 NSString* ShdwDocumentsDirectory(void) {
 	// The verification driver (tests/stealth-device.sh) stages the launch
@@ -35,6 +54,61 @@ BOOL ShdwIsShadowCoreLoaded(void) {
 	// Shadow.framework classes from ordinary lookup, while the deliberately
 	// unhooked fatal lookup still returns this known-present class.
 	return objc_getRequiredClass("Shadow") && !objc_getClass("Shadow");
+}
+
+static NSDictionary* shdw_activation_snapshot(void) {
+    if(!ShdwIsShadowCoreLoaded()) {
+        return nil;
+    }
+
+    __block NSDictionary* snapshot = nil;
+    SHADOW_INTERNAL_SCOPE {
+        Class coordinator = objc_getRequiredClass("SHDWHookCoordinator");
+        SEL selector = sel_registerName("shdw_activationSnapshot");
+
+        if(coordinator && [coordinator respondsToSelector:selector]) {
+            typedef NSDictionary* (*SnapshotMessage)(id, SEL);
+            snapshot = ((SnapshotMessage)objc_msgSend)(coordinator, selector);
+        }
+    }
+
+    return [snapshot isKindOfClass:[NSDictionary class]] ? snapshot : nil;
+}
+
+static NSArray<NSString*>* shdw_activation_inventory(NSDictionary* snapshot, NSString* key) {
+    id value = snapshot[key];
+    return [value isKindOfClass:[NSArray class]] ? value : @[];
+}
+
+static NSDictionary* shdw_activation_observation(void) {
+    NSDictionary* snapshot = shdw_activation_snapshot();
+    NSArray<NSString*>* ctor = shdw_activation_inventory(snapshot, @"ctor_inventory");
+    NSArray<NSString*>* postLoad = shdw_activation_inventory(snapshot, @"post_load_inventory");
+    NSArray<NSString*>* postDetector = shdw_activation_inventory(snapshot, @"post_detector_inventory");
+    NSSet* ctorSet = [NSSet setWithArray:ctor];
+    NSSet* postLoadSet = [NSSet setWithArray:postLoad];
+    NSSet* postDetectorSet = [NSSet setWithArray:postDetector];
+    BOOL ctorObserved = [snapshot[@"ctor_observed"] boolValue];
+    BOOL postLoadObserved = [snapshot[@"post_load_observed"] boolValue];
+    BOOL postDetectorObserved = [snapshot[@"post_detector_observed"] boolValue];
+    BOOL ctorCore = [ctorSet containsObject:@"dyld"] && [ctorSet containsObject:@"objc"] && [ctorSet containsObject:@"classes"];
+    BOOL postLoadCore = [ctorSet isSubsetOfSet:postLoadSet] && [postLoadSet containsObject:@"Hook_URLScheme"];
+    BOOL postDetectorCore = [postLoadSet isSubsetOfSet:postDetectorSet] && [postDetectorSet containsObject:@"Hook_Filesystem@objc"] && [postDetectorSet containsObject:@"Hook_HideApps"];
+
+    return @{
+        @"case_id" : @"activation",
+        @"ctor_inventory" : ctor,
+        @"post_load_inventory" : postLoad,
+        @"post_detector_inventory" : postDetector,
+        @"verdicts" : @{
+            @"ctor_event" : ctorObserved ? @"PASS" : @"FAIL",
+            @"ctor_core_units" : ctorCore ? @"PASS" : @"FAIL",
+            @"post_load_event" : postLoadObserved ? @"PASS" : @"FAIL",
+            @"post_load_progression" : postLoadCore ? @"PASS" : @"FAIL",
+            @"post_detector_event" : postDetectorObserved ? @"PASS" : @"FAIL",
+            @"post_detector_progression" : postDetectorCore ? @"PASS" : @"FAIL",
+        },
+    };
 }
 
 Class ShdwShadowClass(const char* name) {
@@ -227,7 +301,11 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 			}
 			engineResult = engineRestricted ? @"restricted" : @"allowed";
 		} else {
-			rawFound = shdw_raw_open([detail UTF8String]) >= 0;
+			long rawFD = shdw_raw_open([detail UTF8String]);
+			rawFound = rawFD >= 0;
+			if(rawFound) {
+				close((int)rawFD);
+			}
 			rawResult = rawFound ? @"found" : @"absent";
 			int mode = [group isEqualToString:@"readable"] ? R_OK : F_OK;
 			filteredFound = access([detail UTF8String], mode) == 0;
@@ -298,6 +376,7 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 }
 
 NSDictionary* ShdwStealthReport(void) {
+	uint64_t reportEnd = mach_continuous_time();
 	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 	NSString* documents = ShdwDocumentsDirectory();
 	NSData* contextData = documents ? ShdwReadEvidenceData(
@@ -334,6 +413,7 @@ NSDictionary* ShdwStealthReport(void) {
 		fileContext[@"force_failure_id"] : nil;
 
 	NSArray<NSDictionary*>* batteryRows = ShdwBatteryRows();
+	NSDictionary* activation = [mode isEqualToString:@"injected"] ? shdw_activation_observation() : nil;
 	NSMutableArray* observations = [NSMutableArray arrayWithCapacity:batteryRows.count];
 	NSUInteger pass = 0, fail = 0, skip = 0;
 	BOOL forcedFailureMatched = NO;
@@ -367,10 +447,17 @@ NSDictionary* ShdwStealthReport(void) {
 	}
 
 	BOOL loaded = ShdwIsShadowCoreLoaded();
+	BOOL activationFailure = NO;
+	for(id verdict in [activation[@"verdicts"] allValues]) {
+		if(![verdict isEqual:@"PASS"]) {
+			activationFailure = YES;
+			break;
+		}
+	}
 	BOOL setupFailure = batteryRows.count == 0 ||
 		(forcedFailureID.length && !forcedFailureMatched) ||
 		([mode isEqualToString:@"injected"] && !loaded) ||
-		([mode isEqualToString:@"uninjected"] && loaded);
+		([mode isEqualToString:@"uninjected"] && loaded) || activationFailure;
 	NSString* aggregate = setupFailure ? @"SETUP-FAIL" :
 		([mode isEqualToString:@"uninjected"] ? @"CONTROL-INACTIVE" :
 		 (fail ? @"FAIL" : @"PASS"));
@@ -380,7 +467,7 @@ NSDictionary* ShdwStealthReport(void) {
 		@"shadow_core_loaded" : @(loaded),
 	};
 
-	return @{
+	NSMutableDictionary* report = [@{
 		@"schema_version" : @1,
 		@"producer" : @"ShadowHarness",
 		@"run_id" : context[@"_StealthRunID"],
@@ -392,6 +479,11 @@ NSDictionary* ShdwStealthReport(void) {
 		@"canary" : canary,
 		@"observations" : @{
 			@"aggregate" : aggregate,
+			@"timing" : @{
+				@"clock" : @"mach_continuous_time",
+				@"start_ticks" : @(gHarnessProbeStart), @"end_ticks" : @(reportEnd),
+				@"probe_elapsed_ns" : @(shdw_harness_elapsed_ns(reportEnd)),
+			},
 			@"summary" : @{
 				@"pass" : @(pass), @"fail" : @(fail), @"skip" : @(skip),
 				@"setup_fail" : @(setupFailure ? 1 : 0),
@@ -399,7 +491,13 @@ NSDictionary* ShdwStealthReport(void) {
 			@"rows" : observations,
 		},
 		@"producer_exit" : @(producerExit),
-	};
+	} mutableCopy];
+	if(activation) {
+		NSMutableDictionary* reportObservations = [report[@"observations"] mutableCopy];
+		reportObservations[@"activation"] = activation;
+		report[@"observations"] = reportObservations;
+	}
+	return report;
 }
 
 // ---------------------------------------------------------------------------

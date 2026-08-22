@@ -101,10 +101,6 @@ copy_dependency_packages() { # profile
 
 build_lane() { # profile
     local lane=$1 control="$ROOT/control.$1" package destination
-    if false; then # patched Linux rootless
-        echo "$lane requires macOS/Xcode for the new arm64e ABI" >&2
-        return 1
-    fi
     stage_deps "$lane"
     make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
 
@@ -125,17 +121,22 @@ build_lane() { # profile
     package=$(last_package)
     destination="$ROOT/build/$(basename "$package")"
     cp -p "$package" "$destination"
-    scripts/check-compat.sh "$lane" "$destination" || echo "WARN: check-compat failed, continuing" >&2 || true
+    scripts/check-compat.sh "$lane" "$destination"
     copy_dependency_packages "$lane"
 }
 
 build_harness() { # rootful-modern|rootless
-    local lane=$1
+    local lane=$1 package
     case "$lane" in
         rootful-modern) make -C ShadowHarness package FINALPACKAGE=1 ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:14.0 "${MAKE_PATHS[@]}" ;;
         rootless) make -C ShadowHarness package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:15.0 "${MAKE_PATHS[@]}" ;;
     esac
-    cp -p ShadowHarness/packages/*.deb "$ROOT/build/"
+    package=$(<ShadowHarness/.theos/last_package)
+    case "$package" in
+        /*) ;;
+        *) package="$ROOT/ShadowHarness/${package#./}" ;;
+    esac
+    cp -p "$package" "$ROOT/build/"
 }
 
 build_quick() {

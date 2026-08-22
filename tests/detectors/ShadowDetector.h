@@ -14,6 +14,15 @@
 // IOSSecuritySuite, whose public documentation was consulted for the probe
 // path selection).
 
+#ifdef SHADOW_HARNESS
+// On-device port of the host test-battery detector (tests/detectors/):
+// compiled verbatim into the ShadowHarness app. In the harness, access()/
+// open() go through Shadow's libc hooks when the payload is active, and the
+// scheme check consults Shadow's engine directly — i.e. the detector runs
+// against the real on-device filter, which is the point.
+//
+#endif
+
 #ifndef shadow_detector_h
 #define shadow_detector_h
 

@@ -76,11 +76,6 @@ WATCHER=$(find_one -type f -name me.jjolano.shadow.watcher.plist)
 [ -n "$WATCHER" ]
 daemon=$(find "$TMP/root" -type f -path '*/usr/libexec/shadowd' -print)
 daemon_plist=$(find "$TMP/root" -type f -name me.jjolano.shadow.plist -print)
-if [ "$PROFILE" = rootful-legacy ]; then
-    [ -z "$daemon$daemon_plist" ] || { echo "legacy package contains shadowd" >&2; exit 1; }
-else
-    [ -n "$daemon" ] && [ -n "$daemon_plist" ] || { echo "modern package is missing shadowd" >&2; exit 1; }
-    "$(dirname "$0")/check-binary-compat.sh" "$PROFILE" "$daemon"
-fi
+[ -z "$daemon$daemon_plist" ] || { echo "package contains removed shadowd backend" >&2; exit 1; }
 
 echo "OK: $PROFILE package metadata, contents, slices, deployment targets, and ABI"

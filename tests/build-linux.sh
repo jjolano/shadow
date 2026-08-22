@@ -23,9 +23,8 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Itests \
   -IShadowCore.dylib/hooks \
-  tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m tests/ShadowdShims.m \
-  tests/detectors/ShadowDetector.m tests/Fuzz.m tests/shadowd/RecoveryHarness.m \
-  shadowd/ledger.m shadowd/recovery.m \
+  tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m \
+  tests/detectors/ShadowDetector.m tests/Fuzz.m \
   Shadow.framework/Core.m Shadow.framework/Ruleset.m \
   Shadow.framework/Core+Utilities.m \
   Shadow.framework/DpkgRulesGenerator.m \

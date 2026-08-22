@@ -2,14 +2,33 @@
 #import <mach-o/dyld.h>
 #import <mach-o/dyld_images.h>
 #import <mach/mach.h>
+#import <mach/mach_time.h>
 #import <mach/task_info.h>
+#import <dispatch/dispatch.h>
 #import <dlfcn.h>
 #import <errno.h>
 #import <stdatomic.h>
+#import <stdio.h>
+#import <stdint.h>
 #import <stdlib.h>
 #import <string.h>
 #import <sys/stat.h>
 #import <unistd.h>
+
+static uint64_t gProbeStartTicks = 0;
+static mach_timebase_info_data_t gProbeTimebase = {0, 0};
+
+__attribute__((constructor)) static void probe_clock_start(void) {
+    gProbeStartTicks = mach_continuous_time();
+    mach_timebase_info(&gProbeTimebase);
+}
+
+static uint64_t probe_elapsed_ns(uint64_t end) {
+    if(!gProbeStartTicks || !gProbeTimebase.denom || end < gProbeStartTicks) return 0;
+    uint64_t ticks = end - gProbeStartTicks;
+    return (ticks / gProbeTimebase.denom) * gProbeTimebase.numer +
+        ((ticks % gProbeTimebase.denom) * gProbeTimebase.numer) / gProbeTimebase.denom;
+}
 
 // dyldprobe — on-device verification probe for Shadow.
 // Shows the jailbreak the way detectors see it, from four angles:
@@ -134,26 +153,386 @@ static NSString* probe_documents_directory(void) {
         [[NSString stringWithUTF8String:home] stringByAppendingPathComponent:@"Documents"] : nil;
 }
 
-static BOOL probe_write_machine_report(void) {
-    NSString* documents = probe_documents_directory();
-    NSData* contextData = documents ? [NSData dataWithContentsOfFile:
+static NSDictionary* probe_launch_context(NSString* documents) {
+    NSData* data = documents ? [NSData dataWithContentsOfFile:
         [documents stringByAppendingPathComponent:@".ShadowStealthContext.json"]] : nil;
-    NSDictionary* context = contextData ?
-        [NSJSONSerialization JSONObjectWithData:contextData options:0 error:nil] : nil;
+    id context = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    return [context isKindOfClass:[NSDictionary class]] ? context : nil;
+}
+
+static BOOL probe_paths_match(NSString* expected, const char* actual) {
+    if(!expected || !actual) return NO;
+    const char* expectedPath = expected.fileSystemRepresentation;
+    if(!expectedPath) return NO;
+    if(strcmp(expectedPath, actual) == 0) return YES;
+
+    // dyld canonicalizes container paths through /private while app code
+    // commonly receives the /var alias. Avoid realpath here: this probe
+    // intentionally runs beneath filesystem hooks and needs no I/O to compare
+    // the two spellings of the same kernel path.
+    if(strncmp(expectedPath, "/var/", 5) == 0 && strncmp(actual, "/private/var/", 13) == 0) {
+        return strcmp(expectedPath, actual + sizeof("/private") - 1) == 0;
+    }
+    if(strncmp(expectedPath, "/private/var/", 13) == 0 && strncmp(actual, "/var/", 5) == 0) {
+        return strcmp(expectedPath + sizeof("/private") - 1, actual) == 0;
+    }
+    return NO;
+}
+
+// The public dyld registration APIs deliberately have no eight-callback
+// ceiling.  Keep distinct callbacks here so a capped interposer cannot make
+// one callback look like nine registrations.
+enum { PROBE_DYLD_CALLBACK_COUNT = 9 };
+static _Atomic(uint32_t) gProbeDyldReplay[PROBE_DYLD_CALLBACK_COUNT];
+static _Atomic(uint32_t) gProbeDyldAdd[PROBE_DYLD_CALLBACK_COUNT];
+static _Atomic(uint32_t) gProbeDyldRemove[PROBE_DYLD_CALLBACK_COUNT];
+static _Atomic(uint32_t) gProbeDyldExpectedReplay[PROBE_DYLD_CALLBACK_COUNT];
+static _Atomic(bool) gProbeDyldEventsArmed = false;
+static dispatch_once_t gProbeDyldCallbacksOnce;
+
+#define PROBE_DYLD_CALLBACK(index) \
+static void probe_dyld_add_##index(const struct mach_header* mh, intptr_t slide) { \
+    (void)mh; (void)slide; \
+    if(atomic_load_explicit(&gProbeDyldEventsArmed, memory_order_relaxed)) { \
+        atomic_fetch_add_explicit(&gProbeDyldAdd[index], 1, memory_order_relaxed); \
+    } else { \
+        atomic_fetch_add_explicit(&gProbeDyldReplay[index], 1, memory_order_relaxed); \
+    } \
+} \
+static void probe_dyld_remove_##index(const struct mach_header* mh, intptr_t slide) { \
+    (void)mh; (void)slide; \
+    atomic_fetch_add_explicit(&gProbeDyldRemove[index], 1, memory_order_relaxed); \
+}
+
+PROBE_DYLD_CALLBACK(0)
+PROBE_DYLD_CALLBACK(1)
+PROBE_DYLD_CALLBACK(2)
+PROBE_DYLD_CALLBACK(3)
+PROBE_DYLD_CALLBACK(4)
+PROBE_DYLD_CALLBACK(5)
+PROBE_DYLD_CALLBACK(6)
+PROBE_DYLD_CALLBACK(7)
+PROBE_DYLD_CALLBACK(8)
+
+static void (*const kProbeDyldAddCallbacks[PROBE_DYLD_CALLBACK_COUNT])(
+    const struct mach_header*, intptr_t) = {
+    probe_dyld_add_0, probe_dyld_add_1, probe_dyld_add_2,
+    probe_dyld_add_3, probe_dyld_add_4, probe_dyld_add_5,
+    probe_dyld_add_6, probe_dyld_add_7, probe_dyld_add_8,
+};
+static void (*const kProbeDyldRemoveCallbacks[PROBE_DYLD_CALLBACK_COUNT])(
+    const struct mach_header*, intptr_t) = {
+    probe_dyld_remove_0, probe_dyld_remove_1, probe_dyld_remove_2,
+    probe_dyld_remove_3, probe_dyld_remove_4, probe_dyld_remove_5,
+    probe_dyld_remove_6, probe_dyld_remove_7, probe_dyld_remove_8,
+};
+
+static void probe_install_dyld_callbacks(void) {
+    dispatch_once(&gProbeDyldCallbacksOnce, ^{
+        atomic_store_explicit(&gProbeDyldEventsArmed, false, memory_order_relaxed);
+        for(uint32_t i = 0; i < PROBE_DYLD_CALLBACK_COUNT; i++) {
+            atomic_store_explicit(&gProbeDyldExpectedReplay[i], _dyld_image_count(), memory_order_relaxed);
+            _dyld_register_func_for_add_image(kProbeDyldAddCallbacks[i]);
+            _dyld_register_func_for_remove_image(kProbeDyldRemoveCallbacks[i]);
+        }
+        atomic_store_explicit(&gProbeDyldEventsArmed, true, memory_order_relaxed);
+    });
+}
+
+static NSArray<NSDictionary*>* probe_dyld_callback_rows(
+    const uint32_t addBefore[PROBE_DYLD_CALLBACK_COUNT],
+    const uint32_t removeBefore[PROBE_DYLD_CALLBACK_COUNT]) {
+    NSMutableArray<NSDictionary*>* rows = [NSMutableArray new];
+    for(uint32_t i = 0; i < PROBE_DYLD_CALLBACK_COUNT; i++) {
+        uint32_t replay = atomic_load_explicit(&gProbeDyldReplay[i], memory_order_relaxed);
+        uint32_t add = atomic_load_explicit(&gProbeDyldAdd[i], memory_order_relaxed);
+        uint32_t remove = atomic_load_explicit(&gProbeDyldRemove[i], memory_order_relaxed);
+        uint32_t expectedReplay = atomic_load_explicit(&gProbeDyldExpectedReplay[i], memory_order_relaxed);
+        BOOL passed = replay == expectedReplay && add > addBefore[i] && remove > removeBefore[i];
+        [rows addObject:@{
+            @"id" : @(i + 1), @"expected_existing_images" : @(expectedReplay),
+            @"existing_image_replay" : @(replay),
+            @"later_add" : @(add - addBefore[i]),
+            @"later_remove" : @(remove - removeBefore[i]),
+            @"status" : passed ? @"PASS" : @"FAIL",
+        }];
+    }
+    return rows;
+}
+
+static NSString* probe_stage_dyld_stress_library(NSFileManager* fm, NSString** failure) {
+    NSString* documents = probe_documents_directory();
+    if(!documents) {
+        if(failure) *failure = @"container Documents directory unavailable";
+        return nil;
+    }
+
+    NSString* source = nil;
+    NSString* supplied = probe_launch_context(documents)[@"dyld_stress_library"];
+    NSString* suppliedPrefix = [documents stringByAppendingString:@"/.ShadowDyldStress-"];
+    if([supplied isKindOfClass:[NSString class]] && [supplied hasPrefix:suppliedPrefix] &&
+       [supplied hasSuffix:@".dylib"] && [fm fileExistsAtPath:supplied]) {
+        source = supplied;
+    }
+    for(NSString* name in @[@"libshdwtestlib.dylib", @"shdwtestlib.dylib"]) {
+        if(source) break;
+        NSString* candidate = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:name];
+        if([fm fileExistsAtPath:candidate]) {
+            source = candidate;
+            break;
+        }
+    }
+    if(!source) {
+        if(failure) *failure = @"packaged shdwtestlib is missing";
+        return nil;
+    }
+
+    NSString* staged = [documents stringByAppendingPathComponent:[NSString stringWithFormat:
+        @".shadow-dyld-%@-%@", [[NSUUID UUID] UUIDString], [source lastPathComponent]]];
+    NSError* error = nil;
+    if(![fm copyItemAtPath:source toPath:staged error:&error]) {
+        if(failure) *failure = [NSString stringWithFormat:@"cannot stage shdwtestlib: %@", error];
+        return nil;
+    }
+    return staged;
+}
+
+static BOOL probe_direct_contains_path(ProbeTaskDyldInfo probe, NSString* path) {
+    if(!probe.valid || !probe.infos->infoArray) return NO;
+    for(uint32_t i = 0; i < probe.infos->infoArrayCount; i++) {
+        const char* candidate = probe.infos->infoArray[i].imageFilePath;
+        if(probe_paths_match(path, candidate)) return YES;
+    }
+    return NO;
+}
+
+static BOOL probe_direct_uuid_contains_path(ProbeTaskDyldInfo probe, NSString* path) {
+    if(!probe.valid || !probe.infos->infoArray || !probe.infos->uuidArray) return NO;
+    for(uint32_t i = 0; i < probe.infos->infoArrayCount; i++) {
+        const struct dyld_image_info* image = &probe.infos->infoArray[i];
+        if(!probe_paths_match(path, image->imageFilePath)) continue;
+        for(uint32_t j = 0; j < probe.infos->uuidArrayCount; j++) {
+            if(probe.infos->uuidArray[j].imageLoadAddress == image->imageLoadAddress) return YES;
+        }
+    }
+    return NO;
+}
+
+static NSDictionary* probe_dyld_callback_contract(void) {
+    probe_install_dyld_callbacks();
+    uint32_t addBefore[PROBE_DYLD_CALLBACK_COUNT] = {0};
+    uint32_t removeBefore[PROBE_DYLD_CALLBACK_COUNT] = {0};
+    for(uint32_t i = 0; i < PROBE_DYLD_CALLBACK_COUNT; i++) {
+        addBefore[i] = atomic_load_explicit(&gProbeDyldAdd[i], memory_order_relaxed);
+        removeBefore[i] = atomic_load_explicit(&gProbeDyldRemove[i], memory_order_relaxed);
+    }
+
+    NSFileManager* fm = [NSFileManager defaultManager];
+    NSString* stagingFailure = nil;
+    NSString* stressPath = probe_stage_dyld_stress_library(fm, &stagingFailure);
+    ProbeTaskDyldInfo base = probe_task_dyld_info();
+    uint32_t baseCount = base.valid ? base.infos->infoArrayCount : 0;
+    __block _Atomic(BOOL) readerStop = NO;
+    __block uint32_t readerRuns = 0;
+    __block uint32_t readerTorn = 0;
+    __block uint32_t readerMax = 0;
+    BOOL readerReady = NO;
+    BOOL loaded = NO;
+    BOOL unloaded = NO;
+    BOOL markerOK = NO;
+    BOOL uuidVisible = NO;
+
+    if(stressPath && base.valid) {
+        dispatch_queue_t readerQueue = dispatch_queue_create("dyldprobe.machine-reader", DISPATCH_QUEUE_SERIAL);
+        dispatch_semaphore_t readerStarted = dispatch_semaphore_create(0);
+        dispatch_async(readerQueue, ^{
+            dispatch_semaphore_signal(readerStarted);
+            while(!atomic_load_explicit(&readerStop, memory_order_relaxed)) {
+                ProbeTaskDyldInfo sample = probe_task_dyld_info();
+                if(!sample.valid || !sample.infos->infoArray || !sample.infos->infoArrayCount) {
+                    usleep(1000);
+                    continue;
+                }
+                uint32_t count = sample.infos->infoArrayCount;
+                uint32_t cap = MIN(count, 8192u);
+                uint32_t walked = 0;
+                BOOL torn = NO;
+                for(uint32_t i = 0; i < cap; i++) {
+                    struct dyld_image_info info = sample.infos->infoArray[i];
+                    if(!info.imageLoadAddress && !info.imageFilePath) {
+                        torn = YES;
+                        break;
+                    }
+                    walked++;
+                }
+                if(torn) readerTorn++;
+                if(walked > readerMax) readerMax = walked;
+                readerRuns++;
+                usleep(1000);
+            }
+        });
+        readerReady = dispatch_semaphore_wait(readerStarted,
+            dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)) == 0;
+
+        loaded = YES;
+        unloaded = YES;
+        markerOK = YES;
+        uuidVisible = YES;
+        for(uint32_t i = 0; i < 8; i++) {
+            void* handle = dlopen([stressPath fileSystemRepresentation], RTLD_NOW);
+            if(!handle) {
+                loaded = NO;
+                unloaded = NO;
+                markerOK = NO;
+                break;
+            }
+            void* marker = dlsym(handle, "shdwtestlib_probe_marker");
+            if(!marker) markerOK = NO;
+            BOOL visible = NO, uuid = NO;
+            for(uint32_t retry = 0; retry < 20; retry++) {
+                ProbeTaskDyldInfo current = probe_task_dyld_info();
+                visible = visible || probe_direct_contains_path(current, stressPath);
+                uuid = uuid || probe_direct_uuid_contains_path(current, stressPath);
+                if(visible && uuid) break;
+                usleep(1000);
+            }
+            if(!visible) loaded = NO;
+            if(!uuid) uuidVisible = NO;
+            BOOL gone = dlclose(handle) == 0;
+            for(uint32_t retry = 0; gone && retry < 20; retry++) {
+                if(!probe_direct_contains_path(probe_task_dyld_info(), stressPath)) break;
+                if(retry == 19) gone = NO;
+                else usleep(1000);
+            }
+            if(!gone) unloaded = NO;
+        }
+        atomic_store_explicit(&readerStop, YES, memory_order_relaxed);
+        dispatch_sync(readerQueue, ^{});
+    }
+
+    if(stressPath) [fm removeItemAtPath:stressPath error:nil];
+    NSArray<NSDictionary*>* callbacks = probe_dyld_callback_rows(addBefore, removeBefore);
+    BOOL callbacksPassed = YES;
+    for(NSDictionary* row in callbacks) {
+        if(![row[@"status"] isEqual:@"PASS"]) callbacksPassed = NO;
+    }
+    BOOL concurrencyPassed = readerReady && readerRuns > 0 && readerTorn == 0 && readerMax <= baseCount + 1;
+    BOOL passed = stressPath && base.valid && loaded && unloaded && markerOK && uuidVisible && callbacksPassed && concurrencyPassed;
+    return @{
+        @"status" : passed ? @"PASS" : @"FAIL",
+        @"callbacks" : callbacks,
+        @"concurrency" : @{
+            @"status" : concurrencyPassed ? @"PASS" : @"FAIL",
+            @"reader_started" : @(readerReady), @"runs" : @(readerRuns),
+            @"torn_reads" : @(readerTorn), @"max_entries" : @(readerMax),
+            @"expected_max_entries" : @(baseCount + 1),
+        },
+        @"stress" : @{
+            @"status" : (stressPath && base.valid && loaded && unloaded && markerOK && uuidVisible) ? @"PASS" : @"FAIL",
+            @"path" : stressPath ?: @"",
+            @"setup_failure" : stagingFailure ?: @"",
+            @"loaded" : @(loaded), @"unloaded" : @(unloaded), @"marker" : @(markerOK),
+            @"uuid_visible" : @(uuidVisible),
+        },
+    };
+}
+
+static NSString* probe_pointer_string(const void* pointer) {
+    return [NSString stringWithFormat:@"0x%llx", (unsigned long long)(uintptr_t)pointer];
+}
+
+static NSString* probe_uuid_string(const uint8_t uuid[16]) {
+    return [NSString stringWithFormat:
+        @"%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+        uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
+        uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]];
+}
+
+static NSArray<NSDictionary*>* probe_sorted_dyld_rows(NSArray<NSDictionary*>* rows) {
+    return [rows sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* left, NSDictionary* right) {
+        NSString* leftKey = [NSString stringWithFormat:@"%@|%@", left[@"address"], left[@"path"]];
+        NSString* rightKey = [NSString stringWithFormat:@"%@|%@", right[@"address"], right[@"path"]];
+        return [leftKey compare:rightKey];
+    }];
+}
+
+static NSDictionary* probe_normalized_dyld_views(ProbeTaskDyldInfo probe, BOOL* uuidConsistent) {
+    NSMutableDictionary<NSString*, NSString*>* uuids = [NSMutableDictionary new];
+    NSMutableArray<NSString*>* uuidOrphans = [NSMutableArray new];
+    if(probe.valid && probe.infos->uuidArray) {
+        for(uint32_t i = 0; i < probe.infos->uuidArrayCount; i++) {
+            const struct dyld_uuid_info* entry = &probe.infos->uuidArray[i];
+            uuids[probe_pointer_string(entry->imageLoadAddress)] = probe_uuid_string(entry->imageUUID);
+        }
+    }
+
+    NSMutableDictionary<NSString*, NSString*>* publicSlides = [NSMutableDictionary new];
+    NSMutableArray<NSDictionary*>* publicRows = [NSMutableArray new];
+    for(uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const struct mach_header* header = _dyld_get_image_header(i);
+        NSString* address = probe_pointer_string(header);
+        NSString* slide = [NSString stringWithFormat:@"0x%llx",
+            (unsigned long long)(uint64_t)_dyld_get_image_vmaddr_slide(i)];
+        const char* path = _dyld_get_image_name(i);
+        publicSlides[address] = slide;
+        [publicRows addObject:@{
+            @"path" : path ? @(path) : @"", @"address" : address, @"header" : address,
+            @"slide" : slide, @"uuid" : uuids[address] ?: [NSNull null],
+        }];
+    }
+
+    NSMutableArray<NSDictionary*>* memoryRows = [NSMutableArray new];
+    if(probe.valid && probe.infos->infoArray) {
+        for(uint32_t i = 0; i < probe.infos->infoArrayCount; i++) {
+            struct dyld_image_info entry = probe.infos->infoArray[i];
+            NSString* address = probe_pointer_string(entry.imageLoadAddress);
+            [memoryRows addObject:@{
+                @"path" : entry.imageFilePath ? @(entry.imageFilePath) : @"",
+                @"address" : address, @"header" : address,
+                @"slide" : publicSlides[address] ?: @"unknown",
+                @"uuid" : uuids[address] ?: [NSNull null],
+            }];
+        }
+    }
+
+    NSArray<NSDictionary*>* sortedPublic = probe_sorted_dyld_rows(publicRows);
+    NSArray<NSDictionary*>* sortedMemory = probe_sorted_dyld_rows(memoryRows);
+    BOOL consistent = probe.valid && sortedPublic.count > 0 && sortedMemory.count > 0;
+    if(probe.valid && probe.infos->uuidArrayCount && !probe.infos->uuidArray) consistent = NO;
+    for(NSString* address in uuids) {
+        if(!publicSlides[address]) {
+            // dyld retains UUID records for removed non-shared-cache images.
+            // They are useful crash-reporting history, not live image entries.
+            [uuidOrphans addObject:address];
+        }
+    }
+    if(uuidConsistent) *uuidConsistent = consistent;
+    return @{@"public" : sortedPublic, @"memory" : sortedMemory,
+             @"uuid_orphan_addresses" : uuidOrphans};
+}
+
+static BOOL probe_write_machine_report(NSString** failure) {
+    if(failure) *failure = nil;
+    NSString* documents = probe_documents_directory();
+    NSDictionary* context = probe_launch_context(documents);
     if(!documents || ![context isKindOfClass:[NSDictionary class]]) {
+        if(failure) *failure = @"launch context unavailable";
         return NO;
     }
 
     for(NSString* key in @[@"run_id", @"row_id", @"requested_mode", @"nonce", @"probe_revision"]) {
         if(![context[key] isKindOfClass:[NSString class]] || ![context[key] length]) {
+            if(failure) *failure = [NSString stringWithFormat:@"launch context key invalid: %@", key];
             return NO;
         }
     }
     NSString* mode = context[@"requested_mode"];
     if(![mode isEqualToString:@"uninjected"] && ![mode isEqualToString:@"injected"]) {
+        if(failure) *failure = @"launch context mode invalid";
         return NO;
     }
 
+    NSDictionary* callbackContract = probe_dyld_callback_contract();
     ProbeTaskDyldInfo taskProbe = probe_task_dyld_info();
     vm_region_basic_info_data_64_t regionInfo = {0};
     mach_msg_type_number_t regionInfoCount = VM_REGION_BASIC_INFO_COUNT_64;
@@ -169,6 +548,19 @@ static BOOL probe_write_machine_report(void) {
         probe_hidden_images(taskProbe.infos->infoArray, taskProbe.infos->infoArrayCount, appPath) : @[];
     NSArray<NSString*>* publicHidden = probe_public_hidden_images(appPath);
     void* publicSymbol = dlsym(RTLD_DEFAULT, "dyld_all_image_infos");
+    BOOL uuidConsistent = NO;
+    NSDictionary* views = probe_normalized_dyld_views(taskProbe, &uuidConsistent);
+    BOOL viewsAgree = [views[@"public"] isEqualToArray:views[@"memory"]];
+    BOOL addressUUIDPassed = taskProbe.valid && viewsAgree && uuidConsistent;
+    NSDictionary* dyldTaskInfo = @{
+        @"address" : @((unsigned long long)taskProbe.taskInfo.all_image_info_addr),
+        @"size" : @((unsigned long long)taskProbe.taskInfo.all_image_info_size),
+        @"format" : @(taskProbe.taskInfo.all_image_info_format),
+        @"retry" : taskProbe.valid ? @"PASS" : @"FAIL",
+        @"null_info_array_retries" : @(taskProbe.retries),
+    };
+    BOOL callbackContractPassed = [callbackContract[@"status"] isEqualToString:@"PASS"];
+    BOOL dyldPassed = callbackContractPassed && addressUUIDPassed;
 
     struct stat canaryStat;
     errno = 0;
@@ -178,9 +570,10 @@ static BOOL probe_write_machine_report(void) {
     BOOL canaryPassed = statResult == -1 && statErrno == ENOENT;
     BOOL setupFailure = !taskProbe.valid || (injected && !canaryPassed);
     BOOL leaked = injected && (directHidden.count || publicHidden.count);
-    NSInteger producerExit = setupFailure ? 2 : leaked ? 1 : 0;
+    NSInteger producerExit = setupFailure ? 2 : (leaked || !dyldPassed) ? 1 : 0;
     NSString* aggregate = setupFailure ? @"SETUP-FAIL" :
-        (injected ? (leaked ? @"FAIL" : @"PASS") : @"CONTROL-INACTIVE");
+        ((leaked || !dyldPassed) ? @"FAIL" :
+            (injected ? @"PASS" : @"CONTROL-INACTIVE"));
     id canary = injected ? @{
         @"status" : canaryPassed ? @"PASS" : @"FAIL",
         @"probe" : @"stat(/var/jb)",
@@ -188,6 +581,7 @@ static BOOL probe_write_machine_report(void) {
         @"errno" : @(statErrno),
     } : @"CONTROL-INACTIVE";
 
+    uint64_t reportEnd = mach_continuous_time();
     NSDictionary* report = @{
         @"schema_version" : @1,
         @"producer" : @"dyldprobe",
@@ -200,6 +594,25 @@ static BOOL probe_write_machine_report(void) {
         @"canary" : canary,
         @"observations" : @{
             @"aggregate" : aggregate,
+			@"dyld" : @{
+                @"case_id" : @"dyld-fidelity-v1",
+                @"views" : views,
+                @"task_dyld_info" : dyldTaskInfo,
+                @"callbacks" : callbackContract[@"callbacks"],
+                @"concurrency" : callbackContract[@"concurrency"],
+                @"address_uuid" : addressUUIDPassed ? @"PASS" : @"FAIL",
+                @"views_agree" : @(viewsAgree),
+                @"uuid_consistent" : @(uuidConsistent),
+                @"uuid_entry_count" : @(taskProbe.valid ? taskProbe.infos->uuidArrayCount : 0),
+                @"uuid_orphan_addresses" : views[@"uuid_orphan_addresses"],
+                @"stress" : callbackContract[@"stress"],
+                @"status" : dyldPassed ? @"PASS" : @"FAIL",
+			},
+			@"timing" : @{
+				@"clock" : @"mach_continuous_time",
+				@"start_ticks" : @(gProbeStartTicks), @"end_ticks" : @(reportEnd),
+				@"probe_elapsed_ns" : @(probe_elapsed_ns(reportEnd)),
+			},
             @"task_dyld_info" : @{
                 @"kern_return" : @(taskProbe.result),
                 @"count" : @(taskProbe.count),
@@ -210,6 +623,7 @@ static BOOL probe_write_machine_report(void) {
                 @"size" : @((unsigned long long)taskProbe.taskInfo.all_image_info_size),
                 @"format" : @(taskProbe.taskInfo.all_image_info_format),
                 @"null_info_array_retries" : @(taskProbe.retries),
+                @"retry" : taskProbe.valid ? @"PASS" : @"FAIL",
                 @"valid" : @(taskProbe.valid),
                 @"region" : @{
                     @"kern_return" : @(regionResult),
@@ -233,10 +647,19 @@ static BOOL probe_write_machine_report(void) {
         },
         @"producer_exit" : @(producerExit),
     };
-    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:0 error:nil];
+    NSError* error = nil;
+    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:0 error:&error];
     NSString* path = [documents stringByAppendingPathComponent:
         [NSString stringWithFormat:@"dyldprobe-%@.json", context[@"nonce"]]];
-    return data && [data writeToFile:path options:NSDataWritingAtomic error:nil];
+    if(!data) {
+        if(failure) *failure = [NSString stringWithFormat:@"report serialization failed: %@", error.localizedDescription ?: @"unknown"];
+        return NO;
+    }
+    if(![data writeToFile:path options:NSDataWritingAtomic error:&error]) {
+        if(failure) *failure = [NSString stringWithFormat:@"report write failed: %@", error.localizedDescription ?: @"unknown"];
+        return NO;
+    }
+    return YES;
 }
 
 static void probe_section_1(NSMutableString* out, NSString* appPath) {
@@ -525,6 +948,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
                 struct dyld_all_image_infos* infos = probe_direct_infos();
 
                 if(!infos || !infos->infoArray || infos->infoArrayCount == 0) {
+                    usleep(1000);
                     continue;
                 }
 
@@ -553,6 +977,7 @@ static void probe_section_6(NSMutableString* out, NSFileManager* fm, NSArray* hi
                 }
 
                 readerRuns++;
+                usleep(1000);
             }
         });
 
@@ -812,7 +1237,7 @@ static NSString* ProbeReport(void) {
 }
 
 - (void)_refresh {
-    probe_write_machine_report();
+    probe_write_machine_report(NULL);
     _textView.text = ProbeReport();
     fprintf(stderr, "%s\n", [_textView.text UTF8String]);
 }
@@ -824,7 +1249,7 @@ static NSString* ProbeReport(void) {
     @autoreleasepool {
         // Capture the clean launch state before the human-only stress report
         // deliberately rebinds GOT slots in sections 8 and 9.
-        probe_write_machine_report();
+        probe_write_machine_report(NULL);
         report = ProbeReport();
         fprintf(stderr, "%s\n", [report UTF8String]);
     }
@@ -863,9 +1288,13 @@ int main(int argc, char* argv[]) {
                 break;
             }
         }
-        BOOL written = probe_write_machine_report();
+        NSString* failure = nil;
+        BOOL written = probe_write_machine_report(&failure);
         if(headless) {
-            if(!written) return 2;
+            if(!written) {
+                fprintf(stderr, "dyldprobe headless report failure: %s\n", failure.UTF8String ?: "unknown");
+                return 2;
+            }
             for(;;) pause();
         }
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));

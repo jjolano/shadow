@@ -75,7 +75,6 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWHookIDSandbox : @(YES),
         SHDWHookIDMemory : @(YES),
         SHDWHookIDHideApps : @(YES),
-        SHDWVnodeHidingID : @(NO),
         SHDWPseudoSandboxModeID : @(0),
         // PathRewrite: natural-ENOENT path-buffer rewrite (svc trampoline +
         // libc hooks). Default OFF — the rewrite munges the caller's path
@@ -93,7 +92,7 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
 }
 
 // Hook keys only — the subset of defaults the presets steer (every
-// Hook_* toggle plus VnodeHiding; not Global_Enabled / HK_Library /
+// Hook_* toggle plus PseudoSandboxMode; not Global_Enabled / HK_Library /
 // MemoryLevelHiding / App_Enabled).
 static NSArray<NSString*>* SHDWPresetKeys(void) {
     static NSArray<NSString*>* keys = nil;
@@ -102,7 +101,7 @@ static NSArray<NSString*>* SHDWPresetKeys(void) {
         NSMutableArray* mutableKeys = [NSMutableArray new];
 
         for(NSString* key in SHDWDefaultHookSettings()) {
-            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWVnodeHidingID] || [key isEqualToString:SHDWPseudoSandboxModeID]) {
+            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWPseudoSandboxModeID]) {
                 [mutableKeys addObject:key];
             }
         }
@@ -140,7 +139,6 @@ NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
     preset[SHDWHookIDSyscall] = @(YES);
     preset[SHDWHookIDSandbox] = @(YES);
     preset[SHDWHookIDMemory] = @(YES);
-    preset[SHDWVnodeHidingID] = @(YES);
     preset[SHDWPathRewriteID] = @(YES);
 
     return preset;
@@ -163,8 +161,6 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             // dlopen_internal is a private libdyld symbol: needs ElleKit
             // (inline / private-symbol capable).
             SHDWHookIDDynamicLibrariesExtra : @"inline",
-            // Vnode-layer hiding: needs the krw-capable daemon.
-            SHDWVnodeHidingID : @"daemon",
             // C-function groups: any non-Swift backend can run them.
             // EnvVars' core (libc env filtering) rides the C-function lane;
             // its NSProcessInfo swizzles are a subMain add-on that fail-softs

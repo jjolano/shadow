@@ -22,10 +22,6 @@ static BOOL shdwPseudoShouldDeny(const char *cpath) {
     if(!didLookup) {
         didLookup = YES;
         fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_should_deny");
-        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_enforce_should_deny");
-        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdwPseudoEnforceShouldDeny");
-        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_denies_path");
-        if(!fn) fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_is_restricted");
     }
     if(!fn) return NO;
     _inPseudoEval = YES;
@@ -65,25 +61,19 @@ static NSString* shdwJoinWorkingDirectory(NSString* path, NSString* wd) {
     return [wd stringByAppendingPathComponent:path];
 }
 
-static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path) {
+// Group containers: exempt when inside any group container (central strict enforce helper)
+static BOOL shdwIsGroupContainerPath(ShadowRestrictionContext context, NSString* path) {
     if(!context.hasAppSandbox) return NO;
-    if([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]) return YES;
     for(NSString *gc in context.groupContainerPaths) {
         if(gc && [path hasPrefix:gc]) return YES;
     }
     return NO;
 }
 
-// Group containers: exempt when inside any group container (central strict enforce helper)
-static BOOL shdwIsSandboxExemptGroup(ShadowRestrictionContext context, NSString* path) {
+static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path) {
     if(!context.hasAppSandbox) return NO;
-    for(NSString *gc in context.groupContainerPaths) {
-        if(gc && [path hasPrefix:gc]) return YES;
-    }
-    return NO;
-}
-static BOOL shdwIsGroupContainerPath(ShadowRestrictionContext context, NSString* path) {
-    return shdwIsSandboxExemptGroup(context, path);
+    if([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]) return YES;
+    return shdwIsGroupContainerPath(context, path);
 }
 
 static NSString* shdwResolveTarget(NSString* path) {

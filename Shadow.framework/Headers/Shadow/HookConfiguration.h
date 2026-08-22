@@ -36,7 +36,6 @@
 #define SHDWHookIDSandbox          @"Hook_Sandbox"
 #define SHDWHookIDMemory           @"Hook_Memory"
 #define SHDWHookIDHideApps         @"Hook_HideApps"
-#define SHDWVnodeHidingID          @"VnodeHiding"
 #define SHDWPseudoSandboxModeID    @"PseudoSandboxMode"
 #define SHDWPathRewriteID          @"PathRewrite"
 
@@ -131,7 +130,7 @@ SHDW_EXPORT NSDictionary<NSString*, id>* SHDWPresetMaximum(void);
 #pragma mark - Capability metadata (Settings UI)
 
 // Backend requirement of a hook group, as a stable string:
-//   "message", "function", "inline", "daemon" (VnodeHiding), or "none"
+//   "message", "function", "inline", or "none"
 // (not a hook group / stale+ignored, e.g. the removed FakeMac).
 SHDW_EXPORT NSString* SHDWHookGroupCapabilityKind(NSString* groupID);
 
