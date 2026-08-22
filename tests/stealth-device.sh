@@ -18,6 +18,10 @@ SSH_OPTIONS=(
     -o ConnectionAttempts=1
 )
 
+DAEMON_LEGACY_LEDGER=''
+DAEMON_LEGACY_OWNER_PIDS=''
+DAEMON_LEGACY_RECOVERY=''
+
 die() { printf 'stealth-device: %s\n' "$*" >&2; exit 1; }
 usage() {
     printf '%s\n' 'usage: tests/stealth-device.sh {selftest|preflight|inventory|import-stock|build|install-deb|install-component|install-hookprobe|set-mode|launch|pull-report|run-hookprobe|daemon-status|daemon-term-safe|client-kill-safe|restore|collect}' >&2
@@ -489,6 +493,15 @@ if bad: raise SystemExit('cleanup journal has unresolved events: '+','.join(r['e
 PY
 }
 
+baseline_shadowd_job() {
+    python3 - "$EVIDENCE_ABS/run.json" <<'PY'
+import json,sys
+state=json.load(open(sys.argv[1])).get('baseline_service',{}).get('shadowd_job')
+if state not in {'present','absent'}: raise SystemExit('invalid baseline shadowd service state')
+print(state)
+PY
+}
+
 daemon_snapshot_remote() {
     cat <<'EOS'
 set -u
@@ -510,8 +523,14 @@ for p in /var/mobile/Library/Preferences/me.jjolano.shadow.plist /var/jb/var/mob
   printf 'control\t%s\t' "$p"; if [ -e "$p" ]; then printf 'visible\n'; else printf 'absent\n'; fi
 done
 log=/var/jb/var/log/shadowd.log
-lines=$(sed -n '$=' "$log" 2>/dev/null || true)
-printf 'log_lines\t%s\n' "${lines:-0}"
+if [ ! -e "$log" ]; then
+  printf 'log\tabsent\nlog_sha256\tnull\nlog_lines\t0\n'
+elif [ -f "$log" ]; then
+  lines=$(sed -n '$=' "$log" 2>/dev/null || true)
+  printf 'log\tfile\nlog_sha256\t%s\nlog_lines\t%s\n' "$(sha256sum "$log" | cut -d' ' -f1)" "${lines:-0}"
+else
+  printf 'log\terror\nlog_sha256\tnull\nlog_lines\t0\n'
+fi
 printf 'log_begin\n'; tail -n 200 /var/jb/var/log/shadowd.log 2>/dev/null || true; printf 'log_end\n'
 EOS
 }
@@ -534,6 +553,7 @@ for line in lines:
         if f[0]=='control' and len(f)==3: controls.append((f[1],f[2]))
         elif len(f)>=2: facts[f[0]]=f[1]
 if facts.get('ledger') not in ('absent','empty'): raise SystemExit('ledger is not absent/empty')
+if facts.get('log') not in ('absent','file'): raise SystemExit('shadowd log has invalid type')
 if len(controls)!=4 or dict(controls)!=baseline: raise SystemExit('allowlist controls differ from preflight baseline')
 rows=[]
 for line in procs:
@@ -552,6 +572,176 @@ else:
         raise SystemExit('invalid idle shadowd job state')
 print('PASS')
 PY
+}
+
+validate_legacy_daemon_snapshot() {
+    local snapshot=$1 ledger=$2
+    python3 - "$snapshot" "$ledger" "$EVIDENCE_ABS/run.json" <<'PY'
+import json,pathlib,re,sys
+snapshot,ledger,run=map(pathlib.Path,sys.argv[1:])
+facts={}; controls=[]; mode=None
+for line in snapshot.read_text(errors='replace').splitlines():
+    if line in {'processes_begin','log_begin'}: mode=line; continue
+    if line in {'processes_end','log_end'}: mode=None; continue
+    if mode is not None: continue
+    fields=line.split('\t')
+    if fields[0]=='control' and len(fields)==3: controls.append((fields[1],fields[2]))
+    elif len(fields)>=2: facts[fields[0]]=fields[1]
+baseline=json.load(open(run)).get('allowlist_controls',{})
+if facts.get('job')!='present' or facts.get('program')!='/var/jb/usr/libexec/shadowd':
+    raise SystemExit('legacy daemon identity mismatch')
+if facts.get('ledger')!='records' or facts.get('log')!='file' or len(controls)!=4 or dict(controls)!=baseline:
+    raise SystemExit('legacy daemon state is unsafe')
+rows=[line for line in ledger.read_text(errors='strict').splitlines() if line]
+if len(rows)<3 or rows[0]!='SHADOWLEDGER1' or not re.fullmatch(r'[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}',rows[1]):
+    raise SystemExit('legacy ledger header is unsafe')
+paths={'/Library/PreferenceBundles/ShadowSettings.bundle','/var/jb/Library/PreferenceBundles/ShadowSettings.bundle'}
+for row in rows[2:]:
+    fields=row.split('|')
+    if len(fields)!=5: raise SystemExit('legacy ledger record is unsafe')
+    state,path,owner,vnode,vid=fields
+    if state not in {'0','1'} or path not in paths or not re.fullmatch(r'[1-9][0-9]*-[0-9]+-[0-9]+',owner):
+        raise SystemExit('legacy ledger record is unsafe')
+    if not re.fullmatch(r'0x[0-9A-Fa-f]+',vnode) or not re.fullmatch(r'0x[0-9A-Fa-f]+',vid):
+        raise SystemExit('legacy ledger pointer is unsafe')
+print('PASS')
+PY
+}
+
+legacy_ledger_owner_pids() {
+    python3 - "$1" <<'PY'
+import pathlib,re,sys
+pids=set()
+for row in pathlib.Path(sys.argv[1]).read_text(errors='strict').splitlines()[2:]:
+    fields=row.split('|')
+    if len(fields)!=5: raise SystemExit('legacy ledger record is unsafe')
+    owner=fields[2]
+    if not re.fullmatch(r'[1-9][0-9]*-[0-9]+-[0-9]+',owner): raise SystemExit('legacy ledger owner is unsafe')
+    pids.add(int(owner.split('-',1)[0]))
+for pid in sorted(pids): print(pid)
+PY
+}
+
+validate_legacy_recovery_delta() {
+    local ledger=$1 delta=$2
+    python3 - "$ledger" "$delta" <<'PY'
+import pathlib,sys
+ledger,delta=map(pathlib.Path,sys.argv[1:])
+rows=[line.split('|') for line in ledger.read_text(errors='strict').splitlines()[2:] if line]
+paths={row[1] for row in rows if len(row)==5}
+lines=delta.read_text(errors='replace').splitlines()
+if not any('krw: ready' in line for line in lines):
+    raise SystemExit('legacy daemon did not complete recovery')
+for path in paths:
+    safe=(f'ledger: re-hidden {path} via fresh fd',
+          f'ledger: re-hide UNVERIFIED for {path} — retained fd + record',
+          f'ledger: adopted hidden {path} ',
+          f'ledger: mayBeHidden + visible → rolled back: {path}',
+          f'not flagged — dropped: {path}')
+    if not any(any(marker in line for marker in safe) for line in lines):
+        raise SystemExit('legacy ledger recovery is ambiguous: '+path)
+print('PASS')
+PY
+}
+
+backend_absence_remote() {
+    daemon_snapshot_remote
+    cat <<'EOS'
+for path in \
+  /var/jb/usr/libexec/shadowd \
+  /usr/libexec/shadowd \
+  /var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger \
+  /var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger \
+  /var/jb/var/log/shadowd.log \
+  /var/log/shadowd.log; do
+  if [ -e "$path" ]; then state=present; else state=absent; fi
+  printf 'backend\t%s\t%s\n' "$path" "$state"
+done
+EOS
+}
+
+validate_backend_absence_snapshot() {
+    local snapshot=$1
+    validate_daemon_snapshot "$snapshot" true >/dev/null
+    python3 - "$snapshot" <<'PY'
+import pathlib,sys
+facts={}; paths={}; mode=None
+for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
+    if line in {'processes_begin','log_begin'}: mode=line; continue
+    if line in {'processes_end','log_end'}: mode=None; continue
+    if mode is not None: continue
+    fields=line.split('\t')
+    if len(fields)==2: facts[fields[0]]=fields[1]
+    elif len(fields)==3 and fields[0]=='backend': paths[fields[1]]=fields[2]
+expected={
+  '/var/jb/usr/libexec/shadowd', '/usr/libexec/shadowd',
+  '/var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger',
+  '/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger',
+  '/var/jb/var/log/shadowd.log', '/var/log/shadowd.log',
+}
+if set(paths)!=expected or any(value!='absent' for value in paths.values()):
+    raise SystemExit('backend payload, ledger, or activation log remains')
+if facts.get('ledger')!='absent' or facts.get('log')!='absent':
+    raise SystemExit('backend durable state remains')
+PY
+}
+
+capture_backend_absence_snapshot() {
+    local snapshot=$1
+    ssh_privileged "$(backend_absence_remote)" >"$snapshot" 2>>"$CAPTURE_STDERR" || return 1
+    validate_backend_absence_snapshot "$snapshot"
+}
+
+springboard_snapshot_remote() {
+    cat <<'EOS'
+job=$(launchctl print system/com.apple.SpringBoard 2>/dev/null || true)
+pid=$(printf '%s\n' "$job" | sed -n 's/^[[:space:]]*pid = //p' | head -1)
+case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
+started=$(ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//')
+[ -n "$started" ] || exit 1
+printf 'pid\t%s\nlstart\t%s\n' "$pid" "$started"
+EOS
+}
+
+validate_springboard_snapshot() {
+    local snapshot=$1
+    python3 - "$snapshot" <<'PY'
+import pathlib,sys
+rows={}
+for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
+    fields=line.split('\t',1)
+    if len(fields)==2: rows[fields[0]]=fields[1]
+if set(rows)!={'pid','lstart'} or not rows['pid'].isdigit() or not rows['lstart']:
+    raise SystemExit('invalid SpringBoard identity')
+PY
+}
+
+validate_springboard_transition() {
+    local before=$1 after=$2
+    validate_springboard_snapshot "$before"
+    validate_springboard_snapshot "$after"
+    python3 - "$before" "$after" <<'PY'
+import pathlib,sys
+def read(path): return dict(line.split('\t',1) for line in pathlib.Path(path).read_text().splitlines() if '\t' in line)
+before,after=read(sys.argv[1]),read(sys.argv[2])
+if before==after: raise SystemExit('SpringBoard restart was not observed')
+PY
+}
+
+wait_for_springboard_restart() {
+    local before=$1 after=$2 started=$SECONDS rc
+    while [ $((SECONDS - started)) -lt 180 ]; do
+        set +e
+        ssh_mobile "$(springboard_snapshot_remote)" >"$after" 2>>"$CAPTURE_STDERR"
+        rc=$?
+        set -e
+        if [ "$rc" -eq 0 ] && validate_springboard_transition "$before" "$after" >/dev/null 2>&1; then
+            printf '%s\n' "$((SECONDS - started))"
+            return 0
+        fi
+        sleep 3
+    done
+    return 1
 }
 
 cmd_daemon_status() {
@@ -608,54 +798,128 @@ PY
 }
 
 daemon_term_safe_internal() {
-    local event remote before after delta before_lines after_lines job_pid rc
+    local event remote before after delta before_lines after_lines job_pid rc legacy_ledger legacy=0 legacy_owners legacy_recovery legacy_ready exit_seen
     require_clean_journal
+    DAEMON_LEGACY_LEDGER=''
+    DAEMON_LEGACY_OWNER_PIDS=''
+    DAEMON_LEGACY_RECOVERY=''
     before="$CAPTURE_DIR/daemon-before.txt"; after="$CAPTURE_DIR/daemon-after.txt"
     remote=$(daemon_snapshot_remote)
     ssh_privileged "$remote" >"$before" 2>>"$CAPTURE_STDERR" || die 'daemon precheck transport failed'
-    validate_daemon_snapshot "$before" false >>"$CAPTURE_STDOUT"
+    if ! validate_daemon_snapshot "$before" false >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"; then
+        legacy_ledger="$CAPTURE_DIR/legacy-shadowd.ledger"
+        ssh_privileged 'test -f /var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger && test ! -L /var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger && cat /var/jb/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger' >"$legacy_ledger" 2>>"$CAPTURE_STDERR" || die 'legacy ledger capture failed'
+        validate_legacy_daemon_snapshot "$before" "$legacy_ledger" >>"$CAPTURE_STDOUT" || die 'legacy daemon teardown is unsafe'
+        DAEMON_LEGACY_LEDGER=$legacy_ledger
+        legacy=1
+    fi
     before_lines=$(sed -n 's/^log_lines[[:space:]]//p' "$before" | head -1)
     job_pid=$(sed -n 's/^job_pid[[:space:]]//p' "$before" | head -1)
     [[ $before_lines =~ ^[0-9]+$ ]] || die 'invalid daemon log baseline'
+    if [ "$legacy" -eq 1 ]; then
+        legacy_owners="$CAPTURE_DIR/legacy-owner-pids.txt"
+        legacy_ledger_owner_pids "$legacy_ledger" >"$legacy_owners" || die 'legacy ledger owners are unsafe'
+        while IFS= read -r owner_pid; do
+            ssh_mobile "test -z \"\$(ps -p $owner_pid -o pid= 2>/dev/null)\"" || die "legacy owner remains live: $owner_pid"
+        done <"$legacy_owners"
+        DAEMON_LEGACY_OWNER_PIDS=$legacy_owners
+    fi
     event=$(new_event_id)
     journal_event "$event" daemon-bootout system/me.jjolano.shadow bootstrap pending
+    if [ "$legacy" -eq 1 ]; then
+        ssh_privileged 'launchctl kickstart system/me.jjolano.shadow' >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" || die 'legacy daemon start failed'
+        legacy_recovery="$CAPTURE_DIR/legacy-recovery-delta.txt"
+        : >"$legacy_recovery"
+        for _ in $(seq 1 30); do
+            ssh_privileged "tail -n +$((before_lines + 1)) /var/jb/var/log/shadowd.log" >"$legacy_recovery" 2>>"$CAPTURE_STDERR" || die 'legacy recovery log capture failed'
+            if grep -F 'krw: ready' "$legacy_recovery" >/dev/null; then break; fi
+            sleep 1
+        done
+        validate_legacy_recovery_delta "$legacy_ledger" "$legacy_recovery" >>"$CAPTURE_STDOUT" || die 'legacy daemon recovery is unsafe'
+        legacy_ready="$CAPTURE_DIR/legacy-daemon-ready.txt"
+        ssh_privileged "$remote" >"$legacy_ready" 2>>"$CAPTURE_STDERR" || die 'legacy daemon readiness check failed'
+        job_pid=$(sed -n 's/^job_pid[[:space:]]//p' "$legacy_ready" | head -1)
+        [[ $job_pid =~ ^[1-9][0-9]*$ ]] || die 'legacy daemon has no exact live PID after recovery'
+        DAEMON_LEGACY_RECOVERY=$legacy_recovery
+    fi
+    set +e
+    ssh_privileged 'launchctl kill SIGTERM system/me.jjolano.shadow' >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    rc=$?
+    set -e
+    [ "$rc" -eq 0 ] || die 'clean daemon SIGTERM failed'
+    delta="$CAPTURE_DIR/daemon-exit-delta.txt"
+    : >"$delta"
+    if [[ $job_pid =~ ^[0-9]+$ ]]; then
+        after_lines=''
+        exit_seen=0
+        for _ in $(seq 1 30); do
+            ssh_privileged "$remote" >"$after" 2>>"$CAPTURE_STDERR" || die 'daemon postcheck transport failed'
+            after_lines=$(sed -n 's/^log_lines[[:space:]]//p' "$after" | head -1)
+            if [[ $after_lines =~ ^[0-9]+$ ]] && [ "$after_lines" -gt "$before_lines" ]; then
+                ssh_privileged "tail -n +$((before_lines + 1)) /var/jb/var/log/shadowd.log" >"$delta" 2>>"$CAPTURE_STDERR" || die 'daemon shutdown log capture failed'
+                if grep -F 'shadowd exiting' "$delta" >/dev/null; then exit_seen=1; break; fi
+            fi
+            sleep 1
+        done
+        [ "$exit_seen" -eq 1 ] || die 'clean shadowd exit log missing'
+    fi
     set +e
     ssh_privileged 'launchctl bootout system/me.jjolano.shadow' >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
     rc=$?
     set -e
-    [ "$rc" -eq 0 ] || die 'clean launchctl bootout failed'
+    if [ "$rc" -ne 0 ] && ssh_privileged 'launchctl print system/me.jjolano.shadow >/dev/null 2>&1'; then
+        die 'clean launchctl bootout failed'
+    fi
     ssh_privileged "$remote" >"$after" 2>>"$CAPTURE_STDERR" || die 'daemon postcheck transport failed'
     validate_daemon_snapshot "$after" true >>"$CAPTURE_STDOUT"
-    after_lines=$(sed -n 's/^log_lines[[:space:]]//p' "$after" | head -1)
-    delta="$CAPTURE_DIR/daemon-exit-delta.txt"
-    : >"$delta"
-    if [[ $job_pid =~ ^[0-9]+$ ]]; then
-        [[ $after_lines =~ ^[0-9]+$ ]] && [ "$after_lines" -gt "$before_lines" ] || die 'daemon emitted no new shutdown log'
-        ssh_privileged "tail -n +$((before_lines + 1)) /var/jb/var/log/shadowd.log" >"$delta" 2>>"$CAPTURE_STDERR" || die 'daemon shutdown log capture failed'
-        grep -F 'shadowd exiting' "$delta" >/dev/null || die 'clean shadowd exit log missing'
-    fi
     journal_event "$event" daemon-bootout system/me.jjolano.shadow bootstrap completed
 }
 
 cmd_daemon_term_safe() {
+    local artifacts=()
     prepare_existing_run
     verify_device_identity
     capture_dir '' daemon-term-safe device
     daemon_term_safe_internal
-    write_manifest daemon-term-safe '' not-applicable not-applicable 0 0 '' \
-        "daemon-before=$CAPTURE_DIR/daemon-before.txt" "daemon-after=$CAPTURE_DIR/daemon-after.txt" \
-        "daemon-exit-log=$CAPTURE_DIR/daemon-exit-delta.txt"
+    artifacts=("daemon-before=$CAPTURE_DIR/daemon-before.txt" "daemon-after=$CAPTURE_DIR/daemon-after.txt" \
+        "daemon-exit-log=$CAPTURE_DIR/daemon-exit-delta.txt")
+    [ -z "$DAEMON_LEGACY_LEDGER" ] || artifacts+=("legacy-ledger=$DAEMON_LEGACY_LEDGER")
+    [ -z "$DAEMON_LEGACY_OWNER_PIDS" ] || artifacts+=("legacy-owner-pids=$DAEMON_LEGACY_OWNER_PIDS")
+    [ -z "$DAEMON_LEGACY_RECOVERY" ] || artifacts+=("legacy-recovery=$DAEMON_LEGACY_RECOVERY")
+    write_manifest daemon-term-safe '' not-applicable not-applicable 0 0 '' "${artifacts[@]}"
     printf '%s\n' "$CAPTURE_DIR/manifest.json"
 }
 
 process_row() {
     local pid=$1
     [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-    ssh_mobile "ps -o pid=,lstart=,comm= -p $pid"
+    ssh_mobile "ps -o pid=,lstart=,comm= -p $pid 2>/dev/null; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 1 ]"
+}
+
+client_sigkill_state() {
+    local pid=$1 expected_start=$2 expected_comm=$3 row parsed_start comm
+    row=$(process_row "$pid") || return 1
+    [ -n "$row" ] || { printf 'absent\n'; return 0; }
+    read -r parsed_start comm < <(python3 - "$row" <<'PY'
+import sys
+b=sys.argv[1].strip().split()
+if len(b)<3 or not b[0].isdigit(): raise SystemExit(1)
+print('|'.join(b[1:-1]), b[-1])
+PY
+)
+    parsed_start=${parsed_start//|/ }
+    [ -n "$parsed_start" ] && [ -n "$comm" ] || return 1
+    if [ "$parsed_start" != "$expected_start" ]; then
+        printf 'reused\n'
+    elif [ "$comm" != "$expected_comm" ]; then
+        printf 'changed\n'
+    else
+        printf 'live\n'
+    fi
 }
 
 cmd_client_kill_safe() {
-    local pid=$1 lstart=$2 row parsed_start comm event rc
+    local pid=$1 lstart=$2 row parsed_start comm event rc state
     prepare_existing_run
     verify_device_identity
     capture_dir '' client-kill-safe device
@@ -680,7 +944,19 @@ PY
     rc=$?
     set -e
     [ "$rc" -eq 0 ] || die 'client signal failed'
-    if process_row "$pid" >/dev/null 2>&1; then die 'client PID still present or reused'; fi
+    state=$(client_sigkill_state "$pid" "$lstart" "$comm") || die 'client PID recheck failed'
+    if [ "$state" = live ]; then
+        # A stopped child can remain attached to an orphaned SSH shell after
+        # its first SIGKILL. Revalidate before resuming it, then kill it in
+        # the same checked privileged operation.
+        set +e
+        ssh_privileged "kill -CONT $pid && kill -KILL $pid" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+        rc=$?
+        set -e
+        [ "$rc" -eq 0 ] || die 'stopped client recovery signal failed'
+    fi
+    state=$(client_sigkill_state "$pid" "$lstart" "$comm") || die 'client PID final recheck failed'
+    [ "$state" = absent ] || die "client PID still present or reused: $state"
     journal_event "$event" client-sigkill "$pid" "$lstart|$comm" completed
     journal_event "$event" client-sigkill "$pid" "$lstart|$comm" restored
     write_manifest client-kill-safe '' not-applicable not-applicable 0 0 ''
@@ -736,12 +1012,21 @@ PY
 }
 
 cmd_build() {
-    local flavor=$1 rc artifact_specs=() file frozen_dir frozen
+    local flavor=$1 rc artifact_specs=() file frozen_dir frozen fixture_key fixture_spec fixture_source fixture_target
     case "$flavor" in rootless|rootful) ;; *) die 'build flavor must be rootless or rootful' ;; esac
     prepare_existing_run
     capture_dir "$flavor" build host
     set +e
-    bash "$REPO_ROOT/build.sh" "$flavor" >"$CAPTURE_STDOUT" 2>"$CAPTURE_STDERR"
+    (
+        set -e
+        umask 022
+        bash "$REPO_ROOT/build.sh" "$flavor"
+        if [ "$flavor" = rootless ]; then
+            bash "$REPO_ROOT/tools/dyldprobe/build.sh"
+            make -C "$REPO_ROOT/tools/hookprobe" clean
+            make -C "$REPO_ROOT/tools/hookprobe" THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:15.0
+        fi
+    ) >"$CAPTURE_STDOUT" 2>"$CAPTURE_STDERR"
     rc=$?
     set -e
     if [ "$rc" -eq 0 ]; then
@@ -752,6 +1037,27 @@ cmd_build() {
             cp -p "$file" "$frozen"
             artifact_specs+=("candidate=$frozen")
         done < <(find "$REPO_ROOT/build" -maxdepth 1 -type f -print0 | sort -z)
+        if [ "$flavor" = rootless ]; then
+            while IFS= read -r -d '' file; do
+                frozen="$frozen_dir/$(basename -- "$file")"
+                cp -p "$file" "$frozen"
+                artifact_specs+=("candidate=$frozen")
+            done < <(find "$REPO_ROOT/tools/dyldprobe/build" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
+            file="$REPO_ROOT/tools/hookprobe/.theos/obj/debug/hookprobe"
+            [ -f "$file" ] && [ ! -L "$file" ] || die 'rootless hookprobe build artifact missing or unsafe'
+            frozen="$frozen_dir/$(basename -- "$file")"
+            cp -p "$file" "$frozen"
+            artifact_specs+=("hookprobe=$frozen")
+            while IFS= read -r fixture_key; do
+                fixture_spec=$(identity_fixture_spec "$fixture_key") || die "unknown identity fixture: $fixture_key"
+                IFS=$'\t' read -r fixture_source fixture_target <<<"$fixture_spec"
+                file="$REPO_ROOT/tools/hookprobe/.theos/obj/debug/$fixture_source"
+                [ -f "$file" ] && [ ! -L "$file" ] || die "rootless identity fixture missing or unsafe: $fixture_source"
+                frozen="$frozen_dir/$fixture_source"
+                cp -p "$file" "$frozen"
+                artifact_specs+=("hookprobe-fixture-$fixture_key=$frozen")
+            done < <(identity_fixture_keys)
+        fi
         [ "${#artifact_specs[@]}" -gt 0 ] || die 'build produced no artifacts'
     fi
     write_manifest build "$flavor" "$flavor" "$flavor" "$rc" 0 '' "${artifact_specs[@]}"
@@ -799,32 +1105,63 @@ for kind,value,rel in sorted(rows): print(f'{kind}\t{value}\t{rel}')
 PY
 }
 
+recovery_payload_mode_manifest() {
+    python3 - "$1" <<'PY'
+import hashlib, pathlib, stat, sys
+root=pathlib.Path(sys.argv[1]).resolve(); rows=[]
+for item in root.rglob('*'):
+    if not item.is_file() or item.is_symlink(): continue
+    rel='/' + item.relative_to(root).as_posix()
+    if '\n' in rel or '\t' in rel: raise SystemExit('unsafe recovery payload mode path')
+    rows.append(('F',hashlib.sha256(item.read_bytes()).hexdigest(),f'{stat.S_IMODE(item.stat().st_mode):04o}',rel))
+if not rows: raise SystemExit('empty recovery payload mode manifest')
+for kind,digest,mode,rel in sorted(rows): print(f'{kind}\t{digest}\t{mode}\t{rel}')
+PY
+}
+
 find_local_recovery_deb() {
-    local package_id=$1 version=$2 candidate tmp remote_info remote_copy hash script path expected kind
-    local remote_script payload_expected payload_remote
+    local package_id=$1 version=$2 candidate tmp cache remote_info remote_copy hash identity script path expected kind state
+    local remote_script payload_expected payload_remote mode_script mode_expected mode_remote metadata_states
     local matches=()
+
+    # Archive discovery can inspect many historical runs.  Read the installed
+    # package metadata once, then make the potentially large archive walk
+    # entirely local; a recovery lookup must not time out before it can fall
+    # back to exporting the exact cached package.
+    cache=$(mktemp -d "${TMPDIR:-/tmp}/shadow-recovery-installed.XXXXXX") || return 1
+    metadata_states=$(ssh_mobile "for n in md5sums preinst postinst prerm postrm; do p=/var/jb/var/lib/dpkg/info/$package_id.\$n; if [ -f \"\$p\" ] && [ ! -L \"\$p\" ]; then printf '%s\\tpresent\\n' \"\$n\"; elif [ -e \"\$p\" ]; then printf '%s\\terror\\n' \"\$n\"; else printf '%s\\tabsent\\n' \"\$n\"; fi; done") || { rm -rf "$cache"; return 1; }
+    for script in md5sums preinst postinst prerm postrm; do
+        state=$(printf '%s\n' "$metadata_states" | sed -n "s/^$script$(printf '\\t')//p")
+        case "$state" in
+            present)
+                remote_info="/var/jb/var/lib/dpkg/info/$package_id.$script"
+                remote_copy="$cache/installed.$script"
+                scp_from "$remote_info" "$remote_copy" >/dev/null 2>&1 || { rm -rf "$cache"; return 1; }
+                ;;
+            absent) ;;
+            *) rm -rf "$cache"; return 1 ;;
+        esac
+    done
     while IFS= read -r -d '' candidate; do
         [ "$(dpkg-deb -f "$candidate" Package 2>/dev/null)" = "$package_id" ] || continue
         [ "$(dpkg-deb -f "$candidate" Version 2>/dev/null)" = "$version" ] || continue
         tmp=$(mktemp -d "${TMPDIR:-/tmp}/shadow-recovery-check.XXXXXX")
         if ! dpkg-deb -e "$candidate" "$tmp/control" >/dev/null 2>&1 ||
-           ! dpkg-deb -x "$candidate" "$tmp/payload" >/dev/null 2>&1; then
+           ! (umask 022; dpkg-deb -x "$candidate" "$tmp/payload" >/dev/null 2>&1); then
             rm -rf "$tmp"; continue
         fi
-        if [ -f "$tmp/control/md5sums" ]; then
-            remote_info="/var/jb/var/lib/dpkg/info/$package_id.md5sums"
-            remote_copy="$tmp/installed.md5sums"
-            if ! scp_from "$remote_info" "$remote_copy" >/dev/null 2>&1 || ! cmp -s "$tmp/control/md5sums" "$remote_copy"; then
-                rm -rf "$tmp"; continue
-            fi
+        if [ -f "$tmp/control/md5sums" ] && [ -f "$cache/installed.md5sums" ]; then
+            cmp -s "$tmp/control/md5sums" "$cache/installed.md5sums" || { rm -rf "$tmp"; continue; }
+        elif [ -f "$tmp/control/md5sums" ] || [ -f "$cache/installed.md5sums" ]; then
+            rm -rf "$tmp"; continue
         fi
         for script in preinst postinst prerm postrm; do
             if [ -f "$tmp/control/$script" ]; then
-                if ! scp_from "/var/jb/var/lib/dpkg/info/$package_id.$script" "$tmp/installed.$script" >/dev/null 2>&1 ||
-                   ! cmp -s "$tmp/control/$script" "$tmp/installed.$script"; then
+                if [ ! -f "$cache/installed.$script" ] ||
+                   ! cmp -s "$tmp/control/$script" "$cache/installed.$script"; then
                     rm -rf "$tmp"; tmp=''; break
                 fi
-            elif ssh_mobile "test -e $(sq "/var/jb/var/lib/dpkg/info/$package_id.$script")" >/dev/null 2>&1; then
+            elif [ -f "$cache/installed.$script" ]; then
                 rm -rf "$tmp"; tmp=''; break
             fi
         done
@@ -842,23 +1179,320 @@ find_local_recovery_deb() {
         if [ "$payload_remote" != "$(printf '%s\n' "$payload_expected" | cut -f1,2)" ]; then
             rm -rf "$tmp"; continue
         fi
+        mode_expected=$(recovery_payload_mode_manifest "$tmp/payload") || { rm -rf "$tmp"; continue; }
+        mode_script=''
+        while IFS=$'\t' read -r kind expected state path; do
+            [ "$kind" = F ] && [[ $expected =~ ^[0-9a-f]{64}$ ]] && [[ $state =~ ^0[0-7]{3}$ ]] || { rm -rf "$tmp"; die 'invalid recovery payload mode manifest'; }
+            mode_script+="if [ -f $(sq "$path") ] && [ ! -L $(sq "$path") ]; then h=\$(sha256sum $(sq "$path") | cut -d' ' -f1); m=\$(stat -c %a $(sq "$path")); printf 'F\t%s\t0%s\t%s\n' \"\$h\" \"\$m\" $(sq "$path"); else printf 'MISSING\t\t\t%s\n' $(sq "$path"); fi;"
+        done <<<"$mode_expected"
+        mode_remote=$(ssh_mobile "$mode_script" 2>/dev/null) || { rm -rf "$tmp"; continue; }
+        if [ "$mode_remote" != "$mode_expected" ]; then
+            rm -rf "$tmp"; continue
+        fi
+        identity=$({ printf 'control\n'; recovery_payload_manifest "$tmp/control"; printf 'payload\n'; recovery_payload_manifest "$tmp/payload"; } | sha256sum | cut -d' ' -f1) || { rm -rf "$tmp"; continue; }
         hash=$(sha256_file "$candidate")
-        matches+=("$hash|$candidate")
+        matches+=("$identity|$hash|$candidate")
         rm -rf "$tmp"
-    done < <(find "$REPO_ROOT/build" "$REPO_ROOT/packages" "$REPO_ROOT/ShadowHarness/packages" "$REPO_ROOT/tools/dyldprobe/build" -type f -name '*.deb' -print0 2>/dev/null)
+    done < <(find "$REPO_ROOT/build" "$REPO_ROOT/packages" "$REPO_ROOT/ShadowHarness/packages" "$REPO_ROOT/tools/dyldprobe/build" "$REPO_ROOT/artifacts/stealth" -type f -name '*.deb' -print0 2>/dev/null)
+    rm -rf "$cache"
     [ "${#matches[@]}" -gt 0 ] || return 1
     python3 - "${matches[@]}" <<'PY'
 import sys
-rows={item.split('|',1)[0]:item.split('|',1)[1] for item in sys.argv[1:]}
-if len(rows)!=1: raise SystemExit('multiple non-identical local recovery packages match installed metadata')
-print(next(iter(rows.values())))
+rows=[item.split('|',2) for item in sys.argv[1:]]
+if len({row[0] for row in rows}) != 1: raise SystemExit('multiple semantically distinct local recovery packages match installed metadata')
+print(sorted(rows, key=lambda row: (row[1], row[2]))[0][2])
 PY
+}
+
+reconstruct_installed_recovery_deb() (
+    local package_id=$1 version=$2 out=$3 cache stage status payload_list payload_paths payload_tar remote_tar path script remote state
+    local payload_expected payload_remote remote_script kind expected control_dir payload_types
+    local controls=(md5sums preinst postinst prerm postrm conffiles triggers shlibs symbols)
+
+    require_cmd tar
+    [ ! -e "$out" ] || die 'reconstructed recovery target already exists'
+    cache=$(mktemp -d "${TMPDIR:-/tmp}/shadow-recovery-rebuild.XXXXXX") || return 1
+    trap 'rm -rf "$cache"' EXIT
+    stage="$cache/stage"
+    status="$cache/status"
+    payload_list="$cache/package.list"
+    payload_paths="$cache/payload.paths"
+    payload_tar="$cache/payload.tar"
+    payload_types="$cache/payload.types"
+    mkdir -p "$stage/DEBIAN"
+    chmod 0755 "$stage/DEBIAN"
+
+    ssh_mobile "dpkg-query -s $(sq "$package_id")" >"$status" || die 'cannot read installed package status for recovery'
+    python3 - "$status" "$stage/DEBIAN/control" "$package_id" "$version" <<'PY'
+import os, pathlib, sys
+src=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2])
+package=sys.argv[3]; version=sys.argv[4]
+drop={'Status','Installed-Size'}; rows=[]; fields={}; keep=False
+for line in src.read_text(encoding='utf-8').splitlines():
+    if line.startswith((' ', '\t')):
+        if keep: rows.append(line)
+        continue
+    if not line: continue
+    if ':' not in line: raise SystemExit('invalid installed package status')
+    field, value=line.split(':',1); keep=field not in drop
+    if keep:
+        if field in fields: raise SystemExit('duplicate installed package field: '+field)
+        fields[field]=value.strip(); rows.append(line)
+if fields.get('Package') != package or fields.get('Version') != version:
+    raise SystemExit('installed package status identity mismatch')
+if not fields.get('Architecture') or not fields.get('Maintainer') or not fields.get('Description'):
+    raise SystemExit('installed package status lacks required control fields')
+data=(chr(10).join(rows)+chr(10)).encode(); tmp=out.with_name(out.name+f'.tmp.{os.getpid()}')
+with open(tmp,'wb') as f: f.write(data); f.flush(); os.fsync(f.fileno())
+os.replace(tmp,out)
+PY
+    chmod 0644 "$stage/DEBIAN/control"
+
+    for script in "${controls[@]}"; do
+        remote="/var/jb/var/lib/dpkg/info/$package_id.$script"
+        state=$(ssh_mobile "if [ -f $(sq "$remote") ] && [ ! -L $(sq "$remote") ]; then printf present; elif [ -e $(sq "$remote") ]; then printf error; else printf absent; fi") || die 'cannot inspect installed package control metadata'
+        case "$state" in
+            present)
+                scp_from "$remote" "$stage/DEBIAN/$script" >/dev/null || die "cannot capture installed package control metadata: $script"
+                case "$script" in preinst|postinst|prerm|postrm) chmod 0755 "$stage/DEBIAN/$script" ;; *) chmod 0644 "$stage/DEBIAN/$script" ;; esac
+                ;;
+            absent) ;;
+            *) die "unsafe installed package control metadata: $script" ;;
+        esac
+    done
+
+    ssh_mobile "dpkg-query -L $(sq "$package_id")" >"$payload_list" || die 'cannot list installed package payload for recovery'
+    python3 - "$payload_list" "$payload_paths" <<'PY'
+import pathlib, sys
+source=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); rows=[]
+for raw in source.read_text(encoding='utf-8').splitlines():
+    if raw in {'/.','/','/var','/var/jb'}: continue
+    if not raw.startswith('/var/jb/') or '\x00' in raw or '\n' in raw or '\r' in raw:
+        raise SystemExit('unsafe installed package payload path: '+repr(raw))
+    rel=raw[1:]
+    parts=pathlib.PurePosixPath(rel).parts
+    if not parts or any(part in {'','.', '..'} for part in parts):
+        raise SystemExit('unsafe installed package payload path: '+repr(raw))
+    rows.append(rel)
+if len(rows) != len(set(rows)): raise SystemExit('duplicate installed package payload path')
+leaves=[path for path in rows if not any(other.startswith(path + '/') for other in rows)]
+if not leaves: raise SystemExit('installed package has no recovery payload')
+out.write_text(''.join(path+chr(10) for path in sorted(leaves)), encoding='utf-8')
+PY
+    remote_script=''
+    remote_tar=''
+    while IFS= read -r path; do
+        remote="/$path"
+        remote_script+="if [ -f $(sq "$remote") ]; then printf 'F\t%s\n' $(sq "$path"); elif [ -L $(sq "$remote") ]; then printf 'L\t%s\n' $(sq "$path"); else printf 'MISSING\t%s\n' $(sq "$path"); fi;"
+        remote_tar+=" $(sq "$path")"
+    done <"$payload_paths"
+    [ -n "$remote_script" ] || die 'installed package recovery payload is empty'
+    ssh_mobile "$remote_script" >"$payload_types" || die 'cannot inspect installed package payload types'
+    python3 - "$payload_paths" "$payload_types" <<'PY'
+import pathlib, sys
+want=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines(); got={}
+for line in pathlib.Path(sys.argv[2]).read_text(encoding='utf-8').splitlines():
+    fields=line.split('\t')
+    if len(fields)!=2 or fields[0] not in {'F','L','MISSING'}: raise SystemExit('invalid installed payload type row')
+    if fields[1] in got: raise SystemExit('duplicate installed payload type row')
+    got[fields[1]]=fields[0]
+if set(got)!=set(want) or any(got[path] not in {'F','L'} for path in want):
+    raise SystemExit('installed package payload is missing or unsafe')
+PY
+    remote_tar="tar -C / -cf -$remote_tar"
+    ssh_mobile "$remote_tar" >"$payload_tar" || die 'cannot capture installed package payload'
+    python3 - "$payload_tar" "$payload_paths" <<'PY'
+import pathlib, tarfile, sys
+archive=pathlib.Path(sys.argv[1]); expected=pathlib.Path(sys.argv[2]).read_text(encoding='utf-8').splitlines(); actual=[]
+with tarfile.open(archive, 'r:') as tf:
+    for member in tf.getmembers():
+        name=member.name[2:] if member.name.startswith('./') else member.name
+        if not name or name.startswith('/') or '..' in pathlib.PurePosixPath(name).parts:
+            raise SystemExit('unsafe recovery tar member')
+        if not (member.isfile() or member.issym()):
+            raise SystemExit('unexpected recovery tar member type: '+name)
+        actual.append(name)
+if len(actual)!=len(set(actual)) or set(actual)!=set(expected):
+    raise SystemExit('recovery tar membership mismatch')
+PY
+    tar --no-same-owner --same-permissions -xf "$payload_tar" -C "$stage" || die 'cannot stage installed package payload'
+    python3 - "$payload_tar" "$stage" <<'PY'
+import pathlib, tarfile, sys
+archive=pathlib.Path(sys.argv[1]); root=pathlib.Path(sys.argv[2])
+with tarfile.open(archive, 'r:') as tf:
+    for member in tf.getmembers():
+        if not member.isfile(): continue
+        name=member.name[2:] if member.name.startswith('./') else member.name
+        if ((root/name).stat().st_mode & 0o777) != (member.mode & 0o777):
+            raise SystemExit('recovery tar mode mismatch: '+name)
+PY
+    dpkg-deb --root-owner-group --build "$stage" "$out" >/dev/null || die 'cannot build reconstructed recovery package'
+    [ "$(dpkg-deb -f "$out" Package)" = "$package_id" ] && [ "$(dpkg-deb -f "$out" Version)" = "$version" ] || die 'reconstructed recovery package identity mismatch'
+
+    control_dir="$cache/verify-control"
+    dpkg-deb -e "$out" "$control_dir" >/dev/null || die 'cannot verify reconstructed recovery control payload'
+    for script in md5sums preinst postinst prerm postrm conffiles triggers shlibs symbols; do
+        if [ -f "$stage/DEBIAN/$script" ]; then
+            cmp -s "$stage/DEBIAN/$script" "$control_dir/$script" || die "reconstructed recovery control mismatch: $script"
+        elif [ -e "$control_dir/$script" ]; then
+            die "unexpected reconstructed recovery control: $script"
+        fi
+    done
+    dpkg-deb -x "$out" "$cache/verify-payload" >/dev/null || die 'cannot verify reconstructed recovery payload'
+    payload_expected=$(recovery_payload_manifest "$cache/verify-payload") || die 'invalid reconstructed recovery payload'
+    remote_script=''
+    while IFS=$'\t' read -r kind expected path; do
+        case "$kind" in
+            F) remote_script+="if [ -f $(sq "$path") ] && [ ! -L $(sq "$path") ]; then printf 'F\t'; sha256sum $(sq "$path") | cut -d' ' -f1; else printf 'MISSING\t\n'; fi;" ;;
+            L) remote_script+="if [ -L $(sq "$path") ]; then printf 'L\t%s\n' \"\$(readlink $(sq "$path"))\"; else printf 'MISSING\t\n'; fi;" ;;
+            *) die 'invalid reconstructed recovery payload manifest' ;;
+        esac
+    done <<<"$payload_expected"
+    payload_remote=$(ssh_mobile "$remote_script") || die 'cannot verify reconstructed recovery payload against device'
+    [ "$payload_remote" = "$(printf '%s\n' "$payload_expected" | cut -f1,2)" ] || die 'reconstructed recovery payload differs from installed package'
+)
+
+build_mode_repair_manifest() (
+    local recovery=$1 candidate=$2 out=$3 tmp
+    [ -f "$recovery" ] && [ ! -L "$recovery" ] || die 'mode repair recovery archive is unsafe'
+    [ -f "$candidate" ] && [ ! -L "$candidate" ] || die 'mode repair candidate archive is unsafe'
+    [ ! -e "$out" ] || die 'mode repair manifest already exists'
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/shadow-mode-repair.XXXXXX") || return 1
+    trap 'rm -rf "$tmp"' EXIT
+    # The normalizer must see archive modes, rather than this driver's 077
+    # evidence umask, before it can prove an old recovery archive lost modes.
+    umask 022
+    dpkg-deb -x "$recovery" "$tmp/recovery" >/dev/null || die 'cannot unpack mode repair recovery archive'
+    dpkg-deb -x "$candidate" "$tmp/candidate" >/dev/null || die 'cannot unpack mode repair candidate archive'
+    python3 - "$tmp/recovery" "$tmp/candidate" "$out" <<'PY'
+import hashlib, os, pathlib, stat, sys
+recovery=pathlib.Path(sys.argv[1]); candidate=pathlib.Path(sys.argv[2]); out=pathlib.Path(sys.argv[3])
+legacy={'/var/jb/usr/libexec/shadowd','/var/jb/Library/LaunchDaemons/me.jjolano.shadow.plist'}
+def files(root):
+    rows={}
+    for path in root.rglob('*'):
+        if not path.is_file() or path.is_symlink(): continue
+        rel='/' + path.relative_to(root).as_posix()
+        rows[rel]=(stat.S_IMODE(path.stat().st_mode), hashlib.sha256(path.read_bytes()).hexdigest())
+    return rows
+before, template=files(recovery), files(candidate)
+extra=set(before)-set(template)
+if set(template)-set(before) or (extra and extra != legacy):
+    raise SystemExit('mode repair archive paths do not match the recovery contract')
+rows=[]
+for path in sorted(before):
+    source_mode, digest=before[path]
+    if source_mode not in {0o600,0o700}: raise SystemExit('recovery mode is not an umask-loss signature: '+path)
+    target_mode=0o755 if source_mode & 0o100 else 0o644
+    if path in template and template[path][0] != target_mode:
+        raise SystemExit('candidate mode template disagrees: '+path)
+    if path == '/var/jb/usr/libexec/shadowd' and target_mode != 0o755:
+        raise SystemExit('legacy daemon mode template is invalid')
+    if path == '/var/jb/Library/LaunchDaemons/me.jjolano.shadow.plist' and target_mode != 0o644:
+        raise SystemExit('legacy launchd mode template is invalid')
+    rows.append(f'F\t{digest}\t{source_mode:04o}\t{target_mode:04o}\t{path}\n')
+tmp=out.with_name(out.name+f'.tmp.{os.getpid()}')
+with open(tmp,'w',encoding='utf-8') as f:
+    f.writelines(rows); f.flush(); os.fsync(f.fileno())
+os.replace(tmp,out)
+PY
+)
+
+mode_repair_state() {
+    local manifest=$1 snapshot=$2 remote_script='' kind digest source_mode target_mode path
+    [ -f "$manifest" ] && [ ! -L "$manifest" ] || die 'mode repair manifest is unsafe'
+    : >"$snapshot"
+    while IFS=$'\t' read -r kind digest source_mode target_mode path; do
+        [ "$kind" = F ] && [[ $digest =~ ^[0-9a-f]{64}$ ]] &&
+            [[ $source_mode =~ ^0[0-7]{3}$ ]] && [[ $target_mode =~ ^0[0-7]{3}$ ]] &&
+            [[ $path == /var/jb/* ]] || die 'invalid mode repair manifest row'
+        remote_script+="if [ -f $(sq "$path") ] && [ ! -L $(sq "$path") ]; then h=\$(sha256sum $(sq "$path") | cut -d' ' -f1); m=\$(stat -c %a $(sq "$path")); printf 'F\t%s\t%s\t%s\n' \"\$h\" \"\$m\" $(sq "$path"); else printf 'MISSING\t\t\t%s\n' $(sq "$path"); fi;"
+    done <"$manifest"
+    [ -n "$remote_script" ] || die 'mode repair manifest is empty'
+    ssh_privileged "$remote_script" >"$snapshot" 2>>"$CAPTURE_STDERR" || die 'mode repair state capture failed'
+    python3 - "$manifest" "$snapshot" <<'PY'
+import pathlib, sys
+want={}; got={}
+for line in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+    kind,digest,source,target,path=line.split('\t')
+    if path in want: raise SystemExit('duplicate mode repair manifest path')
+    want[path]=(digest,int(source,8),int(target,8))
+for line in pathlib.Path(sys.argv[2]).read_text(encoding='utf-8').splitlines():
+    fields=line.split('\t')
+    if len(fields)!=4 or fields[0]!='F': raise SystemExit('missing mode repair payload path')
+    _,digest,mode,path=fields
+    if path in got: raise SystemExit('duplicate mode repair state path')
+    got[path]=(digest,int(mode,8))
+if set(got)!=set(want): raise SystemExit('mode repair state path mismatch')
+needs=False
+for path,(digest,source,target) in want.items():
+    observed_digest, observed_mode=got[path]
+    if observed_digest != digest: raise SystemExit('mode repair content mismatch: '+path)
+    if observed_mode == source: needs=True
+    elif observed_mode != target: raise SystemExit('unexpected mode repair state: '+path)
+print('needs-repair' if needs else 'already-repaired')
+PY
+}
+
+apply_mode_repair_manifest() {
+    local manifest=$1 remote_script='' kind digest source_mode target_mode path
+    while IFS=$'\t' read -r kind digest source_mode target_mode path; do
+        remote_script+="test -f $(sq "$path") && test ! -L $(sq "$path") && test \"\$(sha256sum $(sq "$path") | cut -d' ' -f1)\" = $(sq "$digest") && chmod $target_mode $(sq "$path") || exit 1;"
+    done <"$manifest"
+    ssh_privileged "$remote_script" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" || die 'mode repair apply failed'
+}
+
+latest_mode_repair_lineage() {
+    python3 - "$EVIDENCE_ABS/cleanup.jsonl" <<'PY'
+import json, pathlib, sys
+latest={}; order=[]
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    if not line.strip(): continue
+    row=json.loads(line); key=row['event_id']
+    if key not in latest: order.append(key)
+    latest[key]=row
+for key in reversed(order):
+    row=latest[key]
+    if row.get('action')!='install-deb': continue
+    bits=row.get('prior_state','').split('|')
+    if len(bits)==4 and bits[3]=='me.jjolano.shadow':
+        print(bits[0]+'\t'+row.get('target','')+'\t'+bits[3]); break
+PY
+}
+
+repair_mode_loss_if_authorized() {
+    local lineage recovery candidate package manifest before after event state
+    [ "$(printenv SHADOW_ALLOW_MODE_REPAIR 2>/dev/null || true)" = "$SHADOW_RUN_ID" ] || return 0
+    lineage=$(latest_mode_repair_lineage)
+    [ -n "$lineage" ] || die 'mode repair lineage is unavailable'
+    IFS=$'\t' read -r recovery candidate package <<<"$lineage"
+    [ "$package" = me.jjolano.shadow ] && [ -f "$recovery" ] && [ -f "$candidate" ] || die 'mode repair lineage is unsafe'
+    manifest="$CAPTURE_DIR/mode-repair.tsv"
+    build_mode_repair_manifest "$recovery" "$candidate" "$manifest"
+    before="$CAPTURE_DIR/mode-repair.before.tsv"
+    state=$(mode_repair_state "$manifest" "$before")
+    case "$state" in
+        already-repaired) MODE_REPAIR_MANIFEST=$manifest; return 0 ;;
+        needs-repair) ;;
+        *) die 'invalid mode repair state' ;;
+    esac
+    event=$(new_event_id)
+    journal_event "$event" mode-repair "$package" "$manifest" pending
+    apply_mode_repair_manifest "$manifest"
+    after="$CAPTURE_DIR/mode-repair.after.tsv"
+    [ "$(mode_repair_state "$manifest" "$after")" = already-repaired ] || die 'mode repair verification failed'
+    journal_event "$event" mode-repair "$package" "$manifest" completed
+    journal_event "$event" mode-repair "$package" "$manifest" restored
+    MODE_REPAIR_MANIFEST=$manifest
 }
 
 export_recovery_deb() {
     local package_id=$1 version=$2 out=$3 remote_path remote_copy event
     remote_path=$(ssh_privileged "find /var/jb/var/cache/apt/archives /var/cache/apt/archives -maxdepth 1 -type f -name '${package_id}_*.deb' 2>/dev/null | head -1")
-    [ -n "$remote_path" ] || return 1
+    if [ -z "$remote_path" ]; then
+        reconstruct_installed_recovery_deb "$package_id" "$version" "$out"
+        return
+    fi
     remote_copy="/var/mobile/Media/.shadow-recovery-$SHADOW_RUN_ID-$$.deb"
     event=$(new_event_id)
     journal_event "$event" recovery-export "$remote_copy" absent pending
@@ -871,7 +1505,8 @@ export_recovery_deb() {
 }
 
 cmd_install_deb() {
-    local package=$1 package_id=$2 candidate_pkg candidate_version installed_version recovery recovery_source prefs_backup remote event upload_event rc uploaded_hash installed_after job candidate_copy snapshot package_status audit_file
+    local package=$1 package_id=$2 candidate_pkg candidate_version installed_version recovery recovery_source prefs_backup prefs_remote_path remote event upload_event rc uploaded_hash installed_after job candidate_copy snapshot package_status audit_file
+    local artifacts=()
     prepare_existing_run
     verify_device_identity
     require_cmd dpkg-deb
@@ -899,7 +1534,8 @@ cmd_install_deb() {
     fi
     [ -f "$recovery" ] || die 'recovery package missing'
     prefs_backup="$CAPTURE_DIR/preferences.before.plist"
-    if ! scp_from /var/mobile/Library/Preferences/me.jjolano.shadow.plist "$prefs_backup" 2>>"$CAPTURE_STDERR"; then
+    prefs_remote_path=$(preferences_remote)
+    if ! scp_from "$prefs_remote_path" "$prefs_backup" 2>>"$CAPTURE_STDERR"; then
         printf 'ABSENT\n' >"$prefs_backup"
     fi
     if [ "$package_id" = me.jjolano.shadow ]; then
@@ -920,7 +1556,7 @@ cmd_install_deb() {
     [ "$uploaded_hash" = "$(sha256_file "$candidate_copy")" ] || die 'uploaded package hash mismatch'
     journal_event "$upload_event" package-upload "$remote" absent completed
     event=$(new_event_id)
-    journal_event "$event" install-deb "$candidate_copy" "$recovery|$prefs_backup|$package_id" pending
+    journal_event "$event" install-deb "$candidate_copy" "$recovery|$prefs_backup|$prefs_remote_path|$package_id" pending
     set +e
     ssh_privileged "dpkg -i $(sq "$remote")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
     rc=$?
@@ -930,19 +1566,115 @@ cmd_install_deb() {
     [ "$installed_after" = "$package_id $candidate_version" ] || die 'installed package identity mismatch'
     ssh_privileged "rm -f $(sq "$remote")" >/dev/null
     journal_event "$upload_event" package-upload "$remote" absent restored
-    journal_event "$event" install-deb "$candidate_copy" "$recovery|$prefs_backup|$package_id" completed
-    write_manifest install-deb '' not-applicable not-applicable 0 0 '' "candidate=$candidate_copy" "recovery=$recovery" "preferences-before=$prefs_backup" "package-status-before=$package_status" "dpkg-audit-before=$audit_file"
+    journal_event "$event" install-deb "$candidate_copy" "$recovery|$prefs_backup|$prefs_remote_path|$package_id" completed
+    artifacts=("candidate=$candidate_copy" "recovery=$recovery" "preferences-before=$prefs_backup" \
+        "package-status-before=$package_status" "dpkg-audit-before=$audit_file")
+    [ -z "$DAEMON_LEGACY_LEDGER" ] || artifacts+=("legacy-ledger=$DAEMON_LEGACY_LEDGER")
+    [ -z "$DAEMON_LEGACY_OWNER_PIDS" ] || artifacts+=("legacy-owner-pids=$DAEMON_LEGACY_OWNER_PIDS")
+    [ -z "$DAEMON_LEGACY_RECOVERY" ] || artifacts+=("legacy-recovery=$DAEMON_LEGACY_RECOVERY")
+    write_manifest install-deb '' not-applicable not-applicable 0 0 '' "${artifacts[@]}"
     printf '%s\n' "$CAPTURE_DIR/manifest.json"
+}
+
+identity_fixture_keys() {
+    printf '%s\n' copy symlink basename embedded case prefix late
+}
+
+identity_fixture_spec() {
+    case "$1" in
+        copy) printf 'hookprobeidentitycopy.dylib\tcopied.dylib\n' ;;
+        symlink) printf 'hookprobeidentitysymlink.dylib\tsymlink-target.dylib\n' ;;
+        basename) printf 'hookprobeidentitybasename.dylib\tShadow.dylib\n' ;;
+        embedded) printf 'hookprobeidentityembedded.dylib\tFrameworks/Shadow.framework/Shadow\n' ;;
+        case) printf 'hookprobeidentitycase.dylib\tshadowcore.dylib\n' ;;
+        prefix) printf 'hookprobeidentityprefix.dylib\tShadowCoreCompat.dylib\n' ;;
+        late) printf 'hookprobeidentitylate.dylib\tlate.dylib\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+identity_fixture_directory_remote() {
+    printf '/var/jb/usr/lib/.shadow-hookprobe-identity-%s\n' "$SHADOW_RUN_ID"
+}
+
+identity_fixture_check_remote() {
+    local directory=$1 remote
+    [ "$directory" = "$(identity_fixture_directory_remote)" ] || return 1
+    read -r -d '' remote <<'EOS' || true
+set -eu
+[ -d "$dir" ] && [ ! -L "$dir" ]
+[ -d "$dir/Frameworks" ] && [ ! -L "$dir/Frameworks" ]
+[ -d "$dir/Frameworks/Shadow.framework" ] && [ ! -L "$dir/Frameworks/Shadow.framework" ]
+for path in \
+  "$dir/copied.dylib" "$dir/symlink-target.dylib" "$dir/Shadow.dylib" \
+  "$dir/Frameworks/Shadow.framework/Shadow" "$dir/shadowcore.dylib" \
+  "$dir/ShadowCoreCompat.dylib" "$dir/late.dylib"; do
+  [ -f "$path" ] && [ ! -L "$path" ]
+done
+[ -L "$dir/symlinked.dylib" ] && [ "$(readlink "$dir/symlinked.dylib")" = symlink-target.dylib ]
+EOS
+    ssh_mobile "dir=$(sq "$directory")
+$remote"
+}
+
+remove_identity_fixture_directory() {
+    local directory=$1 remote
+    [ "$directory" = "$(identity_fixture_directory_remote)" ] || die 'unsafe identity fixture cleanup target'
+    read -r -d '' remote <<'EOS' || true
+set -eu
+[ ! -e "$dir" ] && [ ! -L "$dir" ] && exit 0
+[ -d "$dir" ] && [ ! -L "$dir" ] || exit 1
+for node in $(find "$dir" -mindepth 1 -print); do
+  case "$node" in
+    "$dir/Frameworks"|"$dir/Frameworks/Shadow.framework"|\
+    "$dir/copied.dylib"|"$dir/symlink-target.dylib"|"$dir/symlinked.dylib"|\
+    "$dir/Shadow.dylib"|"$dir/Frameworks/Shadow.framework/Shadow"|\
+    "$dir/shadowcore.dylib"|"$dir/ShadowCoreCompat.dylib"|"$dir/late.dylib") ;;
+    *) exit 1 ;;
+  esac
+done
+[ ! -L "$dir/symlinked.dylib" ] || [ "$(readlink "$dir/symlinked.dylib")" = symlink-target.dylib ] || exit 1
+for path in \
+  "$dir/copied.dylib" "$dir/symlink-target.dylib" "$dir/symlinked.dylib" \
+  "$dir/Shadow.dylib" "$dir/Frameworks/Shadow.framework/Shadow" \
+  "$dir/shadowcore.dylib" "$dir/ShadowCoreCompat.dylib" "$dir/late.dylib"; do
+  if [ -e "$path" ] || [ -L "$path" ]; then rm -f "$path"; fi
+done
+if [ -d "$dir/Frameworks/Shadow.framework" ]; then rmdir "$dir/Frameworks/Shadow.framework"; fi
+if [ -d "$dir/Frameworks" ]; then rmdir "$dir/Frameworks"; fi
+rmdir "$dir"
+EOS
+    ssh_privileged "dir=$(sq "$directory")
+$remote" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
 }
 
 cmd_install_hookprobe() {
     local probe=$1 remote=/var/jb/usr/bin/hookprobe temp backup prior event upload_event remote_hash candidate_copy
+    local fixture_dir fixture_event fixture_key fixture_spec fixture_local fixture_remote fixture_candidate fixture_source fixture_target
+    local fixture_artifacts=()
     prepare_existing_run
     verify_device_identity
     [ -f "$probe" ] && [ ! -L "$probe" ] || die 'hookprobe candidate missing or unsafe'
+    fixture_dir=$(identity_fixture_directory_remote)
+    fixture_source=$(dirname "$probe")
+    while IFS= read -r fixture_key; do
+        fixture_spec=$(identity_fixture_spec "$fixture_key") || die "unknown identity fixture: $fixture_key"
+        IFS=$'\t' read -r fixture_local fixture_target <<<"$fixture_spec"
+        fixture_local="$fixture_source/$fixture_local"
+        [ -f "$fixture_local" ] && [ ! -L "$fixture_local" ] || die "identity fixture missing or unsafe: $fixture_local"
+    done < <(identity_fixture_keys)
     capture_dir '' install-hookprobe device
     candidate_copy="$CAPTURE_DIR/hookprobe.candidate"
     cp -p "$probe" "$candidate_copy"
+    mkdir -p "$CAPTURE_DIR/identity-fixtures"
+    while IFS= read -r fixture_key; do
+        fixture_spec=$(identity_fixture_spec "$fixture_key") || die "unknown identity fixture: $fixture_key"
+        IFS=$'\t' read -r fixture_local fixture_target <<<"$fixture_spec"
+        fixture_local="$fixture_source/$fixture_local"
+        fixture_candidate="$CAPTURE_DIR/identity-fixtures/${fixture_local##*/}"
+        cp -p "$fixture_local" "$fixture_candidate"
+        fixture_artifacts+=("identity-fixture-$fixture_key=$fixture_candidate")
+    done < <(identity_fixture_keys)
     backup="$CAPTURE_DIR/hookprobe.before"
     if scp_from "$remote" "$backup" 2>>"$CAPTURE_STDERR"; then prior=$backup; else prior=absent; rm -f "$backup"; fi
     temp="/var/mobile/Media/.hookprobe-$SHADOW_RUN_ID-$$"
@@ -958,7 +1690,23 @@ cmd_install_hookprobe() {
     remote_hash=$(ssh_privileged "sha256sum $(sq "$remote") | cut -d' ' -f1")
     [ "$remote_hash" = "$(sha256_file "$candidate_copy")" ] || die 'installed hookprobe hash mismatch'
     journal_event "$event" install-hookprobe "$candidate_copy" "$prior|$remote" completed
-    write_manifest install-hookprobe '' not-applicable not-applicable 0 0 '' "candidate=$candidate_copy"
+    ssh_mobile "test ! -e $(sq "$fixture_dir") && test ! -L $(sq "$fixture_dir")" || die 'identity fixture directory already exists'
+    fixture_event=$(new_event_id)
+    journal_event "$fixture_event" install-hookprobe-fixtures "$fixture_dir" absent pending
+    ssh_privileged "umask 077 && mkdir -p $(sq "$fixture_dir/Frameworks/Shadow.framework") && chown mobile:mobile $(sq "$fixture_dir") $(sq "$fixture_dir/Frameworks") $(sq "$fixture_dir/Frameworks/Shadow.framework")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    while IFS= read -r fixture_key; do
+        fixture_spec=$(identity_fixture_spec "$fixture_key") || die "unknown identity fixture: $fixture_key"
+        IFS=$'\t' read -r fixture_local fixture_target <<<"$fixture_spec"
+        fixture_candidate="$CAPTURE_DIR/identity-fixtures/${fixture_local##*/}"
+        fixture_remote="$fixture_dir/$fixture_target"
+        scp_to "$fixture_candidate" "$fixture_remote" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+        ssh_mobile "chmod 600 $(sq "$fixture_remote")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+        [ "$(ssh_mobile "sha256sum $(sq "$fixture_remote") | cut -d' ' -f1")" = "$(sha256_file "$fixture_candidate")" ] || die "identity fixture hash mismatch: $fixture_key"
+    done < <(identity_fixture_keys)
+    ssh_mobile "ln -s symlink-target.dylib $(sq "$fixture_dir/symlinked.dylib")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    identity_fixture_check_remote "$fixture_dir" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" || die 'identity fixture deployment verification failed'
+    journal_event "$fixture_event" install-hookprobe-fixtures "$fixture_dir" absent completed
+    write_manifest install-hookprobe '' not-applicable not-applicable 0 0 '' "candidate=$candidate_copy" "${fixture_artifacts[@]}"
     printf '%s\n' "$CAPTURE_DIR/manifest.json"
 }
 
@@ -1004,12 +1752,28 @@ validate_bundle_id() {
     case "$1" in me.jjolano.shadow.harness|me.jjolano.dyldprobe) ;; *) die "unsupported bundle ID: $1" ;; esac
 }
 
+preferences_remote() {
+    if ssh_privileged 'test -d /var/jb'; then
+        printf '%s\n' /var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist
+    else
+        printf '%s\n' /var/mobile/Library/Preferences/me.jjolano.shadow.plist
+    fi
+}
+
+preferences_install_spec() {
+    case "$1" in
+        /var/jb/var/mobile/Library/Preferences/*) printf 'mobile:mobile\t0600\n' ;;
+        *) printf 'root:wheel\t0644\n' ;;
+    esac
+}
+
 mutate_preferences() {
-    local bundle=$1 mode=$2 action=$3 backup edited readback temp event
+    local bundle=$1 mode=$2 action=$3 backup edited readback temp event remote owner mode_bits
     backup="$CAPTURE_DIR/preferences.$action.before.plist"
     edited="$CAPTURE_DIR/preferences.$action.after.plist"
     readback="$CAPTURE_DIR/preferences.$action.readback.plist"
-    scp_from /var/mobile/Library/Preferences/me.jjolano.shadow.plist "$backup" 2>>"$CAPTURE_STDERR" || die 'cannot back up Shadow preferences'
+    remote=$(preferences_remote)
+    scp_from "$remote" "$backup" 2>>"$CAPTURE_STDERR" || die 'cannot back up Shadow preferences'
     python3 - "$backup" "$edited" "$bundle" "$mode" <<'PY'
 import os,plistlib,sys
 src,dst,bundle,mode=sys.argv[1:]
@@ -1024,13 +1788,14 @@ with open(dst,'wb') as f:
     plistlib.dump(root,f,fmt=plistlib.FMT_BINARY,sort_keys=True); f.flush(); os.fsync(f.fileno())
 PY
     event=$(new_event_id)
-    journal_event "$event" "$action" "$bundle" "$backup|/var/mobile/Library/Preferences/me.jjolano.shadow.plist" pending
+    journal_event "$event" "$action" "$bundle" "$backup|$remote" pending
     temp="/var/mobile/Media/.shadow-prefs-$SHADOW_RUN_ID-$$-$RANDOM.plist"
     scp_to "$edited" "$temp" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
-    ssh_privileged "install -o root -g wheel -m 0644 $(sq "$temp") /var/mobile/Library/Preferences/me.jjolano.shadow.plist && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    IFS=$'\t' read -r owner mode_bits <<<"$(preferences_install_spec "$remote")"
+    ssh_privileged "install -o ${owner%%:*} -g ${owner##*:} -m $mode_bits $(sq "$temp") $(sq "$remote") && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
     ssh_mobile "launchctl kill SIGTERM gui/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || launchctl kill SIGTERM user/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || true" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
     sleep 15
-    scp_from /var/mobile/Library/Preferences/me.jjolano.shadow.plist "$readback" 2>>"$CAPTURE_STDERR" || die 'preferences readback failed'
+    scp_from "$remote" "$readback" 2>>"$CAPTURE_STDERR" || die 'preferences readback failed'
     python3 - "$edited" "$readback" "$bundle" <<'PY'
 import plistlib,sys
 def load(path):
@@ -1038,7 +1803,7 @@ def load(path):
 a=load(sys.argv[1]).get(sys.argv[3]); b=load(sys.argv[2]).get(sys.argv[3])
 if a!=b: raise SystemExit('preferences readback mismatch')
 PY
-    journal_event "$event" "$action" "$bundle" "$backup|/var/mobile/Library/Preferences/me.jjolano.shadow.plist" completed
+    journal_event "$event" "$action" "$bundle" "$backup|$remote" completed
 }
 
 cmd_set_mode() {
@@ -1056,9 +1821,10 @@ cmd_set_mode() {
 }
 
 current_mode() {
-    local bundle=$1 file result
+    local bundle=$1 file result remote
     file=$(mktemp "${TMPDIR:-/tmp}/shadow-prefs.XXXXXX")
-    scp_from /var/mobile/Library/Preferences/me.jjolano.shadow.plist "$file" >/dev/null 2>&1 || { rm -f "$file"; return 1; }
+    remote=$(preferences_remote)
+    scp_from "$remote" "$file" >/dev/null 2>&1 || { rm -f "$file"; return 1; }
     result=$(python3 - "$file" "$bundle" <<'PY'
 import plistlib,sys
 with open(sys.argv[1],'rb') as f: d=plistlib.load(f).get(sys.argv[2],{})
@@ -1111,17 +1877,32 @@ terminate_exact_process() {
 }
 
 restore_launch_process() {
-    local target=$1 prior=$2 lstart comm current
+    local target=$1 prior=$2 lstart comm current state
     if [[ $target =~ ^[1-9][0-9]*$ ]]; then
         IFS='|' read -r lstart comm <<<"$prior"
-        current=$(find_process_exact "$comm") || die 'launched process discovery is ambiguous during restore'
-        [ -n "$current" ] || return 0
-        [ "$(printf '%s' "$current" | cut -f1,2)" = "$target"$'\t'"$lstart" ] || return 0
+        state=$(client_sigkill_state "$target" "$lstart" "$comm") || die 'launched process identity recheck failed during restore'
+        case "$state" in
+            absent|reused) return 0 ;;
+            changed) die 'launched process command changed during restore' ;;
+            live) ;;
+            *) die 'launched process identity recheck failed during restore' ;;
+        esac
+        ssh_privileged "kill -TERM $target" >/dev/null || die 'launched process termination failed during restore'
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            state=$(client_sigkill_state "$target" "$lstart" "$comm") || die 'launched process identity recheck failed during restore'
+            case "$state" in
+                absent|reused) return 0 ;;
+                changed) die 'launched process command changed during restore' ;;
+                live) sleep 1 ;;
+                *) die 'launched process identity recheck failed during restore' ;;
+            esac
+        done
+        die 'launched process did not terminate during restore'
     else
         current=$(find_process_exact "$target") || die 'pending launched process discovery is ambiguous during restore'
         [ -n "$current" ] || return 0
+        terminate_exact_process "$current"
     fi
-    terminate_exact_process "$current"
 }
 
 patch_launch_manifest() {
@@ -1143,16 +1924,17 @@ PY
 }
 
 write_launch_context_file() {
-    local bundle=$1 mode=$2 nonce=$3 documents=$4 remote local_file backup prior event forced_failure=${SHADOW_FORCE_FAILURE_ID:-}
+    local bundle=$1 mode=$2 nonce=$3 documents=$4 stress_library=${5:-} remote local_file backup prior event forced_failure=${SHADOW_FORCE_FAILURE_ID:-}
     [ "${#forced_failure}" -le 200 ] || die 'forced failure ID is too long'
     [[ $forced_failure != *$'\n'* && $forced_failure != *$'\r'* ]] || die 'forced failure ID contains a newline'
     remote="$documents/.ShadowStealthContext.json"
     local_file="$CAPTURE_DIR/stealth-context.json"
-    python3 - "$local_file" "$SHADOW_RUN_ID" "$SHADOW_ROW_ID" "$mode" "$nonce" "$TASK_REVISION" "$forced_failure" <<'PY'
+    python3 - "$local_file" "$SHADOW_RUN_ID" "$SHADOW_ROW_ID" "$mode" "$nonce" "$TASK_REVISION" "$forced_failure" "$stress_library" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1]); d={'schema_version':1,'run_id':sys.argv[2],'row_id':sys.argv[3],
  'requested_mode':sys.argv[4],'nonce':sys.argv[5],'probe_revision':sys.argv[6]}
 if sys.argv[7]: d['force_failure_id']=sys.argv[7]
+if sys.argv[8]: d['dyld_stress_library']=sys.argv[8]
 with open(p,'w',encoding='utf-8') as f: json.dump(d,f,sort_keys=True,separators=(',',':')); f.write('\n'); f.flush(); os.fsync(f.fileno())
 PY
     backup="$CAPTURE_DIR/stealth-context.before.json"
@@ -1172,6 +1954,22 @@ PY
     LAUNCH_CONTEXT_FILE=$local_file
 }
 
+prepare_launch_dyld_stress_file() {
+    local target=$1 source=/var/jb/Applications/dyldprobe.app/shdwtestlib.dylib event source_hash target_hash
+    [ -n "$target" ] || return
+    ssh_mobile "test ! -e $(sq "$target")" || die 'nonce dyld stress library already exists'
+    ssh_privileged "test -f $(sq "$source") && test ! -L $(sq "$source")" || die 'packaged dyld stress library is missing or unsafe'
+    source_hash=$(ssh_privileged "sha256sum $(sq "$source") | cut -d' ' -f1") || die 'cannot hash packaged dyld stress library'
+    event=$(new_event_id)
+    journal_event "$event" launch-report-file "$target" "absent|$target" pending
+    ssh_privileged "install -o mobile -g mobile -m 0700 $(sq "$source") $(sq "$target")" || die 'cannot stage dyld stress library'
+    target_hash=$(ssh_mobile "sha256sum $(sq "$target") | cut -d' ' -f1") || die 'cannot hash staged dyld stress library'
+    [ "$target_hash" = "$source_hash" ] || die 'staged dyld stress library hash mismatch'
+    journal_event "$event" launch-report-file "$target" "absent|$target" completed
+    LAUNCH_DYLD_STRESS_ARTIFACT="$CAPTURE_DIR/dyld-stress.tsv"
+    printf 'source\t%s\ntarget\t%s\nsha256\t%s\n' "$source" "$target" "$target_hash" >"$LAUNCH_DYLD_STRESS_ARTIFACT"
+}
+
 bundle_report_relative() {
     case "$1" in
         me.jjolano.shadow.harness) printf 'ShadowDiagnostics-%s.json' "$2" ;;
@@ -1181,25 +1979,32 @@ bundle_report_relative() {
 }
 
 prepare_launch_report_file() {
-    local bundle=$1 nonce=$2 documents=$3 relative remote event
+    local bundle=$1 nonce=$2 documents=$3 relative remote event output output_event
     relative=$(bundle_report_relative "$bundle" "$nonce") || return
     remote="$documents/$relative"
     ssh_mobile "test ! -e $(sq "$remote")" || die 'nonce report already exists'
     event=$(new_event_id)
     journal_event "$event" launch-report-file "$remote" "absent|$remote" pending
     LAUNCH_REPORT_EVENT=$event
-	LAUNCH_REPORT_FILE=$remote
+    LAUNCH_REPORT_FILE=$remote
+    output="$documents/.ShadowStealthLaunch-$nonce.log"
+    ssh_mobile "test ! -e $(sq "$output")" || die 'nonce launch log already exists'
+    output_event=$(new_event_id)
+    journal_event "$output_event" launch-report-file "$output" "absent|$output" pending
+    LAUNCH_OUTPUT_EVENT=$output_event
+    LAUNCH_OUTPUT_FILE=$output
 }
 
 verification_launch_remote() {
-	local mode=$1 executable=$2 container=$3 safe_mode=''
+	local mode=$1 executable=$2 container=$3 output=$4 safe_mode='' runner
 	if [ "$mode" = uninjected ]; then safe_mode='_MSSafeMode=1 '; fi
-	printf '%sCFFIXED_USER_HOME=%s HOME=%s TMPDIR=%s nohup %s --shadow-headless-producer </dev/null >/dev/null 2>&1 &' \
-		"$safe_mode" "$(sq "$container")" "$(sq "$container")" "$(sq "$container/tmp")" "$(sq "$executable")"
+	runner=$(printf '%sCFFIXED_USER_HOME=%s HOME=%s TMPDIR=%s %s --shadow-headless-producer; rc=$?; printf %s "$rc"' \
+		"$safe_mode" "$(sq "$container")" "$(sq "$container")" "$(sq "$container/tmp")" "$(sq "$executable")" "'__SHADOW_HEADLESS_EXIT__%s\\n'")
+	printf 'nohup /var/jb/bin/sh -c %s </dev/null >%s 2>&1 &' "$(sq "$runner")" "$(sq "$output")"
 }
 
 uses_direct_verification_launch() {
-	[ "$2" = cold ] && [ "$3" = uninjected ] &&
+	[ "$2" = cold ] && { [ "$3" = uninjected ] || [ "$3" = injected ]; } &&
 		{ [ "$1" = me.jjolano.shadow.harness ] || [ "$1" = me.jjolano.dyldprobe ]; }
 }
 
@@ -1213,7 +2018,8 @@ verification_documents_dir() {
 }
 
 cmd_launch() {
-	local bundle=$1 transition=$2 nonce=$3 executable mode pre='' pre_original='' pre_state='' post='' launch_event='' post_pid post_lstart post_comm container documents launch_remote
+	local bundle=$1 transition=$2 nonce=$3 executable mode pre='' pre_original='' pre_state='' post='' launch_event='' post_pid post_lstart post_comm container documents launch_remote launch_output_local='' launch_output_artifact='' dyld_stress_file=''
+    local launch_artifacts=()
     validate_bundle_id "$bundle"
     case "$transition" in cold|warm) ;; *) die 'launch transition must be cold or warm' ;; esac
     [[ $nonce =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'invalid nonce'
@@ -1240,14 +2046,24 @@ cmd_launch() {
     fi
 	container=$(container_for_bundle "$bundle")
 	documents=$(verification_documents_dir "$bundle" "$container")
-	write_launch_context_file "$bundle" "$mode" "$nonce" "$documents"
+	if uses_direct_verification_launch "$bundle" "$transition" "$mode" && [ "$bundle" = me.jjolano.dyldprobe ]; then
+		dyld_stress_file="$documents/.ShadowDyldStress-$nonce.dylib"
+	fi
+	write_launch_context_file "$bundle" "$mode" "$nonce" "$documents" "$dyld_stress_file"
 	prepare_launch_report_file "$bundle" "$nonce" "$documents"
+    if [ -n "$dyld_stress_file" ]; then
+        prepare_launch_dyld_stress_file "$dyld_stress_file"
+    fi
+    launch_artifacts=("launch-context=$LAUNCH_CONTEXT_FILE")
+    if [ -n "${LAUNCH_DYLD_STRESS_ARTIFACT:-}" ]; then
+        launch_artifacts+=("dyld-stress=$LAUNCH_DYLD_STRESS_ARTIFACT")
+    fi
     if [ "$transition" = cold ]; then
         launch_event=$(new_event_id)
         journal_event "$launch_event" launch-process "$executable" "absent|$executable" pending
     fi
 	if uses_direct_verification_launch "$bundle" "$transition" "$mode"; then
-		launch_remote=$(verification_launch_remote "$mode" "$executable" "$container")
+		launch_remote=$(verification_launch_remote "$mode" "$executable" "$container" "$LAUNCH_OUTPUT_FILE")
 		ssh_mobile "$launch_remote" \
 			>"$CAPTURE_STDOUT" 2>"$CAPTURE_STDERR" || die 'verification producer launch failed'
 	else
@@ -1268,7 +2084,18 @@ cmd_launch() {
 			sleep 1
 		done
 	fi
-    [ -n "$post" ] || die 'launched process not found'
+    if [ -z "$post" ]; then
+        if ssh_mobile "test -f $(sq "$LAUNCH_OUTPUT_FILE") && test ! -L $(sq "$LAUNCH_OUTPUT_FILE")"; then
+            launch_output_local="$CAPTURE_DIR/launch-output.log"
+            if scp_from "$LAUNCH_OUTPUT_FILE" "$launch_output_local" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"; then
+                launch_output_artifact="launch-output=$launch_output_local"
+            fi
+        fi
+        [ -z "$launch_output_artifact" ] || launch_artifacts+=("$launch_output_artifact")
+        write_manifest launch "$nonce" "$mode" SETUP-FAIL 0 2 '' "${launch_artifacts[@]}"
+        patch_launch_manifest "$CAPTURE_DIR/manifest.json" "$transition" "$pre_original" '' SETUP-FAIL
+        die 'launched process not found'
+    fi
     if [ "$transition" = warm ]; then
         [ "$(printf '%s' "$pre" | cut -f1,2)" = "$(printf '%s' "$post" | cut -f1,2)" ] || die 'warm launch changed process identity'
     else
@@ -1276,9 +2103,24 @@ cmd_launch() {
         journal_event "$launch_event" launch-process "$post_pid" "$post_lstart|$post_comm" completed
     fi
 	journal_event "$LAUNCH_REPORT_EVENT" launch-report-file "$LAUNCH_REPORT_FILE" "absent|$LAUNCH_REPORT_FILE" completed
-    write_manifest launch "$nonce" "$mode" "$mode" 0 0 '' "launch-context=$LAUNCH_CONTEXT_FILE"
+	journal_event "$LAUNCH_OUTPUT_EVENT" launch-report-file "$LAUNCH_OUTPUT_FILE" "absent|$LAUNCH_OUTPUT_FILE" completed
+    write_manifest launch "$nonce" "$mode" "$mode" 0 0 '' "${launch_artifacts[@]}"
     patch_launch_manifest "$CAPTURE_DIR/manifest.json" "$transition" "$pre_original" "$post" "$mode"
     printf '%s\n' "$CAPTURE_DIR/manifest.json"
+}
+
+validate_producer_report() {
+    local report=$1 nonce=$2
+    python3 - "$report" "$nonce" "$SHADOW_RUN_ID" "$SHADOW_ROW_ID" "$TASK_REVISION" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+want={'nonce':sys.argv[2],'run_id':sys.argv[3],'row_id':sys.argv[4],'probe_revision':sys.argv[5]}
+for k,v in want.items():
+    if d.get(k)!=v: raise SystemExit(f'report provenance mismatch: {k}')
+producer=d.get('producer_exit')
+if not isinstance(producer,int) or isinstance(producer,bool) or producer < 0:
+    raise SystemExit('report producer exit is invalid')
+PY
 }
 
 cmd_pull_report() {
@@ -1311,13 +2153,7 @@ PY
     rc=$?
     set -e
     [ "$rc" -eq 0 ] || die 'report transfer failed'
-    python3 - "$report" "$nonce" "$SHADOW_RUN_ID" "$SHADOW_ROW_ID" "$TASK_REVISION" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1]))
-want={'nonce':sys.argv[2],'run_id':sys.argv[3],'row_id':sys.argv[4],'probe_revision':sys.argv[5]}
-for k,v in want.items():
-    if d.get(k)!=v: raise SystemExit(f'report provenance mismatch: {k}')
-PY
+    validate_producer_report "$report" "$nonce"
     read -r mode producer < <(python3 - "$report" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1])); print(d.get('requested_mode','not-applicable'), d.get('producer_exit','not-applicable'))
@@ -1374,15 +2210,112 @@ os.replace(t,p)
 PY
 }
 
+restart_command_for_mode() {
+    case "$1" in
+        lifecycle-backend-absent-springboard-restart) printf '%s\n' /var/jb/usr/bin/sbreload ;;
+        lifecycle-backend-absent-userspace-reboot) printf '%s\n' 'launchctl reboot userspace' ;;
+        *) return 1 ;;
+    esac
+}
+
+write_restart_event() {
+    local path=$1 mode=$2 event=$3 action_rc=$4 elapsed=$5 result=$6
+    python3 - "$path" "$mode" "$event" "$action_rc" "$elapsed" "$result" <<'PY'
+import json,os,pathlib,sys
+p=pathlib.Path(sys.argv[1])
+d={'schema_version':1,'mode':sys.argv[2],'cleanup_event_id':sys.argv[3],
+   'expected_disconnect':True,'action_transport_exit':sys.argv[4],
+   'reconnect_elapsed_seconds':sys.argv[5],'result':sys.argv[6]}
+t=p.with_name(p.name+f'.tmp.{os.getpid()}')
+with open(t,'w') as f: json.dump(d,f,sort_keys=True,separators=(',',':')); f.write('\n'); f.flush(); os.fsync(f.fileno())
+os.replace(t,p)
+PY
+}
+
+patch_restart_manifest() {
+    local manifest=$1 event=$2 elapsed=$3
+    python3 - "$manifest" "$EVIDENCE_ABS/cleanup.jsonl" "$event" "$elapsed" <<'PY'
+import hashlib,json,os,pathlib,sys
+p=pathlib.Path(sys.argv[1]); d=json.load(open(p)); journal=pathlib.Path(sys.argv[2])
+d['cleanup']={'event_ids':[sys.argv[3]],'journal_sha256':hashlib.sha256(journal.read_bytes()).hexdigest(),
+              'result':'PASS','artifacts':[]}
+d['reconnect']={'expected_disconnect':True,'elapsed_seconds':int(sys.argv[4]),'result':'PASS'}
+t=p.with_name(p.name+f'.tmp.{os.getpid()}')
+with open(t,'w') as f: json.dump(d,f,sort_keys=True,separators=(',',':')); f.write('\n'); f.flush(); os.fsync(f.fileno())
+os.replace(t,p)
+PY
+}
+
+run_backend_absence_restart() {
+    local mode=$1 nonce=$2 auth=$3 restart_command event before after springboard_before springboard_after
+    local restart_event action_rc elapsed inventory_manifest command rc producer raw_report
+    before="$CAPTURE_DIR/backend-before-restart.txt"
+    after="$CAPTURE_DIR/backend-after-restart.txt"
+    springboard_before="$CAPTURE_DIR/springboard-before.txt"
+    springboard_after="$CAPTURE_DIR/springboard-after.txt"
+    restart_event="$CAPTURE_DIR/restart-event.json"
+    capture_backend_absence_snapshot "$before" || die 'backend remains before disruptive restart'
+    ssh_mobile "$(springboard_snapshot_remote)" >"$springboard_before" 2>>"$CAPTURE_STDERR" || die 'SpringBoard pre-restart identity unavailable'
+    validate_springboard_snapshot "$springboard_before" || die 'invalid SpringBoard pre-restart identity'
+    restart_command=$(restart_command_for_mode "$mode") || die 'unsupported disruptive restart mode'
+    event=$(new_event_id)
+    journal_event "$event" lifecycle-restart "$mode" 'backend-absent' pending
+    write_restart_event "$restart_event" "$mode" "$event" not-started pending pending
+    set +e
+    ssh_privileged "$restart_command" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    action_rc=$?
+    set -e
+    journal_event "$event" lifecycle-restart "$mode" 'backend-absent' completed
+    if ! elapsed=$(wait_for_springboard_restart "$springboard_before" "$springboard_after"); then
+        write_restart_event "$restart_event" "$mode" "$event" "$action_rc" timeout FAIL
+        write_manifest run-hookprobe "$nonce" injected SETUP-FAIL 0 0 '' \
+            "restart-event=$restart_event" "backend-before=$before" "springboard-before=$springboard_before"
+        [ -z "$auth" ] || patch_authorization_manifest "$CAPTURE_DIR/manifest.json" "$auth"
+        die 'restart was not observed within 180 seconds'
+    fi
+    verify_device_identity || die 'device identity changed after restart'
+    capture_backend_absence_snapshot "$after" || die 'backend returned after disruptive restart'
+    inventory_manifest=$(cmd_inventory) || die 'post-restart inventory failed'
+    journal_event "$event" lifecycle-restart "$mode" 'backend-absent' restored
+    write_restart_event "$restart_event" "$mode" "$event" "$action_rc" "$elapsed" PASS
+    raw_report="$CAPTURE_DIR/hookprobe-$nonce.json"
+    command="/var/jb/usr/bin/hookprobe --mode $(sq "$mode") --nonce $(sq "$nonce") --run-id $(sq "$SHADOW_RUN_ID") --row-id $(sq "$SHADOW_ROW_ID") --probe-revision $(sq "$TASK_REVISION") --requested-mode injected --reconnect PASS; code=\$?; printf '__SHADOW_PRODUCER_EXIT__%s\\n' \"\$code\" >&2; exit 0"
+    set +e
+    ssh_privileged "$command" >"$raw_report" 2>>"$CAPTURE_STDERR"
+    rc=$?
+    set -e
+    producer=$(sed -n 's/^__SHADOW_PRODUCER_EXIT__//p' "$CAPTURE_STDERR" | tail -1)
+    if ! [[ $producer =~ ^[0-9]+$ ]]; then producer=not-applicable; [ "$rc" -ne 0 ] || rc=125; fi
+    if [ "$producer" = 126 ] || [ "$producer" = 127 ]; then rc=$producer; fi
+    if ! validate_producer_report "$raw_report" "$nonce"; then
+        write_manifest run-hookprobe "$nonce" injected SETUP-FAIL "$rc" "$producer" '' \
+            "raw-report=$raw_report" "restart-event=$restart_event" "backend-before=$before" \
+            "backend-after=$after" "springboard-before=$springboard_before" \
+            "springboard-after=$springboard_after" "post-restart-inventory=$inventory_manifest"
+        [ -z "$auth" ] || patch_authorization_manifest "$CAPTURE_DIR/manifest.json" "$auth"
+        patch_restart_manifest "$CAPTURE_DIR/manifest.json" "$event" "$elapsed"
+        die 'hookprobe report is missing, invalid, or provenance-mismatched after restart'
+    fi
+    write_manifest run-hookprobe "$nonce" injected injected "$rc" "$producer" '' \
+        "raw-report=$raw_report" "restart-event=$restart_event" "backend-before=$before" \
+        "backend-after=$after" "springboard-before=$springboard_before" \
+        "springboard-after=$springboard_after" "post-restart-inventory=$inventory_manifest"
+    [ -z "$auth" ] || patch_authorization_manifest "$CAPTURE_DIR/manifest.json" "$auth"
+    patch_restart_manifest "$CAPTURE_DIR/manifest.json" "$event" "$elapsed"
+    [ "$rc" -eq 0 ] || die 'hookprobe transport/setup failed after restart'
+    [ "$producer" = 0 ] || { printf 'stealth-device: hookprobe reported behavioral failure after restart\n' >&2; return 1; }
+    printf '%s\n' "$CAPTURE_DIR/manifest.json"
+}
+
 cmd_run_hookprobe() {
-    local mode=$1 nonce=$2 privileged=false command rc producer raw_report auth=''
+    local mode=$1 nonce=$2 privileged=false command rc producer raw_report auth='' identity_fixture_dir=''
     is_hookprobe_mode "$mode" || die "unsupported hookprobe mode: $mode"
     [[ $nonce =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'invalid nonce'
     prepare_existing_run
     verify_device_identity
     capture_dir "$nonce" run-hookprobe device
     case "$mode" in
-        lifecycle-daemon-zero-resource-restart|lifecycle-backend-absent-springboard-restart|lifecycle-backend-absent-userspace-reboot) privileged=true ;;
+        lifecycle-daemon-zero-resource-restart|lifecycle-backend-absent|lifecycle-backend-absent-springboard-restart|lifecycle-backend-absent-userspace-reboot) privileged=true ;;
     esac
     case "$mode" in
         lifecycle-backend-absent-springboard-restart|lifecycle-backend-absent-userspace-reboot)
@@ -1394,9 +2327,17 @@ cmd_run_hookprobe() {
             fi
             auth="$EVIDENCE_ABS/disruptive-authorization.json"
             require_clean_journal
+            run_backend_absence_restart "$mode" "$nonce" "$auth"
+            return
             ;;
     esac
-    command="/var/jb/usr/bin/hookprobe --mode $(sq "$mode") --nonce $(sq "$nonce") --run-id $(sq "$SHADOW_RUN_ID") --row-id $(sq "$SHADOW_ROW_ID") --probe-revision $(sq "$TASK_REVISION") --requested-mode injected; code=\$?; printf '__SHADOW_PRODUCER_EXIT__%s\\n' \"\$code\" >&2; exit 0"
+    command="/var/jb/usr/bin/hookprobe --mode $(sq "$mode") --nonce $(sq "$nonce") --run-id $(sq "$SHADOW_RUN_ID") --row-id $(sq "$SHADOW_ROW_ID") --probe-revision $(sq "$TASK_REVISION") --requested-mode injected"
+    if [ "$mode" = identity ]; then
+        identity_fixture_dir=$(identity_fixture_directory_remote)
+        identity_fixture_check_remote "$identity_fixture_dir" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" || die 'identity fixture setup is absent or unsafe'
+        command="$command --identity-fixture-dir $(sq "$identity_fixture_dir")"
+    fi
+    command="$command; code=\$?; printf '__SHADOW_PRODUCER_EXIT__%s\\n' \"\$code\" >&2; exit 0"
     set +e
     if [ "$privileged" = true ]; then
         ssh_privileged "$command" >"$CAPTURE_STDOUT" 2>"$CAPTURE_STDERR"
@@ -1410,9 +2351,14 @@ cmd_run_hookprobe() {
     if [ "$producer" = 126 ] || [ "$producer" = 127 ]; then rc=$producer; fi
     raw_report="$CAPTURE_DIR/hookprobe-$nonce.json"
     cp -p "$CAPTURE_STDOUT" "$raw_report"
+    if ! validate_producer_report "$raw_report" "$nonce"; then
+        write_manifest run-hookprobe "$nonce" injected SETUP-FAIL "$rc" "$producer" '' "raw-report=$raw_report"
+        die 'hookprobe report is missing, invalid, or provenance-mismatched'
+    fi
     write_manifest run-hookprobe "$nonce" injected injected "$rc" "$producer" '' "raw-report=$raw_report"
     [ -z "$auth" ] || patch_authorization_manifest "$CAPTURE_DIR/manifest.json" "$auth"
     [ "$rc" -eq 0 ] || die 'hookprobe transport/setup failed'
+    [ "$producer" = 0 ] || { printf 'stealth-device: hookprobe reported behavioral failure\n' >&2; return 1; }
     printf '%s\n' "$CAPTURE_DIR/manifest.json"
 }
 
@@ -1459,11 +2405,13 @@ PY
 }
 
 restore_preferences_file() {
-    local backup=$1 remote=/var/mobile/Library/Preferences/me.jjolano.shadow.plist temp
+    local backup=$1 requested_remote=${2-} remote owner mode_bits temp
     [ -f "$backup" ] || die "missing preferences backup: $backup"
+    remote=${requested_remote:-$(preferences_remote)}
+    IFS=$'\t' read -r owner mode_bits <<<"$(preferences_install_spec "$remote")"
     temp="/var/mobile/Media/.shadow-restore-prefs-$SHADOW_RUN_ID-$$-$RANDOM.plist"
     scp_to "$backup" "$temp" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
-    ssh_privileged "install -o root -g wheel -m 0644 $(sq "$temp") $(sq "$remote") && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
+    ssh_privileged "install -o ${owner%%:*} -g ${owner##*:} -m $mode_bits $(sq "$temp") $(sq "$remote") && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
     ssh_mobile 'launchctl kill SIGTERM gui/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || launchctl kill SIGTERM user/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || true' >/dev/null
     [ "$(ssh_mobile "sha256sum $(sq "$remote") | cut -d' ' -f1")" = "$(sha256_file "$backup")" ] || die 'restored preferences hash mismatch'
 }
@@ -1474,7 +2422,9 @@ safe_bootout_for_restore() {
     before="$CAPTURE_DIR/restore-daemon-before-$RANDOM.txt"
     after="$CAPTURE_DIR/restore-daemon-after-$RANDOM.txt"
     ssh_privileged "$remote" >"$before" 2>>"$CAPTURE_STDERR" || die 'restore daemon precheck failed'
-    validate_daemon_snapshot "$before" false >/dev/null
+    # A resumed rollback can follow a reboot or an earlier package rollback;
+    # both leave the recorded daemon job absent without making restoration unsafe.
+    validate_daemon_snapshot "$before" false >/dev/null 2>&1 || validate_daemon_snapshot "$before" true >/dev/null
     job=$(sed -n 's/^job[[:space:]]//p' "$before" | head -1)
     if [ "$job" = present ]; then
         before_lines=$(sed -n 's/^log_lines[[:space:]]//p' "$before" | head -1)
@@ -1494,9 +2444,36 @@ safe_bootout_for_restore() {
     fi
 }
 
+restore_recorded_daemon() {
+    local prior snapshot job
+    [ "$(baseline_shadowd_job)" = present ] || return 0
+    prior=$(python3 - "$EVIDENCE_ABS/cleanup.jsonl" <<'PY'
+import json,pathlib,sys
+latest={}
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    if line.strip():
+        row=json.loads(line)
+        latest[row['event_id']]=row
+print('bootstrap' if any(row.get('action') == 'daemon-bootout' and row.get('prior_state') == 'bootstrap' for row in latest.values()) else '')
+PY
+)
+    [ "$prior" = bootstrap ] || return 0
+    snapshot="$CAPTURE_DIR/restore-daemon-rebootstrap-$RANDOM.txt"
+    ssh_privileged "$(daemon_snapshot_remote)" >"$snapshot" 2>>"$CAPTURE_STDERR" || die 'restore daemon rebootstrap precheck failed'
+    job=$(sed -n 's/^job[[:space:]]//p' "$snapshot" | head -1)
+    [ "$job" = absent ] || return 0
+    ssh_privileged 'test -f /var/jb/Library/LaunchDaemons/me.jjolano.shadow.plist' || die 'baseline shadowd launchd plist missing'
+    ssh_privileged 'launchctl bootstrap system /var/jb/Library/LaunchDaemons/me.jjolano.shadow.plist 2>/dev/null || launchctl kickstart system/me.jjolano.shadow' >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" || die 'restore daemon rebootstrap failed'
+    return 0
+}
+
 restore_package_event() {
-    local prior=$1 recovery prefs package_id temp pkg version installed
-    IFS='|' read -r recovery prefs package_id <<<"$prior"
+    local prior=$1 recovery prefs prefs_remote_path package_id temp pkg version installed
+    IFS='|' read -r recovery prefs prefs_remote_path package_id <<<"$prior"
+    if [ -z "$package_id" ]; then
+        package_id=$prefs_remote_path
+        prefs_remote_path=''
+    fi
     [ -f "$recovery" ] || die "missing package recovery artifact: $recovery"
     if [ "$package_id" = me.jjolano.shadow ]; then safe_bootout_for_restore; fi
     temp="/var/mobile/Media/.shadow-rollback-$SHADOW_RUN_ID-$$.deb"
@@ -1507,14 +2484,15 @@ restore_package_event() {
     [ "$pkg" = "$package_id" ] || die 'rollback package ID mismatch'
     installed=$(ssh_mobile "dpkg-query -W -f='\${Package} \${Version}' $package_id")
     [ "$installed" = "$package_id $version" ] || die 'rollback package verification failed'
-    if [ -f "$prefs" ] && ! grep -F -x ABSENT "$prefs" >/dev/null 2>&1; then restore_preferences_file "$prefs"; fi
+    if [ -f "$prefs" ] && ! grep -F -x ABSENT "$prefs" >/dev/null 2>&1; then restore_preferences_file "$prefs" "$prefs_remote_path"; fi
 }
 
 cmd_restore() {
-    local events event action target prior state backup remote mode temp staged restore_dir restore_stdout restore_stderr inventory_manifest daemon_restore_snapshot
+    local events event action target prior state backup remote mode temp staged restore_dir restore_stdout restore_stderr inventory_manifest daemon_restore_snapshot mode_repair_snapshot
     prepare_restore || return
     verify_device_identity || return
     capture_dir '' restore device
+    MODE_REPAIR_MANIFEST=''
     events=$(python3 - "$EVIDENCE_ABS/cleanup.jsonl" <<'PY'
 import json,pathlib,sys
 latest={}; order=[]
@@ -1533,7 +2511,7 @@ PY
         case "$action" in
             set-mode|launch-context)
                 IFS='|' read -r backup remote <<<"$prior"
-                restore_preferences_file "$backup"
+                restore_preferences_file "$backup" "$remote"
                 ;;
             launch-context-file)
                 IFS='|' read -r backup remote <<<"$prior"
@@ -1564,6 +2542,10 @@ PY
                     ssh_privileged "install -o root -g wheel -m 0755 $(sq "$temp") $(sq "$remote") && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
                 fi
                 ;;
+            install-hookprobe-fixtures)
+                [ "$prior" = absent ] || die 'invalid identity fixture prior state'
+                remove_identity_fixture_directory "$target"
+                ;;
             install-component)
                 IFS='|' read -r backup remote mode <<<"$prior"
                 [ -f "$backup" ] || die 'component backup missing'
@@ -1573,6 +2555,13 @@ PY
                 ssh_privileged "install -o root -g wheel -m $mode $(sq "$temp") $(sq "$staged") && mv -f $(sq "$staged") $(sq "$remote") && rm -f $(sq "$temp")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
                 [ "$(ssh_privileged "sha256sum $(sq "$remote") | cut -d' ' -f1")" = "$(sha256_file "$backup")" ] || die 'restored component hash mismatch'
                 ;;
+            mode-repair)
+                [ -f "$prior" ] && [ ! -L "$prior" ] || die 'mode repair replay manifest is unsafe'
+                apply_mode_repair_manifest "$prior"
+                mode_repair_snapshot="$CAPTURE_DIR/mode-repair-replay-$RANDOM.tsv"
+                [ "$(mode_repair_state "$prior" "$mode_repair_snapshot")" = already-repaired ] || die 'mode repair replay verification failed'
+                MODE_REPAIR_MANIFEST=$prior
+                ;;
             install-deb) restore_package_event "$prior" ;;
             package-upload|recovery-export) ssh_privileged "rm -f $(sq "$target")" >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR" ;;
             daemon-bootout)
@@ -1580,16 +2569,31 @@ PY
                     ssh_privileged 'launchctl bootstrap system /var/jb/Library/LaunchDaemons/me.jjolano.shadow.plist 2>/dev/null || launchctl kickstart system/me.jjolano.shadow' >>"$CAPTURE_STDOUT" 2>>"$CAPTURE_STDERR"
                 fi
                 ;;
-            daemon-idle) : ;;
+            daemon-idle|lifecycle-restart) : ;;
             launch-process) restore_launch_process "$target" "$prior" ;;
-            launch-terminate|client-sigkill) ;;
+            launch-terminate) ;;
+            client-sigkill)
+                IFS='|' read -r lstart comm <<<"$prior"
+                case "$(client_sigkill_state "$target" "$lstart" "$comm")" in
+                    absent|reused) ;;
+                    live) die 'client SIGKILL target remains live during restore' ;;
+                    changed) die 'client SIGKILL target changed command during restore' ;;
+                    *) die 'client SIGKILL target recheck failed during restore' ;;
+                esac
+                ;;
             *) die "unknown cleanup action: $action" ;;
         esac
         journal_event "$event" "$action" "$target" "$prior" restored
     done <<<"$events"
+    repair_mode_loss_if_authorized
+    restore_recorded_daemon
     daemon_restore_snapshot="$CAPTURE_DIR/restore-daemon-state.txt"
     ssh_privileged "$(daemon_snapshot_remote)" >"$daemon_restore_snapshot" 2>>"$CAPTURE_STDERR" || die 'restore daemon state capture failed'
-    validate_daemon_snapshot "$daemon_restore_snapshot" false >/dev/null
+    case "$(baseline_shadowd_job)" in
+        present) validate_daemon_snapshot "$daemon_restore_snapshot" false >/dev/null ;;
+        absent) validate_daemon_snapshot "$daemon_restore_snapshot" true >/dev/null ;;
+        *) die 'invalid baseline shadowd service state' ;;
+    esac
     restore_dir=$CAPTURE_DIR; restore_stdout=$CAPTURE_STDOUT; restore_stderr=$CAPTURE_STDERR
     inventory_manifest=$(cmd_inventory restore) || die 'restore inventory failed'
     python3 - "$EVIDENCE_ABS/run.json" "$inventory_manifest" <<'PY'
@@ -1602,8 +2606,14 @@ for key, baseline in run['baseline_components'].items():
 if manifest['inventory'].get('package_database',{}).get('packages') != run.get('baseline_packages'): raise SystemExit('restore package-state mismatch')
 PY
     CAPTURE_DIR=$restore_dir; CAPTURE_STDOUT=$restore_stdout; CAPTURE_STDERR=$restore_stderr
-    write_manifest restore '' not-applicable not-applicable 0 0 '' \
-        "final-inventory=$inventory_manifest" "restore-daemon-state=$daemon_restore_snapshot"
+    if [ -n "$MODE_REPAIR_MANIFEST" ]; then
+        write_manifest restore '' not-applicable not-applicable 0 0 '' \
+            "final-inventory=$inventory_manifest" "restore-daemon-state=$daemon_restore_snapshot" \
+            "mode-repair=$MODE_REPAIR_MANIFEST"
+    else
+        write_manifest restore '' not-applicable not-applicable 0 0 '' \
+            "final-inventory=$inventory_manifest" "restore-daemon-state=$daemon_restore_snapshot"
+    fi
     python3 - "$CAPTURE_DIR/manifest.json" <<'PY'
 import json,os,pathlib,sys
 p=pathlib.Path(sys.argv[1]); d=json.load(open(p)); d['restore']['result']='PASS'
@@ -1617,7 +2627,7 @@ PY
 cmd_selftest() {
     local tmp failed=0
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/shadow-stealth-selftest.XXXXXX")
-    trap 'rm -rf "$tmp"' EXIT
+    trap '[ -z "${tmp:-}" ] || rm -rf "$tmp"' EXIT
     mkdir -p "$tmp/bin"
     printf '#!/bin/sh\n[ "${FAKE_TRANSPORT_FAIL:-0}" = 1 ] && exit 23\ncase "${FAKE_REPLY:-ok}" in sudo-fail) exit 1;; *) printf "ok\\n";; esac\n' >"$tmp/bin/ssh"
     printf '#!/bin/sh\n[ "${FAKE_SCP_FAIL:-0}" = 1 ] && exit 24\n[ "${FAKE_SCP_CONSUME:-0}" = 1 ] && cat >/dev/null\nexit 0\n' >"$tmp/bin/scp"
@@ -1653,6 +2663,23 @@ two
 EOF
     if [ "$replayed" -ne 2 ]; then printf 'FAIL journal replay stdin isolation\n'; failed=1; fi
 
+    process_row() { printf '42 start /app\n'; }
+    if [ "$(client_sigkill_state 42 start /app)" != live ]; then
+        printf 'FAIL live client SIGKILL recheck\n'; failed=1
+    fi
+    process_row() { :; }
+    if [ "$(client_sigkill_state 42 start /app)" != absent ]; then
+        printf 'FAIL absent client SIGKILL recheck\n'; failed=1
+    fi
+    process_row() { printf '42 other /app\n'; }
+    if [ "$(client_sigkill_state 42 start /app)" != reused ]; then
+        printf 'FAIL reused client SIGKILL recheck\n'; failed=1
+    fi
+    process_row() { printf '42 start /other\n'; }
+    if [ "$(client_sigkill_state 42 start /app)" != changed ]; then
+        printf 'FAIL changed client SIGKILL recheck\n'; failed=1
+    fi
+
     mkdir -p "$tmp/recovery/dir"
     printf x >"$tmp/recovery/dir/file"
     ln -s dir "$tmp/recovery/link"
@@ -1661,36 +2688,174 @@ EOF
        ! printf '%s\n' "$recovery" | grep -q $'^F\t[0-9a-f]\{64\}\t/dir/file$'; then
         printf 'FAIL recovery symlink manifest\n'; failed=1
     fi
+    mkdir -p "$tmp/mode-source" "$tmp/mode-stage"
+    printf x >"$tmp/mode-source/executable"
+    chmod 0755 "$tmp/mode-source/executable"
+    tar -C "$tmp/mode-source" -cf "$tmp/modes.tar" executable
+    tar --no-same-owner --same-permissions -xf "$tmp/modes.tar" -C "$tmp/mode-stage"
+    if [ "$(stat -c %a "$tmp/mode-stage/executable")" != 755 ]; then
+        printf 'FAIL recovery mode preservation\n'; failed=1
+    fi
+    mkdir -p "$tmp/mode-recovery/DEBIAN" "$tmp/mode-recovery/var/jb/bin" "$tmp/mode-candidate/DEBIAN" "$tmp/mode-candidate/var/jb/bin"
+    printf 'Package: mode-test\nVersion: 1\nArchitecture: all\nMaintainer: test\nDescription: mode test\n' >"$tmp/mode-recovery/DEBIAN/control"
+    cp "$tmp/mode-recovery/DEBIAN/control" "$tmp/mode-candidate/DEBIAN/control"
+    printf x >"$tmp/mode-recovery/var/jb/bin/tool"
+    printf y >"$tmp/mode-recovery/var/jb/data"
+    cp "$tmp/mode-recovery/var/jb/bin/tool" "$tmp/mode-candidate/var/jb/bin/tool"
+    cp "$tmp/mode-recovery/var/jb/data" "$tmp/mode-candidate/var/jb/data"
+    chmod 0755 "$tmp/mode-recovery/DEBIAN" "$tmp/mode-candidate/DEBIAN"
+    chmod 0644 "$tmp/mode-recovery/DEBIAN/control" "$tmp/mode-candidate/DEBIAN/control"
+    chmod 0700 "$tmp/mode-recovery/var/jb/bin/tool"
+    chmod 0600 "$tmp/mode-recovery/var/jb/data"
+    chmod 0755 "$tmp/mode-candidate/var/jb/bin/tool"
+    chmod 0644 "$tmp/mode-candidate/var/jb/data"
+    if ! dpkg-deb --root-owner-group --build "$tmp/mode-recovery" "$tmp/mode-recovery.deb" >/dev/null ||
+       ! dpkg-deb --root-owner-group --build "$tmp/mode-candidate" "$tmp/mode-candidate.deb" >/dev/null ||
+       ! build_mode_repair_manifest "$tmp/mode-recovery.deb" "$tmp/mode-candidate.deb" "$tmp/mode-repair.tsv" ||
+       ! python3 - "$tmp/mode-repair.tsv" <<'PY'
+import pathlib,sys
+rows=[line.split('\t') for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+assert {(row[2],row[3]) for row in rows} == {('0600','0644'),('0700','0755')}
+assert len(rows)==2
+PY
+    then
+        printf 'FAIL recovery mode repair manifest\n'; failed=1
+    fi
 
-    local killed=''
-    find_process_exact() { printf '42\tstart\tRs\t/app\n'; }
-    terminate_exact_process() { killed=$1; }
+    local killed='' restore_state=live
+    find_process_exact() { return 2; }
+    client_sigkill_state() { printf '%s\n' "$restore_state"; }
+    ssh_privileged() { killed=$1; restore_state=absent; }
     restore_launch_process 42 'start|/app'
-    if [ -z "$killed" ]; then printf 'FAIL launched process cleanup\n'; failed=1; fi
+    if [ "$killed" != 'kill -TERM 42' ]; then printf 'FAIL launched process cleanup\n'; failed=1; fi
     killed=''
+    restore_state=reused
     restore_launch_process 41 'start|/app'
     if [ -n "$killed" ]; then printf 'FAIL launched PID reuse refusal\n'; failed=1; fi
     if [ "$(bundle_report_relative me.jjolano.shadow.harness nonce)" != ShadowDiagnostics-nonce.json ] ||
        [ "$(bundle_report_relative me.jjolano.dyldprobe nonce)" != dyldprobe-nonce.json ]; then
         printf 'FAIL launch report filename mapping\n'; failed=1
     fi
-	if [ "$(install_component_spec ShadowCore)" != $'/var/jb/usr/lib/ShadowCore.dylib\t0755' ] ||
+
+    EVIDENCE_ABS="$tmp/baseline"
+    mkdir -p "$EVIDENCE_ABS"
+    printf '%s\n' '{"baseline_service":{"shadowd_job":"present"}}' >"$EVIDENCE_ABS/run.json"
+    if [ "$(baseline_shadowd_job)" != present ]; then printf 'FAIL present daemon baseline\n'; failed=1; fi
+    printf '%s\n' '{"baseline_service":{"shadowd_job":"absent"}}' >"$EVIDENCE_ABS/run.json"
+    if [ "$(baseline_shadowd_job)" != absent ]; then printf 'FAIL absent daemon baseline\n'; failed=1; fi
+
+    EVIDENCE_ABS="$tmp/legacy"
+    mkdir -p "$EVIDENCE_ABS"
+    printf '%s\n' '{"allowlist_controls":{"/var/mobile/Library/Preferences/me.jjolano.shadow.plist":"visible","/var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist":"visible","/Library/PreferenceBundles/ShadowSettings.bundle":"absent","/var/jb/Library/PreferenceBundles/ShadowSettings.bundle":"visible"}}' >"$EVIDENCE_ABS/run.json"
+    local legacy_snapshot="$tmp/legacy-snapshot" legacy_ledger="$tmp/legacy-ledger" legacy_delta="$tmp/legacy-delta"
+    printf 'job\tpresent\nprogram\t/var/jb/usr/libexec/shadowd\njob_pid\tabsent\nprocesses_begin\nprocesses_end\nledger\trecords\ncontrol\t/var/mobile/Library/Preferences/me.jjolano.shadow.plist\tvisible\ncontrol\t/var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist\tvisible\ncontrol\t/Library/PreferenceBundles/ShadowSettings.bundle\tabsent\ncontrol\t/var/jb/Library/PreferenceBundles/ShadowSettings.bundle\tvisible\nlog\tfile\nlog_begin\nlog_end\n' >"$legacy_snapshot"
+    printf 'SHADOWLEDGER1\nC3A38F5C-3541-4DBF-8901-432898376B8C\n1|/var/jb/Library/PreferenceBundles/ShadowSettings.bundle|12034-1787358236-807275|0xffffffea243cfc00|0xb9e10f8\n' >"$legacy_ledger"
+    if ! validate_legacy_daemon_snapshot "$legacy_snapshot" "$legacy_ledger" >/dev/null 2>&1; then
+        printf 'FAIL legacy daemon ledger acceptance\n'; failed=1
+    fi
+    printf 'SHADOWLEDGER1\nC3A38F5C-3541-4DBF-8901-432898376B8C\n1|/var/jb/evil|12034-1787358236-807275|0xffffffea243cfc00|0xb9e10f8\n' >"$legacy_ledger"
+    if validate_legacy_daemon_snapshot "$legacy_snapshot" "$legacy_ledger" >/dev/null 2>&1; then
+        printf 'FAIL unsafe legacy daemon ledger accepted\n'; failed=1
+    fi
+    printf 'SHADOWLEDGER1\nC3A38F5C-3541-4DBF-8901-432898376B8C\nmalformed\n' >"$legacy_ledger"
+    if validate_legacy_daemon_snapshot "$legacy_snapshot" "$legacy_ledger" >/dev/null 2>&1; then
+        printf 'FAIL malformed legacy daemon ledger accepted\n'; failed=1
+    fi
+    printf 'SHADOWLEDGER1\nC3A38F5C-3541-4DBF-8901-432898376B8C\n1|/var/jb/Library/PreferenceBundles/ShadowSettings.bundle|12034-1787358236-807275|0xffffffea243cfc00|0xb9e10f8\n' >"$legacy_ledger"
+    if [ "$(legacy_ledger_owner_pids "$legacy_ledger")" != 12034 ]; then
+        printf 'FAIL legacy daemon owner parsing\n'; failed=1
+    fi
+    printf 'ledger: adopted hidden /var/jb/Library/PreferenceBundles/ShadowSettings.bundle (vnode 0xffffffea243cfc00, fd unavailable)\nkrw: ready (mode libjailbreak)\n' >"$legacy_delta"
+    if ! validate_legacy_recovery_delta "$legacy_ledger" "$legacy_delta" >/dev/null 2>&1; then
+        printf 'FAIL legacy daemon recovery acceptance\n'; failed=1
+    fi
+    printf 'krw: ready (mode libjailbreak)\n' >"$legacy_delta"
+    if validate_legacy_recovery_delta "$legacy_ledger" "$legacy_delta" >/dev/null 2>&1; then
+        printf 'FAIL ambiguous legacy daemon recovery accepted\n'; failed=1
+    fi
+
+    if [ "$(install_component_spec ShadowCore)" != $'/var/jb/usr/lib/ShadowCore.dylib\t0755' ] ||
 	   [ "$(install_component_spec ShadowStub)" != $'/var/jb/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib\t0755' ] ||
 	   [ "$(install_component_spec DyldProbe)" != $'/var/jb/Applications/dyldprobe.app/dyldprobe\t0755' ] ||
 	   install_component_spec unknown >/dev/null 2>&1; then
 		printf 'FAIL component install allowlist\n'; failed=1
 	fi
 	local direct_control direct_injected
-	direct_control=$(verification_launch_remote uninjected /app /container)
-	direct_injected=$(verification_launch_remote injected /app /container)
-	if [[ $direct_control != _MSSafeMode=1* ]] || [[ $direct_injected == *'_MSSafeMode=1'* ]] ||
-	   [[ $direct_injected != *"CFFIXED_USER_HOME='/container'"* ]] ||
-	   [[ $direct_injected != *"'/app' --shadow-headless-producer </dev/null"* ]] ||
+	direct_control=$(verification_launch_remote uninjected /app /container /output)
+	direct_injected=$(verification_launch_remote injected /app /container /output)
+	if [[ $direct_control != *'_MSSafeMode=1 CFFIXED_USER_HOME='* ]] || [[ $direct_injected == *'_MSSafeMode=1'* ]] ||
+	   [[ $direct_injected != *'CFFIXED_USER_HOME='* ]] || [[ $direct_injected != *'/container'* ]] ||
+	   [[ $direct_injected != *"nohup /var/jb/bin/sh -c "* ]] ||
+	   [[ $direct_injected != *'/app'* ]] ||
+	   [[ $direct_injected != *"--shadow-headless-producer; rc=\$?; printf "* ]] ||
+	   [[ $direct_injected != *'__SHADOW_HEADLESS_EXIT__'* ]] ||
+	   [[ $direct_injected != *"</dev/null >'/output' 2>&1"* ]] ||
 	   ! uses_direct_verification_launch me.jjolano.shadow.harness cold uninjected ||
-	   uses_direct_verification_launch me.jjolano.shadow.harness cold injected ||
+	   ! uses_direct_verification_launch me.jjolano.shadow.harness cold injected ||
 	   uses_direct_verification_launch me.jjolano.shadow.harness warm uninjected; then
 		printf 'FAIL verification producer launch mapping\n'; failed=1
 	fi
+    printf 'pid\t1\nlstart\told\n' >"$tmp/springboard-before"
+    printf 'pid\t2\nlstart\tnew\n' >"$tmp/springboard-after"
+    if ! validate_springboard_snapshot "$tmp/springboard-before" ||
+       ! validate_springboard_transition "$tmp/springboard-before" "$tmp/springboard-after" ||
+       validate_springboard_transition "$tmp/springboard-before" "$tmp/springboard-before" 2>/dev/null ||
+       [ "$(restart_command_for_mode lifecycle-backend-absent-springboard-restart)" != /var/jb/usr/bin/sbreload ] ||
+       [ "$(restart_command_for_mode lifecycle-backend-absent-userspace-reboot)" != 'launchctl reboot userspace' ] ||
+       restart_command_for_mode invalid >/dev/null 2>&1; then
+        printf 'FAIL disruptive restart mapping\n'; failed=1
+    fi
+    local fixture_count=0 fixture_key fixture_spec fixture_source fixture_target fixture_local fixture_candidate
+    SHADOW_RUN_ID=fixture-run
+    if [ "$(identity_fixture_directory_remote)" != /var/jb/usr/lib/.shadow-hookprobe-identity-fixture-run ]; then
+        printf 'FAIL identity fixture directory mapping\n'; failed=1
+    fi
+    while IFS= read -r fixture_key; do
+        fixture_spec=$(identity_fixture_spec "$fixture_key") || { failed=1; break; }
+        IFS=$'\t' read -r fixture_source fixture_target <<<"$fixture_spec"
+        if [[ ! $fixture_source =~ ^hookprobeidentity[a-z]+\.dylib$ ]] || [ -z "$fixture_target" ]; then
+            printf 'FAIL identity fixture spec\n'; failed=1
+        fi
+        fixture_local="$tmp/source/$fixture_source"
+        fixture_candidate="$tmp/identity-fixtures/${fixture_local##*/}"
+        if [ "$(dirname "$fixture_candidate")" != "$tmp/identity-fixtures" ]; then
+            printf 'FAIL identity fixture staging path\n'; failed=1
+        fi
+        fixture_count=$((fixture_count + 1))
+    done < <(identity_fixture_keys)
+    if [ "$fixture_count" -ne 7 ] || identity_fixture_spec unknown >/dev/null 2>&1; then
+        printf 'FAIL identity fixture allowlist\n'; failed=1
+    fi
+    mkdir -p "$tmp/producer-failure"
+    : >"$tmp/producer-failure/out"; : >"$tmp/producer-failure/err"
+    if (
+        is_hookprobe_mode() { :; }
+        prepare_existing_run() { :; }
+        verify_device_identity() { :; }
+        capture_dir() { :; }
+        ssh_mobile() { printf '__SHADOW_PRODUCER_EXIT__1\n' >&2; }
+        write_manifest() { :; }
+        CAPTURE_DIR="$tmp/producer-failure" CAPTURE_STDOUT="$tmp/producer-failure/out" CAPTURE_STDERR="$tmp/producer-failure/err" \
+            SHADOW_RUN_ID=producer-failure SHADOW_ROW_ID=row TASK_REVISION=revision \
+            cmd_run_hookprobe regression-matrix producer-failure
+    ) >/dev/null 2>&1; then
+        printf 'FAIL hookprobe producer failure accepted\n'; failed=1
+    fi
+    mkdir -p "$tmp/invalid-producer"
+    : >"$tmp/invalid-producer/out"; : >"$tmp/invalid-producer/err"
+    if (
+        is_hookprobe_mode() { :; }
+        prepare_existing_run() { :; }
+        verify_device_identity() { :; }
+        capture_dir() { :; }
+        ssh_mobile() { printf '__SHADOW_PRODUCER_EXIT__0\n' >&2; }
+        write_manifest() { :; }
+        CAPTURE_DIR="$tmp/invalid-producer" CAPTURE_STDOUT="$tmp/invalid-producer/out" CAPTURE_STDERR="$tmp/invalid-producer/err" \
+            SHADOW_RUN_ID=invalid-producer SHADOW_ROW_ID=row TASK_REVISION=revision \
+            cmd_run_hookprobe regression-matrix invalid-producer
+    ) >/dev/null 2>&1; then
+        printf 'FAIL invalid hookprobe report accepted\n'; failed=1
+    fi
     mkdir -p "$tmp/pull"
     : >"$tmp/pull/out"; : >"$tmp/pull/err"
     if (
@@ -1748,7 +2913,7 @@ reject('half-configured' in {'installed','absent'},'half-configured package')
 json.dump({'status':'PASS','cases':13},open(p/'result.json','w'))
 PY
     [ "$failed" -eq 0 ] || return 1
-    printf 'PASS stealth-device selftest (fake ssh/scp/sudo; launch/report cleanup; timeout manifest; drift-safe restore; 13 refusal classes)\n'
+    printf 'PASS stealth-device selftest (fake ssh/scp/sudo; launch/report cleanup; restart and identity mapping; timeout manifest; drift-safe restore; 16 refusal classes)\n'
     rm -rf "$tmp"
     trap - EXIT
 }
@@ -1794,7 +2959,7 @@ emit_component() {
   fi
 }
 emit_component shadowd /var/jb/usr/libexec/shadowd
-emit_component ShadowCore /var/jb/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib
+emit_component ShadowCore /var/jb/usr/lib/ShadowCore.dylib
 emit_component harness /var/jb/Applications/ShadowHarness.app/ShadowHarness
 emit_component dyldprobe /var/jb/Applications/dyldprobe.app/dyldprobe
 emit_component hookprobe /var/jb/usr/bin/hookprobe
@@ -1832,7 +2997,6 @@ if facts['jailbreak_root'] != '/var/jb': raise SystemExit('known row is not root
 tools={k[5:]:v for k,v in facts.items() if k.startswith('tool.')}
 absent={k[7:]:v for k,v in facts.items() if k.startswith('absent.')}
 if any(v=='absent' for v in tools.values()): raise SystemExit('required device tool missing')
-if any(v!='absent' for v in absent.values()): raise SystemExit('unexpected device tool present')
 if set(components)!={'shadowd','ShadowCore','harness','dyldprobe','hookprobe'}: raise SystemExit('incomplete baseline components')
 if set(packages)!={'me.jjolano.shadow','me.jjolano.shadow.harness','me.jjolano.dyldprobe'}: raise SystemExit('incomplete baseline packages')
 if any(row['status'] not in {'installed','absent'} for row in packages.values()): raise SystemExit('package database is not ready')

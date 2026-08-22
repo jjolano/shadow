@@ -1,51 +1,96 @@
 #!/bin/sh
 
-DPKG_ROOT=""
-case "$DPKG_MAINTSCRIPT_ARCH" in
-    iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
-esac
+if [ "${SHADOW_DPKG_ROOT+x}" = x ]; then
+    DPKG_ROOT=$SHADOW_DPKG_ROOT
+else
+    DPKG_ROOT=""
+    case "$DPKG_MAINTSCRIPT_ARCH" in
+        iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
+    esac
+fi
 
-# SIGTERM the daemon and wait for a verified exit so it can unhide every
-# VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
-# shutdown). Polls up to 10s at 0.5s intervals; returns 0 if the process is
-# gone, 1 if it is still alive.
-# Never SIGKILL: a force-kill drops the process with its flags still set —
-# exactly the restart hazard this architecture exists to avoid (launchd
-# respawns a half-cleaned daemon, or the vnodes stay hidden until reboot).
+DAEMON_PATH="$DPKG_ROOT/usr/libexec/shadowd"
+DAEMON_JOB="system/me.jjolano.shadow"
+LAUNCHCTL_BIN=${SHADOW_LAUNCHCTL_BIN:-launchctl}
+PS_BIN=${SHADOW_PS_BIN:-/bin/ps}
+SLEEP_BIN=${SHADOW_SLEEP_BIN:-sleep}
+
+shadowd_job_output() {
+    "$LAUNCHCTL_BIN" print "$DAEMON_JOB" 2>/dev/null || true
+}
+
+shadowd_job_program() {
+    shadowd_job_output | sed -n 's/^[[:space:]]*program = //p' | head -1
+}
+
+shadowd_job_pid() {
+    shadowd_job_output | sed -n 's/^[[:space:]]*pid = //p' | head -1
+}
+
+shadowd_exact_pids() {
+    "$PS_BIN" -ax -o pid=,comm= 2>/dev/null |
+    while read -r pid comm rest; do
+        case "$pid" in ''|*[!0-9]*) continue ;; esac
+        [ -z "$rest" ] || continue
+        [ "$comm" = "$DAEMON_PATH" ] || continue
+        printf '%s\n' "$pid"
+    done
+}
+
+shadowd_job_state() {
+    program=$(shadowd_job_program)
+    [ -n "$program" ] || { printf '%s\n' absent; return; }
+    [ "$program" = "$DAEMON_PATH" ] || { printf '%s\n' mismatch; return; }
+    pid=$(shadowd_job_pid)
+    case "$pid" in ''|*[!0-9]*) printf '%s\n' exact-idle ;; *) printf '%s\n' exact-live ;; esac
+}
+
+# SIGTERM only a verified service or a process whose comm is its exact package
+# path. A basename/prefix decoy is deliberately ignored.
 shadowd_stop() {
-    # Send SIGTERM via launchd when the service exists; fall back to a raw
-    # kill for the rare already-booted-out orphan.
-    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null \
-        || kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+    state=$(shadowd_job_state)
+    [ "$state" != mismatch ] || return 1
+    if [ "$state" = exact-live ]; then
+        "$LAUNCHCTL_BIN" kill SIGTERM "$DAEMON_JOB" 2>/dev/null || return 1
+    fi
+    pids=$(shadowd_exact_pids)
+    for pid in $pids; do
+        kill -TERM "$pid" 2>/dev/null || return 1
+    done
     remaining=20
     while [ "$remaining" -gt 0 ]; do
-        pgrep -x shadowd > /dev/null 2>&1 || return 0
-        sleep 0.5
+        state=$(shadowd_job_state)
+        [ "$state" != mismatch ] || return 1
+        pids=$(shadowd_exact_pids)
+        [ "$state" != exact-live ] && [ -z "$pids" ] && return 0
+        "$SLEEP_BIN" 1
         remaining=$((remaining - 1))
     done
     return 1
 }
 
+shadowd_bootout() {
+    state=$(shadowd_job_state)
+    [ "$state" != mismatch ] || return 1
+    case "$state" in
+        absent) return 0 ;;
+        exact-idle)
+            "$LAUNCHCTL_BIN" bootout "$DAEMON_JOB" 2>/dev/null \
+                || "$LAUNCHCTL_BIN" unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null
+        ;;
+        exact-live) return 1 ;;
+    esac
+}
+
 case "$1" in
     remove|upgrade)
-        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ]; then
-            if ! shadowd_stop; then
-                # Still alive after 10s of SIGTERM. Do NOT escalate to SIGKILL
-                # and do NOT bootout: terminating a daemon that still holds
-                # VISSHADOW-flagged vnodes leaves them hidden until reboot.
-                # Abort the removal — dpkg keeps the package installed and the
-                # daemon running (non-zero prerm aborts remove/upgrade).
-                echo "shadowd: did not exit after SIGTERM; ABORTING removal. REBOOT REQUIRED to fully restore hidden state." >&2
-                exit 1
-            fi
-            launchctl bootout system/me.jjolano.shadow 2> /dev/null \
-                || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
+        if ! shadowd_stop || ! shadowd_bootout; then
+            echo "shadowd: exact daemon did not cleanly exit; ABORTING removal." >&2
+            exit 1
         fi
-
-        # The ruleset watcher is stateless (no kernel flags to clear) — plain
-        # bootout; failure to stop it must not abort the removal.
-        launchctl bootout system/me.jjolano.shadow.watcher 2> /dev/null \
-            || launchctl unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null || true
+        "$LAUNCHCTL_BIN" bootout system/me.jjolano.shadow.watcher 2>/dev/null \
+            || "$LAUNCHCTL_BIN" unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null \
+            || true
     ;;
 esac
 

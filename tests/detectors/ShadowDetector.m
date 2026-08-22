@@ -1,3 +1,11 @@
+#ifdef SHADOW_HARNESS
+// On-device port of the host test-battery detector (tests/detectors/):
+// compiled verbatim into the ShadowHarness app. In the harness, access()/
+// open() go through Shadow's libc hooks when the payload is active, and the
+// scheme check consults Shadow's engine directly — i.e. the detector runs
+// against the real on-device filter, which is the point.
+//
+#endif
 #import "ShadowDetector.h"
 
 #import <unistd.h>
@@ -109,16 +117,12 @@ static const char* const kSuspiciousPaths[] = {
     "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
     "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
     "/var/mobile/Library/Preferences/me.jjolano.shadow.plist",
-
-    // Shadow's own artifacts: the vnode daemon and the ruleset watcher. The
-    // daemon binary and shdw are rootful exact-blacklist entries in the
-    // shipped JailbreakMisc.plist (SystemRules covers them only when its
-    // generation succeeded), so probing them must stay ENOENT from the
-    // shipped rulesets alone.
-    "/usr/libexec/shadowd",
-    "/var/jb/usr/libexec/shadowd",
+#ifndef SHADOW_HARNESS
+    // Shadow's ruleset watcher is a rootful exact-blacklist entry in the shipped JailbreakMisc
+    // plist (SystemRules covers it only when generation succeeds).
     "/usr/local/bin/shdw",
     "/var/jb/usr/local/bin/shdw",
+#endif
 };
 
 // These paths exist legitimately on simulators and are SKIPPED by

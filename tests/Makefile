@@ -28,10 +28,7 @@ VENDOR = ../vendor
 CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS
 INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../ShadowCore.dylib/hooks
 
-SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m ShadowdShims.m detectors/ShadowDetector.m Fuzz.m \
-       shadowd/RecoveryHarness.m \
-       ../shadowd/ledger.m \
-       ../shadowd/recovery.m \
+SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
        $(FRAMEWORK)/Core.m \
        $(FRAMEWORK)/Ruleset.m \
        $(FRAMEWORK)/Core+Utilities.m \

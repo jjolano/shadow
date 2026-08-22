@@ -327,7 +327,7 @@
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"CLEAR_CONFIRM" fallback:@"Clear"] style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
 		if(self.filterBundleID) {
 			// ponytail: interprocess RMW race with app-side appends; move writes
-			// to shadowd if detector-log volume ever makes lost entries material.
+// to a dedicated store if detector-log volume ever makes lost entries material.
 			NSMutableArray* kept = [NSMutableArray new];
 			for(id value in [prefs arrayForKey:@"DetectorLog"]) {
 				NSDictionary* record = [self recordForRawEntry:value];

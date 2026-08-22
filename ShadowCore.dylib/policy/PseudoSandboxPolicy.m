@@ -69,10 +69,6 @@ BOOL shdw_pseudo_should_deny(const char* path) {
     return !shdw_pseudo_is_allowed(path);
 }
 
-BOOL shdw_pseudo_denies_path(const char* path) { return shdw_pseudo_should_deny(path); }
-BOOL shdw_pseudo_is_restricted(const char* path) { return shdw_pseudo_should_deny(path); }
-BOOL shdw_pseudo_enforce_should_deny(const char* path) { return shdw_pseudo_should_deny(path); }
-
 BOOL shdw_pseudo_enabled(void) {
     pthread_mutex_lock(&_pseudoLock);
     BOOL v = _pseudoEnabled;

@@ -13,14 +13,20 @@
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
+    int caller_errno = errno;
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
 
     if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        errno = caller_errno;
         return original_access(pathname, mode);   // natural ENOENT
     }
 
+    // The policy lookup can use libc internally. access(2) leaves errno
+    // untouched on success, so do not leak an internal lookup's errno.
+    errno = caller_errno;
     int result = original_access(pathname, mode);
+    int result_errno = errno;
 
     // Restricted-root paths (e.g. /var/jb) are always jailbreak indicators —
     // deny unconditionally. Other restricted paths respect the external-caller
@@ -33,6 +39,7 @@ static int replaced_access(const char* pathname, int mode) {
         }
     }
 
+    errno = result_errno;
     return result;
 }
 
@@ -582,6 +589,7 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
 
 static int (*original_faccessat)(int dirfd, const char* pathname, int mode, int flags);
 static int replaced_faccessat(int dirfd, const char* pathname, int mode, int flags) {
+    int caller_errno = errno;
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "faccessat", ext);
 
@@ -590,6 +598,7 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     }
 
     if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+        errno = caller_errno;
         return original_faccessat(dirfd, pathname, mode, flags);   // natural ENOENT
     }
 
@@ -597,7 +606,9 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return -1;
     }
 
+    errno = caller_errno;
     int result = original_faccessat(dirfd, pathname, mode, flags);
+    int result_errno = errno;
 
     // Restricted-root paths: deny unconditionally for external callers
     if(result != -1) {
@@ -608,6 +619,7 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         }
     }
 
+    errno = result_errno;
     return result;
 }
 
@@ -1486,23 +1498,6 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
-// JIT gap: when the app makes a range executable, scan it for raw svc sites
-// immediately (the svc patcher's periodic VM re-scan would otherwise race
-// the detector's first probe). The scan itself is a no-op unless the
-// Hook_Syscall-gated patcher installed. Non-path svc sites pass through the
-// trampoline untouched, so JIT engines that emit svc (e.g. JSC) are
-// unaffected beyond a per-call trampoline hop.
-static int (*original_mprotect)(void* addr, size_t len, int prot);
-static int replaced_mprotect(void* addr, size_t len, int prot) {
-    int ret = original_mprotect(addr, len, prot);
-
-    if(ret == 0 && (prot & PROT_EXEC)) {
-        shdw_svc_scan_range((uintptr_t)addr, len);
-    }
-
-    return ret;
-}
-
 // One descriptor array is the SINGLE source of truth for every libc hook's
 // install (which group hooks it), post-install verification (which group
 // treats a NULL original as a failure) and the dlsym symbol policy (every
@@ -1584,8 +1579,6 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC },
     { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC },
     { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC },
-    { "mprotect",               (void*)&replaced_mprotect,                 (void**)&original_mprotect,                 LIBC,   LIBC },
-
     // installed-only (verification excluded, matching the old code's exempt lists)
     { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0 },   // iOS 11+ gate: dlsym is the availability check
     { "getmntinfo_r_np",        (void*)&shdw_replaced_getmntinfo_r_np,     (void**)&original_getmntinfo_r_np,          LIBC,   0 },   // iOS 16+ export

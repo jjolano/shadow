@@ -1,106 +1,158 @@
 #!/bin/sh
 
-DPKG_ROOT=""
-ROOTFS_ROOT=""
-case "$DPKG_MAINTSCRIPT_ARCH" in
-    iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
-    iphoneos-arm64e) ROOTFS_ROOT="/rootfs" ;;
-esac
+if [ "${SHADOW_DPKG_ROOT+x}" = x ]; then
+    DPKG_ROOT=$SHADOW_DPKG_ROOT
+else
+    DPKG_ROOT=""
+    case "$DPKG_MAINTSCRIPT_ARCH" in
+        iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
+    esac
+fi
+if [ "${SHADOW_ROOTFS_ROOT+x}" = x ]; then
+    ROOTFS_ROOT=$SHADOW_ROOTFS_ROOT
+else
+    ROOTFS_ROOT=""
+    case "$DPKG_MAINTSCRIPT_ARCH" in
+        iphoneos-arm64e) ROOTFS_ROOT="/rootfs" ;;
+    esac
+fi
 
-# SIGTERM the daemon and wait for a verified exit so it can unhide every
-# VISSHADOW-flagged vnode first (leaked hidden vnodes panic the kernel at
-# shutdown). Polls up to 10s at 0.5s intervals; returns 0 if the process is
-# gone, 1 if it is still alive.
-# Never SIGKILL: a force-kill drops the process with its flags still set —
-# exactly the restart hazard this architecture exists to avoid (launchd
-# respawns a half-cleaned daemon, or the vnodes stay hidden until reboot).
+DAEMON_PATH="$DPKG_ROOT/usr/libexec/shadowd"
+DAEMON_JOB="system/me.jjolano.shadow"
+LEGACY_LEDGER="$DPKG_ROOT/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger"
+LEGACY_LEDGER_DIR="$DPKG_ROOT/var/mobile/Library/Preferences/me.jjolano.shadowd"
+LEGACY_LOG="$DPKG_ROOT/var/log/shadowd.log"
+LAUNCHCTL_BIN=${SHADOW_LAUNCHCTL_BIN:-launchctl}
+PS_BIN=${SHADOW_PS_BIN:-/bin/ps}
+SLEEP_BIN=${SHADOW_SLEEP_BIN:-sleep}
+
+shadowd_job_output() {
+    "$LAUNCHCTL_BIN" print "$DAEMON_JOB" 2>/dev/null || true
+}
+
+shadowd_job_program() {
+    shadowd_job_output | sed -n 's/^[[:space:]]*program = //p' | head -1
+}
+
+shadowd_job_pid() {
+    shadowd_job_output | sed -n 's/^[[:space:]]*pid = //p' | head -1
+}
+
+shadowd_exact_pids() {
+    "$PS_BIN" -ax -o pid=,comm= 2>/dev/null |
+    while read -r pid comm rest; do
+        case "$pid" in ''|*[!0-9]*) continue ;; esac
+        [ -z "$rest" ] || continue
+        [ "$comm" = "$DAEMON_PATH" ] || continue
+        printf '%s\n' "$pid"
+    done
+}
+
+shadowd_job_state() {
+    program=$(shadowd_job_program)
+    [ -n "$program" ] || { printf '%s\n' absent; return; }
+    [ "$program" = "$DAEMON_PATH" ] || { printf '%s\n' mismatch; return; }
+    pid=$(shadowd_job_pid)
+    case "$pid" in ''|*[!0-9]*) printf '%s\n' exact-idle ;; *) printf '%s\n' exact-live ;; esac
+}
+
 shadowd_stop() {
-    # Send SIGTERM via launchd when the service exists, AND a raw kill to any
-    # shadowd process. Both fire unconditionally: on some Dopamine builds
-    # `launchctl kill` returns 0 without actually delivering the signal, so a
-    # `||` fallback would never run and the daemon would keep polling a live
-    # process until the upgrade aborts.
-    launchctl kill SIGTERM system/me.jjolano.shadow 2> /dev/null || true
-    kill -TERM "$(pgrep -x shadowd)" 2> /dev/null || true
+    state=$(shadowd_job_state)
+    [ "$state" != mismatch ] || return 1
+    if [ "$state" = exact-live ]; then
+        "$LAUNCHCTL_BIN" kill SIGTERM "$DAEMON_JOB" 2>/dev/null || return 1
+    fi
+    pids=$(shadowd_exact_pids)
+    for pid in $pids; do
+        kill -TERM "$pid" 2>/dev/null || return 1
+    done
     remaining=20
     while [ "$remaining" -gt 0 ]; do
-        pgrep -x shadowd > /dev/null 2>&1 || return 0
-        sleep 0.5
+        state=$(shadowd_job_state)
+        [ "$state" != mismatch ] || return 1
+        pids=$(shadowd_exact_pids)
+        [ "$state" != exact-live ] && [ -z "$pids" ] && return 0
+        "$SLEEP_BIN" 1
         remaining=$((remaining - 1))
     done
     return 1
 }
 
+shadowd_bootout() {
+    state=$(shadowd_job_state)
+    [ "$state" != mismatch ] || return 1
+    case "$state" in
+        absent) return 0 ;;
+        exact-idle)
+            "$LAUNCHCTL_BIN" bootout "$DAEMON_JOB" 2>/dev/null \
+                || "$LAUNCHCTL_BIN" unload "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null
+        ;;
+        exact-live) return 1 ;;
+    esac
+}
+
+# The backend-free package must not carry forward the old daemon's durable
+# state.  Only remove it after the exact old job and process are gone; a
+# label collision or a live exact process is an upgrade failure, not a reason
+# to erase a recovery record.
+shadowd_remove_legacy_state() {
+    state=$(shadowd_job_state)
+    [ "$state" != mismatch ] || return 1
+    case "$state" in
+        absent) ;;
+        exact-idle)
+            "$LAUNCHCTL_BIN" bootout "$DAEMON_JOB" 2>/dev/null || return 1
+        ;;
+        exact-live) return 1 ;;
+    esac
+    [ -z "$(shadowd_exact_pids)" ] || return 1
+    rm -f "$LEGACY_LEDGER" "$LEGACY_LOG"
+    rmdir "$LEGACY_LEDGER_DIR" 2>/dev/null || true
+}
+
 case "$1" in
     configure)
-        # Prefs plist: root-owned 0644 so apps (running as mobile) cannot write
-        # their own hiding config; cfprefsd (root) still writes via the Settings
-        # UI. Same path on rootful and rootless (/var/mobile exists on both).
         mkdir -p "$ROOTFS_ROOT/var/mobile/Library/Preferences"
         touch "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         chown root:wheel "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         chmod 0644 "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
-        # v6: the payload moved out of the injector's scan directory to
-        # /usr/lib (loaded only via the stub's gated dlopen). Remove stale
-        # copies from the legacy MobileSubstrate dir and Dopamine's
-        # TweakInject dir so an old payload can never be injected directly.
         rm -f "$DPKG_ROOT/Library/MobileSubstrate/DynamicLibraries/ShadowCore.dylib" \
               "$DPKG_ROOT/usr/lib/TweakInject/ShadowCore.dylib"
-
-        # Ruleset tree: root-owned, dirs 0755 / files 0644 (X grants execute
-        # on directories only). World-writable mobile-owned rulesets let any
-        # protected app tamper with its own hiding rules.
         chown -R root:wheel "$DPKG_ROOT/Library/Shadow"
         chmod -R u=rwX,go=rX "$DPKG_ROOT/Library/Shadow"
+        "$DPKG_ROOT/usr/local/bin/shdw" -g >/dev/null 2>&1 || true
 
-        # shdw runs as root from postinst/triggers, so it can still write.
-        ( "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null 2>&1 & pid=$!; ( sleep 15; kill -9 $pid 2>/dev/null ) & w=$!; wait $pid 2>/dev/null; rc=$?; kill $w 2>/dev/null; wait $w 2>/dev/null; exit $rc ) || true
-
-        # shadowd is absent from the legacy package. Modern packages keep its
-        # lifecycle independent from the stateless ruleset watcher.
-        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ] && [ -f "$DPKG_ROOT/usr/libexec/shadowd" ]; then
-            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
+        if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" ] && [ -f "$DAEMON_PATH" ]; then
+            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" "$DAEMON_PATH"
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
-            chown root:wheel "$DPKG_ROOT/usr/libexec/shadowd"
-            chmod 755 "$DPKG_ROOT/usr/libexec/shadowd"
+            chmod 755 "$DAEMON_PATH"
             mkdir -p "$DPKG_ROOT/var/log"
-
-            # On upgrade, prerm asked the old daemon to exit; a copy that
-            # survived that gets one more graceful stop here. Never SIGKILL
-            # (kickstart -k): killing mid-hide leaves VISSHADOW flags set.
-            if pgrep -x shadowd > /dev/null 2>&1; then
-                if ! shadowd_stop; then
-                    # Still alive: do not replace it while it holds flagged
-                    # vnodes. Abort the configure — dpkg leaves the package
-                    # unpacked and the old daemon keeps running.
-                    echo "shadowd: old daemon did not exit; ABORTING upgrade. REBOOT REQUIRED to fully restore hidden state." >&2
-                    exit 1
-                fi
+            if ! shadowd_stop || ! shadowd_bootout; then
+                echo "shadowd: exact daemon did not cleanly exit; ABORTING configure." >&2
+                exit 1
             fi
-
-            # Modern launchctl API; older iOS falls back to legacy load -w.
-            # (On upgrades bootstrap/load fail with "already loaded" when the
-            # old service is still registered — harmless, the service is kept.)
-            launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null \
-                || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2> /dev/null || true
-
+            "$LAUNCHCTL_BIN" bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null \
+                || "$LAUNCHCTL_BIN" load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null \
+                || true
         fi
 
-        # Ruleset watcher: shdw -d regenerates the installed-apps ruleset on
-        # app install/uninstall. It is useful on every supported package lane.
+        if ! shadowd_remove_legacy_state; then
+            echo "shadowd: legacy backend state is still active; ABORTING configure." >&2
+            exit 1
+        fi
+
         if [ -f "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" ] && [ -f "$DPKG_ROOT/usr/local/bin/shdw" ]; then
-            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
+            chown root:wheel "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" "$DPKG_ROOT/usr/local/bin/shdw"
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist"
-            chown root:wheel "$DPKG_ROOT/usr/local/bin/shdw"
             chmod 755 "$DPKG_ROOT/usr/local/bin/shdw"
-            launchctl bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null \
-                || launchctl load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2> /dev/null || true
+            "$LAUNCHCTL_BIN" bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null \
+                || "$LAUNCHCTL_BIN" load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.watcher.plist" 2>/dev/null \
+                || true
         fi
     ;;
-
     triggered)
-        ( "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null 2>&1 & pid=$!; ( sleep 15; kill -9 $pid 2>/dev/null ) & w=$!; wait $pid 2>/dev/null; rc=$?; kill $w 2>/dev/null; wait $w 2>/dev/null; exit $rc ) || true
+        "$DPKG_ROOT/usr/local/bin/shdw" -g >/dev/null 2>&1 || true
     ;;
 esac
 

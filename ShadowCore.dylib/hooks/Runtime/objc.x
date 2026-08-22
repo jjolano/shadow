@@ -12,9 +12,9 @@ static const char* (*original_class_getImageName)(Class cls);
 // apps are installed under /private/preboot, which isCPathRestricted: treats
 // as restricted (observed on-device: ShadowHarness aborted with "No class
 // named AppDelegate is loaded" the moment hooks installed). Exempt the main
-// executable BEFORE any range verdict; Shadow's own artifacts (ShadowCore,
-// Shadow.framework, HookKit, libSandy, substrate/substitute/ellekit) remain
-// hidden via the own-ranges check.
+// executable BEFORE any range verdict; canonical Shadow package images remain
+// hidden via the own-ranges check, while the broader protected-image policy
+// handles third-party jailbreak artifacts.
 
 // Cached span of the main executable (dyld image 0), built once at first use.
 static BOOL shdw_addr_in_main_image(const void* addr) {

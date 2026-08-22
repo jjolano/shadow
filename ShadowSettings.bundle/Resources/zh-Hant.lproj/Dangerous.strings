@@ -6,8 +6,6 @@
 "HOOK_LLC_DESC" = "在底層檔案開啟和目錄 API 中隱藏越獄路徑。";
 "HOOK_MEM" = "隱藏可執行記憶體";
 "HOOK_MEM_DESC" = "過濾虛擬記憶體查詢，避免暴露注入的可執行記憶體區域。";
-"VNODE_HIDING" = "Vnode 級隱藏";
-"VNODE_HIDING_DESC" = "透過 Shadow 服務在 vnode 層隱藏越獄路徑，位置低於一般檔案 API。";
 "MEMORY_LEVEL_HIDING" = "記憶體層級隱藏";
 "MEMORY_LEVEL_HIDING_DESC" = "從 dyld 的記憶體映像列表中移除注入的動態程式庫。如果應用程式不穩定，請關閉此選項。";
 "HOOK_DYLD_EXTRA" = "提前安裝動態程式庫";

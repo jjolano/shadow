@@ -110,9 +110,13 @@ int shdw_shadow_filter(const char* path, int is_write); // ShadowFilter.m
 
 static int filter_path(const char* path, int is_write) {
     if(gFilterEnabled && !gInFilter && path && path[0]) {
+        int caller_errno = errno;
         gInFilter = 1;
         int blocked = shdw_shadow_filter(path, is_write);
         gInFilter = 0;
+        // The engine may use libc while classifying a safe path. The wrapped
+        // libc call below owns errno for its result, not that lookup.
+        errno = caller_errno;
         return blocked;
     }
 

@@ -11,6 +11,7 @@
 	</dict>
 	<key>BlacklistExactPaths</key>
 	<array>
+		<string>/var/mobile/Library/Preferences/me.jjolano.shadow.plist</string>
 		<string>/usr/lib/pspawn_payload-stg2.dylib</string>
 		<string>/usr/lib/tweakloader.dylib</string>
 		<string>/usr/lib/libjailbreak.dylib</string>
@@ -45,12 +46,13 @@
 		<string>/usr/lib/tweaks</string>
 		<string>/usr/lib/libkrw</string>
 		<string>/usr/libexec/ellekit</string>
-		<string>/usr/libexec/shadowd</string>
 		<string>/usr/local/bin/shdw</string>
 		<string>/var/containers/Bundle/iosbinpack64</string>
 		<string>/var/containers/Bundle/tweaksupport</string>
 		<string>/var/db/stash</string>
 		<string>/var/db/sudo</string>
+		<string>/var/Liy</string>
+		<string>/var/binpack</string>
 		<string>/var/jb</string>
 		<string>/var/run/FilzaHelper</string>
 		<string>/var/run/sudo</string>

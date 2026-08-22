@@ -2,6 +2,7 @@
 
 #import <Foundation/Foundation.h>
 #import "../ShadowCore.dylib/policy/EnvironmentPolicy.h"
+#import "ranges.h"
 #import <string.h>
 #import <stdlib.h>
 
@@ -156,6 +157,44 @@ static void testSnapshotBuilder(void) {
     CHECK((*snap2)[1] == raw4, "unchanged entries keep their original pointers");
 }
 
+static void testCanonicalRuntimeIdentity(void) {
+    printf("[tests] caller identity: exact package paths\n");
+
+    CHECK(shdw_is_canonical_shadow_runtime_path("/var/jb/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib"),
+        "rootless Shadow stub is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path("/var/jb/Library/Frameworks/Shadow.framework/Shadow"),
+        "rootless Shadow framework is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path("/var/jb/usr/lib/ShadowCore.dylib"),
+        "rootless ShadowCore is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path("/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib"),
+        "rootful Shadow stub is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path("/Library/Frameworks/Shadow.framework/Shadow"),
+        "rootful Shadow framework is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path("/usr/lib/ShadowCore.dylib"),
+        "rootful ShadowCore is canonical");
+
+    const char* physicalRoot = "/private/preboot/test/procursus";
+    CHECK(shdw_is_canonical_shadow_runtime_path_under_root("/private/preboot/test/procursus/Library/MobileSubstrate/DynamicLibraries/Shadow.dylib", physicalRoot),
+        "resolved rootless Shadow stub is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path_under_root("/private/preboot/test/procursus/Library/Frameworks/Shadow.framework/Shadow", physicalRoot),
+        "resolved rootless Shadow framework is canonical");
+    CHECK(shdw_is_canonical_shadow_runtime_path_under_root("/private/preboot/test/procursus/usr/lib/ShadowCore.dylib", physicalRoot),
+        "resolved rootless ShadowCore is canonical");
+
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/mobile/ShadowCore.dylib"), "copied ShadowCore is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/jb/usr/lib/ShadowCoreCompat.dylib"), "ShadowCoreCompat lookalike is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/jb/usr/lib/ShadowCore.dylib.bak"), "prefix lookalike is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/jb/usr/lib/shadowcore.dylib"), "case variant is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/mobile/Library/Frameworks/Shadow.framework/Shadow"), "embedded framework is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/jb/Library/Frameworks/HookKit.framework/HookKit"), "HookKit is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path("/var/jb/usr/lib/libSandy.dylib"), "libSandy is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path_under_root("/private/preboot/test/procursus/usr/lib/ShadowCoreCompat.dylib", physicalRoot),
+        "resolved-root prefix lookalike is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path_under_root("/private/preboot/test/procursus/usr/lib/.shadow-hookprobe-identity-run/ShadowCore.dylib", physicalRoot),
+        "resolved-root fixture is external");
+    CHECK(!shdw_is_canonical_shadow_runtime_path(NULL), "null image is external");
+}
+
 int RunPolicyTests(void) {
     @autoreleasepool {
         testHiddenNames();
@@ -163,6 +202,7 @@ int RunPolicyTests(void) {
         testDictionarySanitizer();
         testArgvSanitizer();
         testSnapshotBuilder();
+        testCanonicalRuntimeIdentity();
 
         printf("=== policy: %d passed, %d failed\n", gPass, gFail);
         return gFail;

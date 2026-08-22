@@ -6,8 +6,8 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = ShadowHarness
 
-ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m StatusViewController.m Battery.m ShadowDetector.m
-ShadowHarness_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers
+ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m StatusViewController.m Battery.m ../tests/detectors/ShadowDetector.m
+ShadowHarness_CFLAGS = -fobjc-arc -DSHADOW_HARNESS -I../tests/detectors -I../Shadow.framework/Headers
 # Mirror shdw's linkage exactly: Shadow.framework resolves at runtime through
 # these rpaths (rooted + rootless layouts), staged builds come from $THEOS/lib.
 ShadowHarness_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
