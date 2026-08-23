@@ -1103,13 +1103,17 @@ static void probeSandbox(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Code-signing self-validity observations (Security.framework surface).
-// Commercial RASP validates the running process's code signature and Team-ID
-// entitlements; Shadow has no hooks on this surface yet. PASS = matches the
-// stock-clean expectation (nothing leaks). A deviation is recorded as SKIP —
-// NOT FAIL — with the raw OSStatus/value in the detail: it is evidence for
-// the future Hook_CodeSigning unit, and an unhooked surface must not block
-// the QA gate. Flip these SKIPs to report() once that policy lands.
+// Code-signing self-validation (Hook_CodeSigning, hooks/AntiDebug/security.x).
+// Commercial RASP validates the running process's own code signature;
+// jailbreak-side re-signing makes such validation fail where stock passes.
+// The hook fakes errSecSuccess ONLY for failed validations of our own
+// executable by external callers; everything else passes through untouched.
+// PASS = stock-clean result observed. FAIL = own-code validation still fails
+// with the group enabled (hook not effective). SKIP = Security.framework
+// absent or SecTask SPI unavailable. The get-task-allow probe stays
+// observational: a dev-signed QA build legitimately carries true — signing-
+// mode noise, not a leak this unit addresses (entitlements are deliberately
+// never faked; see security.x).
 // SecTaskCopyValueForEntitlement/SecTaskCreateFromSelf are private SPI —
 // dlsym'd, skipped cleanly when absent.
 // ---------------------------------------------------------------------------
@@ -1132,12 +1136,8 @@ static void probeCodeSigningObservations(void) {
             skip(@"codesign", @"SecCodeCheckValidity(self)", [NSString stringWithFormat:@"SecCodeCopySelf rc=%d", (int) rc]);
         } else {
             rc = secCodeCheckValidity(code, 0, NULL);
-
-            if(rc == errSecSuccess) {
-                report(@"codesign", @"SecCodeCheckValidity(self)", YES, @"valid (stock-clean)");
-            } else {
-                skip(@"codesign", @"SecCodeCheckValidity(self)", [NSString stringWithFormat:@"OSStatus=%d (leak evidence)", (int) rc]);
-            }
+            report(@"codesign", @"SecCodeCheckValidity(self)", rc == errSecSuccess,
+                   [NSString stringWithFormat:@"OSStatus=%d", (int) rc]);
 
             CFRelease(code);
         }
@@ -1160,12 +1160,8 @@ static void probeCodeSigningObservations(void) {
             skip(@"codesign", @"SecStaticCodeCheckValidity(self)", [NSString stringWithFormat:@"SecStaticCodeCreateWithPath rc=%d", (int) rc]);
         } else {
             rc = secStaticCodeCheckValidityWithErrors(staticCode, 0, NULL, NULL);
-
-            if(rc == errSecSuccess) {
-                report(@"codesign", @"SecStaticCodeCheckValidity(self)", YES, @"valid (stock-clean)");
-            } else {
-                skip(@"codesign", @"SecStaticCodeCheckValidity(self)", [NSString stringWithFormat:@"OSStatus=%d (leak evidence)", (int) rc]);
-            }
+            report(@"codesign", @"SecStaticCodeCheckValidity(self)", rc == errSecSuccess,
+                   [NSString stringWithFormat:@"OSStatus=%d", (int) rc]);
 
             CFRelease(staticCode);
         }
@@ -2033,7 +2029,12 @@ int main(int argc, char* argv[]) {
         }
 
         // Self-gating: dlsym/class availability decides PASS vs SKIP inside.
-        probeCodeSigningObservations();
+        if(prefsEnabled(@"Hook_CodeSigning")) {
+            probeCodeSigningObservations();
+        } else {
+            skip(@"codesign", @"self-validity probes", @"Hook_CodeSigning disabled");
+        }
+
         probeHookByteIntegrity();
 
         probeNSUserDefaults();

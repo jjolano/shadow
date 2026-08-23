@@ -8,7 +8,7 @@
 #import <Shadow/Settings.h>
 #import <AltList/LSApplicationProxy+AltList.h>
 
-// Private UIKit SPI used by the existing Safe Mode pane for native app icons.
+// Private UIKit SPI for native app icons.
 @interface UIImage (SHDWDetectorIcon)
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleID format:(int)format scale:(CGFloat)scale;
 @end
