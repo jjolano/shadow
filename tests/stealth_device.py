@@ -1087,6 +1087,15 @@ printf 'PS_END\\n'
         finally:
             path.unlink(missing_ok=True)
 
+    def launch_mode(self, bundle: str) -> str:
+        # One-shot controls must not rewrite cached device preferences.
+        mode = os.environ.get("SHADOW_LAUNCH_MODE", "")
+        if mode:
+            if mode not in {"injected", "uninjected"}:
+                fail("invalid SHADOW_LAUNCH_MODE")
+            return mode
+        return self.current_mode(bundle)
+
     def find_process(self, executable: str) -> tuple[int, str, str, str] | None:
         result = self.remote("ps -ax -o pid=,lstart=,state=,comm=")
         if result.code:
@@ -1097,6 +1106,9 @@ printf 'PS_END\\n'
             parts = line.strip().split()
             if len(parts) >= 4 and parts[0].isdigit() and (parts[-1] == executable or parts[-1].endswith(suffix)):
                 found.append((int(parts[0]), " ".join(parts[1:-2]), parts[-2], parts[-1]))
+        exact = [row for row in found if row[3] == executable]
+        if len(exact) == 1:
+            return exact[0]
         if len(found) > 1:
             fail("process discovery is ambiguous")
         return found[0] if found else None
@@ -1275,14 +1287,14 @@ done
         self.prepare_existing()
         self.verify_device_identity()
         capture = self.capture_dir(nonce, "launch")
-        mode = self.current_mode(bundle)
+        mode = self.launch_mode(bundle)
         before = self.find_process(executable)
         if transition == "warm":
             if before is None or "T" not in before[2]:
                 result = self.manifest("launch", nonce=nonce, requested=mode, observed="UNSUPPORTED")
                 self.patch_launch(result, transition, before, before, "UNSUPPORTED")
                 return result
-        elif before is not None:
+        elif before is not None and before[3] == executable:
             self.terminate_process(before)
         container = self.container_for_bundle(bundle)
         documents = self.documents_for_bundle(bundle, container)
@@ -2136,6 +2148,22 @@ def selftest() -> None:
             pass
         else:
             raise AssertionError("new evidence accepted stale driver")
+        prior_mode = os.environ.get("SHADOW_LAUNCH_MODE")
+        try:
+            os.environ["SHADOW_LAUNCH_MODE"] = "uninjected"
+            assert driver.launch_mode("unused") == "uninjected"
+            os.environ["SHADOW_LAUNCH_MODE"] = "invalid"
+            try:
+                driver.launch_mode("unused")
+            except DriverError:
+                pass
+            else:
+                raise AssertionError("invalid launch-mode override accepted")
+        finally:
+            if prior_mode is None:
+                os.environ.pop("SHADOW_LAUNCH_MODE", None)
+            else:
+                os.environ["SHADOW_LAUNCH_MODE"] = prior_mode
         revision_manifest = pathlib.Path(temporary) / "revision.manifest"
         driver.build_revision_manifest(revision_manifest)
         rows = revision_manifest.read_text(encoding="utf-8")
