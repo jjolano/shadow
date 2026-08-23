@@ -8,6 +8,13 @@
 #import <Foundation/Foundation.h>
 #import <sys/types.h>
 #import <stddef.h>
+#import <sys/sysctl.h>
+
+// The theos SDK's sysctl.h predates this xnu constant ({CTL_KERN,
+// KERN_BOOTARGS} — string: kernel boot args). Stable across xnu versions.
+#ifndef KERN_BOOTARGS
+#define KERN_BOOTARGS 55
+#endif
 
 struct kinfo_proc;
 
@@ -89,6 +96,18 @@ typedef enum {
     SHADW_PROC_MIB_PID_OTHER,   // {CTL_KERN, KERN_PROC, KERN_PROC_PID, >0, != self}
     SHADW_PROC_MIB_ARGS2_SELF,  // {CTL_KERN, KERN_PROCARGS2, self}
     SHADW_PROC_MIB_ARGS2_OTHER, // {CTL_KERN, KERN_PROCARGS2, >0, != self}
+    SHADW_PROC_MIB_BOOTARGS,    // {CTL_KERN, KERN_BOOTARGS}
 } shdw_proc_mib_kind_t;
 
 shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen);
+
+// kern.bootargs answer for external callers: stock devices report an empty
+// boot-args string, while jailbreak boot flags (amfi_get_out_of_my_way=1,
+// debug=..., -v) are a direct jailbreak tell. Answered WITHOUT an original
+// call so the size-only probe and the data query agree — a real size would
+// leak the boot flags' length even with the data filtered. Stock string-node
+// semantics: empty string is one NUL byte.
+// Returns 0 on success; -1 with errno ENOMEM when the caller's buffer is
+// too short (required size still stored in *oldlenp), EFAULT when oldlenp
+// is NULL. Callers divert only read queries (newp == NULL).
+int shdw_bootargs_filtered(void* oldp, size_t* oldlenp);

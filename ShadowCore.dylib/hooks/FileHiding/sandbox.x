@@ -742,8 +742,18 @@ static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char
 // task_get_exception_ports: pass-through (conservative). Exception handler
 // ports cannot be attributed to restricted images (a port right carries no
 // owning-image identity), and hiding a legitimate handler would break crash
-// reporting / XPC. TODO: filter/hide rights attributable to restricted
-// images once attribution exists; deallocate removed rights.
+// reporting / XPC.
+//
+// CONTRACT: this pass-through is only stealth-safe while NO Shadow-side
+// component installs an in-process exception handler — a detector querying
+// its own task's exception ports would otherwise see the foreign handler
+// right and infer injection. Known live caveat: the ctor pre-initializes
+// ElleKit's exception-based hooking path (EKLaunchExceptionHandler,
+// shadowcore.x), which MAY register a task-level handler; if a detector is
+// ever shown probing exception ports, that is the first suspect and the fix
+// is filtering self-task replies here (mask/behavior/flavor attribution).
+// TODO: filter/hide rights attributable to restricted images once
+// attribution exists; deallocate removed rights.
 static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
 static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
     return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
