@@ -440,16 +440,19 @@ static void replaced_objc_setHook_getClass(objc_hook_getClass newValue, objc_hoo
 
 
 void shadowhook_objc_hidetweakclasses(SHDWHookSession* hooks) {
-    [hooks hookFunction:NSClassFromString withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
+    // These public imports are covered by HK3's import-rebind engine. Do not
+    // globally patch libobjc entrypoints; private dlsym targets below remain
+    // address hooks because they have no import slot to rewrite.
+    [hooks hookRebindSymbol:@"NSClassFromString" withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
 
     // Class lookup / enumeration (plan Wave 1c). objc_getRequiredClass is
     // skipped: its fatal contract (abort on missing class) makes a filtered
     // miss a crash, and it is not a usable probe.
-    [hooks hookFunction:objc_getClass withReplacement:replaced_objc_getClass outOldPtr:(void **) &original_objc_getClass];
-    [hooks hookFunction:objc_lookUpClass withReplacement:replaced_objc_lookUpClass outOldPtr:(void **) &original_objc_lookUpClass];
-    [hooks hookFunction:objc_getMetaClass withReplacement:replaced_objc_getMetaClass outOldPtr:(void **) &original_objc_getMetaClass];
-    [hooks hookFunction:objc_getClassList withReplacement:replaced_objc_getClassList outOldPtr:(void **) &original_objc_getClassList];
-    [hooks hookFunction:objc_copyClassList withReplacement:replaced_objc_copyClassList outOldPtr:(void **) &original_objc_copyClassList];
+    [hooks hookRebindSymbol:@"objc_getClass" withReplacement:replaced_objc_getClass outOldPtr:(void **) &original_objc_getClass];
+    [hooks hookRebindSymbol:@"objc_lookUpClass" withReplacement:replaced_objc_lookUpClass outOldPtr:(void **) &original_objc_lookUpClass];
+    [hooks hookRebindSymbol:@"objc_getMetaClass" withReplacement:replaced_objc_getMetaClass outOldPtr:(void **) &original_objc_getMetaClass];
+    [hooks hookRebindSymbol:@"objc_getClassList" withReplacement:replaced_objc_getClassList outOldPtr:(void **) &original_objc_getClassList];
+    [hooks hookRebindSymbol:@"objc_copyClassList" withReplacement:replaced_objc_copyClassList outOldPtr:(void **) &original_objc_copyClassList];
 
     void* enumerateClassesPtr = dlsym(RTLD_DEFAULT, "objc_enumerateClasses");
 
@@ -466,9 +469,9 @@ void shadowhook_objc_hidetweakclasses(SHDWHookSession* hooks) {
         original_method_getImplementation = method_getImplementation;
     }
 
-    [hooks hookFunction:class_copyMethodList withReplacement:replaced_class_copyMethodList outOldPtr:(void **) &original_class_copyMethodList];
-    [hooks hookFunction:class_getInstanceMethod withReplacement:replaced_class_getInstanceMethod outOldPtr:(void **) &original_class_getInstanceMethod];
-    [hooks hookFunction:class_getClassMethod withReplacement:replaced_class_getClassMethod outOldPtr:(void **) &original_class_getClassMethod];
+    [hooks hookRebindSymbol:@"class_copyMethodList" withReplacement:replaced_class_copyMethodList outOldPtr:(void **) &original_class_copyMethodList];
+    [hooks hookRebindSymbol:@"class_getInstanceMethod" withReplacement:replaced_class_getInstanceMethod outOldPtr:(void **) &original_class_getInstanceMethod];
+    [hooks hookRebindSymbol:@"class_getClassMethod" withReplacement:replaced_class_getClassMethod outOldPtr:(void **) &original_class_getClassMethod];
 
     void* methodImplAndNamePtr = dlsym(RTLD_DEFAULT, "_method_getImplementationAndName");
 

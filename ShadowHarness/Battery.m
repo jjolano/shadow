@@ -49,11 +49,18 @@ NSString* ShdwDocumentsDirectory(void) {
 // ---------------------------------------------------------------------------
 
 BOOL ShdwIsShadowCoreLoaded(void) {
-	// ShadowCore deliberately hides its images from the public dyld list, so
-	// an image scan is circular. Its always-on class-identity hooks suppress
-	// Shadow.framework classes from ordinary lookup, while the deliberately
-	// unhooked fatal lookup still returns this known-present class.
-	return objc_getRequiredClass("Shadow") && !objc_getClass("Shadow");
+    // ShadowCore deliberately hides its images from public dyld APIs. Probe
+    // its private coordinator instead; enter the supported internal scope so
+    // a working class-hiding group cannot hide the marker from the harness.
+    Class coordinator = Nil;
+    SHADOW_INTERNAL_SCOPE {
+        coordinator = objc_getClass("SHDWHookCoordinator");
+    }
+    return coordinator != Nil;
+}
+
+BOOL ShdwIsShadowClassHidingActive(void) {
+    return ShdwIsShadowCoreLoaded() && objc_getClass("Shadow") == Nil;
 }
 
 static NSDictionary* shdw_activation_snapshot(void) {
@@ -91,6 +98,7 @@ static NSDictionary* shdw_activation_observation(void) {
     BOOL ctorObserved = [snapshot[@"ctor_observed"] boolValue];
     BOOL postLoadObserved = [snapshot[@"post_load_observed"] boolValue];
     BOOL postDetectorObserved = [snapshot[@"post_detector_observed"] boolValue];
+    BOOL classHidingActive = ShdwIsShadowClassHidingActive();
     BOOL ctorCore = [ctorSet containsObject:@"dyld"] && [ctorSet containsObject:@"objc"] && [ctorSet containsObject:@"classes"];
     BOOL postLoadCore = [ctorSet isSubsetOfSet:postLoadSet] && [postLoadSet containsObject:@"Hook_URLScheme"];
     BOOL postDetectorCore = [postLoadSet isSubsetOfSet:postDetectorSet] && [postDetectorSet containsObject:@"Hook_Filesystem@objc"] && [postDetectorSet containsObject:@"Hook_HideApps"];
@@ -107,6 +115,7 @@ static NSDictionary* shdw_activation_observation(void) {
             @"post_load_progression" : postLoadCore ? @"PASS" : @"FAIL",
             @"post_detector_event" : postDetectorObserved ? @"PASS" : @"FAIL",
             @"post_detector_progression" : postDetectorCore ? @"PASS" : @"FAIL",
+            @"class_hiding" : classHidingActive ? @"PASS" : @"FAIL",
         },
     };
 }
@@ -447,6 +456,7 @@ NSDictionary* ShdwStealthReport(void) {
 	}
 
 	BOOL loaded = ShdwIsShadowCoreLoaded();
+	BOOL classHidingActive = ShdwIsShadowClassHidingActive();
 	BOOL activationFailure = NO;
 	for(id verdict in [activation[@"verdicts"] allValues]) {
 		if(![verdict isEqual:@"PASS"]) {
@@ -465,6 +475,7 @@ NSDictionary* ShdwStealthReport(void) {
 	id canary = [mode isEqualToString:@"uninjected"] ? @"CONTROL-INACTIVE" : @{
 		@"status" : loaded ? @"PASS" : @"FAIL",
 		@"shadow_core_loaded" : @(loaded),
+		@"class_hiding_active" : @(classHidingActive),
 	};
 
 	NSMutableDictionary* report = [@{

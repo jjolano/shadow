@@ -294,6 +294,7 @@ static NSString* const kHeaderReuseID = @"Header";
 	// nothing about whether Shadow is actually filtering this process. The
 	// hooks payload (ShadowCore.dylib) is the primary answer.
 	BOOL payloadActive = ShdwIsShadowCoreLoaded();
+	BOOL classHidingActive = ShdwIsShadowClassHidingActive();
 	BOOL enginePresent = ShdwShadowClass("Shadow") != nil;
 
 	if(payloadActive) {
@@ -305,6 +306,10 @@ static NSString* const kHeaderReuseID = @"Header";
 		[rows addObject:activeRow];
 
 		[rows addObject:shdw_row(@"Engine present (framework)", @"YES")];
+		ShdwRow* classHidingRow = shdw_row(@"Class hiding", classHidingActive ? @"YES" : @"NO");
+		classHidingRow.symbolName = classHidingActive ? @"checkmark.circle.fill" : @"exclamationmark.triangle.fill";
+		classHidingRow.symbolTint = classHidingActive ? [UIColor systemGreenColor] : [UIColor systemOrangeColor];
+		[rows addObject:classHidingRow];
 		[rows addObject:shdw_row(@"Rootless", shadow.rootless ? @"yes" : @"no")];
 		[rows addObject:shdw_row(@"Has app sandbox", shadow.hasAppSandbox ? @"yes" : @"no")];
 		[rows addObject:shdw_row(@"Bundle path", shadow.bundlePath)];
