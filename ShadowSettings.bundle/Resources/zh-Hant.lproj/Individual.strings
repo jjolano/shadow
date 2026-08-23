@@ -25,3 +25,5 @@
 "HOOK_SYSCALL_DESC" = "過濾可能暴露隱藏檔案、程序或程式碼簽章狀態的直接系統呼叫。";
 "HOOK_APPENUM" = "應用程式列舉";
 "HOOK_APPENUM_DESC" = "從已安裝應用程式查詢中移除已知的越獄應用程式。";
+"HOOK_CODESIGN" = "程式碼簽名驗證";
+"HOOK_CODESIGN_DESC" = "當越獄側的重新簽名或注入會導致驗證失敗時，仍報告應用自身的程式碼簽名有效。";

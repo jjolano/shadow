@@ -38,4 +38,3 @@
 "IMPORT_APPLIED" = "Settings imported. Respring to apply.";
 "IMPORT_OK" = "OK";
 "APPS_EXCLUDED_FMT" = "All apps enabled · %ld excluded";
-"ROOT_SAFE_MODE" = "Safe Mode";

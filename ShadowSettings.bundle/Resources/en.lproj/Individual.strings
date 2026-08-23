@@ -25,3 +25,5 @@
 "HOOK_SYSCALL_DESC" = "Filters direct system calls that can reveal hidden files, processes, or code-signing state.";
 "HOOK_APPENUM" = "App Enumeration";
 "HOOK_APPENUM_DESC" = "Removes known jailbreak apps from installed-app lookups.";
+"HOOK_CODESIGN" = "Code Signing Validation";
+"HOOK_CODESIGN_DESC" = "Reports the app's own code signature as valid when jailbreak-side re-signing or injection would fail validation.";

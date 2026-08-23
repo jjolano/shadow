@@ -17,6 +17,9 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     { "Hook_IOKit",           SHDWHookIDIOKit,               SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_LowLevelC",       SHDWHookIDLowLevelC,           SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "Hook_AntiDebugging",   SHDWHookIDAntiDebugging,       SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    // Code-signing self-validation concealment: rebind-lane C hooks on the
+    // Security.framework validity surface (own-executable failures only).
+    { "Hook_CodeSigning",     SHDWHookIDCodeSigning,         SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     { "objc",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
     // method_getImplementation rides the rebind lane (subMain's inline
     // preflight refuses its tiny prologue; see shadowhook_objc_methodimpl).
@@ -70,6 +73,11 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWHookIDIOKit : @(NO),
         SHDWHookIDLowLevelC : @(YES),
         SHDWHookIDAntiDebugging : @(YES),
+        // Code-signing concealment defaults ON: it fakes nothing but a
+        // FAILED validation of the app's own executable (no blanket
+        // denials, no third-party code touched), so it cannot break
+        // legitimate apps the way the raw-svc/sandbox groups can.
+        SHDWHookIDCodeSigning : @(YES),
         SHDWHookIDDynamicLibrariesExtra : @(NO),
         SHDWHookIDSyscall : @(NO),
         SHDWHookIDSandbox : @(YES),
@@ -171,6 +179,7 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             SHDWHookIDIOKit : @"function",
             SHDWHookIDLowLevelC : @"function",
             SHDWHookIDAntiDebugging : @"function",
+            SHDWHookIDCodeSigning : @"function",
             SHDWHookIDSyscall : @"function",
             SHDWHookIDSandbox : @"function",
             SHDWHookIDMemory : @"function",
