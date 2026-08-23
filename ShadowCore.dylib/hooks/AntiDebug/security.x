@@ -75,6 +75,25 @@ static void shdw_security_capture_own_paths(void) {
         [NSBundle mainBundle].bundlePath.fileSystemRepresentation);
 }
 
+// YES when the caller frame is inside Security.framework (see hooks.h).
+// dladdr is hooked by the symlookup group, but that hook only alters
+// answers for SHADOW-image addresses — a Security address forwards to the
+// original untouched, so this stays a real lookup.
+BOOL shdw_addr_in_security_framework(const void* return_address) {
+    Dl_info info = {0};
+
+    if(!return_address || dladdr(return_address, &info) == 0 || !info.dli_fname) {
+        return NO;
+    }
+
+    const char* name = info.dli_fname;
+    size_t len = strlen(name);
+    const char* suffix = "/Security.framework/Security";
+    size_t slen = strlen(suffix);
+
+    return len > slen && strcmp(name + len - slen, suffix) == 0;
+}
+
 // YES when the code reference names our own executable. Resolution goes
 // through the public SecCodeCopyPath API; any ambiguity answers NO — the hook
 // then leaves the original result standing (fail-open).
