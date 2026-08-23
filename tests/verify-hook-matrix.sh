@@ -104,6 +104,35 @@ for field in expected_existing_images existing_image_replay later_add later_remo
     fi
 done
 
+# JSON is the dyldprobe evidence contract.  Keep the UI to supplemental
+# diagnostics and ensure it cannot rewrite the machine report on refresh.
+machine_writes=$(grep -c 'probe_write_machine_report(' "$dyld_probe")
+if [ "$machine_writes" -ne 2 ]; then
+    echo 'DYLD DRIFT: machine evidence is not single-write'
+    rc=1
+fi
+delegate=$(sed -n '/@implementation AppDelegate/,/@end/p' "$dyld_probe")
+if printf '%s\n' "$delegate" | grep -q 'probe_write_machine_report('; then
+    echo 'DYLD DRIFT: UI refresh rewrites formal machine evidence'
+    rc=1
+fi
+for section in 1 2 6; do
+    if grep -q "probe_section_$section" "$dyld_probe"; then
+        echo "DYLD DRIFT: duplicated UI section $section returned"
+        rc=1
+    fi
+done
+for section in 3 4 5 7 8 9; do
+    if ! grep -q "probe_section_$section" "$dyld_probe"; then
+        echo "DYLD DRIFT: retained supplemental UI section $section missing"
+        rc=1
+    fi
+done
+if ! grep -q 'Formal JSON evidence is written once at launch' "$dyld_probe"; then
+    echo 'DYLD DRIFT: UI no longer identifies JSON as formal evidence'
+    rc=1
+fi
+
 if grep -q SHADOW_LEGACY_COORDINATOR ShadowCore.dylib/shadowcore.x; then
     echo 'COORDINATOR DRIFT: rollback install path returned'
     exit 1
