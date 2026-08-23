@@ -358,6 +358,14 @@ extern void shadowhook_libc_lowlevel(SHDWHookSession* hooks);
 extern void shadowhook_libc_antidebugging(SHDWHookSession* hooks);
 extern void shadowhook_security(SHDWHookSession* hooks);
 extern void shadowhook_dyld_extra(SHDWHookSession* hooks);
+
+// YES when the return address lies inside the Security.framework image.
+// Used by the csops policy: Security constructs its own code-identity views
+// (SecCodeCopySelf) by reading the CDHASH through csops — blinding THOSE
+// queries degrades Security's answer to "unsigned" (-67065), which is a
+// worse leak than the hash itself. Direct detector csops probes stay
+// blinded. Implemented in hooks/AntiDebug/security.x.
+BOOL shdw_addr_in_security_framework(const void* return_address);
 extern void shadowhook_dyld_symlookup(SHDWHookSession* hooks);
 extern void shadowhook_dyld_symaddrlookup(SHDWHookSession* hooks);
 

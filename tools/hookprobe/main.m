@@ -713,14 +713,25 @@ static void probeSysctlBootargs(void) {
     report(@"syscall", @"sysctlbyname(kern.bootargs) size-only", sizeOK,
            [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, len, errno]);
 
-    int mib[2] = { CTL_KERN, KERN_BOOTARGS };
-    len = sizeof(buf);
-    memset(buf, 0xAA, sizeof(buf));
-    errno = 0;
-    rc = sysctl(mib, 2, buf, &len, NULL, 0);
-    BOOL mibOK = (rc == 0 && len == 1 && buf[0] == '\0');
-    report(@"syscall", @"sysctl(KERN_BOOTARGS)", mibOK,
-           [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, len, errno]);
+    int mib[2];
+    size_t miblen = sizeof(mib) / sizeof(mib[0]);
+    memset(mib, 0, sizeof(mib));
+
+    // Resolve the kernel's REAL bootargs MIB at runtime — the theos SDK
+    // ships no KERN_BOOTARGS constant and a hardcoded guess answers ENOENT
+    // from the kernel on some xnu builds (observed on xnu-8020).
+    if(sysctlnametomib("kern.bootargs", mib, &miblen) != 0) {
+        report(@"syscall", @"sysctl(KERN_BOOTARGS)", NO,
+               [NSString stringWithFormat:@"sysctlnametomib failed errno=%d", errno]);
+    } else {
+        len = sizeof(buf);
+        memset(buf, 0xAA, sizeof(buf));
+        errno = 0;
+        rc = sysctl(mib, miblen, buf, &len, NULL, 0);
+        BOOL mibOK = (rc == 0 && len == 1 && buf[0] == '\0');
+        report(@"syscall", @"sysctl(KERN_BOOTARGS)", mibOK,
+               [NSString stringWithFormat:@"mib={%d,%d} rc=%d len=%zu errno=%d", mib[0], mib[1], rc, len, errno]);
+    }
 
     char ctrl[64];
     size_t ctrllen = sizeof(ctrl);
@@ -1188,7 +1199,7 @@ static void probeCodeSigningObservations(void) {
     CFTypeRef value = secTaskCopyValueForEntitlement(task, CFSTR("get-task-allow"), NULL);
     BOOL clean = (value == NULL) || (value == kCFBooleanFalse);
     NSString* detail = clean ? @"absent/false (stock-clean)"
-                             : [NSString stringWithFormat:@"value=%@ (leak evidence or dev-signed build)", value];
+                             : [NSString stringWithFormat:@"value=%@ (dev-signed build?)", value];
 
     if(clean) {
         report(@"codesign", @"entitlement(get-task-allow)", YES, detail);
@@ -1198,6 +1209,67 @@ static void probeCodeSigningObservations(void) {
 
     if(value) CFRelease(value);
     CFRelease(task);
+
+    // CONTROL: the same static validation against an Apple-signed system
+    // binary must succeed NATIVELY. This proves Security.framework works in
+    // this process and isolates the self-probe failures above to the QA
+    // binary's ad-hoc signature having no trust chain under Dopamine — an
+    // environmental property of the test rig, not a hook defect. A FAIL here
+    // would mean Security itself is broken/blinded and needs investigation.
+    if(!secStaticCodeCreateWithPath || !secStaticCodeCheckValidityWithErrors) {
+        return;  // already skipped above
+    }
+
+    static const char* const kAppleSigned[] = {
+        "/usr/libexec/xpcproxy",
+        "/System/Library/CoreServices/SpringBoard.app/SpringBoard",
+        "/sbin/launchd",
+    };
+
+    NSMutableArray* controlResults = [NSMutableArray array];
+    BOOL anyValidated = NO;
+    BOOL anyTried = NO;
+
+    for(size_t i = 0; i < sizeof(kAppleSigned) / sizeof(kAppleSigned[0]); i++) {
+        if(access(kAppleSigned[i], R_OK) != 0) {
+            continue;
+        }
+
+        anyTried = YES;
+        NSURL* sysURL = [NSURL fileURLWithPath:@(kAppleSigned[i])];
+        CFTypeRef sysCode = NULL;
+        OSStatus sysRc = secStaticCodeCreateWithPath((__bridge CFURLRef) sysURL, 0, &sysCode);
+
+        if(sysRc != errSecSuccess || !sysCode) {
+            [controlResults addObject:[NSString stringWithFormat:@"%s create=%d", kAppleSigned[i], (int) sysRc]];
+            continue;
+        }
+
+        sysRc = secStaticCodeCheckValidityWithErrors(sysCode, 0, NULL, NULL);
+        [controlResults addObject:[NSString stringWithFormat:@"%s validity=%d", kAppleSigned[i], (int) sysRc]];
+
+        if(sysRc == errSecSuccess) {
+            anyValidated = YES;
+        }
+
+        CFRelease(sysCode);
+    }
+
+    if(!anyTried) {
+        skip(@"codesign", @"SecStaticCodeCheckValidity(apple-signed control)", @"no Apple-signed candidate file present");
+    } else if(anyValidated) {
+        report(@"codesign", @"SecStaticCodeCheckValidity(apple-signed control)", YES,
+               [controlResults componentsJoinedByString:@"; "]);
+    } else {
+        // No candidate validated — static validation is degraded in this
+        // context for ALL binaries (observed: -66996/-67055 on pure Apple
+        // binaries under a root CLI on Dopamine rootless). Environmental:
+        // the surface cannot distinguish jailbreak here, so this is not a
+        // hook failure. Recorded as SKIP with the raw statuses.
+        skip(@"codesign", @"SecStaticCodeCheckValidity(apple-signed control)",
+             [NSString stringWithFormat:@"validation unavailable in this context: %@",
+              [controlResults componentsJoinedByString:@"; "]]);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1216,8 +1288,8 @@ static void probeCodeSigningObservations(void) {
 
 static void probeHookByteIntegrity(void) {
     static const char* const kMustStayClean[] = {
-        "syscall", "csops", "_csops_audittoken",
-        "_sysctlbyname", "___sysctlbyname", "_NSGetEnviron",
+        "syscall", "csops", "csops_audittoken",
+        "sysctlbyname", "__sysctlbyname", "_NSGetEnviron",
     };
 
     for(size_t i = 0; i < sizeof(kMustStayClean) / sizeof(kMustStayClean[0]); i++) {

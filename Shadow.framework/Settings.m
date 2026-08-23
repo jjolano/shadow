@@ -63,7 +63,12 @@
                 value = [userDefaults objectForKey:key];
             }
 
-            [result setObject:value forKey:key];
+            // Absent everywhere (a key added by an upgrade, or a Sandy-
+            // filtered read): keep the shipped default already in result.
+            // setObject:nil here would throw and abort the whole ctor.
+            if(value) {
+                [result setObject:value forKey:key];
+            }
         }
     }
 

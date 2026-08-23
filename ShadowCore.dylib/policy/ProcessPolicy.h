@@ -10,12 +10,6 @@
 #import <stddef.h>
 #import <sys/sysctl.h>
 
-// The theos SDK's sysctl.h predates this xnu constant ({CTL_KERN,
-// KERN_BOOTARGS} — string: kernel boot args). Stable across xnu versions.
-#ifndef KERN_BOOTARGS
-#define KERN_BOOTARGS 55
-#endif
-
 struct kinfo_proc;
 
 // Classifies a process as restricted (jailbreak daemon) by its executable

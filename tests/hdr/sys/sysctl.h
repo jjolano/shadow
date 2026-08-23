@@ -7,5 +7,6 @@
 #include <stddef.h>
 
 int sysctlbyname(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+int sysctlnametomib(const char* name, int* mibp, size_t* sizep);
 
 #endif

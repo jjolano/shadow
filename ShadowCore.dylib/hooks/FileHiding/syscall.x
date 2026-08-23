@@ -9,7 +9,7 @@
 
 // Forward declaration: shared post-success csops policy, defined in the
 // csops section below (used by the raw SYS_csops dispatch case).
-static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize);
+static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize, const void* caller);
 
 // Forwards an intercepted syscall() call with exact arguments. There is no
 // v-syscall, so a va_list can't be forwarded through a variadic `...`: the
@@ -466,7 +466,7 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     if(ext) {
         switch(cat) {
             case SHADW_RAW_CAT_CSOPS:
-                if(result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize)) {
+                if(result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize, NULL)) {
                     return -1;
                 }
                 break;
@@ -602,18 +602,29 @@ static void shdw_csops_sanitize_status(uint32_t* flags) {
 // synthetic EBADEXEC on top of a real error would deviate from stock):
 // CS_OPS_STATUS gets the clear-only sanitization at *useraddr (the flags are
 // written into the CALLER's buffer, not returned — editing `ret` would
-// corrupt the return value); CS_OPS_CDHASH is hidden. Returns YES when the
-// call must be converted into a denial (errno set), NO to pass through.
-static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize) {
+// corrupt the return value); CS_OPS_CDHASH is hidden. `caller` is the hook
+// replacement's return address (NULL on the raw-syscall dispatch path, which
+// keeps the strict policy). Returns YES when the call must be converted into
+// a denial (errno set), NO to pass through.
+static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize, const void* caller) {
     if(ops == CS_OPS_STATUS && useraddr && usersize >= sizeof(uint32_t)) {
         shdw_csops_sanitize_status((uint32_t *) useraddr);
         return NO;
     }
 
     if(ops == CS_OPS_CDHASH) {
-        // Hide CDHASH for trustcache checks.
-        errno = EBADEXEC;
-        return YES;
+        // Hide CDHASH for trustcache checks — EXCEPT when the caller IS
+        // Security.framework: its self-identity construction
+        // (SecCodeCopySelf) reads the CDHASH through csops, and blinding
+        // THAT degrades Security's answer to "unsigned" (-67065), a worse
+        // leak than the hash itself (an unsigned main executable is direct
+        // tamper evidence). Detectors calling csops directly remain blinded.
+        if(!caller || !shdw_addr_in_security_framework(caller)) {
+            errno = EBADEXEC;
+            return YES;
+        }
+
+        return NO;
     }
 
     return NO;
@@ -637,7 +648,7 @@ static int replaced_csops(pid_t pid, unsigned int ops, void* useraddr, size_t us
 
     int ret = original_csops(pid, ops, useraddr, usersize);
 
-    if(ext && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(ext && pid == getpid() && ret == 0 && shdw_csops_apply_after_success(ops, useraddr, usersize, __builtin_return_address(0))) {
         return -1;
     }
 
@@ -659,7 +670,7 @@ static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr
 
     int ret = original_csops_audittoken(pid, ops, useraddr, usersize, token);
 
-    if(ext && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize)) {
+    if(ext && ret == 0 && pid == getpid() && shdw_csops_apply_after_success(ops, useraddr, usersize, __builtin_return_address(0))) {
         return -1;
     }
 
