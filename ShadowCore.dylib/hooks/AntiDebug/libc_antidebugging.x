@@ -180,7 +180,7 @@ int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int b
     return ret;
 }
 
-void shadowhook_libc_antidebugging(HKSubstitutor* hooks) {
+void shadowhook_libc_antidebugging(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ANTIDEBUG);
 }
 

@@ -462,7 +462,7 @@ static void shdw_cache_main_bundle(void) {
 %end
 %end
 
-void shadowhook_NSBundle(HKSubstitutor* hooks) {
+void shadowhook_NSBundle(SHDWHookSession* hooks) {
     shdw_cache_main_bundle();
     %init(shadowhook_NSBundle);
 }

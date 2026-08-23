@@ -173,7 +173,7 @@ static kern_return_t replaced_mach_port_names(ipc_space_t task, mach_port_name_a
     return original_mach_port_names(task, names, namesCnt, types, typesCnt);
 }
 
-void shadowhook_mach(HKSubstitutor* hooks) {
+void shadowhook_mach(SHDWHookSession* hooks) {
     [hooks hookFunction:bootstrap_check_in withReplacement:replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
     [hooks hookFunction:bootstrap_look_up withReplacement:replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 

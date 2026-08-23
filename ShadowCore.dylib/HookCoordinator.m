@@ -85,10 +85,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 }
 
 @interface SHDWBackendSet ()   // readwrite backing for the init-time fill
-@property (nonatomic, readwrite) HKSubstitutor* message;
-@property (nonatomic, readwrite) HKSubstitutor* rebind;
-@property (nonatomic, readwrite) HKSubstitutor* symlookup;
-@property (nonatomic, readwrite) HKSubstitutor* privateSym;
+@property (nonatomic, readwrite) SHDWHookSession* hooks;
 @property (nonatomic, readwrite) SHDWCapabilities capabilities;
 @end
 
@@ -136,67 +133,15 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     _lifecycleQueue = dispatch_queue_create("com.shadow.hookcoordinator.lifecycle", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_set_specific(_lifecycleQueue, &kSHDWHookCoordinatorQueueKey, (__bridge void*)self, NULL);
 
-    // Resolve each lane once. Auto-cover routes each function target and
-    // HookKit groups batched operations by the backend that won.
-    HKSubstitutor* message   = [HKSubstitutor substitutorWithCategory:HK_CAT_MESSAGE];
-    HKSubstitutor* rebind    = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
-    HKSubstitutor* inlineCov = [HKSubstitutor substitutorWithAutoCoverCategories:@[@(HK_CAT_FUNCTION_INLINE), @(HK_CAT_FUNCTION_REBIND)]];
-    HKSubstitutor* symlookup = inlineCov;
-    HKSubstitutor* privSym   = [HKSubstitutor substitutorWithTypes:HK_LIB_NATIVE];
-
-    NSString* preferredID = prefs[SHDWHookLibraryID];
-    if(preferredID && ![preferredID isEqualToString:@"auto"]) {
-        hookkit_lib_t available = [HKSubstitutor getAvailableSubstitutorTypes];
-
-        for(NSDictionary* info in [HKSubstitutor getSubstitutorTypeInfo:available]) {
-            hookkit_lib_t type = (hookkit_lib_t)[info[@"type"] unsignedIntValue];
-
-            if([preferredID isEqualToString:info[@"id"]] && (available & type) && !(type & HK_LIB_SWIFT)) {
-                rebind = [HKSubstitutor substitutorWithTypes:type];
-                break;
-            }
-        }
-    }
-
-    if(privSym.activeType == HK_LIB_NONE) {
-        privSym = [HKSubstitutor substitutorWithCategory:HK_CAT_PRIVATE_SYMBOL];
-    }
-
-    hookkit_cat_t categories = [HKSubstitutor getAvailableCategories];
-    SHDWCapabilities caps = 0;
-
-    if(categories & HK_CAT_MESSAGE) {
-        caps |= SHDWCapMessage;
-    }
-
-    if(rebind.activeType != HK_LIB_NONE) {
-        caps |= SHDWCapFunction;
-    }
-
-    if(categories & HK_CAT_FUNCTION_INLINE) {
-        caps |= SHDWCapInline;
-    }
-
-    if(privSym.activeType != HK_LIB_NONE) {
-        caps |= SHDWCapPrivateSym;
-    }
-
     SHDWBackendSet* set = [SHDWBackendSet new];
-    set.message = message;
-    set.rebind = rebind;
-    set.symlookup = symlookup;
-    set.privateSym = privSym;
-    set.capabilities = caps;
+    set.hooks = [SHDWHookSession new];
+    // HK3 reports each hook request individually. These bits therefore mean
+    // "the native request exists", not that a legacy provider was discovered
+    // before the request had a chance to route.
+    set.capabilities = SHDWCapMessage | SHDWCapFunction |
+                       SHDWCapInline | SHDWCapPrivateSym;
     self.backends = set;
     gSHDWActivationCoordinator = self;
-
-    if(!(caps & SHDWCapMessage)) {
-        NSLog(@"[Shadow][coordinator] no ObjC-capable hooking library available (only fishhook); skipping ObjC-method hook groups");
-    }
-
-    if(!(caps & SHDWCapPrivateSym)) {
-        NSLog(@"[Shadow][coordinator] no private-symbol-capable backend (dlopen_internal needs one)");
-    }
 
     return self;
 }
@@ -367,88 +312,6 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     return NULL;
 }
 
-#pragma mark - Backend selection per capability kind
-
-// Map each install-unit capability to its dedicated backend lane.
-- (HKSubstitutor*)backendForUnit:(const SHDWInstallUnit*)unit {
-    // These message-gated C-runtime identity groups use inline-first
-    // auto-cover for their individual targets.
-    if(strcmp(unit->unitID, "objc") == 0 || strcmp(unit->unitID, "classes") == 0) {
-        return self.backends.symlookup;
-    }
-
-    switch(unit->capability) {
-        case SHDWCapabilityMessage:
-            return self.backends.message;
-        case SHDWCapabilitySymlookup:
-            return self.backends.symlookup;
-        case SHDWCapabilityPrivateSym:
-            return self.backends.privateSym;
-        case SHDWCapabilityFunction:
-        case SHDWCapabilityNone:
-        default:
-            return self.backends.rebind ?: self.backends.message;
-    }
-}
-
-- (BOOL)unitCapable:(const SHDWInstallUnit*)unit {
-    SHDWCapabilities caps = self.backends.capabilities;
-
-    if(unit->capability == SHDWCapabilityMessage) {
-        if(!(caps & SHDWCapMessage)) {
-            NSLog(@"[Shadow][coordinator] %s skipped: no ObjC-capable backend", unit->unitID);
-            return NO;
-        }
-
-        return YES;
-    }
-
-    if(unit->capability == SHDWCapabilityPrivateSym) {
-        if(!(caps & SHDWCapPrivateSym)) {
-            NSLog(@"[Shadow][coordinator] dylibex skipped: no private-symbol-capable backend (dlopen_internal needs one)");
-            return NO;
-        }
-
-        return YES;
-    }
-
-    if(unit->capability == SHDWCapabilitySymlookup && !(caps & (SHDWCapInline | SHDWCapFunction))) {
-        NSLog(@"[Shadow][coordinator] %s skipped: no rebind/inline backend", unit->unitID);
-        return NO;
-    }
-
-    return YES;
-}
-
-#pragma mark - Batch commit
-
-// %hook/%function groups use HookKit's default substitutor; explicit hook
-// functions use the lane passed by the installer. Drain both sets.
-- (void)commitBatch:(NSArray<NSString*>*)unitIDs {
-    BOOL failed = HKExecuteBatch() != HK_OK;
-    HKDisableBatching();
-
-    for(HKSubstitutor* lane in @[self.backends.message, self.backends.rebind,
-                                 self.backends.symlookup, self.backends.privateSym]) {
-        failed |= [lane executeHooks] != HK_OK;
-        [lane setBatching:NO];
-    }
-
-    if(!failed || !unitIDs.count) {
-        return;
-    }
-
-    NSLog(@"[Shadow][coordinator] batch install failed — running per-unit verify");
-
-    for(NSString* unitID in unitIDs) {
-        const SHDWHookInstaller* installer = [self installerForUnitID:unitID];
-
-        if(installer && installer->verify) {
-            installer->verify();
-        }
-    }
-}
-
 #pragma mark - Event install
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event {
@@ -492,14 +355,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         return 0;
     }
 
-    NSMutableArray<NSString*>* attempted = [NSMutableArray new];
     NSUInteger localInstalled = 0;
-
-    HKEnableBatching();
-    for(HKSubstitutor* lane in @[self.backends.message, self.backends.rebind,
-                                 self.backends.symlookup, self.backends.privateSym]) {
-        [lane setBatching:YES];
-    }
 
     for(NSString* unitID in plan) {
         NSUInteger index = [self unitIndexForID:unitID];
@@ -524,19 +380,18 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
             continue;
         }
 
-        if(![self unitCapable:unit]) {
-            continue;
-        }
-
         NSLog(@"[Shadow][coordinator] + %s", unit->unitID);
 
-        installer->install([self backendForUnit:unit]);
+        SHDWHookSession* previous = SHDWHookSessionSetCurrent(self.backends.hooks);
+        @try {
+            installer->install(self.backends.hooks);
+        } @finally {
+            SHDWHookSessionSetCurrent(previous);
+        }
         _installedBits |= (1ULL << index);
         localInstalled++;
-        [attempted addObject:unitID];
     }
 
-    [self commitBatch:attempted];
     [self recordActivationInventoryForEvent:event];
 
     return localInstalled;

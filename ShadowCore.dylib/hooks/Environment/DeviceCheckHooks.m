@@ -18,7 +18,7 @@
 // the row matching the method's runtime encoding fires — the other row
 // skips.
 //
-// Install route: the passed message-capable HKSubstitutor (shadowhook_DeviceCheck
+// Install route: the passed message-capable hook session (shadowhook_DeviceCheck
 // receives it from the coordinator), NOT the global HKHookMessage default.
 
 // One logged-unknown guard shared by every row: once a class+selector with an
@@ -126,7 +126,7 @@ static IMP shdw_dch_replacement_imp(const DCHDescriptor* desc) {
     return truePolicy ? (IMP) &shdw_dch_imp1_bool_true : (IMP) &shdw_dch_imp1_bool_false;
 }
 
-NSUInteger shdw_devicecheck_install_hooks(HKSubstitutor* hooks) {
+NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks) {
     if(!hooks) {
         return 0;
     }

@@ -777,20 +777,18 @@ static char*** replaced_NSGetEnviron(void) {
 // page. Reproduced deterministically on-device (co.communico.brampton,
 // 3/3 launches, same signature) — this is a HookKit-level inline-patch race,
 // not specific to these replacement functions; flagged upstream.
-// A rebind-only substitutor never attempts the inline fallback: a
-// zero-match target just fails HK_ERR_NOT_SUPPORTED, which these three calls
-// already treat as "skip cleanly" (return value unchecked, matching the
-// runtime-resolved siblings below). Coverage loss (raw syscall dispatch
+// HK3's symbol-rebind request never attempts the inline fallback: a zero-match
+// target simply fails safe, which these calls already treat as "skip cleanly"
+// (return value unchecked, matching the runtime-resolved siblings below).
+// Coverage loss (raw syscall dispatch
 // filtering / csops self-mark protection go unhooked on devices where these
 // symbols aren't GOT-rebindable) is preferable to crashing the target app.
 // Revert to `hooks` once HookKit's inline-patch path is made safe against
 // concurrent execution of the target (thread suspension during the write, or
 // an atomically-visible single-instruction redirect into an out-of-line stub).
-void shadowhook_syscall(HKSubstitutor* hooks) {
-    HKSubstitutor* rebindOnly = [HKSubstitutor substitutorWithCategory:HK_CAT_FUNCTION_REBIND];
-
-    [rebindOnly hookFunction:syscall withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
-    [rebindOnly hookFunction:csops withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
+void shadowhook_syscall(SHDWHookSession* hooks) {
+    [hooks hookRebindSymbol:@"syscall" withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
+    [hooks hookRebindSymbol:@"csops" withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
 
     // Runtime-resolve __syscall; skipped cleanly when absent.
     void* sym___syscall = shdw_resolve_libsystem("___syscall");
@@ -798,31 +796,31 @@ void shadowhook_syscall(HKSubstitutor* hooks) {
     // Address-based rebinders already cover every slot for that address; a
     // second replacement cannot coexist and only reports a false failure.
     if(sym___syscall && sym___syscall != (void *)syscall) {
-        [rebindOnly hookFunction:sym___syscall withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
+        [hooks hookRebindSymbol:@"___syscall" withReplacement:replaced___syscall outOldPtr:(void **) &original___syscall];
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    // Also on rebindOnly (bisection isolation, see the note above): these are
+    // Also symbol-rebind-only (bisection isolation, see the note above): these are
     // fewer/colder than syscall/csops but still direct-branch libsystem_kernel
     // exports, so leaving them on the inline-capable lane is the same hazard.
     void* sym_misc = shdw_resolve_libsystem("_sysctlbyname");
     if(sym_misc) {
-        [rebindOnly hookFunction:sym_misc withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
+        [hooks hookRebindSymbol:@"_sysctlbyname" withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];
     }
 
     sym_misc = shdw_resolve_libsystem("___sysctlbyname");
     if(sym_misc) {
-        [rebindOnly hookFunction:sym_misc withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
+        [hooks hookRebindSymbol:@"___sysctlbyname" withReplacement:replaced___sysctlbyname outOldPtr:(void **) &original___sysctlbyname];
     }
 
     sym_misc = shdw_resolve_libsystem("_csops_audittoken");
     if(sym_misc) {
-        [rebindOnly hookFunction:sym_misc withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
+        [hooks hookRebindSymbol:@"_csops_audittoken" withReplacement:replaced_csops_audittoken outOldPtr:(void **) &original_csops_audittoken];
     }
 
     sym_misc = shdw_resolve_libsystem("_NSGetEnviron");
     if(sym_misc) {
-        [rebindOnly hookFunction:sym_misc withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
+        [hooks hookRebindSymbol:@"_NSGetEnviron" withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
 
     // Raw svc #0x80 interception (svc_patch.x): loaded-image writes are

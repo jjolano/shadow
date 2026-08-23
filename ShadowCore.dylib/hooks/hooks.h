@@ -34,7 +34,7 @@
 #import <Shadow/JBPath.h>
 #import "../HookRuntime.h"
 
-#import <HookKit.h>
+#import "../SHDWHookSession.h"
 
 #import "FileHiding/path_rewrite.h"
 
@@ -96,11 +96,9 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
     return shdw_path_munge_path((char*)pathname);
 }
 
-// Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks, and
-// there is no Logos generator that targets HookKit directly. Route that
-// single substrate-compat name into HookKit's native API; everything else
-// uses HKSubstitutor calls directly.
-#define MSHookMessageEx HKHookMessage
+// Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks. Route
+// that single spelling through the native HK3 session active for this unit.
+#define MSHookMessageEx SHDWHookMessage
 
 // private symbols
 #import "../../vendor/apple/dyld_priv.h"
@@ -285,25 +283,25 @@ static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t*
     }
 }
 
-extern void shadowhook_DeviceCheck(HKSubstitutor* hooks);
-extern void shadowhook_dyld(HKSubstitutor* hooks);
-extern void shadowhook_libc(HKSubstitutor* hooks);
-extern void shadowhook_mach(HKSubstitutor* hooks);
-extern void shadowhook_NSArray(HKSubstitutor* hooks);
-extern void shadowhook_NSBundle(HKSubstitutor* hooks);
-extern void shadowhook_NSData(HKSubstitutor* hooks);
-extern void shadowhook_NSDictionary(HKSubstitutor* hooks);
-extern void shadowhook_NSFileHandle(HKSubstitutor* hooks);
-extern void shadowhook_NSFileManager(HKSubstitutor* hooks);
-extern void shadowhook_NSFileVersion(HKSubstitutor* hooks);
-extern void shadowhook_NSFileWrapper(HKSubstitutor* hooks);
-extern void shadowhook_NSProcessInfo(HKSubstitutor* hooks);
-extern void shadowhook_NSString(HKSubstitutor* hooks);
-extern void shadowhook_NSURL(HKSubstitutor* hooks);
-extern void shadowhook_objc(HKSubstitutor* hooks);
-extern void shadowhook_objc_methodimpl(HKSubstitutor* hooks);
-extern void shadowhook_sandbox(HKSubstitutor* hooks);
-extern void shadowhook_syscall(HKSubstitutor* hooks);
+extern void shadowhook_DeviceCheck(SHDWHookSession* hooks);
+extern void shadowhook_dyld(SHDWHookSession* hooks);
+extern void shadowhook_libc(SHDWHookSession* hooks);
+extern void shadowhook_mach(SHDWHookSession* hooks);
+extern void shadowhook_NSArray(SHDWHookSession* hooks);
+extern void shadowhook_NSBundle(SHDWHookSession* hooks);
+extern void shadowhook_NSData(SHDWHookSession* hooks);
+extern void shadowhook_NSDictionary(SHDWHookSession* hooks);
+extern void shadowhook_NSFileHandle(SHDWHookSession* hooks);
+extern void shadowhook_NSFileManager(SHDWHookSession* hooks);
+extern void shadowhook_NSFileVersion(SHDWHookSession* hooks);
+extern void shadowhook_NSFileWrapper(SHDWHookSession* hooks);
+extern void shadowhook_NSProcessInfo(SHDWHookSession* hooks);
+extern void shadowhook_NSString(SHDWHookSession* hooks);
+extern void shadowhook_NSURL(SHDWHookSession* hooks);
+extern void shadowhook_objc(SHDWHookSession* hooks);
+extern void shadowhook_objc_methodimpl(SHDWHookSession* hooks);
+extern void shadowhook_sandbox(SHDWHookSession* hooks);
+extern void shadowhook_syscall(SHDWHookSession* hooks);
 
 // Raw-syscall policy categories (hooks/FileHiding/syscall.x dispatch;
 // shared with the svc-patch trampoline in hooks/FileHiding/svc_patch.x).
@@ -326,15 +324,15 @@ shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
 // (synthetic ENOENT for restricted paths, original svc otherwise). Called
 // from shadowhook_syscall, so the Hook_Syscall pref gates it. Idempotent.
 void shdw_svc_patch_install(void);
-extern void shadowhook_UIApplication(HKSubstitutor* hooks);
-extern void shadowhook_UIImage(HKSubstitutor* hooks);
-extern void shadowhook_libc_envvar(HKSubstitutor* hooks);
-extern void shadowhook_envpolicy(HKSubstitutor* hooks);
-extern void shadowhook_libc_lowlevel(HKSubstitutor* hooks);
-extern void shadowhook_libc_antidebugging(HKSubstitutor* hooks);
-extern void shadowhook_dyld_extra(HKSubstitutor* hooks);
-extern void shadowhook_dyld_symlookup(HKSubstitutor* hooks);
-extern void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks);
+extern void shadowhook_UIApplication(SHDWHookSession* hooks);
+extern void shadowhook_UIImage(SHDWHookSession* hooks);
+extern void shadowhook_libc_envvar(SHDWHookSession* hooks);
+extern void shadowhook_envpolicy(SHDWHookSession* hooks);
+extern void shadowhook_libc_lowlevel(SHDWHookSession* hooks);
+extern void shadowhook_libc_antidebugging(SHDWHookSession* hooks);
+extern void shadowhook_dyld_extra(SHDWHookSession* hooks);
+extern void shadowhook_dyld_symlookup(SHDWHookSession* hooks);
+extern void shadowhook_dyld_symaddrlookup(SHDWHookSession* hooks);
 
 // KERN_PROCARGS2 self-query payload filter (libc.x): rebuilds the kernel's
 // [argc][argv][envp][strings] payload so its argv/envp agree with the
@@ -366,7 +364,7 @@ typedef enum {
     SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
 } shdw_hook_group_t;
 
-void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group);
+void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
 void shdw_libc_verify_group(const char* group, uint32_t mask);
 
 // struct stat64 is not visible in this build configuration: the SDK guards it
@@ -461,8 +459,8 @@ void* shdw_sym_policy_lookup_mem(const char* name);
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).
 extern void shdw_sandbox_invalidate_cwd(void);
-extern void shadowhook_mem(HKSubstitutor* hooks);
-extern void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks);
+extern void shadowhook_mem(SHDWHookSession* hooks);
+extern void shadowhook_objc_hidetweakclasses(SHDWHookSession* hooks);
 // Shared across the objc satellites (Runtime/objc.x defines; Runtime/objc_hidetweakclasses.x
 // and Runtime/objc_methodimpl.x consume): class/address/image hiding predicates and the
 // method_getImplementation original cell (rebind lane, defined in objc_methodimpl.x).
@@ -470,11 +468,11 @@ extern BOOL shdw_objc_addr_is_hidden(const void* addr);
 extern BOOL shdw_objc_image_path_is_hidden(const char* path);
 extern BOOL shdw_objc_class_is_hidden(Class cls);
 extern IMP (*original_method_getImplementation)(Method m);
-extern void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks);
-extern void shadowhook_NSTask(HKSubstitutor* hooks);
-extern void shadowhook_NSThread(HKSubstitutor* hooks);
-extern void shadowhook_NSUserDefaults(HKSubstitutor* hooks);
-extern void shadowhook_iokit(HKSubstitutor* hooks);
+extern void shadowhook_LSApplicationWorkspace(SHDWHookSession* hooks);
+extern void shadowhook_NSTask(SHDWHookSession* hooks);
+extern void shadowhook_NSThread(SHDWHookSession* hooks);
+extern void shadowhook_NSUserDefaults(SHDWHookSession* hooks);
+extern void shadowhook_iokit(SHDWHookSession* hooks);
 extern void shadowhook_iokit_verify(void);
 extern void* shdw_sym_policy_lookup_iokit(const char* name);
 extern void shadowhook_libc_verify(void);

@@ -31,7 +31,7 @@ char* replaced_getenv(const char* name) {
     return result;
 }
 
-void shadowhook_libc_envvar(HKSubstitutor* hooks) {
+void shadowhook_libc_envvar(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ENVVAR);
 }
 

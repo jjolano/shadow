@@ -108,7 +108,7 @@
 %end
 %end
 
-void shadowhook_NSArray(HKSubstitutor* hooks) {
+void shadowhook_NSArray(SHDWHookSession* hooks) {
     %init(shadowhook_NSArray);
 }
 
@@ -218,7 +218,7 @@ void shadowhook_NSArray(HKSubstitutor* hooks) {
 %end
 %end
 
-void shadowhook_NSDictionary(HKSubstitutor* hooks) {
+void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     %init(shadowhook_NSDictionary);
 }
 
@@ -350,7 +350,7 @@ void shadowhook_NSDictionary(HKSubstitutor* hooks) {
 %end
 %end
 
-void shadowhook_NSData(HKSubstitutor* hooks) {
+void shadowhook_NSData(SHDWHookSession* hooks) {
     %init(shadowhook_NSData);
 }
 
@@ -491,7 +491,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
 %end
 %end
 
-void shadowhook_NSFileHandle(HKSubstitutor* hooks) {
+void shadowhook_NSFileHandle(SHDWHookSession* hooks) {
     %init(shadowhook_NSFileHandle);
 }
 
@@ -623,7 +623,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
 %end
 %end
 
-void shadowhook_NSFileWrapper(HKSubstitutor* hooks) {
+void shadowhook_NSFileWrapper(SHDWHookSession* hooks) {
     %init(shadowhook_NSFileWrapper);
 }
 
@@ -791,7 +791,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 %end
 %end
 
-void shadowhook_NSFileVersion(HKSubstitutor* hooks) {
+void shadowhook_NSFileVersion(SHDWHookSession* hooks) {
     %init(shadowhook_NSFileVersion);
 }
 
@@ -842,6 +842,6 @@ void shadowhook_NSFileVersion(HKSubstitutor* hooks) {
 %end
 %end
 
-void shadowhook_NSTask(HKSubstitutor* hooks) {
+void shadowhook_NSTask(SHDWHookSession* hooks) {
     %init(shadowhook_NSTask);
 }

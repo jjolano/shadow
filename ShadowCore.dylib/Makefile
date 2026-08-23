@@ -8,12 +8,15 @@ include $(THEOS)/makefiles/common.mk
 # the stub dlopens @THEOS_PACKAGE_INSTALL_PREFIX /usr/lib/ShadowCore.dylib.
 LIBRARY_NAME = ShadowCore
 
-ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m hooks/FileHiding/path_rewrite.c $(wildcard policy/*.m) shadowcore.x HookCoordinator.m
+ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m hooks/FileHiding/path_rewrite.c $(wildcard policy/*.m) shadowcore.x HookCoordinator.m SHDWHookSession.m
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
 ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
+ifneq ($(SHADOW_LANE),rootful-legacy)
+ShadowCore_CFLAGS += -DSHADOW_CANONICAL_HOOKKIT=1
+endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_CFLAGS += -DSHADOW_ROOTHIDE
 endif
