@@ -45,11 +45,14 @@
 #import <ctype.h>
 #import <sys/stat.h>
 #import <sys/types.h>
+#import <sys/sysctl.h>
 #import <dirent.h>
 #import <fcntl.h>
 #import <unistd.h>
 #import <stdlib.h>
 #import <string.h>
+#import <limits.h>
+#import <Security/Security.h>
 
 #import "identity_fixture.h"
 
@@ -65,6 +68,10 @@ extern kern_return_t mach_vm_region(vm_map_read_t target_task, mach_vm_address_t
 // CS_OPS_ENTITLEMENTS_BLOB).
 extern int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 #define CS_OPS_CDHASH 5
+
+#ifndef KERN_BOOTARGS
+#define KERN_BOOTARGS 55
+#endif
 
 // The DeviceCheck/UIImage probes dispatch via runtime selectors (the tool
 // links only Foundation; a static class ref would need the framework at
@@ -682,6 +689,49 @@ static void probeSyscallCsopsPost(void) {
 }
 
 // ---------------------------------------------------------------------------
+// kern.bootargs (ProcessPolicy shdw_bootargs_filtered): stock devices report
+// an empty boot-args string; jailbreak boot flags (amfi_get_out_of_my_way=1,
+// debug=..., -v) are a direct tell. The filter rides Hook_Syscall (raw
+// dispatch + sysctlbyname) and Hook_AntiDebugging (libc sysctl) — probed
+// when either is enabled. All three channels must agree.
+// ---------------------------------------------------------------------------
+
+static void probeSysctlBootargs(void) {
+    char buf[256];
+    size_t len = sizeof(buf);
+    memset(buf, 0xAA, sizeof(buf));
+    errno = 0;
+    int rc = sysctlbyname("kern.bootargs", buf, &len, NULL, 0);
+    BOOL dataOK = (rc == 0 && len == 1 && buf[0] == '\0');
+    report(@"syscall", @"sysctlbyname(kern.bootargs)", dataOK,
+           [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, len, errno]);
+
+    len = 0;
+    errno = 0;
+    rc = sysctlbyname("kern.bootargs", NULL, &len, NULL, 0);
+    BOOL sizeOK = (rc == 0 && len == 1);
+    report(@"syscall", @"sysctlbyname(kern.bootargs) size-only", sizeOK,
+           [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, len, errno]);
+
+    int mib[2] = { CTL_KERN, KERN_BOOTARGS };
+    len = sizeof(buf);
+    memset(buf, 0xAA, sizeof(buf));
+    errno = 0;
+    rc = sysctl(mib, 2, buf, &len, NULL, 0);
+    BOOL mibOK = (rc == 0 && len == 1 && buf[0] == '\0');
+    report(@"syscall", @"sysctl(KERN_BOOTARGS)", mibOK,
+           [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, len, errno]);
+
+    char ctrl[64];
+    size_t ctrllen = sizeof(ctrl);
+    errno = 0;
+    rc = sysctlbyname("kern.osrelease", ctrl, &ctrllen, NULL, 0);
+    BOOL ctrlOK = (rc == 0 && ctrllen > 1);
+    report(@"syscall", @"sysctlbyname(kern.osrelease) control", ctrlOK,
+           [NSString stringWithFormat:@"rc=%d len=%zu errno=%d", rc, ctrllen, errno]);
+}
+
+// ---------------------------------------------------------------------------
 // DeviceCheck group (DeviceCheck.x): DCDevice.isSupported fails closed (NO)
 // when hooked. The framework MUST be dlopen'ed BEFORE ShadowCore — the ctor's
 // descriptor install silently skips absent classes and never retries.
@@ -1050,6 +1100,148 @@ static void probeSandbox(void) {
 
     int c = sandbox_check(getpid(), "file-read-data", SANDBOX_FILTER_PATH, [kControlDir fileSystemRepresentation]);
     report(@"sandbox", @"sandbox_check(control)", c == 0, [NSString stringWithFormat:@"rc=%d", c]);
+}
+
+// ---------------------------------------------------------------------------
+// Code-signing self-validity observations (Security.framework surface).
+// Commercial RASP validates the running process's code signature and Team-ID
+// entitlements; Shadow has no hooks on this surface yet. PASS = matches the
+// stock-clean expectation (nothing leaks). A deviation is recorded as SKIP —
+// NOT FAIL — with the raw OSStatus/value in the detail: it is evidence for
+// the future Hook_CodeSigning unit, and an unhooked surface must not block
+// the QA gate. Flip these SKIPs to report() once that policy lands.
+// SecTaskCopyValueForEntitlement/SecTaskCreateFromSelf are private SPI —
+// dlsym'd, skipped cleanly when absent.
+// ---------------------------------------------------------------------------
+
+static void probeCodeSigningObservations(void) {
+    // Dynamic self-validation: SecCodeCopySelf + SecCodeCheckValidity.
+    // iOS exports this SPI but omits the macOS SecStaticCode declarations.
+    OSStatus (*secCodeCopySelf)(uint32_t, CFTypeRef*) = dlsym(RTLD_DEFAULT, "SecCodeCopySelf");
+    OSStatus (*secCodeCheckValidity)(CFTypeRef, uint32_t, CFTypeRef) = dlsym(RTLD_DEFAULT, "SecCodeCheckValidity");
+    OSStatus (*secStaticCodeCreateWithPath)(CFURLRef, uint32_t, CFTypeRef*) = dlsym(RTLD_DEFAULT, "SecStaticCodeCreateWithPath");
+    OSStatus (*secStaticCodeCheckValidityWithErrors)(CFTypeRef, uint32_t, CFTypeRef, CFErrorRef*) = dlsym(RTLD_DEFAULT, "SecStaticCodeCheckValidityWithErrors");
+
+    if(!secCodeCopySelf || !secCodeCheckValidity) {
+        skip(@"codesign", @"SecCodeCheckValidity(self)", @"SecCode SPI unavailable");
+    } else {
+        CFTypeRef code = NULL;
+        OSStatus rc = secCodeCopySelf(0, &code);
+
+        if(rc != errSecSuccess || !code) {
+            skip(@"codesign", @"SecCodeCheckValidity(self)", [NSString stringWithFormat:@"SecCodeCopySelf rc=%d", (int) rc]);
+        } else {
+            rc = secCodeCheckValidity(code, 0, NULL);
+
+            if(rc == errSecSuccess) {
+                report(@"codesign", @"SecCodeCheckValidity(self)", YES, @"valid (stock-clean)");
+            } else {
+                skip(@"codesign", @"SecCodeCheckValidity(self)", [NSString stringWithFormat:@"OSStatus=%d (leak evidence)", (int) rc]);
+            }
+
+            CFRelease(code);
+        }
+    }
+
+    // Static validation of the running executable's on-disk binary.
+    char execPath[PATH_MAX];
+    uint32_t execSize = sizeof(execPath);
+
+    if(!secStaticCodeCreateWithPath || !secStaticCodeCheckValidityWithErrors) {
+        skip(@"codesign", @"SecStaticCodeCheckValidity(self)", @"SecStaticCode SPI unavailable");
+    } else if(_NSGetExecutablePath(execPath, &execSize) != 0) {
+        skip(@"codesign", @"SecStaticCodeCheckValidity(self)", @"_NSGetExecutablePath failed");
+    } else {
+        NSURL* binURL = [NSURL fileURLWithPath:@(execPath)];
+        CFTypeRef staticCode = NULL;
+        OSStatus rc = secStaticCodeCreateWithPath((__bridge CFURLRef) binURL, 0, &staticCode);
+
+        if(rc != errSecSuccess || !staticCode) {
+            skip(@"codesign", @"SecStaticCodeCheckValidity(self)", [NSString stringWithFormat:@"SecStaticCodeCreateWithPath rc=%d", (int) rc]);
+        } else {
+            rc = secStaticCodeCheckValidityWithErrors(staticCode, 0, NULL, NULL);
+
+            if(rc == errSecSuccess) {
+                report(@"codesign", @"SecStaticCodeCheckValidity(self)", YES, @"valid (stock-clean)");
+            } else {
+                skip(@"codesign", @"SecStaticCodeCheckValidity(self)", [NSString stringWithFormat:@"OSStatus=%d (leak evidence)", (int) rc]);
+            }
+
+            CFRelease(staticCode);
+        }
+    }
+
+    // Self-entitlement probe: get-task-allow must read false/absent on a
+    // stock production binary. NOTE: a dev-signed QA build legitimately
+    // carries true — a SKIP here can be signing-mode noise, not a leak.
+    void* (*secTaskCreateFromSelf)(CFAllocatorRef) = dlsym(RTLD_DEFAULT, "SecTaskCreateFromSelf");
+    CFTypeRef (*secTaskCopyValueForEntitlement)(CFTypeRef, CFStringRef, CFErrorRef*) = dlsym(RTLD_DEFAULT, "SecTaskCopyValueForEntitlement");
+
+    if(!secTaskCreateFromSelf || !secTaskCopyValueForEntitlement) {
+        skip(@"codesign", @"entitlement(get-task-allow)", @"SecTask SPI unavailable");
+        return;
+    }
+
+    CFTypeRef task = secTaskCreateFromSelf(NULL);
+
+    if(!task) {
+        skip(@"codesign", @"entitlement(get-task-allow)", @"SecTaskCreateFromSelf returned NULL");
+        return;
+    }
+
+    CFTypeRef value = secTaskCopyValueForEntitlement(task, CFSTR("get-task-allow"), NULL);
+    BOOL clean = (value == NULL) || (value == kCFBooleanFalse);
+    NSString* detail = clean ? @"absent/false (stock-clean)"
+                             : [NSString stringWithFormat:@"value=%@ (leak evidence or dev-signed build)", value];
+
+    if(clean) {
+        report(@"codesign", @"entitlement(get-task-allow)", YES, detail);
+    } else {
+        skip(@"codesign", @"entitlement(get-task-allow)", detail);
+    }
+
+    if(value) CFRelease(value);
+    CFRelease(task);
+}
+
+// ---------------------------------------------------------------------------
+// Rebind-lane byte integrity: the symbols hooked via hookRebindSymbol
+// (syscall.x: syscall/csops/___syscall/_sysctlbyname/___sysctlbyname/
+// _csops_audittoken/_NSGetEnviron) MUST keep their original prologues —
+// GOT/lazy-pointer rebinding never touches function bodies, which is exactly
+// what defeats byte-comparison "system library hooking" detectors (the
+// inline-capable lane patches prologues and is detectable). This probe pins
+// that contract at runtime: dlsym returns the real function address (it
+// walks exports, not GOT slots), so a patched prologue means someone moved
+// these symbols onto the inline lane.
+// Signatures checked: arm64 brk #imm (ElleKit substitutor patch) and
+// unconditional B (inline trampoline redirect).
+// ---------------------------------------------------------------------------
+
+static void probeHookByteIntegrity(void) {
+    static const char* const kMustStayClean[] = {
+        "syscall", "csops", "_csops_audittoken",
+        "_sysctlbyname", "___sysctlbyname", "_NSGetEnviron",
+    };
+
+    for(size_t i = 0; i < sizeof(kMustStayClean) / sizeof(kMustStayClean[0]); i++) {
+        const char* symbol = kMustStayClean[i];
+        void* fn = dlsym(RTLD_DEFAULT, symbol);
+
+        if(!fn) {
+            skip(@"hooks", [NSString stringWithUTF8String:symbol], @"symbol absent on this OS");
+            continue;
+        }
+
+        uint32_t word = 0;
+        memcpy(&word, fn, sizeof(word));
+
+        BOOL brkPatch = (word & 0xFFE0001F) == 0xD4200000;   // brk #imm
+        BOOL branchPatch = (word & 0xFC000000) == 0x14000000; // b .+off
+
+        report(@"hooks", [NSString stringWithFormat:@"%@ prologue clean", @(symbol)], !(brkPatch || branchPatch),
+               [NSString stringWithFormat:@"first word=0x%08x%s", word, (brkPatch ? " brk-patch" : (branchPatch ? " branch-patch" : ""))]);
+    }
 }
 
 static void probeSkippedGroups(void) {
@@ -1767,6 +1959,12 @@ int main(int argc, char* argv[]) {
             skip(@"syscall", @"csops", @"Hook_Syscall disabled");
         }
 
+        if(prefsEnabled(@"Hook_Syscall") || prefsEnabled(@"Hook_AntiDebugging")) {
+            probeSysctlBootargs();
+        } else {
+            skip(@"syscall", @"kern.bootargs", @"Hook_Syscall and Hook_AntiDebugging disabled");
+        }
+
         if(prefsEnabled(@"Hook_DeviceCheck")) {
             probeDeviceCheckPost();
         } else {
@@ -1833,6 +2031,10 @@ int main(int argc, char* argv[]) {
         } else {
             skip(@"sandbox", @"sandbox_check", @"Hook_Sandbox disabled");
         }
+
+        // Self-gating: dlsym/class availability decides PASS vs SKIP inside.
+        probeCodeSigningObservations();
+        probeHookByteIntegrity();
 
         probeNSUserDefaults();
 

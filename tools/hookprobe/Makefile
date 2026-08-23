@@ -14,7 +14,7 @@ include $(THEOS)/makefiles/common.mk
 TOOL_NAME = hookprobe
 
 hookprobe_FILES = main.m
-hookprobe_FRAMEWORKS = Foundation
+hookprobe_FRAMEWORKS = Foundation Security
 hookprobe_CFLAGS = -fobjc-arc
 hookprobe_INSTALL_PATH = /usr/bin
 
