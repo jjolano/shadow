@@ -1319,6 +1319,64 @@ static void probeSkippedGroups(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Substitutor-lane delivery diagnostics. The 04/23 device run showed every
+// failing probe sits on the [hooks hookFunction:] lane while rebind/message/
+// raw lanes pass. These two probes isolate whether that lane delivers AT ALL:
+//
+//   getppid — the AntiDebugging replacement answers 1 for external callers;
+//     the native answer in this SSH/sudo chain is a real parent pid != 1.
+//     Unambiguous: 1 = substitutor delivered, anything else = inert.
+//
+//   __opendir2 — opendir and __opendir2 may be weak aliases (one address).
+//     Two hookFunction requests on one address can conflict; probing the
+//     private symbol directly separates "pair member filtered" from
+//     "public name unfiltered".
+// ---------------------------------------------------------------------------
+
+extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+
+static void probeSubstitutorDelivery(void) {
+    pid_t ppid = getppid();
+    char parentPath[PATH_MAX] = {0};
+    proc_pidpath(ppid, parentPath, sizeof(parentPath));
+    report(@"hooks", @"getppid substitutor delivery", ppid == 1,
+           [NSString stringWithFormat:@"ppid=%d (%s)", ppid, parentPath[0] ? parentPath : "?"]);
+
+    // Patch-state witness: a WORKING substitutor hook leaves a brk (ElleKit
+    // exception-based patch) at the function entry. No brk on a symbol whose
+    // group installed = the backend applied no patch (silent vm_protect
+    // failure on shared-cache text) — the delivery failure is upstream of
+    // the replacement, not a policy bug.
+    void* getenvFn = dlsym(RTLD_DEFAULT, "getenv");
+
+    if(getenvFn) {
+        uint32_t word = 0;
+        memcpy(&word, getenvFn, sizeof(word));
+        BOOL brkPatched = (word & 0xFFE0001F) == 0xD4200000;
+        report(@"hooks", @"getenv prologue patch state", YES,
+               [NSString stringWithFormat:@"first word=0x%08x %@", word,
+                brkPatched ? @"(brk-patched)" : @"(UNPATCHED — substitutor did not apply)"]);
+    }
+
+    DIR* (*opendir2)(const char*, int) = dlsym(RTLD_DEFAULT, "__opendir2");
+
+    if(opendir2) {
+        errno = 0;
+        DIR* dir = opendir2([kRestrictedDir fileSystemRepresentation], 0);
+        BOOL denied = (dir == NULL && errno == ENOENT);
+
+        if(dir) {
+            closedir(dir);
+        }
+
+        report(@"libc", @"__opendir2(restricted) direct", denied,
+               [NSString stringWithFormat:@"errno=%d", errno]);
+    } else {
+        skip(@"libc", @"__opendir2(restricted) direct", @"__opendir2 symbol absent");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -2119,6 +2177,7 @@ int main(int argc, char* argv[]) {
         }
 
         probeSkippedGroups();
+        probeSubstitutorDelivery();
 
         NSLog(@"[hookprobe] SUMMARY pass=%d fail=%d skip=%d hooksLive=%d", gPass, gFail, gSkip, hooksLive);
 
