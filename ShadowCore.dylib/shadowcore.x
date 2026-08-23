@@ -9,7 +9,6 @@
 #import <Shadow.h>
 #import <Shadow/Settings.h>
 #import <libSandy.h>
-#import <HookKit.h>
 
 #include <time.h>
 #include <dlfcn.h>
@@ -64,13 +63,13 @@ void shdw_detector_detected(const char* reason) {
     [shdw_coordinator_instance escalateWithReason:nil];
 }
 
-static void shdw_coord_envvars_c(HKSubstitutor* hooks) {
+static void shdw_coord_envvars_c(SHDWHookSession* hooks) {
     setenv("SHELL", "/bin/sh", 1);
     shadowhook_libc_envvar(hooks);
     shadowhook_envpolicy(hooks);
 }
 
-static void shdw_coord_symlookup(HKSubstitutor* hooks) {
+static void shdw_coord_symlookup(SHDWHookSession* hooks) {
     shadowhook_dyld_symlookup(hooks);
     shadowhook_dyld_symaddrlookup(hooks);
 }
@@ -80,14 +79,14 @@ static void shdw_coord_verify_symlookup(void) {
     shadowhook_dyld_symaddrlookup_verify();
 }
 
-static void shdw_coord_filesystem_objc(HKSubstitutor* hooks) {
+static void shdw_coord_filesystem_objc(SHDWHookSession* hooks) {
     shadowhook_NSFileManager(hooks);
     shadowhook_NSFileHandle(hooks);
     shadowhook_NSFileVersion(hooks);
     shadowhook_NSFileWrapper(hooks);
 }
 
-static void shdw_coord_foundation_objc(HKSubstitutor* hooks) {
+static void shdw_coord_foundation_objc(SHDWHookSession* hooks) {
     shadowhook_NSArray(hooks);
     shadowhook_NSDictionary(hooks);
     shadowhook_NSBundle(hooks);

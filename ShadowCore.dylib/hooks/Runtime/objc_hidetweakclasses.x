@@ -439,7 +439,7 @@ static void replaced_objc_setHook_getClass(objc_hook_getClass newValue, objc_hoo
 // had broad runtime interference for no reachable detector surface.
 
 
-void shadowhook_objc_hidetweakclasses(HKSubstitutor* hooks) {
+void shadowhook_objc_hidetweakclasses(SHDWHookSession* hooks) {
     [hooks hookFunction:NSClassFromString withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
 
     // Class lookup / enumeration (plan Wave 1c). objc_getRequiredClass is

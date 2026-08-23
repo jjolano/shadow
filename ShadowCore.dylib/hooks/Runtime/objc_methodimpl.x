@@ -6,7 +6,7 @@ IMP (*original_method_getImplementation)(Method m);
 // to hide Shadow-owned IMPs therefore breaks legitimate swizzlers on public
 // classes: they get a NULL predecessor and later branch through address 0.
 // Keep the native API live and retain hiding in the class-aware metadata hooks.
-void shadowhook_objc_methodimpl(HKSubstitutor* hooks) {
+void shadowhook_objc_methodimpl(SHDWHookSession* hooks) {
     (void)hooks;
 
     if(!original_method_getImplementation) {

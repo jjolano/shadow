@@ -3,10 +3,8 @@
 
 #import <Foundation/Foundation.h>
 
-// Runtime capability checks for the Settings UI, based on available HookKit
-// backends.
-// Controllers call SHDWApplyHookGroupGating: on their loaded specifiers to
-// disable toggles whose backend is missing, with a footer note explaining why.
+// Compatibility surface for Settings controllers. HK3 routes requests in the
+// injected process, so the Preferences bundle leaves hook controls enabled.
 
 // Hook-group capability matrix. groupID is the plist id (e.g. "Hook_Memory").
 // Supported = the selected/available backends can actually run the group's

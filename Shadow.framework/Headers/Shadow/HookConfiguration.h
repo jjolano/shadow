@@ -49,13 +49,6 @@
 // has per-app overrides", so its NO state is "follow global", not "off".
 #define SHDWAppDisabledID          @"App_Disabled"
 
-// Stale key from older releases: the FakeMac group was removed as inert (its
-// installer installs nothing — answering isMacCatalystApp/isiOSAppOnMac YES
-// is a universal fingerprint). The key is ACCEPTED but IGNORED: it is not in
-// the defaults, presets, capability list or install-unit table, so existing
-// preference files that still carry it keep parsing without breaking.
-#define SHDWStaleFakeMacID         @"Hook_FakeMac"
-
 #pragma mark - Lifecycle phases
 
 // When an install unit is installed:
@@ -79,13 +72,13 @@ typedef NS_ENUM(NSInteger, SHDWLifecycleEvent) {
     SHDWEventDetectorEscalation,   // behavioral tripwire fired
 };
 
-#pragma mark - Available-backend capabilities (what HKSubstitutor can do)
+#pragma mark - Native HookKit request capabilities
 
 typedef NS_OPTIONS(NSUInteger, SHDWCapabilities) {
-    SHDWCapMessage   = 1 << 0,   // ObjC message swizzle backend (ElleKit/Substrate/Substitute/native)
-    SHDWCapFunction  = 1 << 1,   // C-function rebind backend (fishhook etc.)
-    SHDWCapInline    = 1 << 2,   // function-inline backend
-    SHDWCapPrivateSym = 1 << 3,  // private-symbol-capable backend
+    SHDWCapMessage   = 1 << 0,   // ObjC method request
+    SHDWCapFunction  = 1 << 1,   // C function request
+    SHDWCapInline    = 1 << 2,   // address-hook request
+    SHDWCapPrivateSym = 1 << 3,  // loaded-image symbol lookup request
 };
 
 #pragma mark - Install units
@@ -131,7 +124,7 @@ SHDW_EXPORT NSDictionary<NSString*, id>* SHDWPresetMaximum(void);
 
 // Backend requirement of a hook group, as a stable string:
 //   "message", "function", "inline", or "none"
-// (not a hook group / stale+ignored, e.g. the removed FakeMac).
+// (not a hook group).
 SHDW_EXPORT NSString* SHDWHookGroupCapabilityKind(NSString* groupID);
 
 #pragma mark - Planner (pure)

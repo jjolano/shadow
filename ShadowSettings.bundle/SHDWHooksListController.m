@@ -21,9 +21,7 @@
 // Preset profiles: batch values for every hook toggle. "standard" mirrors the
 // shipped defaults; "maximum" enables everything including dangerous hooks.
 // Canonical values come from Shadow/HookConfiguration.h (SHDWPresetStandard /
-// SHDWPresetMaximum) — the metadata is the single source of truth. The stale
-// Hook_FakeMac key is absent from both, so a stored legacy value is simply
-// ignored by PrefsMatchPreset.
+// SHDWPresetMaximum) — the metadata is the single source of truth.
 
 static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
 	for(NSString* key in preset) {

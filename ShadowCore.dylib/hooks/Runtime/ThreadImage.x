@@ -122,7 +122,7 @@ static NSArray* shdw_filter_stack_symbols(NSArray* result) {
 %end
 %end
 
-void shadowhook_NSThread(HKSubstitutor* hooks) {
+void shadowhook_NSThread(SHDWHookSession* hooks) {
     %init(shadowhook_NSThread);
 }
 
@@ -247,7 +247,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 %end
 %end
 
-void shadowhook_UIImage(HKSubstitutor* hooks) {
+void shadowhook_UIImage(SHDWHookSession* hooks) {
     %init(shadowhook_UIImage);
 
     if(class_getClassMethod([UIImage class], @selector(imageNamed:inBundle:variableValue:withConfiguration:))) {

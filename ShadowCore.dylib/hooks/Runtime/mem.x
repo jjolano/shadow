@@ -118,7 +118,7 @@ static kern_return_t replaced_mach_vm_region_recurse(vm_map_read_t target_task, 
     }
 }
 
-void shadowhook_mem(HKSubstitutor* hooks) {
+void shadowhook_mem(SHDWHookSession* hooks) {
     [hooks hookFunction:vm_region_64 withReplacement:replaced_vm_region_64 outOldPtr:(void **) &original_vm_region_64];
     [hooks hookFunction:vm_region_recurse_64 withReplacement:replaced_vm_region_recurse_64 outOldPtr:(void **) &original_vm_region_recurse_64];
     [hooks hookFunction:mach_vm_region withReplacement:replaced_mach_vm_region outOldPtr:(void **) &original_mach_vm_region];

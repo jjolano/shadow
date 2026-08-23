@@ -20,7 +20,7 @@ Dependencies are pulled in automatically. You may need additional repositories f
 
 * `AltList` from [opa334's repository](https://opa334.github.io) — application listing in preferences.
 * `libSandy` from [opa334's repository](https://opa334.github.io) — sandboxed preference loading.
-* `HookKit` (>= 2.5.0) from [jjolano's repository](https://ios.jjolano.me) — hooking, including the change-hooking-library feature.
+* `HookKit` (>= 3.0.0) from [jjolano's repository](https://ios.jjolano.me) — the canonical HK3 runtime behind Shadow's compatibility source surface.
 
 `Injection Foundation` from [PoomSmart's repository](https://poomsmart.github.io/repo) is recommended but not required; it ensures Shadow is injected properly into certain apps.
 
@@ -59,7 +59,7 @@ Building requires [Theos](https://theos.dev). Build pinned dependencies first, t
 ./build.sh rootful-modern
 ```
 
-The available lanes are `rootful-legacy`, `rootful-modern`, `rootless`, and `roothide`; `rootful` builds both rootful packages when both toolchains are available. Legacy Linux builds default to `$THEOS/toolchain/oldabi/linux/iphone` (Clang 11) and `$THEOS/sdks/iPhoneOS13.7.sdk`; `OLDABI_TOOLCHAIN` and `OLDABI_SDKS` can override those locations. The dependency build invokes HookKit's pinned legacy builder, with `HOOKKIT_LEGACY_DEB` available as a prebuilt override. Modern lanes require macOS/Xcode 12 or newer for the new arm64e ABI, and RootHide uses the [RootHide Theos fork](https://github.com/roothide/theos). Every package is rejected if its architecture set, deployment targets, ABI marker, metadata, loader paths, or required payload is wrong.
+The available lanes are `rootful-legacy`, `rootful-modern`, `rootless`, and `roothide`; `rootful` builds both rootful packages when both toolchains are available. Legacy Linux builds default to `$THEOS/toolchain/oldabi/linux/iphone` (Clang 11) and `$THEOS/sdks/iPhoneOS13.7.sdk`; `OLDABI_TOOLCHAIN` and `OLDABI_SDKS` can override those locations. Modern dependency builds use HookKit's canonical 3.0 facade; set `HOOKKIT_CANONICAL_DEB` to use a locally built package. The legacy lane remains on the old-ABI HookKit package and accepts `HOOKKIT_LEGACY_DEB`. Modern lanes require macOS/Xcode 12 or newer for the new arm64e ABI, and RootHide uses the [RootHide Theos fork](https://github.com/roothide/theos). Every package is rejected if its architecture set, deployment targets, ABI marker, metadata, loader paths, or required payload is wrong.
 
 Continuous integration builds and verifies the legacy lane on Ubuntu and all three modern lanes on macOS (`.github/workflows/build.yml`).
 

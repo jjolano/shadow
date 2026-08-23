@@ -338,7 +338,7 @@ int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open
     return original_openat_authenticated_np(dirfd, path, auth, flags);
 }
 
-void shadowhook_libc_lowlevel(HKSubstitutor* hooks) {
+void shadowhook_libc_lowlevel(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LOWLEVEL);
 }
 

@@ -1141,7 +1141,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 %end
 %end
 
-void shadowhook_NSFileManager(HKSubstitutor* hooks) {
+void shadowhook_NSFileManager(SHDWHookSession* hooks) {
     %init(shadowhook_NSFileManager);
 
     Class fileManager = [NSFileManager class];

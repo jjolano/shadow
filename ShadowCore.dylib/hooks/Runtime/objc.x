@@ -336,7 +336,7 @@ static id replaced_imp_getBlock(IMP anImp) {
 
     return block;
 }
-void shadowhook_objc(HKSubstitutor* hooks) {
+void shadowhook_objc(SHDWHookSession* hooks) {
     // %init(shadowhook_objc);
     [hooks hookFunction:class_getImageName withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
     [hooks hookFunction:objc_copyClassNamesForImage withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];

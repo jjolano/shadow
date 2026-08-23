@@ -177,8 +177,6 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             // Pseudo sandbox: policy inside RestrictionEngine, pref-driven, not an
             // install unit — no backend requirement (keeps diff minimal).
             SHDWPseudoSandboxModeID : @"none",
-            // Removed as inert; accepted-but-ignored stale key.
-            SHDWStaleFakeMacID : @"none",
         };
     });
 

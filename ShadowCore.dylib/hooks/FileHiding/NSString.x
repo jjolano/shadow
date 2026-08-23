@@ -338,7 +338,7 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 %end
 %end
 
-void shadowhook_NSString(HKSubstitutor* hooks) {
+void shadowhook_NSString(SHDWHookSession* hooks) {
     %init(shadowhook_NSString);
     %init(shadowhook_NSCharacterSet);
 

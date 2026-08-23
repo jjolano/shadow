@@ -3,19 +3,16 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/HookConfiguration.h>
-#import <HookKit.h>
+#import "SHDWHookSession.h"
 
 typedef struct {
     const char* unitID;
-    void (*install)(HKSubstitutor* hooks);
+    void (*install)(SHDWHookSession* hooks);
     void (*verify)(void);
 } SHDWHookInstaller;
 
 @interface SHDWBackendSet : NSObject
-@property (nonatomic, readonly) HKSubstitutor* message;
-@property (nonatomic, readonly) HKSubstitutor* rebind;
-@property (nonatomic, readonly) HKSubstitutor* symlookup;
-@property (nonatomic, readonly) HKSubstitutor* privateSym;
+@property (nonatomic, readonly) SHDWHookSession* hooks;
 @property (nonatomic, readonly) SHDWCapabilities capabilities;
 @end
 

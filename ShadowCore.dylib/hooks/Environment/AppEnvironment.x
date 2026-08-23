@@ -43,7 +43,7 @@
 %end
 %end
 
-void shadowhook_UIApplication(HKSubstitutor* hooks) {
+void shadowhook_UIApplication(SHDWHookSession* hooks) {
     %init(shadowhook_UIApplication);
 }
 
@@ -105,7 +105,7 @@ static BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
 %end
 %end
 
-void shadowhook_NSUserDefaults(HKSubstitutor* hooks) {
+void shadowhook_NSUserDefaults(SHDWHookSession* hooks) {
     %init(shadowhook_NSUserDefaults);
 }
 #import "../../policy/EnvironmentPolicy.h"
@@ -141,7 +141,7 @@ void shadowhook_NSUserDefaults(HKSubstitutor* hooks) {
 %end
 %end
 
-void shadowhook_NSProcessInfo(HKSubstitutor* hooks) {
+void shadowhook_NSProcessInfo(SHDWHookSession* hooks) {
     %init(shadowhook_NSProcessInfo);
 }
 
@@ -349,7 +349,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 %end
 %end
 
-void shadowhook_LSApplicationWorkspace(HKSubstitutor* hooks) {
+void shadowhook_LSApplicationWorkspace(SHDWHookSession* hooks) {
     %init(shadowhook_LSApplicationWorkspace);
 
     Class workspace = objc_getClass("LSApplicationWorkspace");

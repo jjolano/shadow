@@ -149,7 +149,7 @@ static kern_return_t replaced_IOServiceOpen(io_service_t service, task_port_t ow
     return original_IOServiceOpen(service, owningTask, type, connect);
 }
 
-void shadowhook_iokit(HKSubstitutor* hooks) {
+void shadowhook_iokit(SHDWHookSession* hooks) {
     [hooks hookFunction:IOServiceGetMatchingServices withReplacement:replaced_IOServiceGetMatchingServices outOldPtr:(void **) &original_IOServiceGetMatchingServices];
     [hooks hookFunction:IOServiceOpen withReplacement:replaced_IOServiceOpen outOldPtr:(void **) &original_IOServiceOpen];
 
