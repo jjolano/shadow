@@ -338,10 +338,12 @@ static id replaced_imp_getBlock(IMP anImp) {
 }
 void shadowhook_objc(SHDWHookSession* hooks) {
     // %init(shadowhook_objc);
-    [hooks hookFunction:class_getImageName withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
-    [hooks hookFunction:objc_copyClassNamesForImage withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];
-    [hooks hookFunction:objc_copyImageNames withReplacement:replaced_objc_copyImageNames outOldPtr:(void **) &original_objc_copyImageNames];
-    [hooks hookFunction:class_getMethodImplementation withReplacement:replaced_class_getMethodImplementation outOldPtr:(void **) &original_class_getMethodImplementation];
+    // Public ObjC imports use HK3's existing-import route. Runtime-resolved
+    // private symbols below still need the address route.
+    [hooks hookRebindSymbol:@"class_getImageName" withReplacement:replaced_class_getImageName outOldPtr:(void **) &original_class_getImageName];
+    [hooks hookRebindSymbol:@"objc_copyClassNamesForImage" withReplacement:replaced_objc_copyClassNamesForImage outOldPtr:(void **) &original_objc_copyClassNamesForImage];
+    [hooks hookRebindSymbol:@"objc_copyImageNames" withReplacement:replaced_objc_copyImageNames outOldPtr:(void **) &original_objc_copyImageNames];
+    [hooks hookRebindSymbol:@"class_getMethodImplementation" withReplacement:replaced_class_getMethodImplementation outOldPtr:(void **) &original_class_getMethodImplementation];
 
     void* imp_getBlock_ptr = dlsym(RTLD_DEFAULT, "imp_getBlock");
     if(imp_getBlock_ptr) {
