@@ -7,6 +7,10 @@ verify-path-rewrite:
 		verify-path-rewrite.c ../ShadowCore.dylib/hooks/FileHiding/path_rewrite.c
 	/tmp/opencode/rewrite-test
 
+verify-device-driver:
+	python3 stealth_device.py selftest
+	./stealth-device.sh selftest
+
 # Builds the real Shadow.framework decision sources against a host Foundation
 # with a path shim.
 # Nothing here touches the theos/device toolchain.
@@ -125,4 +129,4 @@ clean:
 
 endif
 
-.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite
+.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
