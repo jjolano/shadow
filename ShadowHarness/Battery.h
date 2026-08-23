@@ -18,9 +18,15 @@ BOOL ShdwWriteEvidenceData(NSData* data, NSString* path);
 
 // YES when Shadow's hooks payload (ShadowCore.dylib) is loaded into this
 // process — the stub dlopens it when its ctor path gate passes. The harness
-// links Shadow.framework directly, so class presence alone does not mean
-// the hooks are active.
+// links Shadow.framework directly, so it probes a Core-only coordinator
+// class under Shadow's internal-read scope rather than treating class hiding
+// itself as the payload canary.
 BOOL ShdwIsShadowCoreLoaded(void);
+
+// YES when external ObjC class lookup hides Shadow's framework class. This
+// remains a separate stealth assertion: Core can be active while this one
+// hook group is unavailable.
+BOOL ShdwIsShadowClassHidingActive(void);
 
 // Engine class lookup that survives Shadow's own class hiding: with the
 // payload active, NSClassFromString/objc_getClass are hooked and hide

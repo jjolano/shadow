@@ -38,6 +38,32 @@
 
 #import "FileHiding/path_rewrite.h"
 
+// --- Hook-lane contract (hook-concealment front) ---------------------------
+//
+// Every hooked symbol lives on one of two lanes, and the lane choice is a
+// STEALTH decision, not an implementation detail:
+//
+//   * REBIND lane (hookRebindSymbol / fishhook-style GOT and lazy-pointer
+//     rebinding): only the pointer slots change; the function body keeps its
+//     original bytes. Byte-comparison "system library hooking" detectors
+//     (dlsym the symbol, compare the prologue against known-good encodings)
+//     see nothing. Required for detection-hot symbols.
+//
+//   * SUBSTITUTOR/INLINE lane ([hooks hookFunction:] — ElleKit substitutor,
+//     brk-patched prologues, or HKStrategyInline trampolines): the function's
+//     first instructions are modified and are detectable by prologue
+//     comparison.
+//
+// MUST stay on the rebind lane (currently: syscall.x — syscall, csops,
+// ___syscall, _sysctlbyname, ___sysctlbyname, _csops_audittoken,
+// _NSGetEnviron; rationale: hottest concurrent calls AND byte-integrity
+// surface). tools/hookprobe's `hooks|<symbol> prologue clean` battery pins
+// this at runtime — moving one of these to the inline lane turns that probe
+// FAIL by design. New detection-hot hooks go rebind-first; deviating needs a
+// written rationale here.
+//
+// ---------------------------------------------------------------------------
+
 // Resolve a libsystem C export by its Mach-O symbol name (e.g. "_signal") for
 // the hand-written C-function groups (sandbox/syscall/mach/iokit). Use this
 // instead of [hooks findSymbolInImage:NULL symbolName:@"_x"]: the vendored
