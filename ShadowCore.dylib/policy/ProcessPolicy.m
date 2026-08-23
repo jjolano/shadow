@@ -308,6 +308,11 @@ void shdw_proc_sanitize_self_record(struct kinfo_proc* p) {
 
 // --- sysctl MIB classification ---------------------------------------------
 
+// The real {CTL_KERN, KERN_BOOTARGS} MIB, resolved once via
+// sysctlnametomib (see shdw_proc_mib_kind). mib[0] stays 0 until resolved.
+static int shdw_bootargs_mib[2] = {0, 0};
+static BOOL shdw_bootargs_mib_resolved = NO;
+
 shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
     if(!name || namelen == 0) {
         return SHADW_PROC_MIB_NONE;
@@ -317,9 +322,19 @@ shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
         return SHADW_PROC_MIB_NONE;
     }
 
-    // KERN_BOOTARGS is a direct CTL_KERN child: {CTL_KERN, KERN_BOOTARGS}.
-    // Checked before the namelen < 3 bail — this MIB has exactly 2 elements.
-    if(name[1] == KERN_BOOTARGS && namelen == 2) {
+    // KERN_BOOTARGS is a direct CTL_KERN child — but its MIB number is NOT
+    // stable across xnu builds (the theos SDK ships no constant, and a
+    // hardcoded guess answers ENOENT from the kernel on xnu-8020). Resolve
+    // the real MIB once via sysctlnametomib and classify by value. Failure
+    // to resolve classifies NONE (fail-open: pass-through untouched).
+    if(!shdw_bootargs_mib_resolved) {
+        size_t miblen = sizeof(shdw_bootargs_mib) / sizeof(shdw_bootargs_mib[0]);
+        shdw_bootargs_mib_resolved = YES;   // resolve once; benign race (idempotent)
+        sysctlnametomib("kern.bootargs", shdw_bootargs_mib, &miblen);
+    }
+
+    if(shdw_bootargs_mib[0] != 0 && namelen == 2 &&
+       name[0] == shdw_bootargs_mib[0] && name[1] == shdw_bootargs_mib[1]) {
         return SHADW_PROC_MIB_BOOTARGS;
     }
 
