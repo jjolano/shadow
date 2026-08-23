@@ -61,6 +61,7 @@ static NSDictionary* AllOnPrefs(void) {
     prefs[SHDWHookIDIOKit] = @(YES);
     prefs[SHDWHookIDLowLevelC] = @(YES);
     prefs[SHDWHookIDAntiDebugging] = @(YES);
+    prefs[SHDWHookIDCodeSigning] = @(YES);
     prefs[SHDWHookIDDynamicLibrariesExtra] = @(YES);
     prefs[SHDWHookIDSyscall] = @(YES);
     prefs[SHDWHookIDSandbox] = @(YES);
@@ -82,6 +83,7 @@ static NSArray* ExpectedCtorOrder(void) {
         @"Hook_IOKit",
         @"Hook_LowLevelC",
         @"Hook_AntiDebugging",
+        @"Hook_CodeSigning",
         @"objc",
         @"objc@methodimpl",
         @"Hook_Syscall",

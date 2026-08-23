@@ -109,6 +109,7 @@ static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
     { "Hook_IOKit",                   shadowhook_iokit,                shadowhook_iokit_verify },
     { "Hook_LowLevelC",               shadowhook_libc_lowlevel,        shadowhook_libc_lowlevel_verify },
     { "Hook_AntiDebugging",           shadowhook_libc_antidebugging,   shadowhook_libc_antidebugging_verify },
+    { "Hook_CodeSigning",             shadowhook_security,             shadowhook_security_verify },
     { "objc",                         shadowhook_objc,                 NULL },
     { "objc@methodimpl",              shadowhook_objc_methodimpl,      NULL },
     { "Hook_Syscall",                 shadowhook_syscall,              shadowhook_syscall_verify },
@@ -161,13 +162,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         for(uint32_t i = 0; i < count; i++) {
             shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
         }
-    }
-
-    NSString* counterKey = shdw_crash_counter_key();
-    if(counterKey) {
-        NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-        [defaults removeObjectForKey:counterKey];
-        [defaults synchronize];
     }
 
     NSLog(@"completed hooks");

@@ -31,6 +31,7 @@
 #define SHDWHookIDIOKit            @"Hook_IOKit"
 #define SHDWHookIDLowLevelC        @"Hook_LowLevelC"
 #define SHDWHookIDAntiDebugging    @"Hook_AntiDebugging"
+#define SHDWHookIDCodeSigning      @"Hook_CodeSigning"
 #define SHDWHookIDDynamicLibrariesExtra @"Hook_DynamicLibrariesExtra"
 #define SHDWHookIDSyscall          @"Hook_Syscall"
 #define SHDWHookIDSandbox          @"Hook_Sandbox"

@@ -167,18 +167,6 @@
 			<key>cell</key>
 			<string>PSLinkCell</string>
 			<key>detail</key>
-			<string>SHDWSafeModeListController</string>
-			<key>icon</key>
-			<string>IcoSafeMode.png</string>
-			<key>isController</key>
-			<true/>
-			<key>label</key>
-			<string>ROOT_SAFE_MODE</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
 			<string>SHDWDetectorLogListController</string>
 			<key>icon</key>
 			<string>IcoLog.png</string>

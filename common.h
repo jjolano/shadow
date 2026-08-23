@@ -4,27 +4,6 @@
 #define SHADOW_PREFS_PLIST  "/var/mobile/Library/Preferences/" BUNDLE_ID ".plist"
 
 #import <Foundation/Foundation.h>
-#include <unistd.h>
-
-// Crash watchdog: the stub (Shadow.dylib) increments a per-app counter
-// before loading the payload; ShadowCore resets it when its ctor completes.
-// After SHADOW_CRASH_THRESHOLD consecutive launches where the payload did
-// not complete (crash during load), the stub skips it — the app keeps
-// running unhooked instead of dying at spawn. The counter decays after
-// SHADOW_CRASH_DECAY_SECS so a fixed update recovers automatically.
-//
-// The counter lives INSIDE the Shadow prefs plist (per-app key) — never a
-// separate file: a standalone file in the prefs dir would be a detection
-// vector. The plist is a known Shadow artifact. Value format:
-// "<count>:<unixTimestamp>" (timestamp enables
-// the decay without trusting the plist mtime, which settings writes touch).
-#define SHADOW_CRASH_THRESHOLD 3
-#define SHADOW_CRASH_DECAY_SECS (24 * 60 * 60)
-
-static inline NSString* shdw_crash_counter_key(void) {
-    NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
-    return bundleID ? [NSString stringWithFormat:@"CrashCount.%@", bundleID] : nil;
-}
 
 #ifndef DEBUG
 #define NSLog(...) (void)0
