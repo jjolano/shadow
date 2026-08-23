@@ -309,11 +309,21 @@ void shdw_proc_sanitize_self_record(struct kinfo_proc* p) {
 // --- sysctl MIB classification ---------------------------------------------
 
 shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
-    if(!name || namelen < 3) {
+    if(!name || namelen == 0) {
         return SHADW_PROC_MIB_NONE;
     }
 
     if(name[0] != CTL_KERN) {
+        return SHADW_PROC_MIB_NONE;
+    }
+
+    // KERN_BOOTARGS is a direct CTL_KERN child: {CTL_KERN, KERN_BOOTARGS}.
+    // Checked before the namelen < 3 bail — this MIB has exactly 2 elements.
+    if(name[1] == KERN_BOOTARGS && namelen == 2) {
+        return SHADW_PROC_MIB_BOOTARGS;
+    }
+
+    if(namelen < 3) {
         return SHADW_PROC_MIB_NONE;
     }
 
@@ -357,4 +367,29 @@ shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
     }
 
     return SHADW_PROC_MIB_NONE;
+}
+
+// --- kern.bootargs answer ---------------------------------------------------
+
+int shdw_bootargs_filtered(void* oldp, size_t* oldlenp) {
+    if(!oldlenp) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    if(!oldp) {
+        // Size-only query: an empty string is one NUL byte.
+        *oldlenp = 1;
+        return 0;
+    }
+
+    if(*oldlenp < 1) {
+        *oldlenp = 1;
+        errno = ENOMEM;
+        return -1;
+    }
+
+    ((char*) oldp)[0] = '\0';
+    *oldlenp = 1;
+    return 0;
 }

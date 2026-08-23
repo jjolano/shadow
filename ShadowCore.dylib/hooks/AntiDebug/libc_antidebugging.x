@@ -50,6 +50,12 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
 
     shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(name, namelen);
 
+    // kern.bootargs: answered directly (empty string, stock semantics) —
+    // see shdw_bootargs_filtered. Setting boot args (newp) passes through.
+    if(kind == SHADW_PROC_MIB_BOOTARGS && newp == NULL) {
+        return shdw_bootargs_filtered(oldp, oldlenp);
+    }
+
     // Per-pid queries of a jailbreak daemon must answer ENOENT, the same
     // hiding the KERN_PROC_ALL filter applies to the list (a pid-scanning
     // detector steps the MIB pid by pid).

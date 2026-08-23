@@ -315,6 +315,7 @@ static long shdw_syscall_dispatch(int number, va_list args) {
     u_int sysctl_miblen = 0;
     void* sysctl_oldp = NULL;
     size_t* sysctl_oldlenp = NULL;
+    void* sysctl_newp = NULL;
 
     // Raw getdirentries64 policy args (hoisted; used after the forward).
     int gd_fd = -1;
@@ -366,8 +367,18 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                 sysctl_miblen = (u_int) va_arg(inspect, intptr_t);
                 sysctl_oldp = (void *) va_arg(inspect, intptr_t);
                 sysctl_oldlenp = (size_t *) va_arg(inspect, intptr_t);
+                sysctl_newp = (void *) va_arg(inspect, intptr_t);
 
                 shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
+
+                // kern.bootargs: answered directly (empty string, stock
+                // semantics) — see shdw_bootargs_filtered. Setting boot args
+                // (newp) passes through.
+                if(kind == SHADW_PROC_MIB_BOOTARGS && sysctl_newp == NULL) {
+                    int ba_ret = shdw_bootargs_filtered(sysctl_oldp, sysctl_oldlenp);
+                    va_end(inspect);
+                    return ba_ret;
+                }
 
                 // KERN_PROC_ALL process enumeration: same filtered-list policy
                 // as the libc.x sysctl hook, via the shared filter
@@ -663,6 +674,13 @@ static int replaced_csops_audittoken(pid_t pid, unsigned int ops, void* useraddr
 
 static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlenp, void* newp, size_t newlen, int (*original)(const char*, void*, size_t*, void*, size_t)) {
     if(isCallerExternal() && name) {
+        // kern.bootargs: answered directly (empty string, stock semantics)
+        // — see shdw_bootargs_filtered. Setting boot args (newp) passes
+        // through.
+        if(strcmp(name, "kern.bootargs") == 0 && newp == NULL) {
+            return shdw_bootargs_filtered(oldp, oldlenp);
+        }
+
         if(strcmp(name, "kern.proc.all") == 0) {
             // The original calls below re-enter the (possibly
             // __syscall-delegating) dispatch, hence reentrant = YES.
