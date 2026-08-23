@@ -442,7 +442,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 %end
 %end
 
-void shadowhook_NSURL(HKSubstitutor* hooks) {
+void shadowhook_NSURL(SHDWHookSession* hooks) {
     %init(shadowhook_NSURL);
     %init(shadowhook_NSURLSession);
 }

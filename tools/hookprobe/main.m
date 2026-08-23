@@ -1096,39 +1096,22 @@ static BOOL reportArguments(int argc, char* argv[], const char** runID, const ch
     return *runID && *rowID && *nonce && *revision && *requestedMode;
 }
 
-static int reportModeNotRun(int argc, char* argv[], const char* mode) {
-    const char *runID, *rowID, *nonce, *revision, *requestedMode;
-
-    if(!reportArguments(argc, argv, &runID, &rowID, &nonce, &revision, &requestedMode)) {
-        fprintf(stderr, "hookprobe: %s requires run, row, nonce, revision, and mode\n", mode);
-        return 64;
-    }
-
-    NSDictionary* observations;
-
-    if(strncmp(mode, "lifecycle-", strlen("lifecycle-")) == 0 || strcmp(mode, "vnode-held-lease") == 0) {
-        observations = @{ @"lifecycle" : @[ @{ @"id" : @(mode), @"status" : @"NOT-RUN",
-                                                   @"restore" : @"NOT-RUN",
-                                                   @"reason" : @"backend lifecycle was removed" } ] };
-    } else {
-        observations = @{ @"mode" : @{ @"id" : @(mode), @"status" : @"NOT-RUN",
-                                          @"reason" : @"mode has no device implementation" } };
-    }
-
-    writeJSON(@{
+static NSDictionary* reportEnvelope(NSString* producer, const char* runID, const char* rowID,
+                                    const char* requestedMode, const char* nonce, const char* revision,
+                                    NSDictionary* canary, NSDictionary* observations, int producerExit) {
+    return @{
         @"schema_version" : @1,
-        @"producer" : @"hookprobe-mode-not-run",
+        @"producer" : producer,
         @"run_id" : @(runID),
         @"row_id" : @(rowID),
         @"row_type" : @"jailbroken",
         @"requested_mode" : @(requestedMode),
         @"nonce" : @(nonce),
         @"probe_revision" : @(revision),
-        @"canary" : @{ @"status" : @"NOT-RUN" },
+        @"canary" : canary,
         @"observations" : observations,
-        @"producer_exit" : @1,
-    });
-    return 1;
+        @"producer_exit" : @(producerExit),
+    };
 }
 
 static int reportRegressionMatrix(int argc, char* argv[], BOOL hooksLive) {
@@ -1156,19 +1139,8 @@ static int reportRegressionMatrix(int argc, char* argv[], BOOL hooksLive) {
                            @"probe_summary" : @{ @"pass" : @(gPass), @"fail" : @(gFail), @"skip" : @(gSkip) } },
     };
 
-    writeJSON(@{
-        @"schema_version" : @1,
-        @"producer" : @"hookprobe-regression-matrix",
-        @"run_id" : @(runID),
-        @"row_id" : @(rowID),
-        @"row_type" : @"jailbroken",
-        @"requested_mode" : @(requestedMode),
-        @"nonce" : @(nonce),
-        @"probe_revision" : @(revision),
-        @"canary" : @{ @"status" : hooksLive ? @"PASS" : @"FAIL" },
-        @"observations" : observations,
-        @"producer_exit" : @(passed ? 0 : 1),
-    });
+    writeJSON(reportEnvelope(@"hookprobe-regression-matrix", runID, rowID, requestedMode, nonce, revision,
+                             @{ @"status" : hooksLive ? @"PASS" : @"FAIL" }, observations, passed ? 0 : 1));
     return passed ? 0 : 1;
 }
 
@@ -1238,21 +1210,9 @@ static int reportBackendAbsence(int argc, char* argv[], const char* mode) {
         lifecycle[@"reconnect"] = reconnectPassed ? @"PASS" : @"FAIL";
     }
 
-    NSDictionary* report = @{
-        @"schema_version" : @1,
-        @"producer" : @"hookprobe-backend-absence",
-        @"run_id" : @(runID),
-        @"row_id" : @(rowID),
-        @"row_type" : @"jailbroken",
-        @"requested_mode" : @(requestedMode),
-        @"nonce" : @(nonce),
-        @"probe_revision" : @(revision),
-        @"canary" : @{ @"status" : passed ? @"PASS" : @"FAIL" },
-        @"observations" : @{ @"lifecycle" : @[ lifecycle ] },
-        @"producer_exit" : @(passed ? 0 : 1),
-    };
-
-    writeJSON(report);
+    writeJSON(reportEnvelope(@"hookprobe-backend-absence", runID, rowID, requestedMode, nonce, revision,
+                             @{ @"status" : passed ? @"PASS" : @"FAIL" }, @{ @"lifecycle" : @[ lifecycle ] },
+                             passed ? 0 : 1));
     return passed ? 0 : 1;
 }
 
@@ -1457,21 +1417,11 @@ static void probeLaunchServices(void) {
 
 static int reportIdentitySetupFailure(const char* runID, const char* rowID, const char* nonce,
                                       const char* revision, const char* requestedMode, NSString* reason) {
-    writeJSON(@{
-        @"schema_version" : @1,
-        @"producer" : @"hookprobe-identity",
-        @"run_id" : @(runID),
-        @"row_id" : @(rowID),
-        @"row_type" : @"jailbroken",
-        @"requested_mode" : @(requestedMode),
-        @"nonce" : @(nonce),
-        @"probe_revision" : @(revision),
-        @"canary" : @{ @"status" : @"FAIL" },
-        @"observations" : @{ @"identity" : @{ @"case_id" : @"identity", @"status" : @"FAIL", @"reason" : reason },
-                              @"regression" : @[],
-                              @"controls" : @{ @"positive" : @"FAIL", @"unrelated" : @"FAIL" } },
-        @"producer_exit" : @1,
-    });
+    writeJSON(reportEnvelope(@"hookprobe-identity", runID, rowID, requestedMode, nonce, revision,
+                             @{ @"status" : @"FAIL" },
+                             @{ @"identity" : @{ @"case_id" : @"identity", @"status" : @"FAIL", @"reason" : reason },
+                                @"regression" : @[],
+                                @"controls" : @{ @"positive" : @"FAIL", @"unrelated" : @"FAIL" } }, 1));
     return 1;
 }
 
@@ -1610,26 +1560,16 @@ static int reportIdentity(int argc, char* argv[], BOOL hooksLive) {
     }
 
     NSDictionary* finalCanonical = identityCoreSnapshot(bundleID, scheme);
-    writeJSON(@{
-        @"schema_version" : @1,
-        @"producer" : @"hookprobe-identity",
-        @"run_id" : @(runID),
-        @"row_id" : @(rowID),
-        @"row_type" : @"jailbroken",
-        @"requested_mode" : @(requestedMode),
-        @"nonce" : @(nonce),
-        @"probe_revision" : @(revision),
-        @"canary" : @{ @"status" : passed ? @"PASS" : @"FAIL" },
-        @"observations" : @{
-            @"identity" : @{ @"case_id" : @"identity", @"fixture_directory" : directory,
-                              @"bundle_id" : bundleID, @"scheme" : scheme,
-                              @"canonical" : finalCanonical ?: [NSNull null], @"variants" : variants },
-            @"regression" : regression,
-            @"controls" : @{ @"positive" : hooksLive ? @"PASS" : @"FAIL",
-                              @"unrelated" : unrelated ? @"PASS" : @"FAIL" },
-        },
-        @"producer_exit" : @(passed ? 0 : 1),
-    });
+    writeJSON(reportEnvelope(@"hookprobe-identity", runID, rowID, requestedMode, nonce, revision,
+                             @{ @"status" : passed ? @"PASS" : @"FAIL" },
+                             @{
+                                 @"identity" : @{ @"case_id" : @"identity", @"fixture_directory" : directory,
+                                                   @"bundle_id" : bundleID, @"scheme" : scheme,
+                                                   @"canonical" : finalCanonical ?: [NSNull null], @"variants" : variants },
+                                 @"regression" : regression,
+                                 @"controls" : @{ @"positive" : hooksLive ? @"PASS" : @"FAIL",
+                                                   @"unrelated" : unrelated ? @"PASS" : @"FAIL" },
+                             }, passed ? 0 : 1));
     return passed ? 0 : 1;
 }
 
@@ -1643,7 +1583,8 @@ int main(int argc, char* argv[]) {
         }
 
         if(mode && strcmp(mode, "regression-matrix") != 0 && !identityMode) {
-            return reportModeNotRun(argc, argv, mode);
+            fprintf(stderr, "hookprobe: unsupported mode: %s\n", mode);
+            return 64;
         }
 
         gProbeRows = [NSMutableArray array];

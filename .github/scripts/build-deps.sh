@@ -10,7 +10,9 @@ WORK_BASE=${WORK:-/tmp}
 RUN=$(mktemp -d "$WORK_BASE/shadow-deps.XXXXXX")
 trap 'rm -rf "$RUN"' EXIT
 
-HOOKKIT=a06e2a39bc87c358d122d80ecaa5a69c8571d93a
+# HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
+# unchanged, but link them against the facade's HK3 plan/engine bridge.
+HOOKKIT=55aaddc34e23ebdb6d8c119aa7fd2d5946473b1f
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -166,10 +168,18 @@ build_hookkit() {
         return
     fi
 
+    if [ -n "${HOOKKIT_CANONICAL_DEB:-}" ]; then
+        [ -f "$HOOKKIT_CANONICAL_DEB" ] || { echo "HOOKKIT_CANONICAL_DEB does not exist" >&2; exit 1; }
+        stage_package hookkit "$HOOKKIT_CANONICAL_DEB"
+        return
+    fi
+
     clone_pin jjolano/HookKit "$HOOKKIT" hookkit
     local source=$RUN/hookkit control=$RUN/hookkit.control deb
     write_control_floor "$source/control" "$control" "$FLOOR"
-    (cd "$source" && make clean && make package FINALPACKAGE=1 "${MAKE_ARGS[@]}" \
+    sed -i 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/; s/^Version:.*/Version: 3.0.0-1/' "$control"
+    (cd "$source" && make clean HOOKKIT_CANONICAL_3=1 "${MAKE_ARGS[@]}" && \
+        make package HOOKKIT_CANONICAL_3=1 FINALPACKAGE=1 "${MAKE_ARGS[@]}" \
         "_THEOS_DEB_PACKAGE_CONTROL_PATH=$control")
     deb=$(package_path "$source")
     stage_package hookkit "$deb"

@@ -2314,7 +2314,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     pthread_mutex_unlock(&_shdw_dyld_mirror_lock);
 }
 
-void shadowhook_dyld(HKSubstitutor* hooks) {
+void shadowhook_dyld(SHDWHookSession* hooks) {
     _shdw_dyld_collection = [NSMutableArray new];
     _shdw_dyld_add_image = [NSMutableArray new];
     _shdw_dyld_remove_image = [NSMutableArray new];
@@ -2340,21 +2340,13 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // sync on every add/remove) before any hook below can fire.
     shdw_own_ranges_refresh();
 
-    // Fishhook accepts these dyld imports but only installs them partially on
-    // iOS 15's protected sections. Litehook uses the same clean import-slot
-    // strategy and covers the slots; retain the supplied backend as fallback.
-    HKSubstitutor* publicHooks = [HKSubstitutor substitutorWithTypes:HK_LIB_LITEHOOK];
-    if(publicHooks.activeType == HK_LIB_NONE) {
-        publicHooks = hooks;
-    }
-
-    [publicHooks hookFunction:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
-    [publicHooks hookFunction:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
-    [publicHooks hookFunction:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
-    [publicHooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
-    [publicHooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
-    [publicHooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
-    [publicHooks hookFunction:task_info withReplacement:replaced_task_info outOldPtr:(void **)&original_task_info];
+    [hooks hookFunction:_dyld_get_image_name withReplacement:replaced_dyld_get_image_name outOldPtr:(void **) &original_dyld_get_image_name];
+    [hooks hookFunction:_dyld_image_count withReplacement:replaced_dyld_image_count outOldPtr:(void **) &original_dyld_image_count];
+    [hooks hookFunction:_dyld_get_image_header withReplacement:replaced_dyld_get_image_header outOldPtr:(void **) &original_dyld_get_image_header];
+    [hooks hookFunction:_dyld_get_image_vmaddr_slide withReplacement:replaced_dyld_get_image_vmaddr_slide outOldPtr:(void **) &original_dyld_get_image_vmaddr_slide];
+    [hooks hookFunction:_dyld_register_func_for_add_image withReplacement:replaced_dyld_register_func_for_add_image outOldPtr:(void **) &original_dyld_register_func_for_add_image];
+    [hooks hookFunction:_dyld_register_func_for_remove_image withReplacement:replaced_dyld_register_func_for_remove_image outOldPtr:(void **) &original_dyld_register_func_for_remove_image];
+    [hooks hookFunction:task_info withReplacement:replaced_task_info outOldPtr:(void **)&original_task_info];
 
     // TASK_DYLD_INFO is the authoritative live struct. dyld4 may expose a
     // same-named private symbol that is not the address the kernel publishes.
@@ -2375,7 +2367,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     }
 
     if(!_shdw_all_image_infos) {
-        HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
+        SHDWImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
 
         if(libdyldImage) {
             _shdw_all_image_infos = [hooks findSymbolInImage:libdyldImage symbolName:@"dyld_all_image_infos"];
@@ -2391,7 +2383,7 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
         // pointer swap routes every notification through
         // replaced_dyld_image_notification, which chains to the original.
         //
-        // The rejected alternative — an HK_LIB_NATIVE inline trampoline into
+        // The rejected alternative — an inline trampoline into
         // the notifier (dyld's lldb_image_notifier) — is fatal: that function
         // shares a 16KB dyld __TEXT page with hot API thunks, including
         // _dyld_get_image_name's block. Writing the trampoline COW-breaks the
@@ -2445,8 +2437,8 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
 
     // Directly linkable — declared in vendor/apple/dyld_priv.h (Core.m calls
     // it the same way); no findSymbolInImage needed.
-    [publicHooks hookFunction:dyld_image_path_containing_address withReplacement:replaced_dyld_image_path_containing_address outOldPtr:(void **) &original_dyld_image_path_containing_address];
-    [publicHooks hookFunction:dyld_image_header_containing_address withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_image_header_containing_address];
+    [hooks hookFunction:dyld_image_path_containing_address withReplacement:replaced_dyld_image_path_containing_address outOldPtr:(void **) &original_dyld_image_path_containing_address];
+    [hooks hookFunction:dyld_image_header_containing_address withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_image_header_containing_address];
 
     // Address-attribution siblings (plan Wave 1c): the slide pair is ancient
     // and directly linkable; _dyld_find_unwind_sections is SJLJ-guarded (not
@@ -2454,16 +2446,16 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     // alias (dyld4, iOS 15+), _dyld_get_image_uuid (iOS 10+) and
     // dyld_image_get_installname (dyld3/4) are resolved by name below so the
     // legacy (iOS 9) build doesn't link against symbols it lacks.
-    [publicHooks hookFunction:_dyld_get_image_slide withReplacement:replaced_dyld_get_image_slide outOldPtr:(void **) &original_dyld_get_image_slide];
+    [hooks hookFunction:_dyld_get_image_slide withReplacement:replaced_dyld_get_image_slide outOldPtr:(void **) &original_dyld_get_image_slide];
 
-    [publicHooks hookFunction:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
+    [hooks hookFunction:dlopen_preflight withReplacement:replaced_dlopen_preflight outOldPtr:(void **) &original_dlopen_preflight];
 
-    [publicHooks hookFunction:dlerror withReplacement:replaced_dlerror outOldPtr:(void **) &original_dlerror];
+    [hooks hookFunction:dlerror withReplacement:replaced_dlerror outOldPtr:(void **) &original_dlerror];
 
     // Modern dyld SPIs (iOS 12+/13+). Resolved by name via findSymbolInImage: so the
     // legacy (iOS 9) build doesn't link against symbols it lacks; skipped
     // silently on OSes without them.
-    HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
+    SHDWImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
 
     void* findUnwindSectionsPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_find_unwind_sections"];
 
@@ -2627,9 +2619,9 @@ void shadowhook_dyld(HKSubstitutor* hooks) {
     }
 }
 
-void shadowhook_dyld_extra(HKSubstitutor* hooks) {
+void shadowhook_dyld_extra(SHDWHookSession* hooks) {
     // dlopen hook code from Choicy
-    HKImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
+    SHDWImageRef libdyldImage = [hooks openImage:@"/usr/lib/system/libdyld.dylib"];
     // libdyld is always loaded (it IS the dyld library); RTLD_NOLOAD returns
     // the existing handle without a fresh load. A plain dlopen here would
     // fire the dyld add-image callback (shadowhook_dyld_updatelibs) on this
@@ -2637,17 +2629,9 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     // _dyld_image_count/_dyld_get_image_name and recurses (observed: launch
     // hang, 9k+ updatelibs(add) libdyld cycles).
     void* libdyldHandle = dlopen("/usr/lib/system/libdyld.dylib", RTLD_NOLOAD | RTLD_NOW);
-    // The private dlopen entry point needs the supplied native/private-symbol
-    // backend. Public dlopen/dlclose use litehook's address-based import scan:
-    // fishhook finds their named slots but only installs them partially on
-    // iOS 15's protected dyld sections, while litehook covers them cleanly.
-    HKSubstitutor* publicHooks = hooks.activeType == HK_LIB_NATIVE
-        ? [HKSubstitutor substitutorWithTypes:HK_LIB_LITEHOOK]
-        : hooks;
-
     void* dlopen_global_var_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZN5dyld45gDyldE"];
 
-    [publicHooks hookFunction:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
+    [hooks hookFunction:dlopen withReplacement:replaced_dlopen outOldPtr:(void **) &original_dlopen];
 
     if(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_14_1 && !dlopen_global_var_ptr) {
         void* dlopen_internal_ptr = [hooks findSymbolInImage:libdyldImage symbolName:@"__ZL15dlopen_internalPKciPv"];
@@ -2668,7 +2652,7 @@ void shadowhook_dyld_extra(HKSubstitutor* hooks) {
     }
 }
 
-void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
+void shadowhook_dyld_symlookup(SHDWHookSession* hooks) {
     [hooks hookFunction:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
 
     // CFBundle symbol-resolution wrappers (plan Wave 3): same bypass surface
@@ -2678,7 +2662,7 @@ void shadowhook_dyld_symlookup(HKSubstitutor* hooks) {
     [hooks hookFunction:CFBundleGetDataPointerForName withReplacement:replaced_CFBundleGetDataPointerForName outOldPtr:(void **) &original_CFBundleGetDataPointerForName];
 }
 
-void shadowhook_dyld_symaddrlookup(HKSubstitutor* hooks) {
+void shadowhook_dyld_symaddrlookup(SHDWHookSession* hooks) {
     [hooks hookFunction:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
 }
 

@@ -1618,7 +1618,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 #undef LOW
 #undef ANTIDBG
 
-void shdw_libc_install_group(HKSubstitutor* hooks, uint32_t group) {
+void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
     // resolution (dyld image walk) and Foundation file APIs call
     // getppid/getrusage/sysctl/stat/fopen — which are themselves hooked by
@@ -1682,7 +1682,7 @@ void shdw_libc_verify_group(const char* group, uint32_t mask) {
     }
 }
 
-void shadowhook_libc(HKSubstitutor* hooks) {
+void shadowhook_libc(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LIBC);
 }
 

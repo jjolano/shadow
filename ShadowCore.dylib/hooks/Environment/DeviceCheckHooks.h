@@ -1,13 +1,13 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <HookKit.h>
+#import "../../SHDWHookSession.h"
 
 // Descriptor-driven ObjC hook table for the DeviceCheck group.
 //
 // Each row describes one method to neutralize. Installation walks the table
 // and, for every row whose class exists and whose method's runtime type
 // encoding matches the row's accepted return encoding, swaps in the matching
-// replacement IMP via the passed message-capable HKSubstitutor (the same
+// replacement IMP via the passed message-capable hook session (the same
 // instance DeviceCheck.x's shadowhook_DeviceCheck receives). Rows whose
 // class/method is absent or whose encoding is not accepted are skipped; a
 // skipped row with an UNKNOWN encoding is logged once (fail open — the real
@@ -59,6 +59,5 @@ static inline BOOL shdw_dch_imp1_bool_true (id self, SEL _cmd, id a0) { return Y
 static inline id   shdw_dch_imp0_obj_nil  (id self, SEL _cmd) { return nil; }
 
 // Installs every descriptor row whose class exists and whose method's runtime
-// encoding matches the row. `hooks` must be a message-capable HKSubstitutor
-// (it is passed to HKHookMessage). Returns the number of hooks installed.
-NSUInteger shdw_devicecheck_install_hooks(HKSubstitutor* hooks);
+// encoding matches the row. Returns the number of hooks installed.
+NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks);

@@ -1,9 +1,9 @@
 #import "SHDWAppListController.h"
-#import "SHDWHookLibs.h"
 #import "SHDWPrefs.h"
 
 #import <Preferences/PSListController.h>
 #import <Shadow/Settings.h>
+#import <Shadow/HookConfiguration.h>
 
 @interface SHDWTroubleshootingListController : PSListController
 @end
@@ -33,6 +33,10 @@
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
+	if([[specifier identifier] isEqualToString:SHDWHookLibraryID]) {
+		return @"auto";
+	}
+
 	return SHDWReadAppPref(prefs, [self applicationIDInContext], [specifier identifier]);
 }
 
@@ -57,11 +61,6 @@
 		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
 		NSMutableArray* titles = [NSMutableArray arrayWithObject:
 			[bundle localizedStringForKey:@"AUTOMATIC" value:@"Automatic (Recommended)" table:@"Troubleshooting"]];
-
-		for(NSDictionary* info in SHDWAvailableHookLibs()) {
-			[values addObject:info[@"id"]];
-			[titles addObject:info[@"name"]];
-		}
 
 		hookLibraryValues = [values copy];
 		hookLibraryTitles = [titles copy];

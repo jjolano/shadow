@@ -14,7 +14,7 @@
 #import <Shadow/JBPath.h>
 
 #ifndef SHADOW_TEST_HARNESS
-#import <HookKit.h>
+#import "../SHDWHookSession.h"
 #endif
 
 #import <string.h>
@@ -77,6 +77,23 @@ static _Thread_local size_t shdw_env_path_capacity = 0;
 static _Thread_local char* shdw_env_path_cache_input = NULL;
 static _Thread_local size_t shdw_env_path_cache_capacity = 0;
 
+// Shared PATH component filter for every environment surface. The callers
+// retain their distinct ownership/lifetime contracts; this only centralizes
+// which components are hidden.
+static NSString* shdw_env_filtered_path_string(NSString* value, BOOL* changed) {
+    NSArray* parts = [value componentsSeparatedByString:@":"];
+    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
+
+    for(NSString* part in parts) {
+        if(!shdw_is_restricted_root_c([part fileSystemRepresentation])) {
+            [kept addObject:part];
+        }
+    }
+
+    *changed = kept.count != parts.count;
+    return *changed ? [kept componentsJoinedByString:@":"] : value;
+}
+
 // Removes jailbreak components from a PATH value (/var/jb bootstrap and
 // preboot roots — stock iOS PATH has neither). Returns the original pointer
 // when nothing needed removing, otherwise a sanitized copy in thread-local
@@ -87,54 +104,29 @@ char* shdw_env_sanitized_path(const char* value) {
         return shdw_env_path_storage;  // PATH unchanged: cached sanitized result
     }
 
-    NSArray* parts = [[NSString stringWithUTF8String:value] componentsSeparatedByString:@":"];
-    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
-
-    for(NSString* part in parts) {
-        // ponytail: single-source JB root predicate
-        if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
-            continue;
-        }
-
-        [kept addObject:part];
+    NSString* raw = [NSString stringWithUTF8String:value];
+    if(!raw) {
+        return (char *)value;
     }
 
-    if(kept.count == parts.count) {
-        // Nothing needed removing: cache the unchanged value so the next call
-        // short-circuits instead of re-splitting.
-        size_t len = strlen(value) + 1;
+    BOOL changed = NO;
+    NSString* filtered = shdw_env_filtered_path_string(raw, &changed);
+    size_t len = [filtered lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1;
 
-        if(len > shdw_env_path_capacity) {
-            char* grown = realloc(shdw_env_path_storage, len);
+    if(len > shdw_env_path_capacity) {
+        char* grown = realloc(shdw_env_path_storage, len);
 
-            if(!grown) {
-                return (char *) value;
-            }
-
-            shdw_env_path_storage = grown;
-            shdw_env_path_capacity = len;
+        if(!grown) {
+            // OOM: fall back to the original value rather than returning a
+            // truncated path.
+            return (char *) value;
         }
 
-        strcpy(shdw_env_path_storage, value);
-    } else {
-        NSString* joined = [kept componentsJoinedByString:@":"];
-        size_t len = joined.length + 1;
-
-        if(len > shdw_env_path_capacity) {
-            char* grown = realloc(shdw_env_path_storage, len);
-
-            if(!grown) {
-                // OOM: fall back to the original value rather than returning a
-                // truncated path.
-                return (char *) value;
-            }
-
-            shdw_env_path_storage = grown;
-            shdw_env_path_capacity = len;
-        }
-
-        strcpy(shdw_env_path_storage, joined.UTF8String);
+        shdw_env_path_storage = grown;
+        shdw_env_path_capacity = len;
     }
+
+    strcpy(shdw_env_path_storage, filtered.UTF8String);
 
     // Remember the raw input for the next call.
     size_t input_len = strlen(value) + 1;
@@ -180,7 +172,7 @@ static int replaced_unsetenv(const char* name) {
 
 // Installed with the envvar group (dylib.x, next to shadowhook_libc_envvar):
 // keeps the PATH sanitization cache coherent with the live environment.
-void shadowhook_envpolicy(HKSubstitutor* hooks) {
+void shadowhook_envpolicy(SHDWHookSession* hooks) {
     [hooks hookFunction:setenv withReplacement:replaced_setenv outOldPtr:(void **) &original_setenv];
     [hooks hookFunction:unsetenv withReplacement:replaced_unsetenv outOldPtr:(void **) &original_unsetenv];
 }
@@ -195,22 +187,18 @@ char* shdw_env_sanitized_path_entry(const char* var, char** storage, size_t* cap
         return NULL;
     }
 
-    NSArray* parts = [[NSString stringWithUTF8String:var + 5] componentsSeparatedByString:@":"];
-    NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
-
-    for(NSString* part in parts) {
-        if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
-            continue;
-        }
-
-        [kept addObject:part];
-    }
-
-    if(kept.count == parts.count) {
+    NSString* path = [NSString stringWithUTF8String:var + 5];
+    if(!path) {
         return NULL;
     }
 
-    NSString* joined = [NSString stringWithFormat:@"PATH=%@", [kept componentsJoinedByString:@":"]];
+    BOOL changed = NO;
+    NSString* filtered = shdw_env_filtered_path_string(path, &changed);
+    if(!changed) {
+        return NULL;
+    }
+
+    NSString* joined = [@"PATH=" stringByAppendingString:filtered];
     size_t len = [joined lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + 1;
 
     if(len > *capacity) {
@@ -249,19 +237,11 @@ NSDictionary* shdw_env_sanitized_dictionary(NSDictionary* result) {
     NSString* pathValue = filtered_result[@"PATH"];
 
     if(pathValue && pathValue.length > 0) {
-        NSArray* parts = [pathValue componentsSeparatedByString:@":"];
-        NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
+        BOOL changed = NO;
+        NSString* filtered = shdw_env_filtered_path_string(pathValue, &changed);
 
-        for(NSString* part in parts) {
-            if(shdw_is_restricted_root_c([part fileSystemRepresentation])) {
-                continue;
-            }
-
-            [kept addObject:part];
-        }
-
-        if(kept.count != parts.count) {
-            filtered_result[@"PATH"] = [kept componentsJoinedByString:@":"];
+        if(changed) {
+            filtered_result[@"PATH"] = filtered;
         }
     }
 

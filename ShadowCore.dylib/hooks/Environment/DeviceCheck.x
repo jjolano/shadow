@@ -13,7 +13,7 @@
 // DeviceCheckHooks.m (batches 1-6). This file is now a thin install call:
 // the descriptor-driven install (shdw_devicecheck_install_hooks) walks the
 // table, resolves each class/method's runtime encoding, and swaps in the
-// matching replacement IMP via the passed message-capable HKSubstitutor.
+// matching replacement IMP via the passed message-capable hook session.
 // Late-loaded detector-class retry needs the dylib.x watcher wiring (not
 // implemented here).
 
@@ -23,6 +23,6 @@
 // (NO), @@: → object-returning hook (nil), anything else → skip and leave
 // the real method untouched.
 
-void shadowhook_DeviceCheck(HKSubstitutor* hooks) {
+void shadowhook_DeviceCheck(SHDWHookSession* hooks) {
     shdw_devicecheck_install_hooks(hooks);
 }
