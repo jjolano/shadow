@@ -26,7 +26,14 @@ endif
 # thing that stays linkable (theos never applies Shadow.tbd as an export
 # list, so without this every ObjC class is stripped and the tweak can't
 # link). Keep exported_symbols.txt in sync with the classes.
+# roothide replaces the jbroot seam with JBPath.h inlines/macros, so those
+# seven symbols cease to exist and exporting them fails the link — use the
+# trimmed variant there.
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
+Shadow_LDFLAGS += -exported_symbols_list exported_symbols-roothide.txt
+else
 Shadow_LDFLAGS += -exported_symbols_list exported_symbols.txt
+endif
 Shadow_LDFLAGS += -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 
 include $(THEOS_MAKE_PATH)/framework.mk
