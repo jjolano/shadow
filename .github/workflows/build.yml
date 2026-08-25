@@ -44,9 +44,14 @@ jobs:
           OLDABI_SDKS: ${{ runner.temp }}/oldabi/sdks
           XPC_HEADERS: ${{ github.workspace }}/.github/vendor/xpc
         run: |
-          # check-binary-compat needs lipo/vtool/otool; the old-ABI toolchain
-          # ships them. Export inline: GITHUB_PATH only affects later steps.
-          export PATH="${OLDABI_TOOLCHAIN}/bin:${PATH}"
+          # Mach-O tools for HookKit's compat checks — WITHOUT putting the
+          # old-ABI cross-clang on PATH: its host-side tests compile with
+          # plain clang, and the cross toolchain's ld rejects --eh-frame-hdr.
+          mkdir -p "$RUNNER_TEMP/machotools"
+          ln -sf "$OLDABI_TOOLCHAIN/bin/lipo" "$OLDABI_TOOLCHAIN/bin/vtool" \
+              "$OLDABI_TOOLCHAIN/bin/otool" "$OLDABI_TOOLCHAIN/bin/nm" \
+              "$RUNNER_TEMP/machotools/"
+          export PATH="$RUNNER_TEMP/machotools:$PATH"
           .github/scripts/build-deps.sh rootful-legacy
           ./build.sh rootful-legacy
 
@@ -69,6 +74,14 @@ jobs:
         run: |
           brew install dpkg ldid
           sudo git clone --recursive --quiet https://github.com/roothide/theos.git "$THEOS"
+          # Xcode 16's iOS SDK dropped private-framework tbds (Preferences et
+          # al); stage the pinned 16.5 SDK so dependency framework links
+          # (AltList -> Preferences) resolve.
+          curl -fL -o "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" \
+            https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz
+          echo '5e0fd3f01266cce4ce012d4a99b38eb56578fca40d09edc81cd83dee958202fb  '"$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" | shasum -a 256 -c -
+          sudo mkdir -p "$THEOS/sdks"
+          sudo tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$THEOS/sdks"
 
       - name: Build and verify
         run: |
