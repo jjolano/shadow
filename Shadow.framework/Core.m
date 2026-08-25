@@ -363,7 +363,17 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
             return NO;
         }
 
-        if([self isCPathRestricted:[path fileSystemRepresentation]]) {
+        // Hostile strings (invalid UTF-16, control characters) make Darwin's
+        // fileSystemRepresentation throw; fall through to the name-based
+        // checks below instead of crashing the host app.
+        const char *cpath = NULL;
+        @try {
+            cpath = [path fileSystemRepresentation];
+        } @catch(NSException* exception) {
+            cpath = NULL;
+        }
+
+        if(cpath && [self isCPathRestricted:cpath]) {
             return YES;
         }
 
