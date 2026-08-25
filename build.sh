@@ -58,6 +58,14 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
         cp "$sandy" "$LIBRARY_PATH/iphone/$scheme/libsandy.dylib"
     fi
 
+    if [ "$profile" = roothide ]; then
+        # -lroothide resolves from roothide/theos's vendor/lib, which our
+        # THEOS_LIBRARY_PATH override hides; stage the stub locally.
+        local roothide_tbd="$THEOS/vendor/lib/iphone/roothide/libroothide.tbd"
+        [ -f "$roothide_tbd" ] || { echo "missing libroothide.tbd under $THEOS/vendor/lib" >&2; return 1; }
+        cp "$roothide_tbd" "$LIBRARY_PATH/iphone/roothide/libroothide.tbd"
+    fi
+
     : # patched: skip vendor compat check on Linux
 }
 
