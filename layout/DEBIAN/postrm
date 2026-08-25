@@ -9,6 +9,12 @@ case "$1" in
     triggered)
         "$DPKG_ROOT/usr/local/bin/shdw" -g > /dev/null || true
     ;;
+    remove|purge)
+        # Runtime-generated ruleset files dpkg does not own (the shipped
+        # dpkgInstalled.plist placeholder is removed by dpkg itself).
+        rm -f "$DPKG_ROOT/Library/Shadow/Rulesets/SystemRules.plist" \
+              "$DPKG_ROOT/Library/Shadow/Rulesets/"*.shadowcache
+    ;;
 esac
 
 exit 0

@@ -12,7 +12,7 @@ trap 'rm -rf "$RUN"' EXIT
 
 # HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
 # unchanged, but link them against the facade's HK3 plan/engine bridge.
-HOOKKIT=55aaddc34e23ebdb6d8c119aa7fd2d5946473b1f
+HOOKKIT=26f49474d4bb6f48f0a9ccee59429ebc0b0a896a
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -137,6 +137,8 @@ legacy_make_args() {
     [ "$major" -lt 12 ] || { echo "old-ABI lane requires Clang older than 12" >&2; exit 1; }
     export OLDABI_TOOLCHAIN=$toolchain OLDABI_SDKS=$sdks
 
+    # libSandy imports <xpc/xpc.h>; the pinned old-ABI SDKs ship no xpc
+    # headers, so the caller must provide them (CI vendors .github/vendor/xpc).
     local xpc=${XPC_HEADERS:-$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/xpc}
     [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; exit 1; }
     mkdir -p "$RUN/include"
@@ -177,7 +179,8 @@ build_hookkit() {
     clone_pin jjolano/HookKit "$HOOKKIT" hookkit
     local source=$RUN/hookkit control=$RUN/hookkit.control deb
     write_control_floor "$source/control" "$control" "$FLOOR"
-    sed -i 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/; s/^Version:.*/Version: 3.0.0-1/' "$control"
+    sed -e 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/' \
+        -e 's/^Version:.*/Version: 3.0.0-1/' "$control" > "$control.tmp" && mv "$control.tmp" "$control"
     (cd "$source" && make clean HOOKKIT_CANONICAL_3=1 "${MAKE_ARGS[@]}" && \
         make package HOOKKIT_CANONICAL_3=1 FINALPACKAGE=1 "${MAKE_ARGS[@]}" \
         "_THEOS_DEB_PACKAGE_CONTROL_PATH=$control")
