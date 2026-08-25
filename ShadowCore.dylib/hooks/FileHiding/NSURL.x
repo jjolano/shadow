@@ -308,9 +308,11 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 
 - (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        NSURLSessionDataTask* task = %orig(url, ^(NSData *data, NSURLResponse *response, NSError *error) {
+        // roothide logos cannot parse block literals inside %orig(...) args.
+        void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow — the blocked completion below is the only one delivered
-        });
+        };
+        NSURLSessionDataTask* task = %orig(url, swallow);
 
         [task cancel];
 
@@ -337,9 +339,11 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
-        NSURLSessionDownloadTask* task = %orig(url, ^(NSURL *location, NSURLResponse *response, NSError *error) {
+        // roothide logos cannot parse block literals inside %orig(...) args.
+        void (^swallow)(NSURL *, NSURLResponse *, NSError *) = ^(NSURL *location, NSURLResponse *response, NSError *error) {
             // swallow
-        });
+        };
+        NSURLSessionDownloadTask* task = %orig(url, swallow);
 
         [task cancel];
 
@@ -366,9 +370,11 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if(isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
-        NSURLSessionUploadTask* task = %orig(request, fileURL, ^(NSData *data, NSURLResponse *response, NSError *error) {
+        // roothide logos cannot parse block literals inside %orig(...) args.
+        void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow
-        });
+        };
+        NSURLSessionUploadTask* task = %orig(request, fileURL, swallow);
 
         [task cancel];
 
@@ -395,9 +401,11 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
-        NSURLSessionDataTask* task = %orig(request, ^(NSData *data, NSURLResponse *response, NSError *error) {
+        // roothide logos cannot parse block literals inside %orig(...) args.
+        void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
             // swallow
-        });
+        };
+        NSURLSessionDataTask* task = %orig(request, swallow);
 
         [task cancel];
 
@@ -424,9 +432,11 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
-        NSURLSessionDownloadTask* task = %orig(request, ^(NSURL *location, NSURLResponse *response, NSError *error) {
+        // roothide logos cannot parse block literals inside %orig(...) args.
+        void (^swallow)(NSURL *, NSURLResponse *, NSError *) = ^(NSURL *location, NSURLResponse *response, NSError *error) {
             // swallow
-        });
+        };
+        NSURLSessionDownloadTask* task = %orig(request, swallow);
 
         [task cancel];
 

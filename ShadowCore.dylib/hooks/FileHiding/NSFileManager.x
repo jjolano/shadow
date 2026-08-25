@@ -372,7 +372,8 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
         return nil;
     }
 
-    NSDirectoryEnumerator* result = %orig(url, keys, mask, ^BOOL(NSURL *childURL, NSError *childError) {
+    // roothide logos cannot parse block literals inside %orig(...) args.
+    BOOL (^filteredHandler)(NSURL *, NSError *) = ^BOOL(NSURL *childURL, NSError *childError) {
         // Suppress errors for restricted entries: the app handler must not
         // learn about (or be able to react to) hidden subtrees.
         if([_shadow isURLRestricted:childURL options:nil]) {
@@ -384,7 +385,8 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
         }
 
         return NO;
-    });
+    };
+    NSDirectoryEnumerator* result = %orig(url, keys, mask, filteredHandler);
     
     if(result) {
         objc_setAssociatedObject(result, _NSDirectoryEnumerator_shdw_key, [url path], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
