@@ -1,26 +1,30 @@
+# Defaults for bare `make` without a lane; lane builds override below.
 ARCHS ?= arm64 arm64e
 TARGET ?= iphone:clang:16.5:12.0
 
-ifeq ($(SHADOW_LANE),rootful-legacy)
-override ARCHS := armv7 armv7s arm64 arm64e
-override TARGET := iphone:clang:13.7
-override TARGET_OS_DEPLOYMENT_VERSION := 9.0
-override TARGET_OS_DEPLOYMENT_VERSION_arm64e := 12.0
-override THEOS_PACKAGE_SCHEME :=
-else ifeq ($(SHADOW_LANE),rootful-modern)
-override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:16.5:14.0
-override THEOS_PACKAGE_SCHEME :=
-else ifeq ($(SHADOW_LANE),rootless)
-override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:16.5:15.0
-override THEOS_PACKAGE_SCHEME := rootless
-else ifeq ($(SHADOW_LANE),roothide)
-override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:16.5:15.0
-override THEOS_PACKAGE_SCHEME := roothide
-else ifneq ($(SHADOW_LANE),)
+# Lane matrix lives in one place; see lanes.sh. The shell file is the
+# single source of truth — make reads fields through it so the two can
+# never drift.
+LANES_SH := $(addprefix $(dir $(lastword $(MAKEFILE_LIST))),lanes.sh)
+lane_field = $(shell . "$(LANES_SH)" && shadow_lane_field $(1) $(2) 2>/dev/null)
+
+ifneq ($(SHADOW_LANE),)
+ifeq ($(call lane_field,$(SHADOW_LANE),ARCHS),)
 $(error unknown SHADOW_LANE '$(SHADOW_LANE)')
+endif
+
+override ARCHS := $(call lane_field,$(SHADOW_LANE),ARCHS)
+override TARGET := $(call lane_field,$(SHADOW_LANE),TARGET)
+override THEOS_PACKAGE_SCHEME := $(call lane_field,$(SHADOW_LANE),SCHEME)
+
+LANE_DEPLOY := $(call lane_field,$(SHADOW_LANE),DEPLOY)
+ifneq ($(LANE_DEPLOY),)
+override TARGET_OS_DEPLOYMENT_VERSION := $(LANE_DEPLOY)
+endif
+LANE_DEPLOY_ARM64E := $(call lane_field,$(SHADOW_LANE),DEPLOY_ARM64E)
+ifneq ($(LANE_DEPLOY_ARM64E),)
+override TARGET_OS_DEPLOYMENT_VERSION_arm64e := $(LANE_DEPLOY_ARM64E)
+endif
 endif
 export ARCHS TARGET TARGET_OS_DEPLOYMENT_VERSION TARGET_OS_DEPLOYMENT_VERSION_arm64e THEOS_PACKAGE_SCHEME
 
