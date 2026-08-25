@@ -80,7 +80,7 @@ for binary in "$@"; do
                 abi=0x80
             fi
             if ! printf '%s\n' "$header" | grep -Eq "[[:space:]]E[[:space:]]+${abi}[[:space:]]"; then
-                echo "WARN: $binary [$arch] ABI mismatch expected $PROFILE (building on Linux, ignoring)" >&2
+                echo "WARN: $binary [$arch] ABI mismatch expected $PROFILE (toolchain cannot emit versioned ptrauth ABI; ignoring)" >&2
             fi
         fi
 
