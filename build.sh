@@ -129,8 +129,8 @@ build_lane() { # profile
 build_harness() { # rootful-modern|rootless
     local lane=$1 package
     case "$lane" in
-        rootful-modern) make -C ShadowHarness package FINALPACKAGE=1 ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:14.0 "${MAKE_PATHS[@]}" ;;
-        rootless) make -C ShadowHarness package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:latest:15.0 "${MAKE_PATHS[@]}" ;;
+        rootful-modern) make -C ShadowHarness package FINALPACKAGE=1 ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:14.0 "${MAKE_PATHS[@]}" ;;
+        rootless) make -C ShadowHarness package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:15.0 "${MAKE_PATHS[@]}" ;;
     esac
     package=$(<ShadowHarness/.theos/last_package)
     case "$package" in

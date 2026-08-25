@@ -27,19 +27,19 @@ case "$FLAVOR" in
         ;;
     rootful-modern)
         ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:latest:14.0
+        TARGET=iphone:clang:16.5:14.0
         FLOOR=14.0
         SCHEME=
         ;;
     rootless)
         ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:latest:15.0
+        TARGET=iphone:clang:16.5:15.0
         FLOOR=15.0
         SCHEME=rootless
         ;;
     roothide)
         ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:latest:15.0
+        TARGET=iphone:clang:16.5:15.0
         FLOOR=15.0
         SCHEME=roothide
         ;;
