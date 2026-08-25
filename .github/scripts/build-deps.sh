@@ -12,9 +12,9 @@ trap 'rm -rf "$RUN"' EXIT
 
 # HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
 # unchanged, but link them against the facade's HK3 plan/engine bridge.
-# This pre-rewrite upstream state vendors vendor/gum/libfrida-gum.a, which
-# current HookKit master no longer ships; fetched by SHA (see clone_pin).
-HOOKKIT=55aaddc34e23ebdb6d8c119aa7fd2d5946473b1f
+# Master purged vendor/gum/libfrida-gum.a from history; build_hookkit
+# restores the pinned pre-rewrite archive (identical frida-gum.h) for HKGum.
+HOOKKIT=000ca08a8b8be78133a82b086a09def937133bf1
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -185,6 +185,13 @@ build_hookkit() {
 
     clone_pin jjolano/HookKit "$HOOKKIT" hookkit
     local source=$RUN/hookkit control=$RUN/hookkit.control deb
+
+    # Restore the pinned gum devkit archive (modern lanes link HKGum against
+    # it; legacy excludes HKGum). Runs on macOS only -> shasum.
+    curl -fL -o "$source/vendor/gum/libfrida-gum.a" \
+        https://github.com/jjolano/shadow/releases/download/hookkit-gum-devkit/libfrida-gum.a
+    echo 'aa6ef1a1d205183cf98ed2be546a9bb26ed84fda1cc71b40ccf075ae0535d99c  '"$source/vendor/gum/libfrida-gum.a" | shasum -a 256 -c -
+
     write_control_floor "$source/control" "$control" "$FLOOR"
     sed -e 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/' \
         -e 's/^Version:.*/Version: 3.0.0-1/' "$control" > "$control.tmp" && mv "$control.tmp" "$control"
