@@ -930,6 +930,14 @@ static void runAdversary(void) {
             printf("LEAK: %s (expected %s, got %s) — %s\n", p.name,
                 expected ? "restricted" : "allowed",
                 got ? "restricted" : "allowed", p.note);
+
+            // Ground truth for platform divergences: what standardization
+            // produces on THIS Foundation, and how the engine judges it.
+            NSString* std = [Shadow getStandardizedPath:path];
+            BOOL direct = [shdw() isPathRestricted:std];
+            printf("  diag: std='%s' direct=%d raw-exists=%d\n",
+                [std UTF8String], direct,
+                [[NSFileManager defaultManager] fileExistsAtPath:path] ? 1 : 0);
         }
     }
 
