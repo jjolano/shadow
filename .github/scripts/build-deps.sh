@@ -190,7 +190,7 @@ build_hookkit() {
     # it; legacy excludes HKGum). Runs on macOS only -> shasum.
     curl -fL -o "$source/vendor/gum/libfrida-gum.a" \
         https://github.com/jjolano/shadow/releases/download/hookkit-gum-devkit/libfrida-gum.a
-    echo 'aa6ef1a1d205183cf98ed2be546a9bb26ed84fda1cc71b40ccf075ae0535d99c  '"$source/vendor/gum/libfrida-gum.a" | shasum -a 256 -c -
+    echo 'f005425646adc7708b8546f069d933a03a8f4f9d605d36b37f413661f4844abf  '"$source/vendor/gum/libfrida-gum.a" | shasum -a 256 -c -
 
     write_control_floor "$source/control" "$control" "$FLOOR"
     sed -e 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/' \
