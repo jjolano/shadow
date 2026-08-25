@@ -311,7 +311,9 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         // Tilde: deny on unresolvable user; expand otherwise.
         expanded = shdwExpandTilde(path);
 
-        if(!expanded) {
+        // An empty expansion (e.g. "~" with no home) makes Darwin's
+        // fileSystemRepresentation throw further down.
+        if(!expanded || [expanded length] == 0) {
             return NO;
         }
 

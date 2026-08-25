@@ -254,8 +254,17 @@ static ShadowRestrictionQuery* shdwQueryFromOptions(NSString* path, NSDictionary
     // the outer (real) caller sees is unchanged.
     BOOL restricted = NO;
 
-    SHADOW_INTERNAL_SCOPE {
-        restricted = [engine isPathRestrictedQuery:query];
+    // Hostile strings (empty, invalid UTF-16, control characters) make
+    // Darwin's fileSystemRepresentation throw mid-evaluation; GNUstep
+    // tolerates them. A detection filter must not crash its host app:
+    // fail open, matching GNUstep semantics.
+    @try {
+        SHADOW_INTERNAL_SCOPE {
+            restricted = [engine isPathRestrictedQuery:query];
+        }
+    } @catch(NSException* exception) {
+        NSLog(@"[Shadow] path query evaluation threw: %@", exception);
+        restricted = NO;
     }
 
     return restricted;
