@@ -36,6 +36,16 @@ extern char*** _NSGetArgv();
         return path;
     }
 
+    // Darwin's NSURL standardization turns "/../x" into a RELATIVE "x"
+    // (it consumes the root slash), so collapse leading dot-dots ourselves
+    // before handing off — the result must stay absolute.
+    while([path hasPrefix:@"/../"]) {
+        path = [path substringFromIndex:3];
+    }
+    if([path isEqualToString:@"/.."]) {
+        path = @"/";
+    }
+
     NSURL* url = [NSURL URLWithString:path];
 
     if(!url) {
@@ -50,17 +60,6 @@ extern char*** _NSGetArgv();
 
     while([path containsString:@"/./"]) {
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
-    }
-
-    // Darwin's NSURL standardization keeps leading ".." segments that would
-    // climb past the filesystem root ("/../x" stays "/../x"), letting an
-    // adversary prefix dodge prefix/exact rules; GNUstep collapses them.
-    // Strip "/.." but keep the separator, or the path turns relative.
-    while([path hasPrefix:@"/../"]) {
-        path = [path substringFromIndex:3];
-    }
-    if([path isEqualToString:@"/.."]) {
-        path = @"/";
     }
 
     // ponytail: /./ and // collapse are kept — NSURL standardizedURL preserves empty path segments.
