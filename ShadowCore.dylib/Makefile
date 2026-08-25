@@ -20,10 +20,17 @@ endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_CFLAGS += -DSHADOW_ROOTHIDE
 endif
-# Xcode 16's linker refuses a shared-cache-eligible dylib linking an
-# ineligible one (ShadowCore -> @rpath/Shadow.framework/Shadow); tweak
-# dylibs are not shared-cache candidates anyway.
-ShadowCore_LDFLAGS = -Wl,-x -not_for_dyld_shared_cache -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+ShadowCore_LDFLAGS = -Wl,-x -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+# Xcode 16's new linker refuses a shared-cache-eligible dylib linking an
+# ineligible one (ShadowCore -> @rpath/Shadow.framework/Shadow) on the
+# rootful-modern lane; tweak dylibs are not shared-cache candidates anyway.
+# Scoped: the legacy lane's old ld and the scheme lanes' drivers reject the
+# bare flag, and rootless builds fine without it.
+ifeq ($(THEOS_PACKAGE_SCHEME),)
+ifneq ($(findstring 16.5,$(TARGET)),)
+ShadowCore_LDFLAGS += -Wl,-not_for_dyld_shared_cache
+endif
+endif
 ShadowCore_LDFLAGS += -F../ -F../vendor
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_LDFLAGS += -lroothide
