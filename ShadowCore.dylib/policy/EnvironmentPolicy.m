@@ -85,7 +85,10 @@ static NSString* shdw_env_filtered_path_string(NSString* value, BOOL* changed) {
     NSMutableArray* kept = [NSMutableArray arrayWithCapacity:parts.count];
 
     for(NSString* part in parts) {
-        if(!shdw_is_restricted_root_c([part fileSystemRepresentation])) {
+        // Empty components (e.g. "::" or an empty value) mean CWD on POSIX;
+        // macOS Foundation throws on [@"": fileSystemRepresentation].
+        if([part length] == 0 ||
+           !shdw_is_restricted_root_c([part fileSystemRepresentation])) {
             [kept addObject:part];
         }
     }
