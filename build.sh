@@ -85,9 +85,12 @@ legacy_args() {
 prepare_scheme_framework() { # rootless|roothide
     local lane=$1
     # Invoked directly (not via the root Makefile), so the lane's ARCHS/
-    # TARGET overrides don't apply — state them explicitly.
-    make -C Shadow.framework "SHADOW_LANE=$lane" ARCHS='arm64 arm64e' \
-        TARGET=iphone:clang:16.5:15.0 "${MAKE_PATHS[@]}"
+    # TARGET overrides don't apply — state them explicitly. The scheme must
+    # match the main build too: a mismatched pass leaves stale caller
+    # objects compiled without -DSHADOW_ROOTHIDE while JBPath.m (whose
+    # implementations the header inlines replace) recompiles empty.
+    make -C Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
+        ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:15.0 "${MAKE_PATHS[@]}"
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
     cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
