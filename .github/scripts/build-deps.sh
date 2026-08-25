@@ -10,6 +10,9 @@ WORK_BASE=${WORK:-/tmp}
 RUN=$(mktemp -d "$WORK_BASE/shadow-deps.XXXXXX")
 trap 'rm -rf "$RUN"' EXIT
 
+# Lane matrix lives in one place; see lanes.sh.
+. "$ROOT/lanes.sh"
+
 # HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
 # unchanged, but link them against the facade's HK3 plan/engine bridge.
 # Master purged vendor/gum/libfrida-gum.a from history; build_hookkit
@@ -18,33 +21,10 @@ HOOKKIT=000ca08a8b8be78133a82b086a09def937133bf1
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
-case "$FLAVOR" in
-    rootful-legacy)
-        ARCHS='armv7 armv7s arm64 arm64e'
-        TARGET=iphone:clang:13.7
-        FLOOR=9.0
-        SCHEME=
-        ;;
-    rootful-modern)
-        ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:16.5:14.0
-        FLOOR=14.0
-        SCHEME=
-        ;;
-    rootless)
-        ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:16.5:15.0
-        FLOOR=15.0
-        SCHEME=rootless
-        ;;
-    roothide)
-        ARCHS='arm64 arm64e'
-        TARGET=iphone:clang:16.5:15.0
-        FLOOR=15.0
-        SCHEME=roothide
-        ;;
-    *) echo "unknown flavor: $FLAVOR" >&2; exit 2 ;;
-esac
+ARCHS=$(shadow_lane_field "$FLAVOR" ARCHS) || exit 2
+TARGET=$(shadow_lane_field "$FLAVOR" TARGET) || exit 2
+FLOOR=$(shadow_lane_field "$FLAVOR" FLOOR) || exit 2
+SCHEME=$(shadow_lane_field "$FLAVOR" SCHEME) || exit 2
 
 if [ "$FLAVOR" != rootful-legacy ]; then
     [ "$(uname -s)" = Darwin ] || {
@@ -158,8 +138,8 @@ legacy_make_args() {
     MAKE_ARGS+=(
         "SDKBINPATH=$toolchain/bin"
         "THEOS_SDKS_PATH=$sdks"
-        'TARGET_OS_DEPLOYMENT_VERSION=9.0'
-        'TARGET_OS_DEPLOYMENT_VERSION_arm64e=12.0'
+        "TARGET_OS_DEPLOYMENT_VERSION=$(shadow_lane_field "$FLAVOR" DEPLOY)"
+        "TARGET_OS_DEPLOYMENT_VERSION_arm64e=$(shadow_lane_field "$FLAVOR" DEPLOY_ARM64E)"
         "ADDITIONAL_CFLAGS=-I$RUN/include -fmodules-cache-path=$RUN/module-cache"
         "ADDITIONAL_OBJCFLAGS=-I$RUN/include -fmodules-cache-path=$RUN/module-cache -Wno-unguarded-availability-new"
     )
