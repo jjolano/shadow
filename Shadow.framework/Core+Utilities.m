@@ -36,14 +36,24 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    // Darwin's NSURL standardization turns "/../x" into a RELATIVE "x"
-    // (it consumes the root slash), so collapse leading dot-dots ourselves
-    // before handing off — the result must stay absolute.
-    while([path hasPrefix:@"/../"]) {
-        path = [path substringFromIndex:3];
-    }
-    if([path isEqualToString:@"/.."]) {
-        path = @"/";
+    // Darwin NSURL pitfalls for adversarial absolute input: "//x" parses
+    // "x" as an authority (standardizedURL then drops it), "/../x" comes
+    // back RELATIVE, and "/.//x" cascades through both. Collapse slash/dot
+    // degeneracies first; NSURL keeps the remaining legitimate work
+    // (percent decoding, ?/# stripping, interior dot segments).
+    if([path hasPrefix:@"/"]) {
+        while([path hasPrefix:@"/../"]) {
+            path = [path substringFromIndex:3];
+        }
+        if([path isEqualToString:@"/.."]) {
+            path = @"/";
+        }
+        while([path containsString:@"//"]) {
+            path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+        }
+        while([path containsString:@"/./"]) {
+            path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        }
     }
 
     NSURL* url = [NSURL URLWithString:path];
