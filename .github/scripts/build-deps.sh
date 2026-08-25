@@ -126,12 +126,20 @@ write_control_floor() { # source control, output, floor
 }
 
 common_make_args() {
+    # libSandy imports <xpc/xpc.h>; none of the SDKs used here ship xpc
+    # headers (pinned old-ABI SDKs, staged 16.5 SDK). Stage the vendored
+    # copy unless the caller points XPC_HEADERS elsewhere.
+    local xpc=${XPC_HEADERS:-$ROOT/.github/vendor/xpc}
+    [ -d "$xpc" ] || { echo "no xpc headers at $xpc (set XPC_HEADERS)" >&2; exit 1; }
+    mkdir -p "$RUN/include"
+    cp -R "$xpc" "$RUN/include/"
+
     MAKE_ARGS=(
         "ARCHS=$ARCHS"
         "TARGET=$TARGET"
         "THEOS_LIBRARY_PATH=$RUN/theos-lib"
-        "ADDITIONAL_CFLAGS=-fmodules-cache-path=$RUN/module-cache"
-        "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=$RUN/module-cache"
+        "ADDITIONAL_CFLAGS=-I$RUN/include -fmodules-cache-path=$RUN/module-cache"
+        "ADDITIONAL_OBJCFLAGS=-I$RUN/include -fmodules-cache-path=$RUN/module-cache"
     )
     [ -z "$SCHEME" ] || MAKE_ARGS+=("THEOS_PACKAGE_SCHEME=$SCHEME")
 }
@@ -146,13 +154,6 @@ legacy_make_args() {
     major=${major%%.*}
     [ "$major" -lt 12 ] || { echo "old-ABI lane requires Clang older than 12" >&2; exit 1; }
     export OLDABI_TOOLCHAIN=$toolchain OLDABI_SDKS=$sdks
-
-    # libSandy imports <xpc/xpc.h>; the pinned old-ABI SDKs ship no xpc
-    # headers, so the caller must provide them (CI vendors .github/vendor/xpc).
-    local xpc=${XPC_HEADERS:-$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/xpc}
-    [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; exit 1; }
-    mkdir -p "$RUN/include"
-    cp -R "$xpc" "$RUN/include/"
 
     MAKE_ARGS+=(
         "SDKBINPATH=$toolchain/bin"
