@@ -84,10 +84,6 @@ jobs:
           sudo tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$THEOS/sdks"
 
       - name: Build and verify
-        env:
-          # Pin the staged 16.5 SDK: TARGET=latest otherwise resolves to
-          # Xcode's iOS SDK, which lacks private-framework tbds.
-          SDKVERSION: "16.5"
         run: |
           .github/scripts/build-deps.sh "${{ matrix.flavor }}"
           ./build.sh "${{ matrix.flavor }}"
