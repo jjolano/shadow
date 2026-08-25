@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# One run per ref: a new push cancels the superseded in-progress run, and
+# PR branches don't double-run against their push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   THEOS: /opt/theos
 
