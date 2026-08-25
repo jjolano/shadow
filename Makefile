@@ -1,5 +1,5 @@
 ARCHS ?= arm64 arm64e
-TARGET ?= iphone:clang:latest:12.0
+TARGET ?= iphone:clang:16.5:12.0
 
 ifeq ($(SHADOW_LANE),rootful-legacy)
 override ARCHS := armv7 armv7s arm64 arm64e
@@ -9,15 +9,15 @@ override TARGET_OS_DEPLOYMENT_VERSION_arm64e := 12.0
 override THEOS_PACKAGE_SCHEME :=
 else ifeq ($(SHADOW_LANE),rootful-modern)
 override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:latest:14.0
+override TARGET := iphone:clang:16.5:14.0
 override THEOS_PACKAGE_SCHEME :=
 else ifeq ($(SHADOW_LANE),rootless)
 override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:latest:15.0
+override TARGET := iphone:clang:16.5:15.0
 override THEOS_PACKAGE_SCHEME := rootless
 else ifeq ($(SHADOW_LANE),roothide)
 override ARCHS := arm64 arm64e
-override TARGET := iphone:clang:latest:15.0
+override TARGET := iphone:clang:16.5:15.0
 override THEOS_PACKAGE_SCHEME := roothide
 else ifneq ($(SHADOW_LANE),)
 $(error unknown SHADOW_LANE '$(SHADOW_LANE)')
