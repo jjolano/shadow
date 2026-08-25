@@ -118,7 +118,10 @@ write_control_floor() { # source control, output, floor
     if grep -q '^Depends:.*firmware' "$source"; then
         sed -E "s/firmware \(>= [0-9.]+\)/firmware (>= $floor)/" "$source" > "$output"
     else
-        sed "/^Architecture:/a Depends: firmware (>= $floor)" "$source" > "$output"
+        # BSD sed's a-command needs a backslash-newline; awk is portable.
+        awk -v depends="Depends: firmware (>= $floor)" \
+            '!done && /^Architecture:/ { print; print depends; done = 1; next } \
+             { print }' "$source" > "$output"
     fi
 }
 
