@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
 cd "$ROOT"
 : "${THEOS:?THEOS must point to Theos}"
+
+# Lane matrix lives in one place; see lanes.sh.
+. "$ROOT/lanes.sh"
+
 PB=${PREBUILT_ROOT:-$ROOT/../prebuilt}
 CONTROL_VAR=_THEOS_DEB_PACKAGE_CONTROL_PATH
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/shadow-build.XXXXXX")
@@ -90,7 +94,8 @@ prepare_scheme_framework() { # rootless|roothide
     # objects compiled without -DSHADOW_ROOTHIDE while JBPath.m (whose
     # implementations the header inlines replace) recompiles empty.
     make -C Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
-        ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:15.0 "${MAKE_PATHS[@]}"
+        ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
+        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
     cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
@@ -140,11 +145,11 @@ build_lane() { # profile
 }
 
 build_harness() { # rootful-modern|rootless
-    local lane=$1 package
-    case "$lane" in
-        rootful-modern) make -C ShadowHarness package FINALPACKAGE=1 ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:14.0 "${MAKE_PATHS[@]}" ;;
-        rootless) make -C ShadowHarness package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS='arm64 arm64e' TARGET=iphone:clang:16.5:15.0 "${MAKE_PATHS[@]}" ;;
-    esac
+    local lane=$1 package scheme=
+    [ "$lane" = rootless ] && scheme=rootless
+    make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
+        ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
+        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
     package=$(<ShadowHarness/.theos/last_package)
     case "$package" in
         /*) ;;
