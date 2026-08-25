@@ -55,8 +55,9 @@ extern char*** _NSGetArgv();
     // Darwin's NSURL standardization keeps leading ".." segments that would
     // climb past the filesystem root ("/../x" stays "/../x"), letting an
     // adversary prefix dodge prefix/exact rules; GNUstep collapses them.
+    // Strip "/.." but keep the separator, or the path turns relative.
     while([path hasPrefix:@"/../"]) {
-        path = [path substringFromIndex:4];
+        path = [path substringFromIndex:3];
     }
     if([path isEqualToString:@"/.."]) {
         path = @"/";
