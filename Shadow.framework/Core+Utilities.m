@@ -39,20 +39,26 @@ extern char*** _NSGetArgv();
     // Darwin NSURL pitfalls for adversarial absolute input: "//x" parses
     // "x" as an authority (standardizedURL then drops it), "/../x" comes
     // back RELATIVE, and "/.//x" cascades through both. Collapse slash/dot
-    // degeneracies first; NSURL keeps the remaining legitimate work
-    // (percent decoding, ?/# stripping, interior dot segments).
+    // degeneracies to a fixpoint before handing off — the collapses feed
+    // each other ("/./.." -> "/.." -> "/", "//../x" -> "/../x" -> "/x") —
+    // NSURL keeps the remaining legitimate work (percent decoding, ?/#
+    // stripping, interior dot segments).
     if([path hasPrefix:@"/"]) {
-        while([path hasPrefix:@"/../"]) {
-            path = [path substringFromIndex:3];
-        }
-        if([path isEqualToString:@"/.."]) {
-            path = @"/";
-        }
-        while([path containsString:@"//"]) {
-            path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
-        }
-        while([path containsString:@"/./"]) {
-            path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+        NSString* previous = nil;
+        while(![path isEqualToString:previous]) {
+            previous = path;
+            while([path hasPrefix:@"/../"]) {
+                path = [path substringFromIndex:3];
+            }
+            if([path isEqualToString:@"/.."]) {
+                path = @"/";
+            }
+            while([path containsString:@"//"]) {
+                path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
+            }
+            while([path containsString:@"/./"]) {
+                path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
+            }
         }
     }
 
