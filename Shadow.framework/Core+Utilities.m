@@ -52,6 +52,16 @@ extern char*** _NSGetArgv();
         path = [path stringByReplacingOccurrencesOfString:@"/./" withString:@"/"];
     }
 
+    // Darwin's NSURL standardization keeps leading ".." segments that would
+    // climb past the filesystem root ("/../x" stays "/../x"), letting an
+    // adversary prefix dodge prefix/exact rules; GNUstep collapses them.
+    while([path hasPrefix:@"/../"]) {
+        path = [path substringFromIndex:4];
+    }
+    if([path isEqualToString:@"/.."]) {
+        path = @"/";
+    }
+
     // ponytail: /./ and // collapse are kept — NSURL standardizedURL preserves empty path segments.
     while([path containsString:@"//"]) {
         path = [path stringByReplacingOccurrencesOfString:@"//" withString:@"/"];
