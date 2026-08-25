@@ -12,7 +12,9 @@ trap 'rm -rf "$RUN"' EXIT
 
 # HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
 # unchanged, but link them against the facade's HK3 plan/engine bridge.
-HOOKKIT=26f49474d4bb6f48f0a9ccee59429ebc0b0a896a
+# This pre-rewrite upstream state vendors vendor/gum/libfrida-gum.a, which
+# current HookKit master no longer ships; fetched by SHA (see clone_pin).
+HOOKKIT=55aaddc34e23ebdb6d8c119aa7fd2d5946473b1f
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -65,7 +67,12 @@ clone_pin() { # repo sha directory
     else
         git clone --quiet "https://github.com/$1" "$RUN/$3"
     fi
-    git -C "$RUN/$3" checkout --quiet --detach "$2"
+    # A pinned SHA may be unreachable from any ref (rewritten history);
+    # clone only fetches refs, so fall back to fetching the commit itself.
+    git -C "$RUN/$3" checkout --quiet --detach "$2" 2>/dev/null || {
+        git -C "$RUN/$3" fetch --quiet origin "$2" &&
+        git -C "$RUN/$3" checkout --quiet --detach FETCH_HEAD
+    }
 }
 
 package_path() { # source directory
