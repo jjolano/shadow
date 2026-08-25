@@ -336,6 +336,11 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
             NSString* resolved = shdwResolveTarget(path);
 
             if(resolved) {
+                // realpath() resolves through host symlinks like macOS's
+                // /var -> /private/var; re-standardize so exact-match rules
+                // keyed on the un-resolved form still hit.
+                resolved = [Shadow getStandardizedPath:resolved];
+
                 BOOL resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
                     || [self _evaluatePathRestriction:resolved query:query];
 
