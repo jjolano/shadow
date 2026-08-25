@@ -38,10 +38,12 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetect
        $(FRAMEWORK)/Core+Utilities.m \
        $(FRAMEWORK)/DpkgRulesGenerator.m \
        $(FRAMEWORK)/RestrictionEngine.m \
+       $(FRAMEWORK)/JBPath.m \
        $(FRAMEWORK)/RulesetCompiler.m \
        $(FRAMEWORK)/RulesetStore.m \
        RestrictionTests.m \
        PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
+       ../ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
        CoordinatorTests.m
 

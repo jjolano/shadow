@@ -44,6 +44,8 @@ jobs:
           OLDABI_SDKS: ${{ runner.temp }}/oldabi/sdks
           XPC_HEADERS: ${{ github.workspace }}/.github/vendor/xpc
         run: |
+          # check-compat needs lipo; the old-ABI toolchain ships it.
+          echo "${OLDABI_TOOLCHAIN}/bin" >> "$GITHUB_PATH"
           .github/scripts/build-deps.sh rootful-legacy
           ./build.sh rootful-legacy
 
