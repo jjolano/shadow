@@ -46,6 +46,7 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
         cp "$THEOS/vendor/include/libSandy.h" "$INCLUDE_PATH/libSandy.h"
     fi
     if [ "$profile" = rootful-legacy ]; then
+        # libSandy imports <xpc/xpc.h>; pinned old-ABI SDKs lack xpc headers.
         local xpc=${XPC_HEADERS:-$THEOS/sdks/iPhoneOS14.5.sdk/usr/include/xpc}
         [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; return 1; }
         cp -R "$xpc" "$INCLUDE_PATH/"

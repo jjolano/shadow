@@ -42,6 +42,7 @@ jobs:
         env:
           OLDABI_TOOLCHAIN: ${{ runner.temp }}/oldabi/toolchain/linux/iphone
           OLDABI_SDKS: ${{ runner.temp }}/oldabi/sdks
+          XPC_HEADERS: ${{ github.workspace }}/.github/vendor/xpc
         run: |
           .github/scripts/build-deps.sh rootful-legacy
           ./build.sh rootful-legacy
