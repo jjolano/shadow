@@ -46,6 +46,11 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     return sdks;
 }
 
+static NSString* SHDWReportPath(SHDWSDK* sdk) {
+    return [SHDWResultsDirectory stringByAppendingPathComponent:
+        [sdk.identifier stringByAppendingPathExtension:@"json"]];
+}
+
 static NSString* SHDWString(id value) {
     return [value isKindOfClass:[NSString class]] ? value : nil;
 }
@@ -64,9 +69,7 @@ static NSArray<NSDictionary*>* SHDWDictionaryArray(id value) {
 }
 
 static NSDictionary* SHDWReport(SHDWSDK* sdk) {
-    NSString* path = [SHDWResultsDirectory stringByAppendingPathComponent:
-        [sdk.identifier stringByAppendingPathExtension:@"json"]];
-    NSData* data = [NSData dataWithContentsOfFile:path];
+    NSData* data = [NSData dataWithContentsOfFile:SHDWReportPath(sdk)];
     if(!data) return nil;
     NSError* error = nil;
     id report = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
@@ -117,6 +120,57 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     return UIColor.systemGrayColor;
 }
 
+static NSMutableDictionary<NSString*, NSDictionary*>* SHDWActiveRuns(void) {
+    static NSMutableDictionary<NSString*, NSDictionary*>* runs;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ runs = [NSMutableDictionary new]; });
+    return runs;
+}
+
+static NSDate* SHDWReportDate(SHDWSDK* sdk) {
+    return [[NSFileManager defaultManager] attributesOfItemAtPath:SHDWReportPath(sdk)
+        error:nil][NSFileModificationDate];
+}
+
+static void SHDWBeginRun(SHDWSDK* sdk) {
+    SHDWActiveRuns()[sdk.identifier] = @{
+        @"started" : [NSDate date],
+        @"baseline" : SHDWReportDate(sdk) ?: [NSNull null],
+    };
+}
+
+static void SHDWEndRun(SHDWSDK* sdk) {
+    [SHDWActiveRuns() removeObjectForKey:sdk.identifier];
+}
+
+static BOOL SHDWRunActive(SHDWSDK* sdk) {
+    NSDictionary* state = SHDWActiveRuns()[sdk.identifier];
+    if(!state) return NO;
+
+    NSDate* started = state[@"started"];
+    if(-started.timeIntervalSinceNow > 60) {
+        SHDWEndRun(sdk);
+        return NO;
+    }
+
+    NSDate* baseline = [state[@"baseline"] isKindOfClass:[NSDate class]] ? state[@"baseline"] : nil;
+    NSDate* current = SHDWReportDate(sdk);
+    if(current && (!baseline || [current compare:baseline] == NSOrderedDescending) &&
+       ![SHDWOutcome(SHDWReport(sdk)) isEqualToString:@"running"]) {
+        SHDWEndRun(sdk);
+        return NO;
+    }
+
+    return YES;
+}
+
+static UIActivityIndicatorView* SHDWSpinner(void) {
+    UIActivityIndicatorView* spinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    [spinner startAnimating];
+    return spinner;
+}
+
 @interface SHDWSDKDetailController : UITableViewController
 - (instancetype)initWithSDK:(SHDWSDK*)sdk;
 @end
@@ -125,6 +179,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     SHDWSDK* _sdk;
     NSDictionary* _report;
     NSArray<NSDictionary*>* _rounds;
+    NSTimer* _refreshTimer;
 }
 
 - (instancetype)initWithSDK:(SHDWSDK*)sdk {
@@ -144,6 +199,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 }
 
 - (void)dealloc {
+    [_refreshTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -155,18 +211,39 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 - (void)refresh {
     _report = SHDWReport(_sdk);
     _rounds = SHDWDictionaryArray(_report[@"rounds"]);
+    BOOL running = SHDWRunActive(_sdk);
+    self.navigationItem.rightBarButtonItem.title = running ? @"Running" : @"Run";
+    self.navigationItem.rightBarButtonItem.enabled = !running;
+    if(running && !_refreshTimer) {
+        _refreshTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self
+            selector:@selector(refreshTimer:) userInfo:nil repeats:YES];
+    } else if(!running && _refreshTimer) {
+        [_refreshTimer invalidate];
+        _refreshTimer = nil;
+    }
     [self.tableView reloadData];
 }
 
+- (void)refreshTimer:(NSTimer*)timer {
+    (void)timer;
+    [self refresh];
+}
+
 - (void)runSDK {
+    SHDWBeginRun(_sdk);
+    [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
     NSURL* url = [NSURL URLWithString:_sdk.scheme];
     [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
         if(success) return;
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Runner unavailable"
-            message:@"Reinstall Shadow Harness to restore its isolated runners."
-            preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SHDWEndRun(self->_sdk);
+            [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Runner unavailable"
+                message:@"Reinstall Shadow Harness to restore its isolated runners."
+                preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
     }];
 }
 
@@ -197,14 +274,24 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     cell.detailTextLabel.numberOfLines = 0;
     cell.imageView.image = nil;
     cell.imageView.tintColor = nil;
+    cell.accessoryView = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessibilityValue = nil;
 
     if(indexPath.section == 0) {
-        NSString* outcome = SHDWOutcome(_report);
+        BOOL running = SHDWRunActive(_sdk);
+        NSString* outcome = running ? @"running" : SHDWOutcome(_report);
         if(indexPath.row == 0) {
             cell.textLabel.text = @"Status";
             cell.detailTextLabel.text = SHDWOutcomeTitle(outcome);
-            cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
-            cell.imageView.tintColor = SHDWOutcomeColor(outcome);
+            if(running) {
+                cell.imageView.image = nil;
+                cell.accessoryView = SHDWSpinner();
+            } else {
+                cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
+                cell.imageView.tintColor = SHDWOutcomeColor(outcome);
+            }
+            cell.accessibilityValue = SHDWOutcomeTitle(outcome);
         } else if(indexPath.row == 1) {
             cell.textLabel.text = @"Runner version";
             cell.detailTextLabel.text = SHDWString(SHDWDictionary(_report[@"sdk"])[@"version"]) ?: _sdk.version;
@@ -289,6 +376,9 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     if(!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuse];
     cell.textLabel.adjustsFontForContentSizeCategory = YES;
     cell.detailTextLabel.adjustsFontForContentSizeCategory = YES;
+    cell.accessoryView = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessibilityValue = nil;
 
     if(indexPath.section == 0) {
         cell.textLabel.text = @"Shadow diagnostics";
@@ -302,13 +392,19 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 
     SHDWSDK* sdk = SHDWSDKs()[indexPath.row];
     NSDictionary* report = SHDWReport(sdk);
-    NSString* outcome = SHDWOutcome(report);
+    BOOL running = SHDWRunActive(sdk);
+    NSString* outcome = running ? @"running" : SHDWOutcome(report);
     cell.textLabel.text = sdk.name;
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
         SHDWString(SHDWDictionary(report[@"sdk"])[@"version"]) ?: sdk.version];
-    cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
-    cell.imageView.tintColor = SHDWOutcomeColor(outcome);
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    if(running) {
+        cell.imageView.image = nil;
+        cell.accessoryView = SHDWSpinner();
+    } else {
+        cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
+        cell.imageView.tintColor = SHDWOutcomeColor(outcome);
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
     cell.accessibilityValue = SHDWOutcomeTitle(outcome);
     return cell;
 }
