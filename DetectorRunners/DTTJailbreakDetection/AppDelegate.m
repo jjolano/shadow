@@ -31,9 +31,18 @@
         }]
     };
     NSString* directory = @"/var/mobile/Documents/ShadowDetectorTests";
-    [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
-    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
-    [data writeToFile:[directory stringByAppendingPathComponent:@"dttjailbreakdetection.json"] atomically:YES];
+    NSError* error = nil;
+    BOOL directoryReady = [NSFileManager.defaultManager createDirectoryAtPath:directory
+        withIntermediateDirectories:YES attributes:nil error:&error];
+    NSData* data = directoryReady ? [NSJSONSerialization dataWithJSONObject:report
+        options:NSJSONWritingPrettyPrinted error:&error] : nil;
+    BOOL written = data && [data writeToFile:[directory stringByAppendingPathComponent:@"dttjailbreakdetection.json"]
+        options:NSDataWritingAtomic error:&error];
+    if(!written) {
+        self.label.text = [NSString stringWithFormat:@"Report write failed\n\n%@",
+            error.localizedDescription ?: @"Unknown error"];
+        return;
+    }
     self.label.text = jailbroken ? @"DTTJailbreakDetection reported jailbroken" : @"DTTJailbreakDetection reported clean";
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [application openURL:[NSURL URLWithString:@"shadow-detectors://refresh"] options:@{} completionHandler:nil];

@@ -56,7 +56,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       "checks": checks
     ]
     let directory = URL(fileURLWithPath: "/var/mobile/Documents/ShadowDetectorTests", isDirectory: true)
-    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let report: [String: Any] = [
       "schemaVersion": 1,
       "sdk": ["id": "freerasp", "name": "freeRASP", "version": "6.4.0"],
@@ -68,11 +67,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       ],
       "rounds": [round]
     ]
-    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
-      try? data.write(to: directory.appendingPathComponent("freerasp.json"), options: .atomic)
+    var writeError: Error?
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+      try data.write(to: directory.appendingPathComponent("freerasp.json"), options: .atomic)
+    } catch {
+      writeError = error
     }
+    let failure = writeError?.localizedDescription
 
     DispatchQueue.main.async { [weak self] in
+      if let failure {
+        self?.label?.text = "Report write failed\n\n\(failure)"
+        return
+      }
       self?.label?.text = final ? (jailbroken ? "freeRASP detected jailbreak evidence" : "freeRASP reported clean") : "Running freeRASP 6.4.0…"
       guard final, self?.returned == false else { return }
       self?.returned = true
