@@ -13,10 +13,10 @@
 //   - anything else            -> fail open: leave the real method untouched,
 //                                 log once
 //
-// The two probes each get TWO descriptor rows (scalar-family + object) so a
+// The two probes each get THREE descriptor rows (scalar, object, pointer) so a
 // single row carries exactly one accepted return encoding; at install only
-// the row matching the method's runtime encoding fires — the other row
-// skips.
+// the row matching the method's runtime encoding fires — the other rows
+// skip.
 //
 // Install route: the passed message-capable hook session (shadowhook_DeviceCheck
 // receives it from the coordinator), NOT the global HKHookMessage default.
@@ -26,14 +26,16 @@
 static char s_loggedUnknown[256] = { 0 };
 
 // Descriptor table. Step 1: the two ABI-sensitive probes. Each probe gets
-// TWO rows — a scalar-family row (accepted 'B'/'c', policy false) and an
-// object row (accepted '@', policy nil). Exactly one row matches any given
-// runtime encoding. Both probes are zero-argument instance methods.
+// THREE rows — scalar ('B'/'c', false), object ('@', nil), and pointer ('^',
+// NULL). Exactly one row matches any given runtime encoding. Both probes are
+// zero-argument instance methods.
 const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, '@', 0, DCHPolicyFalse },
+    { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, '^', 0, DCHPolicyFalse },
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, '@', 0, DCHPolicyFalse },
+    { "EnrollParameters",       "jailbroken", DCHMethodInstance, '^', 0, DCHPolicyFalse },
 
     // Step 2, batch 1: Apple/device classes.
     { "DCDevice",                 "isSupported",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
@@ -43,6 +45,11 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "UIDevice",                 "isJailBroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "JailbreakDetectionVC",     "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "DTTJailbreakDetection",    "isJailbroken",         DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "SafeDeviceJailbreakDetection", "isJailbroken",     DCHMethodClass,    'B', 0, DCHPolicyFalse },
+    { "SafeDevicePlugin",         "isJailBroken",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "SafeDevicePlugin",         "isJailBrokenCustom",    DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "SafeDevicePlugin",         "hasObviousJailbreakSigns", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
+    { "JailMonkey",               "isJailBroken",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "ANSMetadata",              "computeIsJailbroken",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "ANSMetadata",              "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
 
@@ -105,7 +112,24 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
 };
 
 static BOOL shdw_dch_encoding_is_unknown(char encoding) {
-    return encoding != 'B' && encoding != 'c' && encoding != '@';
+    return encoding != 'B' && encoding != 'c' && encoding != '@' && encoding != '^';
+}
+
+static DCHTarget shdw_dch_target(const DCHDescriptor* desc) {
+    if(strcmp(desc->className, "DTTJailbreakDetection") == 0) {
+        return DCHTargetDTT;
+    }
+
+    if(strcmp(desc->className, "SafeDeviceJailbreakDetection") == 0 ||
+       strcmp(desc->className, "SafeDevicePlugin") == 0) {
+        return DCHTargetSafeDevice;
+    }
+
+    if(strcmp(desc->className, "JailMonkey") == 0) {
+        return DCHTargetJailMonkey;
+    }
+
+    return DCHTargetNone;
 }
 
 static IMP shdw_dch_replacement_imp(const DCHDescriptor* desc) {
@@ -114,6 +138,10 @@ static IMP shdw_dch_replacement_imp(const DCHDescriptor* desc) {
         // a one-arg '@' row has no IMP and must not reach the resolver
         // (argCount guard in the install loop).
         return (IMP) &shdw_dch_imp0_obj_nil;
+    }
+
+    if(desc->encoding == '^') {
+        return (IMP) &shdw_dch_imp0_ptr_null;
     }
 
     // Scalar family ('B'/'c' rows): policy picks false vs true.
@@ -126,7 +154,7 @@ static IMP shdw_dch_replacement_imp(const DCHDescriptor* desc) {
     return truePolicy ? (IMP) &shdw_dch_imp1_bool_true : (IMP) &shdw_dch_imp1_bool_false;
 }
 
-NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks) {
+NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks, DCHTarget enabledTargets) {
     if(!hooks) {
         return 0;
     }
@@ -134,6 +162,12 @@ NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks) {
     NSUInteger installed = 0;
 
     for(const DCHDescriptor* desc = shdw_devicecheck_descriptors; desc->className; desc++) {
+        DCHTarget target = shdw_dch_target(desc);
+
+        if(target != DCHTargetNone && !(enabledTargets & target)) {
+            continue;
+        }
+
         Class cls = objc_getClass(desc->className);
 
         if(!cls) {
@@ -161,7 +195,8 @@ NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks) {
         char e0 = encoding[0];
         BOOL rowMatches = (e0 == 'B' || e0 == 'c')
             ? (desc->encoding == 'B' || desc->encoding == 'c')
-            : (e0 == '@' && desc->encoding == '@');
+            : (e0 == '@' && desc->encoding == '@') ||
+              (e0 == '^' && desc->encoding == '^');
 
         if(!rowMatches) {
             if(shdw_dch_encoding_is_unknown(e0)) {

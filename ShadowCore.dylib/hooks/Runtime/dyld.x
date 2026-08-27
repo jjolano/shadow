@@ -52,8 +52,8 @@ static kern_return_t replaced_task_info(task_name_t target_task, task_flavor_t f
 // buffer. Two-generation publication: a reader holding a pointer across MORE
 // than one rebuild may observe that generation rewritten in place — bounded
 // by the fixed capacity, never an over-read. Path strings are retained in
-// `_shdw_dyld_path_pool` for the lifetime of the process so
-// fileSystemRepresentation pointers never dangle after a collection removal.
+// `_shdw_dyld_path_pool` for the lifetime of the process so their UTF8String
+// pointers never dangle after a collection removal.
 #define SHADOW_DYLD_MIRROR_CAPACITY 4096   // beyond any real process's image count
 // ponytail: fixed buffers + warning near capacity; grow-on-demand would require
 // a new vm_allocate'd generation published after a quiescent window (never-
@@ -2119,7 +2119,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
 
             snapshot->entry[i].mh = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
             snapshot->entry[i].slide = (intptr_t)[dylib[@"slide"] pointerValue];
-            snapshot->entry[i].name = [dylib[@"name"] fileSystemRepresentation];
+            snapshot->entry[i].name = [dylib[@"name"] UTF8String];
         }
 
         __atomic_store_n(&_shdw_dyld_snapshot, snapshot, __ATOMIC_RELEASE);
@@ -2220,7 +2220,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
             NSDictionary* dylib = _dyld_collection[i];
 
             infoGen[i].imageLoadAddress = (struct mach_header *)[dylib[@"mach_header"] pointerValue];
-            infoGen[i].imageFilePath = [dylib[@"name"] fileSystemRepresentation];
+            infoGen[i].imageFilePath = [dylib[@"name"] UTF8String];
 
             // Real mtime from the file: a synthetic 0 is a fingerprint for a
             // raw reader cross-checking imageFilePath against stat(). The
@@ -2656,7 +2656,12 @@ void shadowhook_dyld_extra(SHDWHookSession* hooks) {
 }
 
 void shadowhook_dyld_symlookup(SHDWHookSession* hooks) {
-    [hooks hookFunction:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
+    // dlsym is a tiny shared-cache entrypoint on some iOS releases and may
+    // not have a relocatable prologue. Cover normal callers through their
+    // import slots when the entrypoint hook cannot be installed.
+    if(![hooks hookFunction:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym]) {
+        [hooks hookRebindSymbol:@"dlsym" withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
+    }
 
     // CFBundle symbol-resolution wrappers (plan Wave 3): same bypass surface
     // as dlsym, reached through CoreFoundation.

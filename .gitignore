@@ -10,6 +10,7 @@ tests/*.gcno
 tests/*.gcda
 tests/*.gcov
 artifacts/
+.detector-deps/
 core
 core.*
 __pycache__/
