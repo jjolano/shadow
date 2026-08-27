@@ -18,3 +18,5 @@
 "PSEUDO_SANDBOX_STRICT_DESC" = "在允许列表之外强制失败关闭。需要先启用审计——仅在共享区域验证后启用。";
 "PATH_REWRITE" = "重写越狱路径";
 "PATH_REWRITE_DESC" = "在系统调用和 libc 层面重写调用方缓冲区中的越狱路径，使文件操作自然以 ENOENT 失败。重写后的字符串对应用自身的日志和界面可见。";
+"DETECTOR_PATCHES" = "定向检测器覆盖";
+"DETECTOR_PATCHES_DESC" = "通过直接覆盖方法或 Shadow 的行为 Hook，消除受支持检测库的越狱探测。Objective-C 适配器需要启用“设备检查”。默认关闭；仅为使用对应库的应用开启。freeRASP 选项会阻止 SDK 启动，因此会抑制所有 freeRASP 回调。";

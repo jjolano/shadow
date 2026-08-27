@@ -18,6 +18,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lane-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build lane and package metadata contract
+        run: sh tests/verify-lane-contract.sh
+
   linux-gnustep:
     runs-on: ubuntu-latest
     steps:

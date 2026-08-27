@@ -175,7 +175,8 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
     spec.target.symbol.struct_size = sizeof(spec.target.symbol);
     spec.target.symbol.struct_version = HK_ABI_VERSION_3_0;
     spec.target.symbol.name = symbolName.UTF8String;
-    spec.target.symbol.name_convention = HK_SYMBOL_NAME_C;
+    spec.target.symbol.name_convention = [symbolName hasPrefix:@"$s"]
+        ? HK_SYMBOL_NAME_SWIFT_MANGLED : HK_SYMBOL_NAME_C;
     spec.target.symbol.defining_image.struct_size = sizeof(spec.target.symbol.defining_image);
     spec.target.symbol.defining_image.struct_version = HK_ABI_VERSION_3_0;
     spec.target.symbol.defining_image.kind = HK_IMAGE_ANY_LOADED;

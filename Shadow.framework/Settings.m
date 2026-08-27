@@ -39,6 +39,11 @@
 
     NSMutableDictionary* result = [defaultSettings mutableCopy];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
+    // Sandboxed cfprefsd can omit another app's dictionary despite libSandy's file grant.
+    if(!app_settings && bundleIdentifier) {
+        id fileSettings = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST][bundleIdentifier];
+        app_settings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
+    }
 
     // Per-app kill switch. Distinct from App_Enabled, which means "this app has
     // per-app overrides" — its NO state is "follow global", so it cannot say

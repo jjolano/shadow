@@ -4,34 +4,22 @@ set -euo pipefail
 
 PROFILE=${1:-}
 ARTIFACT=${2:-}
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+
+# Keep the package contract with the build-lane contract.  This script runs
+# after packaging, so a mismatched control file cannot silently broaden a
+# lane's supported iOS range.
+. "$ROOT/lanes.sh"
 
 case "$PROFILE" in
-    rootful-legacy)
-        PACKAGE=me.jjolano.shadow.legacy
-        PACKAGE_ARCH=iphoneos-arm
-        FLOOR=9.0
-        CEILING=14.0
-        ;;
-    rootful-modern)
-        PACKAGE=me.jjolano.shadow
-        PACKAGE_ARCH=iphoneos-arm
-        FLOOR=14.0
-        CEILING=
-        ;;
-    rootless)
-        PACKAGE=me.jjolano.shadow
-        PACKAGE_ARCH=iphoneos-arm64
-        FLOOR=15.0
-        CEILING=
-        ;;
-    roothide)
-        PACKAGE=me.jjolano.shadow
-        PACKAGE_ARCH=iphoneos-arm64e
-        FLOOR=15.0
-        CEILING=18.0
-        ;;
+    rootful-legacy|rootful-modern|rootless|roothide) ;;
     *) echo "usage: $0 <rootful-legacy|rootful-modern|rootless|roothide> ARTIFACT.deb" >&2; exit 2 ;;
 esac
+
+PACKAGE=$(shadow_lane_field "$PROFILE" PACKAGE)
+PACKAGE_ARCH=$(shadow_lane_field "$PROFILE" PACKAGE_ARCH)
+FLOOR=$(shadow_lane_field "$PROFILE" FLOOR)
+CEILING=$(shadow_lane_field "$PROFILE" CEILING)
 
 [ -f "$ARTIFACT" ] || { echo "artifact not found: $ARTIFACT" >&2; exit 2; }
 : "${THEOS:?THEOS must point to Theos}"

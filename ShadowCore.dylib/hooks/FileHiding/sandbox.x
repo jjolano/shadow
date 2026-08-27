@@ -594,6 +594,7 @@ static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn
 }
 
 static pid_t (*original_fork)(void);
+static pid_t (*resolved_fork)(void);
 static pid_t replaced_fork(void) {
     if(isCallerExternal()) {
         // Stock-like denial for app-origin callers: the app sandbox refuses
@@ -602,7 +603,14 @@ static pid_t replaced_fork(void) {
         return -1;
     }
 
-    return original_fork();
+    pid_t (*call_fork)(void) = original_fork ?: resolved_fork;
+
+    if(!call_fork) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    return call_fork();
 }
 
 static pid_t (*original_vfork)(void);
@@ -825,7 +833,10 @@ void shadowhook_sandbox(SHDWHookSession* hooks) {
     [hooks hookFunction:execv withReplacement:replaced_execv outOldPtr:NULL];
     [hooks hookFunction:posix_spawn withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn];
     [hooks hookFunction:posix_spawnp withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp];
-    [hooks hookFunction:fork withReplacement:replaced_fork outOldPtr:(void **) &original_fork];
+    resolved_fork = fork;
+    if(![hooks hookFunction:fork withReplacement:replaced_fork outOldPtr:(void **) &original_fork]) {
+        [hooks hookRebindSymbol:@"fork" withReplacement:replaced_fork outOldPtr:(void **) &original_fork];
+    }
     [hooks hookFunction:vfork withReplacement:replaced_vfork outOldPtr:(void **) &original_vfork];
 
     // Signal aliases: runtime-resolved, skipped cleanly when absent.
@@ -955,7 +966,12 @@ void* shdw_sym_policy_lookup_sandbox(const char* name) {
     for(size_t i = 0; i < sizeof(shdw_sandbox_sym_policy_table) / sizeof(shdw_sandbox_sym_policy_table[0]); i++) {
         if(strcmp(name, shdw_sandbox_sym_policy_table[i].name) == 0) {
             if(shdw_sandbox_sym_policy_table[i].original && *shdw_sandbox_sym_policy_table[i].original == NULL) {
-                return NULL;  // runtime-resolved symbol not installed
+                // IOSSecuritySuite resolves fork with dlsym(RTLD_DEFAULT). Keep
+                // that route covered even when its tiny entrypoint cannot be
+                // patched and the app has no fork import to rebind.
+                if(strcmp(name, "fork") != 0 || !resolved_fork) {
+                    return NULL;  // runtime-resolved symbol not installed
+                }
             }
 
             return shdw_sandbox_sym_policy_table[i].replacement;

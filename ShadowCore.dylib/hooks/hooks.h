@@ -310,6 +310,7 @@ static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t*
 }
 
 extern void shadowhook_DeviceCheck(SHDWHookSession* hooks);
+extern void shadowhook_DeviceCheck_configure(NSDictionary* prefs);
 extern void shadowhook_dyld(SHDWHookSession* hooks);
 extern void shadowhook_libc(SHDWHookSession* hooks);
 extern void shadowhook_mach(SHDWHookSession* hooks);

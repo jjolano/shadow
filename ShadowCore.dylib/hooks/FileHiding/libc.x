@@ -1663,7 +1663,13 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             }
         }
 
-        [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
+        // fopen's shared-cache entrypoint is not relocatable on iOS 15;
+        // rebind its imports instead of leaving the detector surface open.
+        if(strcmp(d->symbol, "fopen") == 0) {
+            [hooks hookRebindSymbol:@"fopen" withReplacement:d->replacement outOldPtr:d->original];
+        } else {
+            [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
+        }
 
         if(strcmp(d->symbol, "close") == 0) {
             shdw_close_hooked = YES;

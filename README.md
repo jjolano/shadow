@@ -10,7 +10,6 @@ The Shadow package (`me.jjolano.shadow`, version 4.0.0) ships the following comp
 * **Shadow.dylib** and **ShadowCore.dylib** — the injection entry point and the hook layer that intercepts detection APIs.
 * **ShadowSettings.bundle** — preferences UI in the Settings app.
 * **shdw** — a command-line tool installed to `/usr/local/bin`. Its `-d` watcher mode regenerates the installed-apps ruleset whenever apps are installed or uninstalled (debounced), and it is also used for ruleset maintenance.
-* **shadowd** — an arm64 XPC daemon included in modern packages. Its vnode-hiding backend activates only on iOS 15.0–16.6.1 and fails closed elsewhere.
 
 ## Installation
 
@@ -30,12 +29,14 @@ After installation, settings are available in the Settings app. You may configur
 
 ## Compatibility
 
-| Lane | Package architecture | Supported system | Binary slices |
-| --- | --- | --- | --- |
-| Rootful legacy | `iphoneos-arm` | iOS 9–13 | armv7/armv7s/arm64 at iOS 9; old-ABI arm64e at iOS 12 |
-| Rootful modern | `iphoneos-arm` | iOS 14+ | arm64 and new-ABI arm64e at iOS 14 |
-| Rootless | `iphoneos-arm64` | iOS 15+ | arm64 and new-ABI arm64e at iOS 15 |
-| RootHide | `iphoneos-arm64e` | iOS 15–17 | arm64 and new-ABI arm64e at iOS 15 |
+| Lane | Build SDK | Package architecture | Supported system | Binary slices |
+| --- | --- | --- | --- | --- |
+| Rootful legacy | iPhoneOS 13.7 | `iphoneos-arm` | iOS 9–13 | armv7/armv7s/arm64 at iOS 9; old-ABI arm64e at iOS 12 |
+| Rootful modern | iPhoneOS 16.5 | `iphoneos-arm` | iOS 14+ | arm64 and new-ABI arm64e at iOS 14 |
+| Rootless | iPhoneOS 16.5 | `iphoneos-arm64` | iOS 15+ | arm64 and new-ABI arm64e at iOS 15 |
+| RootHide | iPhoneOS 16.5 | `iphoneos-arm64e` | iOS 15–17 | arm64 and new-ABI arm64e at iOS 15 |
+
+`lanes.sh` is the source of truth for the build SDK, deployment floor, package architecture, and firmware ceiling; CI checks it against every control file. A package being eligible for an iOS version is not a guarantee that every app or detection SDK will work there.
 
 The legacy Shadow package and its HookKit, AltList, and libSandy dependencies use separate `.legacy` package IDs so old- and new-ABI arm64e binaries can never be mixed. Modern rootful, rootless, and RootHide packages keep the normal IDs and are selected by package architecture. Shadow is not guaranteed to work on every app.
 

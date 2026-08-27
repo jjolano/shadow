@@ -17,6 +17,7 @@
 //   'B'/_Bool, 'c'/'C' (char)  -> BOOL-style scalar replacement (policy
 //                                 false/true via DCHPolicy)
 //   '@' (object)               -> object replacement (policy nil)
+//   '^' (pointer)              -> pointer replacement (NULL)
 // Anything else is UNKNOWN -> fail open, log once, skip.
 //
 // Replacement IMPs are typed to the method shape they serve:
@@ -37,6 +38,16 @@ typedef NS_ENUM(uint8_t, DCHMethodKind) {
     DCHMethodClass    = 1,
 };
 
+// Named detector-library rows are opt-in; untagged DeviceCheck rows retain
+// their existing behavior.
+typedef NS_OPTIONS(uint8_t, DCHTarget) {
+    DCHTargetNone       = 0,
+    DCHTargetDTT        = 1 << 0,
+    DCHTargetSafeDevice = 1 << 1,
+    DCHTargetJailMonkey = 1 << 2,
+    DCHTargetFreeRASP   = 1 << 3,
+};
+
 typedef struct {
     const char* className;   // runtime class name (objc_getClass)
     const char* selector;    // selector name
@@ -55,9 +66,10 @@ static inline BOOL shdw_dch_imp0_bool_false(id self, SEL _cmd) { return NO;  }
 static inline BOOL shdw_dch_imp0_bool_true (id self, SEL _cmd) { return YES; }
 static inline BOOL shdw_dch_imp1_bool_false(id self, SEL _cmd, id a0) { return NO;  }
 static inline BOOL shdw_dch_imp1_bool_true (id self, SEL _cmd, id a0) { return YES; }
-// Object family (@ rows): zero-arg only for the two step-1 probes.
-static inline id   shdw_dch_imp0_obj_nil  (id self, SEL _cmd) { return nil; }
+// Object/pointer families: zero-arg only for the two step-1 probes.
+static inline id    shdw_dch_imp0_obj_nil (id self, SEL _cmd) { return nil; }
+static inline void* shdw_dch_imp0_ptr_null(id self, SEL _cmd) { return NULL; }
 
 // Installs every descriptor row whose class exists and whose method's runtime
 // encoding matches the row. Returns the number of hooks installed.
-NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks);
+NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks, DCHTarget enabledTargets);

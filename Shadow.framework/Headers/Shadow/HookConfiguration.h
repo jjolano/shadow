@@ -40,6 +40,14 @@
 #define SHDWPseudoSandboxModeID    @"PseudoSandboxMode"
 #define SHDWPathRewriteID          @"PathRewrite"
 
+// Optional detector-library adapters. These are subordinate to
+// Hook_DeviceCheck, not independent install units.
+#define SHDWDetectorPatchDTTID        @"DetectorPatch_DTTJailbreakDetection"
+#define SHDWDetectorPatchSafeDeviceID @"DetectorPatch_SafeDevice"
+#define SHDWDetectorPatchJailMonkeyID @"DetectorPatch_JailMonkey"
+#define SHDWDetectorPatchIOSSecuritySuiteID @"DetectorPatch_IOSSecuritySuite"
+#define SHDWDetectorPatchFreeRASPID         @"DetectorPatch_FreeRASP"
+
 // Non-hook preferences (kept for completeness; not hook groups).
 #define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWHookLibraryID          @"HK_Library"
