@@ -398,10 +398,12 @@ typedef enum {
     SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
     SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
     SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
+    SHADW_HOOK_GROUP_IOS_SECURITY_SUITE = 1 << 4,
 } shdw_hook_group_t;
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
 void shdw_libc_verify_group(const char* group, uint32_t mask);
+void shadowhook_libc_iossecuritysuite(SHDWHookSession* hooks);
 
 // struct stat64 is not visible in this build configuration: the SDK guards it
 // behind feature macros and omits it entirely on LP64 platforms where struct

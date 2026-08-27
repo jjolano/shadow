@@ -176,6 +176,13 @@ if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/FileHiding/libc.
     echo 'LIBC DRIFT: fopen lost its safe rebind path'
     exit 1
 fi
+if ! grep -q 'SHADW_HOOK_GROUP_IOS_SECURITY_SUITE' ShadowCore.dylib/hooks/FileHiding/libc.x ||
+   ! grep -q 'shadowhook_libc_iossecuritysuite' ShadowCore.dylib/hooks/Environment/DeviceCheck.x ||
+   ! grep -q 'shadowhook_NSFileManager' ShadowCore.dylib/hooks/Environment/DeviceCheck.x ||
+   ! grep -q 'effectivePrefs\[SHDWHookIDFilesystem\] = @NO' ShadowCore.dylib/shadowcore.x; then
+    echo 'LIBC DRIFT: IOSSecuritySuite lost its targeted safe filesystem subset'
+    exit 1
+fi
 if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' ShadowCore.dylib/hooks/FileHiding/sandbox.x; then
     echo 'SANDBOX DRIFT: dynamically resolved fork lost its safe fallback'
     exit 1
