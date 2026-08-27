@@ -203,12 +203,20 @@ static void shdw_restricted_ranges_publish_locked(const shdw_restricted_ranges_t
     __atomic_store_n(&_shdw_restricted_ranges_published, other, __ATOMIC_RELEASE);
 }
 
+static BOOL shdw_path_is_in_main_bundle(NSString* path) {
+    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    return [path isEqualToString:bundlePath]
+        || [path hasPrefix:[bundlePath stringByAppendingString:@"/"]];
+}
+
 // Classify one image path exactly the way -[Shadow isAddrRestricted:] would
 // after resolving an address to it: isCPathRestricted:, the ruleset predicate.
 // NOT isProtectedImagePath: — that one ORs in the Shadow-artifact basename set
 // and would restrict addresses the current predicate allows.
 static BOOL shdw_image_path_is_restricted(const char* path) {
-    return path && [_shadow isCPathRestricted:path];
+    if(!path) return NO;
+    NSString* imagePath = [NSString stringWithUTF8String:path];
+    return !shdw_path_is_in_main_bundle(imagePath) && [_shadow isCPathRestricted:path];
 }
 
 // Full reclassification of every loaded image. Only run when the table has no
@@ -778,6 +786,10 @@ static BOOL shdw_dlopen_resolution_denied(const char* path, const void* callerAd
     }
 
     for(NSString* candidate in candidates) {
+        if(shdw_path_is_in_main_bundle(candidate)) {
+            continue;
+        }
+
         if([_shadow isPathRestricted:candidate options:@{kShadowRestrictionEnableResolve : @(NO)}] || [_shadow isProtectedImagePath:candidate]) {
             return YES;
         }
@@ -911,8 +923,9 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
         // too. Asking once and reusing the answer keeps an ordinary system
         // image at two engine queries per load instead of three — and the
         // overwhelming majority of the images an app loads are ordinary.
-        BOOL protectedImage = shdw_is_shadow_runtime_image(image_path)
-            || [_shadow isProtectedImagePath:path];
+        BOOL ownImage = shdw_path_is_in_main_bundle(path);
+        BOOL protectedImage = !ownImage && (shdw_is_shadow_runtime_image(image_path)
+            || [_shadow isProtectedImagePath:path]);
 
         // Record the span if this image is restricted, so the address-keyed
         // hooks can answer from the range table instead of re-resolving and
@@ -922,7 +935,8 @@ void shadowhook_dyld_updatelibs(const struct mach_header* mh, intptr_t vmaddr_sl
             shdw_restricted_ranges_note_add(mh, vmaddr_slide, image_path);
         }
 
-        if(!protectedImage && ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}]) {
+        if(!protectedImage && (ownImage
+            || ![_shadow isPathRestricted:path options:@{kShadowRestrictionEnableResolve : @(NO)}])) {
             if(gDyldDebug) {
                 NSLog(@"%@: %@: %@", @"dyld", @"adding lib", path);
             }
@@ -1916,6 +1930,7 @@ static BOOL shdw_dyld_path_restricted(const char* path) {
     }
 
     NSString* p = [NSString stringWithUTF8String:path];
+    if(shdw_path_is_in_main_bundle(p)) return NO;
     return [_shadow isPathRestricted:p options:@{kShadowRestrictionEnableResolve : @(NO)}] || [_shadow isProtectedImagePath:p];
 }
 

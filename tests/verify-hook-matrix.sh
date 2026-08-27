@@ -93,6 +93,14 @@ if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTI
 fi
 
 dyld_probe=tools/dyldprobe/main.m
+if ! grep -q '@executable_path/shdwtestlib.dylib' "$dyld_probe"; then
+    echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
+    rc=1
+fi
+if [ "$(grep -c 'shdw_path_is_in_main_bundle' ShadowCore.dylib/hooks/Runtime/dyld.x)" -lt 5 ]; then
+    echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
+    rc=1
+fi
 if ! grep -q 'PROBE_DYLD_CALLBACK_COUNT = 9' "$dyld_probe"; then
     echo 'DYLD DRIFT: dyldprobe no longer registers nine distinct callbacks'
     rc=1
