@@ -39,7 +39,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     return probes.map { ["id": $0.0, "name": $0.1, "passed": $0.2, "message": $0.3] }
   }
 
-  private func run(_ phase: String) {
+  private func run(_ phase: String) -> Bool {
     let status = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
     let failures = Dictionary(uniqueKeysWithValues: status.failedChecks.map {
       (String(describing: $0.check), $0.failMessage)
@@ -58,12 +58,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       "clean": !status.jailbroken,
       "checks": suiteChecks + shadowProbeChecks()
     ])
-    writeReport(outcome: status.jailbroken ? "jailbroken" : "clean")
+    return writeReport(outcome: status.jailbroken ? "jailbroken" : "clean")
   }
 
-  private func writeReport(outcome: String) {
+  private func writeReport(outcome: String) -> Bool {
     let directory = URL(fileURLWithPath: "/var/mobile/Documents/ShadowDetectorTests", isDirectory: true)
-    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let report: [String: Any] = [
       "schemaVersion": 1,
       "sdk": ["id": "iossecuritysuite", "name": "IOSSecuritySuite", "version": "2.3.0"],
@@ -71,8 +70,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       "generatedAt": ISO8601DateFormatter().string(from: Date()),
       "rounds": rounds
     ]
-    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
-      try? data.write(to: directory.appendingPathComponent("iossecuritysuite.json"), options: .atomic)
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+      try data.write(to: directory.appendingPathComponent("iossecuritysuite.json"), options: .atomic)
+      return true
+    } catch {
+      label?.text = "Report write failed\n\n\(error.localizedDescription)"
+      return false
     }
   }
 
@@ -81,9 +86,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     lastRunStarted = Date()
     rounds.removeAll()
     label?.text = "Running IOSSecuritySuite 2.3.0…"
-    run("early")
+    _ = run("early")
     DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-      self?.run("settled")
+      guard self?.run("settled") == true else { return }
       self?.label?.text = "Complete\n\nReturning to Detector SDKs"
       if let url = URL(string: "shadow-detectors://refresh") {
         application.open(url, options: [:])
