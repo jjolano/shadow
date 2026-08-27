@@ -55,7 +55,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       "clean": final && !jailbroken,
       "checks": checks
     ]
-    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("ShadowDetectorTests", isDirectory: true)
+    let directory = URL(fileURLWithPath: "/var/mobile/Documents/ShadowDetectorTests", isDirectory: true)
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let report: [String: Any] = [
       "schemaVersion": 1,

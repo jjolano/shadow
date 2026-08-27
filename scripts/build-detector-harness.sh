@@ -10,9 +10,14 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 make -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
+make -C "$ROOT/DetectorRunners/IOSSecuritySuite" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/DetectorRunners/DTTJailbreakDetection" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/DetectorRunners/FreeRASP" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/tools/dyldprobe" stage THEOS_PACKAGE_SCHEME=rootless \
+    TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+    THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
+    ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache \
+    ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache
 make -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
-    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug"
-make -C "$ROOT/DetectorRunners/IOSSecuritySuite" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-make -C "$ROOT/DetectorRunners/DTTJailbreakDetection" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-make -C "$ROOT/DetectorRunners/FreeRASP" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug" INCLUDE_DETECTOR_RUNNERS=1

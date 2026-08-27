@@ -21,3 +21,15 @@ ShadowHarness_RESOURCE_DIRS = Resources
 ShadowHarness_RESOURCE_FILES = ../ShadowSettings.bundle/Resources/icon.png ../ShadowSettings.bundle/Resources/icon@2x.png ../ShadowSettings.bundle/Resources/icon@3x.png
 
 include $(THEOS_MAKE_PATH)/application.mk
+
+ifneq ($(INCLUDE_DETECTOR_RUNNERS),)
+after-stage::
+	$(ECHO_NOTHING)for app in \
+		../DetectorRunners/IOSSecuritySuite/.theos/_/Applications/IOSSecuritySuiteRunner.app \
+		../DetectorRunners/DTTJailbreakDetection/.theos/_/Applications/DTTJailbreakDetectionRunner.app \
+		../DetectorRunners/FreeRASP/.theos/_/Applications/FreeRASPRunner.app \
+		../tools/dyldprobe/.theos/_/Applications/dyldprobe.app; do \
+		test -d "$$app" || exit 1; \
+		cp -R "$$app" "$(THEOS_STAGING_DIR)/Applications/"; \
+	done$(ECHO_END)
+endif
