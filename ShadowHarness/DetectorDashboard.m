@@ -37,6 +37,7 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         sdks = @[
+            SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"shadow-dyldprobe://run"),
             SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run"),
             SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run"),
             SHDWMakeSDK(@"freerasp", @"freeRASP", @"6.4.0", @"shadow-detector-freerasp://run"),
@@ -126,7 +127,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
         if(success) return;
         UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Runner unavailable"
-            message:@"Build and install this SDK runner, then try again."
+            message:@"Reinstall Shadow Harness to restore its isolated runners."
             preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
@@ -170,7 +171,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
             cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
             cell.imageView.tintColor = SHDWOutcomeColor(outcome);
         } else if(indexPath.row == 1) {
-            cell.textLabel.text = @"SDK version";
+            cell.textLabel.text = @"Runner version";
             cell.detailTextLabel.text = _report[@"sdk"][@"version"] ?: _sdk.version;
         } else {
             cell.textLabel.text = @"Last run";
@@ -239,12 +240,12 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
-    return section == 0 ? @"Built-in" : @"Real SDK binaries";
+    return section == 0 ? @"Built-in" : @"Isolated runners";
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForFooterInSection:(NSInteger)section {
     if(section == 0) return nil;
-    return @"A clean result means the SDK reported no jailbreak evidence. Tap an SDK for every check and its raw message.";
+    return @"A clean result means the isolated runner reported no jailbreak evidence. Tap a runner for every check and its raw message.";
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath {

@@ -7,6 +7,7 @@
 #import <dispatch/dispatch.h>
 #import <dlfcn.h>
 #import <errno.h>
+#import <limits.h>
 #import <stdatomic.h>
 #import <stdio.h>
 #import <stdint.h>
@@ -87,6 +88,28 @@ static struct dyld_all_image_infos* probe_direct_infos(void) {
     return probe.valid ? probe.infos : NULL;
 }
 
+static NSString* probe_string_at_pointer(const char* pointer) {
+    if(!pointer) return @"";
+    char bytes[PATH_MAX];
+    size_t length = 0;
+    while(length < sizeof(bytes) - 1) {
+        vm_address_t address = (vm_address_t)(uintptr_t)pointer + length;
+        vm_size_t pageRemaining = vm_page_size - (address % vm_page_size);
+        vm_size_t requested = MIN((vm_size_t)(sizeof(bytes) - 1 - length), pageRemaining);
+        vm_size_t copied = 0;
+        kern_return_t result = vm_read_overwrite(mach_task_self(), address, requested,
+            (vm_address_t)(uintptr_t)(bytes + length), &copied);
+        if(result != KERN_SUCCESS || copied == 0) return nil;
+        char* terminator = memchr(bytes + length, '\0', copied);
+        if(terminator) {
+            *terminator = '\0';
+            return [NSString stringWithUTF8String:bytes];
+        }
+        length += copied;
+    }
+    return nil;
+}
+
 static NSArray<NSString*>* probe_hidden_markers(void) {
     return @[
         @"/var/jb", @"libhooker", @"libsubstitute", @"libsubstrate",
@@ -101,7 +124,7 @@ static NSArray<NSString*>* probe_hidden_images(const struct dyld_image_info* ima
     NSMutableArray<NSString*>* hidden = [NSMutableArray new];
     NSArray<NSString*>* markers = probe_hidden_markers();
     for(uint32_t i = 0; images && i < count; i++) {
-        NSString* path = images[i].imageFilePath ? @(images[i].imageFilePath) : @"";
+        NSString* path = probe_string_at_pointer(images[i].imageFilePath) ?: @"<invalid>";
         if([path hasPrefix:appPath]) {
             continue;
         }
@@ -120,8 +143,7 @@ static NSArray<NSString*>* probe_public_hidden_images(NSString* appPath) {
     NSArray<NSString*>* markers = probe_hidden_markers();
     uint32_t count = _dyld_image_count();
     for(uint32_t i = 0; i < count; i++) {
-        const char* name = _dyld_get_image_name(i);
-        NSString* path = name ? @(name) : @"";
+        NSString* path = probe_string_at_pointer(_dyld_get_image_name(i)) ?: @"<invalid>";
         if([path hasPrefix:appPath]) {
             continue;
         }
@@ -289,8 +311,8 @@ static NSString* probe_stage_dyld_stress_library(NSFileManager* fm, NSString** f
 static BOOL probe_direct_contains_path(ProbeTaskDyldInfo probe, NSString* path) {
     if(!probe.valid || !probe.infos->infoArray) return NO;
     for(uint32_t i = 0; i < probe.infos->infoArrayCount; i++) {
-        const char* candidate = probe.infos->infoArray[i].imageFilePath;
-        if(probe_paths_match(path, candidate)) return YES;
+        NSString* candidate = probe_string_at_pointer(probe.infos->infoArray[i].imageFilePath);
+        if(candidate && probe_paths_match(path, candidate.fileSystemRepresentation)) return YES;
     }
     return NO;
 }
@@ -299,7 +321,8 @@ static BOOL probe_direct_uuid_contains_path(ProbeTaskDyldInfo probe, NSString* p
     if(!probe.valid || !probe.infos->infoArray || !probe.infos->uuidArray) return NO;
     for(uint32_t i = 0; i < probe.infos->infoArrayCount; i++) {
         const struct dyld_image_info* image = &probe.infos->infoArray[i];
-        if(!probe_paths_match(path, image->imageFilePath)) continue;
+        NSString* candidate = probe_string_at_pointer(image->imageFilePath);
+        if(!candidate || !probe_paths_match(path, candidate.fileSystemRepresentation)) continue;
         for(uint32_t j = 0; j < probe.infos->uuidArrayCount; j++) {
             if(probe.infos->uuidArray[j].imageLoadAddress == image->imageLoadAddress) return YES;
         }
@@ -462,10 +485,10 @@ static NSDictionary* probe_normalized_dyld_views(ProbeTaskDyldInfo probe, BOOL* 
         NSString* address = probe_pointer_string(header);
         NSString* slide = [NSString stringWithFormat:@"0x%llx",
             (unsigned long long)(uint64_t)_dyld_get_image_vmaddr_slide(i)];
-        const char* path = _dyld_get_image_name(i);
+        NSString* path = probe_string_at_pointer(_dyld_get_image_name(i)) ?: @"<invalid>";
         publicSlides[address] = slide;
         [publicRows addObject:@{
-            @"path" : path ? @(path) : @"", @"address" : address, @"header" : address,
+            @"path" : path, @"address" : address, @"header" : address,
             @"slide" : slide, @"uuid" : uuids[address] ?: [NSNull null],
         }];
     }
@@ -476,7 +499,7 @@ static NSDictionary* probe_normalized_dyld_views(ProbeTaskDyldInfo probe, BOOL* 
             struct dyld_image_info entry = probe.infos->infoArray[i];
             NSString* address = probe_pointer_string(entry.imageLoadAddress);
             [memoryRows addObject:@{
-                @"path" : entry.imageFilePath ? @(entry.imageFilePath) : @"",
+                @"path" : probe_string_at_pointer(entry.imageFilePath) ?: @"<invalid>",
                 @"address" : address, @"header" : address,
                 @"slide" : publicSlides[address] ?: @"unknown",
                 @"uuid" : uuids[address] ?: [NSNull null],
@@ -500,25 +523,23 @@ static NSDictionary* probe_normalized_dyld_views(ProbeTaskDyldInfo probe, BOOL* 
              @"uuid_orphan_addresses" : uuidOrphans};
 }
 
-static BOOL probe_write_machine_report(NSString** failure) {
+static NSDictionary* probe_machine_report(NSDictionary* context, NSString** failure) {
     if(failure) *failure = nil;
-    NSString* documents = probe_documents_directory();
-    NSDictionary* context = probe_launch_context(documents);
-    if(!documents || ![context isKindOfClass:[NSDictionary class]]) {
+    if(![context isKindOfClass:[NSDictionary class]]) {
         if(failure) *failure = @"launch context unavailable";
-        return NO;
+        return nil;
     }
 
     for(NSString* key in @[@"run_id", @"row_id", @"requested_mode", @"nonce", @"probe_revision"]) {
         if(![context[key] isKindOfClass:[NSString class]] || ![context[key] length]) {
             if(failure) *failure = [NSString stringWithFormat:@"launch context key invalid: %@", key];
-            return NO;
+            return nil;
         }
     }
     NSString* mode = context[@"requested_mode"];
     if(![mode isEqualToString:@"uninjected"] && ![mode isEqualToString:@"injected"]) {
         if(failure) *failure = @"launch context mode invalid";
-        return NO;
+        return nil;
     }
 
     NSDictionary* callbackContract = probe_dyld_callback_contract();
@@ -636,10 +657,12 @@ static BOOL probe_write_machine_report(NSString** failure) {
         },
         @"producer_exit" : @(producerExit),
     };
+    return report;
+}
+
+static BOOL probe_write_json_report(NSDictionary* report, NSString* path, NSString** failure) {
     NSError* error = nil;
-    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:0 error:&error];
-    NSString* path = [documents stringByAppendingPathComponent:
-        [NSString stringWithFormat:@"dyldprobe-%@.json", context[@"nonce"]]];
+    NSData* data = report ? [NSJSONSerialization dataWithJSONObject:report options:0 error:&error] : nil;
     if(!data) {
         if(failure) *failure = [NSString stringWithFormat:@"report serialization failed: %@", error.localizedDescription ?: @"unknown"];
         return NO;
@@ -649,6 +672,88 @@ static BOOL probe_write_machine_report(NSString** failure) {
         return NO;
     }
     return YES;
+}
+
+static BOOL probe_write_machine_report(NSString** failure) {
+    NSString* documents = probe_documents_directory();
+    NSDictionary* context = probe_launch_context(documents);
+    NSDictionary* report = probe_machine_report(context, failure);
+    if(!documents || !report) return NO;
+    NSString* path = [documents stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"dyldprobe-%@.json", context[@"nonce"]]];
+    return probe_write_json_report(report, path, failure);
+}
+
+static NSDictionary* probe_dashboard_check(NSString* identifier, NSString* name,
+                                            BOOL passed, NSString* message) {
+    return @{@"id" : identifier, @"name" : name, @"passed" : @(passed),
+             @"message" : message ?: (passed ? @"Passed" : @"Failed")};
+}
+
+static BOOL probe_write_dashboard_report(NSString** failure) {
+    errno = 0;
+    int canaryResult = stat("/var/jb", &(struct stat){0});
+    int canaryErrno = errno;
+    BOOL injected = canaryResult == -1 && canaryErrno == ENOENT;
+    NSDictionary* context = @{
+        @"run_id" : @"shadow-harness", @"row_id" : @"dyldprobe",
+        @"requested_mode" : injected ? @"injected" : @"uninjected",
+        @"nonce" : @"dashboard", @"probe_revision" : @"dashboard-v1",
+    };
+    NSDictionary* formal = probe_machine_report(context, failure);
+    if(!formal) return NO;
+
+    NSDictionary* observations = formal[@"observations"];
+    NSDictionary* dyld = observations[@"dyld"];
+    NSString* aggregate = observations[@"aggregate"] ?: @"SETUP-FAIL";
+    NSMutableArray<NSDictionary*>* checks = [NSMutableArray new];
+    [checks addObject:probe_dashboard_check(@"dyld.aggregate", @"Aggregate",
+        [aggregate isEqualToString:@"PASS"], aggregate)];
+
+    NSDictionary* canary = [formal[@"canary"] isKindOfClass:[NSDictionary class]] ? formal[@"canary"] : nil;
+    [checks addObject:probe_dashboard_check(@"dyld.canary", @"Jailbreak path canary",
+        [canary[@"status"] isEqualToString:@"PASS"], canary[@"status"] ?: @"Control exposed /var/jb")];
+    for(NSArray* item in @[
+        @[@"dyld.fidelity", @"Dyld fidelity", dyld[@"status"] ?: @"FAIL"],
+        @[@"dyld.address_uuid", @"Address and UUID consistency", dyld[@"address_uuid"] ?: @"FAIL"],
+        @[@"dyld.concurrency", @"Concurrent reads", dyld[@"concurrency"][@"status"] ?: @"FAIL"],
+        @[@"dyld.stress", @"Load/unload stress", dyld[@"stress"][@"status"] ?: @"FAIL"],
+    ]) {
+        NSString* status = item[2];
+        [checks addObject:probe_dashboard_check(item[0], item[1], [status isEqualToString:@"PASS"], status)];
+    }
+
+    NSArray* directHidden = observations[@"direct_memory_view"][@"hidden_images"] ?: @[];
+    NSArray* publicHidden = observations[@"public_api_view"][@"hidden_images"] ?: @[];
+    [checks addObject:probe_dashboard_check(@"dyld.direct_hidden", @"Direct memory image hiding",
+        directHidden.count == 0, [NSString stringWithFormat:@"%lu hidden image leak(s)", (unsigned long)directHidden.count])];
+    [checks addObject:probe_dashboard_check(@"dyld.public_hidden", @"Public API image hiding",
+        publicHidden.count == 0, [NSString stringWithFormat:@"%lu hidden image leak(s)", (unsigned long)publicHidden.count])];
+
+    for(NSDictionary* callback in dyld[@"callbacks"] ?: @[]) {
+        NSString* status = callback[@"status"] ?: @"FAIL";
+        NSString* name = [NSString stringWithFormat:@"Callback %@", callback[@"id"] ?: @"?"];
+        [checks addObject:probe_dashboard_check([NSString stringWithFormat:@"dyld.callback.%@", callback[@"id"] ?: @"?"],
+            name, [status isEqualToString:@"PASS"], status)];
+    }
+
+    NSString* outcome = [aggregate isEqualToString:@"PASS"] ? @"clean" :
+        ([aggregate isEqualToString:@"SETUP-FAIL"] ? @"error" : @"jailbroken");
+    NSDictionary* dashboard = @{
+        @"schemaVersion" : @1,
+        @"sdk" : @{@"id" : @"dyldprobe", @"name" : @"dyldprobe", @"version" : @"1.0.0"},
+        @"outcome" : outcome,
+        @"generatedAt" : [NSISO8601DateFormatter.new stringFromDate:[NSDate date]],
+        @"rounds" : @[@{@"phase" : @"dyld fidelity", @"clean" : @([outcome isEqualToString:@"clean"]), @"checks" : checks}],
+        @"formal" : formal,
+    };
+    NSString* directory = @"/var/mobile/Documents/ShadowDetectorTests";
+    if(![NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil]) {
+        if(failure) *failure = @"cannot create dashboard results directory";
+        return NO;
+    }
+    return probe_write_json_report(dashboard,
+        [directory stringByAppendingPathComponent:@"dyldprobe.json"], failure);
 }
 
 static void probe_section_3(NSMutableString* out, NSFileManager* fm) {
@@ -714,7 +819,7 @@ static NSMutableArray* probe_section_5(NSMutableString* out, NSArray* hiddenMark
     if(infos5 && infos5->infoArray) {
         for(uint32_t i = 0; i < infos5->infoArrayCount; i++) {
             struct dyld_image_info info = infos5->infoArray[i];
-            NSString* p = info.imageFilePath ? @(info.imageFilePath) : @"";
+            NSString* p = probe_string_at_pointer(info.imageFilePath) ?: @"<invalid>";
 
             for(NSString* marker in hiddenMarkers) {
                 if([p containsString:marker]) {
@@ -918,17 +1023,27 @@ static NSString* ProbeReport(void) {
     UITextView* _textView;
 }
 
+- (void)_runForShadowHarness {
+    NSString* failure = nil;
+    if(!probe_write_dashboard_report(&failure)) {
+        _textView.text = [NSString stringWithFormat:@"Dashboard report failed: %@", failure ?: @"unknown error"];
+        return;
+    }
+    _textView.text = @"dyld fidelity report complete";
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"shadow-detectors://refresh"]
+        options:@{} completionHandler:nil];
+}
+
 - (void)_refresh {
     _textView.text = ProbeReport();
     fprintf(stderr, "%s\n", [_textView.text UTF8String]);
 }
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-    NSString* report;
-    @autoreleasepool {
-        report = ProbeReport();
-        fprintf(stderr, "%s\n", [report UTF8String]);
-    }
+    NSURL* launchURL = launchOptions[UIApplicationLaunchOptionsURLKey];
+    BOOL launchedFromHarness = [launchURL.scheme isEqualToString:@"shadow-dyldprobe"];
+    NSString* report = launchedFromHarness ? @"Running dyld fidelity probe…" :
+        @"Tap Refresh to run supplemental diagnostics.";
     CGRect frame = [[UIScreen mainScreen] bounds];
     self.window = [[UIWindow alloc] initWithFrame:frame];
 
@@ -950,6 +1065,15 @@ static NSString* ProbeReport(void) {
 
     self.window.rootViewController = vc;
     [self.window makeKeyAndVisible];
+    if(launchedFromHarness) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self _runForShadowHarness]; });
+    }
+    return YES;
+}
+
+- (BOOL)application:(UIApplication*)application openURL:(NSURL*)url options:(NSDictionary*)options {
+    if(![url.scheme isEqualToString:@"shadow-dyldprobe"]) return NO;
+    [self _runForShadowHarness];
     return YES;
 }
 

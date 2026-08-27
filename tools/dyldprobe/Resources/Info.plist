@@ -24,11 +24,21 @@
 	<string>12.0</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>shadow-detectors</string>
 		<string>cydia</string>
 		<string>sileo</string>
 		<string>zbra</string>
 		<string>xina</string>
 		<string>filza</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>shadow-dyldprobe</string>
+			</array>
+		</dict>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
