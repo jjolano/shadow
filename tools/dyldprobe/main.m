@@ -18,6 +18,7 @@
 
 static uint64_t gProbeStartTicks = 0;
 static mach_timebase_info_data_t gProbeTimebase = {0, 0};
+static NSString* const kProbePackagedStressPath = @"@executable_path/shdwtestlib.dylib";
 
 __attribute__((constructor)) static void probe_clock_start(void) {
     gProbeStartTicks = mach_continuous_time();
@@ -285,18 +286,7 @@ static NSString* probe_stage_dyld_stress_library(NSFileManager* fm, NSString** f
        [supplied hasSuffix:@".dylib"] && [fm fileExistsAtPath:supplied]) {
         source = supplied;
     }
-    for(NSString* name in @[@"libshdwtestlib.dylib", @"shdwtestlib.dylib"]) {
-        if(source) break;
-        NSString* candidate = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:name];
-        if([fm fileExistsAtPath:candidate]) {
-            source = candidate;
-            break;
-        }
-    }
-    if(!source) {
-        if(failure) *failure = @"packaged shdwtestlib is missing";
-        return nil;
-    }
+    if(!source) return kProbePackagedStressPath;
 
     NSString* staged = [documents stringByAppendingPathComponent:[NSString stringWithFormat:
         @".shadow-dyld-%@-%@", [[NSUUID UUID] UUIDString], [source lastPathComponent]]];
@@ -353,6 +343,7 @@ static NSDictionary* probe_dyld_callback_contract(void) {
     BOOL unloaded = NO;
     BOOL markerOK = NO;
     BOOL uuidVisible = NO;
+    NSString* observedStressPath = stressPath;
 
     if(stressPath && base.valid) {
         dispatch_queue_t readerQueue = dispatch_queue_create("dyldprobe.machine-reader", DISPATCH_QUEUE_SERIAL);
@@ -393,6 +384,8 @@ static NSDictionary* probe_dyld_callback_contract(void) {
         for(uint32_t i = 0; i < 8; i++) {
             void* handle = dlopen([stressPath fileSystemRepresentation], RTLD_NOW);
             if(!handle) {
+                const char* error = dlerror();
+                stagingFailure = error ? [NSString stringWithUTF8String:error] : @"dlopen failed";
                 loaded = NO;
                 unloaded = NO;
                 markerOK = NO;
@@ -400,11 +393,15 @@ static NSDictionary* probe_dyld_callback_contract(void) {
             }
             void* marker = dlsym(handle, "shdwtestlib_probe_marker");
             if(!marker) markerOK = NO;
+            Dl_info markerInfo = {0};
+            if(marker && dladdr(marker, &markerInfo) && markerInfo.dli_fname) {
+                observedStressPath = [NSString stringWithUTF8String:markerInfo.dli_fname];
+            }
             BOOL visible = NO, uuid = NO;
             for(uint32_t retry = 0; retry < 20; retry++) {
                 ProbeTaskDyldInfo current = probe_task_dyld_info();
-                visible = visible || probe_direct_contains_path(current, stressPath);
-                uuid = uuid || probe_direct_uuid_contains_path(current, stressPath);
+                visible = visible || probe_direct_contains_path(current, observedStressPath);
+                uuid = uuid || probe_direct_uuid_contains_path(current, observedStressPath);
                 if(visible && uuid) break;
                 usleep(1000);
             }
@@ -412,7 +409,7 @@ static NSDictionary* probe_dyld_callback_contract(void) {
             if(!uuid) uuidVisible = NO;
             BOOL gone = dlclose(handle) == 0;
             for(uint32_t retry = 0; gone && retry < 20; retry++) {
-                if(!probe_direct_contains_path(probe_task_dyld_info(), stressPath)) break;
+                if(!probe_direct_contains_path(probe_task_dyld_info(), observedStressPath)) break;
                 if(retry == 19) gone = NO;
                 else usleep(1000);
             }
@@ -422,7 +419,9 @@ static NSDictionary* probe_dyld_callback_contract(void) {
         dispatch_sync(readerQueue, ^{});
     }
 
-    if(stressPath) [fm removeItemAtPath:stressPath error:nil];
+    if(stressPath && ![stressPath isEqualToString:kProbePackagedStressPath]) {
+        [fm removeItemAtPath:stressPath error:nil];
+    }
     NSArray<NSDictionary*>* callbacks = probe_dyld_callback_rows(addBefore, removeBefore);
     BOOL callbacksPassed = YES;
     for(NSDictionary* row in callbacks) {
@@ -441,7 +440,7 @@ static NSDictionary* probe_dyld_callback_contract(void) {
         },
         @"stress" : @{
             @"status" : (stressPath && base.valid && loaded && unloaded && markerOK && uuidVisible) ? @"PASS" : @"FAIL",
-            @"path" : stressPath ?: @"",
+            @"path" : observedStressPath ?: @"",
             @"setup_failure" : stagingFailure ?: @"",
             @"loaded" : @(loaded), @"unloaded" : @(unloaded), @"marker" : @(markerOK),
             @"uuid_visible" : @(uuidVisible),
