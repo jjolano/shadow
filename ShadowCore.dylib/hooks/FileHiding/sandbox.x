@@ -9,6 +9,13 @@
 #import <netinet/in.h>
 #import <arpa/inet.h>
 
+// Present from the iOS 15 rootless floor.  Older SDKs did not expose the
+// name, but forwarding command 102 is harmless there: only a successful
+// path-returning call is filtered below.
+#ifndef F_GETPATH_NOFIRMLINK
+#define F_GETPATH_NOFIRMLINK 102
+#endif
+
 // Shared bootstrap-service matcher defined in mach.x (see there); used by
 // the mach-lookup denial below. Deliberately not in hooks.h — only the
 // bootstrap hooks and this file consume it.
@@ -386,6 +393,20 @@ static int replaced_fcntl(int fd, int cmd, ...) {
     }
 
     if(isCallerExternal()) {
+        if((cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK) && arg != 0) {
+            int result = original_fcntl(fd, cmd, (void *) arg);
+
+            // Do not disclose a hidden descriptor through either path
+            // spelling. Internal F_GETPATH calls in PathPolicy bypass this
+            // branch through isCallerExternal().
+            if(result == 0 && [_shadow isCPathRestricted:(const char *) arg]) {
+                errno = ENOENT;
+                return -1;
+            }
+
+            return result;
+        }
+
         if(cmd == F_ADDSIGS) {
             // Prevent adding invalid code signatures.
             errno = EINVAL;

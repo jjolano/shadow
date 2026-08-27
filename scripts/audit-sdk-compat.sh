@@ -90,6 +90,20 @@ devicecheck_selectors() { # <SDK path>
     done | LC_ALL=C sort -u
 }
 
+filesystem_symbols() { # <SDK path>
+    local sdk=$1
+
+    {
+        symbols "$sdk/usr/include/sys/unistd.h" '\bfreadlink\b'
+        symbols "$sdk/usr/include/sys/stat.h" '\b(?:mkfifoat|mknodat)\b'
+        symbols "$sdk/usr/include/dirent.h" '\b(?:fdscandir|fdscandir_b|scandirat|scandirat_b)\b'
+    } | LC_ALL=C sort -u
+}
+
+environment_spis() { # <SDK path>
+    { rg --no-filename -o '_getenv(?:_copy_np)?' "$1/usr/lib" -g '*.tbd' || true; } | LC_ALL=C sort -u
+}
+
 reviewed_delta() { # <surface> <symbol>
     case "$1:$2" in
         objc-runtime:objc_enumerateClasses)
@@ -97,8 +111,34 @@ reviewed_delta() { # <surface> <symbol>
                 "$ROOT/ShadowCore.dylib/hooks/Runtime/objc_hidetweakclasses.x" || return 1
             echo "runtime-gated in ShadowCore.dylib/hooks/Runtime/objc_hidetweakclasses.x"
             ;;
+        filesystem:mkfifoat|filesystem:mknodat)
+            rg -Fq "{ \"$2\"" "$ROOT/ShadowCore.dylib/hooks/FileHiding/libc.x" && \
+                rg -Fq "SYS_$2" "$ROOT/ShadowCore.dylib/hooks/FileHiding/RawSyscalls.def" || return 1
+            echo "runtime-gated libc and raw-syscall policy"
+            ;;
         *) return 1 ;;
     esac
+}
+
+probe_required_delta() { # <surface> <symbol>
+    case "$1:$2" in
+        filesystem:freadlink)
+            echo "probe descriptor mode, errno, and raw-SVC path before hooking"
+            ;;
+        filesystem:fdscandir|filesystem:fdscandir_b|filesystem:scandirat|filesystem:scandirat_b)
+            echo "probe whether iOS 26.4 scanners traverse the readdir hooks"
+            ;;
+        environment-spi:_getenv_copy_np)
+            echo "private ABI: dlsym and establish allocation semantics before hooking"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+reviewed_floor() {
+    rg -Fq 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' \
+        "$ROOT/ShadowCore.dylib/hooks/FileHiding/sandbox.x" || return 1
+    echo "F_GETPATH and F_GETPATH_NOFIRMLINK are filtered for external callers"
 }
 
 emit_surface() { # <SDK path> <surface> <output>
@@ -117,6 +157,12 @@ emit_surface() { # <SDK path> <surface> <output>
         devicecheck)
             devicecheck_selectors "$sdk" > "$output"
             ;;
+        filesystem)
+            filesystem_symbols "$sdk" > "$output"
+            ;;
+        environment-spi)
+            environment_spis "$sdk" > "$output"
+            ;;
     esac
 }
 
@@ -125,14 +171,29 @@ BASE_SDK=$(sdk_path "$BASELINE")
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/shadow-sdk-audit.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
-SURFACES=(objc-runtime dyld dlfcn devicecheck)
+SURFACES=(objc-runtime dyld dlfcn devicecheck filesystem environment-spi)
 
 for surface in "${SURFACES[@]}"; do
     emit_surface "$BASE_SDK" "$surface" "$TMP/base-$surface"
 done
 
 failed=0
+pending=0
 echo "SDK detector-surface audit (baseline iPhoneOS$BASELINE)"
+
+if note=$(reviewed_floor); then
+    printf 'iPhoneOS%s REVIEWED floor          F_GETPATH_NOFIRMLINK (%s)\n' "$BASELINE" "$note"
+else
+    echo "iPhoneOS$BASELINE UNREVIEWED floor F_GETPATH_NOFIRMLINK" >&2
+    failed=1
+fi
+
+# SYS_freadlink predates the public libc wrapper, so a header delta would miss
+# raw-SVC detector calls on the iOS 15 floor. Keep it explicitly probe-gated.
+if rg -Fq 'SYS_freadlink' "$BASE_SDK/usr/include/sys/syscall.h"; then
+    printf 'iPhoneOS%s PENDING floor          SYS_freadlink (probe descriptor mode, errno, and raw-SVC path before hooking)\n' "$BASELINE"
+    pending=$((pending + 1))
+fi
 
 for target in "${TARGETS[@]}"; do
     target_sdk=$(sdk_path "$target")
@@ -148,6 +209,9 @@ for target in "${TARGETS[@]}"; do
             found=1
             if note=$(reviewed_delta "$surface" "$symbol"); then
                 printf 'iPhoneOS%s REVIEWED %-13s %s (%s)\n' "$target" "$surface" "$symbol" "$note"
+            elif note=$(probe_required_delta "$surface" "$symbol"); then
+                printf 'iPhoneOS%s PENDING %-14s %s (%s)\n' "$target" "$surface" "$symbol" "$note"
+                pending=$((pending + 1))
             else
                 printf 'iPhoneOS%s UNREVIEWED %-11s %s\n' "$target" "$surface" "$symbol" >&2
                 failed=1
@@ -163,4 +227,4 @@ done
     exit 1
 }
 
-echo "OK: every new public detector-facing API has an explicit review"
+echo "OK: every new API is reviewed or explicitly probe-gated ($pending pending device probes)"
