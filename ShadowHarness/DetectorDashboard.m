@@ -7,10 +7,11 @@
  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
 */
 
-#import <UIKit/UIKit.h>
+#import "DetectorDashboard.h"
+#import "StatusViewController.h"
 
 static NSString* const SHDWResultsDirectory = @"/var/mobile/Documents/ShadowDetectorTests";
-static NSString* const SHDWResultsChanged = @"SHDWDetectorResultsChanged";
+NSNotificationName const SHDWDetectorResultsChanged = @"SHDWDetectorResultsChanged";
 
 @interface SHDWSDK : NSObject
 @property(nonatomic, copy) NSString* identifier;
@@ -101,10 +102,20 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithTitle:@"Run" style:UIBarButtonItemStylePlain target:self action:@selector(runSDK)];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refresh)
+        name:SHDWDetectorResultsChanged object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self refresh];
+}
+
+- (void)refresh {
     _report = SHDWReport(_sdk);
     _rounds = [_report[@"rounds"] isKindOfClass:[NSArray class]] ? _report[@"rounds"] : @[];
     [self.tableView reloadData];
@@ -193,20 +204,16 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 
 @end
 
-@interface SHDWSDKListController : UITableViewController
-@end
-
-
 @implementation SHDWSDKListController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Detector SDKs";
+    self.title = @"Shadow Harness";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refresh:)];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refresh:)
-        name:SHDWResultsChanged object:nil];
+        name:SHDWDetectorResultsChanged object:nil];
 }
 
 - (void)dealloc {
@@ -223,15 +230,20 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     [self.tableView reloadData];
 }
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
+    return 2;
+}
+
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-    return SHDWSDKs().count;
+    return section == 0 ? 1 : SHDWSDKs().count;
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
-    return @"Real SDK binaries";
+    return section == 0 ? @"Built-in" : @"Real SDK binaries";
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForFooterInSection:(NSInteger)section {
+    if(section == 0) return nil;
     return @"A clean result means the SDK reported no jailbreak evidence. Tap an SDK for every check and its raw message.";
 }
 
@@ -239,14 +251,25 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     static NSString* const reuse = @"SDK";
     UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:reuse];
     if(!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuse];
+    cell.textLabel.adjustsFontForContentSizeCategory = YES;
+    cell.detailTextLabel.adjustsFontForContentSizeCategory = YES;
+
+    if(indexPath.section == 0) {
+        cell.textLabel.text = @"Shadow diagnostics";
+        cell.detailTextLabel.text = @"Hooks, rules, and stealth probes";
+        cell.imageView.image = [UIImage systemImageNamed:@"waveform.path.ecg"];
+        cell.imageView.tintColor = UIColor.systemBlueColor;
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.accessibilityValue = @"Live diagnostics";
+        return cell;
+    }
+
     SHDWSDK* sdk = SHDWSDKs()[indexPath.row];
     NSDictionary* report = SHDWReport(sdk);
     NSString* outcome = SHDWOutcome(report);
     cell.textLabel.text = sdk.name;
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
         report[@"sdk"][@"version"] ?: sdk.version];
-    cell.textLabel.adjustsFontForContentSizeCategory = YES;
-    cell.detailTextLabel.adjustsFontForContentSizeCategory = YES;
     cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
     cell.imageView.tintColor = SHDWOutcomeColor(outcome);
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -256,32 +279,12 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if(indexPath.section == 0) {
+        [self.navigationController pushViewController:[StatusViewController new] animated:YES];
+        return;
+    }
     [self.navigationController pushViewController:
         [[SHDWSDKDetailController alloc] initWithSDK:SHDWSDKs()[indexPath.row]] animated:YES];
-}
-
-@end
-
-@interface SHDWDetectorAppDelegate : UIResponder <UIApplicationDelegate>
-@property(nonatomic, strong) UIWindow* window;
-@end
-
-@implementation SHDWDetectorAppDelegate
-
-- (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    SHDWSDKListController* list = [[SHDWSDKListController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-    UINavigationController* navigation = [[UINavigationController alloc] initWithRootViewController:list];
-    navigation.navigationBar.prefersLargeTitles = YES;
-    self.window.rootViewController = navigation;
-    [self.window makeKeyAndVisible];
-    return YES;
-}
-
-- (BOOL)application:(UIApplication*)app openURL:(NSURL*)url options:(NSDictionary*)options {
-    [[NSNotificationCenter defaultCenter] postNotificationName:SHDWResultsChanged object:nil];
-    [self.window.rootViewController dismissViewControllerAnimated:YES completion:nil];
-    return YES;
 }
 
 @end

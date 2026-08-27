@@ -16,10 +16,10 @@
 		<dict>
 			<key>CFBundleIconFiles</key>
 			<array>
-				<string>AppIcon60x60</string>
+				<string>icon</string>
 			</array>
 			<key>CFBundleIconName</key>
-			<string>AppIcon60x60</string>
+			<string>icon</string>
 		</dict>
 	</dict>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -32,12 +32,24 @@
 	<string>14.0</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>shadow-detector-iossecuritysuite</string>
+		<string>shadow-detector-dtt</string>
+		<string>shadow-detector-freerasp</string>
 		<string>cydia</string>
 		<string>sileo</string>
 		<string>zbra</string>
 		<string>undecimus</string>
 		<string>filza</string>
 		<string>xina</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>shadow-detectors</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
