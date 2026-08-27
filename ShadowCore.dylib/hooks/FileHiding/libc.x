@@ -1414,6 +1414,34 @@ static int replaced_mkdirat(int dirfd, const char* path, mode_t mode) {
     return original_mkdirat(dirfd, path, mode);
 }
 
+// iOS 16+ *at creation variants. These are runtime-resolved below so the
+// same binary still runs on the iOS 15 rootless floor.
+static int (*original_mkfifoat)(int dirfd, const char* path, mode_t mode);
+static int replaced_mkfifoat(int dirfd, const char* path, mode_t mode) {
+    if(!isCallerExternal()) {
+        return original_mkfifoat(dirfd, path, mode);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_mkfifoat(dirfd, path, mode);
+}
+
+static int (*original_mknodat)(int dirfd, const char* path, mode_t mode, dev_t dev);
+static int replaced_mknodat(int dirfd, const char* path, mode_t mode, dev_t dev) {
+    if(!isCallerExternal()) {
+        return original_mknodat(dirfd, path, mode, dev);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_mknodat(dirfd, path, mode, dev);
+}
+
 static int (*original_utimensat)(int dirfd, const char* path, const struct timespec times[2], int flags);
 static int replaced_utimensat(int dirfd, const char* path, const struct timespec times[2], int flags) {
     if(!isCallerExternal()) {
@@ -1582,6 +1610,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // installed-only (verification excluded, matching the old code's exempt lists)
     { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0 },   // iOS 11+ gate: dlsym is the availability check
     { "getmntinfo_r_np",        (void*)&shdw_replaced_getmntinfo_r_np,     (void**)&original_getmntinfo_r_np,          LIBC,   0 },   // iOS 16+ export
+    { "mkfifoat",               (void*)&replaced_mkfifoat,                 (void**)&original_mkfifoat,                 LIBC,   0 },   // iOS 16+ export
+    { "mknodat",                (void*)&replaced_mknodat,                  (void**)&original_mknodat,                  LIBC,   0 },   // iOS 16+ export
 
     // envvar group
     { "getenv",                 (void*)&replaced_getenv,                   (void**)&original_getenv,                   ENVVAR, ENVVAR },

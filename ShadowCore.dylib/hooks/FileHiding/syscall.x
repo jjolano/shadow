@@ -91,6 +91,23 @@ static long shdw_fwd_FSTATAT(int number, va_list args) {
     return original_syscall(number, (int) a1, (const char *) a2, (struct stat *) a3, (int) a4);
 }
 
+static long shdw_fwd_ATMODE(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3);
+}
+
+static long shdw_fwd_ATMODEDEV(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3, (dev_t) a4);
+}
+
 static long shdw_fwd_CSOPS(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
     intptr_t a2 = va_arg(args, intptr_t);

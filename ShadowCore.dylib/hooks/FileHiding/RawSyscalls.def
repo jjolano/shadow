@@ -55,6 +55,12 @@ SHADW_RAWSYSCALL(SYS_pathconf,         2, PATH,       P2I)
 SHADW_RAWSYSCALL(SYS_openat,           4, AT,         OPENAT)
 SHADW_RAWSYSCALL(SYS_fstatat,          4, AT,         FSTATAT)
 SHADW_RAWSYSCALL(SYS_fstatat64,        4, AT,         FSTATAT)
+#ifdef SYS_mkfifoat
+SHADW_RAWSYSCALL(SYS_mkfifoat,         3, AT,         ATMODE)
+#endif
+#ifdef SYS_mknodat
+SHADW_RAWSYSCALL(SYS_mknodat,          4, AT,         ATMODEDEV)
+#endif
 SHADW_RAWSYSCALL(SYS_csops,            4, CSOPS,      CSOPS)
 SHADW_RAWSYSCALL(SYS_sysctl,           6, SYSCTL,     SYSCTL)
 SHADW_RAWSYSCALL(SYS_getdirentries64,  4, DIRENT,     GETDIRENTRIES)
