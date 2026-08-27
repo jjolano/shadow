@@ -13,14 +13,19 @@ CONTROL_VAR=_THEOS_DEB_PACKAGE_CONTROL_PATH
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/shadow-build.XXXXXX")
 LIBRARY_PATH=$STAGE/lib
 INCLUDE_PATH=$STAGE/include
-MAKE_PATHS=("THEOS_LIBRARY_PATH=$LIBRARY_PATH" "THEOS_INCLUDE_PATH=$INCLUDE_PATH")
+MAKE_PATHS=(
+    "THEOS_LIBRARY_PATH=$LIBRARY_PATH"
+    "THEOS_INCLUDE_PATH=$INCLUDE_PATH"
+    "ADDITIONAL_CFLAGS=-fmodules-cache-path=$STAGE/module-cache"
+    "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=$STAGE/module-cache"
+)
 trap 'rm -rf "$STAGE"' EXIT
 
 rm -rf "$ROOT/build"
 mkdir -p "$ROOT/build"
 
 stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
-    local profile=$1 source_profile=$1 scheme=
+    local profile=$1 source_profile=$1 scheme= target sdk
     case "$profile" in
         rootful-legacy|rootful-modern) ;;
         rootless) scheme=rootless ;;
@@ -49,11 +54,16 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
     elif [ -f "$THEOS/vendor/include/libSandy.h" ]; then
         cp "$THEOS/vendor/include/libSandy.h" "$INCLUDE_PATH/libSandy.h"
     fi
-    # libSandy imports <xpc/xpc.h>; none of the SDKs used here ship xpc
-    # headers. Stage the vendored copy unless XPC_HEADERS points elsewhere.
-    local xpc=${XPC_HEADERS:-$ROOT/.github/vendor/xpc}
-    [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; return 1; }
-    cp -R "$xpc" "$INCLUDE_PATH/"
+    # libSandy imports <xpc/xpc.h>. Older SDKs need the vendored module;
+    # modern SDKs already provide it and reject a duplicate definition.
+    target=$(shadow_lane_field "$profile" TARGET)
+    sdk=${target#iphone:clang:}
+    sdk=${sdk%%:*}
+    if [ -n "${XPC_HEADERS:-}" ] || [ ! -f "$THEOS/sdks/iPhoneOS$sdk.sdk/usr/include/xpc/xpc.h" ]; then
+        local xpc=${XPC_HEADERS:-$ROOT/.github/vendor/xpc}
+        [ -d "$xpc" ] || { echo "set XPC_HEADERS to an xpc headers directory" >&2; return 1; }
+        cp -R "$xpc" "$INCLUDE_PATH/"
+    fi
 
     if [ -n "$scheme" ]; then
         mkdir -p "$LIBRARY_PATH/iphone/$scheme"
@@ -81,8 +91,6 @@ legacy_args() {
     LEGACY_ARGS=(
         "SDKBINPATH=$toolchain/bin"
         "THEOS_SDKS_PATH=$sdks"
-        "ADDITIONAL_CFLAGS=-fmodules-cache-path=$STAGE/module-cache"
-        "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=$STAGE/module-cache"
     )
 }
 
