@@ -18,7 +18,6 @@ ShadowHarness_INSTALL_PATH = /Applications
 # Explicit so the icon PNGs (and Info.plist, per theos convention) land in
 # the bundle; theos would pick up Resources/ by default anyway.
 ShadowHarness_RESOURCE_DIRS = Resources
-ShadowHarness_RESOURCE_FILES = ../ShadowSettings.bundle/Resources/icon.png ../ShadowSettings.bundle/Resources/icon@2x.png ../ShadowSettings.bundle/Resources/icon@3x.png
 
 include $(THEOS_MAKE_PATH)/application.mk
 

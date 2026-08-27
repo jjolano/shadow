@@ -155,9 +155,13 @@ build_lane() { # profile
 build_harness() { # rootful-modern|rootless
     local lane=$1 package scheme=
     [ "$lane" = rootless ] && scheme=rootless
-    make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
-        ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+    if [ "$lane" = rootless ]; then
+        scripts/build-detector-harness.sh
+    else
+        make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
+            ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
+            TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+    fi
     package=$(<ShadowHarness/.theos/last_package)
     case "$package" in
         /*) ;;

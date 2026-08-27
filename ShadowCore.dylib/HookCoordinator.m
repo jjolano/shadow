@@ -95,7 +95,6 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
     BOOL _installing;                 // re-entrancy guard (see installEventSync:)
-    BOOL _escalating;                 // re-entrancy guard for escalateWithReason:
     NSArray<NSString*>* _ctorInventory;
     NSArray<NSString*>* _postLoadInventory;
     NSArray<NSString*>* _postDetectorInventory;
@@ -342,9 +341,8 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
     // Worker function for installEvent / escalateWithReason. Runs on the
-    // lifecycle queue (or inline from escalateWithReason when already on the
-    // queue). Does NOT manage _installing — that flag is owned by installEvent:
-    // and escalateWithReason: to decide whether dispatch_sync is needed.
+    // lifecycle queue, or on main for the ObjC-heavy detector escalation.
+    // Does NOT manage _installing — installEvent: owns that flag.
     // Idempotency is handled by _installedBits: a unit already installed by an
     // earlier event is skipped, so a re-entrant call from a detector trip
     // during an install is a no-op for already-installed units.
@@ -400,43 +398,15 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 - (void)escalateWithReason:(NSString*)reason {
     (void) reason;
 
-    // A high-frequency detector (for example, concurrent TASK_DYLD_INFO
-    // reads) must not synchronously re-enter the lifecycle queue after the
-    // one escalation is already in progress or complete.
-    if(__atomic_load_n(&_escalated, __ATOMIC_ACQUIRE)) {
+    if(__atomic_exchange_n(&_escalated, YES, __ATOMIC_ACQ_REL)) {
         return;
     }
 
-    // Re-entrancy guard: a detector trip (shdw_detector_detected → escalate)
-    // can fire while installEventSync is already executing — either during
-    // installEvent's dispatch_sync (caught by _installing below, since
-    // installEvent sets _installing before dispatch_sync) or during an
-    // escalation's own installEventSync (caught by _escalating, since the
-    // escalation path calls installEventSync directly on the lifecycle queue).
-    // dispatch_sync to the queue we already own deadlocks (_dispatch_sync_f_slow:
-    // "called on queue already owned by current thread" — the observed
-    // ShadowHarness crash). When either flag is set we are on the lifecycle
-    // queue, so call installEventSync directly: _installedBits makes it
-    // idempotent for already-installed units, and the escalation plan
-    // (SHDWEventDetectorEscalation) installs only Tier-2 units not yet
-    // installed by the ctor plan.
-    if(_installing || _escalating) {
-        __atomic_store_n(&_escalated, YES, __ATOMIC_RELEASE);
-        [self installEventSync:SHDWEventDetectorEscalation];
-        return;
-    }
-
-    _escalating = YES;
-    dispatch_sync(self.lifecycleQueue, ^{
-        if(__atomic_load_n(&_escalated, __ATOMIC_ACQUIRE)) {
-            _escalating = NO;
-            return;
-        }
-
-        __atomic_store_n(&_escalated, YES, __ATOMIC_RELEASE);
+    // Tier-2 installs ObjC hooks, so run it on the main queue after the
+    // detector's intercepted stack has unwound.
+    dispatch_async(dispatch_get_main_queue(), ^{
         [self installEventSync:SHDWEventDetectorEscalation];
     });
-    _escalating = NO;
 }
 
 @end
