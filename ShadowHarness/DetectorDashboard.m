@@ -46,16 +46,52 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     return sdks;
 }
 
+static NSString* SHDWString(id value) {
+    return [value isKindOfClass:[NSString class]] ? value : nil;
+}
+
+static NSDictionary* SHDWDictionary(id value) {
+    return [value isKindOfClass:[NSDictionary class]] ? value : nil;
+}
+
+static NSArray<NSDictionary*>* SHDWDictionaryArray(id value) {
+    if(![value isKindOfClass:[NSArray class]]) return @[];
+    NSMutableArray<NSDictionary*>* dictionaries = [NSMutableArray new];
+    for(id item in value) {
+        if([item isKindOfClass:[NSDictionary class]]) [dictionaries addObject:item];
+    }
+    return dictionaries;
+}
+
 static NSDictionary* SHDWReport(SHDWSDK* sdk) {
     NSString* path = [SHDWResultsDirectory stringByAppendingPathComponent:
         [sdk.identifier stringByAppendingPathExtension:@"json"]];
     NSData* data = [NSData dataWithContentsOfFile:path];
-    return data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if(!data) return nil;
+    NSError* error = nil;
+    id report = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if([report isKindOfClass:[NSDictionary class]]) return report;
+    NSString* message = error.localizedDescription ?: @"Report root is not a JSON object";
+    return @{
+        @"outcome" : @"error",
+        @"generatedAt" : @"Unreadable report",
+        @"rounds" : @[@{
+            @"phase" : @"Report",
+            @"checks" : @[@{
+                @"id" : @"harness.report",
+                @"name" : @"Report JSON",
+                @"passed" : @NO,
+                @"message" : message,
+            }],
+        }],
+    };
 }
 
 static NSString* SHDWOutcome(NSDictionary* report) {
-    NSString* value = [report[@"outcome"] isKindOfClass:[NSString class]] ? report[@"outcome"] : nil;
-    return value ?: @"notRun";
+    if(!report) return @"notRun";
+    NSString* value = SHDWString(report[@"outcome"]);
+    return [value isEqualToString:@"clean"] || [value isEqualToString:@"jailbroken"] ||
+        [value isEqualToString:@"error"] || [value isEqualToString:@"running"] ? value : @"error";
 }
 
 static NSString* SHDWOutcomeTitle(NSString* outcome) {
@@ -118,7 +154,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 
 - (void)refresh {
     _report = SHDWReport(_sdk);
-    _rounds = [_report[@"rounds"] isKindOfClass:[NSArray class]] ? _report[@"rounds"] : @[];
+    _rounds = SHDWDictionaryArray(_report[@"rounds"]);
     [self.tableView reloadData];
 }
 
@@ -141,15 +177,14 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
     if(section == 0) return 3;
     if(_rounds.count == 0) return 1;
-    NSArray* checks = [_rounds[section - 1][@"checks"] isKindOfClass:[NSArray class]]
-        ? _rounds[section - 1][@"checks"] : @[];
+    NSArray* checks = SHDWDictionaryArray(_rounds[section - 1][@"checks"]);
     return MAX((NSInteger)checks.count, 1);
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
     if(section == 0) return @"Summary";
     if(_rounds.count == 0) return @"Results";
-    NSString* phase = _rounds[section - 1][@"phase"];
+    NSString* phase = SHDWString(_rounds[section - 1][@"phase"]);
     return phase.length ? [phase capitalizedString] : @"Checks";
 }
 
@@ -172,10 +207,10 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
             cell.imageView.tintColor = SHDWOutcomeColor(outcome);
         } else if(indexPath.row == 1) {
             cell.textLabel.text = @"Runner version";
-            cell.detailTextLabel.text = _report[@"sdk"][@"version"] ?: _sdk.version;
+            cell.detailTextLabel.text = SHDWString(SHDWDictionary(_report[@"sdk"])[@"version"]) ?: _sdk.version;
         } else {
             cell.textLabel.text = @"Last run";
-            cell.detailTextLabel.text = _report[@"generatedAt"] ?: @"Never";
+            cell.detailTextLabel.text = SHDWString(_report[@"generatedAt"]) ?: @"Never";
         }
         return cell;
     }
@@ -188,7 +223,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
         return cell;
     }
 
-    NSArray* checks = _rounds[indexPath.section - 1][@"checks"];
+    NSArray<NSDictionary*>* checks = SHDWDictionaryArray(_rounds[indexPath.section - 1][@"checks"]);
     if(checks.count == 0) {
         cell.textLabel.text = @"No checks reported";
         cell.detailTextLabel.text = nil;
@@ -196,8 +231,8 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     }
     NSDictionary* check = checks[indexPath.row];
     BOOL passed = [check[@"passed"] boolValue];
-    cell.textLabel.text = check[@"name"] ?: check[@"id"] ?: @"Check";
-    cell.detailTextLabel.text = check[@"message"] ?: (passed ? @"Passed" : @"Detected");
+    cell.textLabel.text = SHDWString(check[@"name"]) ?: SHDWString(check[@"id"]) ?: @"Check";
+    cell.detailTextLabel.text = SHDWString(check[@"message"]) ?: (passed ? @"Passed" : @"Detected");
     cell.imageView.image = [UIImage systemImageNamed:passed ? @"checkmark.circle.fill" : @"xmark.circle.fill"];
     cell.imageView.tintColor = passed ? UIColor.systemGreenColor : UIColor.systemRedColor;
     return cell;
@@ -270,7 +305,7 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     NSString* outcome = SHDWOutcome(report);
     cell.textLabel.text = sdk.name;
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
-        report[@"sdk"][@"version"] ?: sdk.version];
+        SHDWString(SHDWDictionary(report[@"sdk"])[@"version"]) ?: sdk.version];
     cell.imageView.image = [UIImage systemImageNamed:SHDWOutcomeSymbol(outcome)];
     cell.imageView.tintColor = SHDWOutcomeColor(outcome);
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
