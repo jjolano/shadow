@@ -19,15 +19,21 @@ relevant jailbreak scheme.
 
 Run `THEOS=/path/to/theos scripts/audit-sdk-compat.sh` before accepting a
 newer SDK. It compares the iPhoneOS 15.6 baseline with 16.5, 17.5, 18.6, and
-26.5 for public Objective-C runtime, dyld, dlfcn, and DeviceCheck selectors.
-It fails if an added API has no explicit review. The existing
-`objc_enumerateClasses` delta is reviewed because Shadow resolves and hooks it
-only when the symbol exists.
+26.5 for public Objective-C runtime, dyld, dlfcn, DeviceCheck, and
+detector-relevant filesystem APIs. It also watches the narrowly-scoped
+`getenv_copy_np` linker-stub candidate. It fails on an unclassified addition;
+`PENDING` means the API is deliberately probe-gated and does **not** claim
+runtime support. The existing `objc_enumerateClasses` delta is reviewed because
+Shadow resolves and hooks it only when the symbol exists.
 
 The rootless lane still deploys to iOS 15.0; 15.6 is a header-audit baseline,
-not a change to that package floor. Runtime-only/private symbols such as
-`dlopen_from` and `openat_authenticated_np` are intentionally resolved at
-runtime and need device probes in addition to this SDK-header audit.
+not a change to that package floor. The audit also reports the existing
+`SYS_freadlink` route as probe-gated because its libc declaration is newer than
+the syscall itself. `F_GETPATH` and
+`F_GETPATH_NOFIRMLINK` are checked separately because they already exist at
+that floor. Runtime-only/private symbols such as `dlopen_from`,
+`openat_authenticated_np`, and `getenv_copy_np` need device probes in addition
+to this SDK-header audit.
 
 For a new DeviceCheck or App Attest selector, choose a policy before adding it
 to the allowlist: ordinary local signals can be handled normally, but

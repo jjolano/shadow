@@ -102,6 +102,16 @@ if grep -n 'number != SYS_' "$SYSCALL" >/dev/null 2>&1; then
     fail "hand-synced OR-chain detected in syscall.x (outside the def include)"
 fi
 
+for number in SYS_mkfifoat SYS_mknodat; do
+    if ! grep -q "$number" "$DEF"; then
+        fail "$number is missing from the raw-syscall registry"
+    fi
+done
+
+if ! grep -q 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' "$HOOKDIR/FileHiding/sandbox.x"; then
+    fail "F_GETPATH_NOFIRMLINK is not filtered with F_GETPATH"
+fi
+
 # --- libc hook descriptor registry ---------------------------------------
 
 awk -v libc="$LIBC" '
