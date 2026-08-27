@@ -1555,10 +1555,11 @@ typedef struct {
 #define ENVVAR SHADW_HOOK_GROUP_ENVVAR
 #define LOW    SHADW_HOOK_GROUP_LOWLEVEL
 #define ANTIDBG SHADW_HOOK_GROUP_ANTIDEBUG
+#define IOSSAFE SHADW_HOOK_GROUP_IOS_SECURITY_SUITE
 
 static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // required libc group (installed + verified by libc)
-    { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   LIBC,   LIBC },
+    { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   LIBC | IOSSAFE, LIBC },
     { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC },
     { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
     { "creat",                  (void*)&replaced_creat,                    (void**)&original_creat,                    LIBC,   LIBC },
@@ -1566,17 +1567,17 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC },
     { "statvfs",                (void*)&replaced_statvfs,                  (void**)&original_statvfs,                  LIBC,   LIBC },
     { "fstatvfs",               (void*)&replaced_fstatvfs,                 (void**)&original_fstatvfs,                 LIBC,   LIBC },
-    { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     LIBC,   LIBC },
-    { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    LIBC,   LIBC },
-    { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                LIBC,   LIBC },
+    { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     LIBC | IOSSAFE, LIBC },
+    { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    LIBC | IOSSAFE, LIBC },
+    { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                LIBC | IOSSAFE, LIBC },
     { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC },
     { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC },
     { "closedir",               (void*)&replaced_closedir,                 (void**)&original_closedir,                 LIBC,   LIBC },
-    { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    LIBC,   LIBC },
+    { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    LIBC | IOSSAFE, LIBC },
     { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
-    { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 LIBC,   LIBC },
-    { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               LIBC,   LIBC },
+    { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 LIBC | IOSSAFE, LIBC },
+    { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               LIBC | IOSSAFE, LIBC },
     { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC },
     { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC },
     { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC },
@@ -1647,6 +1648,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 #undef ENVVAR
 #undef LOW
 #undef ANTIDBG
+#undef IOSSAFE
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
@@ -1693,9 +1695,16 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             }
         }
 
+        // IOSSecuritySuite terminates during the full filesystem installer
+        // on iOS 15. Its adapter uses only the path-query hooks it exercises,
+        // and keeps them off the brittle inline lane.
+        if(group == SHADW_HOOK_GROUP_IOS_SECURITY_SUITE) {
+            [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                    withReplacement:d->replacement
+                           outOldPtr:d->original];
         // fopen's shared-cache entrypoint is not relocatable on iOS 15;
         // rebind its imports instead of leaving the detector surface open.
-        if(strcmp(d->symbol, "fopen") == 0) {
+        } else if(strcmp(d->symbol, "fopen") == 0) {
             [hooks hookRebindSymbol:@"fopen" withReplacement:d->replacement outOldPtr:d->original];
         } else {
             [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
@@ -1720,6 +1729,10 @@ void shdw_libc_verify_group(const char* group, uint32_t mask) {
 
 void shadowhook_libc(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LIBC);
+}
+
+void shadowhook_libc_iossecuritysuite(SHDWHookSession* hooks) {
+    shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_IOS_SECURITY_SUITE);
 }
 
 // Post-install verification: a hook that failed to install (backend error,

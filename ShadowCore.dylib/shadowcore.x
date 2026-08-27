@@ -192,6 +192,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             return;
         }
 
+        // IOSSecuritySuite exits during the full filesystem installer on
+        // iOS 15. Its explicit adapter replaces that wide group with the seven
+        // path-query hooks the SDK actually exercises (installed by the
+        // DeviceCheck unit below).
+        if([prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
+           [prefs[SHDWHookIDDeviceCheck] boolValue] &&
+           [prefs[SHDWHookIDFilesystem] boolValue]) {
+            NSMutableDictionary* effectivePrefs = [prefs mutableCopy];
+            effectivePrefs[SHDWHookIDFilesystem] = @NO;
+            prefs = [effectivePrefs copy];
+        }
+
         shdw_memory_hiding_enabled = [prefs[@"MemoryLevelHiding"] boolValue];
 
         [Shadow sharedInstance];
