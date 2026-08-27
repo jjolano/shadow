@@ -1,0 +1,9 @@
+Package: me.jjolano.shadow.test.dashboard
+Name: Shadow Detector Harness
+Depends: firmware (>= 14.0)
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: On-device dashboard for real jailbreak detector SDK tests
+Maintainer: jjolano
+Author: jjolano
+Section: Utilities

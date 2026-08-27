@@ -249,6 +249,18 @@ static void TestPresetConsistency(void) {
     NSDictionary* defaults = SHDWDefaultHookSettings();
     NSDictionary* standard = SHDWPresetStandard();
 
+    CHECK(![defaults[SHDWDetectorPatchDTTID] boolValue], "targeted DTT patch defaults off");
+    CHECK(![defaults[SHDWDetectorPatchSafeDeviceID] boolValue], "targeted SafeDevice patch defaults off");
+    CHECK(![defaults[SHDWDetectorPatchJailMonkeyID] boolValue], "targeted JailMonkey patch defaults off");
+    CHECK(![defaults[SHDWDetectorPatchIOSSecuritySuiteID] boolValue], "targeted IOSSecuritySuite patch defaults off");
+    CHECK(![defaults[SHDWDetectorPatchFreeRASPID] boolValue], "targeted freeRASP patch defaults off");
+    CHECK(standard[SHDWDetectorPatchDTTID] == nil &&
+          standard[SHDWDetectorPatchSafeDeviceID] == nil &&
+          standard[SHDWDetectorPatchJailMonkeyID] == nil &&
+          standard[SHDWDetectorPatchIOSSecuritySuiteID] == nil &&
+          standard[SHDWDetectorPatchFreeRASPID] == nil,
+          "targeted detector patches stay outside hook presets");
+
     for(NSString* key in defaults) {
         if([key hasPrefix:@"Hook_"]) {
             CHECK([standard[key] isEqual:defaults[key]], "standard preset matches defaults for hook key");

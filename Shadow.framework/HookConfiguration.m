@@ -89,6 +89,11 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         // buffer in place (propagation win, but the munged string is visible
         // to the app's own logging/UI).
         SHDWPathRewriteID : @(NO),
+        SHDWDetectorPatchDTTID : @(NO),
+        SHDWDetectorPatchSafeDeviceID : @(NO),
+        SHDWDetectorPatchJailMonkeyID : @(NO),
+        SHDWDetectorPatchIOSSecuritySuiteID : @(NO),
+        SHDWDetectorPatchFreeRASPID : @(NO),
         // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
         // patch is unconditional by default (untrusted callers read the raw
         // struct), but a misbehaving patch on a new iOS must be disableable
@@ -101,7 +106,7 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
 
 // Hook keys only — the subset of defaults the presets steer (every
 // Hook_* toggle plus PseudoSandboxMode; not Global_Enabled / HK_Library /
-// MemoryLevelHiding / App_Enabled).
+// MemoryLevelHiding / App_Enabled / subordinate DetectorPatch_* options).
 static NSArray<NSString*>* SHDWPresetKeys(void) {
     static NSArray<NSString*>* keys = nil;
     static dispatch_once_t onceToken;

@@ -150,6 +150,45 @@ if grep -q 'outOldPtr:&' ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m; 
     exit 1
 fi
 
+for legacy_pointer_probe in UBReportMetadataDevice EnrollParameters; do
+    if ! grep "$legacy_pointer_probe" ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m | grep -q "'\^'"; then
+        echo "DEVICECHECK DRIFT: 3.7.6 pointer hook missing for $legacy_pointer_probe"
+        exit 1
+    fi
+done
+if ! grep -q 'shdw_dch_imp0_ptr_null' ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m; then
+    echo 'DEVICECHECK DRIFT: pointer-return hooks lack a typed NULL replacement'
+    exit 1
+fi
+if ! grep -q 'DCHTargetFreeRASP' ShadowCore.dylib/hooks/Environment/DeviceCheck.x ||
+   ! grep -q '\$s13TalsecRuntime0A0C5start6configyAA0A6ConfigV_tFZ' ShadowCore.dylib/hooks/Environment/DeviceCheck.x ||
+   ! grep -q 'hookRebindSymbol:kSHDWFreeRASPStartSymbol' ShadowCore.dylib/hooks/Environment/DeviceCheck.x ||
+   ! grep -q 'HK_SYMBOL_NAME_SWIFT_MANGLED' ShadowCore.dylib/SHDWHookSession.m; then
+    echo 'DEVICECHECK DRIFT: freeRASP start disablement is incomplete'
+    exit 1
+fi
+
+if ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' Shadow.dylib/dylib.x; then
+    echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
+    exit 1
+fi
+if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/FileHiding/libc.x; then
+    echo 'LIBC DRIFT: fopen lost its safe rebind path'
+    exit 1
+fi
+if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' ShadowCore.dylib/hooks/FileHiding/sandbox.x; then
+    echo 'SANDBOX DRIFT: dynamically resolved fork lost its safe fallback'
+    exit 1
+fi
+if ! grep -q 'hookRebindSymbol:@"dlsym"' ShadowCore.dylib/hooks/Runtime/dyld.x; then
+    echo 'DYLD DRIFT: dlsym lost its safe rebind fallback'
+    exit 1
+fi
+if grep -q 'snapshot->entry\[i\]\.name = \[dylib\[@"name"\] fileSystemRepresentation\]' ShadowCore.dylib/hooks/Runtime/dyld.x; then
+    echo 'DYLD DRIFT: persistent image snapshot stores an autorelease-scoped path pointer'
+    exit 1
+fi
+
 # The device matrix must expose the complete landed ledger by canonical ID.
 # Keep this source-level check beside the hook matrix so a new/renamed row
 # cannot silently turn REL-02 back into an aggregate-only result.

@@ -31,7 +31,8 @@ extern char*** _NSGetArgv();
     // /Applications (rooted) or /var/jb/Applications (rootless) — both
     // denied below — so without these exact exceptions they cannot be hooked.
     BOOL isVerificationApp = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]
-        || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"];
+        || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"]
+        || [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
 
     if(!isVerificationApp && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
@@ -59,6 +60,11 @@ extern char*** _NSGetArgv();
 
     NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
     NSDictionary* app_settings = bundleIdentifier ? [defaults objectForKey:bundleIdentifier] : nil;
+    // Sandboxed cfprefsd can omit another app's dictionary despite libSandy's file grant.
+    if(!app_settings && bundleIdentifier) {
+        id fileSettings = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST][bundleIdentifier];
+        app_settings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
+    }
 
     // Per-app kill switch (see getPreferencesForIdentifier: in Settings.m).
     // Checked here rather than left to the payload's own gate so an excluded

@@ -197,11 +197,20 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         [Shadow sharedInstance];
         shdw_own_ranges_refresh();
         shdw_pseudo_init(prefs);
+        shadowhook_DeviceCheck_configure(prefs);
 
         NSLog(@"starting hooks");
         [Shadow shdwEnterInternalRead];
         @try {
             shdw_coordinator_ctor(prefs);
+
+            // Swift source builds and Talsec binaries have no stable direct
+            // hook ABI. Pre-arm Shadow's existing behavioral coverage when
+            // the user explicitly names either detector instead.
+            if([prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] ||
+               [prefs[SHDWDetectorPatchFreeRASPID] boolValue]) {
+                shdw_detector_detected("configured detector override");
+            }
         } @finally {
             [Shadow shdwExitInternalRead];
         }

@@ -18,3 +18,5 @@
 "PSEUDO_SANDBOX_STRICT_DESC" = "Enforce fail-closed outside the allowlist. Requires audit toggle — only enable after carve-outs are validated.";
 "PATH_REWRITE" = "Rewrite Jailbreak Paths";
 "PATH_REWRITE_DESC" = "Rewrites jailbreak paths in the caller's buffer at the syscall and libc level, so file operations naturally fail with ENOENT. The rewritten string is visible to the app's own logging and UI.";
+"DETECTOR_PATCHES" = "Targeted Detector Overrides";
+"DETECTOR_PATCHES_DESC" = "Neutralizes supported detector-library jailbreak probes through direct method overrides or Shadow's behavioral hooks. Objective-C adapters require Device Check. Disabled by default; enable only for apps using the matching library. The freeRASP option disables SDK startup, so it suppresses every freeRASP callback.";
