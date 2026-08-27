@@ -6,8 +6,8 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = ShadowHarness
 
-ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m StatusViewController.m Battery.m ../tests/detectors/ShadowDetector.m
-ShadowHarness_CFLAGS = -fobjc-arc -DSHADOW_HARNESS -I../tests/detectors -I../Shadow.framework/Headers
+ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m DetectorDashboard.m StatusViewController.m Battery.m ../tests/detectors/ShadowDetector.m
+ShadowHarness_CFLAGS = -fobjc-arc -fmodules-cache-path=/tmp/shadow-harness-module-cache -DSHADOW_HARNESS -I../tests/detectors -I../Shadow.framework/Headers
 # Mirror shdw's linkage exactly: Shadow.framework resolves at runtime through
 # these rpaths (rooted + rootless layouts), staged builds come from $THEOS/lib.
 ShadowHarness_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
@@ -18,5 +18,6 @@ ShadowHarness_INSTALL_PATH = /Applications
 # Explicit so the icon PNGs (and Info.plist, per theos convention) land in
 # the bundle; theos would pick up Resources/ by default anyway.
 ShadowHarness_RESOURCE_DIRS = Resources
+ShadowHarness_RESOURCE_FILES = ../ShadowSettings.bundle/Resources/icon.png ../ShadowSettings.bundle/Resources/icon@2x.png ../ShadowSettings.bundle/Resources/icon@3x.png
 
 include $(THEOS_MAKE_PATH)/application.mk

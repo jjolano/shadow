@@ -7,7 +7,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 "$ROOT/scripts/fetch-detector-sdks.sh" iossecuritysuite
 "$ROOT/scripts/fetch-detector-sdks.sh" dtt
 "$ROOT/scripts/fetch-detector-sdks.sh" freerasp
-make -C "$ROOT/DetectorHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+    ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
+    ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
+make -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+    TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug"
 make -C "$ROOT/DetectorRunners/IOSSecuritySuite" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/DTTJailbreakDetection" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/FreeRASP" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless

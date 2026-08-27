@@ -1,5 +1,6 @@
 #import "SceneDelegate.h"
 
+#import "DetectorDashboard.h"
 #import "StatusViewController.h"
 
 @implementation SceneDelegate
@@ -11,8 +12,8 @@
 
 	self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
 
-	StatusViewController* statusViewController = [StatusViewController new];
-	UINavigationController* navigationController = [[UINavigationController alloc] initWithRootViewController:statusViewController];
+	SHDWSDKListController* dashboard = [[SHDWSDKListController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+	UINavigationController* navigationController = [[UINavigationController alloc] initWithRootViewController:dashboard];
 	navigationController.navigationBar.prefersLargeTitles = YES;
 	self.window.rootViewController = navigationController;
 
@@ -23,6 +24,7 @@
 	// A warm uiopen reuses the existing process, so main/viewDidLoad do not
 	// run again. Consume the driver's new nonce when this scene is reactivated.
 	[StatusViewController writeStealthReport];
+	[[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
 }
 
 @end
