@@ -2,6 +2,10 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
+# Theos may have an older HookKit installed globally.  Put Shadow's vendored
+# framework first so the HK3 headers and linked binary stay in lockstep.
+_THEOS_INTERNAL_SEARCHPATHS := $(abspath ../vendor) $(_THEOS_INTERNAL_SEARCHPATHS)
+
 # The payload is a plain library, not a DynamicLibraries tweak: it must load
 # only through the stub's gated dlopen, never through the runtime's own
 # injection. library.mk stages it to /usr/lib (no filter plist required) and
@@ -31,7 +35,7 @@ ifneq ($(findstring 16.5,$(TARGET)),)
 ShadowCore_LDFLAGS += -Wl,-not_for_dyld_shared_cache
 endif
 endif
-ShadowCore_LDFLAGS += -F../ -F../vendor
+ShadowCore_LDFLAGS += -F../
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_LDFLAGS += -lroothide
 endif
