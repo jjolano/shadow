@@ -91,6 +91,10 @@ static long shdw_fwd_FSTATAT(int number, va_list args) {
     return original_syscall(number, (int) a1, (const char *) a2, (struct stat *) a3, (int) a4);
 }
 
+// Gated to match their RawSyscalls.def entries: SYS_mkfifoat/SYS_mknodat are
+// absent on the legacy SDK (iOS 13.7), where the def skips the case and the
+// forwarder would otherwise be an unused-function error under -Werror.
+#ifdef SYS_mkfifoat
 static long shdw_fwd_ATMODE(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
     intptr_t a2 = va_arg(args, intptr_t);
@@ -98,7 +102,9 @@ static long shdw_fwd_ATMODE(int number, va_list args) {
 
     return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3);
 }
+#endif
 
+#ifdef SYS_mknodat
 static long shdw_fwd_ATMODEDEV(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
     intptr_t a2 = va_arg(args, intptr_t);
@@ -107,6 +113,7 @@ static long shdw_fwd_ATMODEDEV(int number, va_list args) {
 
     return original_syscall(number, (int) a1, (const char *) a2, (mode_t) a3, (dev_t) a4);
 }
+#endif
 
 static long shdw_fwd_CSOPS(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
