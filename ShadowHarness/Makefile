@@ -26,6 +26,7 @@ before-stage::
 		"$(THEOS_STAGING_DIR)/Applications/IOSSecuritySuiteRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/DTTJailbreakDetectionRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/FreeRASPRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/RoothiderRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/dyldprobe.app"$(ECHO_END)
 
 ifneq ($(INCLUDE_DETECTOR_RUNNERS),)
@@ -34,6 +35,7 @@ after-stage::
 		../DetectorRunners/IOSSecuritySuite/.theos/_/Applications/IOSSecuritySuiteRunner.app \
 		../DetectorRunners/DTTJailbreakDetection/.theos/_/Applications/DTTJailbreakDetectionRunner.app \
 		../DetectorRunners/FreeRASP/.theos/_/Applications/FreeRASPRunner.app \
+		../DetectorRunners/Roothider/.theos/_/Applications/RoothiderRunner.app \
 		../tools/dyldprobe/.theos/_/Applications/dyldprobe.app; do \
 		test -d "$$app" || exit 1; \
 		cp -R "$$app" "$(THEOS_STAGING_DIR)/Applications/"; \
