@@ -14,6 +14,61 @@
 #import <sys/stat.h>
 #import <limits.h>
 
+static _Atomic BOOL shdw_detector_write_policy_active = NO;
+
+void shdw_detector_write_policy_set_enabled(BOOL enabled) {
+    atomic_store_explicit(&shdw_detector_write_policy_active, enabled,
+                          memory_order_release);
+}
+
+BOOL shdw_detector_write_policy_is_enabled(void) {
+    return atomic_load_explicit(&shdw_detector_write_policy_active,
+                                memory_order_acquire);
+}
+
+static BOOL shdw_path_is_within(NSString* path, NSString* root) {
+    return path.length && root.length &&
+        ([path isEqualToString:root] ||
+         [path hasPrefix:[root stringByAppendingString:@"/"]]);
+}
+
+BOOL shdw_detector_write_path_denied(NSString* path) {
+    if(!shdw_detector_write_policy_is_enabled() || !path.length) {
+        return NO;
+    }
+
+    Shadow* shadow = [Shadow sharedInstance];
+    if(!shadow.hasAppSandbox) return NO;
+
+    @autoreleasepool {
+        NSString* absolute = path;
+        if(!absolute.isAbsolutePath) {
+            char cwd[PATH_MAX];
+            if(!getcwd(cwd, sizeof(cwd))) return NO;
+            absolute = [[NSString stringWithUTF8String:cwd]
+                stringByAppendingPathComponent:absolute];
+        }
+        absolute = [Shadow getStandardizedPath:absolute];
+        if(!absolute.length) return NO;
+
+        NSString* bundleID = [[NSBundle mainBundle] bundleIdentifier];
+        if([bundleID hasPrefix:@"me.jjolano.shadow.test."] &&
+           shdw_path_is_within(absolute,
+               @"/var/mobile/Documents/ShadowDetectorTests")) return NO;
+        if(shdw_path_is_within(absolute, shadow.bundlePath)) return YES;
+        if(shdw_path_is_within(absolute, shadow.homePath)) return NO;
+        if(shdw_path_is_within(absolute,
+                @"/var/mobile/Containers/Shared/AppGroup")) return NO;
+        if([absolute isEqualToString:@"/dev/null"]) return NO;
+        return YES;
+    }
+}
+
+BOOL shdw_detector_c_write_path_denied(const char* path) {
+    return path && shdw_detector_write_path_denied(
+        [NSString stringWithUTF8String:path]);
+}
+
 // Shared fd cache size (fd→path for the fstat family, per-dirfd options for
 // the *at family): fixed-size table, round-robin eviction.
 #define SHADW_FD_CACHE_SIZE 16
@@ -397,47 +452,4 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char
         stringByStandardizingPath];
 
     return [_shadow isCPathRestricted:[joined fileSystemRepresentation]];
-}
-
-// freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
-// jailbroken devices (symlink into writable bootstrap) and fails on stock.
-// Fail the same way stock does (ENOENT — the path doesn't resolve). The
-// probe is matched as an exact path COMPONENT under the app's bundle
-// directory: a substring match would trip on benign names like
-// "notajbrootfile". Deny only when a path component equals ".jbroot" and the
-// components before it are exactly the app bundle dir.
-BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag) {
-    if(!pathname || !(oflag & O_CREAT)) {
-        return NO;
-    }
-
-    // C fast-path: the probe matches a path COMPONENT equal to ".jbroot";
-    // if the string doesn't contain it at all, no NSString work is needed.
-    if(!strstr(pathname, ".jbroot")) {
-        return NO;
-    }
-
-    NSString* bundlePath = [_shadow bundlePath];
-
-    if(!bundlePath || !bundlePath.length) {
-        return NO;
-    }
-
-    NSArray* components = [[NSString stringWithUTF8String:pathname] pathComponents];
-    NSUInteger count = components.count;
-
-    for(NSUInteger i = 0; i < count; i++) {
-        if(![components[i] isEqualToString:@".jbroot"]) {
-            continue;
-        }
-
-        // The ".jbroot" component's parent must be the app bundle directory.
-        NSString* parent = [[NSString pathWithComponents:[components subarrayWithRange:NSMakeRange(0, i)]] stringByStandardizingPath];
-
-        if([parent isEqualToString:bundlePath]) {
-            return YES;
-        }
-    }
-
-    return NO;
 }
