@@ -1,12 +1,15 @@
 #import <Shadow/HookConfiguration.h>
+#import <Shadow/SHDWPluginOrder.inc>
 
 // Canonical metadata for the hook lifecycle/configuration registry — see
-// HookConfiguration.h. Pure Foundation; no behavior on its own.
+// SHDWPlugin.h. Pure Foundation; no behavior on its own.
+// Hybrid seam: kSHDWPlugins is the renamed kSHDWInstallUnits (alias kept).
 
-#pragma mark - Install units
+#pragma mark - Plugin registry (renamed InstallUnits)
 
-// Canonical ordered install-unit table. Every lifecycle pass walks this order.
-static const SHDWInstallUnit kSHDWInstallUnits[] = {
+// Canonical ordered plugin table. Every lifecycle pass walks this order.
+// Hybrid: order verified against SHDWPluginOrder.inc at compile time.
+static const SHDWPlugin kSHDWPlugins[] = {
     // Identity concealment — unconditional, installed for every enabled app.
     { "dyld",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 1 },
     { "Hook_Filesystem@c",    SHDWHookIDFilesystem,          SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
@@ -33,6 +36,9 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     // installs it unconditionally (the coordinator gates on the backend).
     { "Hook_DynamicLibrariesExtra", SHDWHookIDDynamicLibrariesExtra,
                                                                   SHDWPhaseEscalation, SHDWCapabilityPrivateSym, 1, 1 },
+    // Generic detector integrity: reveal pre-Shadow IMPs and protect only
+    // import slots Shadow actually rebound. Installed on detector evidence.
+    { "detector-integrity",    NULL,                          SHDWPhaseTier2,       SHDWCapabilityFunction,    0, 0 },
     // Tier-2: ObjC-method swizzles install on first detector evidence.
     { "Hook_Filesystem@objc", SHDWHookIDFilesystem,          SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
     { "Hook_Foundation@objc", SHDWHookIDFoundation,          SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
@@ -40,14 +46,34 @@ static const SHDWInstallUnit kSHDWInstallUnits[] = {
     // UIKit-load groups (the classes only exist once UIKit is loaded).
     { "Hook_URLScheme",       SHDWHookIDURLScheme,           SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
     { "Hook_Foundation@uikit", SHDWHookIDFoundation,         SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
+    // Policy plugins — evaluated via RestrictionEngine / policy/*.m, not via
+    // HookCoordinator install. Registered here so SHDWPluginRegistry is the
+    // single source for hook+policy metadata. Never installed via HookPlan
+    // (ctorInstall 0). Pref gating lives in policy code, not planner.
+    { "Policy_Path",          NULL,                          SHDWPhaseAlways,      SHDWCapabilityNone,        0, 0 },
+    { "Policy_Environment",   NULL,                          SHDWPhaseAlways,      SHDWCapabilityNone,        0, 0 },
+    { "Policy_Process",       NULL,                          SHDWPhaseAlways,      SHDWCapabilityNone,        0, 0 },
+    { "Policy_PseudoSandbox", NULL,                          SHDWPhaseAlways,      SHDWCapabilityNone,        0, 0 },
 };
 
-const SHDWInstallUnit* SHDWInstallUnits(NSUInteger* outCount) {
-    if(outCount) {
-        *outCount = sizeof(kSHDWInstallUnits) / sizeof(kSHDWInstallUnits[0]);
-    }
+// Hybrid verification: plugin count must match canonical order
+static const char* const kSHDWPluginOrderCheck[] __attribute__((unused)) = { SHDW_PLUGIN_ORDER };
+_Static_assert(sizeof(kSHDWPlugins)/sizeof(kSHDWPlugins[0]) == sizeof(kSHDWPluginOrderCheck)/sizeof(kSHDWPluginOrderCheck[0]), "plugin registry drift vs SHDWPluginOrder.inc — edit order.inc, not tables");
+_Static_assert(sizeof(kSHDWPlugins)/sizeof(kSHDWPlugins[0]) == SHDW_PLUGIN_COUNT, "plugin count != SHDW_PLUGIN_COUNT");
 
-    return kSHDWInstallUnits;
+const SHDWPlugin* SHDWPluginRegistry(NSUInteger* outCount) {
+    if(outCount) {
+        *outCount = sizeof(kSHDWPlugins) / sizeof(kSHDWPlugins[0]);
+    }
+    return kSHDWPlugins;
+}
+
+const SHDWInstallUnit* SHDWInstallUnits(NSUInteger* outCount) {
+    // Compat shim — same storage, new name
+    if(outCount) {
+        *outCount = sizeof(kSHDWPlugins) / sizeof(kSHDWPlugins[0]);
+    }
+    return (const SHDWInstallUnit*)kSHDWPlugins;
 }
 
 #pragma mark - Defaults and presets
@@ -62,21 +88,9 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWHookIDFoundation : @(NO),
         SHDWHookIDDeviceCheck : @(YES),
         SHDWHookIDMachBootstrap : @(NO),
-        // C0-4: identity groups (dyld/objc/classes/symlookup) are forced
-        // on unconditionally — off-by-default = that vector is 100% exposed
-        // on a default install (detectors enumerate the dyld/objc surface
-        // before any pref can be flipped). Sandbox, Memory, and
-        // AntiDebugging are now ON by default (safe blanket denials);
-        // Syscall remains opt-in due to raw svc risk. IOKit and
-        // MachBootstrap remain NO (explicit intent; ctor defaulted via
-        // missing key before metadata existed).
         SHDWHookIDIOKit : @(NO),
         SHDWHookIDLowLevelC : @(YES),
         SHDWHookIDAntiDebugging : @(YES),
-        // Code-signing concealment defaults ON: it fakes nothing but a
-        // FAILED validation of the app's own executable (no blanket
-        // denials, no third-party code touched), so it cannot break
-        // legitimate apps the way the raw-svc/sandbox groups can.
         SHDWHookIDCodeSigning : @(YES),
         SHDWHookIDDynamicLibrariesExtra : @(NO),
         SHDWHookIDSyscall : @(NO),
@@ -84,66 +98,43 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWHookIDMemory : @(YES),
         SHDWHookIDHideApps : @(YES),
         SHDWPseudoSandboxModeID : @(0),
-        // PathRewrite: natural-ENOENT path-buffer rewrite (svc trampoline +
-        // libc hooks). Default OFF — the rewrite munges the caller's path
-        // buffer in place (propagation win, but the munged string is visible
-        // to the app's own logging/UI).
         SHDWPathRewriteID : @(NO),
-        SHDWDetectorPatchDTTID : @(NO),
-        SHDWDetectorPatchSafeDeviceID : @(NO),
-        SHDWDetectorPatchJailMonkeyID : @(NO),
-        SHDWDetectorPatchIOSSecuritySuiteID : @(NO),
-        SHDWDetectorPatchFreeRASPID : @(NO),
-        // AR2 emergency kill-switch: the dyld_all_image_infos memory-hiding
-        // patch is unconditional by default (untrusted callers read the raw
-        // struct), but a misbehaving patch on a new iOS must be disableable
-        // without a reinstall. Default YES (patch on); flipping to NO
-        // restores dyld's original struct and stops the patch — detection
-        // exposure returns, crashes stop.
+        SHDWDetectorPatchDTTID : @(YES),
+        SHDWDetectorPatchSafeDeviceID : @(YES),
+        SHDWDetectorPatchJailMonkeyID : @(YES),
+        SHDWDetectorPatchIOSSecuritySuiteID : @(YES),
+        SHDWDetectorPatchFreeRASPID : @(YES),
         SHDWMemoryLevelHidingID : @(YES)
     };
 }
 
-// Hook keys only — the subset of defaults the presets steer (every
-// Hook_* toggle plus PseudoSandboxMode; not Global_Enabled / HK_Library /
-// MemoryLevelHiding / App_Enabled / subordinate DetectorPatch_* options).
 static NSArray<NSString*>* SHDWPresetKeys(void) {
     static NSArray<NSString*>* keys = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         NSMutableArray* mutableKeys = [NSMutableArray new];
-
         for(NSString* key in SHDWDefaultHookSettings()) {
             if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWPseudoSandboxModeID]) {
                 [mutableKeys addObject:key];
             }
         }
-
         keys = [mutableKeys copy];
     });
-
     return keys;
 }
 
 NSDictionary<NSString*, id>* SHDWPresetStandard(void) {
-    // "standard" derives from the shipped defaults — one source of truth,
-    // so a defaults change can never drift from the default preset.
     NSDictionary<NSString*, id>* defaults = SHDWDefaultHookSettings();
     NSMutableDictionary* preset = [NSMutableDictionary new];
-
     for(NSString* key in SHDWPresetKeys()) {
         preset[key] = defaults[key];
     }
-
     return preset;
 }
 
 NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
-    // "maximum": standard plus every dangerous hook — the blanket denial
-    // groups that break legitimate apps, and the detector-evidence groups.
     NSDictionary<NSString*, id>* standard = SHDWPresetStandard();
     NSMutableDictionary* preset = [standard mutableCopy];
-
     preset[SHDWHookIDFoundation] = @(YES);
     preset[SHDWHookIDMachBootstrap] = @(YES);
     preset[SHDWHookIDIOKit] = @(YES);
@@ -153,7 +144,11 @@ NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
     preset[SHDWHookIDSandbox] = @(YES);
     preset[SHDWHookIDMemory] = @(YES);
     preset[SHDWPathRewriteID] = @(YES);
-
+    preset[SHDWDetectorPatchDTTID] = @(YES);
+    preset[SHDWDetectorPatchSafeDeviceID] = @(YES);
+    preset[SHDWDetectorPatchJailMonkeyID] = @(YES);
+    preset[SHDWDetectorPatchIOSSecuritySuiteID] = @(YES);
+    preset[SHDWDetectorPatchFreeRASPID] = @(YES);
     return preset;
 }
 
@@ -164,20 +159,11 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         kinds = @{
-            // ObjC-method swizzle groups (subMain): the Settings picker
-            // filters substrate/substitute/swift out of selection, so these
-            // need a message-capable backend.
             SHDWHookIDURLScheme : @"message",
-            SHDWHookIDDeviceCheck : @"message",  // descriptor-driven ObjC-method installs
-            SHDWHookIDFoundation : @"message",   // NSArray/NSBundle/... + UIImage
-            SHDWHookIDHideApps : @"message",     // LSApplicationWorkspace
-            // dlopen_internal is a private libdyld symbol: needs ElleKit
-            // (inline / private-symbol capable).
+            SHDWHookIDDeviceCheck : @"message",
+            SHDWHookIDFoundation : @"message",
+            SHDWHookIDHideApps : @"message",
             SHDWHookIDDynamicLibrariesExtra : @"inline",
-            // C-function groups: any non-Swift backend can run them.
-            // EnvVars' core (libc env filtering) rides the C-function lane;
-            // its NSProcessInfo swizzles are a subMain add-on that fail-softs
-            // without a message backend — gate the group on the C path.
             SHDWHookIDEnvVars : @"function",
             SHDWHookIDFilesystem : @"function",
             SHDWHookIDMachBootstrap : @"function",
@@ -188,89 +174,78 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             SHDWHookIDSyscall : @"function",
             SHDWHookIDSandbox : @"function",
             SHDWHookIDMemory : @"function",
-            // Pseudo sandbox: policy inside RestrictionEngine, pref-driven, not an
-            // install unit — no backend requirement (keeps diff minimal).
             SHDWPseudoSandboxModeID : @"none",
         };
     });
-
     return kinds[groupID];
 }
 
 #pragma mark - Planner
 
-static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit,
-                            NSDictionary<NSString*, id>* prefs,
-                            SHDWLifecycleEvent event) {
-    if(!unit->prefKey) {
-        return YES;  // unconditional (identity concealment)
-    }
-
-    // dylibex: escalation installs it whether or not the pref is on (the
-    // coordinator gates on the resolved private-symbol backend).
-    if(event == SHDWEventDetectorEscalation && unit->phase == SHDWPhaseEscalation) {
+static BOOL SHDWPluginEnabled(const SHDWPlugin* plugin,
+                             NSDictionary<NSString*, id>* prefs,
+                             SHDWLifecycleEvent event) {
+    if(!plugin->prefKey) {
         return YES;
     }
-
-    return [prefs[unit->prefKey] boolValue];
+    if(event == SHDWEventDetectorEscalation && plugin->phase == SHDWPhaseEscalation) {
+        return YES;
+    }
+    return [prefs[plugin->prefKey] boolValue];
 }
 
-// ObjC-message groups require a message backend. dlopen_internal is gated by
-// the coordinator because its private-symbol backend is resolved there.
-static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) {
-    if(unit->phase == SHDWPhaseEscalation) {
-        // dlopen_internal's backend gate and skip log live in the coordinator.
+static BOOL SHDWPluginCapable(const SHDWPlugin* plugin, SHDWCapabilities caps) {
+    if(plugin->phase == SHDWPhaseEscalation) {
         return YES;
     }
-
-    if(unit->capability != SHDWCapabilityMessage) {
+    if(plugin->capability != SHDWCapabilityMessage) {
         return YES;
     }
-
-    // objc, classes, tier-2 ObjC groups and the UIKit groups all fail-soft
-    // without a message-capable backend.
     return (caps & SHDWCapMessage) != 0;
 }
 
+NSArray<NSString*>* SHDWPluginPlan(NSDictionary<NSString*, id>* prefs,
+                                  SHDWCapabilities caps,
+                                  SHDWLifecycleEvent event) {
+    NSDictionary<NSString*, id>* effective = prefs ?: SHDWDefaultHookSettings();
+    NSMutableArray<NSString*>* plan = [NSMutableArray new];
+    NSUInteger count = 0;
+    const SHDWPlugin* plugins = SHDWPluginRegistry(&count);
+    for(NSUInteger i = 0; i < count; i++) {
+        const SHDWPlugin* plugin = &plugins[i];
+        BOOL include = NO;
+        switch(event) {
+            case SHDWEventCtor:
+                include = plugin->ctorInstall != 0;
+                break;
+            case SHDWEventUIKitLoaded:
+                include = plugin->phase == SHDWPhaseUIKit;
+                break;
+            case SHDWEventDetectorEscalation:
+                include = plugin->phase == SHDWPhaseTier2 || plugin->phase == SHDWPhaseEscalation;
+                break;
+        }
+        if(!include) continue;
+        if(!SHDWPluginEnabled(plugin, effective, event)) continue;
+        if(!SHDWPluginCapable(plugin, caps)) continue;
+        [plan addObject:[NSString stringWithUTF8String:plugin->unitID]];
+    }
+    return plan;
+}
+
+// Compat shims — forward to new planner
 NSArray<NSString*>* SHDWHookPlan(NSDictionary<NSString*, id>* prefs,
                                  SHDWCapabilities caps,
                                  SHDWLifecycleEvent event) {
-    NSDictionary<NSString*, id>* effective = prefs ?: SHDWDefaultHookSettings();
-    NSMutableArray<NSString*>* plan = [NSMutableArray new];
+    return SHDWPluginPlan(prefs, caps, event);
+}
 
-    NSUInteger count = 0;
-    const SHDWInstallUnit* units = SHDWInstallUnits(&count);
-
-    for(NSUInteger i = 0; i < count; i++) {
-        const SHDWInstallUnit* unit = &units[i];
-        BOOL include = NO;
-
-        switch(event) {
-            case SHDWEventCtor:
-                include = unit->ctorInstall != 0;
-                break;
-            case SHDWEventUIKitLoaded:
-                include = unit->phase == SHDWPhaseUIKit;
-                break;
-            case SHDWEventDetectorEscalation:
-                include = unit->phase == SHDWPhaseTier2 || unit->phase == SHDWPhaseEscalation;
-                break;
-        }
-
-        if(!include) {
-            continue;
-        }
-
-        if(!SHDWUnitEnabled(unit, effective, event)) {
-            continue;
-        }
-
-        if(!SHDWUnitCapable(unit, caps)) {
-            continue;
-        }
-
-        [plan addObject:[NSString stringWithUTF8String:unit->unitID]];
-    }
-
-    return plan;
+// Legacy internal helpers kept for compat
+static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit, NSDictionary<NSString*, id>* prefs, SHDWLifecycleEvent event) __attribute__((unused));
+static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit, NSDictionary<NSString*, id>* prefs, SHDWLifecycleEvent event) {
+    return SHDWPluginEnabled((const SHDWPlugin*)unit, prefs, event);
+}
+static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) __attribute__((unused));
+static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) {
+    return SHDWPluginCapable((const SHDWPlugin*)unit, caps);
 }

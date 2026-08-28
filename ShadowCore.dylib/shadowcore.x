@@ -4,6 +4,7 @@
 #import "../common.h"
 #import <Shadow/JBPath.h>
 #import "hooks/hooks.h"
+#import "policy/PathPolicy.h"
 #import "policy/PseudoSandboxPolicy.h"
 
 #import <Shadow.h>
@@ -17,7 +18,7 @@
 #import "HookCoordinator.h"
 #import "../vendor/apple/dyld_priv.h"
 
-// Set by behavioral tripwires in the hook files, never by image-name matching.
+// Set by an exact detector-adapter match or behavioral tripwires.
 BOOL shdw_detector_present = NO;
 
 // Emergency kill-switch for the dyld_all_image_infos memory-hiding patch.
@@ -60,6 +61,7 @@ void shdw_detector_detected(const char* reason) {
     }
 
     shdw_detector_present = YES;
+    shdw_detector_write_policy_set_enabled(YES);
     [shdw_coordinator_instance escalateWithReason:nil];
 }
 
@@ -77,6 +79,16 @@ static void shdw_coord_symlookup(SHDWHookSession* hooks) {
 static void shdw_coord_verify_symlookup(void) {
     shadowhook_dyld_symlookup_verify();
     shadowhook_dyld_symaddrlookup_verify();
+}
+
+static void shdw_coord_detector_integrity(SHDWHookSession* hooks) {
+    [Shadow shdwEnterInternalRead];
+    @try {
+        shadowhook_objc_methodimpl_detector(hooks);
+        shadowhook_ImportSlotProtection(hooks);
+    } @finally {
+        [Shadow shdwExitInternalRead];
+    }
 }
 
 static void shdw_coord_filesystem_objc(SHDWHookSession* hooks) {
@@ -98,8 +110,11 @@ static void shdw_coord_foundation_objc(SHDWHookSession* hooks) {
     shadowhook_NSTask(hooks);
 }
 
-// Must stay in SHDWInstallUnits() order.
-static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
+static void shdw_plugin_policy_nop(SHDWHookSession* hooks) { (void)hooks; }
+
+// Must stay in SHDWPluginRegistry() order (Hybrid: verified vs SHDWPluginOrder.inc).
+#import <Shadow/SHDWPluginOrder.inc>
+static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "dyld",                         shadowhook_dyld,                 shadowhook_dyld_verify },
     { "Hook_Filesystem@c",            shadowhook_libc,                 shadowhook_libc_verify },
     { "Hook_EnvVars@c",               shdw_coord_envvars_c,            shadowhook_libc_envvar_verify },
@@ -118,17 +133,26 @@ static const SHDWHookInstaller kSHDWCoordinatorInstallers[] = {
     { "classes",                      shadowhook_objc_hidetweakclasses, NULL },
     { "symlookup",                    shdw_coord_symlookup,            shdw_coord_verify_symlookup },
     { "Hook_DynamicLibrariesExtra",   shadowhook_dyld_extra,           shadowhook_dyld_extra_verify },
+    { "detector-integrity",            shdw_coord_detector_integrity,   NULL },
     { "Hook_Filesystem@objc",         shdw_coord_filesystem_objc,      NULL },
     { "Hook_Foundation@objc",         shdw_coord_foundation_objc,      NULL },
     { "Hook_HideApps",                shadowhook_LSApplicationWorkspace, NULL },
     { "Hook_URLScheme",               shadowhook_UIApplication,        NULL },
     { "Hook_Foundation@uikit",        shadowhook_UIImage,              NULL },
+    // Policy plugins — no hook install, evaluated via RestrictionEngine
+    { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
+    { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },
+    { "Policy_Process",               shdw_plugin_policy_nop,          NULL },
+    { "Policy_PseudoSandbox",         shdw_plugin_policy_nop,          NULL },
 };
+static const char* const kSHDWPluginInstallerOrderCheck[] __attribute__((unused)) = { SHDW_PLUGIN_ORDER };
+_Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == sizeof(kSHDWPluginInstallerOrderCheck)/sizeof(kSHDWPluginInstallerOrderCheck[0]), "installer table drift vs SHDWPluginOrder.inc");
+_Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == SHDW_PLUGIN_COUNT, "installer count != SHDW_PLUGIN_COUNT");
 
 static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
     shdw_coordinator_instance =
-        [[SHDWHookCoordinator alloc] initWithInstallerTable:kSHDWCoordinatorInstallers
-                                                      count:sizeof(kSHDWCoordinatorInstallers) / sizeof(kSHDWCoordinatorInstallers[0])
+        [[SHDWHookCoordinator alloc] initWithInstallerTable:kSHDWPluginInstallers
+                                                      count:sizeof(kSHDWPluginInstallers) / sizeof(kSHDWPluginInstallers[0])
                                                       prefs:prefs];
 
     if(!shdw_coordinator_instance) {
@@ -192,15 +216,32 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             return;
         }
 
+        // Adapter support defaults on, but only an exact SDK fingerprint may
+        // activate its library-specific behavior. Resolve before constructing
+        // the hook plan because the iOSSecuritySuite profile narrows two
+        // otherwise-wide groups and freeRASP enables raw-syscall coverage.
+        prefs = shadowhook_DetectorAdapters_resolvePreferences(prefs);
+        BOOL hasActiveDetectorAdapter = NO;
+        for(NSString* key in @[ SHDWDetectorPatchDTTID, SHDWDetectorPatchSafeDeviceID,
+                                SHDWDetectorPatchJailMonkeyID, SHDWDetectorPatchIOSSecuritySuiteID,
+                                SHDWDetectorPatchFreeRASPID ]) {
+            hasActiveDetectorAdapter |= [prefs[key] boolValue];
+        }
+
         // IOSSecuritySuite exits during the full filesystem installer on
         // iOS 15. Its explicit adapter replaces that wide group with the seven
         // path-query hooks the SDK actually exercises (installed by the
         // DeviceCheck unit below).
-        if([prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
-           [prefs[SHDWHookIDDeviceCheck] boolValue] &&
-           [prefs[SHDWHookIDFilesystem] boolValue]) {
+        BOOL adaptIOSSecuritySuite = [prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
+            [prefs[SHDWHookIDDeviceCheck] boolValue] &&
+            [prefs[SHDWHookIDFilesystem] boolValue];
+        if(adaptIOSSecuritySuite || [prefs[SHDWDetectorPatchFreeRASPID] boolValue]) {
             NSMutableDictionary* effectivePrefs = [prefs mutableCopy];
-            effectivePrefs[SHDWHookIDFilesystem] = @NO;
+            if(adaptIOSSecuritySuite) {
+                effectivePrefs[SHDWHookIDFilesystem] = @NO;
+                effectivePrefs[SHDWHookIDURLScheme] = @NO;
+            }
+            shadowhook_FreeRASP_preparePreferences(effectivePrefs);
             prefs = [effectivePrefs copy];
         }
 
@@ -217,11 +258,13 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             shdw_coordinator_ctor(prefs);
 
             // Swift source builds and Talsec binaries have no stable direct
-            // hook ABI. Pre-arm Shadow's existing behavioral coverage when
-            // the user explicitly names either detector instead.
-            if([prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] ||
-               [prefs[SHDWDetectorPatchFreeRASPID] boolValue]) {
-                shdw_detector_detected("configured detector override");
+            // hook ABI. Explicit adapters are known before detector code can
+            // run, so install their Tier-2 coverage synchronously. Runtime
+            // discoveries still use the deferred escalation path.
+            if(hasActiveDetectorAdapter) {
+                shdw_detector_present = YES;
+                shdw_detector_write_policy_set_enabled(YES);
+                [shdw_coordinator_instance prearmDetector];
             }
         } @finally {
             [Shadow shdwExitInternalRead];
