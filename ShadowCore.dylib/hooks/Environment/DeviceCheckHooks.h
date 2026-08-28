@@ -45,7 +45,6 @@ typedef NS_OPTIONS(uint8_t, DCHTarget) {
     DCHTargetDTT        = 1 << 0,
     DCHTargetSafeDevice = 1 << 1,
     DCHTargetJailMonkey = 1 << 2,
-    DCHTargetFreeRASP   = 1 << 3,
 };
 
 typedef struct {

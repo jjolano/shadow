@@ -1,3 +1,6 @@
+// Plugin: Policy_Path — registered in SHDWPluginRegistry (HookConfiguration.m)
+#define SHDWPolicyPathPluginID "Policy_Path"
+
 // Path/fd/dirfd classification shared by the libc and raw-syscall hook
 // surfaces (hooks/libc.x, hooks/syscall.x): dirfd-aware *at classification,
 // the fd→path cache, the readdir DIR* cache, readlink target resolution and
@@ -67,10 +70,9 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char
 // this with its own isCallerExternal() expansion.)
 BOOL shdw_is_jb_probe(const char* path);
 
-// freeRASP rootless probe: writing under @executable_path/.jbroot succeeds on
-// jailbroken devices (symlink into writable bootstrap) and fails on stock.
-// Matched as an exact path COMPONENT under the app's bundle directory — a
-// substring match would trip on benign names like "notajbrootfile". Deny
-// only when a path component equals ".jbroot" and the components before it
-// are exactly the app bundle dir.
-BOOL shdw_is_jbroot_write_probe(const char* pathname, int oflag);
+// Once detector behavior is established, reproduce a stock app sandbox's
+// write boundary independently of detector names.
+void shdw_detector_write_policy_set_enabled(BOOL enabled);
+BOOL shdw_detector_write_policy_is_enabled(void);
+BOOL shdw_detector_write_path_denied(NSString* path);
+BOOL shdw_detector_c_write_path_denied(const char* path);
