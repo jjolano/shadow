@@ -1321,7 +1321,8 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     // any image" — zero the record and return 0, never a fabricated success
     // with a fake executable path (plan Wave 1c; the RTLD_NEXT re-lookup loop
     // is gone — the fallback it fabricated was a fingerprint).
-    if(result && shdw_addr_is_restricted(addr)) {
+    if(result && (shdw_objc_addr_is_hidden(addr)
+        || (info && shdw_is_shadow_runtime_image(info->dli_fname)))) {
         if(info) {
             memset(info, 0, sizeof(Dl_info));
         }

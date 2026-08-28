@@ -103,6 +103,9 @@ BOOL JBIsRootless(void) {
 
 BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
+    // /private/preboot itself is present on stock iOS. Hide jailbreak
+    // descendants, but let the stock directory reach the ruleset.
+    if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
 
     if (strncmp(path, "/var/jb", 7) == 0
         && (path[7] == '\0' || path[7] == '/')) return YES;
