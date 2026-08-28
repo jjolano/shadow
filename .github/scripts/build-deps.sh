@@ -13,9 +13,8 @@ trap 'rm -rf "$RUN"' EXIT
 # Lane matrix lives in one place; see lanes.sh.
 . "$ROOT/lanes.sh"
 
-# HookKit 3 canonical facade. Modern Shadow lanes keep their source calls
-# unchanged, but link them against the facade's HK3 plan/engine bridge.
-HOOKKIT=879912445c0a2a88e187bc4fc34e47b721bee78b
+# HookKit is provisioned into Theos (see .github/scripts/install-hookkit-theos.sh
+# and the HOOKKIT pin in build.yml), not built here.
 ALTLIST=9db09f92eff0404ae7fa9c2fe6c25ba13d5e02d7
 LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
@@ -62,16 +61,12 @@ package_path() { # source directory
     esac
 }
 
-stage_package() { # hookkit|altlist|sandy deb
+stage_package() { # altlist|sandy deb
     local dep=$1 deb=$2 extract source destination
     extract=$(mktemp -d "$RUN/extract.XXXXXX")
     dpkg-deb -x "$deb" "$extract"
 
     case "$dep" in
-        hookkit)
-            source=$(find "$extract" -type d -path '*/Library/Frameworks/HookKit.framework' -print -quit)
-            destination="$PB/hookkit/$FLAVOR/HookKit.framework"
-            ;;
         altlist)
             source=$(find "$extract" -type d -path '*/Library/Frameworks/AltList.framework' -print -quit)
             destination="$PB/altlist/$FLAVOR/AltList.framework"
@@ -143,41 +138,6 @@ legacy_make_args() {
     )
 }
 
-build_hookkit() {
-    if [ "$FLAVOR" = rootful-legacy ]; then
-        if [ -n "${HOOKKIT_LEGACY_DEB:-}" ]; then
-            [ -f "$HOOKKIT_LEGACY_DEB" ] || { echo "HOOKKIT_LEGACY_DEB does not exist" >&2; exit 1; }
-            stage_package hookkit "$HOOKKIT_LEGACY_DEB"
-            return
-        fi
-
-        clone_pin jjolano/HookKit "$HOOKKIT" hookkit
-        local source=$RUN/hookkit deb
-        (cd "$source" && ./build.sh rootful-legacy)
-        deb=$source/build/hookkit-rootful-legacy.deb
-        stage_package hookkit "$deb"
-        return
-    fi
-
-    if [ -n "${HOOKKIT_CANONICAL_DEB:-}" ]; then
-        [ -f "$HOOKKIT_CANONICAL_DEB" ] || { echo "HOOKKIT_CANONICAL_DEB does not exist" >&2; exit 1; }
-        stage_package hookkit "$HOOKKIT_CANONICAL_DEB"
-        return
-    fi
-
-    clone_pin jjolano/HookKit "$HOOKKIT" hookkit
-    local source=$RUN/hookkit control=$RUN/hookkit.control deb
-
-    write_control_floor "$source/control" "$control" "$FLOOR"
-    sed -e 's/^Name:.*/Name: HookKit Framework (3.0 Release Candidate)/' \
-        -e 's/^Version:.*/Version: 3.0.0-1/' "$control" > "$control.tmp" && mv "$control.tmp" "$control"
-    (cd "$source" && make clean HOOKKIT_CANONICAL_3=1 LIBRARY_NAME= "${MAKE_ARGS[@]}" && \
-        make package HOOKKIT_CANONICAL_3=1 LIBRARY_NAME= FINALPACKAGE=1 "${MAKE_ARGS[@]}" \
-        "_THEOS_DEB_PACKAGE_CONTROL_PATH=$control")
-    deb=$(package_path "$source")
-    stage_package hookkit "$deb"
-}
-
 build_altlist() {
     clone_pin opa334/AltList "$ALTLIST" altlist
     local source=$RUN/altlist control deb
@@ -216,7 +176,9 @@ build_sandy() {
 
 common_make_args
 [ "$FLAVOR" != rootful-legacy ] || legacy_make_args
-build_hookkit
+# HookKit is provisioned into Theos (HookKit repo: make install-theos), not
+# staged here; build.sh resolves it from $THEOS/lib per lane. build-deps only
+# builds the from-source deps that are not published as a Theos install.
 build_altlist
 build_sandy
 echo "dependencies staged: $FLAVOR"
