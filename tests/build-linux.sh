@@ -22,6 +22,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -include tests/hdr/dispatch/once.h -include tests/hdr/CoreFoundation/CFBundle.h \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Itests \
+  -Ivendor/HookKit.framework/Headers \
   -IShadowCore.dylib/hooks \
   tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m \
@@ -32,7 +33,8 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
   tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
   Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
-  tests/VersionCompareTests.m \
+  tests/VersionCompareTests.m tests/HookFallbackTests.c \
+  -Wl,--export-dynamic \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
   $BASE_LIBS -o tests/harness
 
