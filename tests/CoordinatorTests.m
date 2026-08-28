@@ -159,6 +159,7 @@ static void TestPlannerEscalation(void) {
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventDetectorEscalation);
     NSArray* expected = @[
         @"Hook_DynamicLibrariesExtra",
+        @"detector-integrity",
         @"Hook_Filesystem@objc",
         @"Hook_Foundation@objc",
         @"Hook_HideApps",
@@ -178,6 +179,7 @@ static void TestPlannerEscalation(void) {
     // capability gate lives in the coordinator).
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventDetectorEscalation);
     CHECK(IDInPlan(planFish, "Hook_DynamicLibrariesExtra"), "fishhook-only: dylibex still named (coordinator gates it)");
+    CHECK(IDInPlan(planFish, "detector-integrity"), "fishhook-only: detector integrity still installs");
     CHECK(!IDInPlan(planFish, "Hook_Filesystem@objc"), "fishhook-only: tier-2 ObjC dropped");
 }
 
@@ -249,11 +251,11 @@ static void TestPresetConsistency(void) {
     NSDictionary* defaults = SHDWDefaultHookSettings();
     NSDictionary* standard = SHDWPresetStandard();
 
-    CHECK(![defaults[SHDWDetectorPatchDTTID] boolValue], "targeted DTT patch defaults off");
-    CHECK(![defaults[SHDWDetectorPatchSafeDeviceID] boolValue], "targeted SafeDevice patch defaults off");
-    CHECK(![defaults[SHDWDetectorPatchJailMonkeyID] boolValue], "targeted JailMonkey patch defaults off");
-    CHECK(![defaults[SHDWDetectorPatchIOSSecuritySuiteID] boolValue], "targeted IOSSecuritySuite patch defaults off");
-    CHECK(![defaults[SHDWDetectorPatchFreeRASPID] boolValue], "targeted freeRASP patch defaults off");
+    CHECK([defaults[SHDWDetectorPatchDTTID] boolValue], "targeted DTT support defaults on");
+    CHECK([defaults[SHDWDetectorPatchSafeDeviceID] boolValue], "targeted SafeDevice support defaults on");
+    CHECK([defaults[SHDWDetectorPatchJailMonkeyID] boolValue], "targeted JailMonkey support defaults on");
+    CHECK([defaults[SHDWDetectorPatchIOSSecuritySuiteID] boolValue], "targeted IOSSecuritySuite support defaults on");
+    CHECK([defaults[SHDWDetectorPatchFreeRASPID] boolValue], "targeted freeRASP support defaults on");
     CHECK(standard[SHDWDetectorPatchDTTID] == nil &&
           standard[SHDWDetectorPatchSafeDeviceID] == nil &&
           standard[SHDWDetectorPatchJailMonkeyID] == nil &&
@@ -273,6 +275,12 @@ static void TestPresetConsistency(void) {
     CHECK([maximum[SHDWHookIDMemory] boolValue], "maximum preset: memory on");
     CHECK([maximum[SHDWHookIDAntiDebugging] boolValue], "maximum preset: antidebugging on");
     CHECK([maximum[SHDWHookIDFoundation] boolValue], "maximum preset: foundation on");
+    CHECK([maximum[SHDWDetectorPatchDTTID] boolValue] &&
+          [maximum[SHDWDetectorPatchSafeDeviceID] boolValue] &&
+          [maximum[SHDWDetectorPatchJailMonkeyID] boolValue] &&
+          [maximum[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
+          [maximum[SHDWDetectorPatchFreeRASPID] boolValue],
+          "maximum preset: all detector adapters on");
 
     // The maximum preset's hook keys are a superset of the standard's.
     for(NSString* key in standard) {

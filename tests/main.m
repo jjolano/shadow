@@ -52,6 +52,7 @@ int RunRestrictionTests(void);
 int RunPolicyTests(void);
 int RunCoordinatorTests(void);
 int RunVersionCompareTests(void);
+int RunHookFallbackTests(void);
 
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
@@ -63,6 +64,11 @@ static BOOL gFuzz = NO;
 static BOOL gAFuzz = NO;
 static int gPass = 0;
 static int gFail = 0;
+static BOOL gDetectorWritePolicyEnabled = NO;
+
+BOOL shdw_detector_write_policy_is_enabled(void) {
+    return gDetectorWritePolicyEnabled;
+}
 
 #define CHECK(_cond, _name) do { \
     if(_cond) { gPass++; } else { gFail++; printf("FAIL: %s\n", _name); } \
@@ -566,6 +572,19 @@ static void testSandbox(void) {
     expectAllowedOpts(@"noFollow link-location query exempt", evil, @{kShadowRestrictionNoFollow : @YES});
     expectAllowed(@"bundle dir itself exempt", [shadow bundlePath]);
     CHECK([shdw() isURLRestricted:[NSURL fileURLWithPath:evil]], "file URL through bundle symlink");
+}
+
+static void testDetectorWritePolicy(void) {
+    printf("[tests] detector-gated stock write sandbox\n");
+    Shadow* shadow = shdw();
+    gDetectorWritePolicyEnabled = YES;
+    expectRestrictedWrite(@"detector write outside container denied", @"/tmp/shdw-detector-write");
+    expectRestrictedWrite(@"detector write into signed bundle denied",
+        [[shadow bundlePath] stringByAppendingPathComponent:@"probe"]);
+    expectAllowedOpts(@"detector write inside data container allowed",
+        [[shadow homePath] stringByAppendingPathComponent:@"Documents/probe"], writeOptions());
+    expectAllowedOpts(@"detector write to /dev/null allowed", @"/dev/null", writeOptions());
+    gDetectorWritePolicyEnabled = NO;
 }
 
 static void testUtilities(void) {
@@ -1509,6 +1528,7 @@ int main(int argc, const char** argv) {
         testSchemesAndIDs();
         testProtectedNames();
         testSandbox();
+        testDetectorWritePolicy();
         testUtilities();
         testHookEntryPoints();
         testHookFilters();
@@ -1518,6 +1538,7 @@ int main(int argc, const char** argv) {
         gFail += RunPolicyTests();
         gFail += RunCoordinatorTests();
         gFail += RunVersionCompareTests();
+        gFail += RunHookFallbackTests();
 
         if(!gRootless) {
             testReload();

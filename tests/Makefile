@@ -21,6 +21,19 @@ verify-device-driver:
 #             libobjc2 + GNUstep Foundation). `make` builds and runs through
 #             docker; the binary lands in tests/harness.
 
+# HookKit headers for the harness come from the Theos install (HookKit repo:
+# make install-theos), staged into vendor/ (gitignored, arch-independent) since
+# neither this harness nor the container carries Theos. build.sh no longer
+# stages them, so the harness provisions its own.
+THEOS ?= /opt/theos
+HOOKKIT_HEADERS ?= $(THEOS)/lib/HookKit.framework/Headers
+
+stage-hookkit-headers:
+	@test -d "$(HOOKKIT_HEADERS)" || { echo "no HookKit headers at $(HOOKKIT_HEADERS) — set HOOKKIT_HEADERS or run 'make install-theos' in the HookKit repo" >&2; exit 1; }
+	rm -rf ../vendor/HookKit.framework/Headers
+	mkdir -p ../vendor/HookKit.framework
+	cp -R "$(HOOKKIT_HEADERS)" ../vendor/HookKit.framework/Headers
+
 UNAME := $(shell uname)
 
 ifeq ($(UNAME),Darwin)
@@ -30,7 +43,8 @@ FRAMEWORK = ../Shadow.framework
 VENDOR = ../vendor
 
 CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS
-INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../ShadowCore.dylib/hooks
+INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../ShadowCore.dylib/hooks \
+       -I$(VENDOR)/HookKit.framework/Headers
 
 SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
        $(FRAMEWORK)/Core.m \
@@ -46,9 +60,9 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetect
        ../ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
        CoordinatorTests.m \
-       VersionCompareTests.m
+       VersionCompareTests.m HookFallbackTests.c
 
-harness: $(SRCS) Makefile
+harness: $(SRCS) Makefile | stage-hookkit-headers
 	$(CC) $(CFLAGS) $(INCS) $(SRCS) -framework Foundation -o harness
 
 test: harness
@@ -89,7 +103,7 @@ RUN := $(DOCKER) run --rm -v $(CURDIR)/..:/src -w /src $(IMAGE)
 image:
 	$(DOCKER) build -t $(IMAGE) $(CURDIR)
 
-harness: image
+harness: image stage-hookkit-headers
 	$(RUN) sh /src/tests/build-linux.sh
 
 test: harness
@@ -132,4 +146,4 @@ clean:
 
 endif
 
-.PHONY: test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
+.PHONY: stage-hookkit-headers test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
