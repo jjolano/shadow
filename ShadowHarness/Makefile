@@ -29,6 +29,7 @@ before-stage::
 		"$(THEOS_STAGING_DIR)/Applications/RoothiderRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/BATJailbreakGuardRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/SafetyNetRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/DeviceSecurityKitRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/dyldprobe.app"$(ECHO_END)
 
 ifneq ($(INCLUDE_DETECTOR_RUNNERS),)
@@ -40,6 +41,7 @@ after-stage::
 		../DetectorRunners/Roothider/.theos/_/Applications/RoothiderRunner.app \
 		../DetectorRunners/BATJailbreakGuard/.theos/_/Applications/BATJailbreakGuardRunner.app \
 		../DetectorRunners/SafetyNet/.theos/_/Applications/SafetyNetRunner.app \
+		../DetectorRunners/DeviceSecurityKit/.theos/_/Applications/DeviceSecurityKitRunner.app \
 		../tools/dyldprobe/.theos/_/Applications/dyldprobe.app; do \
 		test -d "$$app" || exit 1; \
 		cp -R "$$app" "$(THEOS_STAGING_DIR)/Applications/"; \
