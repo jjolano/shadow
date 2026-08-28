@@ -147,6 +147,8 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
+			<key>id</key>
+			<string>DetectorPatchesGroup</string>
 			<key>label</key>
 			<string>DETECTOR_PATCHES</string>
 			<key>footerText</key>

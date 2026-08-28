@@ -18,5 +18,5 @@
 "PSEUDO_SANDBOX_STRICT_DESC" = "在允許清單之外強制失敗關閉。需要先啟用稽核——僅在共享區域驗證後啟用。";
 "PATH_REWRITE" = "重寫越獄路徑";
 "PATH_REWRITE_DESC" = "在系統呼叫和 libc 層面重寫呼叫端緩衝區中的越獄路徑，使檔案操作自然以 ENOENT 失敗。重寫後的字串對應用程式自身的日誌和介面可見。";
-"DETECTOR_PATCHES" = "定向偵測器覆寫";
-"DETECTOR_PATCHES_DESC" = "透過直接覆寫方法或 Shadow 的行為 Hook，消除受支援偵測程式庫的越獄探測。Objective-C 介接器需要啟用「裝置檢查」。預設關閉；僅為使用對應程式庫的應用程式開啟。freeRASP 選項會阻止 SDK 啟動，因此會抑制所有 freeRASP 回呼。";
+"DETECTOR_PATCHES" = "偵測 SDK 相容性";
+"DETECTOR_PATCHES_DESC" = "當通用 Hook 不足時，為支援的偵測 SDK 提供定向相容。支援預設開啟，但每個介接器僅在偵測到對應 SDK 時啟用。只有發生相容問題時才關閉。";
