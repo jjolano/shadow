@@ -1,20 +1,19 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 // Raw svc interception (the "Accepted Residual" from HOOK-FIX-PLAN.md:216):
-// inline `svc #0x80` syscalls never pass through libc wrappers, so the
+// inline `svc` syscalls never pass through libc wrappers, so the
 // syscall(2)/__syscall(2) hooks in syscall.x cannot see them. Real (non-
 // public) detectors emit their own svc sites in their own code and query
 // jailbreak paths directly.
 //
-// This file scans every loaded image's __TEXT for the two svc encodings
-// (0xD4001001 = svc #0x80, the iOS syscall convention; 0xD4000001 = svc #0,
-// the Linux convention — XNU ignores the immediate, so both trap) and
+// This file scans every loaded image's __TEXT for the ARM64 svc opcode
+// (the 16-bit immediate varies between emitters; XNU ignores it) and
 // redirects each site with a `bl` to a naked trampoline. The trampoline
 // applies the SAME path policy as the syscall(2) dispatch (RawSyscalls.def
 // categories + isCPathRestricted / shdw_at_path_denied) and, when denied,
 // either rewrites the caller's path buffer in place (natural-ENOENT rewrite,
 // see the helper below) or returns the synthetic raw-svc error the kernel
-// would have produced for a real ENOENT: x0 = -2 with the carry flag set
+// would have produced for a real ENOENT: x0 = 2 with the carry flag set
 // (the arm64 syscall convention; libc wrappers and detectors alike read
 // carry via cset/b.cs). Allowed calls execute the original svc and return
 // with the kernel's own register/flag state.
@@ -40,7 +39,7 @@
 // executable mappings are intentionally not patched: live scanning can
 // destabilize an app, so raw-svc coverage is limited to loaded images; (4)
 // arm64-only:
-// the rootful-legacy armv7 lane gets an empty installer (the svc #0x80
+// the rootful-legacy armv7 lane gets an empty installer (the ARM64 svc
 // convention and this file's encoding scan are arm64 — an armv7 port would
 // need the Thumb/ARM-mode encodings).
 //
@@ -176,10 +175,10 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
 }
 
 // --- Naked trampolines ------------------------------------------------------
-// One per svc immediate (the allow path must execute the SAME encoding the
-// site originally had). Save all caller-saved registers + x16 (syscall
+// XNU ignores svc's immediate, so one canonical trampoline handles every
+// encoding. Save all caller-saved registers + x16 (syscall
 // number) + lr, ask the helper, then either synthesize the ENOENT return
-// (x0 = -2, carry set — the kernel's error convention) or restore and
+// (x0 = ENOENT, carry set — Darwin's kernel error convention) or restore and
 // execute the original svc.
 #define SHADW_SVC_TRAMPOLINE(NAME, IMM) \
 __attribute__((naked, used, noinline)) static void NAME(void) { \
@@ -202,8 +201,8 @@ __attribute__((naked, used, noinline)) static void NAME(void) { \
         "ldr x4, [sp, #8]\n" \
         "bl _shdw_svc_should_deny\n" \
         "cbz x0, 1f\n" \
-        /* deny: x0 = -ENOENT, carry set (msr nzcv bit 29), keep x0 */ \
-        "mov x0, #-2\n" \
+        /* deny: x0 = ENOENT, carry set (msr nzcv bit 29), keep x0 */ \
+        "mov x0, #2\n" \
         "mov x1, #0x20000000\n" \
         "msr nzcv, x1\n" \
         "ldp x18, lr, [sp], #16\n" \
@@ -236,9 +235,15 @@ __attribute__((naked, used, noinline)) static void NAME(void) { \
 }
 
 SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_80, "0x80")
-SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_0, "0")
 
 // --- Scanner ----------------------------------------------------------------
+
+#define SHDW_SVC_OPCODE_MASK 0xFFE0001FU
+#define SHDW_SVC_OPCODE      0xD4000001U
+
+static inline BOOL shdw_svc_is_instruction(uint32_t insn) {
+    return (insn & SHDW_SVC_OPCODE_MASK) == SHDW_SVC_OPCODE;
+}
 
 // Images that must never be patched (see the file header: recursion safety
 // and trampoline self-protection).
@@ -253,6 +258,20 @@ static BOOL shdw_svc_skip_image(const char* path) {
 
     if(strncmp(path, "/usr/", 5) == 0) {
         return YES;
+    }
+
+    NSString* imagePath = [NSString stringWithUTF8String:path];
+    NSString* bundlePath = [NSBundle mainBundle].bundlePath;
+    if([imagePath isEqualToString:bundlePath] ||
+       [imagePath hasPrefix:[bundlePath stringByAppendingString:@"/"]]) {
+        return NO;
+    }
+
+    // dyld reports the canonical preboot path for rootless apps while
+    // NSBundle can retain /var/jb. Code inside procursus/Applications is
+    // still app-owned detector code, not a bootstrap library.
+    if(strstr(path, "/procursus/Applications/") != NULL) {
+        return NO;
     }
 
     // Rootless jailbreak root: /var/jb resolves to
@@ -270,7 +289,7 @@ static BOOL shdw_svc_skip_image(const char* path) {
     return NO;
 }
 
-// Redirects one image svc site to the matching trampoline. Idempotent: a
+// Redirects one image svc site to the canonical trampoline. Idempotent: a
 // patched site is a bl instruction, so a re-scan never matches it.
 static _Atomic BOOL shdw_svc_far_site_seen = NO;
 
@@ -278,15 +297,11 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* w
     (void)where;
     uintptr_t target = 0;
 
-    if(insn == 0xD4001001) {          // svc #0x80
-        target = (uintptr_t)shdw_svc_trampoline_80;
-    } else if(insn == 0xD4000001) {   // svc #0
-        target = (uintptr_t)shdw_svc_trampoline_0;
-    } else {
-        return;
-    }
+    if(!shdw_svc_is_instruction(insn)) return;
+    target = (uintptr_t)shdw_svc_trampoline_80;
 
-    int64_t delta = (int64_t)target - (int64_t)(site + 4);
+    // A64 B/BL immediates are relative to the branch instruction's address.
+    int64_t delta = (int64_t)target - (int64_t)site;
 
     if(delta < -0x8000000LL || delta > 0x7FFFFFCLL) {
         // Logging while every other thread is stopped can deadlock on a
@@ -314,7 +329,7 @@ static BOOL shdw_svc_range_has_site(uintptr_t addr, size_t size) {
     size_t nwords = size / 4;
 
     for(size_t w = 0; w < nwords; w++) {
-        if(words[w] == 0xD4001001 || words[w] == 0xD4000001) {
+        if(shdw_svc_is_instruction(words[w])) {
             return YES;
         }
     }
@@ -473,7 +488,7 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
         for(size_t w = 0; w < nwords; w++) {
             uint32_t insn = words[w];
 
-            if(insn == 0xD4001001 || insn == 0xD4000001) {
+            if(shdw_svc_is_instruction(insn)) {
                 shdw_svc_try_patch_site(addr + w * 4, insn, where);
             }
         }
@@ -579,7 +594,7 @@ void shdw_svc_patch_install(void) {
 
 #else   // !__arm64__
 
-// Rootful-legacy armv7 lane: no svc #0x80 interception (arm64-only
+// Rootful-legacy armv7 lane: no ARM64 svc interception (arm64-only
 // encoding scan; see the file header). The stub keeps syscall.x linkable.
 void shdw_svc_patch_install(void) {
 }
