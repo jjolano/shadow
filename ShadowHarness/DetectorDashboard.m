@@ -45,6 +45,7 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
             SHDWMakeSDK(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run"),
             SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run"),
             SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run"),
+            SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"master@rn", @"shadow-detector-jailmonkey://run"),
         ];
     });
     return sdks;
