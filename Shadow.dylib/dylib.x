@@ -30,9 +30,10 @@ extern char*** _NSGetArgv();
     // The verification apps are their own test subjects: they install to
     // /Applications (rooted) or /var/jb/Applications (rootless) — both
     // denied below — so without these exact exceptions they cannot be hooked.
+    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
     BOOL isVerificationApp = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]
         || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"]
-        || [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
+        || isDetectorRunner;
 
     if(!isVerificationApp && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
@@ -74,7 +75,8 @@ extern char*** _NSGetArgv();
         return;
     }
 
-    if(![app_settings[@"App_Enabled"] boolValue] && ![defaults boolForKey:@"Global_Enabled"]) {
+    if(!isDetectorRunner && ![app_settings[@"App_Enabled"] boolValue]
+       && ![defaults boolForKey:@"Global_Enabled"]) {
         return;
     }
 

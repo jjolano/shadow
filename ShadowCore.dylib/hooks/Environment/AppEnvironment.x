@@ -320,6 +320,44 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 %end
 %end
 
+%group shadowhook_LSApplicationWorkspaceCanOpenURL
+%hook LSApplicationWorkspace
+- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url error:(NSError **)error {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+        if(error) *error = nil;
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url includePrivateURLSchemes:(BOOL)includePrivateURLSchemes error:(NSError **)error {
+    if(isCallerExternal() && [_shadow isURLRestricted:url]) {
+        if(error) *error = nil;
+        return NO;
+    }
+
+    return %orig;
+}
+%end
+%end
+
+static BOOL shdw_ls_can_open_url_installed = NO;
+
+void shadowhook_LSApplicationWorkspaceCanOpenURL(SHDWHookSession* hooks) {
+    (void)hooks;
+
+    if(shdw_ls_can_open_url_installed) {
+        return;
+    }
+
+    Class workspace = objc_getClass("LSApplicationWorkspace");
+    if(workspace && class_getInstanceMethod(workspace, sel_registerName("isApplicationAvailableToOpenURL:error:"))) {
+        %init(shadowhook_LSApplicationWorkspaceCanOpenURL);
+        shdw_ls_can_open_url_installed = YES;
+    }
+}
+
 %group shadowhook_LSApplicationWorkspaceInstalledApplications
 %hook LSApplicationWorkspace
 - (NSArray<NSString *> *)installedApplications {
@@ -351,6 +389,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 
 void shadowhook_LSApplicationWorkspace(SHDWHookSession* hooks) {
     %init(shadowhook_LSApplicationWorkspace);
+    shadowhook_LSApplicationWorkspaceCanOpenURL(hooks);
 
     Class workspace = objc_getClass("LSApplicationWorkspace");
     if(workspace && class_getInstanceMethod(workspace, @selector(installedApplications))) {

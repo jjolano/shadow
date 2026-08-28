@@ -1273,7 +1273,8 @@ static int replaced_symlink(const char* path1, const char* path2) {
 
 static int (*original_link)(const char* path1, const char* path2);
 static int replaced_link(const char* path1, const char* path2) {
-    if(!isCallerExternal() || !([_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
+    if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(path2) ||
+       [_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
         return original_link(path1, path2);
     }
 
@@ -1283,7 +1284,8 @@ static int replaced_link(const char* path1, const char* path2) {
 
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
-    if(!isCallerExternal() || !([_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
+    if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(new) ||
+       [_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
         return original_rename(old, new);
     }
 
@@ -1328,6 +1330,11 @@ static int (*original_linkat)(int dirfd1, const char* path1, int dirfd2, const c
 static int replaced_linkat(int dirfd1, const char* path1, int dirfd2, const char* path2, int flags) {
     if(!isCallerExternal()) {
         return original_linkat(dirfd1, path1, dirfd2, path2, flags);
+    }
+
+    if(path2 && path2[0] == '/' && shdw_detector_c_write_path_denied(path2)) {
+        errno = ENOENT;
+        return -1;
     }
 
     // Both path arguments are resolved against their own dirfd.
@@ -1391,6 +1398,11 @@ static int (*original_renameat)(int fromfd, const char* from, int tofd, const ch
 static int replaced_renameat(int fromfd, const char* from, int tofd, const char* to) {
     if(!isCallerExternal()) {
         return original_renameat(fromfd, from, tofd, to);
+    }
+
+    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+        errno = ENOENT;
+        return -1;
     }
 
     // Both path arguments are resolved against their own dirfd.
@@ -1696,8 +1708,9 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
         }
 
         // IOSSecuritySuite terminates during the full filesystem installer
-        // on iOS 15. Its adapter uses only the path-query hooks it exercises,
-        // and keeps them off the brittle inline lane.
+        // on iOS 15. Its adapter uses only the path-query hooks it exercises
+        // and keeps every public libc prologue untouched; its Foundation
+        // symlink path is covered by the narrow NSFileManager group.
         if(group == SHADW_HOOK_GROUP_IOS_SECURITY_SUITE) {
             [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
                     withReplacement:d->replacement

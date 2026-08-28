@@ -246,7 +246,8 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && (shadowhook_FreeRASP_shouldHideExistencePath(path) ||
+       [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         return NO;
     }
 
@@ -254,7 +255,8 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && (shadowhook_FreeRASP_shouldHideExistencePath(path) ||
+       [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         // Out-param leak: the directory bit must not survive the hiding.
         if(isDirectory) {
             *isDirectory = NO;
@@ -486,35 +488,6 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     }
 
     return [[linkPath stringByDeletingLastPathComponent] stringByAppendingPathComponent:destPath];
-}
-
-- (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
-        if(error) {
-            *error = [Shadow fileNoSuchFileErrorForPath:path];
-        }
-        
-        return nil;
-    }
-
-    NSString* result = %orig;
-
-    // Both-sides validation: the link is allowed but its destination may
-    // point into a restricted tree. Error names the (caller-supplied) link
-    // path, never the resolved destination — that would leak it.
-    if(result && isCallerExternal()) {
-        NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
-
-        if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
-            if(error) {
-                *error = [Shadow fileNoSuchFileErrorForPath:path];
-            }
-
-            return nil;
-        }
-    }
-
-    return result;
 }
 
 - (NSArray<NSString *> *)componentsToDisplayForPath:(NSString *)path {
@@ -1106,6 +1079,48 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 %end
 %end
 
+%group shadowhook_NSFileManagerSymbolicLinks
+%hook NSFileManager
+- (NSString *)destinationOfSymbolicLinkAtPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:path];
+        }
+
+        return nil;
+    }
+
+    NSString* result = %orig;
+
+    // Both-sides validation: the link is allowed but its destination may
+    // point into a restricted tree. Error names the caller-supplied link.
+    if(result && isCallerExternal()) {
+        NSString* resolvedDest = _shdw_resolveLinkDestination(path, result);
+
+        if(resolvedDest && [_shadow isPathRestricted:resolvedDest options:_shdw_optionsForAbsolute(self, [resolvedDest isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileNoSuchFileErrorForPath:path];
+            }
+
+            return nil;
+        }
+    }
+
+    return result;
+}
+%end
+%end
+
+void shadowhook_NSFileManagerSymbolicLinks(SHDWHookSession* hooks) {
+    static BOOL installed = NO;
+    (void)hooks;
+
+    if(!installed) {
+        %init(shadowhook_NSFileManagerSymbolicLinks);
+        installed = YES;
+    }
+}
+
 %group shadowhook_NSFileManagerDeprecatedPaths
 %hook NSFileManager
 - (BOOL)copyPath:(NSString *)src toPath:(NSString *)dest handler:(id)handler {
@@ -1145,6 +1160,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 void shadowhook_NSFileManager(SHDWHookSession* hooks) {
     %init(shadowhook_NSFileManager);
+    shadowhook_NSFileManagerSymbolicLinks(hooks);
 
     Class fileManager = [NSFileManager class];
     if(class_getInstanceMethod(fileManager, @selector(copyPath:toPath:handler:))

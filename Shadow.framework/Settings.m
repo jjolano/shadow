@@ -55,8 +55,9 @@
     }
 
     BOOL useAppSettings = [[app_settings objectForKey:@"App_Enabled"] boolValue];
+    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
 
-    if(useAppSettings || [userDefaults boolForKey:@"Global_Enabled"]) {
+    if(useAppSettings || [userDefaults boolForKey:@"Global_Enabled"] || isDetectorRunner) {
         // Per-app overrides win; a key the app does not set inherits the
         // global value (matches the settings UI).
         [result setObject:@(YES) forKey:@"App_Enabled"];
@@ -74,6 +75,14 @@
             if(value) {
                 [result setObject:value forKey:key];
             }
+        }
+
+        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.iossecuritysuite"]) {
+            result[SHDWDetectorPatchIOSSecuritySuiteID] = @YES;
+        } else if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.dtt"]) {
+            result[SHDWDetectorPatchDTTID] = @YES;
+        } else if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.freerasp"]) {
+            result[SHDWDetectorPatchFreeRASPID] = @YES;
         }
     }
 

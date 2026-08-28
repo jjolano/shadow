@@ -24,6 +24,7 @@
 #define JBIsRootless() YES
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
+    if (strcmp(path, "/private/preboot") == 0) return NO;
     if (strncmp(path, "/var/jb", 7) == 0) return YES;
     if (strncmp(path, "/cores/", 7) == 0) return YES;
     if (strncmp(path, "/private/preboot", 16) == 0) return YES;
@@ -66,6 +67,7 @@ static inline NSString* shdw_jbroot_prefix(void) {
 #define JBIsRootless() shdw_harness_rootless()
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
+    if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
     if (strncmp(path, "/var/jb", 7) == 0) return YES;
     if (strncmp(path, "/cores/", 7) == 0) return YES;
     if (strncmp(path, "/private/preboot", 16) == 0) return YES;
