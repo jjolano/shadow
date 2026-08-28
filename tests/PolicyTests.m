@@ -1,6 +1,7 @@
 // Host tests for the production environment policy.
 
 #import <Foundation/Foundation.h>
+#import <Shadow/JBPath.h>
 #import "../ShadowCore.dylib/policy/EnvironmentPolicy.h"
 #import "ranges.h"
 #import <string.h>
@@ -45,6 +46,9 @@ static void testHiddenNames(void) {
 
 static void testPathSanitizer(void) {
     printf("[tests] env policy: PATH sanitizer\n");
+
+    CHECK(!shdw_is_restricted_root("/private/preboot"), "stock preboot root allowed");
+    CHECK(shdw_is_restricted_root("/private/preboot/x"), "preboot descendant restricted");
 
     char* p = shdw_env_sanitized_path("/usr/bin:/var/jb/bin:/private/preboot/x:/preboot/y:/bin");
     CHECK(strcmp(p, "/usr/bin:/bin") == 0, "all jailbreak components dropped, order preserved");
