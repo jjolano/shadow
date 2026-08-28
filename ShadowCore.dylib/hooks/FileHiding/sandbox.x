@@ -595,11 +595,12 @@ static int replaced_execve(const char* path, char* const argv[], char* const env
 
 static int (*original_posix_spawn)(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
 static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
-    if(isCallerExternal() && path && [_shadow isCPathRestricted:path]) {
+    if(isCallerExternal()) {
+        if(pid) *pid = -1;
         // posix_spawn(2) reports failure as a POSITIVE errno-number return
-        // value and does not set errno — returning -1 would violate the
-        // contract. ENOENT matches the tweak's hidden-path denial style.
-        return ENOENT;
+        // value and does not set errno. Stock app sandboxes deny process
+        // creation before execution; preserve ENOENT for hidden paths.
+        return path && [_shadow isCPathRestricted:path] ? ENOENT : EPERM;
     }
 
     return original_posix_spawn(pid, path, file_actions, attrp, argv, envp);
@@ -607,8 +608,9 @@ static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_
 
 static int (*original_posix_spawnp)(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]);
 static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
-    if(isCallerExternal() && file && [_shadow isCPathRestricted:file]) {
-        return ENOENT;
+    if(isCallerExternal()) {
+        if(pid) *pid = -1;
+        return file && [_shadow isCPathRestricted:file] ? ENOENT : EPERM;
     }
 
     return original_posix_spawnp(pid, file, file_actions, attrp, argv, envp);
@@ -803,7 +805,8 @@ static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t a
             const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
             if(sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
                 uint16_t port = ntohs(sin->sin_port);
-                if(port == 27042 || port == 4444 || port == 22) {
+                if(port == 27042 || port == 4444 || port == 2222 ||
+                   port == 1337 || port == 44 || port == 22) {
                     shdw_detector_detected("connect");
                     errno = ECONNREFUSED;
                     return -1;
@@ -813,7 +816,8 @@ static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t a
             const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
             if(IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) {
                 uint16_t port = ntohs(sin6->sin6_port);
-                if(port == 27042 || port == 4444 || port == 22) {
+                if(port == 27042 || port == 4444 || port == 2222 ||
+                   port == 1337 || port == 44 || port == 22) {
                     shdw_detector_detected("connect");
                     errno = ECONNREFUSED;
                     return -1;

@@ -4,9 +4,7 @@
 #import <string.h>
 #import <stdlib.h>
 
-// freeRASP rootless probe (.jbroot write): the classifier lives in
-// policy/PathPolicy.m (shdw_is_jbroot_write_probe), shared with the open
-// family hooks below.
+// Detector-gated stock sandbox write policy shared by the open family.
 
 int (*original_open)(const char *pathname, int oflag, ...);
 int replaced_open(const char *pathname, int oflag, ...) {
@@ -27,7 +25,7 @@ int replaced_open(const char *pathname, int oflag, ...) {
         va_end(args);
     }
 
-    if(ext && shdw_is_jbroot_write_probe(pathname, oflag)) {
+    if(ext && (oflag & O_CREAT) && shdw_detector_c_write_path_denied(pathname)) {
         // Stock fails with ENOENT since .jbroot doesn't exist there; must match
         // exactly so the probe can't distinguish us via a different errno.
         errno = ENOENT;
@@ -77,7 +75,7 @@ int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         return original_openat(dirfd, pathname, oflag);
     }
 
-    if(shdw_is_jbroot_write_probe(pathname, oflag)) {
+    if((oflag & O_CREAT) && shdw_detector_c_write_path_denied(pathname)) {
         // Stock fails with ENOENT since .jbroot doesn't exist there; must match
         // exactly so the probe can't distinguish us via a different errno.
         errno = ENOENT;
@@ -245,7 +243,7 @@ int replaced_open_dprotected_np(const char* path, int flags, int class, int dpfl
         va_end(args);
     }
 
-    if(ext && shdw_is_jbroot_write_probe(path, flags)) {
+    if(ext && (flags & O_CREAT) && shdw_detector_c_write_path_denied(path)) {
         errno = ENOENT;
         return -1;
     }
@@ -284,7 +282,7 @@ int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int cl
         return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
     }
 
-    if(shdw_is_jbroot_write_probe(path, flags)) {
+    if((flags & O_CREAT) && shdw_detector_c_write_path_denied(path)) {
         errno = ENOENT;
         return -1;
     }
@@ -322,7 +320,7 @@ int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open
         return original_openat_authenticated_np(dirfd, path, auth, flags);
     }
 
-    if(shdw_is_jbroot_write_probe(path, flags)) {
+    if((flags & O_CREAT) && shdw_detector_c_write_path_denied(path)) {
         errno = ENOENT;
         return -1;
     }
