@@ -1,10 +1,7 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
-
-# Theos may have an older HookKit installed globally.  Put Shadow's vendored
-# framework first so the HK3 headers and linked binary stay in lockstep.
-_THEOS_INTERNAL_SEARCHPATHS := $(abspath ../vendor) $(_THEOS_INTERNAL_SEARCHPATHS)
+include ../hookkit.mk
 
 # The payload is a plain library, not a DynamicLibraries tweak: it must load
 # only through the stub's gated dlopen, never through the runtime's own
@@ -17,14 +14,14 @@ ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
-ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
+ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers $(SHADOW_HOOKKIT_CFLAGS)
 ifneq ($(SHADOW_LANE),rootful-legacy)
 ShadowCore_CFLAGS += -DSHADOW_CANONICAL_HOOKKIT=1
 endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowCore_CFLAGS += -DSHADOW_ROOTHIDE
 endif
-ShadowCore_LDFLAGS = -Wl,-x -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+ShadowCore_LDFLAGS = -Wl,-x $(SHADOW_HOOKKIT_LDFLAGS) -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 # Xcode 16's new linker refuses a shared-cache-eligible dylib linking an
 # ineligible one (ShadowCore -> @rpath/Shadow.framework/Shadow) on the
 # rootful-modern lane; tweak dylibs are not shared-cache candidates anyway.

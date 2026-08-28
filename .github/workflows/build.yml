@@ -12,6 +12,10 @@ concurrency:
 
 env:
   THEOS: /opt/theos
+  # HookKit is consumed from the Theos install, not vendored. CI provisions the
+  # pinned commit per lane (scripts/install-theos.sh <lane> in the HookKit repo)
+  # before building Shadow; local devs manage their own Theos HookKit.
+  HOOKKIT: 879912445c0a2a88e187bc4fc34e47b721bee78b
 
 jobs:
   legacy:
@@ -44,6 +48,10 @@ jobs:
           echo '1c998a5ee7eb8c29e39f0d8c83add9cad1a954342ca0d86204d1b4fe08a921b9  '"$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" | sha256sum -c -
           sudo tar -xJf "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" -C "$THEOS/sdks"
 
+          # install-hookkit-theos.sh writes the HookKit framework into $THEOS/lib;
+          # the tree was cloned with sudo, so hand it to the runner user.
+          sudo chown -R "$(id -un)" "$THEOS"
+
       - name: Build and verify
         env:
           OLDABI_TOOLCHAIN: ${{ runner.temp }}/oldabi/toolchain/linux/iphone
@@ -57,6 +65,7 @@ jobs:
               "$OLDABI_TOOLCHAIN/bin/otool" "$OLDABI_TOOLCHAIN/bin/nm" \
               "$RUNNER_TEMP/machotools/"
           export PATH="$RUNNER_TEMP/machotools:$PATH"
+          .github/scripts/install-hookkit-theos.sh rootful-legacy
           .github/scripts/build-deps.sh rootful-legacy
           ./build.sh rootful-legacy
 
@@ -88,8 +97,13 @@ jobs:
           sudo mkdir -p "$THEOS/sdks"
           sudo tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$THEOS/sdks"
 
+          # install-hookkit-theos.sh writes the HookKit framework into $THEOS/lib;
+          # the tree was cloned with sudo, so hand it to the runner user.
+          sudo chown -R "$(id -un)" "$THEOS"
+
       - name: Build and verify
         run: |
+          .github/scripts/install-hookkit-theos.sh "${{ matrix.flavor }}"
           .github/scripts/build-deps.sh "${{ matrix.flavor }}"
           ./build.sh "${{ matrix.flavor }}"
 
