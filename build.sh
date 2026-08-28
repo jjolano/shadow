@@ -33,18 +33,25 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
         *) echo "unknown dependency profile: $profile" >&2; return 2 ;;
     esac
 
-    local hookkit="$PB/hookkit/$source_profile/HookKit.framework"
+    # HookKit is resolved from the Theos install (HookKit repo: make
+    # install-theos), not staged here — see hookkit.mk. AltList and libSandy are
+    # still built from source into prebuilt and staged into the lane sandbox.
     local altlist="$PB/altlist/$source_profile/AltList.framework"
     local sandy="$PB/sandy/$source_profile/libsandy.dylib"
-    [ -f "$hookkit/HookKit" ] && [ -f "$altlist/AltList" ] && [ -f "$sandy" ] || {
+    [ -f "$altlist/AltList" ] && [ -f "$sandy" ] || {
         echo "missing $source_profile dependencies; run .github/scripts/build-deps.sh $source_profile" >&2
         return 1
     }
+    local hookkit_theos="$THEOS/lib/HookKit.framework"
+    [ "$profile" = rootful-legacy ] && hookkit_theos="$THEOS/lib/iphone/rootful-legacy/HookKit.framework"
+    [ -n "$scheme" ] && hookkit_theos="$THEOS/lib/iphone/$scheme/HookKit.framework"
+    [ -f "$hookkit_theos/HookKit" ] || {
+        echo "missing Theos HookKit for $profile ($hookkit_theos); run 'make install-theos' in the HookKit repo" >&2
+        return 1
+    }
 
-    rm -rf vendor/HookKit.framework "$LIBRARY_PATH" "$INCLUDE_PATH"
-    mkdir -p vendor "$LIBRARY_PATH" "$INCLUDE_PATH"
-    cp -R "$hookkit" vendor/HookKit.framework
-    cp -R "$hookkit" "$LIBRARY_PATH/HookKit.framework"
+    rm -rf "$LIBRARY_PATH" "$INCLUDE_PATH"
+    mkdir -p "$LIBRARY_PATH" "$INCLUDE_PATH"
     cp -R "$altlist" "$LIBRARY_PATH/AltList.framework"
     cp "$sandy" "$LIBRARY_PATH/libsandy.dylib"
     if [ -f "$PB/sandy/$source_profile/libSandy.h" ]; then
@@ -67,7 +74,6 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
 
     if [ -n "$scheme" ]; then
         mkdir -p "$LIBRARY_PATH/iphone/$scheme"
-        cp -R "$hookkit" "$LIBRARY_PATH/iphone/$scheme/HookKit.framework"
         cp -R "$altlist" "$LIBRARY_PATH/iphone/$scheme/AltList.framework"
         cp "$sandy" "$LIBRARY_PATH/iphone/$scheme/libsandy.dylib"
     fi

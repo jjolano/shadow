@@ -1,22 +1,23 @@
 INSTALL_TARGET_PROCESSES = Preferences
 
 include $(THEOS)/makefiles/common.mk
+include ../hookkit.mk
 
 BUNDLE_NAME = ShadowSettings
 
 ShadowSettings_FILES = $(wildcard *.m)
 ShadowSettings_FRAMEWORKS = Foundation
-ShadowSettings_EXTRA_FRAMEWORKS = Shadow AltList MobileCoreServices
+ShadowSettings_EXTRA_FRAMEWORKS = Shadow AltList HookKit MobileCoreServices
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
-ShadowSettings_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers -I../vendor/HookKit.framework/Headers
+ShadowSettings_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers $(SHADOW_HOOKKIT_CFLAGS)
 ifeq ($(SHADOW_LANE),rootful-legacy)
 ShadowSettings_CFLAGS += -Wno-unguarded-availability-new
 endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowSettings_CFLAGS += -DSHADOW_ROOTHIDE
 endif
-ShadowSettings_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+ShadowSettings_LDFLAGS = $(SHADOW_HOOKKIT_LDFLAGS) -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
 ShadowSettings_LDFLAGS += -F../ -F../vendor
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowSettings_LDFLAGS += -lroothide
