@@ -70,6 +70,24 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
+			<string>DETECTOR_PATCHES_PANE_DESC</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>SHDWDangerousListController</string>
+			<key>detectorPane</key>
+			<true/>
+			<key>isController</key>
+			<true/>
+			<key>label</key>
+			<string>DETECTOR_PATCHES</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
 			<string>TROUBLESHOOTING_DESC</string>
 		</dict>
 		<dict>
