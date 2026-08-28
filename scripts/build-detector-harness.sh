@@ -21,6 +21,7 @@ make -C "$ROOT/DetectorRunners/FreeRASP" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/Roothider" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/BATJailbreakGuard" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/SafetyNet" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/DetectorRunners/DeviceSecurityKit" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/tools/dyldprobe" stage THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
