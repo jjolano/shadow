@@ -2,14 +2,19 @@
 #define hook_coordinator_h
 
 #import <Foundation/Foundation.h>
-#import <Shadow/HookConfiguration.h>
+#import <Shadow/SHDWPlugin.h>
 #import "SHDWHookSession.h"
 
+// Plugin installer — renamed from SHDWHookInstaller (alias kept)
 typedef struct {
-    const char* unitID;
+    const char* pluginID;
     void (*install)(SHDWHookSession* hooks);
     void (*verify)(void);
-} SHDWHookInstaller;
+} SHDWPluginInstaller;
+typedef SHDWPluginInstaller SHDWHookInstaller;
+#ifndef pluginID
+// unitID alias handled in SHDWPlugin.h; keep installer field consistent
+#endif
 
 @interface SHDWBackendSet : NSObject
 @property (nonatomic, readonly) SHDWHookSession* hooks;
@@ -29,6 +34,7 @@ typedef struct {
 @property (nonatomic, readonly, getter=isEscalated) BOOL escalated;
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event;
+- (void)prearmDetector;
 - (void)escalateWithReason:(NSString*)reason;
 
 @end

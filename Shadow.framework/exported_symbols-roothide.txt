@@ -7,7 +7,9 @@ _OBJC_METACLASS_$_SystemRulesGenerator
 _shdw_ruleset_generation
 _shdwInternalBusy
 _SHDWHookPlan
+_SHDWPluginPlan
 _SHDWInstallUnits
+_SHDWPluginRegistry
 _SHDWDefaultHookSettings
 _SHDWPresetStandard
 _SHDWPresetMaximum

@@ -271,8 +271,8 @@ static inline NSDictionary* shdw_restriction_write_options(void) {
     return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 }
 
-// Set by dylib.x when a known detection library (IOSSecuritySuite/freeRASP)
-// is loaded; read by dyld.x to escalate memory-level hiding.
+// Set by exact detector-adapter matches or behavioral tripwires; read by the
+// hook layer to escalate detector-gated coverage.
 extern BOOL shdw_detector_present;
 
 // Emergency kill-switch for the dyld_all_image_infos memory-hiding patch
@@ -289,6 +289,10 @@ extern BOOL shdw_memory_hiding_enabled;
 // loads post-spawn. Idempotent; installs the detector-gated hook groups the
 // ctor skipped. Safe to call from hooked functions and the image watcher.
 extern void shdw_detector_detected(const char* reason);
+
+// Resolve enabled detector adapters against exact pre-hook SDK fingerprints.
+// The UI switches are support kill-switches; an absent SDK stays untouched.
+NSDictionary* shadowhook_DetectorAdapters_resolvePreferences(NSDictionary* prefs);
 
 // Post-install verification: a hook that failed to install (backend error,
 // symbol unresolvable) leaves its original_* NULL and the restriction
@@ -311,6 +315,12 @@ static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t*
 
 extern void shadowhook_DeviceCheck(SHDWHookSession* hooks);
 extern void shadowhook_DeviceCheck_configure(NSDictionary* prefs);
+extern void shadowhook_IOSSecuritySuite(SHDWHookSession* hooks);
+extern void shadowhook_IOSSecuritySuite_configure(NSDictionary* prefs);
+extern void shadowhook_FreeRASP_preparePreferences(NSMutableDictionary* prefs);
+extern void shadowhook_FreeRASP(SHDWHookSession* hooks);
+extern BOOL shadowhook_FreeRASP_shouldHideExistencePath(NSString* path);
+extern void shadowhook_ImportSlotProtection(SHDWHookSession* hooks);
 extern void shadowhook_dyld(SHDWHookSession* hooks);
 extern void shadowhook_libc(SHDWHookSession* hooks);
 extern void shadowhook_mach(SHDWHookSession* hooks);
@@ -320,6 +330,7 @@ extern void shadowhook_NSData(SHDWHookSession* hooks);
 extern void shadowhook_NSDictionary(SHDWHookSession* hooks);
 extern void shadowhook_NSFileHandle(SHDWHookSession* hooks);
 extern void shadowhook_NSFileManager(SHDWHookSession* hooks);
+extern void shadowhook_NSFileManagerSymbolicLinks(SHDWHookSession* hooks);
 extern void shadowhook_NSFileVersion(SHDWHookSession* hooks);
 extern void shadowhook_NSFileWrapper(SHDWHookSession* hooks);
 extern void shadowhook_NSProcessInfo(SHDWHookSession* hooks);
@@ -327,6 +338,7 @@ extern void shadowhook_NSString(SHDWHookSession* hooks);
 extern void shadowhook_NSURL(SHDWHookSession* hooks);
 extern void shadowhook_objc(SHDWHookSession* hooks);
 extern void shadowhook_objc_methodimpl(SHDWHookSession* hooks);
+extern void shadowhook_objc_methodimpl_detector(SHDWHookSession* hooks);
 extern void shadowhook_sandbox(SHDWHookSession* hooks);
 extern void shadowhook_syscall(SHDWHookSession* hooks);
 
@@ -507,6 +519,7 @@ extern BOOL shdw_objc_image_path_is_hidden(const char* path);
 extern BOOL shdw_objc_class_is_hidden(Class cls);
 extern IMP (*original_method_getImplementation)(Method m);
 extern void shadowhook_LSApplicationWorkspace(SHDWHookSession* hooks);
+extern void shadowhook_LSApplicationWorkspaceCanOpenURL(SHDWHookSession* hooks);
 extern void shadowhook_NSTask(SHDWHookSession* hooks);
 extern void shadowhook_NSThread(SHDWHookSession* hooks);
 extern void shadowhook_NSUserDefaults(SHDWHookSession* hooks);

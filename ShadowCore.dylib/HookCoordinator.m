@@ -11,10 +11,12 @@
 #import <string.h>
 #import <sys/stat.h>
 
-// Installed-state bitset, indexed by unit index in the SHDWInstallUnits()
-// table. The installer table's row order must match the metadata table's
-// order (SHDWHookInstaller carries unitID precisely so the coordinator can
-// cross-check and, if they ever disagree, fall back to a per-ID lookup).
+// Installed-state bitset, indexed by plugin index in SHDWPluginRegistry()
+// (renamed from SHDWInstallUnits). The installer table's row order should
+// match the metadata table's order for the hook plugins (SHDWPluginInstaller
+// carries pluginID/unitID precisely so the coordinator can cross-check and,
+// if they ever disagree, fall back to a per-ID lookup). Policy plugins have
+// no installer (they are evaluated via RestrictionEngine).
 #define SHDW_MAX_UNITS 64
 
 static char kSHDWHookCoordinatorQueueKey;
@@ -90,7 +92,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 @end
 
 @interface SHDWHookCoordinator () {
-    SHDWHookInstaller _installers[SHDW_MAX_UNITS];
+    SHDWPluginInstaller _installers[SHDW_MAX_UNITS];
     NSUInteger _installerCount;
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
@@ -113,7 +115,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 
 @implementation SHDWHookCoordinator
 
-- (instancetype)initWithInstallerTable:(const SHDWHookInstaller*)installers
+- (instancetype)initWithInstallerTable:(const SHDWPluginInstaller*)installers
                                  count:(NSUInteger)count
                                  prefs:(NSDictionary<NSString*, id>*)prefs {
     self = [super init];
@@ -132,6 +134,13 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     _lifecycleQueue = dispatch_queue_create("com.shadow.hookcoordinator.lifecycle", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_set_specific(_lifecycleQueue, &kSHDWHookCoordinatorQueueKey, (__bridge void*)self, NULL);
 
+    // HK_Library troubleshooting override: first try this process's
+    // function/memory hooks on one backend engine. "auto" (the default)
+    // leaves routing alone; a clean override refusal retries automatic routing.
+    id hookLibrary = _prefs[SHDWHookLibraryID];
+    SHDWSetProcessBackendOverride([hookLibrary isKindOfClass:[NSString class]]
+        ? [(NSString*)hookLibrary UTF8String] : NULL);
+
     SHDWBackendSet* set = [SHDWBackendSet new];
     set.hooks = [SHDWHookSession new];
     // HK3 reports each hook request individually. These bits therefore mean
@@ -149,17 +158,18 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 
 - (NSArray<NSString*>*)installedUnitIDs {
     NSUInteger count = 0;
-    const SHDWInstallUnit* units = SHDWInstallUnits(&count);
+    const SHDWPlugin* plugins = SHDWPluginRegistry(&count);
     NSMutableArray<NSString*>* inventory = [NSMutableArray new];
 
     for(NSUInteger i = 0; i < count && i < SHDW_MAX_UNITS; i++) {
         if((_installedBits >> i) & 1ULL) {
-            [inventory addObject:[NSString stringWithUTF8String:units[i].unitID]];
+            [inventory addObject:[NSString stringWithUTF8String:plugins[i].unitID]];
         }
     }
 
     return [inventory copy];
 }
+- (NSArray<NSString*>*)installedPluginIDs { return [self installedUnitIDs]; }
 
 - (void)recordActivationInventoryForEvent:(SHDWLifecycleEvent)event {
     NSArray<NSString*>* inventory = [self installedUnitIDs];
@@ -290,25 +300,29 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 
 - (NSUInteger)unitIndexForID:(NSString*)unitID {
     NSUInteger count = 0;
-    const SHDWInstallUnit* units = SHDWInstallUnits(&count);
+    const SHDWPlugin* plugins = SHDWPluginRegistry(&count);
 
     for(NSUInteger i = 0; i < count; i++) {
-        if([[NSString stringWithUTF8String:units[i].unitID] isEqualToString:unitID]) {
+        if([[NSString stringWithUTF8String:plugins[i].unitID] isEqualToString:unitID]) {
             return i;
         }
     }
 
     return NSNotFound;
 }
+- (NSUInteger)pluginIndexForID:(NSString*)pluginID { return [self unitIndexForID:pluginID]; }
 
-- (const SHDWHookInstaller*)installerForUnitID:(NSString*)unitID {
+- (const SHDWPluginInstaller*)installerForUnitID:(NSString*)unitID {
     for(NSUInteger i = 0; i < _installerCount; i++) {
         if(strcmp(_installers[i].unitID, unitID.UTF8String) == 0) {
-            return &_installers[i];
+            return (const SHDWPluginInstaller*)&_installers[i];
         }
     }
 
     return NULL;
+}
+- (const SHDWPluginInstaller*)installerForPluginID:(NSString*)pluginID {
+    return [self installerForUnitID:pluginID];
 }
 
 #pragma mark - Event install
@@ -346,7 +360,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     // Idempotency is handled by _installedBits: a unit already installed by an
     // earlier event is skipped, so a re-entrant call from a detector trip
     // during an install is a no-op for already-installed units.
-    NSArray<NSString*>* plan = SHDWHookPlan(self.prefs, self.backends.capabilities, event);
+    NSArray<NSString*>* plan = SHDWPluginPlan(self.prefs, self.backends.capabilities, event);
 
     if(!plan.count) {
         [self recordActivationInventoryForEvent:event];
@@ -368,17 +382,23 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
             continue;
         }
 
-        NSUInteger unitCount = 0;
-        const SHDWInstallUnit* units = SHDWInstallUnits(&unitCount);
-        const SHDWInstallUnit* unit = index < unitCount ? &units[index] : NULL;
-        const SHDWHookInstaller* installer = [self installerForUnitID:unitID];
+        NSUInteger pluginCount = 0;
+        const SHDWPlugin* plugins = SHDWPluginRegistry(&pluginCount);
+        const SHDWPlugin* plugin = index < pluginCount ? &plugins[index] : NULL;
+        const SHDWPluginInstaller* installer = [self installerForUnitID:unitID];
 
         if(!installer) {
+            // Policy plugins have no installer — they are evaluated via RestrictionEngine
+            if(plugin && strncmp(plugin->unitID, "Policy_", 7) == 0) {
+                _installedBits |= (1ULL << index);
+                localInstalled++;
+                continue;
+            }
             NSLog(@"[Shadow][coordinator] no installer for unit %@", unitID);
             continue;
         }
 
-        NSLog(@"[Shadow][coordinator] + %s", unit->unitID);
+        NSLog(@"[Shadow][coordinator] + %s", plugin->unitID);
 
         SHDWHookSession* previous = SHDWHookSessionSetCurrent(self.backends.hooks);
         @try {
@@ -407,6 +427,17 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     dispatch_async(dispatch_get_main_queue(), ^{
         [self installEventSync:SHDWEventDetectorEscalation];
     });
+}
+
+- (void)prearmDetector {
+    if(__atomic_exchange_n(&_escalated, YES, __ATOMIC_ACQ_REL)) {
+        return;
+    }
+
+    // Explicit detector adapters are known during construction, before any
+    // detector code can be on the stack. Install Tier 2 now; the asynchronous
+    // path remains for behavioral discoveries made inside intercepted calls.
+    [self installEvent:SHDWEventDetectorEscalation];
 }
 
 @end
