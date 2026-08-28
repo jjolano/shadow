@@ -2,6 +2,9 @@
 "UPDATES_HDR" = "التحديثات";
 "INSTALLED_VERSION" = "الإصدار المثبت";
 "LATEST_VERSION" = "أحدث إصدار";
+"UPDATE_STATUS" = "الحالة";
+"UP_TO_DATE" = "محدّث";
+"UPDATE_AVAILABLE" = "يتوفر تحديث";
 "CREDITS_HDR" = "الاعتمادات";
 "DEVELOPER" = "المطور";
 "VISIT_GITHUB" = "زيارة Shadow على GitHub";

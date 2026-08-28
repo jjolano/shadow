@@ -45,7 +45,8 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetect
        PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
        ../ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
-       CoordinatorTests.m
+       CoordinatorTests.m \
+       VersionCompareTests.m
 
 harness: $(SRCS) Makefile
 	$(CC) $(CFLAGS) $(INCS) $(SRCS) -framework Foundation -o harness
