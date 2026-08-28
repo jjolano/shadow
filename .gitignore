@@ -10,6 +10,9 @@ tests/*.gcno
 tests/*.gcda
 tests/*.gcov
 artifacts/
+# Built framework staged by build.sh stage_deps(); theos links against it
+# via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
+vendor/HookKit.framework/
 .detector-deps/
 core
 core.*
