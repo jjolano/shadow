@@ -51,6 +51,7 @@ int shdw_afuzz_run(NSUInteger variantsPerSeed, unsigned seed);
 int RunRestrictionTests(void);
 int RunPolicyTests(void);
 int RunCoordinatorTests(void);
+int RunVersionCompareTests(void);
 
 static BOOL gRootless = NO;
 static BOOL gDetect = NO;
@@ -1516,6 +1517,7 @@ int main(int argc, const char** argv) {
         gFail += RunRestrictionTests();
         gFail += RunPolicyTests();
         gFail += RunCoordinatorTests();
+        gFail += RunVersionCompareTests();
 
         if(!gRootless) {
             testReload();

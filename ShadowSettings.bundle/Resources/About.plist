@@ -21,10 +21,22 @@
 		<dict>
 			<key>cell</key>
 			<string>PSTitleValueCell</string>
+			<key>id</key>
+			<string>LatestVersion</string>
 			<key>label</key>
 			<string>LATEST_VERSION</string>
 			<key>get</key>
 			<string>aboutLatestVersion:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSTitleValueCell</string>
+			<key>id</key>
+			<string>UpdateStatus</string>
+			<key>label</key>
+			<string>UPDATE_STATUS</string>
+			<key>get</key>
+			<string>aboutUpdateStatus:</string>
 		</dict>
 		<dict>
 			<key>cell</key>

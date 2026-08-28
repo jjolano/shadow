@@ -2,6 +2,9 @@
 "UPDATES_HDR" = "Updates";
 "INSTALLED_VERSION" = "Installed Version";
 "LATEST_VERSION" = "Latest Version";
+"UPDATE_STATUS" = "Status";
+"UP_TO_DATE" = "Up to date";
+"UPDATE_AVAILABLE" = "Update available";
 "CREDITS_HDR" = "Credits";
 "DEVELOPER" = "Developer";
 "VISIT_GITHUB" = "Visit Shadow on GitHub";

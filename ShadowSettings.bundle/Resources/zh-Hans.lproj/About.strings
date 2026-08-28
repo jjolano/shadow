@@ -2,6 +2,9 @@
 "UPDATES_HDR" = "更新";
 "INSTALLED_VERSION" = "已安装版本";
 "LATEST_VERSION" = "最新版本";
+"UPDATE_STATUS" = "状态";
+"UP_TO_DATE" = "已是最新版本";
+"UPDATE_AVAILABLE" = "有可用更新";
 "CREDITS_HDR" = "致谢";
 "DEVELOPER" = "开发者";
 "VISIT_GITHUB" = "在GitHub上查看Shadow";

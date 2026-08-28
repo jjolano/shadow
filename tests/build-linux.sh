@@ -32,6 +32,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
   tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
   Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
+  tests/VersionCompareTests.m \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \
   $BASE_LIBS -o tests/harness
 
