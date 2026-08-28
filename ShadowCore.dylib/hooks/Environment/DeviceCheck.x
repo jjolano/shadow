@@ -24,17 +24,9 @@
 // the real method untouched.
 
 static DCHTarget s_enabledTargets = DCHTargetNone;
-static BOOL s_iosSecuritySuiteEnabled = NO;
-
-// Public API imported by the tested freeRASP 6.4.0 app. Rebinding the lazy
-// import avoids an inline prologue patch; the replacement returns Void and
-// safely ignores its Swift config argument on arm64.
-static void shdw_freerasp_start_disabled(void) {}
-static NSString* const kSHDWFreeRASPStartSymbol = @"$s13TalsecRuntime0A0C5start6configyAA0A6ConfigV_tFZ";
-
 void shadowhook_DeviceCheck_configure(NSDictionary* prefs) {
     s_enabledTargets = DCHTargetNone;
-    s_iosSecuritySuiteEnabled = [prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue];
+    shadowhook_IOSSecuritySuite_configure(prefs);
 
     if([prefs[SHDWDetectorPatchDTTID] boolValue]) {
         s_enabledTargets |= DCHTargetDTT;
@@ -45,22 +37,10 @@ void shadowhook_DeviceCheck_configure(NSDictionary* prefs) {
     if([prefs[SHDWDetectorPatchJailMonkeyID] boolValue]) {
         s_enabledTargets |= DCHTargetJailMonkey;
     }
-    if([prefs[SHDWDetectorPatchFreeRASPID] boolValue]) {
-        s_enabledTargets |= DCHTargetFreeRASP;
-    }
 }
 
 void shadowhook_DeviceCheck(SHDWHookSession* hooks) {
     shdw_devicecheck_install_hooks(hooks, s_enabledTargets);
-
-    if(s_iosSecuritySuiteEnabled) {
-        shadowhook_libc_iossecuritysuite(hooks);
-        shadowhook_NSFileManager(hooks);
-    }
-
-    if(s_enabledTargets & DCHTargetFreeRASP) {
-        [hooks hookRebindSymbol:kSHDWFreeRASPStartSymbol
-                withReplacement:(void*)shdw_freerasp_start_disabled
-                       outOldPtr:NULL];
-    }
+    shadowhook_IOSSecuritySuite(hooks);
+    shadowhook_FreeRASP(hooks);
 }

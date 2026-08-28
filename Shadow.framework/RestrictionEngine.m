@@ -33,6 +33,26 @@ static BOOL shdwPseudoShouldDeny(const char *cpath) {
 #endif
 }
 
+static BOOL shdwDetectorWritePolicyEnabled(void) {
+    static BOOL (*fn)(void) = NULL;
+    static BOOL didLookup = NO;
+    if(!didLookup) {
+        didLookup = YES;
+        fn = dlsym(RTLD_DEFAULT, "shdw_detector_write_policy_is_enabled");
+    }
+    return fn ? fn() : NO;
+}
+
+static BOOL shdwDetectorPathRestricted(const char* path) {
+    static BOOL (*fn)(const char*) = NULL;
+    static BOOL didLookup = NO;
+    if(!didLookup) {
+        didLookup = YES;
+        fn = dlsym(RTLD_DEFAULT, "shdw_detector_path_policy_is_restricted");
+    }
+    return fn && fn(path);
+}
+
 // How long a cached decision is honored (see the cache notes below).
 // Trimmed from 2.0s (plan C0-1): a "not restricted" verdict for a
 // nonexistent path is cached, and if the jailbreak file appears within the
@@ -62,18 +82,40 @@ static NSString* shdwJoinWorkingDirectory(NSString* path, NSString* wd) {
 }
 
 // Group containers: exempt when inside any group container (central strict enforce helper)
+static BOOL shdwPathIsWithin(NSString* path, NSString* root) {
+    return path.length && root.length &&
+        ([path isEqualToString:root] ||
+         [path hasPrefix:[root stringByAppendingString:@"/"]]);
+}
+
 static BOOL shdwIsGroupContainerPath(ShadowRestrictionContext context, NSString* path) {
     if(!context.hasAppSandbox) return NO;
     for(NSString *gc in context.groupContainerPaths) {
-        if(gc && [path hasPrefix:gc]) return YES;
+        if(shdwPathIsWithin(path, gc)) return YES;
     }
     return NO;
 }
 
 static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path) {
     if(!context.hasAppSandbox) return NO;
-    if([path hasPrefix:context.bundlePath] || [path hasPrefix:context.homePath]) return YES;
+    if(shdwPathIsWithin(path, context.bundlePath) ||
+       shdwPathIsWithin(path, context.homePath)) return YES;
     return shdwIsGroupContainerPath(context, path);
+}
+
+static BOOL shdwDetectorWriteDenied(ShadowRestrictionContext context,
+                                    ShadowRestrictionQuery* query,
+                                    NSString* path) {
+    if(query.operation != ShadowRestrictionOperationWrite ||
+       !context.hasAppSandbox || !shdwDetectorWritePolicyEnabled()) return NO;
+    NSString* bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    if([bundleID hasPrefix:@"me.jjolano.shadow.test."] &&
+       shdwPathIsWithin(path, @"/var/mobile/Documents/ShadowDetectorTests")) return NO;
+    if(shdwPathIsWithin(path, context.bundlePath)) return YES;
+    if(shdwPathIsWithin(path, context.homePath) ||
+       shdwIsGroupContainerPath(context, path) ||
+       [path isEqualToString:@"/dev/null"]) return NO;
+    return YES;
 }
 
 static NSString* shdwResolveTarget(NSString* path) {
@@ -326,6 +368,17 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
         // Standardize.
         path = [Shadow getStandardizedPath:path];
+
+        const char* detectorPath = [path fileSystemRepresentation];
+        if(detectorPath && shdwDetectorPathRestricted(detectorPath)) {
+            restricted = YES;
+            goto done;
+        }
+
+        if(shdwDetectorWriteDenied(_context, query, path)) {
+            restricted = YES;
+            goto done;
+        }
 
         // Run checks if path is outside the app sandbox.
         BOOL shouldCheckPath = !shdwIsSandboxExempt(_context, path);

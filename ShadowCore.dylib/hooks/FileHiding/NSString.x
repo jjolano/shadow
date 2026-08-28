@@ -1,4 +1,5 @@
 #import "hooks.h"
+#import "../../policy/PathPolicy.h"
 
 typedef void (^NSAttributedStringCompletionHandler)(NSAttributedString *, NSDictionary<NSAttributedStringDocumentAttributeKey, id> *, NSError *);
 
@@ -177,7 +178,8 @@ static NSError* _shdw_urlReadError(NSURL* url) {
 }
 
 - (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile encoding:(NSStringEncoding)enc error:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
+    if(isCallerExternal() && (shdw_detector_write_path_denied(path) ||
+       [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}])) {
         if(error) {
             *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:path url:nil];
         }

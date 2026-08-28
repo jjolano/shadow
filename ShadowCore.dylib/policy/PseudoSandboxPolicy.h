@@ -1,6 +1,9 @@
 #ifndef shadow_pseudo_sandbox_policy_h
 #define shadow_pseudo_sandbox_policy_h
 
+// Plugin: Policy_PseudoSandbox — registered in SHDWPluginRegistry (HookConfiguration.m)
+#define SHDWPolicyPseudoSandboxPluginID "Policy_PseudoSandbox"
+
 #import <Foundation/Foundation.h>
 
 // Pseudo-sandbox: a per-app fail-closed allowlist ("overlay") evaluated
