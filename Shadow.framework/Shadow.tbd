@@ -9,7 +9,7 @@ exports:
     objc-classes:         [ _Shadow,
                             _ShadowSettings,
                             _SystemRulesGenerator ]
-    symbols:              [ _SHDWHookPlan, _SHDWInstallUnits,
+    symbols:              [ _SHDWHookPlan, _SHDWPluginPlan, _SHDWInstallUnits, _SHDWPluginRegistry,
                             _SHDWDefaultHookSettings, _SHDWPresetStandard,
                             _SHDWPresetMaximum, _SHDWHookGroupCapabilityKind,
                             _shdw_ruleset_generation,
