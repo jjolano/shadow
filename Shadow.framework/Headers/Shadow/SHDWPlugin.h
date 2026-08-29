@@ -38,8 +38,6 @@
 #define SHDWDetectorPatchDTTID        @"DetectorPatch_DTTJailbreakDetection"
 #define SHDWDetectorPatchSafeDeviceID @"DetectorPatch_SafeDevice"
 #define SHDWDetectorPatchJailMonkeyID @"DetectorPatch_JailMonkey"
-#define SHDWDetectorPatchIOSSecuritySuiteID @"DetectorPatch_IOSSecuritySuite"
-#define SHDWDetectorPatchFreeRASPID         @"DetectorPatch_FreeRASP"
 
 #define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWHookLibraryID          @"HK_Library"
