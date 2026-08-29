@@ -19,6 +19,11 @@
 
 static NSString * const kDir = @"/var/mobile/Documents/ShadowDetectorTests";
 static NSDictionary *ck(NSString *i, NSString *n, BOOL p, NSString *m){ return @{@"id":i,@"name":n,@"passed":@(p),@"message":m?:@""}; }
+static NSDictionary *inconclusiveCheck(NSString *i, NSString *n, NSString *m){
+    NSMutableDictionary *check=[ck(i,n,YES,m) mutableCopy];
+    check[@"inconclusive"]=@YES;
+    return check;
+}
 static NSDictionary *roundOf(NSString *phase, BOOL clean, NSArray *checks){ return @{@"phase":phase,@"clean":@(clean),@"checks":checks}; }
 static uint64_t shdw_detector_framework_load_ns = 0;
 
@@ -65,8 +70,18 @@ static NSDictionary *roundWithTiming(NSString *phase, BOOL clean, NSArray *check
 }
 
 static void writeReport(NSString *iden, NSString *name, NSString *ver, NSArray *rounds, NSDictionary *harness, NSDictionary *timing){
-    BOOL clean=YES; for(NSDictionary *r in rounds) if(![r[@"clean"] boolValue]){clean=NO; break;}
-    NSMutableDictionary *rep=[@{@"schemaVersion":@1,@"sdk":@{@"id":iden,@"name":name,@"version":ver},@"outcome":clean?@"clean":@"jailbroken",@"generatedAt":[[NSISO8601DateFormatter new] stringFromDate:[NSDate date]],@"rounds":rounds} mutableCopy];
+    BOOL clean=YES;
+    BOOL inconclusive=NO;
+    for(NSDictionary *round in rounds){
+        for(NSDictionary *check in round[@"checks"]){
+            if([check[@"inconclusive"] boolValue]) inconclusive=YES;
+            else if(![check[@"passed"] boolValue]) clean=NO;
+        }
+    }
+    NSString *outcome=!clean?@"jailbroken":inconclusive?@"error":@"clean";
+    NSString *forcedOutcome=[harness[@"outcome"] isKindOfClass:[NSString class]]?harness[@"outcome"]:nil;
+    if(forcedOutcome.length) outcome=forcedOutcome;
+    NSMutableDictionary *rep=[@{@"schemaVersion":@1,@"sdk":@{@"id":iden,@"name":name,@"version":ver},@"outcome":outcome,@"generatedAt":[[NSISO8601DateFormatter new] stringFromDate:[NSDate date]],@"rounds":rounds} mutableCopy];
     if(harness) rep[@"harness"]=harness;
     if(timing) rep[@"timing"]=timing;
     NSError *e=nil; [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:nil error:&e];
@@ -232,17 +247,29 @@ static NSArray *jailbreakDetectorChecks(void){
 }
 
 static NSArray *securityToolkitChecks(void){
-    BOOL root=bridgeBool(@"STKBridge",@"rootPrivilegesThreat",@[]);
-    BOOL hooks=bridgeBool(@"STKBridge",@"hooksThreat",@[]);
+    NSDictionary *statuses=bridge(@"STKBridge",@"statuses");
     Class stk=NSClassFromString(@"STKBridge");
     if(!stk) return nativeChecksForID(@"securitytoolkit");
-    return @[
-        ck(@"securitytoolkit.root_privileges",@"Root privileges", !root, root?@"Threat detected":@"No threat detected"),
-        ck(@"securitytoolkit.hooks",@"Runtime hooks", !hooks, hooks?@"Threat detected":@"No threat detected"),
+    NSArray *probes=@[
+        @{@"key":@"rootPrivileges",@"id":@"securitytoolkit.root_privileges",@"name":@"Root privileges"},
+        @{@"key":@"hooks",@"id":@"securitytoolkit.hooks",@"name":@"Runtime hooks"},
+        @{@"key":@"simulator",@"id":@"securitytoolkit.simulator",@"name":@"Simulator"},
+        @{@"key":@"debugger",@"id":@"securitytoolkit.debugger",@"name":@"Debugger"},
+        @{@"key":@"devicePasscode",@"id":@"securitytoolkit.device_passcode",@"name":@"Device passcode"},
+        @{@"key":@"hardwareCryptography",@"id":@"securitytoolkit.hardware_cryptography",@"name":@"Hardware cryptography"},
     ];
+    NSMutableArray *checks=[NSMutableArray new];
+    for(NSDictionary *probe in probes){
+        NSString *status=statuses[probe[@"key"]];
+        BOOL detected=[status isEqualToString:@"present"];
+        BOOL unknown=!status.length || [status hasPrefix:@"exception"] || [status isEqualToString:@"notChecked"];
+        NSString *message=unknown?(status.length?status:@"No status returned"):(detected?@"Threat detected":@"No threat detected");
+        [checks addObject:unknown?inconclusiveCheck(probe[@"id"],probe[@"name"],message):ck(probe[@"id"],probe[@"name"],!detected,message)];
+    }
+    return checks;
 }
 
-static NSArray *freeRASPChecks(BOOL *started){
+static NSArray *freeRASPChecks(BOOL *started, BOOL checksFinished){
     NSDictionary *threatNames=@{
         @"signature":@"appIntegrity", @"jailbreak":@"privilegedAccess", @"debugger":@"debug",
         @"runtimeManipulation":@"hooks", @"passcode":@"passcode", @"passcodeChange":@"passcodeChange",
@@ -256,7 +283,13 @@ static NSArray *freeRASPChecks(BOOL *started){
     NSMutableArray *checks=[NSMutableArray new];
     for(NSString *name in threatNames.allKeys){
         BOOL detected=[threats containsObject:threatNames[name]];
-        [checks addObject:ck([@"freerasp." stringByAppendingString:name],name, !detected, detected?@"Threat callback received":@"No threat callback")];
+        NSString *identifier=[@"freerasp." stringByAppendingString:name];
+        if(detected)
+            [checks addObject:ck(identifier,name,NO,@"Threat callback received")];
+        else if(checksFinished)
+            [checks addObject:ck(identifier,name,YES,@"No threat callback")];
+        else
+            [checks addObject:inconclusiveCheck(identifier,name,@"No threat callback; checks incomplete")];
     }
     return checks;
 }
@@ -342,6 +375,8 @@ static NSArray *safetyNetChecks(void){
     if(!NSClassFromString(@"SafetyNetBridge")) return nativeChecksForID(@"safetynet");
     NSDictionary *result=bridgeOnWorker(@"SafetyNetBridge",@"runChecks");
     if(!result) return nativeChecksForID(@"safetynet");
+    NSString *error=[result[@"error"] isKindOfClass:[NSString class]]?result[@"error"]:nil;
+    if(error.length) return @[inconclusiveCheck(@"safetynet.result",@"SafetyNet result",error)];
     NSInteger level=[result[@"level"] integerValue];
     NSArray *reasons=result[@"reasons"];
     NSDictionary *map=@{
@@ -369,7 +404,10 @@ static NSArray *safetyNetChecks(void){
         [checks addObject:ck(pair[0],pair[1], !detected, detected?@"Threat detected":@"clean")];
     }
     NSArray *levels=@[@"none",@"medium",@"high",@"critical"];
-    [checks addObject:ck(@"safetynet.level",@"Aggregate threat level", level==0, levels[level])];
+    if(level<0 || level>=(NSInteger)levels.count)
+        [checks addObject:inconclusiveCheck(@"safetynet.level",@"Aggregate threat level",@"No aggregate threat level returned")];
+    else
+        [checks addObject:ck(@"safetynet.level",@"Aggregate threat level", level==0, levels[level])];
     return checks;
 }
 
@@ -390,7 +428,10 @@ static NSArray *batChecks(void){
     NSMutableArray *checks=[NSMutableArray new];
     for(NSDictionary *probe in probes){
         BOOL detected=bridgeBool(@"BATBridge",probe[@"sel"],@[]);
-        [checks addObject:ck(probe[@"id"],probe[@"name"], !detected, detected?@"Threat detected":@"No threat detected")];
+        if([probe[@"sel"] isEqualToString:@"checksum"])
+            [checks addObject:inconclusiveCheck(probe[@"id"],probe[@"name"],@"No expected file checksums configured")];
+        else
+            [checks addObject:ck(probe[@"id"],probe[@"name"], !detected, detected?@"Threat detected":@"No threat detected")];
     }
     return checks;
 }
@@ -410,6 +451,11 @@ static NSArray *deviceSecurityKitChecks(void){
     [checks addObject:ck(@"dsk.dylib",@"DylibInjectionDetector.isDylibInjected", !bridgeBool(@"DSKBridge",@"isDylibInjected",@[]), @"dylib check")];
     [checks addObject:ck(@"dsk.reverse",@"ReverseEngineeringDetector.isReverseEngineered", !bridgeBool(@"DSKBridge",@"isReverseEngineered",@[]), @"reverse-engineering check")];
     [checks addObject:ck(@"dsk.debugger",@"DebuggerDetector.isDebuggerAttached", !bridgeBool(@"DSKBridge",@"isDebuggerAttached",@[]), @"debugger check")];
+    NSDictionary *emulator=bridge(@"DSKBridge",@"emulatorInfo");
+    BOOL emulatorDetected=[emulator[@"detected"] boolValue];
+    NSArray *methods=emulator[@"methods"];
+    NSString *emulatorMessage=emulatorDetected?(methods.count?[methods componentsJoinedByString:@", "]:@"emulator detected"):@"physical device";
+    [checks addObject:ck(@"dsk.emulator",@"EmulatorDetector.detectEmulator", !emulatorDetected, emulatorMessage)];
     return checks;
 }
 
@@ -417,7 +463,7 @@ NSArray<NSString*>* SHDWAllDetectorIDs(void){ return @[@"batjailbreakguard",@"ja
 static BOOL SHDWTalsecStarted=NO;
 BOOL SHDWRunDetectorWithID(NSString *iid){
     if(!iid.length) return NO;
-    NSDictionary *meta=@{@"batjailbreakguard":@[@"BATJailbreakGuard",@"main@spm"],@"jailmonkey":@[@"JailMonkey",@"v2.8.5"],@"roothider":@[@"Roothider JailbreakDetector",@"main@5b3d0be"],@"safetynet":@[@"SafetyNet",@"main@spm"],@"dttjailbreakdetection":@[@"DTTJailbreakDetection",@"0.2.0+cedd424"],@"jailbreakdetector":@[@"JailbreakDetector.swift",@"main@b6afe56"],@"securitytoolkit":@[@"iOS Security Toolkit",@"2.0.0-filtered"],@"devicesecuritykit":@[@"DeviceSecurityKit",@"0.40.0"],@"iossecuritysuite":@[@"IOSSecuritySuite",@"2.3.0"],@"freerasp":@[@"freeRASP",@"7.1.2"]};
+    NSDictionary *meta=@{@"batjailbreakguard":@[@"BATJailbreakGuard",@"main@spm"],@"jailmonkey":@[@"JailMonkey",@"v2.8.5"],@"roothider":@[@"Roothider JailbreakDetector",@"main@5b3d0be"],@"safetynet":@[@"SafetyNet",@"main@spm"],@"dttjailbreakdetection":@[@"DTTJailbreakDetection",@"0.2.0+cedd424"],@"jailbreakdetector":@[@"JailbreakDetector.swift",@"main@b6afe56"],@"securitytoolkit":@[@"iOS Security Toolkit",@"2.0.0"],@"devicesecuritykit":@[@"DeviceSecurityKit",@"0.40.0"],@"iossecuritysuite":@[@"IOSSecuritySuite",@"2.3.0"],@"freerasp":@[@"freeRASP",@"7.1.2"]};
     NSArray *pair=meta[iid.lowercaseString]; if(!pair) return NO;
     NSString *lid=iid.lowercaseString;
     if([lid isEqualToString:@"safetynet"]){
@@ -435,18 +481,22 @@ BOOL SHDWRunDetectorWithID(NSString *iid){
     }
     if([lid isEqualToString:@"freerasp"]){
         uint64_t start=shdw_detector_now_ns();
-        NSArray *checks=freeRASPChecks(&SHDWTalsecStarted);
+        BOOL checksFinished=[TalsecBridge allChecksFinished];
+        NSArray *checks=freeRASPChecks(&SHDWTalsecStarted,checksFinished);
         NSDictionary *timing=shdw_detector_timing(lid,shdw_detector_now_ns()-start);
         BOOL clean=YES; for(NSDictionary *c in checks) if(![c[@"passed"] boolValue]){ clean=NO; break; }
-        NSDictionary *harness=@{@"varJBVisible":@(fileExists("/var/jb")),@"shadowCoreVisible":@(fileExists("/var/jb/usr/lib/ShadowCore.dylib")),@"talsecStartReturned":@YES,@"talsecImageLoaded":@(dyldHas("TalsecRuntime")),@"talsecAllChecksFinished":@NO,@"stockMarkerVisibleBeforeStart":@(fileExists("/.file"))};
+        NSDictionary *harness=@{@"varJBVisible":@(fileExists("/var/jb")),@"shadowCoreVisible":@(fileExists("/var/jb/usr/lib/ShadowCore.dylib")),@"talsecStartReturned":@YES,@"talsecImageLoaded":@(dyldHas("TalsecRuntime")),@"talsecAllChecksFinished":@(checksFinished),@"outcome":@"running",@"stockMarkerVisibleBeforeStart":@(fileExists("/.file"))};
         writeReport(lid,pair[0],pair[1],@[roundWithTiming(@"startup",clean,checks,timing)],harness,timing);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(30*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(30*NSEC_PER_SEC)),dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
             uint64_t settledStart=shdw_detector_now_ns();
-            NSArray *settled=freeRASPChecks(&SHDWTalsecStarted);
+            BOOL settledFinished=[TalsecBridge allChecksFinished];
+            NSArray *settled=freeRASPChecks(&SHDWTalsecStarted,settledFinished);
             NSDictionary *settledTiming=shdw_detector_timing(lid,shdw_detector_now_ns()-settledStart);
             BOOL clean2=YES; for(NSDictionary *c in settled) if(![c[@"passed"] boolValue]){ clean2=NO; break; }
             NSMutableDictionary *h2=[harness mutableCopy];
-            h2[@"talsecAllChecksFinished"]=@([TalsecBridge allChecksFinished]);
+            h2[@"talsecAllChecksFinished"]=@(settledFinished);
+            [h2 removeObjectForKey:@"outcome"];
+            if(!settledFinished && clean2) h2[@"outcome"]=@"error";
             writeReport(lid,pair[0],pair[1],@[roundWithTiming(@"settled",clean2,settled,settledTiming)],h2,settledTiming);
         });
         return YES;

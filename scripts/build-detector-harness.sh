@@ -23,8 +23,8 @@ sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedMod
 # The real Roothider repo is a single main.m app whose detect_* functions only
 # LOG findings; the harness compiles it in-process. Filter it (idempotent):
 # redirect LOG to the recorder header, drop the app-scaffolding (NSObject
-# category + AppDelegate + main) and the non-SDK xpc_private include, and fix
-# an int-passed-as-%s bug in detect_jailbreak_port.
+# category + AppDelegate + main), remove Roothider's side-effecting openURL
+# probe, and fix an int-passed-as-%s bug in detect_jailbreak_port.
 python3 - "$ROOT/.detector-deps/JailbreakDetector/main.m" <<'PY'
 import sys, re
 p = sys.argv[1]
@@ -32,8 +32,12 @@ s = open(p).read()
 s = re.sub(r'#define LOG\(\.\.\.\) NSLog\(@__VA_ARGS__\)', '#include "RoothiderLog.h"', s)
 s = re.sub(r'^#include <xpc_private.h>\n', '', s, flags=re.M)
 s = re.sub(r'/\* bypass all jb-bypass.*\Z', '', s, flags=re.S)
+s = re.sub(
+    r'(?m)^[ \t]*canOpen = \[\[UIApplication sharedApplication\] openURL:.*\n'
+    r'[ \t]*if\(canOpen\) LOG\("URLScheme opened:.*\n',
+    '', s)
 s = s.replace('LOG("jailbreak port %s unknown err: %s,%s\\n", ports[i], kr, mach_error_string(kr))',
-              'LOG("jailbreak port %s unknown err: %d,%s\\n", ports[i], kr, mach_error_string(kr))')
+               'LOG("jailbreak port %s unknown err: %d,%s\\n", ports[i], kr, mach_error_string(kr))')
 s = s.replace('snprintf(path,sizeof(path),"%s/tmp/%lx",getenv("HOME"), arc4random());',
               'snprintf(path,sizeof(path),"%s/tmp/%lx",getenv("HOME"), (unsigned long)arc4random());')
 s = s.replace('int fd = open(path, O_RDWR|O_CREAT, 0755);\n        assert(fd >= 0);',

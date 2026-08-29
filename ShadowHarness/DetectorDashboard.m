@@ -43,7 +43,7 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
             SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"shadow-dyldprobe://run", @"https://github.com/jjolano/shadow/tree/master/tools/dyldprobe"),
             SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
             SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
-            SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0-filtered", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
+            SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
             SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run", @"https://github.com/thii/DTTJailbreakDetection"),
             SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"shadow-detector-freerasp://run", @"https://github.com/talsec/Free-RASP-iOS"),
             SHDWMakeSDK(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run", @"https://github.com/roothider/JailbreakDetector"),
@@ -353,11 +353,12 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
         return cell;
     }
     NSDictionary* check = checks[indexPath.row];
+    BOOL inconclusive = [check[@"inconclusive"] boolValue];
     BOOL passed = [check[@"passed"] boolValue];
     cell.textLabel.text = SHDWString(check[@"name"]) ?: SHDWString(check[@"id"]) ?: @"Check";
-    cell.detailTextLabel.text = SHDWString(check[@"message"]) ?: (passed ? @"Passed" : @"Detected");
-    cell.imageView.image = [UIImage systemImageNamed:passed ? @"checkmark.circle.fill" : @"xmark.circle.fill"];
-    cell.imageView.tintColor = passed ? UIColor.systemGreenColor : UIColor.systemRedColor;
+    cell.detailTextLabel.text = SHDWString(check[@"message"]) ?: (inconclusive ? @"Inconclusive" : (passed ? @"Passed" : @"Detected"));
+    cell.imageView.image = [UIImage systemImageNamed:inconclusive ? @"questionmark.circle.fill" : (passed ? @"checkmark.circle.fill" : @"xmark.circle.fill")];
+    cell.imageView.tintColor = inconclusive ? UIColor.systemGrayColor : (passed ? UIColor.systemGreenColor : UIColor.systemRedColor);
     return cell;
 }
 

@@ -24,9 +24,16 @@ JailbreakDetector_INSTALL_PATH = /Library/Frameworks
 
 SECURITY_TOOLKIT_DIR = $(DEPS)/iOS-Security-Toolkit/Sources
 FRAMEWORK_NAME += SecurityToolkit
-SecurityToolkit_FILES = $(SECURITY_TOOLKIT_DIR)/ThreatReport.swift $(SECURITY_TOOLKIT_DIR)/internal/JailbreakDetector.swift $(SECURITY_TOOLKIT_DIR)/internal/HooksDetector.swift $(BRIDGES)/STKBridge.swift
+SecurityToolkit_FILES = $(SECURITY_TOOLKIT_DIR)/ThreatReport.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/JailbreakDetector.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/HooksDetector.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/SimulatorDetector.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/DebuggerDetector.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/DevicePasscodeDetector.swift \
+    $(SECURITY_TOOLKIT_DIR)/internal/HardwareSecurityDetector.swift \
+    $(BRIDGES)/STKBridge.swift
 SecurityToolkit_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-fw-module-cache
-SecurityToolkit_FRAMEWORKS = UIKit Foundation
+SecurityToolkit_FRAMEWORKS = UIKit Foundation LocalAuthentication
 SecurityToolkit_LDFLAGS = -lswiftFoundation
 SecurityToolkit_INSTALL_PATH = /Library/Frameworks
 
@@ -49,9 +56,11 @@ DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
     $(DSK_DIR)/Detectors/FridaDetector.swift \
     $(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
+    $(DSK_DIR)/Detectors/EmulatorDetector.swift \
     $(DSK_DIR)/Lists/JailbreakListOptions.swift \
     $(DSK_DIR)/Lists/DebuggerDetectorList.swift \
     $(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
+    $(DSK_DIR)/Lists/EmulatorDetectorListOptions.swift \
     $(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
     $(DSK_DIR)/SecurityLogger/SecurityLogger.swift \
     $(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
@@ -61,7 +70,7 @@ DeviceSecurityKit_FILES = \
     $(STUBS)/SignatureUpdateManager.swift \
     $(BRIDGES)/DSKBridge.swift
 DeviceSecurityKit_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-fw-module-cache
-DeviceSecurityKit_FRAMEWORKS = UIKit Foundation
+DeviceSecurityKit_FRAMEWORKS = UIKit Foundation DeviceCheck
 DeviceSecurityKit_LDFLAGS = -lswiftFoundation
 DeviceSecurityKit_INSTALL_PATH = /Library/Frameworks
 
