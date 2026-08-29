@@ -15,6 +15,7 @@ ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
 ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers $(SHADOW_HOOKKIT_CFLAGS)
+ShadowCore_LOGOSFLAGS = -c generator=hookkit -c hook_inheritance=allow_inherited
 ifneq ($(SHADOW_LANE),rootful-legacy)
 ShadowCore_CFLAGS += -DSHADOW_CANONICAL_HOOKKIT=1
 endif

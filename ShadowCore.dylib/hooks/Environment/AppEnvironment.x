@@ -4,7 +4,7 @@
 
 %group shadowhook_UIApplication
 %hook UIApplication
-- (BOOL)canOpenURL:(NSURL *)url {
+- (BOOL)canOpenURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"canOpenURL restricted: %@", url);
         return NO;
@@ -13,7 +13,7 @@
     return %orig;
 }
 
-- (BOOL)openURL:(NSURL *)url {
+- (BOOL)openURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"openURL restricted: %@", url);
         return NO;
@@ -25,7 +25,7 @@
 // NOTE: declared void on iOS 10+ (UIApplication.h) — never contact
 // LaunchServices for a restricted URL; the completion is delivered
 // asynchronously with NO, matching the async contract of the real API.
-- (void)openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenExternalURLOptionsKey, id> *)options completionHandler:(void (^)(BOOL success))completion {
+- (void)openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenExternalURLOptionsKey, id> *)options completionHandler:(void (^)(BOOL success))completion __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSLog(@"openURL:options: restricted: %@", url);
 
@@ -80,7 +80,7 @@ static BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
 
 %group shadowhook_NSUserDefaults
 %hook NSUserDefaults
-- (instancetype)initWithSuiteName:(NSString *)suitename {
+- (instancetype)initWithSuiteName:(NSString *)suitename __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_nsuserdefaults_suite_restricted(suitename)) {
         shdw_detector_detected("nsuserdefaults");
 
@@ -94,7 +94,7 @@ static BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
     return %orig;
 }
 
-- (NSDictionary *)persistentDomainForName:(NSString *)domainName {
+- (NSDictionary *)persistentDomainForName:(NSString *)domainName __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_nsuserdefaults_suite_restricted(domainName)) {
         shdw_detector_detected("nsuserdefaults");
         return nil;
@@ -112,7 +112,7 @@ void shadowhook_NSUserDefaults(SHDWHookSession* hooks) {
 
 %group shadowhook_NSProcessInfo
 %hook NSProcessInfo
-- (NSDictionary *)environment {
+- (NSDictionary *)environment __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
     if(!isCallerExternal() || !result) {
@@ -126,7 +126,7 @@ void shadowhook_NSUserDefaults(SHDWHookSession* hooks) {
     return shdw_env_sanitized_dictionary(result);
 }
 
-- (NSArray<NSString *> *)arguments {
+- (NSArray<NSString *> *)arguments __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<NSString *>* result = %orig;
 
     if(!isCallerExternal() || !result || result.count == 0) {
@@ -174,7 +174,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 
 %group shadowhook_LSApplicationWorkspace
 %hook LSApplicationWorkspace
-- (NSArray<LSApplicationProxy *> *)allApplications {
+- (NSArray<LSApplicationProxy *> *)allApplications __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -184,7 +184,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)allInstalledApplications {
+- (NSArray<LSApplicationProxy *> *)allInstalledApplications __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -194,7 +194,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)directionsApplications {
+- (NSArray<LSApplicationProxy *> *)directionsApplications __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -204,7 +204,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)unrestrictedApplications {
+- (NSArray<LSApplicationProxy *> *)unrestrictedApplications __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<LSApplicationProxy *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -214,7 +214,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)applicationsAvailableForHandlingURLScheme:(NSString *)urlScheme {
+- (NSArray<LSApplicationProxy *> *)applicationsAvailableForHandlingURLScheme:(NSString *)urlScheme __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isSchemeRestricted:urlScheme]) {
         return @[];
     }
@@ -228,7 +228,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url {
+- (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return @[];
     }
@@ -242,7 +242,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url legacySPI:(BOOL)legacySPI {
+- (NSArray<LSApplicationProxy *> *)applicationsAvailableForOpeningURL:(NSURL *)url legacySPI:(BOOL)legacySPI __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return @[];
     }
@@ -256,7 +256,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<NSString *> *)publicURLSchemes {
+- (NSArray<NSString *> *)publicURLSchemes __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<NSString *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -274,7 +274,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return result;
 }
 
-- (NSArray<NSString *> *)privateURLSchemes {
+- (NSArray<NSString *> *)privateURLSchemes __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<NSString *>* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -302,7 +302,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 // reliable decode without breaking stock unarchiving), and returning nil
 // mid-unarchive can abort LaunchServices internals.
 %hook LSApplicationProxy
-+ (instancetype)applicationProxyForIdentifier:(NSString *)identifier {
++ (instancetype)applicationProxyForIdentifier:(NSString *)identifier __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && identifier && [_shadow isBundleIDRestricted:identifier]) {
         return nil;
     }
@@ -310,7 +310,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return %orig;
 }
 
-+ (instancetype)applicationProxyForBundleURL:(NSURL *)url {
++ (instancetype)applicationProxyForBundleURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return nil;
     }
@@ -322,7 +322,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 
 %group shadowhook_LSApplicationWorkspaceCanOpenURL
 %hook LSApplicationWorkspace
-- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url error:(NSError **)error {
+- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url error:(NSError **)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) *error = nil;
         return NO;
@@ -331,7 +331,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     return %orig;
 }
 
-- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url includePrivateURLSchemes:(BOOL)includePrivateURLSchemes error:(NSError **)error {
+- (BOOL)isApplicationAvailableToOpenURL:(NSURL *)url includePrivateURLSchemes:(BOOL)includePrivateURLSchemes error:(NSError **)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) *error = nil;
         return NO;
@@ -360,7 +360,7 @@ void shadowhook_LSApplicationWorkspaceCanOpenURL(SHDWHookSession* hooks) {
 
 %group shadowhook_LSApplicationWorkspaceInstalledApplications
 %hook LSApplicationWorkspace
-- (NSArray<NSString *> *)installedApplications {
+- (NSArray<NSString *> *)installedApplications __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray<NSString *>* result = %orig;
 
     if(isCallerExternal() && result) {

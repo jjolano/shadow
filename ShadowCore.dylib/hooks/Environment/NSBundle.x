@@ -23,7 +23,7 @@ static void shdw_cache_main_bundle(void) {
 
 %group shadowhook_NSBundle
 %hook NSBundle
-- (id)objectForInfoDictionaryKey:(NSString *)key {
+- (id)objectForInfoDictionaryKey:(NSString *)key __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [key isEqualToString:@"SignerIdentity"]) {
         return nil;
     }
@@ -31,31 +31,31 @@ static void shdw_cache_main_bundle(void) {
     return %orig;
 }
 
-+ (instancetype)bundleWithURL:(NSURL *)url {
++ (instancetype)bundleWithURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
     
     return %orig;
 }
 
-+ (instancetype)bundleWithPath:(NSString *)path {
++ (instancetype)bundleWithPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
     return %orig;
 }
 
-- (instancetype)initWithURL:(NSURL *)url {
+- (instancetype)initWithURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
     
     return %orig;
 }
 
-- (instancetype)initWithPath:(NSString *)path {
+- (instancetype)initWithPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
     return %orig;
 }
 
-+ (NSBundle *)bundleForClass:(Class)aClass {
++ (NSBundle *)bundleForClass:(Class)aClass __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_addr_is_restricted((__bridge const void *)aClass)) {
         // Nonnull contract: report the main bundle, never nil.
         return [NSBundle mainBundle];
@@ -64,7 +64,7 @@ static void shdw_cache_main_bundle(void) {
     return %orig;
 }
 
-+ (NSBundle *)bundleWithIdentifier:(NSString *)identifier {
++ (NSBundle *)bundleWithIdentifier:(NSString *)identifier __attribute__((annotate("hookkit:allow_inherited"))) {
     NSBundle* result = %orig;
 
     if(isCallerExternal() && result && [_shadow isPathRestricted:[result bundlePath]]) {
@@ -74,7 +74,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath {
+- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -84,7 +84,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext {
+- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -94,7 +94,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath {
+- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -112,7 +112,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
+- (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -122,7 +122,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName {
+- (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath localization:(NSString *)localizationName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -140,7 +140,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
++ (NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -150,7 +150,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL {
++ (NSArray<NSURL *> *)URLsForResourcesWithExtension:(NSString *)ext subdirectory:(NSString *)subpath inBundleWithURL:(NSURL *)bundleURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -168,7 +168,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext {
+- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
@@ -178,7 +178,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath {
+- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
@@ -188,7 +188,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
+- (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
@@ -198,7 +198,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath {
+- (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -216,7 +216,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName {
+- (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)subpath forLocalization:(NSString *)localizationName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -234,7 +234,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)bundlePath {
++ (NSString *)pathForResource:(NSString *)name ofType:(NSString *)ext inDirectory:(NSString *)bundlePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
@@ -244,7 +244,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)bundlePath {
++ (NSArray<NSString *> *)pathsForResourcesOfType:(NSString *)ext inDirectory:(NSString *)bundlePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -262,7 +262,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSArray<NSBundle *> *)allBundles {
++ (NSArray<NSBundle *> *)allBundles __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -280,7 +280,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-+ (NSArray<NSBundle *> *)allFrameworks {
++ (NSArray<NSBundle *> *)allFrameworks __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -304,7 +304,7 @@ static void shdw_cache_main_bundle(void) {
 // redirects protected classes to the main bundle. These checks are
 // defense-in-depth for objects created before the hooks installed.
 
-- (NSDictionary<NSString *, id> *)infoDictionary {
+- (NSDictionary<NSString *, id> *)infoDictionary __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
     if(isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
@@ -316,7 +316,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSDictionary<NSString *, id> *)localizedInfoDictionary {
+- (NSDictionary<NSString *, id> *)localizedInfoDictionary __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
     if(isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
@@ -331,7 +331,7 @@ static void shdw_cache_main_bundle(void) {
 // Path getters check the ORIGINAL result (no receiver-path circularity): a
 // protected path is replaced with the main-bundle equivalent for the
 // nonnull contracts (bundlePath/bundleURL) and nilled for the rest.
-- (NSString *)bundlePath {
+- (NSString *)bundlePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
@@ -341,7 +341,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)bundleURL {
+- (NSURL *)bundleURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
@@ -351,7 +351,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)resourcePath {
+- (NSString *)resourcePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
@@ -361,7 +361,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)resourceURL {
+- (NSURL *)resourceURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
@@ -371,7 +371,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)executablePath {
+- (NSString *)executablePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
@@ -381,7 +381,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)executableURL {
+- (NSURL *)executableURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
@@ -391,7 +391,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSString *)pathForAuxiliaryExecutable:(NSString *)executableName {
+- (NSString *)pathForAuxiliaryExecutable:(NSString *)executableName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
@@ -401,7 +401,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (NSURL *)URLForAuxiliaryExecutable:(NSString *)executableName {
+- (NSURL *)URLForAuxiliaryExecutable:(NSString *)executableName __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -411,7 +411,7 @@ static void shdw_cache_main_bundle(void) {
     return result;
 }
 
-- (BOOL)isLoaded {
+- (BOOL)isLoaded __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
         return NO;
     }
@@ -419,7 +419,7 @@ static void shdw_cache_main_bundle(void) {
     return %orig;
 }
 
-- (BOOL)load {
+- (BOOL)load __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
         return NO;
     }
@@ -427,19 +427,7 @@ static void shdw_cache_main_bundle(void) {
     return %orig;
 }
 
-- (BOOL)loadAndReturnError:(NSError * _Nullable *)error {
-    if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
-        if(error) {
-            *error = [Shadow fileNoSuchFileErrorForPath:[self bundlePath]];
-        }
-
-        return NO;
-    }
-
-    return %orig;
-}
-
-- (BOOL)preflightAndReturnError:(NSError * _Nullable *)error {
+- (BOOL)loadAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:[self bundlePath]];
@@ -451,7 +439,19 @@ static void shdw_cache_main_bundle(void) {
     return %orig;
 }
 
-- (BOOL)unload {
+- (BOOL)preflightAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
+    if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
+        if(error) {
+            *error = [Shadow fileNoSuchFileErrorForPath:[self bundlePath]];
+        }
+
+        return NO;
+    }
+
+    return %orig;
+}
+
+- (BOOL)unload __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isProtectedImagePath:[self bundlePath]]) {
         // No-op for restricted receivers.
         return NO;

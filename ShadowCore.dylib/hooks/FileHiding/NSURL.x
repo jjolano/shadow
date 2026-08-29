@@ -31,7 +31,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 %group shadowhook_NSURL
 %hook NSURL
-- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error {
+- (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -43,7 +43,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (BOOL)checkPromisedItemIsReachableAndReturnError:(NSError * _Nullable *)error {
+- (BOOL)checkPromisedItemIsReachableAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -55,7 +55,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (BOOL)getPromisedItemResourceValue:(id  _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
+- (BOOL)getPromisedItemResourceValue:(id  _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(value) {
             *value = nil;
@@ -71,7 +71,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (NSDictionary<NSURLResourceKey, id> *)promisedItemResourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
+- (NSDictionary<NSURLResourceKey, id> *)promisedItemResourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -83,7 +83,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (NSURL *)fileReferenceURL {
+- (NSURL *)fileReferenceURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
@@ -93,7 +93,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return result;
 }
 
-- (NSURL *)filePathURL {
+- (NSURL *)filePathURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
@@ -103,7 +103,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return result;
 }
 
-- (NSURL *)URLByResolvingSymlinksInPath {
+- (NSURL *)URLByResolvingSymlinksInPath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
@@ -117,14 +117,14 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return result;
 }
 
-- (NSURL *)URLByStandardizingPath {
+- (NSURL *)URLByStandardizingPath __attribute__((annotate("hookkit:allow_inherited"))) {
     // Pure lexical normalization — the output carries no information beyond
     // the receiver — so no restriction check (a filtered value here is a
     // stock-impossible answer for the query the detector constructed).
     return %orig;
 }
 
-+ (NSData *)bookmarkDataWithContentsOfURL:(NSURL *)bookmarkFileURL error:(NSError * _Nullable *)error {
++ (NSData *)bookmarkDataWithContentsOfURL:(NSURL *)bookmarkFileURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:bookmarkFileURL]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:bookmarkFileURL];
@@ -136,7 +136,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (BOOL)getResourceValue:(id _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
+- (BOOL)getResourceValue:(id _Nullable *)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(value) {
             *value = nil;
@@ -152,7 +152,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error {
+- (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -164,7 +164,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (BOOL)setResourceValue:(id)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error {
+- (BOOL)setResourceValue:(id)value forKey:(NSURLResourceKey)key error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -176,7 +176,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return %orig;
 }
 
-- (BOOL)setResourceValues:(NSDictionary<NSURLResourceKey, id> *)keyedValues error:(NSError * _Nullable *)error {
+- (BOOL)setResourceValues:(NSDictionary<NSURLResourceKey, id> *)keyedValues error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestrictedWithOptions(self, shdw_restriction_write_options())) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:self];
@@ -190,7 +190,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 
 // Cache-mutation APIs: no-ops for restricted URLs — the value cache of a
 // hidden resource must not be observable or manipulable.
-- (void)removeCachedResourceValueForKey:(NSURLResourceKey)key {
+- (void)removeCachedResourceValueForKey:(NSURLResourceKey)key __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
@@ -198,7 +198,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     %orig;
 }
 
-- (void)removeAllCachedResourceValues {
+- (void)removeAllCachedResourceValues __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
@@ -206,7 +206,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     %orig;
 }
 
-- (void)setTemporaryResourceValue:(id)value forKey:(NSURLResourceKey)key {
+- (void)setTemporaryResourceValue:(id)value forKey:(NSURLResourceKey)key __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         return;
     }
@@ -214,7 +214,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     %orig;
 }
 
-- (instancetype)initByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error {
+- (instancetype)initByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     self = %orig;
 
     if(isCallerExternal() && self && _shdw_resultURLRestricted(self)) {
@@ -234,7 +234,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return self;
 }
 
-+ (NSURL *)URLByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error {
++ (NSURL *)URLByResolvingBookmarkData:(NSData *)bookmarkData options:(NSURLBookmarkResolutionOptions)options relativeToURL:(NSURL *)relativeURL bookmarkDataIsStale:(BOOL *)isStale error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && _shdw_resultURLRestricted(result)) {
@@ -252,7 +252,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
     return result;
 }
 
-+ (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys fromBookmarkData:(NSData *)bookmarkData {
++ (NSDictionary<NSURLResourceKey, id> *)resourceValuesForKeys:(NSArray<NSURLResourceKey> *)keys fromBookmarkData:(NSData *)bookmarkData __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -295,7 +295,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     }
 }
 
-- (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url {
+- (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDataTask* task = %orig;
         [task cancel];
@@ -306,7 +306,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+- (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         // roothide logos cannot parse block literals inside %orig(...) args.
         void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
@@ -326,7 +326,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url {
+- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         NSURLSessionDownloadTask* task = %orig;
         [task cancel];
@@ -337,7 +337,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
+- (NSURLSessionDownloadTask *)downloadTaskWithURL:(NSURL *)url completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         // roothide logos cannot parse block literals inside %orig(...) args.
         void (^swallow)(NSURL *, NSURLResponse *, NSError *) = ^(NSURL *location, NSURLResponse *response, NSError *error) {
@@ -357,7 +357,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL {
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
         NSURLSessionUploadTask* task = %orig;
         [task cancel];
@@ -368,7 +368,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromFile:(NSURL *)fileURL completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && (_shdw_requestRestricted(request) || [_shadow isURLRestricted:fileURL])) {
         // roothide logos cannot parse block literals inside %orig(...) args.
         void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
@@ -388,7 +388,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDataTask* task = %orig;
         [task cancel];
@@ -399,7 +399,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
         // roothide logos cannot parse block literals inside %orig(...) args.
         void (^swallow)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
@@ -419,7 +419,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
         NSURLSessionDownloadTask* task = %orig;
         [task cancel];
@@ -430,7 +430,7 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
     return %orig;
 }
 
-- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler {
+- (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *location, NSURLResponse *response, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_requestRestricted(request)) {
         // roothide logos cannot parse block literals inside %orig(...) args.
         void (^swallow)(NSURL *, NSURLResponse *, NSError *) = ^(NSURL *location, NSURLResponse *response, NSError *error) {
