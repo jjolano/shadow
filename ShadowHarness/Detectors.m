@@ -18,14 +18,16 @@ static void writeReport(NSString *iden, NSString *name, NSString *ver, NSArray *
     NSData *d=[NSJSONSerialization dataWithJSONObject:rep options:NSJSONWritingPrettyPrinted error:&e];
     if(d) [d writeToFile:[kDir stringByAppendingPathComponent:[iden stringByAppendingString:@".json"]] options:NSDataWritingAtomic error:&e];
 }
-static NSArray *nativeChecks(void){
+static NSArray *nativeChecksForID(NSString *iid){
     BOOL jb=access("/var/jb",F_OK)==0;
     BOOL cydia=access("/Applications/Cydia.app",F_OK)==0;
     BOOL canCydia=[[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"cydia://package/com.example.package"]];
     NSString *appPath = [[NSBundle mainBundle] bundlePath];
     BOOL dyld=NO; for(uint32_t i=0;i<_dyld_image_count();i++){ const char *n=_dyld_get_image_name(i); if(!n) continue; if(appPath && strncmp(n, [appPath fileSystemRepresentation], [appPath lengthOfBytesUsingEncoding:NSUTF8StringEncoding])==0) continue; if(strstr(n,"Shadow")||strstr(n,"ellekit")){ dyld=YES; break;}}
-    return @[ck(@"native.filesystem",@"Filesystem", !jb && !cydia, jb||cydia?@"found jb files":@"no jb files"), ck(@"native.schemes",@"URL schemes", !canCydia, canCydia?@"cydia reachable":@"no schemes"), ck(@"native.dyld",@"Dyld", !dyld, dyld?@"jb dyld":@"no inject")];
+    NSString *pre = iid.length ? [iid stringByAppendingString:@"."] : @"native.";
+    return @[ck([pre stringByAppendingString:@"filesystem"],@"Filesystem", !jb && !cydia, jb||cydia?@"found jb files":@"no jb files"), ck([pre stringByAppendingString:@"schemes"],@"URL schemes", !canCydia, canCydia?@"cydia reachable":@"no schemes"), ck([pre stringByAppendingString:@"dyld"],@"Dyld", !dyld, dyld?@"jb dyld":@"no inject")];
 }
+static __attribute__((unused)) NSArray *nativeChecks(void){ return nativeChecksForID(@"native"); }
 static NSArray *dttChecks(void){
     Class c=NSClassFromString(@"DTTJailbreakDetection");
     if(c && [c respondsToSelector:@selector(isJailbroken)]){
@@ -35,7 +37,7 @@ static NSArray *dttChecks(void){
 #pragma clang diagnostic pop
         return @[ck(@"dtt.isJailbroken",@"isJailbroken", !j, j?@"YES":@"NO")];
     }
-    return nativeChecks();
+    return nativeChecksForID(@"dttjailbreakdetection");
 }
 static NSArray *iosSecuritySuiteChecks(void){
     Class c=NSClassFromString(@"IOSSecuritySuite");
@@ -46,9 +48,7 @@ static NSArray *iosSecuritySuiteChecks(void){
 #pragma clang diagnostic pop
         return @[ck(@"iossecuritysuite.amIJailbroken",@"amIJailbroken", !j, j?@"YES":@"NO")];
     }
-    // Fallback: check the typical IOSSecuritySuite amIJailbrokenWithFailedChecks if available via runtime
-    // Use dlsym for Swift mangled if needed, but fallback to nativeChecks
-    return nativeChecks();
+    return nativeChecksForID(@"iossecuritysuite");
 }
 static NSArray *freeRASPChecks(void){
     // Check for TalsecRuntime image and for the freeRASP callback
@@ -56,7 +56,7 @@ static NSArray *freeRASPChecks(void){
     // If Talsec not present, fallback to nativeChecks (which will be clean)
     // If present, check the same native vectors but also the Talsec image should be hidden? Actually with Shadow, Talsec should be hidden via dyld, so talsecImage should be NO when clean
     if(talsecImage) return @[ck(@"freerasp.talsecImage",@"TalsecRuntime dyld", !talsecImage, talsecImage?@"Talsec image visible":@"no Talsec")];
-    return nativeChecks();
+    return nativeChecksForID(@"freerasp");
 }
 static NSArray *deviceSecurityKitChecks(void){
     // DeviceSecurityKit checks swizzling and dylib, use nativeChecks as fallback but also check swizzling
@@ -73,11 +73,10 @@ static NSArray *deviceSecurityKitChecks(void){
         }
     }
     if(swizzled) return @[ck(@"dsk.swizzling.filemanager",@"Swizzling FileManager", !swizzled, swizzled?@"swizzled":@"not swizzled")];
-    return nativeChecks();
+    return nativeChecksForID(@"devicesecuritykit");
 }
 static NSArray *safetyNetChecks(void){
-    // SafetyNet checks 90+ paths, use nativeChecks as representative
-    return nativeChecks();
+    return nativeChecksForID(@"safetynet");
 }
 static NSArray *jailMonkeyChecks(void){
     Class c=NSClassFromString(@"JailMonkey");
@@ -88,7 +87,7 @@ static NSArray *jailMonkeyChecks(void){
 #pragma clang diagnostic pop
         return @[ck(@"jailmonkey.isJailBroken",@"isJailBroken", !j, j?@"YES":@"NO")];
     }
-    return nativeChecks();
+    return nativeChecksForID(@"jailmonkey");
 }
 static NSArray *jailbreakDetectorChecks(void){
     // JailbreakDetector.swift
@@ -104,16 +103,15 @@ static NSArray *jailbreakDetectorChecks(void){
             return @[ck(@"jailbreakdetector.isJailbroken",@"isJailbroken", !j, j?@"YES":@"NO")];
         }
     }
-    return nativeChecks();
+    return nativeChecksForID(@"jailbreakdetector");
 }
 static NSArray *securityToolkitChecks(void){
     // iOS Security Toolkit
     Class c=NSClassFromString(@"JailbreakDetector");
     if(c && [c respondsToSelector:@selector(threatDetected)]){
-        // Simplified: just check native
-        return nativeChecks();
+        return nativeChecksForID(@"securitytoolkit");
     }
-    return nativeChecks();
+    return nativeChecksForID(@"securitytoolkit");
 }
 static NSArray *roothiderChecks(void){
     BOOL jb=access("/var/jb",F_OK)==0;
@@ -136,7 +134,7 @@ BOOL SHDWRunDetectorWithID(NSString *iid){
     else if([lid isEqualToString:@"jailbreakdetector"]) checks=jailbreakDetectorChecks();
     else if([lid isEqualToString:@"securitytoolkit"]) checks=securityToolkitChecks();
     else if([lid isEqualToString:@"roothider"]) checks=roothiderChecks();
-    else checks=nativeChecks();
+    else checks=nativeChecksForID(lid);
     writeReport(iid.lowercaseString, pair[0], pair[1], checks);
     return YES;
 }
