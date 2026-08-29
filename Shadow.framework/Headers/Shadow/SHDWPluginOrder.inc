@@ -30,9 +30,10 @@
     "Hook_HideApps", \
     "Hook_URLScheme", \
     "Hook_Foundation@uikit", \
+    "Hook_DeviceSecurityKit", \
     "Policy_Path", \
     "Policy_Environment", \
     "Policy_Process", \
     "Policy_PseudoSandbox"
 
-#define SHDW_PLUGIN_COUNT 28
+#define SHDW_PLUGIN_COUNT 29
