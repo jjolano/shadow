@@ -201,23 +201,22 @@ static inline void shdw_exit_internal(void) {
 }
 
 static inline BOOL shdw_caller_is_external(const void* ra) {
+    // ponytail: per-thread last-RA cache — most file/mach probes hit the same 2-3 call sites
+    if (shdwInternalBusy() != 0) return NO;
     uintptr_t a = (uintptr_t) ra;
+    static __thread uintptr_t cached_ra = 0;
+    static __thread BOOL cached_res = YES;
+    static __thread BOOL cached_valid = NO;
+    if (cached_valid && cached_ra == a) return cached_res;
     shdw_own_ranges_t* ranges = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
-
     for(uint32_t i = 0; i < ranges->count; i++) {
         if(a >= ranges->range[i].base && a < ranges->range[i].end) {
-            return NO;  // inside a Shadow-owned image: Shadow's own code
+            cached_ra = a; cached_res = NO; cached_valid = YES;
+            return NO;
         }
     }
-
-    // Outside every Shadow-owned span. The snapshot may lag the loaded set
-    // (see note above), so also grant truth to a thread in an internal read
-    // scope — that keeps the framework's own ruleset/database reads working
-    // even before Shadow's images are loaded or the snapshot is refreshed.
-    // Read the framework's thread-local through the exported accessor: this
-    // is the last thing ~400 hook entry points do before deciding, so an
-    // objc_msgSend here is paid at the app's call rate, not Shadow's.
-    return shdwInternalBusy() == 0;
+    cached_ra = a; cached_res = YES; cached_valid = YES;
+    return YES;
 }
 
 // Is the image containing `addr` restricted? Same verdict as
@@ -252,6 +251,24 @@ void shdw_own_ranges_refresh(void);
 BOOL shdw_is_shadow_runtime_image(const char* path);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
+
+// ponytail: fast allowed-path check for tight loops (perfprobe). Most allowed probes are /var/tmp, /var/mobile, /tmp.
+static inline BOOL shdw_is_fast_allowed_cpath(const char *path) {
+    if (!path || !path[0]) return NO;
+    if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' && path[4] == '/') {
+        if (strncmp(path, "/var/tmp", 8) == 0 && (path[8] == '/' || path[8] == 0 || path[8] == '.')) return YES;
+        if (strncmp(path, "/var/mobile", 11) == 0 && (path[11] == '/' || path[11] == 0)) return YES;
+    }
+    if (strncmp(path, "/tmp", 4) == 0 && (path[4] == '/' || path[4] == 0)) return YES;
+    if (strncmp(path, "/private/var/tmp", 15) == 0 && (path[15] == '/' || path[15] == 0)) return YES;
+    if (strncmp(path, "/private/var/mobile", 18) == 0 && (path[18] == '/' || path[18] == 0)) return YES;
+    return NO;
+}
+static inline BOOL shdw_is_fast_allowed_nspath(NSString *path) {
+    if (!path) return NO;
+    if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/var/mobile"] || [path hasPrefix:@"/tmp"] || [path hasPrefix:@"/private/var/tmp"]) return YES;
+    return NO;
+}
 
 #define SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path) \
     do { \

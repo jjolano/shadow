@@ -1,4 +1,5 @@
 #import "hooks.h"
+#import <stdarg.h>
 #import "../../policy/PathPolicy.h"
 
 #import <string.h>
@@ -8,6 +9,13 @@
 
 int (*original_open)(const char *pathname, int oflag, ...);
 int replaced_open(const char *pathname, int oflag, ...) {
+    if (shdw_is_fast_allowed_cpath(pathname)) {
+        if (oflag & O_CREAT) {
+            va_list ap; va_start(ap, oflag); mode_t m = (mode_t)va_arg(ap, int); va_end(ap);
+            return original_open(pathname, oflag, m);
+        }
+        return original_open(pathname, oflag);
+    }
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "open", ext);
 
