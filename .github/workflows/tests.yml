@@ -17,6 +17,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  HOOKKIT: 8f29e7168a7c9bbe9f1829afd3516a24b95ec79e
+
 jobs:
   lane-contract:
     runs-on: ubuntu-latest
@@ -30,6 +33,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Provision HookKit headers
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/hookkit
+          git clone --quiet https://github.com/jjolano/HookKit /tmp/hookkit
+          git -C /tmp/hookkit checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
+            git -C /tmp/hookkit fetch --quiet origin "$HOOKKIT"
+            git -C /tmp/hookkit checkout --quiet --detach FETCH_HEAD
+          }
+          test -f /tmp/hookkit/Headers/HookKit.h || { echo "missing HookKit headers at /tmp/hookkit/Headers" >&2; exit 1; }
+          echo "HOOKKIT_HEADERS=/tmp/hookkit/Headers" >> "$GITHUB_ENV"
+          # stage-hookkit-headers also accepts THEOS layout; mirror there for
+          # jobs that still probe /opt/theos/lib/... (build.sh parity)
+          sudo mkdir -p /opt/theos/lib/HookKit.framework
+          sudo rm -rf /opt/theos/lib/HookKit.framework/Headers
+          sudo cp -R /tmp/hookkit/Headers /opt/theos/lib/HookKit.framework/Headers
 
       # The toolchain image (~10 min to build) is cached as a docker-archive
       # tarball keyed on the Dockerfile; a restore makes the subsequent
@@ -83,6 +103,21 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Provision HookKit headers
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/hookkit
+          git clone --quiet https://github.com/jjolano/HookKit /tmp/hookkit
+          git -C /tmp/hookkit checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
+            git -C /tmp/hookkit fetch --quiet origin "$HOOKKIT"
+            git -C /tmp/hookkit checkout --quiet --detach FETCH_HEAD
+          }
+          test -f /tmp/hookkit/Headers/HookKit.h || { echo "missing HookKit headers at /tmp/hookkit/Headers" >&2; exit 1; }
+          echo "HOOKKIT_HEADERS=/tmp/hookkit/Headers" >> "$GITHUB_ENV"
+          sudo mkdir -p /opt/theos/lib/HookKit.framework
+          sudo rm -rf /opt/theos/lib/HookKit.framework/Headers
+          sudo cp -R /tmp/hookkit/Headers /opt/theos/lib/HookKit.framework/Headers
 
       - name: Unit assertions (rooted)
         run: make -C tests test-rooted
