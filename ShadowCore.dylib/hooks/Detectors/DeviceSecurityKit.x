@@ -3,12 +3,6 @@
 #import <HookKit/HookKitRuntime.h>
 #import <HookKit/HookKitResolver.h>
 
-static BOOL s_enabled = YES;
-
-void shadowhook_DeviceSecurityKit_configure(NSDictionary* prefs) {
-    s_enabled = [prefs[SHDWDetectorPatchDeviceSecurityKitID] boolValue];
-}
-
 // DeviceSecurityKit runner up to 0.40 filtered checks UIApplication.canOpenURL
 // swizzling via dladdr on method_getImplementation. Shadow's %hook for
 // UIApplication uses HookKit's ObjC engine, whose IMP lives in
@@ -39,7 +33,6 @@ __attribute__((swiftcall)) static void *hook_SafetyNetRun(void *self) {
 }
 
 void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
-    if (!s_enabled) return;
     // Filtered runner: DeviceSecurityKitRunner.AppDelegate.isSwizzled
     hk_swift_target_t t1 = hk_swift_target_init();
     t1.class_name = "DeviceSecurityKitRunner.AppDelegate";

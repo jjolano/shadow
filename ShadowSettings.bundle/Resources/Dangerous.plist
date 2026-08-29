@@ -214,18 +214,6 @@
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>DetectorPatch_DeviceSecurityKit</string>
-			<key>label</key>
-			<string>DeviceSecurityKit</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
 	</array>
 	<key>title</key>
 	<string>DNGR_HOOKS</string>
