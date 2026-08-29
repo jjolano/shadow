@@ -138,7 +138,27 @@ BOOL SHDWRunDetectorWithID(NSString *iid){
     writeReport(iid.lowercaseString, pair[0], pair[1], checks);
     return YES;
 }
+static void shdw_dlopen_frameworks(void){
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        for(NSString *name in @[@"TalsecRuntime", @"IOSSecuritySuite", @"DeviceSecurityKit", @"BATJailbreakGuard", @"SafetyNet"]){
+            NSString *path = [NSString stringWithFormat:@"/var/jb/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name];
+            if(![[NSFileManager defaultManager] fileExistsAtPath:path]){
+                path = [NSString stringWithFormat:@"/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name];
+            }
+            dlopen([path fileSystemRepresentation], RTLD_NOW);
+            // Also try .detector-deps path for dev
+            NSString *devPath = [NSString stringWithFormat:@"/var/mobile/.detector-deps/%@.framework/%@", name, name];
+            dlopen([devPath fileSystemRepresentation], RTLD_NOW);
+        }
+        // Also try loading Swift package products
+        for(NSString *name in @[@"BATJailbreakGuard", @"SafetyNet", @"JailbreakDetector"]){
+            dlopen([[NSString stringWithFormat:@"/var/jb/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name] fileSystemRepresentation], RTLD_NOW);
+        }
+    });
+}
 void SHDWRunAllDetectors(void){
     if(![NSThread isMainThread]){ dispatch_sync(dispatch_get_main_queue(), ^{ SHDWRunAllDetectors(); }); return; }
+    shdw_dlopen_frameworks();
     for(NSString *iid in SHDWAllDetectorIDs()) SHDWRunDetectorWithID(iid);
 }
