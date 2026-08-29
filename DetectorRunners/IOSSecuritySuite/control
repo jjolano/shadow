@@ -1,9 +1,0 @@
-Package: me.jjolano.shadow.test.iossecuritysuite
-Name: IOSSecuritySuite Runner
-Depends: firmware (>= 14.0)
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Isolated real-binary runner for IOSSecuritySuite
-Maintainer: jjolano
-Author: jjolano
-Section: Utilities

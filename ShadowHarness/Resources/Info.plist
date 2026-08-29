@@ -32,32 +32,12 @@
 	<string>14.0</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>shadow-dyldprobe</string>
-		<string>shadow-detector-iossecuritysuite</string>
-		<string>shadow-detector-jailbreakdetector</string>
-		<string>shadow-detector-securitytoolkit</string>
-		<string>shadow-detector-dtt</string>
-		<string>shadow-detector-freerasp</string>
-		<string>shadow-detector-roothider</string>
-		<string>shadow-detector-bat</string>
-		<string>shadow-detector-safetynet</string>
-		<string>shadow-detector-dsk</string>
-		<string>shadow-detector-jailmonkey</string>
 		<string>cydia</string>
 		<string>sileo</string>
 		<string>zbra</string>
 		<string>undecimus</string>
 		<string>filza</string>
 		<string>xina</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>shadow-detectors</string>
-			</array>
-		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

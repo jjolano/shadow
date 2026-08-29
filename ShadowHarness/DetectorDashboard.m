@@ -8,6 +8,7 @@
 */
 
 #import "DetectorDashboard.h"
+#import "Detectors.h"
 #import "StatusViewController.h"
 
 static NSString* const SHDWResultsDirectory = @"/var/mobile/Documents/ShadowDetectorTests";
@@ -241,19 +242,18 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 - (void)runSDK {
     SHDWBeginRun(_sdk);
     [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
-    NSURL* url = [NSURL URLWithString:_sdk.scheme];
-    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
-        if(success) return;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SHDWEndRun(self->_sdk);
-            [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Runner unavailable"
-                message:@"Reinstall Shadow Harness to restore its isolated runners."
+    dispatch_async(dispatch_get_main_queue(), ^{
+        BOOL ok = SHDWRunDetectorWithID(self->_sdk.identifier);
+        SHDWEndRun(self->_sdk);
+        [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
+        if(!ok){
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Detector unavailable"
+                message:[NSString stringWithFormat:@"No in-process detector for %@.", self->_sdk.identifier]
                 preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
-        });
-    }];
+        }
+    });
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {
@@ -324,7 +324,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
     if(_rounds.count == 0) {
         cell.textLabel.text = @"No result yet";
-        cell.detailTextLabel.text = @"Tap Run to launch the isolated SDK runner.";
+        cell.detailTextLabel.text = @"Tap Run to execute the in-process detector.";
         cell.imageView.image = [UIImage systemImageNamed:@"circle"];
         cell.imageView.tintColor = UIColor.systemGrayColor;
         return cell;
@@ -399,12 +399,12 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
-    return section == 0 ? @"Built-in" : @"Isolated runners";
+    return section == 0 ? @"Built-in" : @"Bundled detectors";
 }
 
 - (NSString*)tableView:(UITableView*)tableView titleForFooterInSection:(NSInteger)section {
     if(section == 0) return nil;
-    return @"A clean result means the isolated runner reported no jailbreak evidence. Tap a runner for every check and its raw message.";
+    return @"A clean result means the bundled detector reported no jailbreak evidence. Tap a detector for every check and its raw message.";
 }
 
 - (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath {

@@ -1,9 +1,0 @@
-Package: me.jjolano.shadow.test.dtt
-Name: DTTJailbreakDetection Runner
-Depends: firmware (>= 14.0)
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Isolated real-source runner for DTTJailbreakDetection
-Maintainer: jjolano
-Author: jjolano
-Section: Utilities
