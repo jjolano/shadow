@@ -1158,8 +1158,22 @@ void shadowhook_NSFileManagerSymbolicLinks(SHDWHookSession* hooks) {
 %end
 %end
 
+static void *gShadowFileExistsOrig = NULL;
+static void *gShadowFileExistsHook = NULL;
+void* shdw_NSFileManagerFileExistsOriginal(void) { return gShadowFileExistsOrig; }
+void* shdw_NSFileManagerFileExistsHook(void) { return gShadowFileExistsHook; }
+
 void shadowhook_NSFileManager(SHDWHookSession* hooks) {
+    Class fmCls = objc_getClass("NSFileManager");
+    SEL fmSel = sel_registerName("fileExistsAtPath:");
+    Method fm = class_getInstanceMethod(fmCls, fmSel);
+    if (fm) gShadowFileExistsOrig = (void*)method_getImplementation(fm);
     %init(shadowhook_NSFileManager);
+    if (fm) gShadowFileExistsHook = (void*)method_getImplementation(fm);
+    if (!gShadowFileExistsOrig) {
+        IMP orig = SHDWOriginalImplementationForMethod(fm);
+        if (orig) gShadowFileExistsOrig = (void*)orig;
+    }
     shadowhook_NSFileManagerSymbolicLinks(hooks);
 
     Class fileManager = [NSFileManager class];

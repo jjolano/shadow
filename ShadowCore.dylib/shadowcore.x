@@ -139,6 +139,7 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Hook_HideApps",                shadowhook_LSApplicationWorkspace, NULL },
     { "Hook_URLScheme",               shadowhook_UIApplication,        NULL },
     { "Hook_Foundation@uikit",        shadowhook_UIImage,              NULL },
+    { "Hook_DeviceSecurityKit",       shadowhook_DeviceSecurityKit,    NULL },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
     { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
     { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },

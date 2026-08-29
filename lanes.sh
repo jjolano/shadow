@@ -1,8 +1,8 @@
 # Single source of truth for Shadow's build-lane matrix. Sourced by
 # .github/scripts/build-deps.sh and build.sh; the root Makefile reads the
-# same fields via $(shell). Fields: ARCHS, TARGET, ABI, SCHEME, FLOOR,
-# CEILING, DEPLOY, DEPLOY_ARM64E, PACKAGE, PACKAGE_ARCH (the deployment fields
-# only apply where they are non-empty).
+# same fields via $(shell). Fields: ARCHS, TARGET, SCHEME, FLOOR, CEILING,
+# DEPLOY, DEPLOY_ARM64E, PACKAGE, PACKAGE_ARCH (the deployment fields only
+# apply where they are non-empty).
 #
 # Consumers must read these fields rather than duplicate package limits.
 
@@ -10,7 +10,6 @@ shadow_lane_field() { # <lane> <field>
     case "$1:$2" in
     rootful-legacy:ARCHS)         echo "armv7 armv7s arm64 arm64e" ;;
     rootful-legacy:TARGET)        echo "iphone:clang:13.7" ;;
-    rootful-legacy:ABI)           echo "old" ;;
     rootful-legacy:SCHEME)        echo "" ;;
     rootful-legacy:FLOOR)         echo "9.0" ;;
     rootful-legacy:CEILING)       echo "14.0" ;;
@@ -20,7 +19,6 @@ shadow_lane_field() { # <lane> <field>
     rootful-legacy:PACKAGE_ARCH)  echo "iphoneos-arm" ;;
     rootful-modern:ARCHS)         echo "arm64 arm64e" ;;
     rootful-modern:TARGET)        echo "iphone:clang:16.5:14.0" ;;
-    rootful-modern:ABI)           echo "new" ;;
     rootful-modern:SCHEME)        echo "" ;;
     rootful-modern:FLOOR)         echo "14.0" ;;
     rootful-modern:CEILING)       echo "" ;;
@@ -30,7 +28,6 @@ shadow_lane_field() { # <lane> <field>
     rootful-modern:PACKAGE_ARCH)  echo "iphoneos-arm" ;;
     rootless:ARCHS)               echo "arm64 arm64e" ;;
     rootless:TARGET)              echo "iphone:clang:16.5:15.0" ;;
-    rootless:ABI)                 echo "new" ;;
     rootless:SCHEME)              echo "rootless" ;;
     rootless:FLOOR)               echo "15.0" ;;
     rootless:CEILING)             echo "" ;;
@@ -40,7 +37,6 @@ shadow_lane_field() { # <lane> <field>
     rootless:PACKAGE_ARCH)        echo "iphoneos-arm64" ;;
     roothide:ARCHS)               echo "arm64 arm64e" ;;
     roothide:TARGET)              echo "iphone:clang:16.5:15.0" ;;
-    roothide:ABI)                 echo "new" ;;
     roothide:SCHEME)              echo "roothide" ;;
     roothide:FLOOR)               echo "15.0" ;;
     roothide:CEILING)             echo "18.0" ;;

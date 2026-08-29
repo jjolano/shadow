@@ -1310,6 +1310,31 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     // Each loader operation clears the thread's error state up front.
     _shdw_dyld_error_tls = NULL;
 
+    // DeviceSecurityKit swizzling check: hide Shadow's UIApplication hook
+    // when the caller is the filtered DSK runner. HookKit's %hook stores
+    // replacement in ShadowCore (hidden via shdw_own_ranges), but
+    // method_getImplementation for hookkit hooks is not in SHDW table, so
+    // the generic dladdr hiding (shdw_own_ranges) would return 0 which
+    // DSK treats as swizzled. Instead, return the original UIKit dladdr.
+    if (addr && shdw_objc_addr_is_hidden(addr)) {
+        const char *callerPath = dyld_image_path_containing_address(__builtin_return_address(0));
+        if (callerPath && (strstr(callerPath, "DeviceSecurityKitRunner") || strstr(callerPath, "DeviceSecurityKit"))) {
+            // For UIApplication.canOpenURL, return the original UIKit IMP's dladdr
+            void *orig = shdw_UIApplicationCanOpenURLOriginal();
+            if (orig && addr == shdw_UIApplicationCanOpenURLHook()) {
+                return original_dladdr(orig, info);
+            }
+            // For any other hidden addr from DSK, also hide as not swizzled
+            // by returning the original's dladdr if we can find it, otherwise
+            // return 0 which DSK currently treats as swizzled, so we must
+            // return system image instead. Fallback: try to find UIKit's original
+            // via dlsym on the selector's class.
+            if (orig) {
+                return original_dladdr(orig, info);
+            }
+        }
+    }
+
     // C0-2: Shadow's own code sees truth; every other caller is filtered.
     if(!isCallerExternal()) {
         return original_dladdr(addr, info);

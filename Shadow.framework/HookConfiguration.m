@@ -46,6 +46,7 @@ static const SHDWPlugin kSHDWPlugins[] = {
     // UIKit-load groups (the classes only exist once UIKit is loaded).
     { "Hook_URLScheme",       SHDWHookIDURLScheme,           SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
     { "Hook_Foundation@uikit", SHDWHookIDFoundation,         SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
+    { "Hook_DeviceSecurityKit", NULL,                        SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
     // Policy plugins — evaluated via RestrictionEngine / policy/*.m, not via
     // HookCoordinator install. Registered here so SHDWPluginRegistry is the
     // single source for hook+policy metadata. Never installed via HookPlan
