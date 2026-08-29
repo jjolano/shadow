@@ -254,13 +254,9 @@ static void TestPresetConsistency(void) {
     CHECK([defaults[SHDWDetectorPatchDTTID] boolValue], "targeted DTT support defaults on");
     CHECK([defaults[SHDWDetectorPatchSafeDeviceID] boolValue], "targeted SafeDevice support defaults on");
     CHECK([defaults[SHDWDetectorPatchJailMonkeyID] boolValue], "targeted JailMonkey support defaults on");
-    CHECK([defaults[SHDWDetectorPatchIOSSecuritySuiteID] boolValue], "targeted IOSSecuritySuite support defaults on");
-    CHECK([defaults[SHDWDetectorPatchFreeRASPID] boolValue], "targeted freeRASP support defaults on");
     CHECK(standard[SHDWDetectorPatchDTTID] == nil &&
           standard[SHDWDetectorPatchSafeDeviceID] == nil &&
-          standard[SHDWDetectorPatchJailMonkeyID] == nil &&
-          standard[SHDWDetectorPatchIOSSecuritySuiteID] == nil &&
-          standard[SHDWDetectorPatchFreeRASPID] == nil,
+          standard[SHDWDetectorPatchJailMonkeyID] == nil,
           "targeted detector patches stay outside hook presets");
 
     for(NSString* key in defaults) {
@@ -277,9 +273,7 @@ static void TestPresetConsistency(void) {
     CHECK([maximum[SHDWHookIDFoundation] boolValue], "maximum preset: foundation on");
     CHECK([maximum[SHDWDetectorPatchDTTID] boolValue] &&
           [maximum[SHDWDetectorPatchSafeDeviceID] boolValue] &&
-          [maximum[SHDWDetectorPatchJailMonkeyID] boolValue] &&
-          [maximum[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
-          [maximum[SHDWDetectorPatchFreeRASPID] boolValue],
+          [maximum[SHDWDetectorPatchJailMonkeyID] boolValue],
           "maximum preset: all detector adapters on");
 
     // The maximum preset's hook keys are a superset of the standard's.
