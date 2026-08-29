@@ -6,7 +6,7 @@ The harness hosts Shadow's built-in diagnostics and lists each real SDK runner a
 scripts/build-detector-harness.sh
 ```
 
-This builds one Shadow Harness package containing isolated runners:
+This builds one Shadow Harness package with bundled in-process detectors (no isolated runners):
 
 * IOSSecuritySuite 2.3.0, JailbreakDetector.swift `b6afe56`, iOS Security Toolkit `2.0.0-filtered`, DTTJailbreakDetection `cedd424`, freeRASP 7.1.2, dyldprobe
 * **JailbreakDetector.swift** `b6afe56` — configurable file, sandbox-write, and URL-scheme checks — pure Swift, iOS 10+

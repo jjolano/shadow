@@ -1,9 +1,0 @@
-Package: me.jjolano.shadow.test.freerasp
-Name: freeRASP Runner
-Depends: firmware (>= 13.0)
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Isolated real-binary runner for freeRASP
-Maintainer: jjolano
-Author: jjolano
-Section: Utilities
