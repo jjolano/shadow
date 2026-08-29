@@ -302,9 +302,9 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         static __thread BOOL lastVerdict = NO;
         static __thread BOOL lastValid = NO;
         static __thread NSUInteger lastGen = 0;
-        static __thread ShadowRestrictionEngine *lastEngine = nil;
+        static __thread uintptr_t lastEngine = 0;
         NSUInteger gen = [store generation];
-        if (lastValid && lastEngine == self && lastGen == gen && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
+        if (lastValid && lastEngine == (uintptr_t)self && lastGen == gen && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
             const char *cur = [path fileSystemRepresentation];
             if (cur && strcmp(cur, lastPathBuf) == 0) return lastVerdict;
         }
@@ -335,7 +335,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
             if(cached >= 0) {
                 const char *cur = [path fileSystemRepresentation];
-                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; lastEngine = self; }
+                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; }
                 return (BOOL)cached;
             }
         }
@@ -450,7 +450,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         if(cacheable) {
             [self _storeVerdict:restricted forKey:cacheKey generation:[store generation] cache:sharedCache];
             const char *cur = [query.path fileSystemRepresentation];
-            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; lastEngine = self; }
+            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; }
         }
 
         return restricted;
