@@ -446,9 +446,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         done:
         if(cacheable) {
             [self _storeVerdict:restricted forKey:cacheKey generation:[store generation] cache:sharedCache];
-        }
-        {
-            const char *cur = [path fileSystemRepresentation];
+            const char *cur = [query.path fileSystemRepresentation];
             if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; }
         }
 
