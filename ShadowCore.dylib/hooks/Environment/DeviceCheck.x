@@ -23,22 +23,12 @@
 // (NO), @@: → object-returning hook (nil), anything else → skip and leave
 // the real method untouched.
 
-static DCHTarget s_enabledTargets = DCHTargetNone;
+static DCHTarget s_enabledTargets = DCHTargetDTT | DCHTargetSafeDevice | DCHTargetJailMonkey;
 void shadowhook_DeviceCheck_configure(NSDictionary* prefs) {
-    s_enabledTargets = DCHTargetNone;
+    // DTT/SafeDevice/JailMonkey are now universal (class-gated only, no pref).
+    // IOSSecuritySuite/FreeRASP remain pref-gated (generic/C/mach_msg cost).
+    s_enabledTargets = DCHTargetDTT | DCHTargetSafeDevice | DCHTargetJailMonkey;
     shadowhook_IOSSecuritySuite_configure(prefs);
-    extern void shadowhook_DeviceSecurityKit_configure(NSDictionary* prefs);
-    shadowhook_DeviceSecurityKit_configure(prefs);
-
-    if([prefs[SHDWDetectorPatchDTTID] boolValue]) {
-        s_enabledTargets |= DCHTargetDTT;
-    }
-    if([prefs[SHDWDetectorPatchSafeDeviceID] boolValue]) {
-        s_enabledTargets |= DCHTargetSafeDevice;
-    }
-    if([prefs[SHDWDetectorPatchJailMonkeyID] boolValue]) {
-        s_enabledTargets |= DCHTargetJailMonkey;
-    }
 }
 
 void shadowhook_DeviceCheck(SHDWHookSession* hooks) {
