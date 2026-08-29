@@ -296,12 +296,15 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
         NSString* path = query.path;
         // ponytail: per-thread last-path cache for tight loops. Most probes hit same 2-3 paths.
+        // Isolated per-engine: TestNonSandboxed creates two engines with different
+        // contexts (sandboxed vs not) that must not share the same cached verdict.
         static __thread char lastPathBuf[PATH_MAX] = {0};
         static __thread BOOL lastVerdict = NO;
         static __thread BOOL lastValid = NO;
         static __thread NSUInteger lastGen = 0;
+        static __thread ShadowRestrictionEngine *lastEngine = nil;
         NSUInteger gen = [store generation];
-        if (lastValid && lastGen == gen && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
+        if (lastValid && lastEngine == self && lastGen == gen && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
             const char *cur = [path fileSystemRepresentation];
             if (cur && strcmp(cur, lastPathBuf) == 0) return lastVerdict;
         }
@@ -332,7 +335,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
             if(cached >= 0) {
                 const char *cur = [path fileSystemRepresentation];
-                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; }
+                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; lastEngine = self; }
                 return (BOOL)cached;
             }
         }
@@ -447,7 +450,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         if(cacheable) {
             [self _storeVerdict:restricted forKey:cacheKey generation:[store generation] cache:sharedCache];
             const char *cur = [query.path fileSystemRepresentation];
-            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; }
+            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; lastEngine = self; }
         }
 
         return restricted;
