@@ -140,6 +140,7 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Hook_URLScheme",               shadowhook_UIApplication,        NULL },
     { "Hook_Foundation@uikit",        shadowhook_UIImage,              NULL },
     { "Hook_DeviceSecurityKit",       shadowhook_DeviceSecurityKit,    NULL },
+    { "IOSSecuritySuite",             shadowhook_IOSSecuritySuite,     NULL },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
     { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
     { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },
@@ -224,19 +225,17 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         prefs = shadowhook_DetectorAdapters_resolvePreferences(prefs);
         BOOL hasActiveDetectorAdapter = NO;
         for(NSString* key in @[ SHDWDetectorPatchDTTID, SHDWDetectorPatchSafeDeviceID,
-                                SHDWDetectorPatchJailMonkeyID, SHDWDetectorPatchIOSSecuritySuiteID,
-                                SHDWDetectorPatchFreeRASPID ]) {
+                                SHDWDetectorPatchJailMonkeyID ]) {
             hasActiveDetectorAdapter |= [prefs[key] boolValue];
         }
 
-        // IOSSecuritySuite exits during the full filesystem installer on
-        // iOS 15. Its explicit adapter replaces that wide group with the seven
-        // path-query hooks the SDK actually exercises (installed by the
-        // DeviceCheck unit below).
-        BOOL adaptIOSSecuritySuite = [prefs[SHDWDetectorPatchIOSSecuritySuiteID] boolValue] &&
-            [prefs[SHDWHookIDDeviceCheck] boolValue] &&
+        // IOSSecuritySuite is now Always (universal) — its 7 path hooks are
+        // installed via the IOSSecuritySuite plugin, so disable the wide
+        // Hook_Filesystem group when DeviceCheck+Filesystem are enabled.
+        // FreeRASP is now universal (mach_msg+syscall+path always).
+        BOOL adaptIOSSecuritySuite = [prefs[SHDWHookIDDeviceCheck] boolValue] &&
             [prefs[SHDWHookIDFilesystem] boolValue];
-        if(adaptIOSSecuritySuite || [prefs[SHDWDetectorPatchFreeRASPID] boolValue]) {
+        {
             NSMutableDictionary* effectivePrefs = [prefs mutableCopy];
             if(adaptIOSSecuritySuite) {
                 effectivePrefs[SHDWHookIDFilesystem] = @NO;

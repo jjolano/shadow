@@ -28,7 +28,7 @@ static BOOL shdw_has_bool_method(Class cls, const char* selector, BOOL classMeth
     return encoding && (encoding[0] == 'B' || encoding[0] == 'c');
 }
 
-static BOOL shdw_has_iossecuritysuite_classes(void) {
+static __attribute__((unused)) BOOL shdw_has_iossecuritysuite_classes(void) {
     int count = objc_getClassList(NULL, 0);
     if(count <= 0) return NO;
 
@@ -60,12 +60,12 @@ static BOOL shdw_has_iossecuritysuite_classes(void) {
         strcmp(suiteImage, jailbreakImage) == 0 && strcmp(suiteImage, runtimeImage) == 0;
 }
 
-static BOOL shdw_detect_iossecuritysuite(void) {
+static __attribute__((unused)) BOOL shdw_detect_iossecuritysuite(void) {
     return shdw_has_image_suffix("/IOSSecuritySuite.framework/IOSSecuritySuite") ||
         shdw_has_iossecuritysuite_classes();
 }
 
-static BOOL shdw_detect_freerasp(void) {
+static __attribute__((unused)) BOOL shdw_detect_freerasp(void) {
     return shdw_has_image_suffix("/TalsecRuntime.framework/TalsecRuntime");
 }
 
@@ -95,8 +95,6 @@ NSDictionary* shadowhook_DetectorAdapters_resolvePreferences(NSDictionary* prefs
         SHDWDetectorPatchDTTID : @(shdw_detect_dtt()),
         SHDWDetectorPatchSafeDeviceID : @(shdw_detect_safedevice()),
         SHDWDetectorPatchJailMonkeyID : @(shdw_detect_jailmonkey()),
-        SHDWDetectorPatchIOSSecuritySuiteID : @(shdw_detect_iossecuritysuite()),
-        SHDWDetectorPatchFreeRASPID : @(shdw_detect_freerasp()),
     };
 
     for(NSString* key in detected) {

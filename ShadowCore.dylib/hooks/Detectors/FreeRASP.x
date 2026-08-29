@@ -1,5 +1,5 @@
 #import "hooks.h"
-static BOOL shdw_freeRASP_enabled = NO;
+static BOOL shdw_freeRASP_enabled = YES;
 static mach_msg_return_t (*shdw_freeRASP_originalMachMsg)(mach_msg_header_t*, mach_msg_option_t,
     mach_msg_size_t, mach_msg_size_t, mach_port_name_t, mach_msg_timeout_t, mach_port_name_t) = NULL;
 static BOOL (*shdw_freeRASP_originalEncryptedBinary)(void) = NULL;
@@ -60,7 +60,6 @@ static mach_msg_return_t shdw_freeRASP_machMsg(mach_msg_header_t* msg, mach_msg_
 }
 
 void shadowhook_FreeRASP(SHDWHookSession* hooks) {
-    if(!shdw_freeRASP_enabled) return;
     if(!shdw_freeRASP_originalMachMsg) {
         if(![hooks hookFunction:mach_msg withReplacement:shdw_freeRASP_machMsg
                       outOldPtr:(void**)&shdw_freeRASP_originalMachMsg]) {
@@ -75,20 +74,15 @@ void shadowhook_FreeRASP(SHDWHookSession* hooks) {
 // its write probes use the detector-gated stock sandbox policy. Talsec.start
 // is never replaced or suppressed.
 void shadowhook_FreeRASP_preparePreferences(NSMutableDictionary* prefs) {
-    shdw_freeRASP_enabled = [prefs[SHDWDetectorPatchFreeRASPID] boolValue];
-    if(shdw_freeRASP_enabled) {
-        prefs[SHDWHookIDSyscall] = @YES;
-    }
+    shdw_freeRASP_enabled = YES;
+    prefs[SHDWHookIDSyscall] = @YES;
 }
 
 BOOL shadowhook_FreeRASP_shouldHideExistencePath(NSString* path) {
-    // Keep Talsec-only stock-path false positives out of universal policy.
-    return shdw_freeRASP_enabled &&
-        ([path isEqualToString:@"/.file"] || [path isEqualToString:@"/usr/sbin/cfprefsd"]);
+    return ([path isEqualToString:@"/.file"] || [path isEqualToString:@"/usr/sbin/cfprefsd"]);
 }
 
 __attribute__((visibility("default")))
 BOOL shdw_detector_path_policy_is_restricted(const char* path) {
-    return shdw_freeRASP_enabled && path &&
-        (strcmp(path, "/.file") == 0 || strcmp(path, "/usr/sbin/cfprefsd") == 0);
+    return path && (strcmp(path, "/.file") == 0 || strcmp(path, "/usr/sbin/cfprefsd") == 0);
 }

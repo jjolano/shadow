@@ -26,13 +26,12 @@
 static DCHTarget s_enabledTargets = DCHTargetDTT | DCHTargetSafeDevice | DCHTargetJailMonkey;
 void shadowhook_DeviceCheck_configure(NSDictionary* prefs) {
     // DTT/SafeDevice/JailMonkey are now universal (class-gated only, no pref).
-    // IOSSecuritySuite/FreeRASP remain pref-gated (generic/C/mach_msg cost).
+    // IOSSecuritySuite is now its own Always plugin, FreeRASP is universal.
     s_enabledTargets = DCHTargetDTT | DCHTargetSafeDevice | DCHTargetJailMonkey;
-    shadowhook_IOSSecuritySuite_configure(prefs);
+    (void)prefs;
 }
 
 void shadowhook_DeviceCheck(SHDWHookSession* hooks) {
     shdw_devicecheck_install_hooks(hooks, s_enabledTargets);
-    shadowhook_IOSSecuritySuite(hooks);
     shadowhook_FreeRASP(hooks);
 }
