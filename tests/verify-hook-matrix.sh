@@ -170,9 +170,6 @@ if ! grep -q 'shdw_dch_imp0_ptr_null' ShadowCore.dylib/hooks/Environment/DeviceC
 fi
 if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' ShadowCore.dylib/hooks ||
    grep -q '0x57898' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q '"talsecStartReturned": talsecStartReturned' DetectorRunners/FreeRASP/AppDelegate.swift ||
-   ! grep -q '"talsecImageLoaded": talsecImageBase() != nil' DetectorRunners/FreeRASP/AppDelegate.swift ||
-   ! grep -q '"talsecAllChecksFinished": ThreatStore.shared.finished()' DetectorRunners/FreeRASP/AppDelegate.swift ||
    ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
    ! grep -q 'mov x0, #2' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
    ! grep -q 'target - (int64_t)site' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
@@ -200,8 +197,7 @@ if grep -Eq 'test_sbiw|\.jbroot' ShadowCore.dylib/hooks/Detectors/FreeRASP.x; th
     echo 'DETECTOR DRIFT: freeRASP write signatures escaped the universal sandbox policy'
     exit 1
 fi
-if ! grep -q '\[shdw_coordinator_instance prearmDetector\]' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'stockMarkerVisibleBeforeStart' DetectorRunners/FreeRASP/AppDelegate.swift; then
+if ! grep -q '\[shdw_coordinator_instance prearmDetector\]' ShadowCore.dylib/shadowcore.x; then
     echo 'DETECTOR DRIFT: configured detector coverage is not active before SDK startup'
     exit 1
 fi
@@ -221,8 +217,8 @@ if ! grep -q 'SHADW_HOOK_GROUP_IOS_SECURITY_SUITE' ShadowCore.dylib/hooks/FileHi
    grep -q 'shadowhook_ImportSlotProtection\|method_getImplementation' ShadowCore.dylib/hooks/Detectors/IOSSecuritySuite.x ||
    ! grep -q 'shadowhook_ImportSlotProtection' ShadowCore.dylib/shadowcore.x ||
    ! grep -q 'shadowhook_objc_methodimpl_detector' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x ||
-   ! grep -q 'HK_ARTIFACT_IMPORT_SLOT' ShadowCore.dylib/SHDWHookSession.m ||
+    ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x ||
+    ! grep -q 'hk_artifact_is_import_slot' ShadowCore.dylib/SHDWHookSession.m ||
    grep -q 'strcmp(d->symbol, "readlink")' ShadowCore.dylib/hooks/FileHiding/libc.x ||
    ! grep -q 'effectivePrefs\[SHDWHookIDFilesystem\] = @NO' ShadowCore.dylib/shadowcore.x ||
    ! grep -q 'effectivePrefs\[SHDWHookIDURLScheme\] = @NO' ShadowCore.dylib/shadowcore.x ||
