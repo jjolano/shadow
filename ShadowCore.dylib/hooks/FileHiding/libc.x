@@ -13,6 +13,7 @@
 
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
+    if (shdw_is_fast_allowed_cpath(pathname)) return original_access(pathname, mode);
     int caller_errno = errno;
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
@@ -488,6 +489,7 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
 
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
+    if (shdw_is_fast_allowed_cpath(pathname)) return original_stat(pathname, buf);
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat", ext);
 
@@ -719,6 +721,7 @@ static int replaced_closedir(DIR* dirp) {
 
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
+    if (shdw_is_fast_allowed_cpath(pathname)) return original_fopen(pathname, mode);
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "fopen", ext);
 

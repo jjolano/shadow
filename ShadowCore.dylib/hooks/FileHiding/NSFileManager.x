@@ -246,6 +246,7 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
+    if (shdw_is_fast_allowed_nspath(path)) return %orig;
     if(isCallerExternal() && (shadowhook_FreeRASP_shouldHideExistencePath(path) ||
        [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         return NO;
@@ -255,6 +256,7 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 }
 
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory __attribute__((annotate("hookkit:allow_inherited"))) {
+    if (shdw_is_fast_allowed_nspath(path)) return %orig;
     if(isCallerExternal() && (shadowhook_FreeRASP_shouldHideExistencePath(path) ||
        [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         // Out-param leak: the directory bit must not survive the hiding.
