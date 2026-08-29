@@ -56,6 +56,17 @@
 			</array>
 		</dict>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>me.jjolano.shadow.harness</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>shadowharness</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIDeviceFamily</key>
