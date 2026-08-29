@@ -1,0 +1,70 @@
+{
+  "sdk" : {
+    "id" : "devicesecuritykit",
+    "name" : "DeviceSecurityKit",
+    "version" : "0.40.0"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 88408958,
+      "checks" : [
+        {
+          "id" : "dsk.jailbreak",
+          "passed" : false,
+          "message" : "suspiciousPath(\"\/private\/preboot\"), suspiciousPath(\"\/Library\/LaunchDaemons\"), forkSucceeded, prebootPath(\"\/private\/preboot\"), antiDetectionTool(\"\/private\/preboot\/aeb02f2ea423d480adc3dcee6aad63514115850173228772f690bb4c77cc968ebdd7ce6ef7f50ebc56dc557b14f09200\/dopamine-ribf4t\/procursus\/usr\/lib\/tweakinject\/shadow.dylib\")",
+          "name" : "JailbreakDetector.isJailbroken"
+        },
+        {
+          "id" : "dsk.hook.prologue",
+          "passed" : false,
+          "message" : "function hook check",
+          "name" : "HookDetector.isFunctionHooked"
+        },
+        {
+          "id" : "dsk.swizzling",
+          "passed" : false,
+          "message" : "swizzle check",
+          "name" : "SwizzlingDetector.isSwizzled"
+        },
+        {
+          "id" : "dsk.frida",
+          "passed" : true,
+          "message" : "frida check",
+          "name" : "FridaDetector.isFridaDetected"
+        },
+        {
+          "id" : "dsk.dylib",
+          "passed" : false,
+          "message" : "dylib check",
+          "name" : "DylibInjectionDetector.isDylibInjected"
+        },
+        {
+          "id" : "dsk.reverse",
+          "passed" : false,
+          "message" : "reverse-engineering check",
+          "name" : "ReverseEngineeringDetector.isReverseEngineered"
+        },
+        {
+          "id" : "dsk.debugger",
+          "passed" : false,
+          "message" : "debugger check",
+          "name" : "DebuggerDetector.isDebuggerAttached"
+        }
+      ],
+      "check_count" : 7
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 72639167,
+    "elapsed_ns" : 88408958,
+    "first_elapsed_ns" : 60446542,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:43:14Z"
+}

@@ -54,3 +54,31 @@ Measurement rig and results for per-call hook overhead (arm A), launch cost
 | sandbox | restricted | 12125 | 11958 | +167 |
 | syscall.csops | allowed | 1250 | 541 | +709 |
 | uikit.imagenamed | allowed | 138250 | 133125 | +5125 |
+
+## Arm B — app launch CPU (median of 5 runs)
+
+Target: Bitwarden (`com.8bit.bitwarden`), process `Bitwarden`. CPU time is the
+primary measure; wall time is coarse one-second device sampling.
+
+| arm | median CPU | median wall |
+|---|---:|---:|
+| injected | 0:05.83 | 7 s |
+| uninjected | 0:01.04 | 3 s |
+| delta | +0:04.79 | +4 s |
+
+## Arm C - detector response timing (median of medians, ms)
+
+`first` is the first invocation in a process; `latest` is the latest report after the harness scene re-run. `framework load` is the cold SDK framework load measured by the harness.
+
+| detector | injected first | injected latest | uninjected first | uninjected latest | latest delta | framework load |
+|---|---:|---:|---:|---:|---:|---:|
+| batjailbreakguard | 22.423 | 20.886 | 8.622 | 6.144 | 14.742 | 39.823 |
+| devicesecuritykit | 59.178 | 50.591 | 242.218 | 205.873 | -155.282 | 39.823 |
+| dttjailbreakdetection | 0.015 | 0.008 | 1.027 | 1.038 | -1.030 | 39.823 |
+| freerasp | 115.144 | 0.043 | 194.723 | 0.071 | -0.028 | 39.823 |
+| iossecuritysuite | 33.169 | 30.384 | 30.300 | 26.542 | 3.842 | 39.823 |
+| jailbreakdetector | 0.735 | 1.363 | 1.216 | 0.857 | 0.505 | 39.823 |
+| jailmonkey | 28.230 | 18.571 | 28.099 | 24.138 | -5.567 | 39.823 |
+| roothider | 165.009 | 175.016 | 108.810 | 76.084 | 98.932 | 39.823 |
+| safetynet | 1617.430 | 147.648 | 1828.776 | 320.777 | -173.129 | 39.823 |
+| securitytoolkit | 3.238 | 4.151 | 2.537 | 2.133 | 2.017 | 39.823 |

@@ -54,8 +54,14 @@ def main() -> int:
         lines.append(f"| {group} | {pclass} | {inj} | {stk} | {delta:+d} |")
 
     text = BENCH.read_text() if BENCH.exists() else ""
-    head = text.split("\n## Arm A")[0].rstrip() + "\n\n"
-    BENCH.write_text(head + "\n".join(lines) + "\n")
+    head = text.split("\n## Arm A", 1)[0].rstrip()
+    tails = [text.find(marker) for marker in ("\n## Arm B", "\n## Arm C")]
+    tails = [index for index in tails if index >= 0]
+    tail = text[min(tails):].lstrip() if tails else ""
+    output = head + "\n\n" + "\n".join(lines) + "\n"
+    if tail:
+        output += "\n" + tail
+    BENCH.write_text(output)
     print(f"wrote {BENCH}")
     return 0
 

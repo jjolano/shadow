@@ -1,0 +1,126 @@
+{
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : true,
+      "run_index" : 3,
+      "elapsed_ns" : 43000,
+      "checks" : [
+        {
+          "id" : "freerasp.systemVPN",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "systemVPN"
+        },
+        {
+          "id" : "freerasp.screenshot",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "screenshot"
+        },
+        {
+          "id" : "freerasp.runtimeManipulation",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "runtimeManipulation"
+        },
+        {
+          "id" : "freerasp.unofficialStore",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "unofficialStore"
+        },
+        {
+          "id" : "freerasp.passcodeChange",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "passcodeChange"
+        },
+        {
+          "id" : "freerasp.simulator",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "simulator"
+        },
+        {
+          "id" : "freerasp.passcode",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "passcode"
+        },
+        {
+          "id" : "freerasp.deviceChange",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "deviceChange"
+        },
+        {
+          "id" : "freerasp.signature",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "signature"
+        },
+        {
+          "id" : "freerasp.jailbreak",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "jailbreak"
+        },
+        {
+          "id" : "freerasp.timeSpoofing",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "timeSpoofing"
+        },
+        {
+          "id" : "freerasp.debugger",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "debugger"
+        },
+        {
+          "id" : "freerasp.missingSecureEnclave",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "missingSecureEnclave"
+        },
+        {
+          "id" : "freerasp.deviceID",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "deviceID"
+        },
+        {
+          "id" : "freerasp.screenRecording",
+          "passed" : true,
+          "message" : "No threat callback",
+          "name" : "screenRecording"
+        }
+      ],
+      "check_count" : 15
+    }
+  ],
+  "schemaVersion" : 1,
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 72042791,
+    "elapsed_ns" : 43000,
+    "first_elapsed_ns" : 107884750,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:44:01Z",
+  "outcome" : "clean",
+  "sdk" : {
+    "id" : "freerasp",
+    "name" : "freeRASP",
+    "version" : "7.1.2"
+  },
+  "harness" : {
+    "talsecImageLoaded" : true,
+    "talsecAllChecksFinished" : false,
+    "stockMarkerVisibleBeforeStart" : false,
+    "varJBVisible" : false,
+    "shadowCoreVisible" : false,
+    "talsecStartReturned" : true
+  }
+}

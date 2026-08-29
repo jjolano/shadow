@@ -1,0 +1,82 @@
+{
+  "sdk" : {
+    "id" : "batjailbreakguard",
+    "name" : "BATJailbreakGuard",
+    "version" : "main@spm"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 6144292,
+      "checks" : [
+        {
+          "id" : "bat.filepath",
+          "passed" : false,
+          "message" : "Threat detected",
+          "name" : "FilePath"
+        },
+        {
+          "id" : "bat.symboliclinks",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "SymbolicLinks"
+        },
+        {
+          "id" : "bat.environmentvariables",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "EnvironmentVariables"
+        },
+        {
+          "id" : "bat.dynamiclib",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "DynamicLib"
+        },
+        {
+          "id" : "bat.sandboxed",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "SandboxedEnvironment"
+        },
+        {
+          "id" : "bat.rootuser",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "RootUser"
+        },
+        {
+          "id" : "bat.openports",
+          "passed" : false,
+          "message" : "Threat detected",
+          "name" : "OpenPorts"
+        },
+        {
+          "id" : "bat.preventedapis",
+          "passed" : false,
+          "message" : "Threat detected",
+          "name" : "PreventedAPIs"
+        },
+        {
+          "id" : "bat.checksum",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "Checksum"
+        }
+      ],
+      "check_count" : 9
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 7430792,
+    "elapsed_ns" : 6144292,
+    "first_elapsed_ns" : 8908125,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:45:02Z"
+}

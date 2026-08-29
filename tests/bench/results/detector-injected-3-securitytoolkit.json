@@ -1,0 +1,40 @@
+{
+  "sdk" : {
+    "id" : "securitytoolkit",
+    "name" : "iOS Security Toolkit",
+    "version" : "2.0.0-filtered"
+  },
+  "outcome" : "clean",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : true,
+      "run_index" : 3,
+      "elapsed_ns" : 4150792,
+      "checks" : [
+        {
+          "id" : "securitytoolkit.root_privileges",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "Root privileges"
+        },
+        {
+          "id" : "securitytoolkit.hooks",
+          "passed" : true,
+          "message" : "No threat detected",
+          "name" : "Runtime hooks"
+        }
+      ],
+      "check_count" : 2
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 72042791,
+    "elapsed_ns" : 4150792,
+    "first_elapsed_ns" : 3237625,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:44:01Z"
+}

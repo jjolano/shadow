@@ -1,0 +1,88 @@
+{
+  "sdk" : {
+    "id" : "jailmonkey",
+    "name" : "JailMonkey",
+    "version" : "v2.8.5"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 16561083,
+      "checks" : [
+        {
+          "id" : "jailmonkey.checkPaths",
+          "passed" : false,
+          "message" : "jailbreak file found",
+          "name" : "checkPaths (60+ paths)"
+        },
+        {
+          "id" : "jailmonkey.checkSchemes",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "checkSchemes (11 schemes)"
+        },
+        {
+          "id" : "jailmonkey.canViolateSandbox",
+          "passed" : true,
+          "message" : "sandbox intact",
+          "name" : "canViolateSandbox"
+        },
+        {
+          "id" : "jailmonkey.canFork",
+          "passed" : true,
+          "message" : "fork denied",
+          "name" : "canFork"
+        },
+        {
+          "id" : "jailmonkey.checkSymlinks",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "checkSymlinks"
+        },
+        {
+          "id" : "jailmonkey.checkDylibs",
+          "passed" : false,
+          "message" : "injected dylib",
+          "name" : "checkDylibs (40+ dylibs)"
+        },
+        {
+          "id" : "jailmonkey.isDebugged",
+          "passed" : true,
+          "message" : "not debugged",
+          "name" : "isDebugged"
+        },
+        {
+          "id" : "jailmonkey.isiOSAppOnMac",
+          "passed" : true,
+          "message" : "not on Mac",
+          "name" : "isiOSAppOnMac (env)"
+        },
+        {
+          "id" : "jailmonkey.isJailBroken",
+          "passed" : true,
+          "message" : "raw=jailbroken; imp=ShadowCore.dylib (hooked)",
+          "name" : "isJailBroken"
+        },
+        {
+          "id" : "jailmonkey.canMockLocation",
+          "passed" : true,
+          "message" : "location not mocked",
+          "name" : "canMockLocation (RN)"
+        }
+      ],
+      "check_count" : 10
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 96914083,
+    "elapsed_ns" : 16561083,
+    "first_elapsed_ns" : 30896167,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:42:24Z"
+}

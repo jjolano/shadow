@@ -3,8 +3,10 @@
 #import "Detectors.h"
 @implementation AppDelegate
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-    SHDWRunAllDetectors();
-    [StatusViewController writeStealthReport];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SHDWRunAllDetectors();
+        [StatusViewController writeStealthReport];
+    });
     return YES;
 }
 @end

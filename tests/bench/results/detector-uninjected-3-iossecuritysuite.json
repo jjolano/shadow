@@ -1,0 +1,172 @@
+{
+  "sdk" : {
+    "id" : "iossecuritysuite",
+    "name" : "IOSSecuritySuite",
+    "version" : "2.3.0"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 26542292,
+      "checks" : [
+        {
+          "id" : "iossecuritysuite.jailbreak.urlSchemes",
+          "passed" : false,
+          "message" : "sileo:\/\/ URL scheme detected",
+          "name" : "Jailbreak: urlSchemes"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.existenceOfSuspiciousFiles",
+          "passed" : false,
+          "message" : "Suspicious file exists: \/var\/jb",
+          "name" : "Jailbreak: existenceOfSuspiciousFiles"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.suspiciousFilesCanBeOpened",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Jailbreak: suspiciousFilesCanBeOpened"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.restrictedDirectoriesWriteable",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Jailbreak: restrictedDirectoriesWriteable"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.fork",
+          "passed" : false,
+          "message" : "Fork was able to create a new process (sandbox violation)",
+          "name" : "Jailbreak: fork"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.symbolicLinks",
+          "passed" : false,
+          "message" : "Rootless jailbreak symlink detected: \/var\/jb -> \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/",
+          "name" : "Jailbreak: symbolicLinks"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.dyld",
+          "passed" : false,
+          "message" : "Suspicious library loaded: \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/basebin\/systemhook.dylib",
+          "name" : "Jailbreak: dyld"
+        },
+        {
+          "id" : "iossecuritysuite.jailbreak.suspiciousObjCClasses",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Jailbreak: suspiciousObjCClasses"
+        },
+        {
+          "id" : "iossecuritysuite.reverse.existenceOfSuspiciousFiles",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Reverse engineering: existenceOfSuspiciousFiles"
+        },
+        {
+          "id" : "iossecuritysuite.reverse.dyld",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Reverse engineering: dyld"
+        },
+        {
+          "id" : "iossecuritysuite.reverse.openedPorts",
+          "passed" : false,
+          "message" : "Port 22 is open",
+          "name" : "Reverse engineering: openedPorts"
+        },
+        {
+          "id" : "iossecuritysuite.reverse.pSelectFlag",
+          "passed" : true,
+          "message" : "Passed",
+          "name" : "Reverse engineering: pSelectFlag"
+        },
+        {
+          "id" : "iossecuritysuite.integrity.bundle",
+          "passed" : true,
+          "message" : "Bundle identifier matches",
+          "name" : "Bundle integrity"
+        },
+        {
+          "id" : "iossecuritysuite.debugger",
+          "passed" : true,
+          "message" : "Debugger not detected",
+          "name" : "Debugger"
+        },
+        {
+          "id" : "iossecuritysuite.parent",
+          "passed" : true,
+          "message" : "Parent is launchd",
+          "name" : "Unexpected parent"
+        },
+        {
+          "id" : "iossecuritysuite.emulator",
+          "passed" : true,
+          "message" : "Physical device",
+          "name" : "Emulator"
+        },
+        {
+          "id" : "iossecuritysuite.proxy",
+          "passed" : true,
+          "message" : "No proxy or VPN detected",
+          "name" : "Proxy or VPN"
+        },
+        {
+          "id" : "iossecuritysuite.lockdown",
+          "passed" : true,
+          "message" : "Lockdown mode disabled",
+          "name" : "Lockdown mode"
+        },
+        {
+          "id" : "iossecuritysuite.loadcommands",
+          "passed" : true,
+          "message" : "No injected dylib exposed",
+          "name" : "Suspicious load commands"
+        },
+        {
+          "id" : "shadow.path.bundle",
+          "passed" : true,
+          "message" : "bundle hidden",
+          "name" : "Shadow preference bundle hidden"
+        },
+        {
+          "id" : "shadow.path.preferences",
+          "passed" : false,
+          "message" : "prefs visible",
+          "name" : "Shadow preferences hidden"
+        },
+        {
+          "id" : "shadow.dyld",
+          "passed" : false,
+          "message" : "\/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/Library\/Frameworks\/Shadow.framework\/Shadow\n\/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/usr\/lib\/TweakInject\/Shadow.dylib",
+          "name" : "Shadow images hidden"
+        },
+        {
+          "id" : "shadow.objc.class",
+          "passed" : true,
+          "message" : "objc_getClass returned nil",
+          "name" : "ShadowRuleset hidden"
+        },
+        {
+          "id" : "shadow.objc.method",
+          "passed" : true,
+          "message" : "method hidden",
+          "name" : "internalDictionary hidden"
+        }
+      ],
+      "check_count" : 24
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 7602292,
+    "elapsed_ns" : 26542292,
+    "first_elapsed_ns" : 30300375,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:46:38Z"
+}

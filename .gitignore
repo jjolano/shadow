@@ -14,6 +14,7 @@ artifacts/
 # via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
 vendor/HookKit.framework/
 .detector-deps/
+ShadowHarness/concurrency/
 core
 core.*
 __pycache__/

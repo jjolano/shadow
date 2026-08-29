@@ -11,12 +11,16 @@
     navigationController.navigationBar.prefersLargeTitles = YES;
     self.window.rootViewController = navigationController;
     [self.window makeKeyAndVisible];
-    SHDWRunAllDetectors();
-    [StatusViewController writeStealthReport];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SHDWRunAllDetectors();
+        [StatusViewController writeStealthReport];
+    });
 }
 - (void)sceneDidBecomeActive:(UIScene*)scene {
-    SHDWRunAllDetectors();
-    [StatusViewController writeStealthReport];
-    [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SHDWRunAllDetectors();
+        [StatusViewController writeStealthReport];
+        [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
+    });
 }
 @end
