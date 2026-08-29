@@ -29,19 +29,21 @@ grep -q 'applicationIDInContext' "$controller" || {
     exit 1
 }
 
-for key in DetectorPatch_DTTJailbreakDetection DetectorPatch_SafeDevice DetectorPatch_JailMonkey \
-           DetectorPatch_IOSSecuritySuite DetectorPatch_FreeRASP; do
+for key in DetectorPatch_DTTJailbreakDetection DetectorPatch_SafeDevice DetectorPatch_JailMonkey; do
     grep -q "<string>$key</string>" "$dangerous" || {
         echo "SETTINGS DRIFT: Dangerous page lost $key"
         exit 1
     }
 done
 
-for key in SHDWDetectorPatchIOSSecuritySuiteID SHDWDetectorPatchFreeRASPID; do
-    grep -q "$key" "$runtime" || {
-        echo "SETTINGS DRIFT: $key no longer pre-arms behavioral coverage"
+# IOSSecuritySuite + FreeRASP are now universal (always-on via SHDWPhaseAlways
+# IOSSecuritySuite plugin and unconditional FreeRASP coverage); no patch ID in
+# defaults/Dangerous to pre-arm.
+for key in DetectorPatch_IOSSecuritySuite DetectorPatch_FreeRASP; do
+    if grep -q "<string>$key</string>" "$dangerous"; then
+        echo "SETTINGS DRIFT: $key should not be in Dangerous (now always-on)"
         exit 1
-    }
+    fi
 done
 
 for source in "$loader" "$settings"; do
