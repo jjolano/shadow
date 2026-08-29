@@ -92,6 +92,8 @@ static NSArray* ExpectedCtorOrder(void) {
         @"classes",
         @"symlookup",
         @"Hook_DynamicLibrariesExtra",
+        @"Hook_DeviceSecurityKit",
+        @"IOSSecuritySuite",
     ];
 }
 
