@@ -77,12 +77,8 @@
             }
         }
 
-        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.iossecuritysuite"]) {
-            result[SHDWDetectorPatchIOSSecuritySuiteID] = @YES;
-        } else if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.dtt"]) {
+        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.dtt"]) {
             result[SHDWDetectorPatchDTTID] = @YES;
-        } else if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.freerasp"]) {
-            result[SHDWDetectorPatchFreeRASPID] = @YES;
         }
     }
 
