@@ -74,7 +74,7 @@ static void SHDWRememberImportSlots(hk_report_t* report) {
     for(size_t i = 0; i < count; i++) {
         hk_artifact_t artifact;
         if(hk_artifact_snapshot_copy_at(snapshot, i, &artifact) == HK_STATUS_OK &&
-           artifact.kind == HK_ARTIFACT_IMPORT_SLOT) {
+           hk_artifact_is_import_slot(&artifact)) {
             SHDWRememberImportSlot(artifact.import_slot_address ?: artifact.address,
                                    artifact.size);
         }
@@ -316,7 +316,7 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
                    HK_REACH_OBJC_DISPATCH, oldPtr
                        ? HK_ORIGINAL_DIRECT_PREDECESSOR : HK_ORIGINAL_NONE);
     spec.target.objc = hk_objc_instance_method(dispatchClass, selector);
-    spec.target.objc.inheritance_policy = HK_OBJC_ALLOW_INHERITED_OVERRIDE;
+    hk_objc_target_allow_inherited(&spec.target.objc);
     spec.target.objc.availability = HK_AVAILABILITY_REQUIRED_NOW;
     BOOL installed = shdw_apply_hook_spec(&spec, oldPtr);
     if(installed && oldPtr && *oldPtr) {

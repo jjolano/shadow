@@ -24,6 +24,8 @@ include $(THEOS_MAKE_PATH)/application.mk
 before-stage::
 	$(ECHO_NOTHING)rm -rf \
 		"$(THEOS_STAGING_DIR)/Applications/IOSSecuritySuiteRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/JailbreakDetectorRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/SecurityToolkitRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/DTTJailbreakDetectionRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/FreeRASPRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/RoothiderRunner.app" \
@@ -37,6 +39,8 @@ ifneq ($(INCLUDE_DETECTOR_RUNNERS),)
 after-stage::
 	$(ECHO_NOTHING)for app in \
 		../DetectorRunners/IOSSecuritySuite/.theos/_/Applications/IOSSecuritySuiteRunner.app \
+		../DetectorRunners/JailbreakDetector/.theos/_/Applications/JailbreakDetectorRunner.app \
+		../DetectorRunners/SecurityToolkit/.theos/_/Applications/SecurityToolkitRunner.app \
 		../DetectorRunners/DTTJailbreakDetection/.theos/_/Applications/DTTJailbreakDetectionRunner.app \
 		../DetectorRunners/FreeRASP/.theos/_/Applications/FreeRASPRunner.app \
 		../DetectorRunners/Roothider/.theos/_/Applications/RoothiderRunner.app \

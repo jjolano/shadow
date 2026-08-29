@@ -5,7 +5,8 @@ SAFETY_DIR ?= ../../.detector-deps/SafetyNet/Sources/SafetyNet
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = SafetyNetRunner
-SafetyNetRunner_FILES = AppDelegate.swift $(wildcard $(SAFETY_DIR)/*.swift)
+# ponytail: native replica needs no package compile; the package's models live in subdirectories.
+SafetyNetRunner_FILES = AppDelegate.swift
 SafetyNetRunner_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-detector-safetynet-module-cache
 SafetyNetRunner_FRAMEWORKS = UIKit Foundation
 SafetyNetRunner_LDFLAGS = -lswiftFoundation

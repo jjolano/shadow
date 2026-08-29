@@ -47,7 +47,7 @@ static NSDictionary *check(NSString *cid, NSString *name, BOOL passed, NSString 
 
     BOOL clean=YES; for(NSDictionary *c in checks) if(![c[@"passed"] boolValue]) clean=NO;
     NSString *outcome=clean?@"clean":@"jailbroken";
-    NSDictionary *report=@{@"schemaVersion":@1,@"sdk":@{@"id":@"jailmonkey",@"name":@"JailMonkey",@"version":@"master@rn"},@"outcome":outcome,@"generatedAt":[NSISO8601DateFormatter.new stringFromDate:self.lastRun],@"rounds":@[@{@"phase":@"startup",@"clean":@(clean),@"checks":checks}]};
+    NSDictionary *report=@{@"schemaVersion":@1,@"sdk":@{@"id":@"jailmonkey",@"name":@"JailMonkey",@"version":@"v2.8.5"},@"outcome":outcome,@"generatedAt":[NSISO8601DateFormatter.new stringFromDate:self.lastRun],@"rounds":@[@{@"phase":@"startup",@"clean":@(clean),@"checks":checks}]};
     NSString *dir=@"/var/mobile/Documents/ShadowDetectorTests"; NSError *e=nil; [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:&e];
     NSData *d=[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:&e]; BOOL ok=d && [d writeToFile:[dir stringByAppendingPathComponent:@"jailmonkey.json"] options:NSDataWritingAtomic error:&e];
     if(!ok) self.label.text=[NSString stringWithFormat:@"Report failed\n%@", e.localizedDescription]; else self.label.text=clean?@"JailMonkey clean":@"JailMonkey jailbroken";

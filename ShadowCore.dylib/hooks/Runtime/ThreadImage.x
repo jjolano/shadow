@@ -75,7 +75,7 @@ static NSArray* shdw_filter_stack_symbols(NSArray* result) {
 
 %group shadowhook_NSThread
 %hook NSThread
-+ (NSArray *)callStackReturnAddresses {
++ (NSArray *)callStackReturnAddresses __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -85,7 +85,7 @@ static NSArray* shdw_filter_stack_symbols(NSArray* result) {
     return result;
 }
 
-+ (NSArray *)callStackSymbols {
++ (NSArray *)callStackSymbols __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -100,7 +100,7 @@ static NSArray* shdw_filter_stack_symbols(NSArray* result) {
 // Exception stacks leak Shadow/HookKit frames to detectors that trigger or
 // catch exceptions and read their stacks; NSThread's own implementation also
 // funnels through NSException on some OS versions. Same filter as NSThread.
-- (NSArray *)callStackReturnAddresses {
+- (NSArray *)callStackReturnAddresses __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -110,7 +110,7 @@ static NSArray* shdw_filter_stack_symbols(NSArray* result) {
     return result;
 }
 
-- (NSArray *)callStackSymbols {
+- (NSArray *)callStackSymbols __attribute__((annotate("hookkit:allow_inherited"))) {
     NSArray* result = %orig;
 
     if(isCallerExternal() && result) {
@@ -187,19 +187,19 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 
 %group shadowhook_UIImage
 %hook UIImage
-- (instancetype)initWithContentsOfFile:(NSString *)path {
+- (instancetype)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (UIImage *)imageWithContentsOfFile:(NSString *)path {
++ (UIImage *)imageWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (UIImage *)imageNamed:(NSString *)name {
++ (UIImage *)imageNamed:(NSString *)name __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_imageNameProtected(name)) {
         return nil;
     }
@@ -207,7 +207,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
     return %orig;
 }
 
-+ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle {
++ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
@@ -215,7 +215,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
     return %orig;
 }
 
-+ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle compatibleWithTraitCollection:(UITraitCollection *)traitCollection {
++ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle compatibleWithTraitCollection:(UITraitCollection *)traitCollection __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
@@ -225,7 +225,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 
 // id instead of UIImageConfiguration: the type is iOS 13+ and the tweak
 // targets iOS 9; selector dispatch only needs the pointer ABI.
-+ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle withConfiguration:(id)configuration {
++ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle withConfiguration:(id)configuration __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }
@@ -237,7 +237,7 @@ static BOOL shdw_assetRestricted(NSString* name, NSBundle* bundle) {
 
 %group shadowhook_UIImageVariableValue
 %hook UIImage
-+ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle variableValue:(double)value withConfiguration:(id)configuration {
++ (UIImage *)imageNamed:(NSString *)name inBundle:(NSBundle *)bundle variableValue:(double)value withConfiguration:(id)configuration __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_assetRestricted(name, bundle)) {
         return nil;
     }

@@ -7,6 +7,7 @@ cd "$ROOT"
 
 # Lane matrix lives in one place; see lanes.sh.
 . "$ROOT/lanes.sh"
+. "$ROOT/scripts/theos-toolchain.sh"
 
 PB=${PREBUILT_ROOT:-$ROOT/../prebuilt}
 CONTROL_VAR=_THEOS_DEB_PACKAGE_CONTROL_PATH
@@ -79,7 +80,7 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
     fi
 
     if [ "$profile" = roothide ]; then
-        # -lroothide resolves from roothide/theos's vendor/lib, which our
+        # -lroothide resolves from Theos' vendor/lib, which our
         # THEOS_LIBRARY_PATH override hides; stage the stub locally.
         local roothide_tbd="$THEOS/vendor/lib/iphone/roothide/libroothide.tbd"
         [ -f "$roothide_tbd" ] || { echo "missing libroothide.tbd under $THEOS/vendor/lib" >&2; return 1; }
@@ -102,6 +103,7 @@ legacy_args() {
 
 prepare_scheme_framework() { # rootless|roothide
     local lane=$1
+    shadow_theos_toolchain_args "$(shadow_lane_field "$lane" ABI)"
     # Invoked directly (not via the root Makefile), so the lane's ARCHS/
     # TARGET overrides don't apply — state them explicitly. The scheme must
     # match the main build too: a mismatched pass leaves stale caller
@@ -109,7 +111,8 @@ prepare_scheme_framework() { # rootless|roothide
     # implementations the header inlines replace) recompiles empty.
     make -C Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
         ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+        TARGET="$(shadow_lane_field "$lane" TARGET)" \
+        "${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}"
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
     cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
@@ -133,21 +136,28 @@ copy_dependency_packages() { # profile
 }
 
 build_lane() { # profile
-    local lane=$1 control="$ROOT/control.$1" package destination
+    local lane=$1 control="$ROOT/control.$1" package destination abi
+    local lane_args
+    local LEGACY_ARGS=()
+    abi=$(shadow_lane_field "$lane" ABI)
+    if [ "$lane" = rootful-legacy ]; then
+        legacy_args
+    fi
+    shadow_theos_toolchain_args "$abi"
+    lane_args=("${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}" "${LEGACY_ARGS[@]}")
     stage_deps "$lane"
-    make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
+    make clean "SHADOW_LANE=$lane" "${lane_args[@]}"
 
     case "$lane" in
         rootful-legacy)
-            legacy_args
-            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}" "${LEGACY_ARGS[@]}"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${lane_args[@]}"
             ;;
         rootful-modern)
-            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${lane_args[@]}"
             ;;
         rootless|roothide)
             prepare_scheme_framework "$lane"
-            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${lane_args[@]}"
             ;;
     esac
 
@@ -164,9 +174,11 @@ build_harness() { # rootful-modern|rootless
     if [ "$lane" = rootless ]; then
         scripts/build-detector-harness.sh
     else
+        shadow_theos_toolchain_args "$(shadow_lane_field "$lane" ABI)"
         make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
             ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-            TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+            TARGET="$(shadow_lane_field "$lane" TARGET)" \
+            "${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}"
     fi
     package=$(<ShadowHarness/.theos/last_package)
     case "$package" in
@@ -178,9 +190,10 @@ build_harness() { # rootful-modern|rootless
 
 build_quick() {
     stage_deps rootful-modern
-    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
-    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
-    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
+    shadow_theos_toolchain_args new
+    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}"
+    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}"
+    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" "${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}"
 }
 
 case ${1:-all} in

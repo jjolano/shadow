@@ -1,17 +1,22 @@
 TARGET ?= iphone:clang:16.5:13.0
 ARCHS ?= arm64
-FREERASP_ROOT ?= ../../.detector-deps/Free-RASP-iOS-6.4.0
+FREERASP_ROOT ?= ../../.detector-deps/Free-RASP-iOS-7.1.2
 TALSEC_FRAMEWORK := $(FREERASP_ROOT)/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework
+FREERASP_COMPAT_FRAMEWORKS := /tmp/shadow-detector-freerasp-frameworks
 
 include $(THEOS)/makefiles/common.mk
 
 # The Linux linker does not honor iOS 16's $ld$previous Swift-Foundation
-# directives, so select the pre-iOS-16 stubs before Foundation is linked.
-_THEOS_INTERNAL_LDFLAGS := -F$(THEOS)/sdks/iPhoneOS14.5.sdk/System/Library/Frameworks -L$(THEOS)/sdks/iPhoneOS14.5.sdk/usr/lib/swift $(_THEOS_INTERNAL_LDFLAGS)
+# directives, so select the pre-iOS-16 Swift stubs before Foundation is linked.
+_THEOS_INTERNAL_LDFLAGS := -F$(FREERASP_COMPAT_FRAMEWORKS) -L$(THEOS)/sdks/iPhoneOS14.5.sdk/usr/lib/swift $(_THEOS_INTERNAL_LDFLAGS)
+
+before-all::
+	$(ECHO_NOTHING)mkdir -p "$(FREERASP_COMPAT_FRAMEWORKS)"$(ECHO_END)
+	$(ECHO_NOTHING)ln -sfn "$(THEOS)/sdks/iPhoneOS14.5.sdk/System/Library/Frameworks/Foundation.framework" "$(FREERASP_COMPAT_FRAMEWORKS)/Foundation.framework"$(ECHO_END)
 
 APPLICATION_NAME = FreeRASPRunner
 FreeRASPRunner_FILES = AppDelegate.swift
-FreeRASPRunner_SWIFTFLAGS = -swift-version 5 -F$(dir $(TALSEC_FRAMEWORK)) -module-cache-path /tmp/shadow-detector-freerasp-module-cache
+FreeRASPRunner_SWIFTFLAGS = -swift-version 5 -F$(dir $(TALSEC_FRAMEWORK)) -module-cache-path /tmp/shadow-detector-freerasp-module-cache -Xcc -Wno-error=unknown-warning-option -Xcc -Wno-error=incomplete-umbrella
 FreeRASPRunner_LDFLAGS = -F$(dir $(TALSEC_FRAMEWORK)) -framework TalsecRuntime -lswiftFoundation -rpath @executable_path/Frameworks
 FreeRASPRunner_FRAMEWORKS = UIKit Foundation
 FreeRASPRunner_INSTALL_PATH = /Applications

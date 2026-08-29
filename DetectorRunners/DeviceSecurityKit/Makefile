@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = DeviceSecurityKitRunner
 # ponytail: filtered — jailbreak/hook/swizzling only, no VPN/clipboard/bg tasks
-DeviceSecurityKitRunner_FILES = AppDelegate.swift $(wildcard $(DSK_DIR)/*.swift)
+DeviceSecurityKitRunner_FILES = AppDelegate.swift
 DeviceSecurityKitRunner_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-detector-dsk-module-cache
 DeviceSecurityKitRunner_FRAMEWORKS = UIKit Foundation Security
 DeviceSecurityKitRunner_LDFLAGS = -lswiftFoundation

@@ -12,6 +12,7 @@ trap 'rm -rf "$RUN"' EXIT
 
 # Lane matrix lives in one place; see lanes.sh.
 . "$ROOT/lanes.sh"
+. "$ROOT/scripts/theos-toolchain.sh"
 
 # HookKit is provisioned into Theos (see .github/scripts/install-hookkit-theos.sh
 # and the HOOKKIT pin in build.yml), not built here.
@@ -20,14 +21,11 @@ LIBSANDY=9c77311172485e92bf0c439391be5a9565c877e4
 
 ARCHS=$(shadow_lane_field "$FLAVOR" ARCHS) || exit 2
 TARGET=$(shadow_lane_field "$FLAVOR" TARGET) || exit 2
+ABI=$(shadow_lane_field "$FLAVOR" ABI) || exit 2
 FLOOR=$(shadow_lane_field "$FLAVOR" FLOOR) || exit 2
 SCHEME=$(shadow_lane_field "$FLAVOR" SCHEME) || exit 2
 
-if [ "$FLAVOR" != rootful-legacy ]; then
-    [ "$(uname -s)" = Darwin ] || {
-        echo "$FLAVOR requires macOS/Xcode for the new arm64e ABI" >&2
-        exit 1
-    }
+if [ "$ABI" = new ] && [ "$(uname -s)" = Darwin ]; then
     xcode_major=$(xcodebuild -version | awk 'NR == 1 { split($2, v, "."); print v[1] }')
     [ "$xcode_major" -ge 12 ] || { echo "$FLAVOR requires Xcode 12 or newer" >&2; exit 1; }
 fi
@@ -176,6 +174,8 @@ build_sandy() {
 
 common_make_args
 [ "$FLAVOR" != rootful-legacy ] || legacy_make_args
+shadow_theos_toolchain_args "$ABI"
+MAKE_ARGS+=("${SHADOW_THEOS_TOOLCHAIN_ARGS[@]}")
 # HookKit is provisioned into Theos (HookKit repo: make install-theos), not
 # staged here; build.sh resolves it from $THEOS/lib per lane. build-deps only
 # builds the from-source deps that are not published as a Theos install.

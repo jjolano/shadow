@@ -4,31 +4,31 @@
 
 %group shadowhook_NSArray
 %hook NSArray
-- (id)initWithContentsOfFile:(NSString *)path {
+- (id)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (id)arrayWithContentsOfFile:(NSString *)path {
++ (id)arrayWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (id)arrayWithContentsOfURL:(NSURL *)url {
++ (id)arrayWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-- (id)initWithContentsOfURL:(NSURL *)url {
+- (id)initWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-- (NSArray *)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+- (NSArray *)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -40,7 +40,7 @@
     return %orig;
 }
 
-+ (NSArray *)arrayWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
++ (NSArray *)arrayWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -52,7 +52,7 @@
     return %orig;
 }
 
-- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -60,7 +60,7 @@
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -68,7 +68,7 @@
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+- (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(error) {
             *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
@@ -82,25 +82,25 @@
 %end
 
 %hook NSMutableArray
-- (id)initWithContentsOfFile:(NSString *)path {
+- (id)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-- (id)initWithContentsOfURL:(NSURL *)url {
+- (id)initWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (id)arrayWithContentsOfFile:(NSString *)path {
++ (id)arrayWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (id)arrayWithContentsOfURL:(NSURL *)url {
++ (id)arrayWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
@@ -114,19 +114,19 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
 
 %group shadowhook_NSDictionary
 %hook NSDictionary
-- (id)initWithContentsOfFile:(NSString *)path {
+- (id)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-- (id)initWithContentsOfURL:(NSURL *)url {
+- (id)initWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-- (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
+- (id)initWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -138,13 +138,13 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
     return %orig;
 }
 
-+ (id)dictionaryWithContentsOfFile:(NSString *)path {
++ (id)dictionaryWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error {
++ (id)dictionaryWithContentsOfURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -156,13 +156,13 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
     return %orig;
 }
 
-+ (id)dictionaryWithContentsOfURL:(NSURL *)url {
++ (id)dictionaryWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -170,7 +170,7 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -178,7 +178,7 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error {
+- (BOOL)writeToURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(error) {
             *error = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
@@ -192,25 +192,25 @@ void shadowhook_NSArray(SHDWHookSession* hooks) {
 %end
 
 %hook NSMutableDictionary
-- (id)initWithContentsOfFile:(NSString *)path {
+- (id)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-- (id)initWithContentsOfURL:(NSURL *)url {
+- (id)initWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (NSMutableDictionary *)dictionaryWithContentsOfFile:(NSString *)path {
++ (NSMutableDictionary *)dictionaryWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (NSMutableDictionary *)dictionaryWithContentsOfURL:(NSURL *)url {
++ (NSMutableDictionary *)dictionaryWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
@@ -224,13 +224,13 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
 
 %group shadowhook_NSData
 %hook NSData
-+ (instancetype)dataWithContentsOfFile:(NSString *)path {
++ (instancetype)dataWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
++ (instancetype)dataWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileNoSuchFileErrorForPath:path];
@@ -242,13 +242,13 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url {
++ (instancetype)dataWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
++ (instancetype)dataWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileNoSuchFileErrorForURL:url];
@@ -260,13 +260,13 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (instancetype)initWithContentsOfFile:(NSString *)path {
+- (instancetype)initWithContentsOfFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+- (instancetype)initWithContentsOfFile:(NSString *)path options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileNoSuchFileErrorForPath:path];
@@ -278,13 +278,13 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (instancetype)initWithContentsOfURL:(NSURL *)url {
+- (instancetype)initWithContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr {
+- (instancetype)initWithContentsOfURL:(NSURL *)url options:(NSDataReadingOptions)readOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileNoSuchFileErrorForURL:url];
@@ -296,19 +296,19 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (id)initWithContentsOfMappedFile:(NSString *)path {
+- (id)initWithContentsOfMappedFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-+ (id)dataWithContentsOfMappedFile:(NSString *)path {
++ (id)dataWithContentsOfMappedFile:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
 
     return %orig;
 }
 
-- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile {
+- (BOOL)writeToFile:(NSString *)path atomically:(BOOL)useAuxiliaryFile __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -316,7 +316,7 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
+- (BOOL)writeToFile:(NSString *)path options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:path url:nil];
@@ -328,7 +328,7 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically {
+- (BOOL)writeToURL:(NSURL *)url atomically:(BOOL)atomically __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         return NO;
     }
@@ -336,7 +336,7 @@ void shadowhook_NSDictionary(SHDWHookSession* hooks) {
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr {
+- (BOOL)writeToURL:(NSURL *)url options:(NSDataWritingOptions)writeOptionsMask error:(NSError * _Nullable *)errorPtr __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(errorPtr) {
             *errorPtr = [Shadow fileErrorWithCode:NSFileWriteUnknownError path:[url path] url:url];
@@ -370,7 +370,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return [_shadow isPathRestricted:@(pathname) options:options];
 }
 
-- (instancetype)initWithFileDescriptor:(int)fd closeOnDealloc:(BOOL)closeOpt {
+- (instancetype)initWithFileDescriptor:(int)fd closeOnDealloc:(BOOL)closeOpt __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_fd_is_restricted(fd, shdw_restriction_write_options())) {
         return nil;
     }
@@ -378,7 +378,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-- (instancetype)initWithFileDescriptor:(int)fd {
+- (instancetype)initWithFileDescriptor:(int)fd __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_fd_is_restricted(fd, shdw_restriction_write_options())) {
         return nil;
     }
@@ -386,7 +386,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-- (int)fileDescriptor {
+- (int)fileDescriptor __attribute__((annotate("hookkit:allow_inherited"))) {
     // %orig is a pure getter; safe to evaluate in the gate and pass through.
     int fd = %orig;
 
@@ -397,7 +397,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return fd;
 }
 
-- (NSData *)readDataToEndOfFile {
+- (NSData *)readDataToEndOfFile __attribute__((annotate("hookkit:allow_inherited"))) {
     // [self fileDescriptor] resolves the real fd: the fileDescriptor hook
     // passes Shadow's own caller (this hook body) through untouched.
     if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
@@ -407,7 +407,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-- (NSData *)readDataOfLength:(NSUInteger)length {
+- (NSData *)readDataOfLength:(NSUInteger)length __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
         return [NSData data];
     }
@@ -415,7 +415,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-- (NSData *)availableData {
+- (NSData *)availableData __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], nil)) {
         return [NSData data];
     }
@@ -423,7 +423,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-- (void)writeData:(NSData *)data {
+- (void)writeData:(NSData *)data __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_fd_is_restricted([self fileDescriptor], shdw_restriction_write_options())) {
         return;
     }
@@ -431,13 +431,13 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-+ (instancetype)fileHandleForReadingAtPath:(NSString *)path {
++ (instancetype)fileHandleForReadingAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path);
     
     return %orig;
 }
 
-+ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error {
++ (instancetype)fileHandleForReadingFromURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -449,7 +449,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-+ (instancetype)fileHandleForWritingAtPath:(NSString *)path {
++ (instancetype)fileHandleForWritingAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:shdw_restriction_write_options()]) {
         return nil;
     }
@@ -457,7 +457,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-+ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error {
++ (instancetype)fileHandleForWritingToURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -469,7 +469,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-+ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path {
++ (instancetype)fileHandleForUpdatingAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:shdw_restriction_write_options()]) {
         return nil;
     }
@@ -477,7 +477,7 @@ static BOOL shdw_fd_is_restricted(int fd, NSDictionary* options) {
     return %orig;
 }
 
-+ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error {
++ (instancetype)fileHandleForUpdatingURL:(NSURL *)url error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
@@ -514,7 +514,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
 
 %group shadowhook_NSFileWrapper
 %hook NSFileWrapper
-- (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
+- (instancetype)initWithURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
@@ -537,7 +537,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
 // stock never returns nil from it, so a filtered nil would be a
 // stock-impossible answer for the exact value the caller supplied.
 
-- (BOOL)matchesContentsOfURL:(NSURL *)url {
+- (BOOL)matchesContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         return NO;
     }
@@ -545,7 +545,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return %orig;
 }
 
-- (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError {
+- (BOOL)readFromURL:(NSURL *)url options:(NSFileWrapperReadingOptions)options error:(NSError * _Nullable *)outError __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
@@ -563,7 +563,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return result;
 }
 
-- (NSDictionary<NSString *,NSFileWrapper *> *)fileWrappers {
+- (NSDictionary<NSString *,NSFileWrapper *> *)fileWrappers __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary<NSString *,NSFileWrapper *> *result = %orig;
 
     if(result && isCallerExternal()) {
@@ -583,7 +583,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return result;
 }
 
-- (NSData *)regularFileContents {
+- (NSData *)regularFileContents __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_wrapper_source_restricted(self)) {
         return nil;
     }
@@ -591,7 +591,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return %orig;
 }
 
-- (NSURL *)symbolicLinkDestinationURL {
+- (NSURL *)symbolicLinkDestinationURL __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_wrapper_source_restricted(self)) {
         return nil;
     }
@@ -599,7 +599,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return %orig;
 }
 
-- (NSData *)serializedRepresentation {
+- (NSData *)serializedRepresentation __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && shdw_wrapper_source_restricted(self)) {
         return nil;
     }
@@ -607,7 +607,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return %orig;
 }
 
-- (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError {
+- (BOOL)writeToURL:(NSURL *)url options:(NSFileWrapperWritingOptions)options originalContentsURL:(NSURL *)originalContentsURL error:(NSError * _Nullable *)outError __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* writeOptions = shdw_restriction_write_options();
 
     if(isCallerExternal() && ([_shadow isURLRestricted:url options:writeOptions] || [_shadow isURLRestricted:originalContentsURL])) {
@@ -646,13 +646,13 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 
 %group shadowhook_NSFileVersion
 %hook NSFileVersion
-+ (NSFileVersion *)currentVersionOfItemAtURL:(NSURL *)url {
++ (NSFileVersion *)currentVersionOfItemAtURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (NSArray<NSFileVersion *> *)otherVersionsOfItemAtURL:(NSURL *)url {
++ (NSArray<NSFileVersion *> *)otherVersionsOfItemAtURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     NSArray* result = %orig;
@@ -664,19 +664,19 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return result;
 }
 
-+ (NSFileVersion *)versionOfItemAtURL:(NSURL *)url forPersistentIdentifier:(id)persistentIdentifier {
++ (NSFileVersion *)versionOfItemAtURL:(NSURL *)url forPersistentIdentifier:(id)persistentIdentifier __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (NSURL *)temporaryDirectoryURLForNewVersionOfItemAtURL:(NSURL *)url {
++ (NSURL *)temporaryDirectoryURLForNewVersionOfItemAtURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     return %orig;
 }
 
-+ (NSFileVersion *)addVersionOfItemAtURL:(NSURL *)url withContentsOfURL:(NSURL *)contentsURL options:(NSFileVersionAddingOptions)options error:(NSError * _Nullable *)outError {
++ (NSFileVersion *)addVersionOfItemAtURL:(NSURL *)url withContentsOfURL:(NSURL *)contentsURL options:(NSFileVersionAddingOptions)options error:(NSError * _Nullable *)outError __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
         // The versioned item is written; the contents source is read.
         NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
@@ -693,7 +693,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return %orig;
 }
 
-+ (NSArray<NSFileVersion *> *)unresolvedConflictVersionsOfItemAtURL:(NSURL *)url {
++ (NSArray<NSFileVersion *> *)unresolvedConflictVersionsOfItemAtURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url);
 
     NSArray* result = %orig;
@@ -708,7 +708,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
 // The receiver's real location: hidden versions report nil so a version
 // object obtained before a ruleset change (or via an unfiltered path)
 // cannot disclose its file.
-- (NSURL *)URL {
+- (NSURL *)URL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
     if(isCallerExternal() && [_shadow isURLRestricted:result]) {
@@ -718,7 +718,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return result;
 }
 
-- (NSURL *)replaceItemAtURL:(NSURL *)url options:(NSFileVersionReplacingOptions)options error:(NSError * _Nullable *)error {
+- (NSURL *)replaceItemAtURL:(NSURL *)url options:(NSFileVersionReplacingOptions)options error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
         NSDictionary* writeOptions = @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 
@@ -746,7 +746,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return result;
 }
 
-- (BOOL)removeAndReturnError:(NSError * _Nullable *)error {
+- (BOOL)removeAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
         NSURL* selfURL = [self URL];
 
@@ -762,7 +762,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return %orig;
 }
 
-+ (BOOL)removeOtherVersionsOfItemAtURL:(NSURL *)url error:(NSError * _Nullable *)outError {
++ (BOOL)removeOtherVersionsOfItemAtURL:(NSURL *)url error:(NSError * _Nullable *)outError __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url options:@{kShadowRestrictionOperation : kShadowRestrictionOpWrite}]) {
         if(outError) {
             *outError = [Shadow fileNoSuchFileErrorForURL:url];
@@ -774,7 +774,7 @@ static NSArray* _shdw_filterVersionArray(NSArray* versions) {
     return %orig;
 }
 
-+ (void)getNonlocalVersionsOfItemAtURL:(NSURL *)url completionHandler:(void (^)(NSArray<NSFileVersion *> *nonlocalFileVersions, NSError *error))completionHandler {
++ (void)getNonlocalVersionsOfItemAtURL:(NSURL *)url completionHandler:(void (^)(NSArray<NSFileVersion *> *nonlocalFileVersions, NSError *error))completionHandler __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
         if(completionHandler) {
             // Async-contract: never invoke a blocked-path completion inline.
@@ -805,13 +805,13 @@ void shadowhook_NSFileVersion(SHDWHookSession* hooks) {
 // iOS 11 era); declare it here so the hook and its %orig compile against a
 // real signature.
 @interface NSTask (ShadowInitWithLaunchPath)
-- (nullable instancetype)initWithLaunchPath:(NSString *)path arguments:(NSArray<NSString *> *)arguments;
+- (nullable instancetype)initWithLaunchPath:(NSString *)path arguments:(NSArray<NSString *> *) __attribute__((annotate("hookkit:allow_inherited")))arguments;
 @end
 
 %group shadowhook_NSTask
 %hook NSTask
 
-- (void)launch {
+- (void)launch __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && self.launchPath && [_shadow isPathRestricted:self.launchPath options:shdw_restriction_write_options()]) {
         // Stock raises exactly this exception when the launch path is
         // invalid ("Couldn't posix_spawn: No such file or directory"); a
@@ -824,7 +824,7 @@ void shadowhook_NSFileVersion(SHDWHookSession* hooks) {
     %orig;
 }
 
-+ (instancetype)launchedTaskWithLaunchPath:(NSString *)path arguments:(NSArray<NSString *> *)arguments {
++ (instancetype)launchedTaskWithLaunchPath:(NSString *)path arguments:(NSArray<NSString *> *)arguments __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && path && [_shadow isPathRestricted:path options:shdw_restriction_write_options()]) {
         // The convenience raises NSInvalidArgumentException for an unusable
         // launch path; mirror it so a denied task fails the same way stock
