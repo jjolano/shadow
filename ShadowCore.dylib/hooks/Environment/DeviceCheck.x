@@ -27,6 +27,8 @@ static DCHTarget s_enabledTargets = DCHTargetNone;
 void shadowhook_DeviceCheck_configure(NSDictionary* prefs) {
     s_enabledTargets = DCHTargetNone;
     shadowhook_IOSSecuritySuite_configure(prefs);
+    extern void shadowhook_DeviceSecurityKit_configure(NSDictionary* prefs);
+    shadowhook_DeviceSecurityKit_configure(prefs);
 
     if([prefs[SHDWDetectorPatchDTTID] boolValue]) {
         s_enabledTargets |= DCHTargetDTT;

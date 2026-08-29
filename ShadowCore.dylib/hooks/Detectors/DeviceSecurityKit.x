@@ -3,6 +3,12 @@
 #import <HookKit/HookKitRuntime.h>
 #import <HookKit/HookKitResolver.h>
 
+static BOOL s_enabled = YES;
+
+void shadowhook_DeviceSecurityKit_configure(NSDictionary* prefs) {
+    s_enabled = [prefs[SHDWDetectorPatchDeviceSecurityKitID] boolValue];
+}
+
 // DeviceSecurityKit runner up to 0.40 filtered checks UIApplication.canOpenURL
 // swizzling via dladdr on method_getImplementation. Shadow's %hook for
 // UIApplication uses HookKit's ObjC engine, whose IMP lives in
@@ -28,13 +34,12 @@ __attribute__((swiftcall)) static bool hook_isSwizzled(void *self, void *cls, vo
 static void *gOrig_SafetyNetRun = NULL;
 
 __attribute__((swiftcall)) static void *hook_SafetyNetRun(void *self) {
-    FILE *lf = fopen("/tmp/shadow-safetynet.log", "a");
-    if (lf) { fprintf(lf, "[SafetyNet] hook_SafetyNetRun called self=%p\n", self); fclose(lf); }
     (void)self;
     return (__bridge void*)@[ ];
 }
 
 void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
+    if (!s_enabled) return;
     // Filtered runner: DeviceSecurityKitRunner.AppDelegate.isSwizzled
     hk_swift_target_t t1 = hk_swift_target_init();
     t1.class_name = "DeviceSecurityKitRunner.AppDelegate";
@@ -43,11 +48,6 @@ void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
     t1.require_unique = false;
     t1.availability = HK_AVAILABILITY_REQUIRED_NOW;
     hk_status_t s1 = hk_swift_hook(&t1, (void*)hook_isSwizzled, NULL);
-    FILE *log = fopen("/tmp/shadow-dsk.log", "a");
-    if (log) {
-        fprintf(log, "[Shadow][DSK] AppDelegate.isSwizzled hook s1=%d err=%d\n", s1, hk_swift_last_error_code());
-        fclose(log);
-    }
 
     // Real library: DeviceSecurityKit.SwizzlingDetector.isSwizzled
     hk_swift_target_t t2 = hk_swift_target_init();
@@ -55,12 +55,7 @@ void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
     t2.name_kind = HK_SWIFT_NAME_DEMANGLED_SUBSTRING;
     t2.method_name = "isSwizzled";
     t2.require_unique = false;
-    hk_status_t s2 = hk_swift_hook(&t2, (void*)hook_isSwizzled, NULL);
-    log = fopen("/tmp/shadow-dsk.log", "a");
-    if (log) {
-        fprintf(log, "[Shadow][DSK] SwizzlingDetector.isSwizzled hook s2=%d err=%d\n", s2, hk_swift_last_error_code());
-        fclose(log);
-    }
+    hk_swift_hook(&t2, (void*)hook_isSwizzled, NULL);
 
     if (s1 != HK_STATUS_OK) {
         hk_swift_target_t t1b = hk_swift_target_init();
@@ -77,7 +72,6 @@ void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
     }
 
     // SafetyNetRunner.AppDelegate.run – hide sshd via run() result patching
-    // Try Swift vtable slot brute force for AppDelegate (covers run, isSwizzled, etc.)
     for (uint32_t idx = 0; idx < 16; idx++) {
         hk_swift_target_t t = hk_swift_target_init();
         t.class_name = "SafetyNetRunner.AppDelegate";
@@ -86,8 +80,6 @@ void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
         void *orig = NULL;
         if (hk_swift_hook(&t, (void*)hook_SafetyNetRun, &orig) == HK_STATUS_OK && orig) {
             gOrig_SafetyNetRun = orig;
-            FILE *lf = fopen("/tmp/shadow-dsk.log", "a");
-            if (lf) { fprintf(lf, "[Shadow][SafetyNet] slot %u hook ok orig=%p\n", idx, orig); fclose(lf); }
             break;
         }
     }
@@ -106,10 +98,5 @@ void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks) {
     }
     if (symRun) {
         [hooks hookFunction:symRun withReplacement:(void*)hook_SafetyNetRun outOldPtr:&gOrig_SafetyNetRun];
-        FILE *lf = fopen("/tmp/shadow-dsk.log", "a");
-        if (lf) { fprintf(lf, "[Shadow][SafetyNet] hookFunction run sym=%p orig=%p\n", symRun, gOrig_SafetyNetRun); fclose(lf); }
-    } else {
-        FILE *lf = fopen("/tmp/shadow-dsk.log", "a");
-        if (lf) { fprintf(lf, "[Shadow][SafetyNet] run sym not found\n"); fclose(lf); }
     }
 }
