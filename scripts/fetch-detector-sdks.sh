@@ -29,6 +29,14 @@ if { [ "$SDK" = all ] || [ "$SDK" = securitytoolkit ]; } &&
 fi
 
 if { [ "$SDK" = all ] || [ "$SDK" = freerasp ]; } &&
+    [ ! -d "$DEPS/Free-RASP-iOS-6.4.0/Talsec/TalsecRuntime.xcframework" ]; then
+    git init "$DEPS/Free-RASP-iOS-6.4.0"
+    git -C "$DEPS/Free-RASP-iOS-6.4.0" remote add origin https://github.com/talsec/Free-RASP-iOS.git
+    git -C "$DEPS/Free-RASP-iOS-6.4.0" fetch --depth 1 origin refs/tags/6.4.0
+    git -C "$DEPS/Free-RASP-iOS-6.4.0" checkout --detach FETCH_HEAD
+fi
+
+if { [ "$SDK" = all ] || [ "$SDK" = freerasp ]; } &&
     [ ! -d "$DEPS/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework" ]; then
     git init "$DEPS/Free-RASP-iOS-7.1.2"
     git -C "$DEPS/Free-RASP-iOS-7.1.2" remote add origin https://github.com/talsec/Free-RASP-iOS.git

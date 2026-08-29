@@ -1,0 +1,34 @@
+{
+  "sdk" : {
+    "id" : "jailbreakdetector",
+    "name" : "JailbreakDetector.swift",
+    "version" : "main@b6afe56"
+  },
+  "outcome" : "clean",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : true,
+      "run_index" : 3,
+      "elapsed_ns" : 857167,
+      "checks" : [
+        {
+          "id" : "jailbreakdetector.result",
+          "passed" : true,
+          "message" : "All configured checks passed",
+          "name" : "Jailbreak detection"
+        }
+      ],
+      "check_count" : 1
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 7430792,
+    "elapsed_ns" : 857167,
+    "first_elapsed_ns" : 1216084,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:45:02Z"
+}

@@ -1,0 +1,34 @@
+{
+  "sdk" : {
+    "id" : "dttjailbreakdetection",
+    "name" : "DTTJailbreakDetection",
+    "version" : "0.2.0+cedd424"
+  },
+  "outcome" : "clean",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : true,
+      "run_index" : 3,
+      "elapsed_ns" : 1445584,
+      "checks" : [
+        {
+          "id" : "dtt.isJailbroken",
+          "passed" : true,
+          "message" : "Library returned NO",
+          "name" : "isJailbroken"
+        }
+      ],
+      "check_count" : 1
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 7430792,
+    "elapsed_ns" : 1445584,
+    "first_elapsed_ns" : 1027292,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:45:02Z"
+}

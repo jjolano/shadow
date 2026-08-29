@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${THEOS:?THEOS must point to Theos}"
+export PATH=/tmp/swift-5.8.1-RELEASE-ubuntu22.04/usr/bin:$PATH
 ABI_ARGS=()
 if [ "$(uname -s)" = Linux ]; then
     tc=${NEWABI_TOOLCHAIN:-$THEOS/toolchain/modern/linux/iphone}
@@ -9,9 +10,77 @@ if [ "$(uname -s)" = Linux ]; then
     ABI_ARGS=("SDKBINPATH=$tc/bin" "IS_NEW_ABI=1")
 fi
 m() { make "$@" ${ABI_ARGS[@]+"${ABI_ARGS[@]}"}; }
-for id in iossecuritysuite jailbreakdetector securitytoolkit dtt freerasp devicesecuritykit; do
-    "$ROOT/scripts/fetch-detector-sdks.sh" "$id"
-done
+"$ROOT/scripts/fetch-detector-sdks.sh" all
+# BATJailbreakGuard's DynamicLib service uses String(validatingCString:), a
+# Swift 5.9+ stdlib init absent from the 14.5 SDK's stdlib; validatingUTF8 is
+# equivalent for the dylib names it reads from the image list (idempotent).
+sed -i 's/String(validatingCString: cName)/String(validatingUTF8: cName)/' \
+    "$ROOT/.detector-deps/BATJailbreakGuard/Sources/BATJailbreakGuard/Service/Sub/DynamicLib/JailbreakDetectionDynamicLibraryCheckService.swift"
+# JailMonkey's RN isDebuggedMode bridge stores a BOOL into a BOOL* (compiles
+# under RN without -Werror); fix the type (idempotent).
+sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeActived = [self isDebugged];/' \
+    "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
+# The real Roothider repo is a single main.m app whose detect_* functions only
+# LOG findings; the harness compiles it in-process. Filter it (idempotent):
+# redirect LOG to the recorder header, drop the app-scaffolding (NSObject
+# category + AppDelegate + main) and the non-SDK xpc_private include, and fix
+# an int-passed-as-%s bug in detect_jailbreak_port.
+python3 - "$ROOT/.detector-deps/JailbreakDetector/main.m" <<'PY'
+import sys, re
+p = sys.argv[1]
+s = open(p).read()
+s = re.sub(r'#define LOG\(\.\.\.\) NSLog\(@__VA_ARGS__\)', '#include "RoothiderLog.h"', s)
+s = re.sub(r'^#include <xpc_private.h>\n', '', s, flags=re.M)
+s = re.sub(r'/\* bypass all jb-bypass.*\Z', '', s, flags=re.S)
+s = s.replace('LOG("jailbreak port %s unknown err: %s,%s\\n", ports[i], kr, mach_error_string(kr))',
+              'LOG("jailbreak port %s unknown err: %d,%s\\n", ports[i], kr, mach_error_string(kr))')
+s = s.replace('snprintf(path,sizeof(path),"%s/tmp/%lx",getenv("HOME"), arc4random());',
+              'snprintf(path,sizeof(path),"%s/tmp/%lx",getenv("HOME"), (unsigned long)arc4random());')
+s = s.replace('int fd = open(path, O_RDWR|O_CREAT, 0755);\n        assert(fd >= 0);',
+              'int fd = open(path, O_RDWR|O_CREAT, 0755);\n        if(fd < 0) return;')
+s = s.replace('assert(fcntl(fd, F_GETSIGSINFO, &siginfo)==0);',
+              'if(fcntl(fd, F_GETSIGSINFO, &siginfo)!=0) { close(fd); unlink(path); return; }')
+s = s.replace('LOG("jailbreak actived! %s : %d\\n", jbsigs[i].tag, siginfo.fg_sig_is_platform)',
+              'LOG("jailbreak actived! %s : %lu\\n", jbsigs[i].tag, (unsigned long)siginfo.fg_sig_is_platform)')
+s = s.replace('kern_return_t kr = bootstrap_look_up(bootstrap_port, (char *)name, &port);',
+              'bootstrap_look_up(bootstrap_port, (char *)name, &port);')
+s = s.replace('        NSString* appIdentifier = [appBundle performSelector:@selector(bundleIdentifier)];',
+              '        // NSString* appIdentifier = [appBundle performSelector:@selector(bundleIdentifier)];')
+s = re.sub(r'#define JBSIGS\(l,h,x\) assert\(l==sizeof\(x\)\); static uint8_t sig_##h\[\] = x;\n(#undef JBSIGS\n)?#include "jbsigs.h"\n',
+              '#define JBSIGS(l,h,x) assert(l==sizeof(x)); static uint8_t sig_##h[] = x;\n#include "jbsigs.h"\n#undef JBSIGS\n',
+              s, count=1)
+open(p, 'w').write(s)
+PY
+
+# TalsecRuntime interfaces ship built with a newer Swift than the theos 5.8
+# toolchain can read: they import _Concurrency/_StringProcessing/_SwiftConcurrencyShims
+# (vestigial — the interface bodies use none) and carry a newer compiler-version
+# stamp. Patch the fetched copies in place (idempotent) so the harness can build
+# against the current (7.1.2) and fallback (6.4.0) frameworks.
+patch_talsec() {
+    local m="$1/Modules/TalsecRuntime.swiftmodule"
+    for f in "$m"/*.swiftinterface; do
+        sed -i \
+            -e 's|^// swift-compiler-version: .*|// swift-compiler-version: Apple Swift version 5.8 (swift-5.8-RELEASE)|' \
+            -e '/^import _Concurrency$/d' \
+            -e '/^import _StringProcessing$/d' \
+            -e '/^import _SwiftConcurrencyShims$/d' \
+            "$f"
+    done
+    # 7.1.2 bundles libcurl headers with a deliberate re-inclusion design that
+    # breaks the clang module build ("macro redefined"); the Swift API does not
+    # use them, so move them out of the umbrella scan and slim the umbrella +
+    # module map to the Swift-facing surface (idempotent).
+    local fw="$1"
+    mkdir -p "$fw/Headers/curl-internal"
+    for h in stdcheaders.h mprintf.h curl.h curlver.h easy.h header.h multi.h options.h system.h typecheck-gcc.h urlapi.h websockets.h CryptoBridgingHeader.h CurlWrapper.h; do
+        [ -f "$fw/Headers/$h" ] && mv "$fw/Headers/$h" "$fw/Headers/curl-internal/"
+    done
+    printf '#import <UIKit/UIKit.h>\n\n//! Project version number for TalsecRuntime_iOS.\nFOUNDATION_EXPORT double TalsecRuntime_iOSVersionNumber;\n\n//! Project version string for TalsecRuntime.\nFOUNDATION_EXPORT const unsigned char TalsecRuntime_iOSVersionString[];\n' > "$fw/Headers/TalsecRuntime_iOS.h"
+    printf 'framework module TalsecRuntime {\n    umbrella header "TalsecRuntime_iOS.h"\n\n    export *\n    module * { export * }\n\n    explicit module Private {\n        export *\n    }\n}\n\nmodule TalsecRuntime.Swift {\n  header "TalsecRuntime-Swift.h"\n  requires objc\n}\n' > "$fw/Modules/module.modulemap"
+}
+patch_talsec "$ROOT/.detector-deps/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework"
+patch_talsec "$ROOT/.detector-deps/Free-RASP-iOS-6.4.0/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework"
 m -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
@@ -20,6 +89,9 @@ m -C "$ROOT/tools/dyldprobe" stage THEOS_PACKAGE_SCHEME=rootless \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache
-m -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
-    TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+mkdir -p "$ROOT/ShadowHarness/concurrency"
+cp -a "$THEOS/toolchain/linux/iphone/lib/swift/iphoneos/prebuilt-modules/16.4/Swift.swiftmodule" "$THEOS/toolchain/linux/iphone/lib/swift/iphoneos/prebuilt-modules/16.4/_Concurrency.swiftmodule" "$ROOT/ShadowHarness/concurrency/"
+make -C "$ROOT/ShadowHarness/detector-frameworks" FINALPACKAGE=1
+make -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+    TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
     THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug"

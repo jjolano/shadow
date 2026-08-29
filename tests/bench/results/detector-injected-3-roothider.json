@@ -1,0 +1,148 @@
+{
+  "sdk" : {
+    "id" : "roothider",
+    "name" : "Roothider JailbreakDetector",
+    "version" : "main@5b3d0be"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 113805708,
+      "checks" : [
+        {
+          "id" : "roothider.rootlessJB",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "rootlessJB"
+        },
+        {
+          "id" : "roothider.kernBypass",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "kernBypass"
+        },
+        {
+          "id" : "roothider.chroot",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "chroot"
+        },
+        {
+          "id" : "roothider.mount_fs",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "mount_fs"
+        },
+        {
+          "id" : "roothider.bootstraps",
+          "passed" : false,
+          "message" : "Zebra found!\n",
+          "name" : "bootstraps"
+        },
+        {
+          "id" : "roothider.trollStoredFilza",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "trollStoredFilza"
+        },
+        {
+          "id" : "roothider.jailbreakd",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "jailbreakd"
+        },
+        {
+          "id" : "roothider.proc_flags",
+          "passed" : false,
+          "message" : "unexcept platform binary!\n; jit-allow found!\n",
+          "name" : "proc_flags"
+        },
+        {
+          "id" : "roothider.jb_payload",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "jb_payload"
+        },
+        {
+          "id" : "roothider.exception_port",
+          "passed" : false,
+          "message" : "exception record modified!; unexept exception record [0] mask=0000003E port=00000000 behavior=00000001 flavor=00000006\n; unexept exception record [1] mask=00000040 port=00002403 behavior=00000001 flavor=00000006\n",
+          "name" : "exception_port"
+        },
+        {
+          "id" : "roothider.jb_preboot",
+          "passed" : false,
+          "message" : "preboot writeable!\n",
+          "name" : "jb_preboot"
+        },
+        {
+          "id" : "roothider.jailbroken_apps",
+          "passed" : false,
+          "message" : "jailbroken app found \/var\/mobile\/Library\/SplashBoard\/Snapshots\/org.coolstar.SileoStore\n; jailbroken app found \/var\/mobile\/Library\/SplashBoard\/Snapshots\/xyz.willy.Zebra\n; jailbroken app found \/var\/mobile\/Library\/Caches\/org.coolstar.SileoStore\n; jailbroken app found \/var\/mobile\/Library\/Caches\/xyz.willy.Zebra\n; jailbroken app found \/var\/mobile\/Library\/Saved Application State\/org.coolstar.SileoStore.savedState\n; jailbroken app found \/var\/mobile\/Library\/Saved Application State\/xyz.willy.Zebra.savedState\n; jailbroken app found \/var\/mobile\/Library\/WebKit\/xyz.willy.Zebra\n; jailbroken app found \/var\/mobile\/Library\/HTTPStorages\/org.coolstar.SileoStore\n; jailbroken app found \/var\/mobile\/Library\/HTTPStorages\/xyz.willy.Zebra\n",
+          "name" : "jailbroken_apps"
+        },
+        {
+          "id" : "roothider.removed_varjb",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "removed_varjb"
+        },
+        {
+          "id" : "roothider.fugu15Max",
+          "passed" : false,
+          "message" : "systemhook.dylib found!\n; fakelib found! \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/basebin\/.fakelib\n",
+          "name" : "fugu15Max"
+        },
+        {
+          "id" : "roothider.jailbreak_sigs",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "jailbreak_sigs"
+        },
+        {
+          "id" : "roothider.jailbreak_port",
+          "passed" : false,
+          "message" : "jailbreak port cy:com.saurik.substrated found!\n; jailbreak port cy:com.opa334.jailbreakd found!\n; jailbreak port lh:com.opa334.jailbreakd found!\n",
+          "name" : "jailbreak_port"
+        },
+        {
+          "id" : "roothider.cfprefsd_hook",
+          "passed" : false,
+          "message" : "cfprefsd hook detected jbroot:\/basebin\/LaunchDaemons\/com.opa334.Dopamine.idownloadd.plist\n; cfprefsd hook detected jbroot:\/basebin\/LaunchDaemons\/com.opa334.Dopamine.startup.plist\n; cfprefsd hook detected jbroot:\/Library\/LaunchDaemons\/us.diatr.shshd.plist\n; cfprefsd hook detected jbroot:\/Library\/LaunchDaemons\/com.opa334.sandyd.plist\n; cfprefsd hook detected jbroot:\/Library\/LaunchDaemons\/com.openssh.sshd.plist\n; cfprefsd hook detected jbroot:\/var\/mobile\/Library\/Preferences\/org.coolstar.SileoStore.plist\n; cfprefsd hook detected jbroot:\/var\/mobile\/Library\/Preferences\/xyz.willy.Zebra.plist\n",
+          "name" : "cfprefsd_hook"
+        },
+        {
+          "id" : "roothider.bind_mounts",
+          "passed" : false,
+          "message" : "unknown bind mount found: \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/System : \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/System\n; unknown bind mount found: \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/usr : \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/usr\n; unknown bind mount found: \/usr\/lib : \/private\/preboot\/AEB02F2EA423D480ADC3DCEE6AAD63514115850173228772F690BB4C77CC968EBDD7CE6EF7F50EBC56DC557B14F09200\/dopamine-RIbf4t\/procursus\/basebin\/.fakelib\n",
+          "name" : "bind_mounts"
+        },
+        {
+          "id" : "roothider.launchd_ipchook",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "launchd_ipchook"
+        },
+        {
+          "id" : "roothider.url_schemes",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "url_schemes"
+        }
+      ],
+      "check_count" : 20
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 72042791,
+    "elapsed_ns" : 113805708,
+    "first_elapsed_ns" : 134987666,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:44:01Z"
+}

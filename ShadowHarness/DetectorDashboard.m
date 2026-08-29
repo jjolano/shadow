@@ -78,6 +78,18 @@ static NSArray<NSDictionary*>* SHDWDictionaryArray(id value) {
     return dictionaries;
 }
 
+static NSString* SHDWTimingText(NSDictionary* report) {
+    NSDictionary* timing = SHDWDictionary(report[@"timing"]);
+    NSNumber* elapsed = timing[@"elapsed_ns"];
+    NSNumber* first = timing[@"first_elapsed_ns"];
+    if(![elapsed isKindOfClass:[NSNumber class]]) return @"Not recorded";
+    if([first isKindOfClass:[NSNumber class]]) {
+        return [NSString stringWithFormat:@"Latest %.2f ms · first %.2f ms",
+            elapsed.doubleValue / 1000000.0, first.doubleValue / 1000000.0];
+    }
+    return [NSString stringWithFormat:@"%.2f ms", elapsed.doubleValue / 1000000.0];
+}
+
 static NSDictionary* SHDWReport(SHDWSDK* sdk) {
     NSData* data = [NSData dataWithContentsOfFile:SHDWReportPath(sdk)];
     if(!data) return nil;
@@ -261,7 +273,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 }
 
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-    if(section == 0) return 4;
+    if(section == 0) return 5;
     if(_rounds.count == 0) return 1;
     NSArray* checks = SHDWDictionaryArray(_rounds[section - 1][@"checks"]);
     return MAX((NSInteger)checks.count, 1);
@@ -309,6 +321,10 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
         } else if(indexPath.row == 2) {
             cell.textLabel.text = @"Last run";
             cell.detailTextLabel.text = SHDWString(_report[@"generatedAt"]) ?: @"Never";
+        } else if(indexPath.row == 3) {
+            cell.textLabel.text = @"Detector time";
+            cell.detailTextLabel.text = SHDWTimingText(_report);
+            cell.accessibilityValue = cell.detailTextLabel.text;
         } else {
             cell.textLabel.text = @"Source repository";
             cell.detailTextLabel.text = _sdk.sourceURL;
@@ -347,7 +363,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if(indexPath.section != 0 || indexPath.row != 3) return;
+    if(indexPath.section != 0 || indexPath.row != 4) return;
     NSURL* url = [NSURL URLWithString:_sdk.sourceURL];
     if(!url) return;
     [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {

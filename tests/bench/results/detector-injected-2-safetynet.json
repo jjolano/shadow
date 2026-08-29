@@ -1,0 +1,130 @@
+{
+  "sdk" : {
+    "id" : "safetynet",
+    "name" : "SafetyNet",
+    "version" : "main@spm"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 217439041,
+      "checks" : [
+        {
+          "id" : "safetynet.open_port",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Suspicious open port"
+        },
+        {
+          "id" : "safetynet.sandbox_write",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Sandbox breach"
+        },
+        {
+          "id" : "safetynet.debugger",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Debugger attached"
+        },
+        {
+          "id" : "safetynet.watchpoint",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Watchpoint"
+        },
+        {
+          "id" : "safetynet.process",
+          "passed" : false,
+          "message" : "Threat detected",
+          "name" : "Suspicious process"
+        },
+        {
+          "id" : "safetynet.url_schemes",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "URL schemes"
+        },
+        {
+          "id" : "safetynet.pselect",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "P_SELECT flag"
+        },
+        {
+          "id" : "safetynet.codesig",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Code signature"
+        },
+        {
+          "id" : "safetynet.dylib",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Injected dylib"
+        },
+        {
+          "id" : "safetynet.filesystem",
+          "passed" : false,
+          "message" : "Threat detected",
+          "name" : "Filesystem (90+ paths)"
+        },
+        {
+          "id" : "safetynet.frida_port",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Frida port"
+        },
+        {
+          "id" : "safetynet.symlinks",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Non-standard symlinks"
+        },
+        {
+          "id" : "safetynet.shadow",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Shadow tweak"
+        },
+        {
+          "id" : "safetynet.traced",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "Process traced"
+        },
+        {
+          "id" : "safetynet.proxy",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "System proxy"
+        },
+        {
+          "id" : "safetynet.vpn",
+          "passed" : true,
+          "message" : "clean",
+          "name" : "VPN"
+        },
+        {
+          "id" : "safetynet.level",
+          "passed" : false,
+          "message" : "high",
+          "name" : "Aggregate threat level"
+        }
+      ],
+      "check_count" : 17
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 72639167,
+    "elapsed_ns" : 217439041,
+    "first_elapsed_ns" : 2675757583,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:43:14Z"
+}

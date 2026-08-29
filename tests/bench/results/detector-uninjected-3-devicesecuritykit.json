@@ -1,0 +1,70 @@
+{
+  "sdk" : {
+    "id" : "devicesecuritykit",
+    "name" : "DeviceSecurityKit",
+    "version" : "0.40.0"
+  },
+  "outcome" : "jailbroken",
+  "schemaVersion" : 1,
+  "rounds" : [
+    {
+      "phase" : "startup",
+      "clean" : false,
+      "run_index" : 3,
+      "elapsed_ns" : 210140042,
+      "checks" : [
+        {
+          "id" : "dsk.jailbreak",
+          "passed" : false,
+          "message" : "suspiciousPath(\"\/var\/jb\"), suspiciousPath(\"\/var\/jb\/usr\/bin\/ssh\"), suspiciousPath(\"\/var\/jb\/usr\/sbin\/sshd\"), suspiciousPath(\"\/var\/jb\/Library\/MobileSubstrate\"), suspiciousPath(\"\/var\/jb\/usr\/lib\/TweakInject\"), suspiciousPath(\"\/var\/jb\/usr\/lib\/ellekit\"), suspiciousPath(\"\/var\/jb\/usr\/lib\/libhooker.dylib\"), suspiciousPath(\"\/var\/jb\/usr\/bin\/apt\"), suspiciousPath(\"\/var\/jb\/usr\/bin\/dpkg\"), suspiciousPath(\"\/var\/jb\/basebin\"), suspiciousPath(\"\/private\/preboot\"), suspiciousPath(\"\/Library\/LaunchDaemons\"), suspiciousPath(\"\/var\/jb\/Library\/MobileSubstrate\/DynamicLibraries\/Shadow.dylib\"), forkSucceeded, urlSchemeResponds(\"sileo:\/\/\"), urlSchemeResponds(\"zbra:\/\/\"), urlSchemeResponds(\"apple-magnifier:\/\/\"), symbolicLink(\"\/var\/jb\"), symbolicLink(\"\/var\/jb\/usr\/lib\/libhooker.dylib\"), prebootPath(\"\/var\/jb\"), prebootPath(\"\/var\/jb\/usr\/bin\/ssh\"), prebootPath(\"\/var\/jb\/usr\/sbin\/sshd\"), prebootPath(\"\/var\/jb\/Library\/MobileSubstrate\"), prebootPath(\"\/var\/jb\/usr\/lib\/TweakInject\"), prebootPath(\"\/var\/jb\/usr\/lib\/ellekit\"), prebootPath(\"\/var\/jb\/usr\/lib\/libhooker.dylib\"), prebootPath(\"\/var\/jb\/usr\/bin\/apt\"), prebootPath(\"\/var\/jb\/usr\/bin\/dpkg\"), prebootPath(\"\/var\/jb\/basebin\"), prebootPath(\"\/private\/preboot\"), prebootPath(\"\/var\/jb\/Library\/MobileSubstrate\/DynamicLibraries\/Shadow.dylib\"), antiDetectionTool(\"\/private\/preboot\/aeb02f2ea423d480adc3dcee6aad63514115850173228772f690bb4c77cc968ebdd7ce6ef7f50ebc56dc557b14f09200\/dopamine-ribf4t\/procursus\/usr\/lib\/tweakinject\/shadow.dylib\")",
+          "name" : "JailbreakDetector.isJailbroken"
+        },
+        {
+          "id" : "dsk.hook.prologue",
+          "passed" : false,
+          "message" : "function hook check",
+          "name" : "HookDetector.isFunctionHooked"
+        },
+        {
+          "id" : "dsk.swizzling",
+          "passed" : true,
+          "message" : "swizzle check",
+          "name" : "SwizzlingDetector.isSwizzled"
+        },
+        {
+          "id" : "dsk.frida",
+          "passed" : true,
+          "message" : "frida check",
+          "name" : "FridaDetector.isFridaDetected"
+        },
+        {
+          "id" : "dsk.dylib",
+          "passed" : false,
+          "message" : "dylib check",
+          "name" : "DylibInjectionDetector.isDylibInjected"
+        },
+        {
+          "id" : "dsk.reverse",
+          "passed" : false,
+          "message" : "reverse-engineering check",
+          "name" : "ReverseEngineeringDetector.isReverseEngineered"
+        },
+        {
+          "id" : "dsk.debugger",
+          "passed" : true,
+          "message" : "debugger check",
+          "name" : "DebuggerDetector.isDebuggerAttached"
+        }
+      ],
+      "check_count" : 7
+    }
+  ],
+  "timing" : {
+    "run_index" : 3,
+    "framework_load_ns" : 7602292,
+    "elapsed_ns" : 210140042,
+    "first_elapsed_ns" : 242217792,
+    "clock" : "mach_continuous_time"
+  },
+  "generatedAt" : "2026-08-29T19:46:38Z"
+}

@@ -1,0 +1,6 @@
+mode,run,wall_sec,cpu_time
+injected,1,7,0:05.71
+injected,2,7,0:05.77
+injected,3,8,0:05.84
+injected,4,7,0:05.87
+injected,5,7,0:05.83
