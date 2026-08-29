@@ -100,6 +100,22 @@ legacy_args() {
     )
 }
 
+modern_args() { # sets MODERN_ARGS for the new arm64e ABI
+    MODERN_ARGS=()
+    # macOS/Xcode compiles the new ABI itself; only a Linux cross build needs
+    # the modern toolchain plus IS_NEW_ABI=1 to override Theos' non-macOS
+    # default (which otherwise links the old-ABI libroot). IS_NEW_ABI=1 on the
+    # make command line wins on stock/roothide Theos too, so this does not
+    # depend on the local fork's THEOS_ABI knob.
+    [ "$(uname -s)" = Linux ] || return 0
+    local toolchain=${NEWABI_TOOLCHAIN:-$THEOS/toolchain/modern/linux/iphone}
+    [ -x "$toolchain/bin/clang" ] || { echo "missing new-ABI toolchain: $toolchain" >&2; return 1; }
+    MODERN_ARGS=(
+        "SDKBINPATH=$toolchain/bin"
+        "IS_NEW_ABI=1"
+    )
+}
+
 prepare_scheme_framework() { # rootless|roothide
     local lane=$1
     # Invoked directly (not via the root Makefile), so the lane's ARCHS/
@@ -109,7 +125,7 @@ prepare_scheme_framework() { # rootless|roothide
     # implementations the header inlines replace) recompiles empty.
     make -C Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
         ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
     cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
@@ -134,6 +150,7 @@ copy_dependency_packages() { # profile
 
 build_lane() { # profile
     local lane=$1 control="$ROOT/control.$1" package destination
+    [ "$lane" = rootful-legacy ] || modern_args
     stage_deps "$lane"
     make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
 
@@ -143,11 +160,11 @@ build_lane() { # profile
             make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}" "${LEGACY_ARGS[@]}"
             ;;
         rootful-modern)
-            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
             ;;
         rootless|roothide)
             prepare_scheme_framework "$lane"
-            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}"
+            make package FINALPACKAGE=1 "SHADOW_LANE=$lane" "$CONTROL_VAR=$control" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
             ;;
     esac
 
@@ -161,12 +178,13 @@ build_lane() { # profile
 build_harness() { # rootful-modern|rootless
     local lane=$1 package scheme=
     [ "$lane" = rootless ] && scheme=rootless
+    modern_args
     if [ "$lane" = rootless ]; then
         scripts/build-detector-harness.sh
     else
         make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
             ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-            TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}"
+            TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
     fi
     package=$(<ShadowHarness/.theos/last_package)
     case "$package" in
@@ -178,9 +196,10 @@ build_harness() { # rootful-modern|rootless
 
 build_quick() {
     stage_deps rootful-modern
-    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
-    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
-    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}"
+    modern_args
+    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
 }
 
 case ${1:-all} in
