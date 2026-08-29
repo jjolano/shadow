@@ -29,4 +29,12 @@ public final class DSKBridge: NSObject {
     @objc public static func isDebuggerAttached() -> Bool {
         DebuggerDetector.isDebuggerAttached()
     }
+    @objc public static func emulatorInfo() -> [String: Any] {
+        let result = EmulatorDetector.detectEmulator()
+        return [
+            "detected": result.isEmulator,
+            "methods": result.detectionMethods,
+            "confidence": result.confidence,
+        ]
+    }
 }

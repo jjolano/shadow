@@ -19,9 +19,11 @@ public final class SafetyNetBridge: NSObject {
         sem.wait()
         _ = task
 
-        guard let event = result.event else { return ["level": 0, "reasons": [String]()] }
+        guard let event = result.event else {
+            return ["error": "SafetyNet returned no threat event"]
+        }
         return [
-            "level": event.level?.rawValue ?? 0,
+            "level": event.level?.rawValue ?? -1,
             "reasons": event.reasons.map { $0.rawValue },
         ]
     }
