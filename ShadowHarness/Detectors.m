@@ -141,20 +141,21 @@ BOOL SHDWRunDetectorWithID(NSString *iid){
 static void shdw_dlopen_frameworks(void){
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        for(NSString *name in @[@"TalsecRuntime", @"IOSSecuritySuite", @"DeviceSecurityKit", @"BATJailbreakGuard", @"SafetyNet"]){
-            NSString *path = [NSString stringWithFormat:@"/var/jb/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name];
-            if(![[NSFileManager defaultManager] fileExistsAtPath:path]){
-                path = [NSString stringWithFormat:@"/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name];
-            }
-            dlopen([path fileSystemRepresentation], RTLD_NOW);
-            // Also try .detector-deps path for dev
-            NSString *devPath = [NSString stringWithFormat:@"/var/mobile/.detector-deps/%@.framework/%@", name, name];
-            dlopen([devPath fileSystemRepresentation], RTLD_NOW);
-        }
-        // Also try loading Swift package products
-        for(NSString *name in @[@"BATJailbreakGuard", @"SafetyNet", @"JailbreakDetector"]){
-            dlopen([[NSString stringWithFormat:@"/var/jb/Applications/ShadowHarness.app/Frameworks/%@.framework/%@", name, name] fileSystemRepresentation], RTLD_NOW);
-        }
+        NSArray *fw = @[
+            @"/var/jb/Applications/ShadowHarness.app/Frameworks/TalsecRuntime.framework/TalsecRuntime",
+            @"/var/jb/Applications/ShadowHarness.app/Frameworks/IOSSecuritySuite.framework/IOSSecuritySuite",
+            @"/Applications/ShadowHarness.app/Frameworks/TalsecRuntime.framework/TalsecRuntime",
+            @"/var/mobile/.detector-deps/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework/TalsecRuntime",
+            @"/private/var/mobile/.detector-deps/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework/TalsecRuntime"
+        ];
+        for(NSString *p in fw) dlopen([p fileSystemRepresentation], RTLD_NOW);
+        // Pre-warm NSClass lookups after dlopen
+        (void)NSClassFromString(@"IOSSecuritySuite");
+        (void)NSClassFromString(@"TalsecRuntime");
+        (void)NSClassFromString(@"DeviceSecurityKit");
+        (void)NSClassFromString(@"BATJailbreakGuard");
+        (void)NSClassFromString(@"SafetyNet");
+        (void)NSClassFromString(@"JailbreakDetector");
     });
 }
 void SHDWRunAllDetectors(void){
