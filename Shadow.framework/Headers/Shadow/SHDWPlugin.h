@@ -40,6 +40,7 @@
 #define SHDWDetectorPatchJailMonkeyID @"DetectorPatch_JailMonkey"
 #define SHDWDetectorPatchIOSSecuritySuiteID @"DetectorPatch_IOSSecuritySuite"
 #define SHDWDetectorPatchFreeRASPID         @"DetectorPatch_FreeRASP"
+#define SHDWDetectorPatchDeviceSecurityKitID @"DetectorPatch_DeviceSecurityKit"
 
 #define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWHookLibraryID          @"HK_Library"

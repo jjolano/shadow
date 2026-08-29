@@ -225,7 +225,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         BOOL hasActiveDetectorAdapter = NO;
         for(NSString* key in @[ SHDWDetectorPatchDTTID, SHDWDetectorPatchSafeDeviceID,
                                 SHDWDetectorPatchJailMonkeyID, SHDWDetectorPatchIOSSecuritySuiteID,
-                                SHDWDetectorPatchFreeRASPID ]) {
+                                SHDWDetectorPatchFreeRASPID, SHDWDetectorPatchDeviceSecurityKitID ]) {
             hasActiveDetectorAdapter |= [prefs[key] boolValue];
         }
 

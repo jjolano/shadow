@@ -44,15 +44,11 @@ struct shdw_proc_bsdinfo_prefix {
 int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
 
 int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
-    FILE *lf = fopen("/tmp/shadow-sysctl.log", "a");
-    if (lf) { fprintf(lf, "[sysctl] called pid %d namelen %u kind %d\n", getpid(), namelen, name ? name[0] : -1); fclose(lf); }
     if(name == NULL || namelen == 0) {
         return original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
     }
 
     shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(name, namelen);
-    lf = fopen("/tmp/shadow-sysctl.log", "a");
-    if (lf) { fprintf(lf, "[sysctl] kind %d namelen %u\n", kind, namelen); fclose(lf); }
 
     // kern.bootargs: answered directly (empty string, stock semantics) —
     // see shdw_bootargs_filtered. Setting boot args (newp) passes through.
@@ -78,15 +74,11 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
     int ret;
 
     if(kind == SHADW_PROC_MIB_ALL && newp == NULL && oldlenp != NULL) {
-        FILE *lf = fopen("/tmp/shadow-sysctl.log", "a");
-        if (lf) { fprintf(lf, "[sysctl] KERN_PROC_ALL called pid %d ppid %d\n", getpid(), getppid()); fclose(lf); }
         // Filtered KERN_PROC_ALL enumeration: restricted processes removed,
         // self trace flags cleared, stock size semantics preserved. The
         // libc surface's original calls cannot re-enter the raw-syscall
         // dispatch, so no in-progress guard (reentrant = NO).
         ret = shdw_proc_all_filtered(original_sysctl, oldp, oldlenp, NO);
-        lf = fopen("/tmp/shadow-sysctl.log", "a");
-        if (lf) { fprintf(lf, "[sysctl] KERN_PROC_ALL filtered ret %d oldlen %zu\n", ret, oldlenp ? *oldlenp : 0); fclose(lf); }
     } else {
         ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
     }
