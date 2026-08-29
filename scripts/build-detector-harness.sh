@@ -3,13 +3,6 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${THEOS:?THEOS must point to Theos}"
-. "$ROOT/scripts/theos-toolchain.sh"
-shadow_theos_toolchain_args new
-if [ -n "$SHADOW_THEOS_TOOLCHAIN_ROOT" ]; then
-    export SDKBINPATH="$SHADOW_THEOS_TOOLCHAIN_ROOT/bin"
-    export PREFIX="$SHADOW_THEOS_TOOLCHAIN_ROOT/bin/"
-    export THEOS_ABI=new
-fi
 
 "$ROOT/scripts/fetch-detector-sdks.sh" iossecuritysuite
 "$ROOT/scripts/fetch-detector-sdks.sh" jailbreakdetector

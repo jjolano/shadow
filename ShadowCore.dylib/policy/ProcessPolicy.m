@@ -9,6 +9,7 @@
 #import "../hooks/hooks.h"
 
 #import <string.h>
+#import <ctype.h>
 #import <stdlib.h>
 #import <pthread.h>
 #import <time.h>
@@ -60,9 +61,25 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
 
     char path[PATH_MAX];
     BOOL restricted = NO;
-
     if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        restricted = [_shadow isCPathRestricted:path];
+        NSString *pathStr = @(path);
+        NSString *lower = pathStr.lowercaseString;
+        if ([lower containsString:@"sshd"] || [lower containsString:@"frida"] ||
+            [lower containsString:@"dropbear"]) {
+            restricted = YES;
+        } else {
+            restricted = [_shadow isCPathRestricted:path];
+        }
+    }
+    // Always log for SafetyNet debugging
+    {
+        char path2[PATH_MAX] = {0};
+        if(proc_pidpath(pid, path2, sizeof(path2)) <= 0) strlcpy(path2, "unknown", sizeof(path2));
+        FILE *lf = fopen("/tmp/shadow-proc.log", "a");
+        if (lf) {
+            fprintf(lf, "[proc] pid %d path %s restricted %d comm %s isCPath %d\n", pid, path2, restricted, p->kp_proc.p_comm, proc_pidpath(pid, path2, sizeof(path2)) > 0 ? [_shadow isCPathRestricted:path2] : 0);
+            fclose(lf);
+        }
     }
 
     pthread_mutex_lock(&shdw_proc_cache_lock);
@@ -138,7 +155,21 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
     BOOL restricted = NO;
 
     if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        restricted = [_shadow isCPathRestricted:path];
+        NSString *p = @(path);
+        NSString *lower = p.lowercaseString;
+        if ([lower containsString:@"sshd"] || [lower containsString:@"frida"] ||
+            [lower containsString:@"dropbear"] || [lower containsString:@"frida-server"]) {
+            restricted = YES;
+        } else {
+            restricted = [_shadow isCPathRestricted:path];
+        }
+        if ([lower containsString:@"sshd"] || [lower containsString:@"frida"]) {
+            FILE *lf = fopen("/var/mobile/Documents/shadow-proc.log", "a");
+            if (lf) {
+                fprintf(lf, "[pid] pid %d path %s lower %s restricted %d isCPath %d\n", pid, path, lower.UTF8String, restricted, [_shadow isCPathRestricted:path]);
+                fclose(lf);
+            }
+        }
     }
 
     pthread_mutex_lock(&shdw_pid_cache_lock);

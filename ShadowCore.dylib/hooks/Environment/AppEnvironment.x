@@ -43,9 +43,24 @@
 %end
 %end
 
+static void *gShadowCanOpenURLOrig = NULL;
+static void *gShadowCanOpenURLHook = NULL;
+
 void shadowhook_UIApplication(SHDWHookSession* hooks) {
+    Class cls = objc_getClass("UIApplication");
+    SEL sel = sel_registerName("canOpenURL:");
+    Method m = class_getInstanceMethod(cls, sel);
+    if (m) gShadowCanOpenURLOrig = (void*)method_getImplementation(m);
     %init(shadowhook_UIApplication);
+    if (m) gShadowCanOpenURLHook = (void*)method_getImplementation(m);
+    if (!gShadowCanOpenURLOrig) {
+        IMP orig = SHDWOriginalImplementationForMethod(m);
+        if (orig) gShadowCanOpenURLOrig = (void*)orig;
+    }
 }
+
+void* shdw_UIApplicationCanOpenURLOriginal(void) { return gShadowCanOpenURLOrig; }
+void* shdw_UIApplicationCanOpenURLHook(void) { return gShadowCanOpenURLHook; }
 
 // NSUserDefaults suite-name coverage. Detectors read other apps' preference
 // domains via [[NSUserDefaults alloc] initWithSuiteName:] / persistentDomain
