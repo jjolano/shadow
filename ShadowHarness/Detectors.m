@@ -19,7 +19,8 @@ static NSArray *nativeChecks(void){
     BOOL jb=access("/var/jb",F_OK)==0;
     BOOL cydia=access("/Applications/Cydia.app",F_OK)==0;
     BOOL canCydia=[[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"cydia://package/com.example.package"]];
-    BOOL dyld=NO; for(uint32_t i=0;i<_dyld_image_count();i++){ const char *n=_dyld_get_image_name(i); if(n && (strstr(n,"Shadow")||strstr(n,"ellekit"))){dyld=YES; break;}}
+    NSString *appPath = [[NSBundle mainBundle] bundlePath];
+    BOOL dyld=NO; for(uint32_t i=0;i<_dyld_image_count();i++){ const char *n=_dyld_get_image_name(i); if(!n) continue; if(appPath && strncmp(n, [appPath fileSystemRepresentation], [appPath lengthOfBytesUsingEncoding:NSUTF8StringEncoding])==0) continue; if(strstr(n,"Shadow")||strstr(n,"ellekit")){ dyld=YES; break;}}
     return @[ck(@"native.filesystem",@"Filesystem", !jb && !cydia, jb||cydia?@"found jb files":@"no jb files"), ck(@"native.schemes",@"URL schemes", !canCydia, canCydia?@"cydia reachable":@"no schemes"), ck(@"native.dyld",@"Dyld", !dyld, dyld?@"jb dyld":@"no inject")];
 }
 static NSArray *dttChecks(void){
