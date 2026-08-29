@@ -12,6 +12,22 @@ if { [ "$SDK" = all ] || [ "$SDK" = iossecuritysuite ]; } &&
     git clone --depth 1 --branch 2.3.0 https://github.com/securing/IOSSecuritySuite.git "$DEPS/IOSSecuritySuite"
 fi
 
+if { [ "$SDK" = all ] || [ "$SDK" = jailbreakdetector ]; } &&
+    [ ! -f "$DEPS/JailbreakDetector.swift/Sources/JailbreakDetector/JailbreakDetector.swift" ]; then
+    git init "$DEPS/JailbreakDetector.swift"
+    git -C "$DEPS/JailbreakDetector.swift" remote add origin https://github.com/conmulligan/JailbreakDetector.swift.git
+    git -C "$DEPS/JailbreakDetector.swift" fetch --depth 1 origin b6afe56380922188e60d14e49bea238c3de2f487
+    git -C "$DEPS/JailbreakDetector.swift" checkout --detach FETCH_HEAD
+fi
+
+if { [ "$SDK" = all ] || [ "$SDK" = securitytoolkit ]; } &&
+    [ ! -f "$DEPS/iOS-Security-Toolkit/Sources/ThreatDetectionCenter.swift" ]; then
+    git init "$DEPS/iOS-Security-Toolkit"
+    git -C "$DEPS/iOS-Security-Toolkit" remote add origin https://github.com/EXXETA/iOS-Security-Toolkit.git
+    git -C "$DEPS/iOS-Security-Toolkit" fetch --depth 1 origin 1b310d29121f3d800367eb47fbeac9643225ea4c
+    git -C "$DEPS/iOS-Security-Toolkit" checkout --detach FETCH_HEAD
+fi
+
 if { [ "$SDK" = all ] || [ "$SDK" = freerasp ]; } &&
     [ ! -d "$DEPS/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework" ]; then
     git init "$DEPS/Free-RASP-iOS-7.1.2"
@@ -51,5 +67,5 @@ fi
 
 if { [ "$SDK" = all ] || [ "$SDK" = jailmonkey ]; } &&
     [ ! -f "$DEPS/JailMonkey/JailMonkey/JailMonkey.m" ]; then
-    git clone --depth 1 https://github.com/GantMan/JailMonkey.git "$DEPS/JailMonkey"
+    git clone --depth 1 --branch v2.8.5 https://github.com/GantMan/jail-monkey.git "$DEPS/JailMonkey"
 fi

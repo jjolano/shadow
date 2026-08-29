@@ -71,3 +71,21 @@ targets unless a detector actually uses them.
    entries, and check whether the existing `readdir` hook was traversed.
 4. Keep the private symbols in a non-blocking `dlsym` inventory. Add a hook
    only after a real device establishes ABI and detector relevance.
+
+## Historical app target: Unveil
+
+The likely missing test app is [Unveil](https://unveilapp.com/), a $4.99 iOS
+system/security analysis app made by Unveil Security LLC. Its official page
+describes sandbox-local software-modification/security checks plus CPU,
+memory, OS, disk, filesystem, and network inspection; its changelog contains
+only `v1.0.0 - Initial Release`. The unc0ver site promoted it as built by its
+lead developer and credits pwn20wnd and the unc0ver team. The surviving
+open-source [Reveil](https://github.com/Lessica/Reveil) project identifies
+itself as a replication and says Unveil received no updates after its initial
+release.
+
+This is a useful black-box detector target, not a detector SDK: no public
+source for the original implementation or reliable bundle ID was found. The
+original App Store listing is reportedly no longer available; use the
+official site for provenance and Reveil only as an inspectable approximation,
+not as proof of Unveil's exact checks.

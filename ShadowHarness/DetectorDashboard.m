@@ -18,17 +18,19 @@ NSNotificationName const SHDWDetectorResultsChanged = @"SHDWDetectorResultsChang
 @property(nonatomic, copy) NSString* name;
 @property(nonatomic, copy) NSString* version;
 @property(nonatomic, copy) NSString* scheme;
+@property(nonatomic, copy) NSString* sourceURL;
 @end
 
 @implementation SHDWSDK
 @end
 
-static SHDWSDK* SHDWMakeSDK(NSString* identifier, NSString* name, NSString* version, NSString* scheme) {
+static SHDWSDK* SHDWMakeSDK(NSString* identifier, NSString* name, NSString* version, NSString* scheme, NSString* sourceURL) {
     SHDWSDK* sdk = [SHDWSDK new];
     sdk.identifier = identifier;
     sdk.name = name;
     sdk.version = version;
     sdk.scheme = scheme;
+    sdk.sourceURL = sourceURL;
     return sdk;
 }
 
@@ -37,15 +39,17 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         sdks = @[
-            SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"shadow-dyldprobe://run"),
-            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run"),
-            SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run"),
-            SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"shadow-detector-freerasp://run"),
-            SHDWMakeSDK(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run"),
-            SHDWMakeSDK(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run"),
-            SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run"),
-            SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run"),
-            SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"master@rn", @"shadow-detector-jailmonkey://run"),
+            SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"shadow-dyldprobe://run", @"https://github.com/jjolano/shadow/tree/master/tools/dyldprobe"),
+            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
+            SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
+            SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0-filtered", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
+            SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run", @"https://github.com/thii/DTTJailbreakDetection"),
+            SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"shadow-detector-freerasp://run", @"https://github.com/talsec/Free-RASP-iOS"),
+            SHDWMakeSDK(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run", @"https://github.com/roothider/JailbreakDetector"),
+            SHDWMakeSDK(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run", @"https://github.com/Basilabt/BATJailbreakGuard"),
+            SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run", @"https://github.com/DipakPanchasara/SafetyNet"),
+            SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run", @"https://github.com/galahador/DeviceSecurityKit"),
+            SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"v2.8.5", @"shadow-detector-jailmonkey://run", @"https://github.com/GantMan/jail-monkey"),
         ];
     });
     return sdks;
@@ -257,7 +261,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 }
 
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-    if(section == 0) return 3;
+    if(section == 0) return 4;
     if(_rounds.count == 0) return 1;
     NSArray* checks = SHDWDictionaryArray(_rounds[section - 1][@"checks"]);
     return MAX((NSInteger)checks.count, 1);
@@ -281,7 +285,9 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
     cell.imageView.tintColor = nil;
     cell.accessoryView = nil;
     cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessibilityTraits = UIAccessibilityTraitNone;
     cell.accessibilityValue = nil;
+    cell.accessibilityHint = nil;
 
     if(indexPath.section == 0) {
         BOOL running = SHDWRunActive(_sdk);
@@ -300,9 +306,18 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
         } else if(indexPath.row == 1) {
             cell.textLabel.text = @"Runner version";
             cell.detailTextLabel.text = SHDWString(SHDWDictionary(_report[@"sdk"])[@"version"]) ?: _sdk.version;
-        } else {
+        } else if(indexPath.row == 2) {
             cell.textLabel.text = @"Last run";
             cell.detailTextLabel.text = SHDWString(_report[@"generatedAt"]) ?: @"Never";
+        } else {
+            cell.textLabel.text = @"Source repository";
+            cell.detailTextLabel.text = _sdk.sourceURL;
+            cell.imageView.image = [UIImage systemImageNamed:@"link"];
+            cell.imageView.tintColor = UIColor.systemBlueColor;
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.accessibilityTraits = UIAccessibilityTraitLink;
+            cell.accessibilityValue = _sdk.sourceURL;
+            cell.accessibilityHint = @"Opens the detector's source repository.";
         }
         return cell;
     }
@@ -328,6 +343,23 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
     cell.imageView.image = [UIImage systemImageNamed:passed ? @"checkmark.circle.fill" : @"xmark.circle.fill"];
     cell.imageView.tintColor = passed ? UIColor.systemGreenColor : UIColor.systemRedColor;
     return cell;
+}
+
+- (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if(indexPath.section != 0 || indexPath.row != 3) return;
+    NSURL* url = [NSURL URLWithString:_sdk.sourceURL];
+    if(!url) return;
+    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
+        if(success) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Unable to open source"
+                message:@"Check the device connection and try again."
+                preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
+    }];
 }
 
 @end

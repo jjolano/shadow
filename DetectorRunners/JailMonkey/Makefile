@@ -5,8 +5,9 @@ JAILMONKEY_DIR ?= ../../.detector-deps/JailMonkey/JailMonkey
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = JailMonkeyRunner
-JailMonkeyRunner_FILES = AppDelegate.m $(wildcard $(JAILMONKEY_DIR)/*.m)
-JailMonkeyRunner_CFLAGS = -I$(JAILMONKEY_DIR) -fobjc-arc -fmodules-cache-path=/tmp/shadow-detector-jailmonkey-module-cache
+# ponytail: the runner mirrors JailMonkey's native checks; compiling its RN bridge would add unavailable headers.
+JailMonkeyRunner_FILES = AppDelegate.m
+JailMonkeyRunner_CFLAGS = -fobjc-arc -fmodules-cache-path=/tmp/shadow-detector-jailmonkey-module-cache
 JailMonkeyRunner_FRAMEWORKS = UIKit Foundation
 JailMonkeyRunner_INSTALL_PATH = /Applications
 JailMonkeyRunner_RESOURCE_DIRS = Resources

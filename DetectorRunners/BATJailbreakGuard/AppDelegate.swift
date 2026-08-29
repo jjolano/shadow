@@ -52,10 +52,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       }
     }
     checks.append(check("bat.openports","OpenPorts", !portFound, portFound ? "open frida port" : "no open ports"))
-    // 8 PreventedAPIs — fork
-    var canFork=false
-    let pid=fork(); if pid==0 { _exit(0) } else if pid>0 { var st:Int32=0; waitpid(pid,&st,0); canFork=true }
-    checks.append(check("bat.preventedapis","PreventedAPIs (fork)", !canFork, canFork ? "fork succeeded" : "fork denied"))
+    // 8 PreventedAPIs — posix_spawn (Swift marks fork unavailable on iOS)
+    var spawnPID = pid_t(-1)
+    let spawnResult = posix_spawn(&spawnPID, "", nil, nil, nil, nil)
+    let canSpawn = spawnResult == 0
+    checks.append(check("bat.preventedapis","PreventedAPIs (posix_spawn)", !canSpawn, canSpawn ? "posix_spawn succeeded" : "posix_spawn denied"))
     // 9 Checksum — placeholder: verify /bin/bash hash if exists (ponytail: naive, real checksum would pin expected)
     let checksumPassed = access("/bin/bash",F_OK) != 0 // no bash on jailed device is clean
     checks.append(check("bat.checksum","Checksum", checksumPassed, checksumPassed ? "system fs clean" : "bash present"))
@@ -81,8 +82,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   func application(_ a: UIApplication, didFinishLaunchingWithOptions o:[UIApplication.LaunchOptionsKey:Any]?=nil)->Bool{
-    let c=UIViewController(); c.view.backgroundColor=.systemBackground
-    let l=UILabel(frame:c.view.bounds.insetBy(dx:24,dy:24)); l.autoresizingMask=[.flexibleWidth,.flexibleHeight]; l.font=.preferredFont(forTextStyle:.title2); l.numberOfLines=0; l.textAlignment=.center; l.text="Running BAT…"; c.view.addSubview(l); self.label=l
+    let c = UIViewController(); c.view.backgroundColor = .systemBackground
+    let l = UILabel(frame: c.view.bounds.insetBy(dx: 24, dy: 24)); l.autoresizingMask = [.flexibleWidth, .flexibleHeight]; l.font = .preferredFont(forTextStyle: .title2); l.numberOfLines = 0; l.textAlignment = .center; l.text = "Running BAT…"; c.view.addSubview(l); self.label = l
     let w=UIWindow(frame:UIScreen.main.bounds); w.rootViewController=c; w.makeKeyAndVisible(); self.window=w
     if Date().timeIntervalSince(lastRun)>2 { lastRun=Date(); write("startup"); DispatchQueue.main.asyncAfter(deadline:.now()+1){ UIApplication.shared.open(URL(string:"shadow-detectors://refresh")!, options:[:]) } }
     return true

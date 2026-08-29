@@ -15,7 +15,24 @@ endif
 
 override ARCHS := $(call lane_field,$(SHADOW_LANE),ARCHS)
 override TARGET := $(call lane_field,$(SHADOW_LANE),TARGET)
+LANE_ABI := $(call lane_field,$(SHADOW_LANE),ABI)
 override THEOS_PACKAGE_SCHEME := $(call lane_field,$(SHADOW_LANE),SCHEME)
+
+ifeq ($(shell uname -s),Linux)
+ifeq ($(LANE_ABI),old)
+LANE_TOOLCHAIN_ROOT := $(or $(OLDABI_TOOLCHAIN),$(THEOS)/toolchain/oldabi/linux/iphone)
+else ifeq ($(LANE_ABI),new)
+LANE_TOOLCHAIN_ROOT := $(or $(NEWABI_TOOLCHAIN),$(THEOS)/toolchain/modern/linux/iphone)
+endif
+ifneq ($(LANE_TOOLCHAIN_ROOT),)
+ifeq ($(wildcard $(LANE_TOOLCHAIN_ROOT)/bin/clang),)
+$(error missing $(LANE_ABI)-ABI toolchain: $(LANE_TOOLCHAIN_ROOT))
+endif
+override SDKBINPATH := $(LANE_TOOLCHAIN_ROOT)/bin
+override PREFIX := $(LANE_TOOLCHAIN_ROOT)/bin/
+override THEOS_ABI := $(LANE_ABI)
+endif
+endif
 
 LANE_DEPLOY := $(call lane_field,$(SHADOW_LANE),DEPLOY)
 ifneq ($(LANE_DEPLOY),)
@@ -26,7 +43,7 @@ ifneq ($(LANE_DEPLOY_ARM64E),)
 override TARGET_OS_DEPLOYMENT_VERSION_arm64e := $(LANE_DEPLOY_ARM64E)
 endif
 endif
-export ARCHS TARGET TARGET_OS_DEPLOYMENT_VERSION TARGET_OS_DEPLOYMENT_VERSION_arm64e THEOS_PACKAGE_SCHEME
+export ARCHS TARGET TARGET_OS_DEPLOYMENT_VERSION TARGET_OS_DEPLOYMENT_VERSION_arm64e THEOS_PACKAGE_SCHEME THEOS_ABI PREFIX SDKBINPATH
 
 include $(THEOS)/makefiles/common.mk
 SUBPROJECTS += Shadow.framework

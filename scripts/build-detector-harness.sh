@@ -3,8 +3,17 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${THEOS:?THEOS must point to Theos}"
+. "$ROOT/scripts/theos-toolchain.sh"
+shadow_theos_toolchain_args new
+if [ -n "$SHADOW_THEOS_TOOLCHAIN_ROOT" ]; then
+    export SDKBINPATH="$SHADOW_THEOS_TOOLCHAIN_ROOT/bin"
+    export PREFIX="$SHADOW_THEOS_TOOLCHAIN_ROOT/bin/"
+    export THEOS_ABI=new
+fi
 
 "$ROOT/scripts/fetch-detector-sdks.sh" iossecuritysuite
+"$ROOT/scripts/fetch-detector-sdks.sh" jailbreakdetector
+"$ROOT/scripts/fetch-detector-sdks.sh" securitytoolkit
 "$ROOT/scripts/fetch-detector-sdks.sh" dtt
 "$ROOT/scripts/fetch-detector-sdks.sh" freerasp
 "$ROOT/scripts/fetch-detector-sdks.sh" roothider
@@ -16,6 +25,8 @@ make -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:cla
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
 make -C "$ROOT/DetectorRunners/IOSSecuritySuite" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/DetectorRunners/JailbreakDetector" stage THEOS_PACKAGE_SCHEME=rootless
+make -C "$ROOT/DetectorRunners/SecurityToolkit" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/DTTJailbreakDetection" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/FreeRASP" stage THEOS_PACKAGE_SCHEME=rootless
 make -C "$ROOT/DetectorRunners/Roothider" stage THEOS_PACKAGE_SCHEME=rootless

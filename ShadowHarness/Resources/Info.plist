@@ -34,6 +34,8 @@
 	<array>
 		<string>shadow-dyldprobe</string>
 		<string>shadow-detector-iossecuritysuite</string>
+		<string>shadow-detector-jailbreakdetector</string>
+		<string>shadow-detector-securitytoolkit</string>
 		<string>shadow-detector-dtt</string>
 		<string>shadow-detector-freerasp</string>
 		<string>shadow-detector-roothider</string>

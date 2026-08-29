@@ -75,7 +75,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   func application(_ a:UIApplication,didFinishLaunchingWithOptions o:[UIApplication.LaunchOptionsKey:Any]?=nil)->Bool{
-    let c=UIViewController(); c.view.backgroundColor=.systemBackground; let l=UILabel(frame:c.view.bounds.insetBy(dx:24,dy:24)); l.autoresizingMask=[.flexibleWidth,.flexibleHeight]; l.font=.preferredFont(forTextStyle:.title2); l.numberOfLines=0; l.textAlignment=.center; l.text="Running DSK…"; c.view.addSubview(l); self.label=l; let w=UIWindow(frame:UIScreen.main.bounds); w.rootViewController=c; w.makeKeyAndVisible(); self.window=w
+    let c = UIViewController(); c.view.backgroundColor = .systemBackground; let l = UILabel(frame: c.view.bounds.insetBy(dx: 24, dy: 24)); l.autoresizingMask = [.flexibleWidth, .flexibleHeight]; l.font = .preferredFont(forTextStyle: .title2); l.numberOfLines = 0; l.textAlignment = .center; l.text = "Running DSK…"; c.view.addSubview(l); self.label = l; let w = UIWindow(frame: UIScreen.main.bounds); w.rootViewController = c; w.makeKeyAndVisible(); self.window = w
     if Date().timeIntervalSince(lastRun)>2{ lastRun=Date(); write("startup"); DispatchQueue.main.asyncAfter(deadline:.now()+1){ UIApplication.shared.open(URL(string:"shadow-detectors://refresh")!, options:[:]) } }; return true
   }
   func applicationDidBecomeActive(_ a:UIApplication){ if Date().timeIntervalSince(lastRun)>9{ lastRun=Date(); write("active") } }

@@ -11,6 +11,54 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   private var label: UILabel?
   private var lastRunStarted = Date.distantPast
 
+  private func check(_ id: String, _ name: String, _ passed: Bool, _ message: String) -> [String: Any] {
+    ["id": id, "name": name, "passed": passed, "message": message]
+  }
+
+  private func mSHookCheck(_ symbol: String) -> [String: Any] {
+    guard let address = dlsym(UnsafeMutableRawPointer(bitPattern: -2), symbol) else {
+      return check("iossecuritysuite.mshook.\(symbol)", "MSHook \(symbol)", false, "dlsym failed")
+    }
+    let hooked = IOSSecuritySuite.amIMSHooked(address)
+    return check(
+      "iossecuritysuite.mshook.\(symbol)", "MSHook \(symbol)", !hooked,
+      hooked ? "Hook prologue detected" : "No hook prologue detected"
+    )
+  }
+
+  private func runtimeHookCheck(_ id: String, _ name: String, _ detectionClass: AnyClass, _ selector: Selector) -> [String: Any] {
+    let hooked = IOSSecuritySuite.amIRuntimeHooked(
+      dyldAllowList: [], detectionClass: detectionClass, selector: selector, isClassMethod: false
+    )
+    guard hooked, let method = class_getInstanceMethod(detectionClass, selector) else {
+      return check(id, name, !hooked, hooked ? "Method missing" : "No hook detected")
+    }
+    var info = Dl_info()
+    let result = dladdr(UnsafeRawPointer(method_getImplementation(method)), &info)
+    let image = result == 1 && info.dli_fname != nil ? String(cString: info.dli_fname) : "no image"
+    return check(id, name, false, "Hook detected; dladdr=\(result) \(image)")
+  }
+
+  private func hardenedRuntimeHookCheck(_ id: String, _ name: String, _ detectionClass: AnyClass, _ selector: Selector) -> [String: Any] {
+    guard let implementation = class_getMethodImplementation(detectionClass, selector) else {
+      return check(id, name, false, "Method missing")
+    }
+
+    var info = Dl_info()
+    guard dladdr(UnsafeRawPointer(implementation), &info) == 1, let imageName = info.dli_fname else {
+      return check(id, name, false, "IMP attribution failed")
+    }
+
+    let image = String(cString: imageName)
+    let lower = image.lowercased()
+    let binary = String(cString: _dyld_get_image_name(0)).lowercased()
+    let clean = lower.contains("/system/library/") || lower.contains(binary)
+    return check(
+      id, name, clean,
+      clean ? "System or app implementation" : "Hook detected in \(image)"
+    )
+  }
+
   private func shadowProbeChecks() -> [[String: Any]] {
     let shadowClass = objc_getClass("ShadowRuleset") as? NSObject.Type
     let shadowSelector = Selector(("internalDictionary"))
@@ -40,25 +88,83 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
   }
 
   private func run(_ phase: String) -> Bool {
-    let status = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
-    let failures = Dictionary(uniqueKeysWithValues: status.failedChecks.map {
+    ["class_getMethodImplementation", "dladdr", "dlsym", "stat"]
+      .forEach(FishHookChecker.denyFishHook)
+
+    let jailbreak = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
+    let jailbreakFailures = Dictionary(uniqueKeysWithValues: jailbreak.failedChecks.map {
       (String(describing: $0.check), $0.failMessage)
     })
-    let suiteChecks: [[String: Any]] = FailedCheck.allCases.map {
+    let jailbreakChecks: [FailedCheck] = [
+      .urlSchemes, .existenceOfSuspiciousFiles, .suspiciousFilesCanBeOpened,
+      .restrictedDirectoriesWriteable, .fork, .symbolicLinks, .dyld, .suspiciousObjCClasses
+    ]
+    let suiteChecks: [[String: Any]] = jailbreakChecks.map {
       let identifier = String(describing: $0)
-      return [
-        "id": "iossecuritysuite.\(identifier)",
-        "name": identifier,
-        "passed": failures[identifier] == nil,
-        "message": failures[identifier] ?? "Passed"
-      ]
+      return check(
+        "iossecuritysuite.jailbreak.\(identifier)", "Jailbreak: \(identifier)",
+        jailbreakFailures[identifier] == nil, jailbreakFailures[identifier] ?? "Passed"
+      )
+    }
+
+    let reverse = IOSSecuritySuite.amIReverseEngineeredWithFailedChecks()
+    let reverseFailures = Dictionary(uniqueKeysWithValues: reverse.failedChecks.map {
+      (String(describing: $0.check), $0.failMessage)
+    })
+    let reverseChecks: [[String: Any]] = [
+      FailedCheck.existenceOfSuspiciousFiles, .dyld, .openedPorts, .pSelectFlag
+    ].map {
+      let identifier = String(describing: $0)
+      return check(
+        "iossecuritysuite.reverse.\(identifier)", "Reverse engineering: \(identifier)",
+        reverseFailures[identifier] == nil, reverseFailures[identifier] ?? "Passed"
+      )
+    }
+
+    let integrity = IOSSecuritySuite.amITampered([
+      .bundleID(Bundle.main.bundleIdentifier ?? "me.jjolano.shadow.test.iossecuritysuite")
+    ])
+    let suspiciousNames = ["shadow", "ellekit", "substrate", "substitute", "libhooker", "systemhook", "frida"]
+    let loadedDylibs = IOSSecuritySuite.findLoadedDylibs()
+    let exposedDylibs = loadedDylibs?.filter { path in
+      suspiciousNames.contains { path.localizedCaseInsensitiveContains($0) }
+    } ?? []
+    var lockdownMode = false
+    if #available(iOS 16, *) { lockdownMode = IOSSecuritySuite.amIInLockdownMode() }
+
+    var extendedChecks: [[String: Any]] = [
+      check("iossecuritysuite.debugger", "Debugger", !IOSSecuritySuite.amIDebugged(), "Debugger not detected"),
+      check("iossecuritysuite.parent", "Unexpected parent", !IOSSecuritySuite.isParentPidUnexpected(), "Parent is launchd"),
+      check("iossecuritysuite.emulator", "Emulator", !IOSSecuritySuite.amIRunInEmulator(), "Physical device"),
+      check("iossecuritysuite.proxy", "Proxy or VPN", !IOSSecuritySuite.amIProxied(considerVPNConnectionAsProxy: true), "No proxy or VPN detected"),
+      check("iossecuritysuite.lockdown", "Lockdown mode", !lockdownMode, lockdownMode ? "Lockdown mode enabled" : "Lockdown mode disabled"),
+      check("iossecuritysuite.integrity.bundle", "Bundle integrity", !integrity.result, integrity.result ? "Bundle identifier mismatch" : "Bundle identifier matches"),
+      runtimeHookCheck("iossecuritysuite.runtime.filemanager", "Runtime hook: FileManager fileExists", FileManager.self, #selector(FileManager.fileExists(atPath:))),
+      runtimeHookCheck("iossecuritysuite.runtime.uiapplication", "Runtime hook: UIApplication canOpenURL", UIApplication.self, #selector(UIApplication.canOpenURL(_:))),
+      hardenedRuntimeHookCheck("iossecuritysuite.runtime.hardened.filemanager", "Runtime hook: hardened FileManager", FileManager.self, #selector(FileManager.fileExists(atPath:))),
+      hardenedRuntimeHookCheck("iossecuritysuite.runtime.hardened.uiapplication", "Runtime hook: hardened UIApplication", UIApplication.self, #selector(UIApplication.canOpenURL(_:))),
+      check("iossecuritysuite.watchpoint", "Watchpoint", !IOSSecuritySuite.hasWatchpoint(), "Watchpoint not detected"),
+      check("iossecuritysuite.loadcommands", "Suspicious load commands", loadedDylibs != nil && exposedDylibs.isEmpty, exposedDylibs.isEmpty ? "No injected dylib exposed" : exposedDylibs.joined(separator: "\n")),
+      mSHookCheck("stat"), mSHookCheck("access"), mSHookCheck("fork"), mSHookCheck("readlink")
+    ]
+    if let address = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "stat") {
+      let breakpoint = IOSSecuritySuite.hasBreakpointAt(UnsafeRawPointer(address), functionSize: 16)
+      extendedChecks.append(check("iossecuritysuite.breakpoint", "Breakpoint", !breakpoint, breakpoint ? "Breakpoint detected" : "Breakpoint not detected"))
+    } else {
+      extendedChecks.append(check("iossecuritysuite.breakpoint", "Breakpoint", false, "dlsym failed"))
+    }
+
+    let checks = suiteChecks + reverseChecks + extendedChecks + shadowProbeChecks()
+    let clean = !jailbreak.jailbroken && !reverse.reverseEngineered && checks.allSatisfy {
+      ($0["passed"] as? Bool) == true
     }
     rounds.append([
       "phase": phase,
-      "clean": !status.jailbroken,
-      "checks": suiteChecks + shadowProbeChecks()
+      "clean": clean,
+      "checks": checks
     ])
-    return writeReport(outcome: status.jailbroken ? "jailbroken" : "clean")
+    let allClean = rounds.allSatisfy { ($0["clean"] as? Bool) == true }
+    return writeReport(outcome: allClean ? "clean" : "jailbroken")
   }
 
   private func writeReport(outcome: String) -> Bool {
