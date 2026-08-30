@@ -87,20 +87,14 @@ static inline void* shdw_resolve_libsystem(const char* mach_symbol) {
     return dlsym(RTLD_DEFAULT, c_name);
 }
 
-// PathRewrite pref: gates the natural-ENOENT path-buffer rewrite (svc
-// trampoline + libc hooks). Default OFF — the rewrite munges the caller's
-// path buffer in place (propagation win, but the munged string is visible to
-// the app's own logging/UI). Cached at first read; prefs are read at install
-// time anyway, so a mid-process toggle is not expected.
+// PathRewrite is configured from the constructor's resolved prefs before any
+// hooks install. Reading NSUserDefaults lazily from a live Foundation hook
+// re-enters the hook stack and can deadlock.
+extern _Atomic BOOL shdw_path_rewrite_active;
+void shdw_path_rewrite_configure(BOOL enabled);
+
 static inline BOOL shdw_path_rewrite_enabled(void) {
-    static int cached = -1;
-
-    if(cached == -1) {
-        NSUserDefaults* ud = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-        cached = [ud boolForKey:SHDWPathRewriteID] ? 1 : 0;
-    }
-
-    return cached;
+    return atomic_load_explicit(&shdw_path_rewrite_active, memory_order_acquire);
 }
 
 // Natural-ENOENT rewrite for libc path hooks: munge the caller's buffer and
@@ -255,6 +249,8 @@ BOOL shdw_is_shadow_runtime_image(const char* path);
 // ponytail: fast allowed-path check for tight loops (perfprobe). Most allowed probes are /var/tmp, /var/mobile, /tmp.
 static inline BOOL shdw_is_fast_allowed_cpath(const char *path) {
     if (!path || !path[0]) return NO;
+    // This exact ruleset entry must still reach policy, including path aliases.
+    if (strstr(path, "me.jjolano.shadow.plist")) return NO;
     if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' && path[4] == '/') {
         if (strncmp(path, "/var/tmp", 8) == 0 && (path[8] == '/' || path[8] == 0 || path[8] == '.')) return YES;
         if (strncmp(path, "/var/mobile", 11) == 0 && (path[11] == '/' || path[11] == 0)) return YES;
@@ -266,6 +262,7 @@ static inline BOOL shdw_is_fast_allowed_cpath(const char *path) {
 }
 static inline BOOL shdw_is_fast_allowed_nspath(NSString *path) {
     if (!path) return NO;
+    if ([path containsString:@"me.jjolano.shadow.plist"]) return NO;
     if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/var/mobile"] || [path hasPrefix:@"/tmp"] || [path hasPrefix:@"/private/var/tmp"]) return YES;
     return NO;
 }
