@@ -11,6 +11,12 @@
 #import <sys/attr.h>
 #import <sys/snapshot.h>
 
+_Atomic BOOL shdw_path_rewrite_active = NO;
+
+void shdw_path_rewrite_configure(BOOL enabled) {
+    atomic_store_explicit(&shdw_path_rewrite_active, enabled, memory_order_release);
+}
+
 static int (*original_access)(const char* pathname, int mode);
 static int replaced_access(const char* pathname, int mode) {
     if (shdw_is_fast_allowed_cpath(pathname)) return original_access(pathname, mode);
@@ -1573,8 +1579,10 @@ typedef struct {
 #define IOSSAFE SHADW_HOOK_GROUP_IOS_SECURITY_SUITE
 
 static const shdw_hook_desc_t shdw_libc_hooks[] = {
-    // required libc group (installed + verified by libc)
-    { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   LIBC | IOSSAFE, LIBC },
+    // IOSSecuritySuite owns these overlap symbols through the rebind lane.
+    // Installing them again through libc would replace their predecessor with
+    // an already-live entry hook and recurse.
+    { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   IOSSAFE, LIBC },
     { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC },
     { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
     { "creat",                  (void*)&replaced_creat,                    (void**)&original_creat,                    LIBC,   LIBC },
@@ -1582,17 +1590,17 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC },
     { "statvfs",                (void*)&replaced_statvfs,                  (void**)&original_statvfs,                  LIBC,   LIBC },
     { "fstatvfs",               (void*)&replaced_fstatvfs,                 (void**)&original_fstatvfs,                 LIBC,   LIBC },
-    { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     LIBC | IOSSAFE, LIBC },
-    { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    LIBC | IOSSAFE, LIBC },
-    { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                LIBC | IOSSAFE, LIBC },
+    { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     IOSSAFE, LIBC },
+    { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    IOSSAFE, LIBC },
+    { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                IOSSAFE, LIBC },
     { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC },
     { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC },
     { "closedir",               (void*)&replaced_closedir,                 (void**)&original_closedir,                 LIBC,   LIBC },
-    { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    LIBC | IOSSAFE, LIBC },
+    { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    IOSSAFE, LIBC },
     { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
-    { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 LIBC | IOSSAFE, LIBC },
-    { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               LIBC | IOSSAFE, LIBC },
+    { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 IOSSAFE, LIBC },
+    { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               IOSSAFE, LIBC },
     { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC },
     { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC },
     { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC },

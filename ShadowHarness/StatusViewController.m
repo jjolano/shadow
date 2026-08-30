@@ -331,18 +331,21 @@ static NSString* const kHeaderReuseID = @"Header";
 		NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 		NSUserDefaults* prefs = shdw_prefs();
 		NSDictionary* appSettings = bundleID ? [prefs objectForKey:bundleID] : nil;
+		NSNumber* appDisabled = appSettings ? appSettings[@"App_Disabled"] : nil;
 		NSNumber* appEnabled = appSettings ? appSettings[@"App_Enabled"] : nil;
 		NSNumber* globalEnabled = [prefs objectForKey:@"Global_Enabled"];
 
 		if(appSettings) {
 			[rows addObject:shdw_row(@"Per-app override",
-				[NSString stringWithFormat:@"present (App_Enabled=%@)", appEnabled ? appEnabled : @"(unset)"])];
+				[NSString stringWithFormat:@"present (App_Enabled=%@, App_Disabled=%@)", appEnabled ? appEnabled : @"(unset)", appDisabled ? appDisabled : @"(unset)"])];
 		} else {
 			[rows addObject:shdw_row(@"Per-app override", @"absent")];
 		}
 		[rows addObject:shdw_row(@"Global_Enabled", globalEnabled ? [globalEnabled boolValue] ? @"YES" : @"NO" : @"(unreadable)")];
 
-		if([appEnabled boolValue]) {
+		if([appDisabled boolValue]) {
+			[rows addObject:shdw_row(@"Filter disabled", @"App_Disabled=YES — Shadow skips this app")];
+		} else if([appEnabled boolValue]) {
 			[rows addObject:shdw_row(@"Filter enabled", @"App_Enabled=YES — Shadow should be active")];
 		} else if([globalEnabled boolValue]) {
 			[rows addObject:shdw_row(@"Filter enabled", @"Global_Enabled=YES — Shadow should be active")];
@@ -360,22 +363,21 @@ static NSString* const kHeaderReuseID = @"Header";
 	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 	NSUserDefaults* prefs = shdw_prefs();
 	NSDictionary* appSettings = bundleID ? [prefs objectForKey:bundleID] : nil;
+	BOOL appDisabled = [appSettings[@"App_Disabled"] boolValue];
 	NSNumber* globalEnabled = [prefs objectForKey:@"Global_Enabled"];
 
-	// Shadow's per-app model is binary (see Shadow.dylib/dylib.x): the app
-	// is filtered iff App_Enabled (per-app override) or Global_Enabled is
-	// set. "Allowlisted"/"blocklisted" are not plist states in this version.
+	// App_Disabled overrides the per-app and global enable paths.
 	BOOL appEnabled = [appSettings[@"App_Enabled"] boolValue];
-	BOOL filtered = appEnabled || [globalEnabled boolValue];
+	BOOL filtered = !appDisabled && (appEnabled || [globalEnabled boolValue]);
 
 	// Prefer ShadowSettings' merged view (defaults + per-app inheritance);
 	// fall back to the raw suite when the class is unavailable.
 	NSDictionary* merged = shdw_shadow_settings_for(bundleID);
-	if(merged) {
+	if(merged && !appDisabled) {
 		filtered = [merged[@"App_Enabled"] boolValue];
 	}
 
-	NSString* modeDetail = appEnabled ? @"App_Enabled=YES (per-app)" :
+	NSString* modeDetail = appDisabled ? @"App_Disabled=YES" : appEnabled ? @"App_Enabled=YES (per-app)" :
 		[globalEnabled boolValue] ? @"Global_Enabled=YES" : @"neither key set";
 
 	return shdw_section(@"This app", @[

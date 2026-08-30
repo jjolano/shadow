@@ -206,8 +206,16 @@ if ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' Shadow.dylib/dylib.x; then
     echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
     exit 1
 fi
+if grep -q 'SHDWRunAllDetectors' ShadowHarness/AppDelegate.m ShadowHarness/SceneDelegate.m; then
+    echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
+    exit 1
+fi
 if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/FileHiding/libc.x; then
     echo 'LIBC DRIFT: fopen lost its safe rebind path'
+    exit 1
+fi
+if grep -q 'LIBC | IOSSAFE' ShadowCore.dylib/hooks/FileHiding/libc.x; then
+    echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
     exit 1
 fi
 if ! grep -q 'SHADW_HOOK_GROUP_IOS_SECURITY_SUITE' ShadowCore.dylib/hooks/FileHiding/libc.x ||
@@ -220,8 +228,8 @@ if ! grep -q 'SHADW_HOOK_GROUP_IOS_SECURITY_SUITE' ShadowCore.dylib/hooks/FileHi
     ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x ||
     ! grep -q 'hk_artifact_is_import_slot' ShadowCore.dylib/SHDWHookSession.m ||
    grep -q 'strcmp(d->symbol, "readlink")' ShadowCore.dylib/hooks/FileHiding/libc.x ||
-   ! grep -q 'effectivePrefs\[SHDWHookIDFilesystem\] = @NO' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'effectivePrefs\[SHDWHookIDURLScheme\] = @NO' ShadowCore.dylib/shadowcore.x ||
+    grep -q 'effectivePrefs\[SHDWHookIDFilesystem\] = @NO' ShadowCore.dylib/shadowcore.x ||
+    grep -q 'effectivePrefs\[SHDWHookIDURLScheme\] = @NO' ShadowCore.dylib/shadowcore.x ||
    ! grep -q 'isApplicationAvailableToOpenURL:(NSURL \*)url error:' ShadowCore.dylib/hooks/Environment/AppEnvironment.x ||
    ! grep -q 'VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x; then
     echo 'LIBC DRIFT: IOSSecuritySuite lost its targeted safe filesystem subset'
