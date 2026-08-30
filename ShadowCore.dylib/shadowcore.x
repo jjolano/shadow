@@ -229,22 +229,18 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             hasActiveDetectorAdapter |= [prefs[key] boolValue];
         }
 
-        // IOSSecuritySuite is now Always (universal) — its 7 path hooks are
-        // installed via the IOSSecuritySuite plugin, so disable the wide
-        // Hook_Filesystem group when DeviceCheck+Filesystem are enabled.
-        // FreeRASP is now universal (mach_msg+syscall+path always).
-        BOOL adaptIOSSecuritySuite = [prefs[SHDWHookIDDeviceCheck] boolValue] &&
-            [prefs[SHDWHookIDFilesystem] boolValue];
+        // Keep the broad filesystem and URL groups enabled alongside the
+        // targeted IOSSecuritySuite subset. The latter is additive; disabling
+        // the broad groups leaves other in-process detectors with unfiltered
+        // path, fork, port, and LaunchServices surfaces.
+        // FreeRASP is universal (mach_msg+syscall+path always).
         {
             NSMutableDictionary* effectivePrefs = [prefs mutableCopy];
-            if(adaptIOSSecuritySuite) {
-                effectivePrefs[SHDWHookIDFilesystem] = @NO;
-                effectivePrefs[SHDWHookIDURLScheme] = @NO;
-            }
             shadowhook_FreeRASP_preparePreferences(effectivePrefs);
             prefs = [effectivePrefs copy];
         }
 
+        shdw_path_rewrite_configure([prefs[SHDWPathRewriteID] boolValue]);
         shdw_memory_hiding_enabled = [prefs[@"MemoryLevelHiding"] boolValue];
 
         [Shadow sharedInstance];
