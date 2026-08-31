@@ -225,9 +225,11 @@ def validate_activation(scope_path: str, root: str) -> dict[str, Any]:
     for raw, _ in reports:
         obs = observations_dict(raw); activation = obs.get("activation")
         require(isinstance(activation, dict), "activation observation missing")
-        required = {"ctor_inventory", "post_load_inventory", "post_detector_inventory", "verdicts", "case_id"}
+        required = {"ctor_inventory", "post_load_inventory", "post_detector_inventory", "sdk_fallback_inventory", "sdk_fallback_observed", "verdicts", "case_id"}
         require(required <= set(activation), "activation observation incomplete")
         require(activation["ctor_inventory"], "empty ctor inventory")
+        require(activation["sdk_fallback_observed"] is True, "SDK fallback was not observed")
+        require({"Adapter_DeviceCheck", "Adapter_DeviceSecurityKit", "Adapter_IOSSecuritySuite"} <= set(activation["sdk_fallback_inventory"]), "SDK fallback inventory incomplete")
         require(isinstance(activation["verdicts"], dict) and all(passing(value) for value in activation["verdicts"].values()), "activation verdict failure")
         cases.add(activation["case_id"])
         fingerprints.append(json.dumps({key: activation[key] for key in required - {"case_id"}}, sort_keys=True))
@@ -403,14 +405,14 @@ def selftest() -> dict[str, Any]:
 
         # activation
         activation_root = root / "activation"; activation_scope = make_scope(root / "activation-scope.json", ["activation"], [], ["row"])
-        activation = {"case_id": "activation", "ctor_inventory": ["core"], "post_load_inventory": ["core"], "post_detector_inventory": ["core"], "verdicts": {"v": "PASS"}}
+        activation = {"case_id": "activation", "ctor_inventory": ["core"], "post_load_inventory": ["core"], "post_detector_inventory": ["core"], "sdk_fallback_inventory": ["Adapter_DeviceCheck", "Adapter_DeviceSecurityKit", "Adapter_IOSSecuritySuite"], "sdk_fallback_observed": True, "verdicts": {"v": "PASS"}}
         for index in range(10): make_pair(activation_root / str(index), {"activation": activation})
         validate_activation(str(activation_scope), str(activation_root))
-        changed = read_json(activation_root / "9" / "raw.json"); changed["observations"]["activation"]["verdicts"]["v"] = "FAIL"; write_json(activation_root / "9" / "raw.json", changed)
+        changed = read_json(activation_root / "9" / "raw.json"); changed["observations"]["activation"]["sdk_fallback_observed"] = False; write_json(activation_root / "9" / "raw.json", changed)
         changed_manifest = read_json(activation_root / "9" / "manifest.json"); changed_manifest["artifacts"][0]["sha256"] = digest(activation_root / "9" / "raw.json"); write_json(activation_root / "9" / "manifest.json", changed_manifest)
         try: validate_activation(str(activation_scope), str(activation_root))
         except Invalid: pass
-        else: raise AssertionError("activation divergence accepted")
+        else: raise AssertionError("missing SDK fallback accepted")
 
         # dyld
         dyld_scope = make_scope(root / "dyld-scope.json", ["dyld"], [], ["stock-row", "row"])

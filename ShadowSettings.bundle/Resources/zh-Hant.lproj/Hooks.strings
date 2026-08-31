@@ -2,6 +2,8 @@
 "DNGR_HOOKS_DESC" = "底層屏蔽方法。可能導致應用程式崩潰或系統功能異常。僅在推薦的Hook無法生效時啟用。";
 "DETECTOR_PATCHES" = "偵測 SDK 相容性";
 "DETECTOR_PATCHES_PANE_DESC" = "為通用 Hook 無法完整涵蓋的偵測 SDK 提供個別函式庫介接。";
+"ADAPTERS" = "轉接器";
+"ADAPTERS_PANE_DESC" = "特定函式庫的相容性開關，與通用掛鉤分開。";
 "ESSENTIAL_HOOKS" = "基本掛鉤";
 "ESSENTIAL_HOOKS_DESC" = "基本掛鉤涵蓋了常見的越獄偵測方式。";
 "EXTRA_HOOKS" = "額外掛鉤";

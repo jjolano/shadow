@@ -30,8 +30,8 @@
 // descriptor install needs DCDevice present at ctor time (absent classes are
 // skipped silently, never retried), and the ctor's UIKit-load watcher replay
 // (dylib.x:1042-1050) installs the UIImage group for already-loaded UIKit.
-// libc probes split by install group: stat/access under Hook_Filesystem
-// (LIBC table group), open/opendir under Hook_LowLevelC (LOW table group,
+// libc probes split by install group: stat/access under Universal_Filesystem
+// (LIBC table group), open/opendir under Universal_LowLevelC (LOW table group,
 // libc.x:2103-2106) — gated separately so neither false-FAILs the other.
 
 #import <Foundation/Foundation.h>
@@ -289,14 +289,14 @@ static NSSet* shdw_defaultOffKeys(void) {
 
     dispatch_once(&onceToken, ^{
         set = [NSSet setWithArray:@[
-            @"Hook_Foundation",
-            @"Hook_Memory",
-            @"Hook_Syscall",
-            @"Hook_Sandbox",
-            @"Hook_MachBootstrap",
-            @"Hook_IOKit",
-            @"Hook_AntiDebugging",
-            @"Hook_DynamicLibrariesExtra"
+            @"Universal_Foundation",
+            @"Universal_Memory",
+            @"Universal_Syscall",
+            @"Universal_Sandbox",
+            @"Universal_MachBootstrap",
+            @"Universal_IOKit",
+            @"Universal_AntiDebugging",
+            @"Universal_DynamicLibrariesExtra"
         ]];
     });
 
@@ -313,13 +313,13 @@ static NSDictionary* shdw_defaultSettings(void) {
 
     dispatch_once(&onceToken, ^{
         NSMutableDictionary* d = [NSMutableDictionary dictionaryWithDictionary:@{
-            @"Hook_Filesystem" : @YES,
-            @"Hook_URLScheme"  : @YES,
-            @"Hook_EnvVars"    : @YES,
-            @"Hook_DeviceCheck": @YES,
-            @"Hook_LowLevelC"  : @YES,
-            @"Hook_HideApps"   : @YES,
-            @"MemoryLevelHiding" : @YES
+            @"Universal_Filesystem" : @YES,
+            @"Universal_URLScheme"  : @YES,
+            @"Universal_EnvVars"    : @YES,
+            @"Adapter_DeviceCheck"  : @YES,
+            @"Universal_LowLevelC"  : @YES,
+            @"Universal_HideApps"   : @YES,
+            @"Universal_MemoryLevelHiding" : @YES
         }];
 
         for(NSString* key in shdw_defaultOffKeys()) {
@@ -355,8 +355,8 @@ static BOOL prefsEnabled(NSString* key) {
 
 // ---------------------------------------------------------------------------
 // libc group (libc.x): stat/access are in the LIBC table group (installs
-// under Hook_Filesystem, libc.x:2045/2053); open/opendir are in the LOW
-// table group (installs under Hook_LowLevelC, libc.x:2103-2106, dylib.x:882).
+// under Universal_Filesystem, libc.x:2045/2053); open/opendir are in the LOW
+// table group (installs under Universal_LowLevelC, libc.x:2103-2106).
 // Probed separately so a Filesystem-only install does not false-FAIL
 // open/opendir — and vice versa. Tier 1, ctor-installed.
 // ---------------------------------------------------------------------------
@@ -691,8 +691,8 @@ static void probeSyscallCsopsPost(void) {
 // ---------------------------------------------------------------------------
 // kern.bootargs (ProcessPolicy shdw_bootargs_filtered): stock devices report
 // an empty boot-args string; jailbreak boot flags (amfi_get_out_of_my_way=1,
-// debug=..., -v) are a direct tell. The filter rides Hook_Syscall (raw
-// dispatch + sysctlbyname) and Hook_AntiDebugging (libc sysctl) — probed
+// debug=..., -v) are a direct tell. The filter rides Universal_Syscall (raw
+// dispatch + sysctlbyname) and Universal_AntiDebugging (libc sysctl) — probed
 // when either is enabled. All three channels must agree.
 // ---------------------------------------------------------------------------
 
@@ -790,7 +790,7 @@ static void probeDeviceCheckPost(void) {
 }
 
 // ---------------------------------------------------------------------------
-// UIImage group (UIImage.x, Hook_Foundation@uikit): imageNamed: name-policy
+// UIImage group (Universal_Foundation_UIKit): imageNamed: name-policy
 // hiding. UIKit is dlopen'ed BEFORE ShadowCore (Run A ordering, proven
 // on-device); the ctor's UIKit-load watcher replay (dylib.x:1042-1050)
 // delivers the already-loaded UIKit and installs the UIImage group at ctor
@@ -1114,7 +1114,7 @@ static void probeSandbox(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Code-signing self-validation (Hook_CodeSigning, hooks/AntiDebug/security.x).
+// Code-signing self-validation (Universal_CodeSigning, hooks/Universal/security.x).
 // Commercial RASP validates the running process's own code signature;
 // jailbreak-side re-signing makes such validation fail where stock passes.
 // The hook fakes errSecSuccess ONLY for failed validations of our own
@@ -1943,10 +1943,10 @@ int main(int argc, char* argv[]) {
 
         gEffectivePrefs = [eff copy];
 
-        BOOL syscallOn = prefsEnabled(@"Hook_Syscall");
-        BOOL deviceCheckOn = prefsEnabled(@"Hook_DeviceCheck");
-        // UIImage rides the Hook_Foundation@uikit group (dylib.x:475).
-        BOOL uiImageOn = prefsEnabled(@"Hook_Foundation");
+        BOOL syscallOn = prefsEnabled(@"Universal_Syscall");
+        BOOL deviceCheckOn = prefsEnabled(@"Adapter_DeviceCheck");
+        // UIImage rides the Universal_Foundation_UIKit group.
+        BOOL uiImageOn = prefsEnabled(@"Universal_Foundation");
 
         // Pre-dlopen baselines: these must observe the UNHOOKED state, so
         // they run before ShadowCore loads.
@@ -2047,30 +2047,30 @@ int main(int argc, char* argv[]) {
         // Effective settings were resolved pre-dlopen (see main() top):
         // every prefsEnabled() below — including the post-dlopen probe
         // gating — consults that same model.
-        BOOL fsOn = prefsEnabled(@"Hook_Filesystem") || prefsEnabled(@"Hook_LowLevelC");
-        BOOL foundationOn = prefsEnabled(@"Hook_Foundation");
-        BOOL envvarsOn = prefsEnabled(@"Hook_EnvVars");
+        BOOL fsOn = prefsEnabled(@"Universal_Filesystem") || prefsEnabled(@"Universal_LowLevelC");
+        BOOL foundationOn = prefsEnabled(@"Universal_Foundation");
+        BOOL envvarsOn = prefsEnabled(@"Universal_EnvVars");
 
-        if(prefsEnabled(@"Hook_Filesystem")) {
+        if(prefsEnabled(@"Universal_Filesystem")) {
             probeLibcFilesystem();
         } else {
-            skip(@"libc", @"stat/access", @"Hook_Filesystem disabled");
+            skip(@"libc", @"stat/access", @"Universal_Filesystem disabled");
         }
 
-        if(prefsEnabled(@"Hook_LowLevelC")) {
+        if(prefsEnabled(@"Universal_LowLevelC")) {
             probeLibcLowLevel();
         } else {
-            skip(@"libc", @"open/opendir", @"Hook_LowLevelC disabled");
+            skip(@"libc", @"open/opendir", @"Universal_LowLevelC disabled");
         }
 
         probeDyld(shadowCoreHeader);
         probeObjC();
 
         if(shadowCoreHeader) {
-            if(prefsEnabled(@"Hook_Memory")) {
+            if(prefsEnabled(@"Universal_Memory")) {
                 probeMem(shadowCoreHeader);
             } else {
-                skip(@"mem", @"vm_region", @"Hook_Memory disabled");
+                skip(@"mem", @"vm_region", @"Universal_Memory disabled");
             }
         } else {
             report(@"mem", @"vm_region", NO, @"ShadowCore header not captured (setup failure)");
@@ -2079,28 +2079,28 @@ int main(int argc, char* argv[]) {
         // Post-dlopen gating consults the same pre-dlopen effective model as
         // the baselines (prefsEnabled → gEffectivePrefs): one model, both
         // sides — a group ShadowCore did not install can never false-FAIL.
-        if(prefsEnabled(@"Hook_Syscall")) {
+        if(prefsEnabled(@"Universal_Syscall")) {
             probeSyscallCsopsPost();
         } else {
-            skip(@"syscall", @"csops", @"Hook_Syscall disabled");
+            skip(@"syscall", @"csops", @"Universal_Syscall disabled");
         }
 
-        if(prefsEnabled(@"Hook_Syscall") || prefsEnabled(@"Hook_AntiDebugging")) {
+        if(prefsEnabled(@"Universal_Syscall") || prefsEnabled(@"Universal_AntiDebugging")) {
             probeSysctlBootargs();
         } else {
-            skip(@"syscall", @"kern.bootargs", @"Hook_Syscall and Hook_AntiDebugging disabled");
+            skip(@"syscall", @"kern.bootargs", @"Universal_Syscall and Universal_AntiDebugging disabled");
         }
 
-        if(prefsEnabled(@"Hook_DeviceCheck")) {
+        if(prefsEnabled(@"Adapter_DeviceCheck")) {
             probeDeviceCheckPost();
         } else {
-            skip(@"DeviceCheck", @"DCDevice.isSupported", @"Hook_DeviceCheck disabled");
+            skip(@"DeviceCheck", @"DCDevice.isSupported", @"Adapter_DeviceCheck disabled");
         }
 
-        if(prefsEnabled(@"Hook_Foundation")) {
+        if(prefsEnabled(@"Universal_Foundation")) {
             probeUIImagePost();
         } else {
-            skip(@"UIImage", @"imageNamed(inBundle:)", @"Hook_Foundation disabled");
+            skip(@"UIImage", @"imageNamed(inBundle:)", @"Universal_Foundation disabled");
         }
 
         if(foundationOn) {
@@ -2113,67 +2113,67 @@ int main(int argc, char* argv[]) {
             // dict-rooted) — a nil result would be native, not filtered.
             skip(@"NSArray", @"array reads", @"no stable CLI probe");
             probeNSFileHandle();
-            // NSThread rides the Foundation@objc group (dylib.x:369).
+            // NSThread rides the Universal_Foundation_ObjC group.
             probeNSThread();
             // NSFileVersion/NSFileWrapper ride the Filesystem@objc group
-            // (dylib.x:368), which installs with Hook_Filesystem.
+            // which installs with Universal_Filesystem.
             if(fsOn) {
                 probeNSFileVersion();
                 probeNSFileWrapper();
             } else {
-                skip(@"NSFileVersion", @"versions", @"Hook_Filesystem disabled");
-                skip(@"NSFileWrapper", @"wrappers", @"Hook_Filesystem disabled");
+                skip(@"NSFileVersion", @"versions", @"Universal_Filesystem disabled");
+                skip(@"NSFileWrapper", @"wrappers", @"Universal_Filesystem disabled");
             }
         } else {
-            skip(@"NSFileManager", @"tier-2 file APIs", @"Hook_Foundation disabled");
-            skip(@"NSURL", @"URL APIs", @"Hook_Foundation disabled");
-            skip(@"NSBundle", @"bundle APIs", @"Hook_Foundation disabled");
-            skip(@"NSString", @"string reads", @"Hook_Foundation disabled");
-            skip(@"NSData", @"data reads", @"Hook_Foundation disabled");
-            skip(@"NSDictionary", @"dict reads", @"Hook_Foundation disabled");
-            skip(@"NSArray", @"array reads", @"Hook_Foundation disabled");
-            skip(@"NSFileHandle", @"handle reads", @"Hook_Foundation disabled");
-            skip(@"NSThread", @"callStack*", @"Hook_Foundation disabled");
-            skip(@"NSFileVersion", @"versions", @"Hook_Foundation disabled");
-            skip(@"NSFileWrapper", @"wrappers", @"Hook_Foundation disabled");
+            skip(@"NSFileManager", @"tier-2 file APIs", @"Universal_Foundation disabled");
+            skip(@"NSURL", @"URL APIs", @"Universal_Foundation disabled");
+            skip(@"NSBundle", @"bundle APIs", @"Universal_Foundation disabled");
+            skip(@"NSString", @"string reads", @"Universal_Foundation disabled");
+            skip(@"NSData", @"data reads", @"Universal_Foundation disabled");
+            skip(@"NSDictionary", @"dict reads", @"Universal_Foundation disabled");
+            skip(@"NSArray", @"array reads", @"Universal_Foundation disabled");
+            skip(@"NSFileHandle", @"handle reads", @"Universal_Foundation disabled");
+            skip(@"NSThread", @"callStack*", @"Universal_Foundation disabled");
+            skip(@"NSFileVersion", @"versions", @"Universal_Foundation disabled");
+            skip(@"NSFileWrapper", @"wrappers", @"Universal_Foundation disabled");
         }
 
         if(envvarsOn) {
             probeEnvironment();
             probeNSProcessInfo();
         } else {
-            skip(@"libc", @"getenv(DYLD_INSERT_LIBRARIES)", @"Hook_EnvVars disabled");
-            skip(@"NSProcessInfo", @"environment", @"Hook_EnvVars disabled");
+            skip(@"libc", @"getenv(DYLD_INSERT_LIBRARIES)", @"Universal_EnvVars disabled");
+            skip(@"NSProcessInfo", @"environment", @"Universal_EnvVars disabled");
         }
 
-        if(prefsEnabled(@"Hook_MachBootstrap")) {
+        if(prefsEnabled(@"Universal_MachBootstrap")) {
             probeMachBootstrap();
         } else {
-            skip(@"mach", @"bootstrap lookups", @"Hook_MachBootstrap disabled");
+            skip(@"mach", @"bootstrap lookups", @"Universal_MachBootstrap disabled");
         }
 
-        if(prefsEnabled(@"Hook_Sandbox")) {
+        if(prefsEnabled(@"Universal_Sandbox")) {
             probeSandbox();
         } else {
-            skip(@"sandbox", @"sandbox_check", @"Hook_Sandbox disabled");
+            skip(@"sandbox", @"sandbox_check", @"Universal_Sandbox disabled");
         }
 
         // Self-gating: dlsym/class availability decides PASS vs SKIP inside.
-        if(prefsEnabled(@"Hook_CodeSigning")) {
+        if(prefsEnabled(@"Universal_CodeSigning")) {
             probeCodeSigningObservations();
         } else {
-            skip(@"codesign", @"self-validity probes", @"Hook_CodeSigning disabled");
+            skip(@"codesign", @"self-validity probes", @"Universal_CodeSigning disabled");
         }
 
         probeHookByteIntegrity();
 
         probeNSUserDefaults();
 
-        if(prefsEnabled(@"Hook_HideApps") || prefsEnabled(@"Hook_URLScheme")) {
+        if(prefsEnabled(@"Universal_HideApps") || prefsEnabled(@"Universal_URLScheme")) {
             probeLaunchServices();
         } else {
-            skip(@"LSApplicationWorkspace", @"application proxy", @"Hook_HideApps and Hook_URLScheme disabled");
-            skip(@"LSApplicationWorkspace", @"URL-scheme lookup", @"Hook_HideApps and Hook_URLScheme disabled");
+            skip(@"LSApplicationWorkspace", @"application proxy", @"Universal_HideApps and Universal_URLScheme disabled");
+            skip(@"LSApplicationWorkspace", @"URL-scheme lookup", @"Universal_HideApps and Universal_URLScheme disabled");
         }
 
         probeSkippedGroups();

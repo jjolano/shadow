@@ -1,0 +1,10 @@
+"ADAPTERS" = "المحوّلات";
+"ADAPTERS_DESC" = "محوّلات توافق لمكتبات الأمان المحددة. هذه المفاتيح مستقلة عن الخطافات العامة.";
+"ADAPTERS_DETECTORS" = "مكتبات الكشف";
+"ADAPTER_DEVICECHECK" = "DeviceCheck";
+"ADAPTER_FREERASP" = "FreeRASP";
+"ADAPTER_DEVICESECURITYKIT" = "DeviceSecurityKit";
+"ADAPTER_IOSSECURITYSUITE" = "IOSSecuritySuite";
+"DTTJailbreakDetection" = "DTTJailbreakDetection";
+"safe_device" = "SafeDevice";
+"JailMonkey" = "JailMonkey";

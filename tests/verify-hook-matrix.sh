@@ -84,7 +84,7 @@ fi
 # private ObjC-notifier arrays are intentionally out of scope here, so inspect
 # only the two public replacement functions rather than banning their shared
 # private-slot constant from the whole source file.
-dyld_source=ShadowCore.dylib/hooks/Runtime/dyld.x
+dyld_source=ShadowCore.dylib/hooks/Universal/dyld.x
 dyld_add=$(sed -n '/^static void replaced_dyld_register_func_for_add_image/,/^}/p' "$dyld_source")
 dyld_remove=$(sed -n '/^static void replaced_dyld_register_func_for_remove_image/,/^}/p' "$dyld_source")
 if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTIFY_CBS|slots full|registrations dropped'; then
@@ -97,7 +97,7 @@ if ! grep -q '@executable_path/shdwtestlib.dylib' "$dyld_probe"; then
     echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
     rc=1
 fi
-if [ "$(grep -c 'shdw_path_is_in_main_bundle' ShadowCore.dylib/hooks/Runtime/dyld.x)" -lt 5 ]; then
+if [ "$(grep -c 'shdw_path_is_in_main_bundle' ShadowCore.dylib/hooks/Universal/dyld.x)" -lt 5 ]; then
     echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
     rc=1
 fi
@@ -153,47 +153,47 @@ if ! printf '%s\n' "$ctor" | grep -q shdw_coordinator_ctor ||
     exit 1
 fi
 
-if grep -q 'outOldPtr:&' ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m; then
+if grep -q 'outOldPtr:&' ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
     echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
     exit 1
 fi
 
 for legacy_pointer_probe in UBReportMetadataDevice EnrollParameters; do
-    if ! grep "$legacy_pointer_probe" ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m | grep -q "'\^'"; then
+    if ! grep "$legacy_pointer_probe" ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m | grep -q "'\^'"; then
         echo "DEVICECHECK DRIFT: 3.7.6 pointer hook missing for $legacy_pointer_probe"
         exit 1
     fi
 done
-if ! grep -q 'shdw_dch_imp0_ptr_null' ShadowCore.dylib/hooks/Environment/DeviceCheckHooks.m; then
+if ! grep -q 'shdw_dch_imp0_ptr_null' ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
     echo 'DEVICECHECK DRIFT: pointer-return hooks lack a typed NULL replacement'
     exit 1
 fi
 if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' ShadowCore.dylib/hooks ||
-   grep -q '0x57898' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
-   ! grep -q 'mov x0, #2' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
-   ! grep -q 'target - (int64_t)site' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
-   ! grep -q '\[NSBundle mainBundle\]\.bundlePath' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
-   ! grep -q '/procursus/Applications/' ShadowCore.dylib/hooks/FileHiding/svc_patch.x ||
-   ! grep -q 'prefs\[SHDWHookIDSyscall\] = @YES' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'shdw_detector_c_write_path_denied(pathname)' ShadowCore.dylib/hooks/FileHiding/libc_lowlevel.x ||
-   ! grep -q 'shdw_detector_c_write_path_denied(new)' ShadowCore.dylib/hooks/FileHiding/libc.x ||
-   ! grep -q 'shdw_detector_write_path_denied(path)' ShadowCore.dylib/hooks/FileHiding/NSString.x ||
+   grep -q '0x57898' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q 'mov x0, #2' ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q 'target - (int64_t)site' ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q '\[NSBundle mainBundle\]\.bundlePath' ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q '/procursus/Applications/' ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q 'prefs\[SHDWUniversalSyscallID\] = @YES' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'shdw_detector_c_write_path_denied(pathname)' ShadowCore.dylib/hooks/Universal/libc_lowlevel.x ||
+   ! grep -q 'shdw_detector_c_write_path_denied(new)' ShadowCore.dylib/hooks/Universal/libc.x ||
+   ! grep -q 'shdw_detector_write_path_denied(path)' ShadowCore.dylib/hooks/Universal/NSString.x ||
    ! grep -q 'shdw_detector_write_policy_set_enabled(YES)' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'shadowhook_FreeRASP_shouldHideExistencePath(path)' ShadowCore.dylib/hooks/FileHiding/NSFileManager.x ||
-   ! grep -q '@"/.file"' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q '@"/usr/sbin/cfprefsd"' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'msg->msgh_bits == 0x1513' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q '0x444f50414d494e45ULL' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'shdw_freeRASP_isVersion712' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q '0x4c90' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'expectedPrologue' ShadowCore.dylib/hooks/Detectors/FreeRASP.x ||
-   ! grep -q 'port == 2222' ShadowCore.dylib/hooks/FileHiding/sandbox.x ||
-   ! grep -q 'shadowhook_FreeRASP_preparePreferences' ShadowCore.dylib/shadowcore.x; then
+   ! grep -q 'SHDWAdapterPathIsHidden(path)' ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
+   ! grep -q '@"/.file"' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q '@"/usr/sbin/cfprefsd"' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'msg->msgh_bits == 0x1513' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q '0x444f50414d494e45ULL' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'shdw_freeRASP_isVersion712' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q '0x4c90' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'expectedPrologue' ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'port == 2222' ShadowCore.dylib/hooks/Universal/sandbox.x ||
+   ! grep -q 'shdw_adapter_freerasp_prepare_preferences' ShadowCore.dylib/shadowcore.x; then
     echo 'DEVICECHECK DRIFT: freeRASP must execute its real start entrypoint'
     exit 1
 fi
-if grep -Eq 'test_sbiw|\.jbroot' ShadowCore.dylib/hooks/Detectors/FreeRASP.x; then
+if grep -Eq 'test_sbiw|\.jbroot' ShadowCore.dylib/hooks/Adapters/FreeRASP.x; then
     echo 'DETECTOR DRIFT: freeRASP write signatures escaped the universal sandbox policy'
     exit 1
 fi
@@ -206,50 +206,70 @@ if ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' Shadow.dylib/dylib.x; then
     echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
     exit 1
 fi
+if ! grep -q 'if(!buf && bufsize == 0)' ShadowCore.dylib/hooks/Universal/libc.x ||
+   [ "$(grep -c 'int rawCount = original_getfsstat(NULL, 0, flags);' ShadowCore.dylib/hooks/Universal/libc.x)" -lt 2 ] ||
+   ! grep -q 'shdw_getfsstat_filtered_snapshot(flags, rawCount, buf, capacity)' ShadowCore.dylib/hooks/Universal/libc.x; then
+    echo 'MOUNT DRIFT: getfsstat buffers must be populated from a full raw snapshot'
+    exit 1
+fi
 if grep -q 'SHDWRunAllDetectors' ShadowHarness/AppDelegate.m ShadowHarness/SceneDelegate.m; then
     echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
     exit 1
 fi
-if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/FileHiding/libc.x; then
+if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/Universal/libc.x; then
     echo 'LIBC DRIFT: fopen lost its safe rebind path'
     exit 1
 fi
-if grep -q 'LIBC | IOSSAFE' ShadowCore.dylib/hooks/FileHiding/libc.x; then
+if grep -q 'LIBC | METADATA' ShadowCore.dylib/hooks/Universal/libc.x; then
     echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
     exit 1
 fi
-if ! grep -q 'SHADW_HOOK_GROUP_IOS_SECURITY_SUITE' ShadowCore.dylib/hooks/FileHiding/libc.x ||
-   ! grep -q 'shadowhook_libc_iossecuritysuite' ShadowCore.dylib/hooks/Detectors/IOSSecuritySuite.x ||
-   ! grep -q 'shadowhook_NSFileManagerSymbolicLinks' ShadowCore.dylib/hooks/Detectors/IOSSecuritySuite.x ||
-   ! grep -q 'shadowhook_LSApplicationWorkspaceCanOpenURL' ShadowCore.dylib/hooks/Detectors/IOSSecuritySuite.x ||
-   grep -q 'shadowhook_ImportSlotProtection\|method_getImplementation' ShadowCore.dylib/hooks/Detectors/IOSSecuritySuite.x ||
-   ! grep -q 'shadowhook_ImportSlotProtection' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'shadowhook_objc_methodimpl_detector' ShadowCore.dylib/shadowcore.x ||
-    ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x ||
+if ! grep -q 'SHADW_HOOK_GROUP_FEATURE_METADATA' ShadowCore.dylib/hooks/Universal/libc.x ||
+   ! grep -q 'SHDWRequestUniversalFeatures' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+   grep -q 'shdw_universal_' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+   ! grep -q 'shdw_universal_import_slot_protection' ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'shdw_universal_objc_methodimpl_detector' ShadowCore.dylib/shadowcore.x ||
+    ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x ||
     ! grep -q 'hk_artifact_is_import_slot' ShadowCore.dylib/SHDWHookSession.m ||
-   grep -q 'strcmp(d->symbol, "readlink")' ShadowCore.dylib/hooks/FileHiding/libc.x ||
-    grep -q 'effectivePrefs\[SHDWHookIDFilesystem\] = @NO' ShadowCore.dylib/shadowcore.x ||
-    grep -q 'effectivePrefs\[SHDWHookIDURLScheme\] = @NO' ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'isApplicationAvailableToOpenURL:(NSURL \*)url error:' ShadowCore.dylib/hooks/Environment/AppEnvironment.x ||
-   ! grep -q 'VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY' ShadowCore.dylib/hooks/Runtime/ImportSlotProtection.x; then
+   grep -q 'strcmp(d->symbol, "readlink")' ShadowCore.dylib/hooks/Universal/libc.x ||
+    grep -q 'effectivePrefs\[SHDWUniversalFilesystemID\] = @NO' ShadowCore.dylib/shadowcore.x ||
+    grep -q 'effectivePrefs\[SHDWUniversalURLSchemeID\] = @NO' ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'isApplicationAvailableToOpenURL:(NSURL \*)url error:' ShadowCore.dylib/hooks/Universal/AppEnvironment.x ||
+   ! grep -q 'VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY' ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x; then
     echo 'LIBC DRIFT: IOSSecuritySuite lost its targeted safe filesystem subset'
     exit 1
 fi
-if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' ShadowCore.dylib/hooks/FileHiding/sandbox.x; then
+if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' ShadowCore.dylib/hooks/Universal/sandbox.x; then
     echo 'SANDBOX DRIFT: dynamically resolved fork lost its safe fallback'
     exit 1
 fi
-if [ "$(grep -c 'if(pid) \*pid = -1;' ShadowCore.dylib/hooks/FileHiding/sandbox.x)" -ne 2 ] ||
-   [ "$(grep -c '? ENOENT : EPERM;' ShadowCore.dylib/hooks/FileHiding/sandbox.x)" -ne 2 ]; then
+if [ "$(grep -c 'if(pid) \*pid = -1;' ShadowCore.dylib/hooks/Universal/sandbox.x)" -ne 2 ] ||
+   [ "$(grep -c '? ENOENT : EPERM;' ShadowCore.dylib/hooks/Universal/sandbox.x)" -ne 2 ]; then
     echo 'SANDBOX DRIFT: external posix_spawn lost its stock denial contract'
     exit 1
 fi
-if ! grep -q 'hookRebindSymbol:@"dlsym"' ShadowCore.dylib/hooks/Runtime/dyld.x; then
+if ! grep -q 'hookRebindSymbol:@"dlsym"' ShadowCore.dylib/hooks/Universal/dyld.x; then
     echo 'DYLD DRIFT: dlsym lost its safe rebind fallback'
     exit 1
 fi
-if grep -q 'snapshot->entry\[i\]\.name = \[dylib\[@"name"\] fileSystemRepresentation\]' ShadowCore.dylib/hooks/Runtime/dyld.x; then
+if grep -q 'snapshot->entry\[i\]\.name = \[dylib\[@"name"\] fileSystemRepresentation\]' ShadowCore.dylib/hooks/Universal/dyld.x; then
     echo 'DYLD DRIFT: persistent image snapshot stores an autorelease-scoped path pointer'
+    exit 1
+fi
+
+if grep -Rqs 'shdw_universal_' ShadowCore.dylib/hooks/Adapters ||
+   grep -Rqs 'shadowhook_\(dyld\|libc\|NSFileManager\|LSApplicationWorkspace\)' ShadowCore.dylib/hooks/Adapters; then
+    echo 'BOUNDARY DRIFT: adapter sources directly reference universal installers'
+    exit 1
+fi
+if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|DeviceCheck' ShadowCore.dylib/hooks/Universal; then
+    echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
+    exit 1
+fi
+if ! grep -q 'SHDWRequestUniversalFeatures' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+   ! grep -q 'SHDWAdapterPathIsHidden' ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
+   ! grep -q 'SHDWRemapDladdrAddress' ShadowCore.dylib/hooks/Universal/dyld.x; then
+    echo 'BOUNDARY DRIFT: the neutral adapter bridge is incomplete'
     exit 1
 fi
 

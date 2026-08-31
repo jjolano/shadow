@@ -26,6 +26,8 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/HookConfiguration.h>
+#import "../Shadow.framework/SettingsMigration.h"
+#import "../ShadowCore.dylib/HookAdapterBridge.h"
 
 #import <string.h>
 #import <stdio.h>
@@ -52,21 +54,24 @@ static NSDictionary* DefaultsFor(NSString* key, BOOL value) {
 // full-on dictionary exercises every unit the event can name.
 static NSDictionary* AllOnPrefs(void) {
     NSMutableDictionary* prefs = [SHDWDefaultHookSettings() mutableCopy];
-    prefs[SHDWHookIDFilesystem] = @(YES);
-    prefs[SHDWHookIDURLScheme] = @(YES);
-    prefs[SHDWHookIDEnvVars] = @(YES);
-    prefs[SHDWHookIDFoundation] = @(YES);
-    prefs[SHDWHookIDDeviceCheck] = @(YES);
-    prefs[SHDWHookIDMachBootstrap] = @(YES);
-    prefs[SHDWHookIDIOKit] = @(YES);
-    prefs[SHDWHookIDLowLevelC] = @(YES);
-    prefs[SHDWHookIDAntiDebugging] = @(YES);
-    prefs[SHDWHookIDCodeSigning] = @(YES);
-    prefs[SHDWHookIDDynamicLibrariesExtra] = @(YES);
-    prefs[SHDWHookIDSyscall] = @(YES);
-    prefs[SHDWHookIDSandbox] = @(YES);
-    prefs[SHDWHookIDMemory] = @(YES);
-    prefs[SHDWHookIDHideApps] = @(YES);
+    prefs[SHDWUniversalFilesystemID] = @(YES);
+    prefs[SHDWUniversalURLSchemeID] = @(YES);
+    prefs[SHDWUniversalEnvVarsID] = @(YES);
+    prefs[SHDWUniversalFoundationID] = @(YES);
+    prefs[SHDWUniversalMachBootstrapID] = @(YES);
+    prefs[SHDWUniversalIOKitID] = @(YES);
+    prefs[SHDWUniversalLowLevelCID] = @(YES);
+    prefs[SHDWUniversalAntiDebuggingID] = @(YES);
+    prefs[SHDWUniversalCodeSigningID] = @(YES);
+    prefs[SHDWUniversalDynamicLibrariesExtraID] = @(YES);
+    prefs[SHDWUniversalSyscallID] = @(YES);
+    prefs[SHDWUniversalSandboxID] = @(YES);
+    prefs[SHDWUniversalMemoryID] = @(YES);
+    prefs[SHDWUniversalHideAppsID] = @(YES);
+    prefs[SHDWAdapterDeviceCheckID] = @(YES);
+    prefs[SHDWAdapterFreeRASPID] = @(YES);
+    prefs[SHDWAdapterDeviceSecurityKitID] = @(YES);
+    prefs[SHDWAdapterIOSSecuritySuiteID] = @(YES);
     return prefs;
 }
 
@@ -74,26 +79,27 @@ static NSDictionary* AllOnPrefs(void) {
 // ctorInstall units.
 static NSArray* ExpectedCtorOrder(void) {
     return @[
-        @"dyld",
-        @"Hook_Filesystem@c",
-        @"Hook_EnvVars@c",
-        @"Hook_EnvVars@objc",
-        @"Hook_DeviceCheck",
-        @"Hook_MachBootstrap",
-        @"Hook_IOKit",
-        @"Hook_LowLevelC",
-        @"Hook_AntiDebugging",
-        @"Hook_CodeSigning",
-        @"objc",
-        @"objc@methodimpl",
-        @"Hook_Syscall",
-        @"Hook_Memory",
-        @"Hook_Sandbox",
-        @"classes",
-        @"symlookup",
-        @"Hook_DynamicLibrariesExtra",
-        @"Hook_DeviceSecurityKit",
-        @"IOSSecuritySuite",
+        @"Universal_Dyld",
+        @"Universal_Filesystem_C",
+        @"Universal_EnvVars_C",
+        @"Universal_EnvVars_ObjC",
+        @"Adapter_DeviceCheck",
+        @"Adapter_FreeRASP",
+        @"Universal_MachBootstrap",
+        @"Universal_IOKit",
+        @"Universal_LowLevelC",
+        @"Universal_AntiDebugging",
+        @"Universal_CodeSigning",
+        @"Universal_ObjC",
+        @"Universal_ObjC_MethodImplementation",
+        @"Universal_Syscall",
+        @"Universal_Memory",
+        @"Universal_Sandbox",
+        @"Universal_HideClasses",
+        @"Universal_SymbolLookup",
+        @"Universal_DynamicLibrariesExtra",
+        @"Adapter_DeviceSecurityKit",
+        @"Adapter_IOSSecuritySuite",
     ];
 }
 
@@ -113,44 +119,44 @@ static void TestPlannerGating(void) {
 
     // Fishhook-only: message units fail-soft out of the ctor plan.
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), fishhookOnly, SHDWEventCtor);
-    CHECK(!IDInPlan(plan, "objc"), "no message backend: 'objc' fail-soft dropped");
-    CHECK(!IDInPlan(plan, "classes"), "no message backend: 'classes' fail-soft dropped");
-    CHECK(!IDInPlan(plan, "Hook_EnvVars@objc"), "no message backend: EnvVars@objc fail-soft dropped");
-    CHECK(IDInPlan(plan, "Hook_EnvVars@c"), "no message backend: EnvVars@c (function) still installs");
-    CHECK(IDInPlan(plan, "dyld"), "no message backend: 'dyld' (identity) still installs");
-    CHECK(IDInPlan(plan, "symlookup"), "no message backend: 'symlookup' still installs");
+    CHECK(!IDInPlan(plan, "Universal_ObjC"), "no message backend: ObjC fail-soft dropped");
+    CHECK(!IDInPlan(plan, "Universal_HideClasses"), "no message backend: class hiding fail-soft dropped");
+    CHECK(!IDInPlan(plan, "Universal_EnvVars_ObjC"), "no message backend: EnvVars ObjC fail-soft dropped");
+    CHECK(IDInPlan(plan, "Universal_EnvVars_C"), "no message backend: EnvVars C still installs");
+    CHECK(IDInPlan(plan, "Universal_Dyld"), "no message backend: dyld still installs");
+    CHECK(IDInPlan(plan, "Universal_SymbolLookup"), "no message backend: symbol lookup still installs");
 
     // Full caps: the same units are present again.
     NSArray* planFull = SHDWHookPlan(AllOnPrefs(), full, SHDWEventCtor);
-    CHECK(IDInPlan(planFull, "objc"), "message backend present: 'objc' installs");
-    CHECK(IDInPlan(planFull, "classes"), "message backend present: 'classes' installs");
+    CHECK(IDInPlan(planFull, "Universal_ObjC"), "message backend present: ObjC installs");
+    CHECK(IDInPlan(planFull, "Universal_HideClasses"), "message backend present: class hiding installs");
 
     // Pref-off: gated units leave the plan; identity units stay.
-    NSDictionary* prefs = DefaultsFor(SHDWHookIDFilesystem, NO);
+    NSDictionary* prefs = DefaultsFor(SHDWUniversalFilesystemID, NO);
     NSArray* planOff = SHDWHookPlan(prefs, full, SHDWEventCtor);
-    CHECK(!IDInPlan(planOff, "Hook_Filesystem@c"), "pref off: Hook_Filesystem@c dropped");
-    CHECK(IDInPlan(planOff, "dyld"), "pref off: 'dyld' (identity) still installs");
+    CHECK(!IDInPlan(planOff, "Universal_Filesystem_C"), "pref off: filesystem C dropped");
+    CHECK(IDInPlan(planOff, "Universal_Dyld"), "pref off: dyld still installs");
 }
 
 static void TestPlannerUIKit(void) {
     SHDWCapabilities full = SHDWCapMessage | SHDWCapFunction | SHDWCapInline | SHDWCapPrivateSym;
 
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventUIKitLoaded);
-    CHECK(([plan isEqualToArray:@[ @"Hook_URLScheme", @"Hook_Foundation@uikit" ]]), "uikit plan == the two UIKit-class units, in order");
+    CHECK(([plan isEqualToArray:@[ @"Universal_URLScheme", @"Universal_Foundation_UIKit" ]]), "uikit plan == the two UIKit-class units, in order");
 
     // Message backend required by the UIKit groups.
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventUIKitLoaded);
     CHECK(planFish.count == 0, "no message backend: uikit plan empty");
 
     // Pref-gated.
-    NSDictionary* prefs = DefaultsFor(SHDWHookIDURLScheme, NO);
+    NSDictionary* prefs = DefaultsFor(SHDWUniversalURLSchemeID, NO);
     NSArray* planPref = SHDWHookPlan(prefs, full, SHDWEventUIKitLoaded);
-    CHECK(!IDInPlan(planPref, "Hook_URLScheme"), "uikit: URLScheme pref off → dropped");
-    CHECK(!IDInPlan(planPref, "Hook_Foundation@uikit"), "uikit: Foundation default off → dropped");
+    CHECK(!IDInPlan(planPref, "Universal_URLScheme"), "uikit: URLScheme pref off → dropped");
+    CHECK(!IDInPlan(planPref, "Universal_Foundation_UIKit"), "uikit: Foundation default off → dropped");
 
-    NSDictionary* prefsFnd = DefaultsFor(SHDWHookIDFoundation, YES);
+    NSDictionary* prefsFnd = DefaultsFor(SHDWUniversalFoundationID, YES);
     NSArray* planFnd = SHDWHookPlan(prefsFnd, full, SHDWEventUIKitLoaded);
-    CHECK(IDInPlan(planFnd, "Hook_Foundation@uikit"), "uikit: Foundation pref on → present");
+    CHECK(IDInPlan(planFnd, "Universal_Foundation_UIKit"), "uikit: Foundation pref on → present");
 }
 
 static void TestPlannerEscalation(void) {
@@ -160,19 +166,19 @@ static void TestPlannerEscalation(void) {
     // table order (mirrors shdw_detector_detected: dyldextra then tier-2).
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventDetectorEscalation);
     NSArray* expected = @[
-        @"Hook_DynamicLibrariesExtra",
-        @"detector-integrity",
-        @"Hook_Filesystem@objc",
-        @"Hook_Foundation@objc",
-        @"Hook_HideApps",
+        @"Universal_DynamicLibrariesExtra",
+        @"Universal_DetectorIntegrity",
+        @"Universal_Filesystem_ObjC",
+        @"Universal_Foundation_ObjC",
+        @"Universal_HideApps",
     ];
 
     CHECK([plan isEqualToArray:expected], "escalation plan == dylibex first, tier-2 in canonical order");
 
     // dylibex installs even with the pref off (coordinator gates on backend).
-    NSDictionary* prefs = DefaultsFor(SHDWHookIDDynamicLibrariesExtra, NO);
+    NSDictionary* prefs = DefaultsFor(SHDWUniversalDynamicLibrariesExtraID, NO);
     NSArray* planPref = SHDWHookPlan(prefs, full, SHDWEventDetectorEscalation);
-    CHECK(IDInPlan(planPref, "Hook_DynamicLibrariesExtra"), "escalation: dylibex unconditional (backend-gated, not pref-gated)");
+    CHECK(IDInPlan(planPref, "Universal_DynamicLibrariesExtra"), "escalation: dylibex unconditional (backend-gated, not pref-gated)");
 
     // Idempotence: repeated calls return equal plans (no state).
     CHECK([plan isEqualToArray:SHDWHookPlan(AllOnPrefs(), full, SHDWEventDetectorEscalation)], "escalation plan idempotent");
@@ -180,9 +186,45 @@ static void TestPlannerEscalation(void) {
     // No message backend: tier-2 ObjC units drop, dylibex stays (its
     // capability gate lives in the coordinator).
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventDetectorEscalation);
-    CHECK(IDInPlan(planFish, "Hook_DynamicLibrariesExtra"), "fishhook-only: dylibex still named (coordinator gates it)");
-    CHECK(IDInPlan(planFish, "detector-integrity"), "fishhook-only: detector integrity still installs");
-    CHECK(!IDInPlan(planFish, "Hook_Filesystem@objc"), "fishhook-only: tier-2 ObjC dropped");
+    CHECK(IDInPlan(planFish, "Universal_DynamicLibrariesExtra"), "fishhook-only: dylibex still named (coordinator gates it)");
+    CHECK(IDInPlan(planFish, "Universal_DetectorIntegrity"), "fishhook-only: detector integrity still installs");
+    CHECK(!IDInPlan(planFish, "Universal_Filesystem_ObjC"), "fishhook-only: tier-2 ObjC dropped");
+}
+
+static void TestPlannerSDKFallback(void) {
+    SHDWCapabilities full = SHDWCapMessage | SHDWCapFunction | SHDWCapInline | SHDWCapPrivateSym;
+    NSArray* productionCtor = SHDWHookPlan(AllOnPrefs(), full, SHDWEventCtor);
+    CHECK(IDInPlan(productionCtor, "Adapter_DeviceCheck") &&
+          IDInPlan(productionCtor, "Adapter_FreeRASP") &&
+          IDInPlan(productionCtor, "Adapter_DeviceSecurityKit") &&
+          IDInPlan(productionCtor, "Adapter_IOSSecuritySuite"),
+          "production ctor keeps SDK adapters early");
+
+    NSMutableDictionary* harnessPrefs = [AllOnPrefs() mutableCopy];
+    harnessPrefs[SHDWUniversalHarnessBaselineID] = @YES;
+    NSArray* harnessCtor = SHDWHookPlan(harnessPrefs, full, SHDWEventCtor);
+    CHECK(!IDInPlan(harnessCtor, "Adapter_DeviceCheck") &&
+          !IDInPlan(harnessCtor, "Adapter_DeviceSecurityKit") &&
+          !IDInPlan(harnessCtor, "Adapter_IOSSecuritySuite"),
+          "Harness baseline defers SDK adapters");
+    CHECK(IDInPlan(harnessCtor, "Adapter_FreeRASP"),
+          "Harness baseline keeps one-shot FreeRASP coverage");
+
+    NSMutableDictionary* maximumHarnessPrefs = [AllOnPrefs() mutableCopy];
+    maximumHarnessPrefs[SHDWUniversalHarnessBaselineID] = @NO;
+    NSArray* maximumHarnessCtor = SHDWHookPlan(maximumHarnessPrefs, full, SHDWEventCtor);
+    CHECK(!IDInPlan(maximumHarnessCtor, "Adapter_DeviceCheck") &&
+          !IDInPlan(maximumHarnessCtor, "Adapter_DeviceSecurityKit") &&
+          !IDInPlan(maximumHarnessCtor, "Adapter_IOSSecuritySuite"),
+          "Harness maximum profile defers target-dependent SDK adapters");
+
+    NSArray* fallback = SHDWHookPlan(harnessPrefs, full, SHDWEventSDKFallback);
+    NSArray* expectedFallback = @[
+        @"Adapter_DeviceCheck", @"Adapter_DeviceSecurityKit", @"Adapter_IOSSecuritySuite",
+    ];
+    CHECK([fallback isEqualToArray:expectedFallback], "SDK fallback restores deferred adapters in registry order");
+    CHECK([SHDWHookPlan(maximumHarnessPrefs, full, SHDWEventSDKFallback) isEqualToArray:expectedFallback],
+          "Harness maximum profile installs SDK adapters after detector frameworks load");
 }
 
 static void TestInstallUnitConsistency(void) {
@@ -211,7 +253,7 @@ static void TestInstallUnitConsistency(void) {
         // shipped defaults (no dangling pref key = dead group).
         if(units[i].prefKey) {
             CHECK(SHDWDefaultHookSettings()[units[i].prefKey] != nil, "unit prefKey exists in shipped defaults");
-            CHECK([units[i].prefKey hasPrefix:@"Hook_"], "unit prefKey is a canonical Hook_ plist key");
+            CHECK([units[i].prefKey hasPrefix:@"Universal_"] || [units[i].prefKey hasPrefix:@"Adapter_"], "unit prefKey is a canonical domain plist key");
         }
     }
 
@@ -243,7 +285,7 @@ static void TestCapabilityCoverage(void) {
     }
 
     // The known capability-kind keys are all reachable from the unit table.
-    CHECK([seenKeys containsObject:SHDWHookIDDynamicLibrariesExtra], "dylibex key covered by unit table");
+    CHECK([seenKeys containsObject:SHDWUniversalDynamicLibrariesExtraID], "dylibex key covered by unit table");
 }
 
 static void TestPresetConsistency(void) {
@@ -253,29 +295,29 @@ static void TestPresetConsistency(void) {
     NSDictionary* defaults = SHDWDefaultHookSettings();
     NSDictionary* standard = SHDWPresetStandard();
 
-    CHECK([defaults[SHDWDetectorPatchDTTID] boolValue], "targeted DTT support defaults on");
-    CHECK([defaults[SHDWDetectorPatchSafeDeviceID] boolValue], "targeted SafeDevice support defaults on");
-    CHECK([defaults[SHDWDetectorPatchJailMonkeyID] boolValue], "targeted JailMonkey support defaults on");
-    CHECK(standard[SHDWDetectorPatchDTTID] == nil &&
-          standard[SHDWDetectorPatchSafeDeviceID] == nil &&
-          standard[SHDWDetectorPatchJailMonkeyID] == nil,
-          "targeted detector patches stay outside hook presets");
+    CHECK([defaults[SHDWAdapterDTTJailbreakDetectionID] boolValue], "targeted DTT adapter defaults on");
+    CHECK([defaults[SHDWAdapterSafeDeviceID] boolValue], "targeted SafeDevice adapter defaults on");
+    CHECK([defaults[SHDWAdapterJailMonkeyID] boolValue], "targeted JailMonkey adapter defaults on");
+    CHECK([standard[SHDWAdapterDTTJailbreakDetectionID] boolValue] &&
+          [standard[SHDWAdapterSafeDeviceID] boolValue] &&
+          [standard[SHDWAdapterJailMonkeyID] boolValue],
+          "adapter switches participate in presets");
 
     for(NSString* key in defaults) {
-        if([key hasPrefix:@"Hook_"]) {
+        if([key hasPrefix:@"Universal_"] || [key hasPrefix:@"Adapter_"]) {
             CHECK([standard[key] isEqual:defaults[key]], "standard preset matches defaults for hook key");
         }
     }
 
     // Maximum = standard + every dangerous hook flipped on.
     NSDictionary* maximum = SHDWPresetMaximum();
-    CHECK([maximum[SHDWHookIDSandbox] boolValue], "maximum preset: sandbox on");
-    CHECK([maximum[SHDWHookIDMemory] boolValue], "maximum preset: memory on");
-    CHECK([maximum[SHDWHookIDAntiDebugging] boolValue], "maximum preset: antidebugging on");
-    CHECK([maximum[SHDWHookIDFoundation] boolValue], "maximum preset: foundation on");
-    CHECK([maximum[SHDWDetectorPatchDTTID] boolValue] &&
-          [maximum[SHDWDetectorPatchSafeDeviceID] boolValue] &&
-          [maximum[SHDWDetectorPatchJailMonkeyID] boolValue],
+    CHECK([maximum[SHDWUniversalSandboxID] boolValue], "maximum preset: sandbox on");
+    CHECK([maximum[SHDWUniversalMemoryID] boolValue], "maximum preset: memory on");
+    CHECK([maximum[SHDWUniversalAntiDebuggingID] boolValue], "maximum preset: antidebugging on");
+    CHECK([maximum[SHDWUniversalFoundationID] boolValue], "maximum preset: foundation on");
+    CHECK([maximum[SHDWAdapterDTTJailbreakDetectionID] boolValue] &&
+          [maximum[SHDWAdapterSafeDeviceID] boolValue] &&
+          [maximum[SHDWAdapterJailMonkeyID] boolValue],
           "maximum preset: all detector adapters on");
 
     // The maximum preset's hook keys are a superset of the standard's.
@@ -300,13 +342,64 @@ static void TestNoDeadGroups(void) {
     NSDictionary* defaults = SHDWDefaultHookSettings();
 
     for(NSString* key in defaults) {
-        if(![key hasPrefix:@"Hook_"]) {
+        if(![key hasPrefix:@"Universal_"] && ![key hasPrefix:@"Adapter_"]) {
             continue;   // Global_Enabled, HK_Library, ... are
                         // not install units
         }
 
-        CHECK([unitKeys containsObject:key], "every defaults Hook_ key is covered by an install unit");
+        CHECK([unitKeys containsObject:key] || SHDWHookGroupCapabilityKind(key) != nil,
+              "every domain default is installed directly or consumed by an adapter");
     }
+}
+
+static void TestSettingsMigration(void) {
+    NSDictionary* legacy = @{
+        @"Hook_Filesystem" : @NO,
+        SHDWUniversalFilesystemID : @YES,
+        @"Hook_DeviceCheck" : @NO,
+        SHDWAdapterFreeRASPID : @YES,
+        @"PseudoSandboxMode" : @2,
+    };
+    NSDictionary* migrated = SHDWMigratedHookSettings(legacy);
+
+    CHECK([migrated[SHDWUniversalFilesystemID] boolValue], "migration: canonical universal value wins");
+    CHECK(![migrated[SHDWAdapterDeviceCheckID] boolValue], "migration: DeviceCheck fans out to its adapter");
+    CHECK([migrated[SHDWAdapterFreeRASPID] boolValue], "migration: canonical FreeRASP value wins");
+    CHECK([migrated[SHDWUniversalPseudoSandboxModeID] integerValue] == 2, "migration: universal mode moved");
+    CHECK(migrated[@"Hook_Filesystem"] == nil && migrated[@"Hook_DeviceCheck"] == nil &&
+          migrated[@"PseudoSandboxMode"] == nil, "migration: legacy keys removed");
+}
+
+static int bridgeReplacement;
+static int bridgeOriginal;
+static NSUInteger bridgeFeatureCalls;
+
+static BOOL BridgePathPredicate(NSString* path) {
+    return [path isEqualToString:@"/.adapter-test"];
+}
+
+static const void* BridgeDladdrRemapper(const void* address, const void* caller) {
+    (void)caller;
+    return address == &bridgeReplacement ? &bridgeOriginal : NULL;
+}
+
+static void BridgeFeatureInstaller(SHDWHookSession* hooks, const void* imageHeader) {
+    (void)hooks;
+    bridgeFeatureCalls += imageHeader == &bridgeOriginal;
+}
+
+static void TestHookAdapterBridge(void) {
+    SHDWSetAdapterPathPredicate(BridgePathPredicate);
+    CHECK(SHDWAdapterPathIsHidden(@"/.adapter-test"), "bridge: adapter path predicate is visible to universal hooks");
+    CHECK(!SHDWAdapterPathIsHidden(@"/stock"), "bridge: adapter path predicate keeps other paths visible");
+
+    SHDWSetDladdrRemapper(BridgeDladdrRemapper);
+    CHECK(SHDWRemapDladdrAddress(&bridgeReplacement, NULL) == &bridgeOriginal,
+          "bridge: adapter dladdr remapper is visible to universal hooks");
+
+    SHDWRegisterUniversalFeatureInstaller(SHDWUniversalFeatureSymbolicLinks, BridgeFeatureInstaller);
+    SHDWRequestUniversalFeatures(SHDWUniversalFeatureSymbolicLinks, nil, &bridgeOriginal);
+    CHECK(bridgeFeatureCalls == 1, "bridge: adapter feature request invokes the registered universal feature");
 }
 
 int RunCoordinatorTests(void) {
@@ -318,10 +411,13 @@ int RunCoordinatorTests(void) {
         TestPlannerGating();
         TestPlannerUIKit();
         TestPlannerEscalation();
+        TestPlannerSDKFallback();
         TestInstallUnitConsistency();
         TestCapabilityCoverage();
         TestPresetConsistency();
         TestNoDeadGroups();
+        TestSettingsMigration();
+        TestHookAdapterBridge();
     }
 
     printf("CoordinatorTests: %d passed, %d failed\n", cg, cf);

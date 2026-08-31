@@ -20,6 +20,10 @@ typedef NSString* SHDWImageRef;
 - (BOOL)hookRebindSymbol:(NSString*)symbolName
           withReplacement:(void*)replacement
                  outOldPtr:(void**)oldPtr;
+- (BOOL)hookRebindSymbol:(NSString*)symbolName
+          withReplacement:(void*)replacement
+                 outOldPtr:(void**)oldPtr
+             inCallerImage:(const void*)imageHeader;
 
 - (SHDWImageRef)openImage:(NSString*)path;
 - (void)closeImage:(SHDWImageRef)image;

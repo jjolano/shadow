@@ -12,25 +12,6 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Dangerous" target:self];
-		BOOL detectorPane = [[self.specifier propertyForKey:@"detectorPane"] boolValue];
-		NSUInteger detectorStart = NSNotFound;
-		for(NSUInteger i = 0; i < _specifiers.count; i++) {
-			if([[[_specifiers objectAtIndex:i] identifier] isEqualToString:@"DetectorPatchesGroup"]) {
-				detectorStart = i;
-				break;
-			}
-		}
-		if(detectorStart != NSNotFound) {
-			// ponytail: detector rows stay last; add an end marker if another
-			// dangerous section is ever appended below them.
-			_specifiers = [(detectorPane
-				? [_specifiers subarrayWithRange:NSMakeRange(detectorStart, _specifiers.count - detectorStart)]
-				: [_specifiers subarrayWithRange:NSMakeRange(0, detectorStart)]) mutableCopy];
-		}
-		if(detectorPane) {
-			self.title = [[NSBundle bundleForClass:[self class]]
-				localizedStringForKey:@"DETECTOR_PATCHES" value:nil table:@"Dangerous"];
-		}
 
 		// Disable and explain hook rows whose runtime backend is missing.
 		SHDWApplyHookGroupGating(_specifiers);

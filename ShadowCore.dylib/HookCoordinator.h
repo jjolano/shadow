@@ -36,6 +36,8 @@ typedef SHDWPluginInstaller SHDWHookInstaller;
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event;
 - (void)prearmDetector;
 - (void)escalateWithReason:(NSString*)reason;
+- (BOOL)installHarnessSDKFallback;
++ (BOOL)shdw_installHarnessSDKFallback;
 
 @end
 

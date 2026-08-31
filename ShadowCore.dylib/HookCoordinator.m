@@ -96,10 +96,13 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     NSUInteger _installerCount;
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
+    BOOL _sdkFallbackInstalled;
+    BOOL _harnessProfile;
     BOOL _installing;                 // re-entrancy guard (see installEventSync:)
     NSArray<NSString*>* _ctorInventory;
     NSArray<NSString*>* _postLoadInventory;
     NSArray<NSString*>* _postDetectorInventory;
+    NSArray<NSString*>* _postSDKFallbackInventory;
 }
 @property (nonatomic, readwrite) SHDWBackendSet* backends;
 @property (nonatomic, readwrite, copy) NSDictionary<NSString*, id>* prefs;
@@ -131,6 +134,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     }
 
     _prefs = [prefs copy];
+    _harnessProfile = _prefs[SHDWUniversalHarnessBaselineID] != nil;
     _lifecycleQueue = dispatch_queue_create("com.shadow.hookcoordinator.lifecycle", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_set_specific(_lifecycleQueue, &kSHDWHookCoordinatorQueueKey, (__bridge void*)self, NULL);
 
@@ -184,6 +188,9 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         case SHDWEventDetectorEscalation:
             _postDetectorInventory = inventory;
             break;
+        case SHDWEventSDKFallback:
+            _postSDKFallbackInventory = inventory;
+            break;
     }
 }
 
@@ -194,9 +201,11 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
             @"ctor_inventory" : _ctorInventory ?: @[],
             @"post_load_inventory" : _postLoadInventory ?: @[],
             @"post_detector_inventory" : _postDetectorInventory ?: @[],
+            @"sdk_fallback_inventory" : _postSDKFallbackInventory ?: @[],
             @"ctor_observed" : @(_ctorInventory != nil),
             @"post_load_observed" : @(_postLoadInventory != nil),
             @"post_detector_observed" : @(_postDetectorInventory != nil),
+            @"sdk_fallback_observed" : @(_postSDKFallbackInventory != nil),
             @"escalated" : @(_escalated),
         };
     };
@@ -438,6 +447,19 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     // detector code can be on the stack. Install Tier 2 now; the asynchronous
     // path remains for behavioral discoveries made inside intercepted calls.
     [self installEvent:SHDWEventDetectorEscalation];
+}
+
+- (BOOL)installHarnessSDKFallback {
+    if(!_harnessProfile || __atomic_exchange_n(&_sdkFallbackInstalled, YES, __ATOMIC_ACQ_REL)) {
+        return NO;
+    }
+
+    [self installEvent:SHDWEventSDKFallback];
+    return YES;
+}
+
++ (BOOL)shdw_installHarnessSDKFallback {
+    return gSHDWActivationCoordinator ? [gSHDWActivationCoordinator installHarnessSDKFallback] : NO;
 }
 
 @end

@@ -62,9 +62,9 @@ static NSSet* shdw_defaultOffKeys(void) {
 
     dispatch_once(&onceToken, ^{
         set = [NSSet setWithArray:@[
-            @"Hook_Foundation", @"Hook_Memory", @"Hook_Syscall", @"Hook_Sandbox",
-            @"Hook_MachBootstrap", @"Hook_IOKit", @"Hook_AntiDebugging",
-            @"Hook_DynamicLibrariesExtra"
+            @"Universal_Foundation", @"Universal_Memory", @"Universal_Syscall", @"Universal_Sandbox",
+            @"Universal_MachBootstrap", @"Universal_IOKit", @"Universal_AntiDebugging",
+            @"Universal_DynamicLibrariesExtra"
         ]];
     });
 
@@ -77,13 +77,13 @@ static NSDictionary* shdw_defaultSettings(void) {
 
     dispatch_once(&onceToken, ^{
         NSMutableDictionary* d = [NSMutableDictionary dictionaryWithDictionary:@{
-            @"Hook_Filesystem" : @YES,
-            @"Hook_URLScheme"  : @YES,
-            @"Hook_EnvVars"    : @YES,
-            @"Hook_DeviceCheck": @YES,
-            @"Hook_LowLevelC"  : @YES,
-            @"Hook_HideApps"   : @YES,
-            @"MemoryLevelHiding" : @YES
+            @"Universal_Filesystem" : @YES,
+            @"Universal_URLScheme"  : @YES,
+            @"Universal_EnvVars"    : @YES,
+            @"Adapter_DeviceCheck"  : @YES,
+            @"Universal_LowLevelC"  : @YES,
+            @"Universal_HideApps"   : @YES,
+            @"Universal_MemoryLevelHiding" : @YES
         }];
 
         for(NSString* key in shdw_defaultOffKeys()) {
@@ -272,25 +272,25 @@ typedef struct {
 } bench_group;
 
 static const bench_group kGroups[] = {
-    { "libc.stat",        "Hook_Filesystem",     cStatFast,       cStatAllowed,       cStatRestricted },
-    { "libc.open",        "Hook_LowLevelC",      cOpenFast,       cOpenAllowed,       cOpenRestricted },
-    { "nsfilemanager",    "Hook_Foundation",     cFmFast,         cFmAllowed,         cFmRestricted },
-    { "nsurl",            "Hook_Foundation",     cUrlFast,        cUrlAllowed,        cUrlRestricted },
-    { "nsbundle",         "Hook_Foundation",     NULL,            cBundleAllowed,     cBundleRestricted },
-    { "nsstring",         "Hook_Foundation",     NULL,            cStringAllowed,     cStringRestricted },
-    { "nsdata",           "Hook_Foundation",     NULL,            cDataAllowed,       cDataRestricted },
-    { "nsdictionary",     "Hook_Foundation",     NULL,            cDictAllowed,       cDictRestricted },
-    { "nsfilehandle",     "Hook_Foundation",     NULL,            cFileHandleAllowed, cFileHandleRestricted },
-    { "nsthread",         "Hook_Foundation",     NULL,            cThread,            NULL },
-    { "sandbox",          "Hook_Sandbox",        cSandboxFast,    cSandboxAllowed,    cSandboxRestricted },
-    { "syscall.csops",    "Hook_Syscall",        NULL,            cCsops,             NULL },
-    { "mach.bootstrap",   "Hook_MachBootstrap",  NULL,            cMachAllowed,       cMachRestricted },
+    { "libc.stat",        "Universal_Filesystem", cStatFast,       cStatAllowed,       cStatRestricted },
+    { "libc.open",        "Universal_LowLevelC",  cOpenFast,       cOpenAllowed,       cOpenRestricted },
+    { "nsfilemanager",    "Universal_Filesystem", cFmFast,         cFmAllowed,         cFmRestricted },
+    { "nsurl",            "Universal_Foundation", cUrlFast,        cUrlAllowed,        cUrlRestricted },
+    { "nsbundle",         "Universal_Foundation", NULL,            cBundleAllowed,     cBundleRestricted },
+    { "nsstring",         "Universal_Foundation", NULL,            cStringAllowed,     cStringRestricted },
+    { "nsdata",           "Universal_Foundation", NULL,            cDataAllowed,       cDataRestricted },
+    { "nsdictionary",     "Universal_Foundation", NULL,            cDictAllowed,       cDictRestricted },
+    { "nsfilehandle",     "Universal_Filesystem", NULL,            cFileHandleAllowed, cFileHandleRestricted },
+    { "nsthread",         "Universal_Foundation", NULL,            cThread,            NULL },
+    { "sandbox",          "Universal_Sandbox",    cSandboxFast,    cSandboxAllowed,    cSandboxRestricted },
+    { "syscall.csops",    "Universal_Syscall",    NULL,            cCsops,             NULL },
+    { "mach.bootstrap",   "Universal_MachBootstrap", NULL,         cMachAllowed,       cMachRestricted },
     { "objc.classlookup", NULL,                  NULL,            cObjcAllowed,       cObjcRestricted },
-    { "mem.vmregion",     "Hook_Memory",         NULL,            cVmRegion,          NULL },
-    { "nsprocessinfo",    "Hook_EnvVars",        NULL,            cProcessInfo,       NULL },
+    { "mem.vmregion",     "Universal_Memory",    NULL,            cVmRegion,          NULL },
+    { "nsprocessinfo",    "Universal_EnvVars",   NULL,            cProcessInfo,       NULL },
     { "nsuserdefaults",   NULL,                  NULL,            cUserDefaults,      NULL },
-    { "devicecheck",      "Hook_DeviceCheck",    NULL,            cDeviceCheck,       NULL },
-    { "uikit.imagenamed", "Hook_Foundation",     NULL,            cUIImage,           NULL },
+    { "devicecheck",      "Adapter_DeviceCheck", NULL,            cDeviceCheck,       NULL },
+    { "uikit.imagenamed", "Universal_Foundation", NULL,           cUIImage,           NULL },
 };
 
 static const char* optionValue(int argc, char* argv[], const char* option) {
@@ -366,11 +366,11 @@ int main(int argc, char* argv[]) {
 
         // Groups that need their framework loaded BEFORE ShadowCore's ctor
         // (absent classes are skipped silently at ctor time, never retried).
-        if(prefsEnabled(@"Hook_DeviceCheck")) {
+        if(prefsEnabled(@"Adapter_DeviceCheck")) {
             dlopen("/System/Library/Frameworks/DeviceCheck.framework/DeviceCheck", RTLD_NOW);
         }
 
-        if(prefsEnabled(@"Hook_Foundation")) {
+        if(prefsEnabled(@"Universal_Foundation")) {
             dlopen("/System/Library/Frameworks/UIKit.framework/UIKit", RTLD_NOW);
         }
 

@@ -26,9 +26,9 @@
 set -e
 
 HOOKDIR=ShadowCore.dylib/hooks
-DEF="$HOOKDIR/FileHiding/RawSyscalls.def"
-SYSCALL="$HOOKDIR/FileHiding/syscall.x"
-LIBC="$HOOKDIR/FileHiding/libc.x"
+DEF="$HOOKDIR/Universal/RawSyscalls.def"
+SYSCALL="$HOOKDIR/Universal/syscall.x"
+LIBC="$HOOKDIR/Universal/libc.x"
 rc=0
 
 fail() {
@@ -108,7 +108,7 @@ for number in SYS_mkfifoat SYS_mknodat; do
     fi
 done
 
-if ! grep -q 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' "$HOOKDIR/FileHiding/sandbox.x"; then
+if ! grep -q 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' "$HOOKDIR/Universal/sandbox.x"; then
     fail "F_GETPATH_NOFIRMLINK is not filtered with F_GETPATH"
 fi
 

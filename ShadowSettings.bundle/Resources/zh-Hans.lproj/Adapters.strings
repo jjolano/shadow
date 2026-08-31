@@ -1,0 +1,10 @@
+"ADAPTERS" = "适配器";
+"ADAPTERS_DESC" = "适用于特定安全库的兼容性适配器。这些开关独立于通用钩子。";
+"ADAPTERS_DETECTORS" = "检测库";
+"ADAPTER_DEVICECHECK" = "DeviceCheck";
+"ADAPTER_FREERASP" = "FreeRASP";
+"ADAPTER_DEVICESECURITYKIT" = "DeviceSecurityKit";
+"ADAPTER_IOSSECURITYSUITE" = "IOSSecuritySuite";
+"DTTJailbreakDetection" = "DTTJailbreakDetection";
+"safe_device" = "SafeDevice";
+"JailMonkey" = "JailMonkey";
