@@ -96,6 +96,9 @@ jobs:
       - name: Hook→engine matrix drift check
         run: sh tests/verify-hook-matrix.sh
 
+      - name: Raw syscall metadata check
+        run: sh tests/verify-syscall-meta.sh
+
       - name: Settings information architecture check
         run: sh tests/verify-settings-structure.sh
 

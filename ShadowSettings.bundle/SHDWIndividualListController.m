@@ -11,7 +11,8 @@
 
 - (NSArray *)specifiers {
 	if(!_specifiers) {
-		_specifiers = [self loadSpecifiersFromPlistName:@"Individual" target:self];
+		NSString* plistName = [self.specifier propertyForKey:@"plistName"] ?: @"Individual";
+		_specifiers = [self loadSpecifiersFromPlistName:plistName target:self];
 
 		// Same capability gating as the other hook pages: toggles can't run
 		// a group the device's backends don't support.

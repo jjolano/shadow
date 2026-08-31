@@ -1,6 +1,7 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
 # LOGOS_DEFAULT_GENERATOR = internal
 
+include ../build-lanes.mk
 include $(THEOS)/makefiles/common.mk
 include ../hookkit.mk
 

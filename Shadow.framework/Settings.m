@@ -3,6 +3,7 @@
 #import "../common.h"
 #import <Shadow/JBPath.h>
 #import <Shadow/HookConfiguration.h>
+#import "SettingsMigration.h"
 
 @implementation ShadowSettings
 @synthesize defaultSettings, userDefaults;
@@ -10,15 +11,48 @@
 - (instancetype)init {
     if((self = [super init])) {
         // Canonical shipped defaults (Shadow/HookConfiguration.h) — the
-        // metadata is the single source of truth. Hook_IOKit is explicit NO
+        // metadata is the single source of truth. Universal_IOKit is explicit NO
         // (previously absent-by-omission).
         defaultSettings = SHDWDefaultHookSettings();
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+        [self migrateLegacyHookSettings];
         [userDefaults registerDefaults:defaultSettings];
     }
 
     return self;
+}
+
+- (void)migrateLegacyHookSettings {
+    NSDictionary* root = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST];
+    if(![root isKindOfClass:[NSDictionary class]]) {
+        return;
+    }
+
+    NSDictionary* migratedRoot = SHDWMigratedHookSettings(root);
+    BOOL changed = NO;
+    for(NSString* key in migratedRoot) {
+        id value = migratedRoot[key];
+        if([value isKindOfClass:[NSDictionary class]]) {
+            NSDictionary* migratedApp = SHDWMigratedHookSettings(value);
+            if(![migratedApp isEqual:value]) {
+                [userDefaults setObject:migratedApp forKey:key];
+                changed = YES;
+            }
+        } else if(![value isEqual:root[key]]) {
+            [userDefaults setObject:value forKey:key];
+            changed = YES;
+        }
+    }
+    for(NSString* key in root) {
+        if(![root[key] isKindOfClass:[NSDictionary class]] && !migratedRoot[key]) {
+            [userDefaults removeObjectForKey:key];
+            changed = YES;
+        }
+    }
+    if(changed) {
+        [userDefaults synchronize];
+    }
 }
 
 + (instancetype)sharedInstance {
@@ -39,10 +73,25 @@
 
     NSMutableDictionary* result = [defaultSettings mutableCopy];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
+    NSDictionary* filePreferences = nil;
+    NSDictionary* fileAppSettings = nil;
     // Sandboxed cfprefsd can omit another app's dictionary despite libSandy's file grant.
-    if(!app_settings && bundleIdentifier) {
-        id fileSettings = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST][bundleIdentifier];
-        app_settings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
+    if(bundleIdentifier) {
+        id fileRoot = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST];
+        filePreferences = [fileRoot isKindOfClass:[NSDictionary class]] ? fileRoot : nil;
+        id fileSettings = filePreferences[bundleIdentifier];
+        fileAppSettings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
+    }
+    if(!app_settings) {
+        app_settings = fileAppSettings;
+    }
+
+    // Profile selection must be file-authoritative for Harness: otherwise
+    // deleting an explicit maximum profile can leave cfprefsd's old dictionary
+    // active and prevent the normal universal baseline from returning.
+    if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
+       filePreferences) {
+        app_settings = fileAppSettings;
     }
 
     // Per-app kill switch. Distinct from App_Enabled, which means "this app has
@@ -77,8 +126,18 @@
             }
         }
 
+        // Harness normally records a universal baseline before SDK-specific
+        // hooks load. Its explicit test profile may opt into a fully prearmed
+        // detector run without changing any other app's behavior.
+        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]) {
+            id baseline = [app_settings objectForKey:SHDWUniversalHarnessBaselineID];
+            if(baseline != nil) {
+                result[SHDWUniversalHarnessBaselineID] = baseline;
+            }
+        }
+
         if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.dtt"]) {
-            result[SHDWDetectorPatchDTTID] = @YES;
+            result[SHDWAdapterDTTJailbreakDetectionID] = @YES;
         }
     }
 

@@ -1,3 +1,4 @@
+include ../build-lanes.mk
 include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = shdw

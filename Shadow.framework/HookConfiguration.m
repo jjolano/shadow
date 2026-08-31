@@ -11,43 +11,44 @@
 // Hybrid: order verified against SHDWPluginOrder.inc at compile time.
 static const SHDWPlugin kSHDWPlugins[] = {
     // Identity concealment — unconditional, installed for every enabled app.
-    { "dyld",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 1 },
-    { "Hook_Filesystem@c",    SHDWHookIDFilesystem,          SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_EnvVars@c",       SHDWHookIDEnvVars,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_EnvVars@objc",    SHDWHookIDEnvVars,             SHDWPhaseTier1,       SHDWCapabilityMessage,     1, 0 },
-    { "Hook_DeviceCheck",     SHDWHookIDDeviceCheck,         SHDWPhaseTier1,       SHDWCapabilityMessage,     1, 0 },
-    { "Hook_MachBootstrap",   SHDWHookIDMachBootstrap,       SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_IOKit",           SHDWHookIDIOKit,               SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_LowLevelC",       SHDWHookIDLowLevelC,           SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_AntiDebugging",   SHDWHookIDAntiDebugging,       SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_Dyld",                 NULL,                                  SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 1 },
+    { "Universal_Filesystem_C",         SHDWUniversalFilesystemID,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_EnvVars_C",            SHDWUniversalEnvVarsID,                SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_EnvVars_ObjC",         SHDWUniversalEnvVarsID,                SHDWPhaseTier1,       SHDWCapabilityMessage,     1, 0 },
+    { "Adapter_DeviceCheck",            SHDWAdapterDeviceCheckID,              SHDWPhaseSDKFallback, SHDWCapabilityMessage,     1, 0 },
+    { "Adapter_FreeRASP",               SHDWAdapterFreeRASPID,                 SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
+    { "Universal_MachBootstrap",        SHDWUniversalMachBootstrapID,          SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_IOKit",                SHDWUniversalIOKitID,                  SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_LowLevelC",            SHDWUniversalLowLevelCID,              SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_AntiDebugging",        SHDWUniversalAntiDebuggingID,          SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
     // Code-signing self-validation concealment: rebind-lane C hooks on the
     // Security.framework validity surface (own-executable failures only).
-    { "Hook_CodeSigning",     SHDWHookIDCodeSigning,         SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "objc",                 NULL,                          SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
+    { "Universal_CodeSigning",          SHDWUniversalCodeSigningID,            SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_ObjC",                 NULL,                                  SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
     // method_getImplementation rides the rebind lane (subMain's inline
     // preflight refuses its tiny prologue; see shadowhook_objc_methodimpl).
-    { "objc@methodimpl",      NULL,                          SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
-    { "Hook_Syscall",         SHDWHookIDSyscall,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_Memory",          SHDWHookIDMemory,              SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "Hook_Sandbox",         SHDWHookIDSandbox,             SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
-    { "classes",              NULL,                          SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
-    { "symlookup",            NULL,                          SHDWPhaseAlways,      SHDWCapabilitySymlookup,   1, 1 },
+    { "Universal_ObjC_MethodImplementation", NULL,                           SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
+    { "Universal_Syscall",              SHDWUniversalSyscallID,                SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_Memory",               SHDWUniversalMemoryID,                 SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_Sandbox",              SHDWUniversalSandboxID,                SHDWPhaseTier1,       SHDWCapabilityFunction,    1, 1 },
+    { "Universal_HideClasses",          NULL,                                  SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
+    { "Universal_SymbolLookup",         NULL,                                  SHDWPhaseAlways,      SHDWCapabilitySymlookup,   1, 1 },
     // dlopen_internal: ctor installs it pref-gated; detector escalation
     // installs it unconditionally (the coordinator gates on the backend).
-    { "Hook_DynamicLibrariesExtra", SHDWHookIDDynamicLibrariesExtra,
+    { "Universal_DynamicLibrariesExtra", SHDWUniversalDynamicLibrariesExtraID,
                                                                   SHDWPhaseEscalation, SHDWCapabilityPrivateSym, 1, 1 },
     // Generic detector integrity: reveal pre-Shadow IMPs and protect only
     // import slots Shadow actually rebound. Installed on detector evidence.
-    { "detector-integrity",    NULL,                          SHDWPhaseTier2,       SHDWCapabilityFunction,    0, 0 },
+    { "Universal_DetectorIntegrity",   NULL,                                  SHDWPhaseTier2,       SHDWCapabilityFunction,    0, 0 },
     // Tier-2: ObjC-method swizzles install on first detector evidence.
-    { "Hook_Filesystem@objc", SHDWHookIDFilesystem,          SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
-    { "Hook_Foundation@objc", SHDWHookIDFoundation,          SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
-    { "Hook_HideApps",        SHDWHookIDHideApps,            SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
+    { "Universal_Filesystem_ObjC",     SHDWUniversalFilesystemID,             SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
+    { "Universal_Foundation_ObjC",     SHDWUniversalFoundationID,             SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
+    { "Universal_HideApps",            SHDWUniversalHideAppsID,               SHDWPhaseTier2,       SHDWCapabilityMessage,     0, 0 },
     // UIKit-load groups (the classes only exist once UIKit is loaded).
-    { "Hook_URLScheme",       SHDWHookIDURLScheme,           SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
-    { "Hook_Foundation@uikit", SHDWHookIDFoundation,         SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
-    { "Hook_DeviceSecurityKit", NULL, SHDWPhaseAlways,      SHDWCapabilityMessage,     1, 0 },
-    { "IOSSecuritySuite",         NULL,                           SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
+    { "Universal_URLScheme",          SHDWUniversalURLSchemeID,              SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
+    { "Universal_Foundation_UIKit",   SHDWUniversalFoundationID,             SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
+    { "Adapter_DeviceSecurityKit",    SHDWAdapterDeviceSecurityKitID,        SHDWPhaseSDKFallback, SHDWCapabilityMessage,     1, 0 },
+    { "Adapter_IOSSecuritySuite",     SHDWAdapterIOSSecuritySuiteID,         SHDWPhaseSDKFallback, SHDWCapabilityFunction,    1, 0 },
     // Policy plugins — evaluated via RestrictionEngine / policy/*.m, not via
     // HookCoordinator install. Registered here so SHDWPluginRegistry is the
     // single source for hook+policy metadata. Never installed via HookPlan
@@ -84,27 +85,30 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
     return @{
         SHDWGlobalEnabledID : @(NO),
         SHDWHookLibraryID : @"auto",
-        SHDWHookIDFilesystem : @(YES),
-        SHDWHookIDURLScheme : @(YES),
-        SHDWHookIDEnvVars : @(YES),
-        SHDWHookIDFoundation : @(NO),
-        SHDWHookIDDeviceCheck : @(YES),
-        SHDWHookIDMachBootstrap : @(NO),
-        SHDWHookIDIOKit : @(NO),
-        SHDWHookIDLowLevelC : @(YES),
-        SHDWHookIDAntiDebugging : @(YES),
-        SHDWHookIDCodeSigning : @(YES),
-        SHDWHookIDDynamicLibrariesExtra : @(NO),
-        SHDWHookIDSyscall : @(NO),
-        SHDWHookIDSandbox : @(YES),
-        SHDWHookIDMemory : @(YES),
-        SHDWHookIDHideApps : @(YES),
-        SHDWPseudoSandboxModeID : @(0),
-        SHDWPathRewriteID : @(NO),
-        SHDWDetectorPatchDTTID : @(YES),
-        SHDWDetectorPatchSafeDeviceID : @(YES),
-        SHDWDetectorPatchJailMonkeyID : @(YES),
-        SHDWMemoryLevelHidingID : @(YES)
+        SHDWUniversalFilesystemID : @(YES),
+        SHDWUniversalURLSchemeID : @(YES),
+        SHDWUniversalEnvVarsID : @(YES),
+        SHDWUniversalFoundationID : @(NO),
+        SHDWUniversalMachBootstrapID : @(NO),
+        SHDWUniversalIOKitID : @(NO),
+        SHDWUniversalLowLevelCID : @(YES),
+        SHDWUniversalAntiDebuggingID : @(YES),
+        SHDWUniversalCodeSigningID : @(YES),
+        SHDWUniversalDynamicLibrariesExtraID : @(NO),
+        SHDWUniversalSyscallID : @(NO),
+        SHDWUniversalSandboxID : @(YES),
+        SHDWUniversalMemoryID : @(YES),
+        SHDWUniversalHideAppsID : @(YES),
+        SHDWUniversalPseudoSandboxModeID : @(0),
+        SHDWUniversalPathRewriteID : @(NO),
+        SHDWUniversalMemoryLevelHidingID : @(YES),
+        SHDWAdapterDeviceCheckID : @(YES),
+        SHDWAdapterFreeRASPID : @(YES),
+        SHDWAdapterDeviceSecurityKitID : @(YES),
+        SHDWAdapterIOSSecuritySuiteID : @(YES),
+        SHDWAdapterDTTJailbreakDetectionID : @(YES),
+        SHDWAdapterSafeDeviceID : @(YES),
+        SHDWAdapterJailMonkeyID : @(YES)
     };
 }
 
@@ -114,7 +118,7 @@ static NSArray<NSString*>* SHDWPresetKeys(void) {
     dispatch_once(&onceToken, ^{
         NSMutableArray* mutableKeys = [NSMutableArray new];
         for(NSString* key in SHDWDefaultHookSettings()) {
-            if([key hasPrefix:@"Hook_"] || [key isEqualToString:SHDWPseudoSandboxModeID]) {
+            if([key hasPrefix:@"Universal_"] || [key hasPrefix:@"Adapter_"]) {
                 [mutableKeys addObject:key];
             }
         }
@@ -135,18 +139,15 @@ NSDictionary<NSString*, id>* SHDWPresetStandard(void) {
 NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
     NSDictionary<NSString*, id>* standard = SHDWPresetStandard();
     NSMutableDictionary* preset = [standard mutableCopy];
-    preset[SHDWHookIDFoundation] = @(YES);
-    preset[SHDWHookIDMachBootstrap] = @(YES);
-    preset[SHDWHookIDIOKit] = @(YES);
-    preset[SHDWHookIDAntiDebugging] = @(YES);
-    preset[SHDWHookIDDynamicLibrariesExtra] = @(YES);
-    preset[SHDWHookIDSyscall] = @(YES);
-    preset[SHDWHookIDSandbox] = @(YES);
-    preset[SHDWHookIDMemory] = @(YES);
-    preset[SHDWPathRewriteID] = @(YES);
-    preset[SHDWDetectorPatchDTTID] = @(YES);
-    preset[SHDWDetectorPatchSafeDeviceID] = @(YES);
-    preset[SHDWDetectorPatchJailMonkeyID] = @(YES);
+    preset[SHDWUniversalFoundationID] = @(YES);
+    preset[SHDWUniversalMachBootstrapID] = @(YES);
+    preset[SHDWUniversalIOKitID] = @(YES);
+    preset[SHDWUniversalAntiDebuggingID] = @(YES);
+    preset[SHDWUniversalDynamicLibrariesExtraID] = @(YES);
+    preset[SHDWUniversalSyscallID] = @(YES);
+    preset[SHDWUniversalSandboxID] = @(YES);
+    preset[SHDWUniversalMemoryID] = @(YES);
+    preset[SHDWUniversalPathRewriteID] = @(YES);
     return preset;
 }
 
@@ -157,22 +158,30 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         kinds = @{
-            SHDWHookIDURLScheme : @"message",
-            SHDWHookIDDeviceCheck : @"message",
-            SHDWHookIDFoundation : @"message",
-            SHDWHookIDHideApps : @"message",
-            SHDWHookIDDynamicLibrariesExtra : @"inline",
-            SHDWHookIDEnvVars : @"function",
-            SHDWHookIDFilesystem : @"function",
-            SHDWHookIDMachBootstrap : @"function",
-            SHDWHookIDIOKit : @"function",
-            SHDWHookIDLowLevelC : @"function",
-            SHDWHookIDAntiDebugging : @"function",
-            SHDWHookIDCodeSigning : @"function",
-            SHDWHookIDSyscall : @"function",
-            SHDWHookIDSandbox : @"function",
-            SHDWHookIDMemory : @"function",
-            SHDWPseudoSandboxModeID : @"none",
+            SHDWUniversalURLSchemeID : @"message",
+            SHDWUniversalFoundationID : @"message",
+            SHDWUniversalHideAppsID : @"message",
+            SHDWUniversalDynamicLibrariesExtraID : @"inline",
+            SHDWUniversalEnvVarsID : @"function",
+            SHDWUniversalFilesystemID : @"function",
+            SHDWUniversalMachBootstrapID : @"function",
+            SHDWUniversalIOKitID : @"function",
+            SHDWUniversalLowLevelCID : @"function",
+            SHDWUniversalAntiDebuggingID : @"function",
+            SHDWUniversalCodeSigningID : @"function",
+            SHDWUniversalSyscallID : @"function",
+            SHDWUniversalSandboxID : @"function",
+            SHDWUniversalMemoryID : @"function",
+            SHDWUniversalPseudoSandboxModeID : @"none",
+            SHDWUniversalPathRewriteID : @"none",
+            SHDWUniversalMemoryLevelHidingID : @"none",
+            SHDWAdapterDeviceCheckID : @"message",
+            SHDWAdapterFreeRASPID : @"function",
+            SHDWAdapterDeviceSecurityKitID : @"message",
+            SHDWAdapterIOSSecuritySuiteID : @"function",
+            SHDWAdapterDTTJailbreakDetectionID : @"message",
+            SHDWAdapterSafeDeviceID : @"message",
+            SHDWAdapterJailMonkeyID : @"message",
         };
     });
     return kinds[groupID];
@@ -181,8 +190,16 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
 #pragma mark - Planner
 
 static BOOL SHDWPluginEnabled(const SHDWPlugin* plugin,
-                             NSDictionary<NSString*, id>* prefs,
-                             SHDWLifecycleEvent event) {
+                              NSDictionary<NSString*, id>* prefs,
+                              SHDWLifecycleEvent event) {
+    // Harness frameworks load per detector. Both its baseline and maximum
+    // profiles must defer target-dependent adapters until that first pass has
+    // loaded every target; production apps have no Harness profile key and
+    // retain their early adapter behavior.
+    if(plugin->phase == SHDWPhaseSDKFallback && event == SHDWEventCtor &&
+       prefs[SHDWUniversalHarnessBaselineID] != nil) {
+        return NO;
+    }
     if(!plugin->prefKey) {
         return YES;
     }
@@ -221,6 +238,9 @@ NSArray<NSString*>* SHDWPluginPlan(NSDictionary<NSString*, id>* prefs,
                 break;
             case SHDWEventDetectorEscalation:
                 include = plugin->phase == SHDWPhaseTier2 || plugin->phase == SHDWPhaseEscalation;
+                break;
+            case SHDWEventSDKFallback:
+                include = plugin->phase == SHDWPhaseSDKFallback;
                 break;
         }
         if(!include) continue;

@@ -17,31 +17,35 @@
 
 #pragma mark - Hook IDs (plist preference keys)
 
-#define SHDWHookIDFilesystem       @"Hook_Filesystem"
-#define SHDWHookIDURLScheme        @"Hook_URLScheme"
-#define SHDWHookIDEnvVars          @"Hook_EnvVars"
-#define SHDWHookIDDeviceCheck      @"Hook_DeviceCheck"
-#define SHDWHookIDFoundation       @"Hook_Foundation"
-#define SHDWHookIDMachBootstrap    @"Hook_MachBootstrap"
-#define SHDWHookIDIOKit            @"Hook_IOKit"
-#define SHDWHookIDLowLevelC        @"Hook_LowLevelC"
-#define SHDWHookIDAntiDebugging    @"Hook_AntiDebugging"
-#define SHDWHookIDCodeSigning      @"Hook_CodeSigning"
-#define SHDWHookIDDynamicLibrariesExtra @"Hook_DynamicLibrariesExtra"
-#define SHDWHookIDSyscall          @"Hook_Syscall"
-#define SHDWHookIDSandbox          @"Hook_Sandbox"
-#define SHDWHookIDMemory           @"Hook_Memory"
-#define SHDWHookIDHideApps         @"Hook_HideApps"
-#define SHDWPseudoSandboxModeID    @"PseudoSandboxMode"
-#define SHDWPathRewriteID          @"PathRewrite"
+#define SHDWUniversalFilesystemID             @"Universal_Filesystem"
+#define SHDWUniversalURLSchemeID              @"Universal_URLScheme"
+#define SHDWUniversalEnvVarsID                @"Universal_EnvVars"
+#define SHDWUniversalFoundationID             @"Universal_Foundation"
+#define SHDWUniversalMachBootstrapID          @"Universal_MachBootstrap"
+#define SHDWUniversalIOKitID                  @"Universal_IOKit"
+#define SHDWUniversalLowLevelCID              @"Universal_LowLevelC"
+#define SHDWUniversalAntiDebuggingID          @"Universal_AntiDebugging"
+#define SHDWUniversalCodeSigningID            @"Universal_CodeSigning"
+#define SHDWUniversalDynamicLibrariesExtraID  @"Universal_DynamicLibrariesExtra"
+#define SHDWUniversalSyscallID                @"Universal_Syscall"
+#define SHDWUniversalSandboxID                @"Universal_Sandbox"
+#define SHDWUniversalMemoryID                 @"Universal_Memory"
+#define SHDWUniversalHideAppsID               @"Universal_HideApps"
+#define SHDWUniversalPseudoSandboxModeID      @"Universal_PseudoSandboxMode"
+#define SHDWUniversalPathRewriteID            @"Universal_PathRewrite"
+#define SHDWUniversalMemoryLevelHidingID      @"Universal_MemoryLevelHiding"
+#define SHDWUniversalHarnessBaselineID        @"Universal_HarnessBaseline"
 
-#define SHDWDetectorPatchDTTID        @"DetectorPatch_DTTJailbreakDetection"
-#define SHDWDetectorPatchSafeDeviceID @"DetectorPatch_SafeDevice"
-#define SHDWDetectorPatchJailMonkeyID @"DetectorPatch_JailMonkey"
+#define SHDWAdapterDeviceCheckID              @"Adapter_DeviceCheck"
+#define SHDWAdapterFreeRASPID                 @"Adapter_FreeRASP"
+#define SHDWAdapterDeviceSecurityKitID        @"Adapter_DeviceSecurityKit"
+#define SHDWAdapterIOSSecuritySuiteID         @"Adapter_IOSSecuritySuite"
+#define SHDWAdapterDTTJailbreakDetectionID    @"Adapter_DTTJailbreakDetection"
+#define SHDWAdapterSafeDeviceID               @"Adapter_SafeDevice"
+#define SHDWAdapterJailMonkeyID               @"Adapter_JailMonkey"
 
 #define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWHookLibraryID          @"HK_Library"
-#define SHDWMemoryLevelHidingID    @"MemoryLevelHiding"
 #define SHDWAppEnabledID           @"App_Enabled"
 #define SHDWAppDisabledID          @"App_Disabled"
 
@@ -53,12 +57,14 @@ typedef NS_ENUM(NSInteger, SHDWLifecyclePhase) {
     SHDWPhaseTier2,
     SHDWPhaseUIKit,
     SHDWPhaseEscalation,
+    SHDWPhaseSDKFallback,
 };
 
 typedef NS_ENUM(NSInteger, SHDWLifecycleEvent) {
     SHDWEventCtor = 0,
     SHDWEventUIKitLoaded,
     SHDWEventDetectorEscalation,
+    SHDWEventSDKFallback,
 };
 
 #pragma mark - Native HookKit request capabilities

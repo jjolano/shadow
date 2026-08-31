@@ -1,5 +1,6 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
 
+include ../build-lanes.mk
 include $(THEOS)/makefiles/common.mk
 include ../hookkit.mk
 
@@ -9,7 +10,7 @@ include ../hookkit.mk
 # the stub dlopens @THEOS_PACKAGE_INSTALL_PREFIX /usr/lib/ShadowCore.dylib.
 LIBRARY_NAME = ShadowCore
 
-ShadowCore_FILES = $(wildcard hooks/*/*.x) hooks/Environment/DeviceCheckHooks.m hooks/FileHiding/path_rewrite.c $(wildcard policy/*.m) shadowcore.x HookCoordinator.m SHDWHookSession.m
+ShadowCore_FILES = $(wildcard hooks/Universal/*.x) $(wildcard hooks/Adapters/*.x) hooks/Adapters/DeviceCheckHooks.m hooks/Universal/path_rewrite.c $(wildcard policy/*.m) shadowcore.x HookCoordinator.m SHDWHookSession.m HookAdapterBridge.m
 ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit

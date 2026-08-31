@@ -6,35 +6,36 @@
 
 // Canonical ordered IDs — must stay in SHDWPluginRegistry order.
 #define SHDW_PLUGIN_ORDER \
-    "dyld", \
-    "Hook_Filesystem@c", \
-    "Hook_EnvVars@c", \
-    "Hook_EnvVars@objc", \
-    "Hook_DeviceCheck", \
-    "Hook_MachBootstrap", \
-    "Hook_IOKit", \
-    "Hook_LowLevelC", \
-    "Hook_AntiDebugging", \
-    "Hook_CodeSigning", \
-    "objc", \
-    "objc@methodimpl", \
-    "Hook_Syscall", \
-    "Hook_Memory", \
-    "Hook_Sandbox", \
-    "classes", \
-    "symlookup", \
-    "Hook_DynamicLibrariesExtra", \
-    "detector-integrity", \
-    "Hook_Filesystem@objc", \
-    "Hook_Foundation@objc", \
-    "Hook_HideApps", \
-    "Hook_URLScheme", \
-    "Hook_Foundation@uikit", \
-    "Hook_DeviceSecurityKit", \
-    "IOSSecuritySuite", \
+    "Universal_Dyld", \
+    "Universal_Filesystem_C", \
+    "Universal_EnvVars_C", \
+    "Universal_EnvVars_ObjC", \
+    "Adapter_DeviceCheck", \
+    "Adapter_FreeRASP", \
+    "Universal_MachBootstrap", \
+    "Universal_IOKit", \
+    "Universal_LowLevelC", \
+    "Universal_AntiDebugging", \
+    "Universal_CodeSigning", \
+    "Universal_ObjC", \
+    "Universal_ObjC_MethodImplementation", \
+    "Universal_Syscall", \
+    "Universal_Memory", \
+    "Universal_Sandbox", \
+    "Universal_HideClasses", \
+    "Universal_SymbolLookup", \
+    "Universal_DynamicLibrariesExtra", \
+    "Universal_DetectorIntegrity", \
+    "Universal_Filesystem_ObjC", \
+    "Universal_Foundation_ObjC", \
+    "Universal_HideApps", \
+    "Universal_URLScheme", \
+    "Universal_Foundation_UIKit", \
+    "Adapter_DeviceSecurityKit", \
+    "Adapter_IOSSecuritySuite", \
     "Policy_Path", \
     "Policy_Environment", \
     "Policy_Process", \
     "Policy_PseudoSandbox"
 
-#define SHDW_PLUGIN_COUNT 30
+#define SHDW_PLUGIN_COUNT 31

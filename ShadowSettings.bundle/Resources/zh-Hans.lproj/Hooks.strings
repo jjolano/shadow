@@ -41,6 +41,8 @@
 "DNGR_HOOKS_DESC" = "底层屏蔽方法。可能导致应用崩溃或系统功能异常。仅在推荐的Hook无法生效时启用。";
 "DETECTOR_PATCHES" = "检测 SDK 兼容性";
 "DETECTOR_PATCHES_PANE_DESC" = "为通用 Hook 无法完全覆盖的检测 SDK 提供按库适配。";
+"ADAPTERS" = "适配器";
+"ADAPTERS_PANE_DESC" = "特定库的兼容性开关，与通用钩子分开。";
 
 "HOOK_SANDBOX" = "增强应用沙盒";
 "HOOK_SANDBOX_DESC" = "让特权操作和仅越狱环境存在的服务像在普通应用沙盒中一样失败。\n\n这些底层 Hook 可能导致应用崩溃或系统功能异常。仅在推荐 Hook 无效时使用。";

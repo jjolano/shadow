@@ -1,0 +1,10 @@
+"ADAPTERS" = "Adapters";
+"ADAPTERS_DESC" = "Compatibility adapters for specific security libraries. These switches are independent of universal hooks.";
+"ADAPTERS_DETECTORS" = "Detector Libraries";
+"ADAPTER_DEVICECHECK" = "DeviceCheck";
+"ADAPTER_FREERASP" = "FreeRASP";
+"ADAPTER_DEVICESECURITYKIT" = "DeviceSecurityKit";
+"ADAPTER_IOSSECURITYSUITE" = "IOSSecuritySuite";
+"DTTJailbreakDetection" = "DTTJailbreakDetection";
+"safe_device" = "SafeDevice";
+"JailMonkey" = "JailMonkey";

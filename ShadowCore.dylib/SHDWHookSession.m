@@ -350,6 +350,16 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
 - (BOOL)hookRebindSymbol:(NSString*)symbolName
           withReplacement:(void*)replacement
                  outOldPtr:(void**)oldPtr {
+    return [self hookRebindSymbol:symbolName
+                  withReplacement:replacement
+                         outOldPtr:oldPtr
+                     inCallerImage:NULL];
+}
+
+- (BOOL)hookRebindSymbol:(NSString*)symbolName
+          withReplacement:(void*)replacement
+                 outOldPtr:(void**)oldPtr
+             inCallerImage:(const void*)imageHeader {
     if(!symbolName.length || !replacement) {
         if(oldPtr) {
             *oldPtr = NULL;
@@ -359,8 +369,8 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
 
     hk_hook_spec_t spec;
     shdw_init_spec(&spec, "shadow.rebind", HK_TARGET_FUNCTION_SYMBOL,
-                   replacement, HK_REACH_EXISTING_IMPORTS, oldPtr
-                       ? HK_ORIGINAL_DIRECT_PREDECESSOR : HK_ORIGINAL_NONE);
+                    replacement, HK_REACH_EXISTING_IMPORTS, oldPtr
+                        ? HK_ORIGINAL_DIRECT_PREDECESSOR : HK_ORIGINAL_NONE);
     spec.target.symbol.struct_size = sizeof(spec.target.symbol);
     spec.target.symbol.struct_version = HK_ABI_VERSION_3_0;
     spec.target.symbol.name = symbolName.UTF8String;
@@ -371,7 +381,9 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
     spec.target.symbol.defining_image.kind = HK_IMAGE_ANY_LOADED;
     spec.target.symbol.caller_image_scope.struct_size = sizeof(spec.target.symbol.caller_image_scope);
     spec.target.symbol.caller_image_scope.struct_version = HK_ABI_VERSION_3_0;
-    spec.target.symbol.caller_image_scope.kind = HK_IMAGE_ANY_LOADED;
+    spec.target.symbol.caller_image_scope.kind = imageHeader
+        ? HK_IMAGE_EXACT_HEADER : HK_IMAGE_ANY_LOADED;
+    spec.target.symbol.caller_image_scope.header = imageHeader;
     spec.target.symbol.alias_policy = HK_SYMBOL_ALIAS_EXACT_ONLY;
     return shdw_apply_hook_spec(&spec, oldPtr);
 }

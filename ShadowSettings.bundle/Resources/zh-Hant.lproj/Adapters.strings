@@ -1,0 +1,10 @@
+"ADAPTERS" = "轉接器";
+"ADAPTERS_DESC" = "適用於特定安全函式庫的相容性轉接器。這些開關獨立於通用掛鉤。";
+"ADAPTERS_DETECTORS" = "偵測函式庫";
+"ADAPTER_DEVICECHECK" = "DeviceCheck";
+"ADAPTER_FREERASP" = "FreeRASP";
+"ADAPTER_DEVICESECURITYKIT" = "DeviceSecurityKit";
+"ADAPTER_IOSSECURITYSUITE" = "IOSSecuritySuite";
+"DTTJailbreakDetection" = "DTTJailbreakDetection";
+"safe_device" = "SafeDevice";
+"JailMonkey" = "JailMonkey";

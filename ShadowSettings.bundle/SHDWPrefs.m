@@ -32,9 +32,8 @@ void SHDWWriteAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key, id 
 NSUInteger SHDWCountEnabledHooks(NSUserDefaults *prefs, NSString *appID) {
 	NSUInteger count = 0;
 
-	// The canonical hook-key set is the preset keys (every Hook_* toggle plus
-    // PseudoSandboxMode); global/runtime settings and subordinate
-    // DetectorPatch_* options must not inflate the independent-hook count.
+	// The canonical hook-key set is the preset keys (every Universal_/Adapter_
+    // setting); global/runtime settings must not inflate the independent-hook count.
 	for(NSString* key in SHDWPresetStandard()) {
 		BOOL enabled = appID
 			? [SHDWReadAppPref(prefs, appID, key) boolValue]
