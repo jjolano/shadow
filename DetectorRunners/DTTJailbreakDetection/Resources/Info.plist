@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>DTT Runner</string>
+    <key>CFBundleExecutable</key><string>DTTJailbreakDetectionRunner</string>
+    <key>CFBundleIdentifier</key><string>me.jjolano.shadow.test.dtt</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>DTTJailbreakDetectionRunner</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>SBAppTags</key><array><string>hidden</string></array>
+    <key>CFBundleURLTypes</key>
+    <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-dtt</string></array></dict></array>
+    <key>LSApplicationQueriesSchemes</key>
+    <array><string>cydia</string><string>shadow-detectors</string></array>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>UILaunchScreen</key><dict/>
+    <key>UIDeviceFamily</key><array><integer>1</integer></array>
+</dict>
+</plist>
