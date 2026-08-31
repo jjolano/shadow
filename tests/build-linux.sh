@@ -23,7 +23,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   -Itests/hdr \
   -IShadow.framework/Headers -IShadow.framework -Itests \
   -Ivendor/HookKit.framework/Headers \
-  -IShadowCore.dylib/hooks \
+  -IShadowCore.dylib/hooks -IShadowCore.dylib/hooks/Universal \
   tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m \
   Shadow.framework/Core.m Shadow.framework/Ruleset.m \
@@ -32,7 +32,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/RestrictionEngine.m Shadow.framework/JBPath.m \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
   tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
-  Shadow.framework/HookConfiguration.m tests/CoordinatorTests.m \
+  Shadow.framework/HookConfiguration.m Shadow.framework/SettingsMigration.m ShadowCore.dylib/HookAdapterBridge.m tests/CoordinatorTests.m \
   tests/VersionCompareTests.m tests/HookFallbackTests.c \
   -Wl,--export-dynamic \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \

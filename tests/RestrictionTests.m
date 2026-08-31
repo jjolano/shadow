@@ -320,7 +320,7 @@ static void TestPseudoAllowlist(void) {
     RCHECK(!shdw_pseudo_is_allowed("/var/jb/usr/bin/tool"), "pseudo outside stock not allowed");
     RCHECK(!shdw_pseudo_is_allowed("/private/var/mobile/evil"), "pseudo outside not allowed");
 
-    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(2)});
+shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(2)});
     RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo mode 2 = strict");
     RCHECK(shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo strict outside denied");
     RCHECK(shdw_pseudo_should_deny("/private/var/mobile/evil"), "pseudo strict outside denied2");
@@ -328,10 +328,10 @@ static void TestPseudoAllowlist(void) {
     RCHECK(!shdw_pseudo_should_deny("/var/mobile/Library/Preferences/.GlobalPreferences.plist"), "pseudo strict carveout not denied");
     RCHECK(!shdw_pseudo_should_deny([homeFile UTF8String]), "pseudo strict container not denied");
     RCHECK(!shdw_pseudo_should_deny("/Applications/Cydia.app"), "pseudo overlay harness always NO inside allow");
-    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(1)});
+shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(1)});
     RCHECK(shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 1 = audit");
     RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo audit only not denied");
-    shdw_pseudo_refresh(@{@"PseudoSandboxMode": @(0)});
+shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(0)});
     RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 0 = off");
     shdw_pseudo_refresh(nil);
     RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo reset OFF");

@@ -1,16 +1,16 @@
 // Host-runnable check for the path-munging logic in
-// ShadowCore.dylib/hooks/FileHiding/path_rewrite.c (pure C, no mach or
+// ShadowCore.dylib/hooks/Universal/path_rewrite.c (pure C, no mach or
 // Foundation, so it compiles and runs on the build host).
 //
 // Build and run:
-//   cc -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test tests/verify-path-rewrite.c ShadowCore.dylib/hooks/FileHiding/path_rewrite.c
+//   cc -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test tests/verify-path-rewrite.c ShadowCore.dylib/hooks/Universal/path_rewrite.c
 //   /tmp/opencode/rewrite-test
 
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "../ShadowCore.dylib/hooks/FileHiding/path_rewrite.h"
+#include "../ShadowCore.dylib/hooks/Universal/path_rewrite.h"
 
 static void expect_munge(const char *orig, const char *expected) {
     char buf[512];

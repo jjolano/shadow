@@ -36,7 +36,7 @@
 
 #import "../SHDWHookSession.h"
 
-#import "FileHiding/path_rewrite.h"
+#import "Universal/path_rewrite.h"
 
 // --- Hook-lane contract (hook-concealment front) ---------------------------
 //
@@ -70,7 +70,7 @@
 // HookKit's NULL-image lookup falls back to an O(~600 loaded images)
 // dlopen(RTLD_NOLOAD)+dlsym walk, and each MISS (a private symbol that no image
 // exports, e.g. "____signal_nobind") walks the whole list — ~4.6s per miss on
-// an iPhone 7, which is the entire Hook_Sandbox (9.3s, 2 misses) + Hook_Syscall
+// an iPhone 7, which is the entire sandbox (9.3s, 2 misses) + syscall
 // (4.6s, 1 miss) ctor cost. dlsym(RTLD_DEFAULT) hits dyld's export hash in
 // O(1): found symbols resolve identically (all these live in the global
 // libsystem namespace), and misses fail instantly instead of walking. Shadow's
@@ -87,7 +87,7 @@ static inline void* shdw_resolve_libsystem(const char* mach_symbol) {
     return dlsym(RTLD_DEFAULT, c_name);
 }
 
-// PathRewrite is configured from the constructor's resolved prefs before any
+// Universal_PathRewrite is configured from the constructor's resolved prefs before any
 // hooks install. Reading NSUserDefaults lazily from a live Foundation hook
 // re-enters the hook stack and can deadlock.
 extern _Atomic BOOL shdw_path_rewrite_active;
@@ -154,7 +154,7 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 // refresh; outside ranges and scopes everyone is external.
 // The tables themselves, and the pure lookup over them, live in ranges.h so
 // the host harness can test the lookup without this file's iOS-only headers.
-#import "ranges.h"
+#import "Universal/ranges.h"
 
 extern shdw_own_ranges_t _shdw_own_ranges_a;
 extern shdw_own_ranges_t _shdw_own_ranges_b;
@@ -246,24 +246,20 @@ BOOL shdw_is_shadow_runtime_image(const char* path);
 
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
 
-// ponytail: fast allowed-path check for tight loops (perfprobe). Most allowed probes are /var/tmp, /var/mobile, /tmp.
+// ponytail: fast allowed-path check for tight loops (perfprobe). User-library
+// paths still need policy because jailbreak tools leave evidence there.
 static inline BOOL shdw_is_fast_allowed_cpath(const char *path) {
     if (!path || !path[0]) return NO;
-    // This exact ruleset entry must still reach policy, including path aliases.
-    if (strstr(path, "me.jjolano.shadow.plist")) return NO;
     if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' && path[4] == '/') {
         if (strncmp(path, "/var/tmp", 8) == 0 && (path[8] == '/' || path[8] == 0 || path[8] == '.')) return YES;
-        if (strncmp(path, "/var/mobile", 11) == 0 && (path[11] == '/' || path[11] == 0)) return YES;
     }
     if (strncmp(path, "/tmp", 4) == 0 && (path[4] == '/' || path[4] == 0)) return YES;
     if (strncmp(path, "/private/var/tmp", 15) == 0 && (path[15] == '/' || path[15] == 0)) return YES;
-    if (strncmp(path, "/private/var/mobile", 18) == 0 && (path[18] == '/' || path[18] == 0)) return YES;
     return NO;
 }
 static inline BOOL shdw_is_fast_allowed_nspath(NSString *path) {
     if (!path) return NO;
-    if ([path containsString:@"me.jjolano.shadow.plist"]) return NO;
-    if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/var/mobile"] || [path hasPrefix:@"/tmp"] || [path hasPrefix:@"/private/var/tmp"]) return YES;
+    if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/tmp"] || [path hasPrefix:@"/private/var/tmp"]) return YES;
     return NO;
 }
 
@@ -293,7 +289,7 @@ extern BOOL shdw_detector_present;
 // (AR2). The patch is unconditional by default (untrusted callers read the
 // raw struct via task_info / _dyld_get_all_image_infos), but a misbehaving
 // patch on a new iOS must be disableable without a reinstall: set by dylib.x
-// from the MemoryLevelHiding pref (default YES). When NO, dyld.x restores
+// from the Universal_MemoryLevelHiding pref (default YES). When NO, dyld.x restores
 // dyld's original struct fields and never re-patches — the direct-memory-read
 // surface is re-exposed (detection exposure returns) but the crash stops.
 extern BOOL shdw_memory_hiding_enabled;
@@ -304,13 +300,9 @@ extern BOOL shdw_memory_hiding_enabled;
 // ctor skipped. Safe to call from hooked functions and the image watcher.
 extern void shdw_detector_detected(const char* reason);
 
-// Resolve enabled detector adapters against exact pre-hook SDK fingerprints.
-// The UI switches are support kill-switches; an absent SDK stays untouched.
-NSDictionary* shadowhook_DetectorAdapters_resolvePreferences(NSDictionary* prefs);
-
 // Post-install verification: a hook that failed to install (backend error,
 // symbol unresolvable) leaves its original_* NULL and the restriction
-// silently unenforced. The hook files expose shadowhook_*_verify functions
+// silently unenforced. The universal hook files expose per-group verification
 // that check their group's required symbols; the ctor calls them after
 // executeHooks for the groups it installed. Runtime-resolved optional
 // symbols are excluded from the checks — NULL there is expected.
@@ -327,37 +319,8 @@ static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t*
     }
 }
 
-extern void shadowhook_DeviceCheck(SHDWHookSession* hooks);
-extern void shadowhook_DeviceCheck_configure(NSDictionary* prefs);
-extern void shadowhook_IOSSecuritySuite(SHDWHookSession* hooks);
-extern void shadowhook_IOSSecuritySuite_configure(NSDictionary* prefs);
-extern void shadowhook_FreeRASP_preparePreferences(NSMutableDictionary* prefs);
-extern void shadowhook_FreeRASP(SHDWHookSession* hooks);
-extern BOOL shadowhook_FreeRASP_shouldHideExistencePath(NSString* path);
-extern void shadowhook_ImportSlotProtection(SHDWHookSession* hooks);
-extern void shadowhook_dyld(SHDWHookSession* hooks);
-extern void shadowhook_libc(SHDWHookSession* hooks);
-extern void shadowhook_mach(SHDWHookSession* hooks);
-extern void shadowhook_NSArray(SHDWHookSession* hooks);
-extern void shadowhook_NSBundle(SHDWHookSession* hooks);
-extern void shadowhook_NSData(SHDWHookSession* hooks);
-extern void shadowhook_NSDictionary(SHDWHookSession* hooks);
-extern void shadowhook_NSFileHandle(SHDWHookSession* hooks);
-extern void shadowhook_NSFileManager(SHDWHookSession* hooks);
-extern void shadowhook_NSFileManagerSymbolicLinks(SHDWHookSession* hooks);
-extern void shadowhook_NSFileVersion(SHDWHookSession* hooks);
-extern void shadowhook_NSFileWrapper(SHDWHookSession* hooks);
-extern void shadowhook_NSProcessInfo(SHDWHookSession* hooks);
-extern void shadowhook_NSString(SHDWHookSession* hooks);
-extern void shadowhook_NSURL(SHDWHookSession* hooks);
-extern void shadowhook_objc(SHDWHookSession* hooks);
-extern void shadowhook_objc_methodimpl(SHDWHookSession* hooks);
-extern void shadowhook_objc_methodimpl_detector(SHDWHookSession* hooks);
-extern void shadowhook_sandbox(SHDWHookSession* hooks);
-extern void shadowhook_syscall(SHDWHookSession* hooks);
-
-// Raw-syscall policy categories (hooks/FileHiding/syscall.x dispatch;
-// shared with the svc-patch trampoline in hooks/FileHiding/svc_patch.x).
+// Raw-syscall policy categories (hooks/Universal/syscall.x dispatch;
+// shared with the svc-patch trampoline in hooks/Universal/svc_patch.x).
 typedef enum {
     SHADW_RAW_CAT_NONE = 0,      // forwarded, never inspected (access_extended)
     SHADW_RAW_CAT_PTRACE,        // PT_DENY_ATTACH short-circuit
@@ -371,30 +334,20 @@ typedef enum {
 
 shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
 
-// Raw svc #0x80 interception (hooks/FileHiding/svc_patch.x): scans loaded
+// Raw svc #0x80 interception (hooks/Universal/svc_patch.x): scans loaded
 // images' __TEXT for inline svc sites and redirects them through a naked
 // trampoline that applies the same path policy as the syscall(2) dispatch
 // (synthetic ENOENT for restricted paths, original svc otherwise). Called
-// from shadowhook_syscall, so the Hook_Syscall pref gates it. Idempotent.
+// from the universal syscall installer, so its preference gates it. Idempotent.
 void shdw_svc_patch_install(void);
-extern void shadowhook_UIApplication(SHDWHookSession* hooks);
-extern void shadowhook_UIImage(SHDWHookSession* hooks);
-extern void shadowhook_libc_envvar(SHDWHookSession* hooks);
-extern void shadowhook_envpolicy(SHDWHookSession* hooks);
-extern void shadowhook_libc_lowlevel(SHDWHookSession* hooks);
-extern void shadowhook_libc_antidebugging(SHDWHookSession* hooks);
-extern void shadowhook_security(SHDWHookSession* hooks);
-extern void shadowhook_dyld_extra(SHDWHookSession* hooks);
 
 // YES when the return address lies inside the Security.framework image.
 // Used by the csops policy: Security constructs its own code-identity views
 // (SecCodeCopySelf) by reading the CDHASH through csops — blinding THOSE
 // queries degrades Security's answer to "unsigned" (-67065), which is a
 // worse leak than the hash itself. Direct detector csops probes stay
-// blinded. Implemented in hooks/AntiDebug/security.x.
+// blinded. Implemented in hooks/Universal/security.x.
 BOOL shdw_addr_in_security_framework(const void* return_address);
-extern void shadowhook_dyld_symlookup(SHDWHookSession* hooks);
-extern void shadowhook_dyld_symaddrlookup(SHDWHookSession* hooks);
 
 // KERN_PROCARGS2 self-query payload filter (libc.x): rebuilds the kernel's
 // [argc][argv][envp][strings] payload so its argv/envp agree with the
@@ -424,12 +377,11 @@ typedef enum {
     SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
     SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
     SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
-    SHADW_HOOK_GROUP_IOS_SECURITY_SUITE = 1 << 4,
+    SHADW_HOOK_GROUP_FEATURE_METADATA = 1 << 4,
 } shdw_hook_group_t;
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
 void shdw_libc_verify_group(const char* group, uint32_t mask);
-void shadowhook_libc_iossecuritysuite(SHDWHookSession* hooks);
 
 // struct stat64 is not visible in this build configuration: the SDK guards it
 // behind feature macros and omits it entirely on LP64 platforms where struct
@@ -523,38 +475,12 @@ void* shdw_sym_policy_lookup_mem(const char* name);
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).
 extern void shdw_sandbox_invalidate_cwd(void);
-extern void shadowhook_mem(SHDWHookSession* hooks);
-extern void shadowhook_objc_hidetweakclasses(SHDWHookSession* hooks);
-// Shared across the objc satellites (Runtime/objc.x defines; Runtime/objc_hidetweakclasses.x
-// and Runtime/objc_methodimpl.x consume): class/address/image hiding predicates and the
+// Shared across the objc satellites (Universal/objc.x defines;
+// Universal/objc_hidetweakclasses.x and Universal/objc_methodimpl.x consume):
+// class/address/image hiding predicates and the
 // method_getImplementation original cell (rebind lane, defined in objc_methodimpl.x).
 extern BOOL shdw_objc_addr_is_hidden(const void* addr);
 extern BOOL shdw_objc_image_path_is_hidden(const char* path);
 extern BOOL shdw_objc_class_is_hidden(Class cls);
 extern IMP (*original_method_getImplementation)(Method m);
-extern void shadowhook_LSApplicationWorkspace(SHDWHookSession* hooks);
-extern void shadowhook_LSApplicationWorkspaceCanOpenURL(SHDWHookSession* hooks);
-extern void shadowhook_NSTask(SHDWHookSession* hooks);
-extern void shadowhook_NSThread(SHDWHookSession* hooks);
-extern void shadowhook_NSUserDefaults(SHDWHookSession* hooks);
-extern void shadowhook_DeviceSecurityKit(SHDWHookSession* hooks);
-extern void* shdw_UIApplicationCanOpenURLOriginal(void);
-extern void* shdw_UIApplicationCanOpenURLHook(void);
-extern void* shdw_NSFileManagerFileExistsOriginal(void);
-extern void* shdw_NSFileManagerFileExistsHook(void);
-extern void shadowhook_iokit(SHDWHookSession* hooks);
-extern void shadowhook_iokit_verify(void);
-extern void shadowhook_security_verify(void);
 extern void* shdw_sym_policy_lookup_iokit(const char* name);
-extern void shadowhook_libc_verify(void);
-extern void shadowhook_libc_envvar_verify(void);
-extern void shadowhook_libc_lowlevel_verify(void);
-extern void shadowhook_libc_antidebugging_verify(void);
-extern void shadowhook_syscall_verify(void);
-extern void shadowhook_mem_verify(void);
-extern void shadowhook_mach_verify(void);
-extern void shadowhook_sandbox_verify(void);
-extern void shadowhook_dyld_verify(void);
-extern void shadowhook_dyld_extra_verify(void);
-extern void shadowhook_dyld_symlookup_verify(void);
-extern void shadowhook_dyld_symaddrlookup_verify(void);

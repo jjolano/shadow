@@ -6,7 +6,7 @@
 // Compatibility surface for Settings controllers. HK3 routes requests in the
 // injected process, so the Preferences bundle leaves hook controls enabled.
 
-// Hook-group capability matrix. groupID is the plist id (e.g. "Hook_Memory").
+// Hook-group capability matrix. groupID is a domain plist id (e.g. "Universal_Memory").
 // Supported = the selected/available backends can actually run the group's
 // hooks. Mirrors the backend routing in ShadowCore.dylib/dylib.x.
 BOOL SHDWHookGroupSupported(NSString* groupID);

@@ -47,7 +47,7 @@ static NSSet* SHDWAllowedKeys(void) {
 }
 
 // Validate one value against its key's expected class: switches
-// (Global_Enabled, App_Enabled, Hook_*, MemoryLevelHiding) are
+// (Global_Enabled, App_Enabled, Universal_*, Adapter_*) are
 // NSNumber, HK_Library is NSString, DetectorLog is an NSArray of NSString,
 // and any other top-level key must be a per-app override dict (bundle ID)
 // whose inner keys follow the same rules. Returns the value (per-app dicts

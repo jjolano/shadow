@@ -1,5 +1,6 @@
 INSTALL_TARGET_PROCESSES = Preferences
 
+include ../build-lanes.mk
 include $(THEOS)/makefiles/common.mk
 include ../hookkit.mk
 

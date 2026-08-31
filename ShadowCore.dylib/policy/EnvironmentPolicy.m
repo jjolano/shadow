@@ -175,7 +175,7 @@ static int replaced_unsetenv(const char* name) {
 
 // Installed with the envvar group (dylib.x, next to shadowhook_libc_envvar):
 // keeps the PATH sanitization cache coherent with the live environment.
-void shadowhook_envpolicy(SHDWHookSession* hooks) {
+void shdw_universal_envpolicy(SHDWHookSession* hooks) {
     [hooks hookFunction:setenv withReplacement:replaced_setenv outOldPtr:(void **) &original_setenv];
     [hooks hookFunction:unsetenv withReplacement:replaced_unsetenv outOldPtr:(void **) &original_unsetenv];
 }

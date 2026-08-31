@@ -4,6 +4,8 @@
 #import "../common.h"
 #import <Shadow/JBPath.h>
 #import "hooks/hooks.h"
+#import "hooks/UniversalHooks.h"
+#import "hooks/AdapterHooks.h"
 #import "policy/PathPolicy.h"
 #import "policy/PseudoSandboxPolicy.h"
 
@@ -67,47 +69,47 @@ void shdw_detector_detected(const char* reason) {
 
 static void shdw_coord_envvars_c(SHDWHookSession* hooks) {
     setenv("SHELL", "/bin/sh", 1);
-    shadowhook_libc_envvar(hooks);
-    shadowhook_envpolicy(hooks);
+    shdw_universal_envvars_c(hooks);
+    shdw_universal_envpolicy(hooks);
 }
 
 static void shdw_coord_symlookup(SHDWHookSession* hooks) {
-    shadowhook_dyld_symlookup(hooks);
-    shadowhook_dyld_symaddrlookup(hooks);
+    shdw_universal_symlookup(hooks);
+    shdw_universal_symaddrlookup(hooks);
 }
 
 static void shdw_coord_verify_symlookup(void) {
-    shadowhook_dyld_symlookup_verify();
-    shadowhook_dyld_symaddrlookup_verify();
+    shdw_universal_symlookup_verify();
+    shdw_universal_symaddrlookup_verify();
 }
 
 static void shdw_coord_detector_integrity(SHDWHookSession* hooks) {
     [Shadow shdwEnterInternalRead];
     @try {
-        shadowhook_objc_methodimpl_detector(hooks);
-        shadowhook_ImportSlotProtection(hooks);
+        shdw_universal_objc_methodimpl_detector(hooks);
+        shdw_universal_import_slot_protection(hooks);
     } @finally {
         [Shadow shdwExitInternalRead];
     }
 }
 
 static void shdw_coord_filesystem_objc(SHDWHookSession* hooks) {
-    shadowhook_NSFileManager(hooks);
-    shadowhook_NSFileHandle(hooks);
-    shadowhook_NSFileVersion(hooks);
-    shadowhook_NSFileWrapper(hooks);
+    shdw_universal_filesystem_objc(hooks);
+    shdw_universal_nsfilehandle(hooks);
+    shdw_universal_nsfileversion(hooks);
+    shdw_universal_nsfilewrapper(hooks);
 }
 
 static void shdw_coord_foundation_objc(SHDWHookSession* hooks) {
-    shadowhook_NSArray(hooks);
-    shadowhook_NSDictionary(hooks);
-    shadowhook_NSBundle(hooks);
-    shadowhook_NSString(hooks);
-    shadowhook_NSURL(hooks);
-    shadowhook_NSData(hooks);
-    shadowhook_NSThread(hooks);
-    shadowhook_NSUserDefaults(hooks);
-    shadowhook_NSTask(hooks);
+    shdw_universal_nsarray(hooks);
+    shdw_universal_nsdictionary(hooks);
+    shdw_universal_nsbundle(hooks);
+    shdw_universal_nsstring(hooks);
+    shdw_universal_nsurl(hooks);
+    shdw_universal_nsdata(hooks);
+    shdw_universal_nsthread(hooks);
+    shdw_universal_user_defaults(hooks);
+    shdw_universal_nstask(hooks);
 }
 
 static void shdw_plugin_policy_nop(SHDWHookSession* hooks) { (void)hooks; }
@@ -115,32 +117,33 @@ static void shdw_plugin_policy_nop(SHDWHookSession* hooks) { (void)hooks; }
 // Must stay in SHDWPluginRegistry() order (Hybrid: verified vs SHDWPluginOrder.inc).
 #import <Shadow/SHDWPluginOrder.inc>
 static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
-    { "dyld",                         shadowhook_dyld,                 shadowhook_dyld_verify },
-    { "Hook_Filesystem@c",            shadowhook_libc,                 shadowhook_libc_verify },
-    { "Hook_EnvVars@c",               shdw_coord_envvars_c,            shadowhook_libc_envvar_verify },
-    { "Hook_EnvVars@objc",            shadowhook_NSProcessInfo,        NULL },
-    { "Hook_DeviceCheck",             shadowhook_DeviceCheck,          NULL },
-    { "Hook_MachBootstrap",           shadowhook_mach,                 shadowhook_mach_verify },
-    { "Hook_IOKit",                   shadowhook_iokit,                shadowhook_iokit_verify },
-    { "Hook_LowLevelC",               shadowhook_libc_lowlevel,        shadowhook_libc_lowlevel_verify },
-    { "Hook_AntiDebugging",           shadowhook_libc_antidebugging,   shadowhook_libc_antidebugging_verify },
-    { "Hook_CodeSigning",             shadowhook_security,             shadowhook_security_verify },
-    { "objc",                         shadowhook_objc,                 NULL },
-    { "objc@methodimpl",              shadowhook_objc_methodimpl,      NULL },
-    { "Hook_Syscall",                 shadowhook_syscall,              shadowhook_syscall_verify },
-    { "Hook_Memory",                  shadowhook_mem,                  shadowhook_mem_verify },
-    { "Hook_Sandbox",                 shadowhook_sandbox,              shadowhook_sandbox_verify },
-    { "classes",                      shadowhook_objc_hidetweakclasses, NULL },
-    { "symlookup",                    shdw_coord_symlookup,            shdw_coord_verify_symlookup },
-    { "Hook_DynamicLibrariesExtra",   shadowhook_dyld_extra,           shadowhook_dyld_extra_verify },
-    { "detector-integrity",            shdw_coord_detector_integrity,   NULL },
-    { "Hook_Filesystem@objc",         shdw_coord_filesystem_objc,      NULL },
-    { "Hook_Foundation@objc",         shdw_coord_foundation_objc,      NULL },
-    { "Hook_HideApps",                shadowhook_LSApplicationWorkspace, NULL },
-    { "Hook_URLScheme",               shadowhook_UIApplication,        NULL },
-    { "Hook_Foundation@uikit",        shadowhook_UIImage,              NULL },
-    { "Hook_DeviceSecurityKit",       shadowhook_DeviceSecurityKit,    NULL },
-    { "IOSSecuritySuite",             shadowhook_IOSSecuritySuite,     NULL },
+    { "Universal_Dyld",                       shdw_universal_dyld,                     shdw_universal_dyld_verify },
+    { "Universal_Filesystem_C",               shdw_universal_filesystem_c,             shdw_universal_filesystem_c_verify },
+    { "Universal_EnvVars_C",                  shdw_coord_envvars_c,                    shdw_universal_envvars_c_verify },
+    { "Universal_EnvVars_ObjC",               shdw_universal_nsprocessinfo,            NULL },
+    { "Adapter_DeviceCheck",                   shdw_adapter_devicecheck,                NULL },
+    { "Adapter_FreeRASP",                      shdw_adapter_freerasp,                   NULL },
+    { "Universal_MachBootstrap",              shdw_universal_mach_bootstrap,           shdw_universal_mach_bootstrap_verify },
+    { "Universal_IOKit",                      shdw_universal_iokit,                    shdw_universal_iokit_verify },
+    { "Universal_LowLevelC",                  shdw_universal_low_level_c,              shdw_universal_low_level_c_verify },
+    { "Universal_AntiDebugging",              shdw_universal_antidebugging,            shdw_universal_antidebugging_verify },
+    { "Universal_CodeSigning",                shdw_universal_codesigning,              shdw_universal_codesigning_verify },
+    { "Universal_ObjC",                       shdw_universal_objc,                     NULL },
+    { "Universal_ObjC_MethodImplementation",  shdw_universal_objc_methodimpl,          NULL },
+    { "Universal_Syscall",                    shdw_universal_syscall,                  shdw_universal_syscall_verify },
+    { "Universal_Memory",                     shdw_universal_memory,                   shdw_universal_memory_verify },
+    { "Universal_Sandbox",                    shdw_universal_sandbox,                  shdw_universal_sandbox_verify },
+    { "Universal_HideClasses",                shdw_universal_hide_classes,             NULL },
+    { "Universal_SymbolLookup",               shdw_coord_symlookup,                    shdw_coord_verify_symlookup },
+    { "Universal_DynamicLibrariesExtra",      shdw_universal_dynamic_libraries_extra,  shdw_universal_dynamic_libraries_extra_verify },
+    { "Universal_DetectorIntegrity",          shdw_coord_detector_integrity,           NULL },
+    { "Universal_Filesystem_ObjC",            shdw_coord_filesystem_objc,              NULL },
+    { "Universal_Foundation_ObjC",            shdw_coord_foundation_objc,              NULL },
+    { "Universal_HideApps",                   shdw_universal_hide_apps,                NULL },
+    { "Universal_URLScheme",                  shdw_universal_url_scheme,               NULL },
+    { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit,         NULL },
+    { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit,          NULL },
+    { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite,           NULL },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
     { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
     { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },
@@ -180,7 +183,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
     // backends being resolved).
     _shdw_watcher_enabled = shdw_coordinator_instance
         && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
-        && ([prefs[@"Hook_URLScheme"] boolValue] || [prefs[@"Hook_Foundation"] boolValue]);
+        && ([prefs[SHDWUniversalURLSchemeID] boolValue] || [prefs[SHDWUniversalFoundationID] boolValue]);
 
     if(_shdw_watcher_enabled) {
         uint32_t count = _dyld_image_count();
@@ -218,35 +221,37 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             return;
         }
 
-        // Adapter support defaults on, but only an exact SDK fingerprint may
-        // activate its library-specific behavior. Resolve before constructing
-        // the hook plan because the iOSSecuritySuite profile narrows two
-        // otherwise-wide groups and freeRASP enables raw-syscall coverage.
-        prefs = shadowhook_DetectorAdapters_resolvePreferences(prefs);
+        // Adapter switches are enabled by default. Exact fingerprints only
+        // narrow the descriptor-backed detector rows before installation.
+        prefs = shdw_adapter_resolve_preferences(prefs);
         BOOL hasActiveDetectorAdapter = NO;
-        for(NSString* key in @[ SHDWDetectorPatchDTTID, SHDWDetectorPatchSafeDeviceID,
-                                SHDWDetectorPatchJailMonkeyID ]) {
+        for(NSString* key in @[ SHDWAdapterDTTJailbreakDetectionID, SHDWAdapterSafeDeviceID,
+                                SHDWAdapterJailMonkeyID ]) {
             hasActiveDetectorAdapter |= [prefs[key] boolValue];
         }
 
-        // Keep the broad filesystem and URL groups enabled alongside the
-        // targeted IOSSecuritySuite subset. The latter is additive; disabling
-        // the broad groups leaves other in-process detectors with unfiltered
-        // path, fork, port, and LaunchServices surfaces.
-        // FreeRASP is universal (mach_msg+syscall+path always).
+        // The adapter's raw-syscall coverage is additive to the universal
+        // groups and follows its own switch.
         {
             NSMutableDictionary* effectivePrefs = [prefs mutableCopy];
-            shadowhook_FreeRASP_preparePreferences(effectivePrefs);
+            if([effectivePrefs[SHDWAdapterFreeRASPID] boolValue]) {
+                shdw_adapter_freerasp_prepare_preferences(effectivePrefs);
+            }
+            if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
+               effectivePrefs[SHDWUniversalHarnessBaselineID] == nil) {
+                effectivePrefs[SHDWUniversalHarnessBaselineID] = @YES;
+            }
             prefs = [effectivePrefs copy];
         }
 
-        shdw_path_rewrite_configure([prefs[SHDWPathRewriteID] boolValue]);
-        shdw_memory_hiding_enabled = [prefs[@"MemoryLevelHiding"] boolValue];
+        shdw_path_rewrite_configure([prefs[SHDWUniversalPathRewriteID] boolValue]);
+        shdw_memory_hiding_enabled = [prefs[SHDWUniversalMemoryLevelHidingID] boolValue];
 
         [Shadow sharedInstance];
         shdw_own_ranges_refresh();
         shdw_pseudo_init(prefs);
-        shadowhook_DeviceCheck_configure(prefs);
+        shdw_adapter_devicecheck_configure(prefs);
+        shdw_universal_register_features();
 
         NSLog(@"starting hooks");
         [Shadow shdwEnterInternalRead];
@@ -254,10 +259,15 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             shdw_coordinator_ctor(prefs);
 
             // Swift source builds and Talsec binaries have no stable direct
-            // hook ABI. Explicit adapters are known before detector code can
-            // run, so install their Tier-2 coverage synchronously. Runtime
-            // discoveries still use the deferred escalation path.
-            if(hasActiveDetectorAdapter) {
+            // hook ABI. Prearm framework-independent Tier-2 coverage before
+            // detector code can run. Production adapter switches install at
+            // construction; the harness keeps its deferred fallback event.
+            // Harness sets this false only for its explicit maximum profile.
+            // Prearm the detector-only units before its first real detector
+            // runs; normal Harness launches retain the universal baseline.
+            BOOL harnessMaximumProfile = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
+                ![prefs[SHDWUniversalHarnessBaselineID] boolValue];
+            if(hasActiveDetectorAdapter || harnessMaximumProfile) {
                 shdw_detector_present = YES;
                 shdw_detector_write_policy_set_enabled(YES);
                 [shdw_coordinator_instance prearmDetector];

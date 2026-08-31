@@ -5,6 +5,8 @@ hooks=ShadowSettings.bundle/Resources/Hooks.plist
 troubleshooting=ShadowSettings.bundle/Resources/Troubleshooting.plist
 controller=ShadowSettings.bundle/SHDWTroubleshootingListController.m
 dangerous=ShadowSettings.bundle/Resources/Dangerous.plist
+individual=ShadowSettings.bundle/Resources/Individual.plist
+adapters=ShadowSettings.bundle/Resources/Adapters.plist
 runtime=ShadowCore.dylib/shadowcore.x
 loader=Shadow.dylib/dylib.x
 settings=Shadow.framework/Settings.m
@@ -29,22 +31,37 @@ grep -q 'applicationIDInContext' "$controller" || {
     exit 1
 }
 
-for key in DetectorPatch_DTTJailbreakDetection DetectorPatch_SafeDevice DetectorPatch_JailMonkey; do
-    grep -q "<string>$key</string>" "$dangerous" || {
-        echo "SETTINGS DRIFT: Dangerous page lost $key"
+grep -q '<string>SHDWIndividualListController</string>' "$hooks" || {
+    echo 'SETTINGS DRIFT: Hooks page no longer links to Adapters'
+    exit 1
+}
+grep -q '<string>Adapters</string>' "$hooks" || {
+    echo 'SETTINGS DRIFT: Hooks page no longer parameterizes the Adapters plist'
+    exit 1
+}
+
+for key in Adapter_DeviceCheck Adapter_FreeRASP Adapter_DeviceSecurityKit Adapter_IOSSecuritySuite Adapter_DTTJailbreakDetection Adapter_SafeDevice Adapter_JailMonkey; do
+    grep -q "<string>$key</string>" "$adapters" || {
+        echo "SETTINGS DRIFT: Adapters page lost $key"
         exit 1
     }
-done
-
-# IOSSecuritySuite + FreeRASP are now universal (always-on via SHDWPhaseAlways
-# IOSSecuritySuite plugin and unconditional FreeRASP coverage); no patch ID in
-# defaults/Dangerous to pre-arm.
-for key in DetectorPatch_IOSSecuritySuite DetectorPatch_FreeRASP; do
-    if grep -q "<string>$key</string>" "$dangerous"; then
-        echo "SETTINGS DRIFT: $key should not be in Dangerous (now always-on)"
+    if grep -q "<string>$key</string>" "$dangerous" || grep -q "<string>$key</string>" "$individual"; then
+        echo "SETTINGS DRIFT: $key must stay on the dedicated Adapters page"
         exit 1
     fi
 done
+
+for plist in "$individual" "$dangerous"; do
+    if grep -q '<string>Hook_' "$plist" || grep -q '<string>DetectorPatch_' "$plist"; then
+        echo "SETTINGS DRIFT: $plist still emits legacy hook keys"
+        exit 1
+    fi
+done
+
+grep -q 'SHDWMigratedHookSettings' Shadow.framework/SettingsMigration.m || {
+    echo 'SETTINGS DRIFT: renamed hook preferences no longer migrate'
+    exit 1
+}
 
 for source in "$loader" "$settings"; do
     grep -q 'dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST' "$source" || {
@@ -52,3 +69,10 @@ for source in "$loader" "$settings"; do
         exit 1
     }
 done
+
+grep -q 'return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"' tests/stealth_device.py &&
+grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-b.sh &&
+grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-c.sh || {
+    echo 'SETTINGS DRIFT: device tools must edit the canonical preference file'
+    exit 1
+}

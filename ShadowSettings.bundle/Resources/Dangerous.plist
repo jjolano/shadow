@@ -14,7 +14,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_Sandbox</string>
+			<string>Universal_Sandbox</string>
 			<key>label</key>
 			<string>HOOK_SANDBOX</string>
 			<key>get</key>
@@ -32,7 +32,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_LowLevelC</string>
+			<string>Universal_LowLevelC</string>
 			<key>label</key>
 			<string>HOOK_LLC</string>
 			<key>get</key>
@@ -50,7 +50,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_Memory</string>
+			<string>Universal_Memory</string>
 			<key>label</key>
 			<string>HOOK_MEM</string>
 			<key>get</key>
@@ -68,7 +68,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>MemoryLevelHiding</string>
+			<string>Universal_MemoryLevelHiding</string>
 			<key>label</key>
 			<string>MEMORY_LEVEL_HIDING</string>
 			<key>get</key>
@@ -86,7 +86,7 @@
 			<key>cell</key>
 			<string>PSSegmentCell</string>
 			<key>id</key>
-			<string>PseudoSandboxMode</string>
+			<string>Universal_PseudoSandboxMode</string>
 			<key>label</key>
 			<string>PSEUDO_SANDBOX</string>
 			<key>default</key>
@@ -118,7 +118,7 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>Hook_DynamicLibrariesExtra</string>
+			<string>Universal_DynamicLibrariesExtra</string>
 			<key>label</key>
 			<string>HOOK_DYLD_EXTRA</string>
 			<key>get</key>
@@ -136,55 +136,9 @@
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>id</key>
-			<string>PathRewrite</string>
+			<string>Universal_PathRewrite</string>
 			<key>label</key>
 			<string>PATH_REWRITE</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>id</key>
-			<string>DetectorPatchesGroup</string>
-			<key>label</key>
-			<string>DETECTOR_PATCHES</string>
-			<key>footerText</key>
-			<string>DETECTOR_PATCHES_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>DetectorPatch_DTTJailbreakDetection</string>
-			<key>label</key>
-			<string>DTTJailbreakDetection</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>DetectorPatch_SafeDevice</string>
-			<key>label</key>
-			<string>safe_device</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>id</key>
-			<string>DetectorPatch_JailMonkey</string>
-			<key>label</key>
-			<string>JailMonkey</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>set</key>

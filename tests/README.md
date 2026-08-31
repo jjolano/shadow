@@ -62,6 +62,9 @@ SHADW_AFUZZ_SEED=123 SHADW_AFUZZ_ITERS=20000 make -C tests afuzz
 Use `tools/dyldprobe`, `tools/hookprobe`, `ShadowHarness`, and
 `tests/stealth-device.sh` for device validation.
 
+`tests/stealth-device.sh run-all` executes Harness Run All headlessly and
+captures its eleven detector reports as device evidence.
+
 ## Layout
 
 - `main.m`, `*Tests.m`, `Fuzz.m` — runner and batteries

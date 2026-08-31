@@ -92,6 +92,7 @@ static NSDictionary* shdw_activation_observation(void) {
     NSArray<NSString*>* ctor = shdw_activation_inventory(snapshot, @"ctor_inventory");
     NSArray<NSString*>* postLoad = shdw_activation_inventory(snapshot, @"post_load_inventory");
     NSArray<NSString*>* postDetector = shdw_activation_inventory(snapshot, @"post_detector_inventory");
+    NSArray<NSString*>* sdkFallback = shdw_activation_inventory(snapshot, @"sdk_fallback_inventory");
     NSSet* ctorSet = [NSSet setWithArray:ctor];
     NSSet* postLoadSet = [NSSet setWithArray:postLoad];
     NSSet* postDetectorSet = [NSSet setWithArray:postDetector];
@@ -99,15 +100,17 @@ static NSDictionary* shdw_activation_observation(void) {
     BOOL postLoadObserved = [snapshot[@"post_load_observed"] boolValue];
     BOOL postDetectorObserved = [snapshot[@"post_detector_observed"] boolValue];
     BOOL classHidingActive = ShdwIsShadowClassHidingActive();
-    BOOL ctorCore = [ctorSet containsObject:@"dyld"] && [ctorSet containsObject:@"objc"] && [ctorSet containsObject:@"classes"];
-    BOOL postLoadCore = [ctorSet isSubsetOfSet:postLoadSet] && [postLoadSet containsObject:@"Hook_URLScheme"];
-    BOOL postDetectorCore = [postLoadSet isSubsetOfSet:postDetectorSet] && [postDetectorSet containsObject:@"Hook_Filesystem@objc"] && [postDetectorSet containsObject:@"Hook_HideApps"];
+    BOOL ctorCore = [ctorSet containsObject:@"Universal_Dyld"] && [ctorSet containsObject:@"Universal_ObjC"] && [ctorSet containsObject:@"Universal_HideClasses"];
+    BOOL postLoadCore = [ctorSet isSubsetOfSet:postLoadSet] && [postLoadSet containsObject:@"Universal_URLScheme"];
+    BOOL postDetectorCore = [postLoadSet isSubsetOfSet:postDetectorSet] && [postDetectorSet containsObject:@"Universal_Filesystem_ObjC"] && [postDetectorSet containsObject:@"Universal_HideApps"];
 
     return @{
         @"case_id" : @"activation",
         @"ctor_inventory" : ctor,
         @"post_load_inventory" : postLoad,
         @"post_detector_inventory" : postDetector,
+        @"sdk_fallback_inventory" : sdkFallback,
+        @"sdk_fallback_observed" : @([snapshot[@"sdk_fallback_observed"] boolValue]),
         @"verdicts" : @{
             @"ctor_event" : ctorObserved ? @"PASS" : @"FAIL",
             @"ctor_core_units" : ctorCore ? @"PASS" : @"FAIL",
