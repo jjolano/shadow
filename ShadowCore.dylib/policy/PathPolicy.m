@@ -6,7 +6,6 @@
 #import "PathPolicy.h"
 
 #import "../hooks/hooks.h"
-#import "PseudoSandboxPolicy.h"
 #import <Shadow/JBPath.h>
 
 #import <string.h>
@@ -170,11 +169,7 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
 
     if(status == SHADW_DIRFD_ABSOLUTE) {
-        BOOL belt = [_shadow isCPathRestricted:pathname];
-        if(shdw_pseudo_enabled()) {
-            shdw_pseudo_audit_log(pathname, belt, "at_check");
-        }
-        if(belt) {
+        if([_shadow isCPathRestricted:pathname]) {
             errno = ENOENT;
             return YES;
         }

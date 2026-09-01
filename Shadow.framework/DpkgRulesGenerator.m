@@ -4,6 +4,12 @@
 
 #import "../common.h"
 
+static BOOL IsShadowVerificationBundle(NSString* bundleID) {
+    return [bundleID isEqualToString:@"me.jjolano.shadow.harness"]
+        || [bundleID isEqualToString:@"me.jjolano.dyldprobe"]
+        || [bundleID hasPrefix:@"me.jjolano.shadow.test."];
+}
+
 @implementation SystemRulesGenerator
 
 + (NSDictionary *)_generateDpkgRuleset {
@@ -50,11 +56,13 @@
                 if([[path pathExtension] isEqualToString:@"app"]) {
                     NSDictionary* plist = [[NSBundle bundleWithPath:JBPath(path)] infoDictionary];
 
-                    for(NSDictionary* type in [plist objectForKey:@"CFBundleURLTypes"]) {
-                        NSArray* appSchemes = [type objectForKey:@"CFBundleURLSchemes"];
+                    if(!IsShadowVerificationBundle([plist objectForKey:@"CFBundleIdentifier"])) {
+                        for(NSDictionary* type in [plist objectForKey:@"CFBundleURLTypes"]) {
+                            NSArray* appSchemes = [type objectForKey:@"CFBundleURLSchemes"];
 
-                        if(appSchemes) {
-                            [schemes addObjectsFromArray:appSchemes];
+                            if(appSchemes) {
+                                [schemes addObjectsFromArray:appSchemes];
+                            }
                         }
                     }
                 }

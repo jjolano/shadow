@@ -4,6 +4,14 @@
 
 NSDictionary<NSString*, id>* SHDWMigratedHookSettings(NSDictionary<NSString*, id>* settings) {
     NSMutableDictionary<NSString*, id>* migrated = [settings mutableCopy] ?: [NSMutableDictionary new];
+
+    // App_Disabled used to override App_Enabled. The single-toggle model
+    // expresses the same state directly and never writes App_Disabled again.
+    if([settings[SHDWAppDisabledID] boolValue]) {
+        migrated[SHDWAppEnabledID] = @NO;
+    }
+    [migrated removeObjectForKey:SHDWAppDisabledID];
+
     NSArray<NSArray<NSString*>*>* mappings = @[
         @[ @"Hook_Filesystem", SHDWUniversalFilesystemID ],
         @[ @"Hook_URLScheme", SHDWUniversalURLSchemeID ],

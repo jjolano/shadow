@@ -13,7 +13,7 @@
     <key>CFBundleURLTypes</key>
     <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-jailmonkey</string></array></dict></array>
     <key>LSApplicationQueriesSchemes</key>
-    <array><string>cydia</string><string>sileo</string><string>zbra</string><string>shadow-detectors</string></array>
+    <array><string>activator</string><string>cydia</string><string>filza</string><string>sileo</string><string>undecimus</string><string>zbra</string><string>anygofree</string><string>xgpspro</string><string>acc.GpsManager</string><string>LocationSimulation</string><string>locationfakelocation</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>UILaunchScreen</key><dict/>
     <key>UIDeviceFamily</key><array><integer>1</integer></array>

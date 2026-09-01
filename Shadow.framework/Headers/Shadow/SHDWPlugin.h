@@ -4,7 +4,7 @@
 #import <Foundation/Foundation.h>
 
 // Canonical plugin registry — single source of truth for hook/policy
-// lifecycle, defaults, presets and planner. Pure Foundation; safe to link
+// lifecycle, built-in profile and planner. Pure Foundation; safe to link
 // from any binary and from the host test harness.
 // Hybrid seam: SHDWPlugin is the renamed SHDWInstallUnit (type alias kept
 // for compat), SHDWPluginRegistry is the renamed SHDWInstallUnits.
@@ -44,10 +44,30 @@
 #define SHDWAdapterSafeDeviceID               @"Adapter_SafeDevice"
 #define SHDWAdapterJailMonkeyID               @"Adapter_JailMonkey"
 
-#define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWHookLibraryID          @"HK_Library"
 #define SHDWAppEnabledID           @"App_Enabled"
+// Read-only migration keys. New settings write only App_Enabled.
+#define SHDWGlobalEnabledID        @"Global_Enabled"
 #define SHDWAppDisabledID          @"App_Disabled"
+#define SHDWSingleToggleMigrationID @"SingleToggleMigrated"
+
+static inline BOOL SHDWApplicationEnabled(NSDictionary* appSettings,
+                                          BOOL legacyGlobalEnabled,
+                                          BOOL singleToggleMigrated,
+                                          BOOL forceEnabled) {
+    if(forceEnabled) {
+        return YES;
+    }
+    if([appSettings[SHDWAppDisabledID] boolValue]) {
+        return NO;
+    }
+    // Before migration, App_Enabled=NO meant "follow global" rather than off.
+    if(!singleToggleMigrated && legacyGlobalEnabled) {
+        return YES;
+    }
+    id appEnabled = appSettings[SHDWAppEnabledID];
+    return appEnabled ? [appEnabled boolValue] : legacyGlobalEnabled;
+}
 
 #pragma mark - Lifecycle phases
 
@@ -109,11 +129,9 @@ SHDW_EXPORT const SHDWPlugin* SHDWPluginRegistry(NSUInteger* outCount);
 // Compat: old name forwards to new impl
 SHDW_EXPORT const SHDWInstallUnit* SHDWInstallUnits(NSUInteger* outCount);
 
-#pragma mark - Defaults and presets
+#pragma mark - Built-in profile
 
 SHDW_EXPORT NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void);
-SHDW_EXPORT NSDictionary<NSString*, id>* SHDWPresetStandard(void);
-SHDW_EXPORT NSDictionary<NSString*, id>* SHDWPresetMaximum(void);
 
 #pragma mark - Capability metadata
 

@@ -301,10 +301,10 @@
 	[entrySpecifiers removeAllObjects];
 
 	if(records.count == 0) {
-		NSString* fallback = self.filterBundleID ? @"No detector activity recorded for this app" : @"No detector activity recorded";
+		NSString* fallback = @"None";
 		PSSpecifier* empty = [PSSpecifier preferenceSpecifierNamed:[self localized:self.filterBundleID ? @"NO_APP_ACTIVITY" : @"NO_ACTIVITY" fallback:fallback] target:self set:NULL get:NULL detail:nil cell:PSStaticTextCell edit:nil];
 		[empty setProperty:@"SHDWDetectorLogEntry" forKey:@"id"];
-		[empty setProperty:@YES forKey:@"enabled"];
+		[empty setProperty:@NO forKey:@"enabled"];
 		[entrySpecifiers addObject:empty];
 		[self insertSpecifier:empty atIndex:1];
 		return;

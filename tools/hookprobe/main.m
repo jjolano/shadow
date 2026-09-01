@@ -10,16 +10,11 @@
 // Exit code: 0 = all probes passed, 1 = probe failure(s), 2 = hooks not
 // active (prefs gate / ctor bail — check Shadow is enabled for this bundle).
 //
-// Prefs-aware: groups the effective global prefs disable are reported SKIP
-// (the hook is legitimately not installed), not FAIL.
-//
 // SKIP groups: UIApplication (no singleton in CLI context), iokit
 // (empty-iterator hide == stock no-match for an absent restricted service
 // class), LSApplicationWorkspace (no restricted app installed — vacuous
 // filter), NSArray (no restricted fixture parses natively as an array —
-// dict-rooted ruleset returns nil natively), and groups the effective
-// global prefs disable (shipped defaults: Syscall/Sandbox/MachBootstrap/
-// Memory/Foundation/IOKit/AntiDebugging ship OFF). Probed groups: libc, dyld,
+// dict-rooted ruleset returns nil natively). Probed groups: libc, dyld,
 // objc, mem, syscall (csops), DeviceCheck,
 // UIImage, NSFileManager/NSURL/NSBundle/NSString/NSData/NSDictionary/
 // NSFileHandle, NSThread, NSFileVersion/NSFileWrapper, NSProcessInfo, mach,
@@ -269,88 +264,12 @@ static BOOL probeCanary(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Effective global prefs: groups the global settings disable are SKIPped.
-// gEffectivePrefs is the battery's replication of ShadowCore's ctor-time
-// resolution (ShadowSettings getPreferencesForIdentifier: for a nil bundle
-// ID, Settings.m:92-128): shipped defaults (SHDWDefaultHookSettings,
-// HookConfiguration.m:55-82) overlaid with the stored suite values when
-// Global_Enabled — read pre-dlopen through the NSUserDefaults suite, the
-// same cfprefsd mediation the ctor uses (no hooks installed yet, so the
-// reads are unhooked). gPrefs is the RAW plist read, kept only as a
-// fallback when the suite resolution is unavailable.
+// Enabled processes always receive the complete built-in profile.
 // ---------------------------------------------------------------------------
 
-static NSDictionary* gPrefs = nil;
-static NSDictionary* gEffectivePrefs = nil;  // resolved pre-dlopen in main()
-
-static NSSet* shdw_defaultOffKeys(void) {
-    static NSSet* set = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        set = [NSSet setWithArray:@[
-            @"Universal_Foundation",
-            @"Universal_Memory",
-            @"Universal_Syscall",
-            @"Universal_Sandbox",
-            @"Universal_MachBootstrap",
-            @"Universal_IOKit",
-            @"Universal_AntiDebugging",
-            @"Universal_DynamicLibrariesExtra"
-        ]];
-    });
-
-    return set;
-}
-
-// Mirror of SHDWDefaultHookSettings (HookConfiguration.m:55-82) — the single
-// source of truth. Built from shdw_defaultOffKeys (→ NO) plus every other
-// key the battery queries (→ YES) so the two cannot drift: a key shipping
-// ON that this mirror misses would silently untest its group.
-static NSDictionary* shdw_defaultSettings(void) {
-    static NSDictionary* dict = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        NSMutableDictionary* d = [NSMutableDictionary dictionaryWithDictionary:@{
-            @"Universal_Filesystem" : @YES,
-            @"Universal_URLScheme"  : @YES,
-            @"Universal_EnvVars"    : @YES,
-            @"Adapter_DeviceCheck"  : @YES,
-            @"Universal_LowLevelC"  : @YES,
-            @"Universal_HideApps"   : @YES,
-            @"Universal_MemoryLevelHiding" : @YES
-        }];
-
-        for(NSString* key in shdw_defaultOffKeys()) {
-            d[key] = @NO;
-        }
-
-        dict = [d copy];
-    });
-
-    return dict;
-}
-
 static BOOL prefsEnabled(NSString* key) {
-    if(gEffectivePrefs) {
-        // ShadowCore's effective resolution; the dict always contains every
-        // defaultSettings key. A missing key is unexpected — fall through to
-        // the raw model as a safety net.
-        id value = [gEffectivePrefs objectForKey:key];
-
-        if(value) {
-            return [value boolValue];
-        }
-    }
-
-    id value = [gPrefs objectForKey:key];
-
-    if(value) {
-        return [value boolValue];
-    }
-
-    return ![shdw_defaultOffKeys() containsObject:key];
+    (void)key;
+    return YES;
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +316,68 @@ static void probeLibcLowLevel(void) {
     }
 
     report(@"libc", @"opendir(restricted)", opendirHidden, [NSString stringWithFormat:@"errno=%d", errno]);
+}
+
+static void probePathRewrite(void) {
+    const char* restricted = [kShadowCoreBin fileSystemRepresentation];
+    size_t length = strlen(restricted);
+
+    if(length >= PATH_MAX) {
+        report(@"path-rewrite", @"open(writable restricted)", NO, @"restricted fixture exceeds PATH_MAX");
+        report(@"path-rewrite", @"open(read-only restricted)", NO, @"restricted fixture exceeds PATH_MAX");
+        report(@"path-rewrite", @"open(O_CREAT) keeps buffer", NO, @"restricted fixture exceeds PATH_MAX");
+        return;
+    }
+
+    char writable[PATH_MAX];
+    char original[PATH_MAX];
+    memcpy(writable, restricted, length + 1);
+    memcpy(original, restricted, length + 1);
+
+    errno = 0;
+    int fd = open(writable, O_RDONLY);
+    int writableErrno = errno;
+    if(fd >= 0) close(fd);
+    BOOL rewritten = memcmp(writable, original, length + 1) != 0;
+    report(@"path-rewrite", @"open(writable restricted)",
+           fd < 0 && writableErrno == ENOENT && rewritten,
+           [NSString stringWithFormat:@"errno=%d rewritten=%@", writableErrno, rewritten ? @"YES" : @"NO"]);
+
+    // A string literal must take the synthetic-deny fallback instead of being
+    // written through, proving the writable-buffer guard does not crash.
+    static const char readOnly[] = "/var/jb/usr/lib/ShadowCore.dylib";
+    errno = 0;
+    fd = open(readOnly, O_RDONLY);
+    int readOnlyErrno = errno;
+    if(fd >= 0) close(fd);
+    report(@"path-rewrite", @"open(read-only restricted)", fd < 0 && readOnlyErrno == ENOENT,
+           [NSString stringWithFormat:@"errno=%d", readOnlyErrno]);
+
+    memcpy(writable, restricted, length + 1);
+    errno = 0;
+    fd = open(writable, O_RDONLY | O_CREAT, 0600);
+    int createErrno = errno;
+    if(fd >= 0) close(fd);
+    BOOL unchanged = memcmp(writable, original, length + 1) == 0;
+    report(@"path-rewrite", @"open(O_CREAT) keeps buffer",
+           fd < 0 && createErrno == ENOENT && unchanged,
+           [NSString stringWithFormat:@"errno=%d rewritten=%@", createErrno, unchanged ? @"NO" : @"YES"]);
+}
+
+static void probeDynamicLibrariesExtra(void) {
+    dlerror();
+    void* control = dlopen("/System/Library/Frameworks/Foundation.framework/Foundation", RTLD_NOW | RTLD_LOCAL);
+    const char* controlError = control ? NULL : dlerror();
+    report(@"dyld-extra", @"dlopen(control)", control != NULL,
+           control ? @"loaded" : [NSString stringWithUTF8String:(controlError ? controlError : "unknown error")]);
+    if(control) dlclose(control);
+
+    dlerror();
+    void* restricted = dlopen([kShadowCoreBin fileSystemRepresentation], RTLD_NOW | RTLD_LOCAL);
+    const char* restrictedError = restricted ? NULL : dlerror();
+    report(@"dyld-extra", @"dlopen(restricted)", restricted == NULL,
+           restricted ? @"restricted library loaded" : [NSString stringWithUTF8String:(restrictedError ? restrictedError : "no error")]);
+    if(restricted) dlclose(restricted);
 }
 
 // ---------------------------------------------------------------------------
@@ -1907,42 +1888,6 @@ int main(int argc, char* argv[]) {
 
         gProbeRows = [NSMutableArray array];
 
-        // Read the effective global prefs BEFORE any hook can influence the
-        // read (the prefs plist lives in the mobile domain, outside the
-        // restricted roots, but the values gate which groups we probe).
-        gPrefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/me.jjolano.shadow.plist"];
-
-        // Resolve the EFFECTIVE settings the way ShadowCore's ctor does —
-        // pre-dlopen, plain Foundation. The suite (initWithSuiteName:
-        // kShadowPrefsPlist, same string ShadowSettings uses at Settings.m:
-        // 24-25) reads the plist through cfprefsd, and registerDefaults
-        // supplies the shipped defaults. This replicates
-        // getPreferencesForIdentifier: (Settings.m:92-128) for a nil bundle
-        // ID: shipped defaults, overlaid with stored suite values only when
-        // Global_Enabled. Both baseline gating and probe gating use this one
-        // model — the raw-plist model diverges from the ctor's resolution
-        // on-device (URLScheme/EnvVars/DeviceCheck/LowLevelC/HideApps resolve
-        // 0 in the CLI context), and a post-dlopen ShadowSettings query is
-        // impossible from the battery (Shadow's NSClassFromString hiding,
-        // objc.x:286-300, filters external callers).
-        NSUserDefaults* ud = [[NSUserDefaults alloc] initWithSuiteName:kShadowPrefsPlist];
-        [ud registerDefaults:shdw_defaultSettings()];
-        NSMutableDictionary* eff = [shdw_defaultSettings() mutableCopy];
-
-        if([ud boolForKey:@"Global_Enabled"]) {
-            eff[@"App_Enabled"] = @YES;
-
-            for(NSString* key in shdw_defaultSettings()) {
-                id value = [ud objectForKey:key];
-
-                if(value) {
-                    eff[key] = value;  // stored ?? registered default (Settings.m:120)
-                }
-            }
-        }
-
-        gEffectivePrefs = [eff copy];
-
         BOOL syscallOn = prefsEnabled(@"Universal_Syscall");
         BOOL deviceCheckOn = prefsEnabled(@"Adapter_DeviceCheck");
         // UIImage rides the Universal_Foundation_UIKit group.
@@ -2063,7 +2008,21 @@ int main(int argc, char* argv[]) {
             skip(@"libc", @"open/opendir", @"Universal_LowLevelC disabled");
         }
 
+        if(prefsEnabled(@"Universal_PathRewrite") && prefsEnabled(@"Universal_LowLevelC")) {
+            probePathRewrite();
+        } else {
+            skip(@"path-rewrite", @"open(writable restricted)", @"Universal_PathRewrite or Universal_LowLevelC disabled");
+            skip(@"path-rewrite", @"open(read-only restricted)", @"Universal_PathRewrite or Universal_LowLevelC disabled");
+            skip(@"path-rewrite", @"open(O_CREAT) keeps buffer", @"Universal_PathRewrite or Universal_LowLevelC disabled");
+        }
+
         probeDyld(shadowCoreHeader);
+        if(prefsEnabled(@"Universal_DynamicLibrariesExtra")) {
+            probeDynamicLibrariesExtra();
+        } else {
+            skip(@"dyld-extra", @"dlopen(control)", @"Universal_DynamicLibrariesExtra disabled");
+            skip(@"dyld-extra", @"dlopen(restricted)", @"Universal_DynamicLibrariesExtra disabled");
+        }
         probeObjC();
 
         if(shadowCoreHeader) {
@@ -2077,7 +2036,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Post-dlopen gating consults the same pre-dlopen effective model as
-        // the baselines (prefsEnabled → gEffectivePrefs): one model, both
+        // the baselines (prefsEnabled): one model, both
         // sides — a group ShadowCore did not install can never false-FAIL.
         if(prefsEnabled(@"Universal_Syscall")) {
             probeSyscallCsopsPost();

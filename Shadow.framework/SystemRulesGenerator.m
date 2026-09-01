@@ -563,6 +563,12 @@ static BOOL IsCryptexZone(NSString* zonePath) {
 // -> schemes/ID land in this ruleset -> canOpenURL:/openURL:/
 // applicationsAvailableForHandlingURLScheme: probes for them are denied.
 // Uninstall the app -> the next regeneration drops it.
+static BOOL IsShadowVerificationBundle(NSString* bundleID) {
+    return [bundleID isEqualToString:@"me.jjolano.shadow.harness"]
+        || [bundleID isEqualToString:@"me.jjolano.dyldprobe"]
+        || [bundleID hasPrefix:@"me.jjolano.shadow.test."];
+}
+
 + (NSDictionary*)generateInstalledAppsRuleset {
     NSString* dir = JBPath(@SHADOW_RULESETS);
     NSArray* urls = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:[NSURL fileURLWithPath:dir isDirectory:YES] includingPropertiesForKeys:@[] options:0 error:nil];
@@ -621,6 +627,11 @@ static BOOL IsCryptexZone(NSString* zonePath) {
     LSApplicationWorkspace* workspace = [LSApplicationWorkspace defaultWorkspace];
 
     for(LSApplicationProxy* proxy in [workspace allInstalledApplications]) {
+        NSString* bundleID = [proxy bundleIdentifier];
+        if(IsShadowVerificationBundle(bundleID)) {
+            continue;
+        }
+
         BOOL restricted = NO;
 
         for(RulesetEngine* ruleset in curated) {
@@ -634,8 +645,6 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         if(!restricted) {
             continue;
         }
-
-        NSString* bundleID = [proxy bundleIdentifier];
 
         if([bundleID length] > 0) {
             [bundleids addObject:[bundleID lowercaseString]];

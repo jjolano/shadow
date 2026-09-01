@@ -5,6 +5,12 @@ import Foundation
 
 @objc(DSKBridge)
 public final class DSKBridge: NSObject {
+    @objc public static func prepareForHarness() {
+        // Harness records detector output itself; avoid DSK's asynchronous
+        // developer logger touching source paths through Shadow's file hooks.
+        SecurityLoggerManager.shared.configure(.silent)
+    }
+
     @objc public static func isJailbroken() -> Bool {
         JailbreakDetector.isJailbroken()
     }
@@ -13,6 +19,9 @@ public final class DSKBridge: NSObject {
     }
     @objc public static func isFunctionHooked() -> Bool {
         HookDetector.isFunctionHooked()
+    }
+    @objc public static func functionHookEvidence() -> [String] {
+        HookDetector.collectEvidence()
     }
     @objc public static func isSwizzled() -> Bool {
         SwizzlingDetector.isSwizzled()
@@ -28,6 +37,12 @@ public final class DSKBridge: NSObject {
     }
     @objc public static func isDebuggerAttached() -> Bool {
         DebuggerDetector.isDebuggerAttached()
+    }
+    @objc public static func debuggerEvidence() -> [String] {
+        DebuggerDetector.getDetectionResults()
+            .filter { $0.value }
+            .map(\.key)
+            .sorted()
     }
     @objc public static func emulatorInfo() -> [String: Any] {
         let result = EmulatorDetector.detectEmulator()

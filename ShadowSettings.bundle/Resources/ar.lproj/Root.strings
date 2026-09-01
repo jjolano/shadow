@@ -4,7 +4,7 @@
 "BYPASS_SETTINGS" = "إعدادات التخطي";
 "BYPASS_SETTINGS_DESC" = "اضبط قوة تخطي كشف الجيلبريك. قد يتأثر أداء التطبيق.";
 "ROOT_APP_SETTINGS" = "إعدادات التطبيق";
-"ROOT_APP_SETTINGS_DESC" = "إعدادات التطبيقات الخاصة بها سيتم تطبيقها فوق الإعداد العام إذا كان مفعلًا.";
+"ROOT_APP_SETTINGS_DESC" = "اختر التطبيقات التي يجب تشغيل Shadow فيها.";
 "APPLICATIONS" = "التطبيقات";
 "RESPRING" = "إعادة تشغيل واجهة النظام";
 "RESPRING_PROMPT" = "سيؤدي هذا إلى إعادة تشغيل SpringBoard";

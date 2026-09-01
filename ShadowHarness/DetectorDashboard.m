@@ -9,6 +9,7 @@
 
 #import "DetectorDashboard.h"
 #import "Detectors.h"
+#import "Battery.h"
 #import "StatusViewController.h"
 
 static NSString* const SHDWResultsDirectory = @"/var/mobile/Documents/ShadowDetectorTests";
@@ -40,7 +41,7 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         sdks = @[
-            SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"shadow-dyldprobe://run", @"https://github.com/jjolano/shadow/tree/master/tools/dyldprobe"),
+            SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"embedded", @"https://github.com/jjolano/shadow/tree/master/tools/dyldprobe"),
             SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
             SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
             SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
@@ -91,7 +92,7 @@ static NSString* SHDWTimingText(NSDictionary* report) {
 }
 
 static NSDictionary* SHDWReport(SHDWSDK* sdk) {
-    NSData* data = [NSData dataWithContentsOfFile:SHDWReportPath(sdk)];
+    NSData* data = ShdwReadEvidenceData(SHDWReportPath(sdk));
     if(!data) return nil;
     NSError* error = nil;
     id report = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
@@ -166,6 +167,7 @@ static void SHDWEndRun(SHDWSDK* sdk) {
 }
 
 static BOOL SHDWRunActive(SHDWSDK* sdk) {
+    if(SHDWAllDetectorsRunning()) return YES;
     NSDictionary* state = SHDWActiveRuns()[sdk.identifier];
     if(!state) return NO;
 
@@ -252,15 +254,15 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 }
 
 - (void)runSDK {
+    if(SHDWAllDetectorsRunning()) return;
     SHDWBeginRun(_sdk);
     [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
     dispatch_async(dispatch_get_main_queue(), ^{
-        BOOL ok = SHDWRunDetectorWithID(self->_sdk.identifier);
-        SHDWEndRun(self->_sdk);
+         BOOL ok = SHDWRunDetectorWithID(self->_sdk.identifier);
         [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
         if(!ok){
             UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Detector unavailable"
-                message:[NSString stringWithFormat:@"No in-process detector for %@.", self->_sdk.identifier]
+                 message:[NSString stringWithFormat:@"No isolated runner for %@.", self->_sdk.identifier]
                 preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
@@ -340,7 +342,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
     if(_rounds.count == 0) {
         cell.textLabel.text = @"No result yet";
-        cell.detailTextLabel.text = @"Tap Run to execute the in-process detector.";
+         cell.detailTextLabel.text = @"Tap Run to execute the isolated runner.";
         cell.imageView.image = [UIImage systemImageNamed:@"circle"];
         cell.imageView.tintColor = UIColor.systemGrayColor;
         return cell;
@@ -381,14 +383,19 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
 @end
 
-@implementation SHDWSDKListController
+@implementation SHDWSDKListController {
+    UIBarButtonItem* _runAllButton;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Shadow Harness";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeAlways;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+    _runAllButton = [[UIBarButtonItem alloc]
+        initWithTitle:@"Run All" style:UIBarButtonItemStylePlain target:self action:@selector(runAll:)];
+    UIBarButtonItem* refresh = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh target:self action:@selector(refresh:)];
+    self.navigationItem.rightBarButtonItems = @[refresh, _runAllButton];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refresh:)
         name:SHDWDetectorResultsChanged object:nil];
 }
@@ -404,7 +411,23 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
 - (void)refresh:(id)sender {
     (void)sender;
+    BOOL running = SHDWAllDetectorsRunning();
+    _runAllButton.title = running ? @"Running" : @"Run All";
+    _runAllButton.enabled = !running;
     [self.tableView reloadData];
+}
+
+- (void)runAll:(id)sender {
+    (void)sender;
+    if(SHDWAllDetectorsRunning()) return;
+    _runAllButton.title = @"Running";
+    _runAllButton.enabled = NO;
+    __weak __typeof(self) weakSelf = self;
+    SHDWRunAllDetectorsWithCompletion(^{
+        __strong __typeof(weakSelf) self = weakSelf;
+        if(!self) return;
+        [self refresh:nil];
+    });
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView {

@@ -7,7 +7,6 @@
 #import "hooks/UniversalHooks.h"
 #import "hooks/AdapterHooks.h"
 #import "policy/PathPolicy.h"
-#import "policy/PseudoSandboxPolicy.h"
 
 #import <Shadow.h>
 #import <Shadow/Settings.h>
@@ -247,9 +246,9 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         shdw_path_rewrite_configure([prefs[SHDWUniversalPathRewriteID] boolValue]);
         shdw_memory_hiding_enabled = [prefs[SHDWUniversalMemoryLevelHidingID] boolValue];
 
-        [Shadow sharedInstance];
+        Shadow* shadow = [Shadow sharedInstance];
+        [shadow shdwConfigurePseudoSandboxMode:[prefs[SHDWUniversalPseudoSandboxModeID] integerValue]];
         shdw_own_ranges_refresh();
-        shdw_pseudo_init(prefs);
         shdw_adapter_devicecheck_configure(prefs);
         shdw_universal_register_features();
 
@@ -262,12 +261,14 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             // hook ABI. Prearm framework-independent Tier-2 coverage before
             // detector code can run. Production adapter switches install at
             // construction; the harness keeps its deferred fallback event.
-            // Harness sets this false only for its explicit maximum profile.
+            // Harness sets this false only for its explicit prearmed mode.
             // Prearm the detector-only units before its first real detector
             // runs; normal Harness launches retain the universal baseline.
-            BOOL harnessMaximumProfile = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
+            BOOL harnessPrearmed = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
                 ![prefs[SHDWUniversalHarnessBaselineID] boolValue];
-            if(hasActiveDetectorAdapter || harnessMaximumProfile) {
+            BOOL forcedPrearm = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."] ||
+                bundleIdentifier.length == 0;
+            if(hasActiveDetectorAdapter || harnessPrearmed || forcedPrearm) {
                 shdw_detector_present = YES;
                 shdw_detector_write_policy_set_enabled(YES);
                 [shdw_coordinator_instance prearmDetector];

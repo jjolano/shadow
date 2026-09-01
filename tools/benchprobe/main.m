@@ -2,8 +2,7 @@
 //
 // Times ONE representative call per hooked API group in a tight loop and
 // emits CSV rows (group,path_class,arm,iters,median_ns,p95_ns,min_ns,max_ns).
-// Mirrors hookprobe's canonical probed groups and their pref gates; a group
-// whose hook pref is off is reported as a SKIP row, exactly like hookprobe.
+// Mirrors hookprobe's canonical probed groups under the built-in profile.
 // Detector SDK groups (IOSSecuritySuite/FreeRASP/...) and AntiDebug are NOT
 // benched here — they only run when a detection library probes, which the
 // end-to-end ShadowHarness battery (arm C) measures instead.
@@ -45,73 +44,16 @@ static NSString* const kShadowFwk       = @"/var/jb/Library/Frameworks/Shadow.fr
 static NSString* const kShadowService   = @"me.jjolano.shadow.service";
 static NSString* const kControlService  = @"com.apple.system.notification_center";
 
-static NSDictionary* gPrefs = nil;
-static NSDictionary* gEffectivePrefs = nil;
 static const char* gArm = "injected";
 static uint64_t gIters = 10000;
 
 // ---------------------------------------------------------------------------
-// Effective-prefs model — copied from hookprobe (same resolution ShadowCore's
-// ctor uses for a nil bundle ID): shipped defaults overlaid with stored
-// suite values only when Global_Enabled.
+// Enabled processes always receive the complete built-in profile.
 // ---------------------------------------------------------------------------
 
-static NSSet* shdw_defaultOffKeys(void) {
-    static NSSet* set = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        set = [NSSet setWithArray:@[
-            @"Universal_Foundation", @"Universal_Memory", @"Universal_Syscall", @"Universal_Sandbox",
-            @"Universal_MachBootstrap", @"Universal_IOKit", @"Universal_AntiDebugging",
-            @"Universal_DynamicLibrariesExtra"
-        ]];
-    });
-
-    return set;
-}
-
-static NSDictionary* shdw_defaultSettings(void) {
-    static NSDictionary* dict = nil;
-    static dispatch_once_t onceToken = 0;
-
-    dispatch_once(&onceToken, ^{
-        NSMutableDictionary* d = [NSMutableDictionary dictionaryWithDictionary:@{
-            @"Universal_Filesystem" : @YES,
-            @"Universal_URLScheme"  : @YES,
-            @"Universal_EnvVars"    : @YES,
-            @"Adapter_DeviceCheck"  : @YES,
-            @"Universal_LowLevelC"  : @YES,
-            @"Universal_HideApps"   : @YES,
-            @"Universal_MemoryLevelHiding" : @YES
-        }];
-
-        for(NSString* key in shdw_defaultOffKeys()) {
-            d[key] = @NO;
-        }
-
-        dict = [d copy];
-    });
-
-    return dict;
-}
-
 static BOOL prefsEnabled(NSString* key) {
-    if(gEffectivePrefs) {
-        id value = [gEffectivePrefs objectForKey:key];
-
-        if(value) {
-            return [value boolValue];
-        }
-    }
-
-    id value = [gPrefs objectForKey:key];
-
-    if(value) {
-        return [value boolValue];
-    }
-
-    return ![shdw_defaultOffKeys() containsObject:key];
+    (void)key;
+    return YES;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,26 +285,6 @@ int main(int argc, char* argv[]) {
 
         printf("arm=%s\n", noShadow ? "stock" : "injected");
         gArm = noShadow ? "stock" : "injected";
-
-        gPrefs = [NSDictionary dictionaryWithContentsOfFile:kShadowPrefsPlist];
-
-        NSUserDefaults* ud = [[NSUserDefaults alloc] initWithSuiteName:kShadowPrefsPlist];
-        [ud registerDefaults:shdw_defaultSettings()];
-        NSMutableDictionary* eff = [shdw_defaultSettings() mutableCopy];
-
-        if([ud boolForKey:@"Global_Enabled"]) {
-            eff[@"App_Enabled"] = @YES;
-
-            for(NSString* key in shdw_defaultSettings()) {
-                id value = [ud objectForKey:key];
-
-                if(value) {
-                    eff[key] = value;
-                }
-            }
-        }
-
-        gEffectivePrefs = [eff copy];
 
         // Groups that need their framework loaded BEFORE ShadowCore's ctor
         // (absent classes are skipped silently at ctor time, never retried).

@@ -79,28 +79,27 @@ const SHDWInstallUnit* SHDWInstallUnits(NSUInteger* outCount) {
     return (const SHDWInstallUnit*)kSHDWPlugins;
 }
 
-#pragma mark - Defaults and presets
+#pragma mark - Built-in profile
 
 NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
     return @{
-        SHDWGlobalEnabledID : @(NO),
         SHDWHookLibraryID : @"auto",
         SHDWUniversalFilesystemID : @(YES),
         SHDWUniversalURLSchemeID : @(YES),
         SHDWUniversalEnvVarsID : @(YES),
-        SHDWUniversalFoundationID : @(NO),
-        SHDWUniversalMachBootstrapID : @(NO),
-        SHDWUniversalIOKitID : @(NO),
+        SHDWUniversalFoundationID : @(YES),
+        SHDWUniversalMachBootstrapID : @(YES),
+        SHDWUniversalIOKitID : @(YES),
         SHDWUniversalLowLevelCID : @(YES),
         SHDWUniversalAntiDebuggingID : @(YES),
         SHDWUniversalCodeSigningID : @(YES),
-        SHDWUniversalDynamicLibrariesExtraID : @(NO),
-        SHDWUniversalSyscallID : @(NO),
+        SHDWUniversalDynamicLibrariesExtraID : @(YES),
+        SHDWUniversalSyscallID : @(YES),
         SHDWUniversalSandboxID : @(YES),
         SHDWUniversalMemoryID : @(YES),
         SHDWUniversalHideAppsID : @(YES),
         SHDWUniversalPseudoSandboxModeID : @(0),
-        SHDWUniversalPathRewriteID : @(NO),
+        SHDWUniversalPathRewriteID : @(YES),
         SHDWUniversalMemoryLevelHidingID : @(YES),
         SHDWAdapterDeviceCheckID : @(YES),
         SHDWAdapterFreeRASPID : @(YES),
@@ -110,45 +109,6 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWAdapterSafeDeviceID : @(YES),
         SHDWAdapterJailMonkeyID : @(YES)
     };
-}
-
-static NSArray<NSString*>* SHDWPresetKeys(void) {
-    static NSArray<NSString*>* keys = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSMutableArray* mutableKeys = [NSMutableArray new];
-        for(NSString* key in SHDWDefaultHookSettings()) {
-            if([key hasPrefix:@"Universal_"] || [key hasPrefix:@"Adapter_"]) {
-                [mutableKeys addObject:key];
-            }
-        }
-        keys = [mutableKeys copy];
-    });
-    return keys;
-}
-
-NSDictionary<NSString*, id>* SHDWPresetStandard(void) {
-    NSDictionary<NSString*, id>* defaults = SHDWDefaultHookSettings();
-    NSMutableDictionary* preset = [NSMutableDictionary new];
-    for(NSString* key in SHDWPresetKeys()) {
-        preset[key] = defaults[key];
-    }
-    return preset;
-}
-
-NSDictionary<NSString*, id>* SHDWPresetMaximum(void) {
-    NSDictionary<NSString*, id>* standard = SHDWPresetStandard();
-    NSMutableDictionary* preset = [standard mutableCopy];
-    preset[SHDWUniversalFoundationID] = @(YES);
-    preset[SHDWUniversalMachBootstrapID] = @(YES);
-    preset[SHDWUniversalIOKitID] = @(YES);
-    preset[SHDWUniversalAntiDebuggingID] = @(YES);
-    preset[SHDWUniversalDynamicLibrariesExtraID] = @(YES);
-    preset[SHDWUniversalSyscallID] = @(YES);
-    preset[SHDWUniversalSandboxID] = @(YES);
-    preset[SHDWUniversalMemoryID] = @(YES);
-    preset[SHDWUniversalPathRewriteID] = @(YES);
-    return preset;
 }
 
 #pragma mark - Capability metadata
@@ -192,9 +152,9 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
 static BOOL SHDWPluginEnabled(const SHDWPlugin* plugin,
                               NSDictionary<NSString*, id>* prefs,
                               SHDWLifecycleEvent event) {
-    // Harness frameworks load per detector. Both its baseline and maximum
-    // profiles must defer target-dependent adapters until that first pass has
-    // loaded every target; production apps have no Harness profile key and
+    // Harness frameworks load per detector. Both baseline and prearmed test
+    // modes defer target-dependent adapters until that first pass has loaded
+    // every target; production apps have no Harness profile key and
     // retain their early adapter behavior.
     if(plugin->phase == SHDWPhaseSDKFallback && event == SHDWEventCtor &&
        prefs[SHDWUniversalHarnessBaselineID] != nil) {

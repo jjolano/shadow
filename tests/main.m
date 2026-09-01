@@ -394,6 +394,9 @@ static void testRulesets(void) {
 
     // restricted roots and recursion
     expectRestricted(@"/var/jb descendant (recursion/fast-path)", @"/var/jb/usr/bin/ssh");
+    expectAllowed(@"stock preboot root", @"/private/preboot");
+    CHECK(![shdw() isCPathRestricted:"/private/preboot"], "stock preboot root C surface allowed");
+    CHECK([shdw() isCPathRestricted:"/private/preboot/xyz"], "preboot descendant C surface restricted");
     expectRestricted(@"restricted root /private/preboot", @"/private/preboot/xyz");
     expectRestricted(@"restricted root /cores", @"/cores/crash");
 

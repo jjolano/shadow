@@ -7,7 +7,7 @@
 "BYPASS_SETTINGS_DESC" = "Adjust the strength of the jailbreak detection bypass. App performance may be affected.";
 
 "ROOT_APP_SETTINGS" = "Application Settings";
-"ROOT_APP_SETTINGS_DESC" = "Per-app settings will override global settings, if enabled.";
+"ROOT_APP_SETTINGS_DESC" = "Choose the applications where Shadow should run.";
 
 "APPLICATIONS" = "Applications";
 

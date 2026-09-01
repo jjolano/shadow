@@ -1,65 +1,75 @@
 #!/bin/sh
 set -eu
 
-hooks=ShadowSettings.bundle/Resources/Hooks.plist
-troubleshooting=ShadowSettings.bundle/Resources/Troubleshooting.plist
-controller=ShadowSettings.bundle/SHDWTroubleshootingListController.m
-dangerous=ShadowSettings.bundle/Resources/Dangerous.plist
-individual=ShadowSettings.bundle/Resources/Individual.plist
-adapters=ShadowSettings.bundle/Resources/Adapters.plist
+root=ShadowSettings.bundle/Resources/Root.plist
+app=ShadowSettings.bundle/Resources/App.plist
 runtime=ShadowCore.dylib/shadowcore.x
 loader=Shadow.dylib/dylib.x
 settings=Shadow.framework/Settings.m
+profile=Shadow.framework/HookConfiguration.m
 
-if grep -q '<string>HK_Library</string>' "$hooks"; then
-    echo 'SETTINGS DRIFT: backend picker returned to the main Hooks page'
+if grep -Rqs --exclude-dir=.theos 'SHDWPreset' Shadow.framework ShadowCore.dylib ShadowSettings.bundle; then
+    echo 'SETTINGS DRIFT: preset API or UI returned'
     exit 1
 fi
 
-grep -q '<string>SHDWTroubleshootingListController</string>' "$hooks" || {
-    echo 'SETTINGS DRIFT: Hooks page no longer links to Troubleshooting'
+if grep -Eq 'Global_Enabled|SHDWHooksListController|BypassPreset' "$root"; then
+    echo 'SETTINGS DRIFT: root pane exposes global or profile controls'
     exit 1
-}
+fi
 
-grep -q '<string>HK_Library</string>' "$troubleshooting" || {
-    echo 'SETTINGS DRIFT: Troubleshooting lost the backend override'
+if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 1 ] ||
+   ! grep -q '<string>App_Enabled</string>' "$app" ||
+   grep -Eq 'App_Disabled|App_FollowGlobal|BypassPreset|Universal_|Adapter_' "$app"; then
+    echo 'SETTINGS DRIFT: app pane is not one App_Enabled switch'
     exit 1
-}
+fi
 
-grep -q 'applicationIDInContext' "$controller" || {
-    echo 'SETTINGS DRIFT: backend override no longer preserves per-app scope'
-    exit 1
-}
+for obsolete in Hooks Individual Dangerous Adapters Troubleshooting; do
+    if [ -e "ShadowSettings.bundle/Resources/$obsolete.plist" ]; then
+        echo "SETTINGS DRIFT: obsolete $obsolete pane returned"
+        exit 1
+    fi
+done
 
-grep -q '<string>SHDWIndividualListController</string>' "$hooks" || {
-    echo 'SETTINGS DRIFT: Hooks page no longer links to Adapters'
-    exit 1
-}
-grep -q '<string>Adapters</string>' "$hooks" || {
-    echo 'SETTINGS DRIFT: Hooks page no longer parameterizes the Adapters plist'
-    exit 1
-}
-
-for key in Adapter_DeviceCheck Adapter_FreeRASP Adapter_DeviceSecurityKit Adapter_IOSSecuritySuite Adapter_DTTJailbreakDetection Adapter_SafeDevice Adapter_JailMonkey; do
-    grep -q "<string>$key</string>" "$adapters" || {
-        echo "SETTINGS DRIFT: Adapters page lost $key"
+for key in SHDWUniversalFoundationID SHDWUniversalMachBootstrapID SHDWUniversalIOKitID SHDWUniversalSyscallID; do
+    grep -q "$key : @(YES)" "$profile" || {
+        echo "SETTINGS DRIFT: built-in profile does not enable $key"
         exit 1
     }
-    if grep -q "<string>$key</string>" "$dangerous" || grep -q "<string>$key</string>" "$individual"; then
-        echo "SETTINGS DRIFT: $key must stay on the dedicated Adapters page"
-        exit 1
-    fi
 done
 
-for plist in "$individual" "$dangerous"; do
-    if grep -q '<string>Hook_' "$plist" || grep -q '<string>DetectorPatch_' "$plist"; then
-        echo "SETTINGS DRIFT: $plist still emits legacy hook keys"
-        exit 1
-    fi
-done
+grep -q 'result\[SHDWAppEnabledID\] = @(enabled)' "$settings" &&
+! grep -q 'addEntriesFromDictionary' "$settings" &&
+grep -q 'SHDWApplicationEnabled' "$loader" &&
+grep -q 'bundleIdentifier.length == 0' "$settings" || {
+    echo 'SETTINGS DRIFT: runtime no longer uses the fixed profile with per-app activation'
+    exit 1
+}
 
-grep -q 'SHDWMigratedHookSettings' Shadow.framework/SettingsMigration.m || {
-    echo 'SETTINGS DRIFT: renamed hook preferences no longer migrate'
+grep -q 'kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides"' "$settings" &&
+grep -q 'NSDictionary\* overrides = isDetectorRunner' "$settings" &&
+grep -q 'SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID' "$settings" &&
+grep -q 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' "$settings" &&
+grep -q 'me.jjolano.shadow.test.iossecuritysuite' "$settings" || {
+    echo 'SETTINGS DRIFT: detector overrides must remain private to test runners'
+    exit 1
+}
+
+grep -q 'SHDWSingleToggleMigrationID, @"DetectorLog"' ShadowSettings.bundle/SHDWRootListController.m || {
+    echo 'SETTINGS DRIFT: exports no longer preserve single-toggle migration state'
+    exit 1
+}
+
+grep -q 'sanitized\[SHDWSingleToggleMigrationID\] = @YES' ShadowSettings.bundle/SHDWRootListController.m &&
+grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' ShadowSettings.bundle/SHDWPrefs.m || {
+    echo 'SETTINGS DRIFT: imported and edited app toggles must use explicit single-toggle semantics'
+    exit 1
+}
+
+grep -q 'SHDWAppDisabledID.*SHDWAppEnabledID' Shadow.framework/SettingsMigration.m ||
+grep -q 'migrated\[SHDWAppEnabledID\] = @NO' Shadow.framework/SettingsMigration.m || {
+    echo 'SETTINGS DRIFT: legacy App_Disabled migration is missing'
     exit 1
 }
 
@@ -71,8 +81,7 @@ for source in "$loader" "$settings"; do
 done
 
 grep -q 'return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"' tests/stealth_device.py &&
-grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-b.sh &&
-grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-c.sh || {
+grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-b.sh || {
     echo 'SETTINGS DRIFT: device tools must edit the canonical preference file'
     exit 1
 }

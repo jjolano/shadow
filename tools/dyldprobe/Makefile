@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = dyldprobe
 
-dyldprobe_FILES = main.m
+dyldprobe_FILES = main.m ../../DetectorRunners/RunnerSupport.m
 dyldprobe_FRAMEWORKS = UIKit Foundation
 dyldprobe_CFLAGS = -fobjc-arc
 dyldprobe_CODESIGN_FLAGS = -Sentitlements.plist

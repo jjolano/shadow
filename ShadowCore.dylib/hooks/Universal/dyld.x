@@ -2706,7 +2706,14 @@ void shdw_universal_symlookup(SHDWHookSession* hooks) {
 }
 
 void shdw_universal_symaddrlookup(SHDWHookSession* hooks) {
-    [hooks hookFunction:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
+    BOOL entrypointInstalled = [hooks hookFunction:dladdr withReplacement:replaced_dladdr outOldPtr:(void **) &original_dladdr];
+
+    // iOS 15 shared-cache callers can retain a direct import despite the
+    // entrypoint route. Dynamic lookups use the policy table above; cover
+    // already-bound direct imports as well.
+    [hooks hookRebindSymbol:@"dladdr"
+            withReplacement:replaced_dladdr
+                   outOldPtr:entrypointInstalled ? NULL : (void **) &original_dladdr];
 }
 
 void shdw_universal_dyld_verify(void) {

@@ -1,7 +1,6 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "UniversalHooks.h"
-#import "../../policy/PseudoSandboxPolicy.h"
 
 #import <unistd.h>
 #import <wordexp.h>
@@ -255,13 +254,7 @@ static BOOL shdw_sandbox_check_file_denied(const char* operation, const char* pa
         return NO;
     }
 
-    BOOL belt = [_shadow isPathRestricted:pathString options:options];
-    if(shdw_pseudo_enabled()) {
-        shdw_pseudo_audit_log(path, belt, operation);
-        // Strict enforce is central in RestrictionEngine — isPathRestricted
-        // already returns pseudo deny when strict+allowed check fails.
-    }
-    return belt;
+    return [_shadow isPathRestricted:pathString options:options];
 }
 
 // Shared name/path inspection for sandbox_check and

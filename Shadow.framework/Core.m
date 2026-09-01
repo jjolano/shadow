@@ -6,6 +6,8 @@
 #import "RestrictionQuery.h"
 
 #import <dlfcn.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 #import <pwd.h>
 #import <stdlib.h>
 
@@ -39,6 +41,19 @@ static _Thread_local NSUInteger shdw_internal_busy = 0;
 __attribute__((visibility("default")))
 NSUInteger shdwInternalBusy(void) {
     return shdw_internal_busy;
+}
+
+__attribute__((visibility("default")))
+BOOL shdwInstallHarnessSDKFallback(void) {
+    __block BOOL installed = NO;
+    SHADOW_INTERNAL_SCOPE {
+        Class coordinator = objc_getClass("SHDWHookCoordinator");
+        SEL selector = sel_registerName("shdw_installHarnessSDKFallback");
+        if(coordinator && [coordinator respondsToSelector:selector]) {
+            installed = ((BOOL (*)(id, SEL))objc_msgSend)((id)coordinator, selector);
+        }
+    }
+    return installed;
 }
 
 @implementation Shadow
@@ -160,6 +175,10 @@ NSUInteger shdwInternalBusy(void) {
     });
 
     return sharedInstance;
+}
+
+- (void)shdwConfigurePseudoSandboxMode:(NSInteger)mode {
+    [engine configurePseudoSandboxMode:mode];
 }
 
 - (BOOL)isAddrRestricted:(const void *)addr {

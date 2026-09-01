@@ -4,10 +4,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${THEOS:?THEOS must point to Theos}"
 export PATH=/tmp/swift-5.8.1-RELEASE-ubuntu22.04/usr/bin:$PATH
 ABI_ARGS=()
+RUNNER_ARGS=()
 if [ "$(uname -s)" = Linux ]; then
     tc=${NEWABI_TOOLCHAIN:-$THEOS/toolchain/modern/linux/iphone}
     [ -x "$tc/bin/clang" ] || { echo "missing new-ABI toolchain: $tc" >&2; exit 1; }
     ABI_ARGS=("SDKBINPATH=$tc/bin" "IS_NEW_ABI=1")
+    RUNNER_ARGS=("TARGET_CC=$THEOS/toolchain/linux/iphone/bin/clang" "TARGET_CXX=$THEOS/toolchain/linux/iphone/bin/clang++" "SWIFTBINPATH=$THEOS/toolchain/linux/iphone/bin")
 fi
 m() { make "$@" ${ABI_ARGS[@]+"${ABI_ARGS[@]}"}; }
 "$ROOT/scripts/fetch-detector-sdks.sh" all
@@ -20,6 +22,14 @@ sed -i 's/String(validatingCString: cName)/String(validatingUTF8: cName)/' \
 # under RN without -Werror); fix the type (idempotent).
 sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeActived = [self isDebugged];/' \
     "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
+# This Linux Theos Swift toolchain has no iOS _Concurrency module. SafetyNet's
+# jailbreak detector only awaits its main-thread URL-scheme call, so make that
+# one-shot path synchronous; the runner invokes the same underlying checks.
+sed -i \
+    -e 's/static func detect() async -> Result/static func detect() -> Result/' \
+    -e 's/result.urlScheme = await checkURLSchemes()/result.urlScheme = checkURLSchemes()/' \
+    -e '/^[[:space:]]*@MainActor$/d' \
+    "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/JailbreakDetector.swift"
 # The real Roothider repo is a single main.m app whose detect_* functions only
 # LOG findings; the harness compiles it in-process. Filter it (idempotent):
 # redirect LOG to the recorder header, drop the app-scaffolding (NSObject
@@ -30,7 +40,13 @@ import sys, re
 p = sys.argv[1]
 s = open(p).read()
 s = re.sub(r'#define LOG\(\.\.\.\) NSLog\(@__VA_ARGS__\)', '#include "RoothiderLog.h"', s)
-s = re.sub(r'^#include <xpc_private.h>\n', '', s, flags=re.M)
+s = re.sub(
+    r'^#include <xpc_private.h>\n',
+    '#include <xpc/xpc.h>\n'
+    'extern int xpc_pipe_routine(xpc_object_t pipe, xpc_object_t message, xpc_object_t *reply);\n'
+    'extern int xpc_pipe_routine_with_flags(xpc_object_t pipe, xpc_object_t message, xpc_object_t *reply, uint32_t flags);\n',
+    s, flags=re.M)
+s = s.replace('xpc_dictionary_create_empty()', 'xpc_dictionary_create(NULL, NULL, 0)')
 s = re.sub(r'/\* bypass all jb-bypass.*\Z', '', s, flags=re.S)
 s = re.sub(
     r'(?m)^[ \t]*canOpen = \[\[UIApplication sharedApplication\] openURL:.*\n'
@@ -49,7 +65,11 @@ s = s.replace('LOG("jailbreak actived! %s : %d\\n", jbsigs[i].tag, siginfo.fg_si
 s = s.replace('kern_return_t kr = bootstrap_look_up(bootstrap_port, (char *)name, &port);',
               'bootstrap_look_up(bootstrap_port, (char *)name, &port);')
 s = s.replace('        NSString* appIdentifier = [appBundle performSelector:@selector(bundleIdentifier)];',
-              '        // NSString* appIdentifier = [appBundle performSelector:@selector(bundleIdentifier)];')
+               '        // NSString* appIdentifier = [appBundle performSelector:@selector(bundleIdentifier)];')
+s = s.replace('NSLog(@"detect jbapp plugin: %@ %lx", pluginIdentifier, pluginIdentifier.hash);',
+              'LOG("detect jbapp plugin: %s %lx\\n", pluginIdentifier.UTF8String, pluginIdentifier.hash);')
+s = s.replace('(__bridge id)kSecAttrIsPermanent: @YES,',
+              '(__bridge id)kSecAttrIsPermanent: @NO,')
 s = re.sub(r'#define JBSIGS\(l,h,x\) assert\(l==sizeof\(x\)\); static uint8_t sig_##h\[\] = x;\n(#undef JBSIGS\n)?#include "jbsigs.h"\n',
               '#define JBSIGS(l,h,x) assert(l==sizeof(x)); static uint8_t sig_##h[] = x;\n#include "jbsigs.h"\n#undef JBSIGS\n',
               s, count=1)
@@ -88,14 +108,28 @@ patch_talsec "$ROOT/.detector-deps/Free-RASP-iOS-6.4.0/Talsec/TalsecRuntime.xcfr
 m -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
-m -C "$ROOT/tools/dyldprobe" stage THEOS_PACKAGE_SCHEME=rootless \
+m -C "$ROOT/Shadow.framework" stage THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+    ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
+    ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
+m -C "$ROOT/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+    TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
+    "${RUNNER_ARGS[@]}" \
+    ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
+    ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
+m -C "$ROOT/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache
-mkdir -p "$ROOT/ShadowHarness/concurrency"
-cp -a "$THEOS/toolchain/linux/iphone/lib/swift/iphoneos/prebuilt-modules/16.4/Swift.swiftmodule" "$THEOS/toolchain/linux/iphone/lib/swift/iphoneos/prebuilt-modules/16.4/_Concurrency.swiftmodule" "$ROOT/ShadowHarness/concurrency/"
-make -C "$ROOT/ShadowHarness/detector-frameworks" FINALPACKAGE=1
-make -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+for runner in \
+    IOSSecuritySuite JailbreakDetector SecurityToolkit DTTJailbreakDetection \
+    FreeRASP Roothider BATJailbreakGuard SafetyNet DeviceSecurityKit JailMonkey; do
+    m -C "$ROOT/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+        TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
+        "${RUNNER_ARGS[@]}" \
+        ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache \
+        ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache
+done
+m -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug"
+    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug" INCLUDE_DETECTOR_RUNNERS=1

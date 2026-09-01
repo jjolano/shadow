@@ -5,33 +5,12 @@
 #import "Ruleset.h"
 #import <Shadow/JBPath.h>
 
+#import "../common.h"
+
 #import <limits.h>
 #import <unistd.h>
 #import <dlfcn.h>
 #import <string.h>
-
-// Ponytail: central strict enforce via dlsym + TLS guard (no PseudoSandboxPolicy header import)
-static _Thread_local BOOL _inPseudoEval = NO;
-
-static BOOL shdwPseudoShouldDeny(const char *cpath) {
-    if(!cpath || !cpath[0]) return NO;
-    if(_inPseudoEval) return NO;
-#ifndef SHADOW_TEST_HARNESS
-    static BOOL (*fn)(const char*) = NULL;
-    static BOOL didLookup = NO;
-    if(!didLookup) {
-        didLookup = YES;
-        fn = dlsym(RTLD_DEFAULT, "shdw_pseudo_should_deny");
-    }
-    if(!fn) return NO;
-    _inPseudoEval = YES;
-    BOOL r = fn(cpath);
-    _inPseudoEval = NO;
-    return r;
-#else
-    return NO;
-#endif
-}
 
 static BOOL shdwDetectorWritePolicyEnabled(void) {
     static BOOL (*fn)(void) = NULL;
@@ -103,6 +82,92 @@ static BOOL shdwIsSandboxExempt(ShadowRestrictionContext context, NSString* path
     return shdwIsGroupContainerPath(context, path);
 }
 
+static NSString* const kPseudoStockRoots[] = {
+    @"/usr", @"/bin", @"/sbin", @"/Applications", @"/Library", @"/System", @"/dev"
+};
+
+static BOOL shdwPseudoWouldDeny(ShadowRestrictionContext context, NSString* path) {
+    if(!context.hasAppSandbox || !path.length) return NO;
+    if(shdwIsSandboxExempt(context, path)) return NO;
+
+    for(NSUInteger i = 0; i < sizeof(kPseudoStockRoots) / sizeof(kPseudoStockRoots[0]); i++) {
+        if(shdwPathIsWithin(path, kPseudoStockRoots[i])) return NO;
+    }
+
+    if([path isEqualToString:@"/private/preboot"] || [path isEqualToString:@"/dev/null"] ||
+       [path isEqualToString:@"/var/mobile/Library/Preferences/.GlobalPreferences.plist"] ||
+       [path hasPrefix:@"/var/mobile/Library/Preferences/com.apple."] ||
+       [path hasPrefix:@"/var/mobile/Library/SplashBoard/Snapshots/com.apple."] ||
+       [path hasPrefix:@"/tmp/com.apple."]) return NO;
+
+    return YES;
+}
+
+#ifndef SHADOW_TEST_HARNESS
+#define kPseudoAuditLogKey @"DetectorLog"
+#define kPseudoAuditMarker @"  Pseudo sandbox would deny "
+#define kPseudoAuditCap 100
+
+static dispatch_queue_t shdwPseudoAuditQueue;
+static NSMutableSet* shdwPseudoAuditedKeys;
+
+static BOOL shdwIsPseudoAuditEntry(id value) {
+    return [value isKindOfClass:[NSString class]] &&
+        [(NSString*)value rangeOfString:kPseudoAuditMarker].location != NSNotFound;
+}
+
+static void shdwRecordPseudoAudit(NSString* path, ShadowRestrictionOperation operation) {
+    if(!path.length) return;
+
+    static dispatch_once_t once = 0;
+    dispatch_once(&once, ^{
+        shdwPseudoAuditQueue = dispatch_queue_create("me.jjolano.shadow.pseudo-audit", DISPATCH_QUEUE_SERIAL);
+        shdwPseudoAuditedKeys = [NSMutableSet new];
+    });
+
+    NSString* bundleID = [NSBundle mainBundle].bundleIdentifier ?: @"unknown";
+    NSString* operationName = operation == ShadowRestrictionOperationWrite ? @"write" : @"read";
+    NSString* key = [NSString stringWithFormat:@"%@|%@|%@", bundleID, operationName, path];
+
+    dispatch_async(shdwPseudoAuditQueue, ^{
+        if([shdwPseudoAuditedKeys containsObject:key]) return;
+        [shdwPseudoAuditedKeys addObject:key];
+
+        SHADOW_INTERNAL_SCOPE {
+            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
+            NSMutableArray* entries = [[defaults arrayForKey:kPseudoAuditLogKey] mutableCopy] ?: [NSMutableArray new];
+            NSUInteger pseudoEntries = 0;
+
+            for(id entry in entries) {
+                if(shdwIsPseudoAuditEntry(entry)) pseudoEntries++;
+            }
+            for(NSUInteger i = 0; pseudoEntries >= kPseudoAuditCap && i < entries.count;) {
+                if(shdwIsPseudoAuditEntry(entries[i])) {
+                    [entries removeObjectAtIndex:i];
+                    pseudoEntries--;
+                } else {
+                    i++;
+                }
+            }
+
+            NSDateFormatter* formatter = [NSDateFormatter new];
+            formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+            formatter.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+            NSString* timestamp = [formatter stringFromDate:[NSDate date]];
+            [entries addObject:[NSString stringWithFormat:@"%@  Pseudo sandbox would deny %@ %@  %@",
+                timestamp, operationName, path, bundleID]];
+            [defaults setObject:entries forKey:kPseudoAuditLogKey];
+            [defaults synchronize];
+        }
+    });
+}
+#else
+static void shdwRecordPseudoAudit(NSString* path, ShadowRestrictionOperation operation) {
+    (void)path;
+    (void)operation;
+}
+#endif
+
 static BOOL shdwDetectorWriteDenied(ShadowRestrictionContext context,
                                     ShadowRestrictionQuery* query,
                                     NSString* path) {
@@ -163,6 +228,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 @implementation ShadowRestrictionEngine {
     ShadowRulesetStore* store;
     ShadowRestrictionContext _context;
+    ShadowPseudoSandboxMode pseudoSandboxMode;
 
     // One generation-aware decision cache split by responsibility:
     //   - sharedCache (tier 1, top-level verdicts): key = raw query path, or
@@ -184,6 +250,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 - (instancetype)initWithContext:(ShadowRestrictionContext)context {
     if((self = [super init])) {
         _context = context;
+        pseudoSandboxMode = ShadowPseudoSandboxModeOff;
         store = [ShadowRulesetStore new];
         sharedCache = [NSCache new];
         [sharedCache setCountLimit:1024];
@@ -192,6 +259,18 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     }
 
     return self;
+}
+
+- (void)configurePseudoSandboxMode:(NSInteger)mode {
+    ShadowPseudoSandboxMode normalized = mode >= ShadowPseudoSandboxModeStrict
+        ? ShadowPseudoSandboxModeStrict
+        : mode == ShadowPseudoSandboxModeAudit ? ShadowPseudoSandboxModeAudit
+        : ShadowPseudoSandboxModeOff;
+
+    if(pseudoSandboxMode != normalized) {
+        pseudoSandboxMode = normalized;
+        [sharedCache removeAllObjects];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +374,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         NSString* path = query.path;
+        ShadowPseudoSandboxMode pseudoMode = pseudoSandboxMode;
         // ponytail: per-thread last-path cache for tight loops. Most probes hit same 2-3 paths.
         // Isolated per-engine: TestNonSandboxed creates two engines with different
         // contexts (sandboxed vs not) that must not share the same cached verdict.
@@ -303,8 +383,9 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         static __thread BOOL lastValid = NO;
         static __thread NSUInteger lastGen = 0;
         static __thread uintptr_t lastEngine = 0;
+        static __thread ShadowPseudoSandboxMode lastPseudoMode = ShadowPseudoSandboxModeOff;
         NSUInteger gen = [store generation];
-        if (lastValid && lastEngine == (uintptr_t)self && lastGen == gen && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
+        if (lastValid && lastEngine == (uintptr_t)self && lastGen == gen && lastPseudoMode == pseudoMode && path && query.workingDirectory == nil && query.operation == ShadowRestrictionOperationRead && query.flags == ShadowRestrictionFlagResolve) {
             const char *cur = [path fileSystemRepresentation];
             if (cur && strcmp(cur, lastPathBuf) == 0) return lastVerdict;
         }
@@ -335,35 +416,14 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
             if(cached >= 0) {
                 const char *cur = [path fileSystemRepresentation];
-                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; }
+                if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = (BOOL)cached; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; lastPseudoMode = pseudoMode; }
                 return (BOOL)cached;
             }
         }
 
         BOOL restricted = NO;
+        BOOL pseudoWouldDeny = NO;
         NSString* expanded = nil;
-
-        // Central strict enforce: before tilde/workdir, check raw craw (+ joined form for relative)
-        // Harness-safe via dlsym + _inPseudoEval TLS guard; stdRaw exempt group containers.
-        {
-            NSString *craw = path;
-            if(!_inPseudoEval && craw) {
-                BOOL isRel = ![craw isAbsolutePath] && ![craw hasPrefix:@"~"];
-                BOOL crawExempt = shdwIsGroupContainerPath(_context, craw);
-                if(!crawExempt) {
-                    const char *ccraw = [craw fileSystemRepresentation];
-                    if(ccraw && shdwPseudoShouldDeny(ccraw)) { restricted = YES; goto done; }
-                    if(isRel) {
-                        NSString *joinedRaw = shdwJoinWorkingDirectory(craw, query.workingDirectory);
-                        joinedRaw = [Shadow getStandardizedPath:joinedRaw];
-                        if(!shdwIsGroupContainerPath(_context, joinedRaw)) {
-                            const char *cj = [joinedRaw fileSystemRepresentation];
-                            if(cj && shdwPseudoShouldDeny(cj)) { restricted = YES; goto done; }
-                        }
-                    }
-                }
-            }
-        }
 
         // Tilde: deny on unresolvable user; expand otherwise.
         expanded = shdwExpandTilde(path);
@@ -384,6 +444,16 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         // Standardize.
         path = [Shadow getStandardizedPath:path];
 
+        if(pseudoMode != ShadowPseudoSandboxModeOff) {
+            pseudoWouldDeny = shdwPseudoWouldDeny(_context, path);
+        }
+
+        // This stock directory must remain reachable: FreeRASP treats an
+        // open failure on the exact path as native jailbreak evidence.
+        if([path isEqualToString:@"/private/preboot"]) {
+            return NO;
+        }
+
         const char* detectorPath = [path fileSystemRepresentation];
         if(detectorPath && shdwDetectorPathRestricted(detectorPath)) {
             restricted = YES;
@@ -398,11 +468,12 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         // Run checks if path is outside the app sandbox.
         BOOL shouldCheckPath = !shdwIsSandboxExempt(_context, path);
 
-        // Resolve-before-exempt. shdwResolveTarget owns the per-thread
-        // realpath guard, so no check is needed here.
         BOOL noFollow = (query.flags & ShadowRestrictionFlagNoFollow) != 0;
 
-        if(!shouldCheckPath && !noFollow) {
+        // Strict mode must not let a container or stock-root symlink escape
+        // the allowlist. The regular belt only needs this re-check for
+        // sandbox-exempt paths, so preserve that cheaper off-mode behavior.
+        if(!noFollow && (pseudoMode != ShadowPseudoSandboxModeOff || !shouldCheckPath)) {
             NSString* resolved = shdwResolveTarget(path);
 
             if(resolved) {
@@ -411,12 +482,18 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
                 // keyed on the un-resolved form still hit.
                 resolved = [Shadow getStandardizedPath:resolved];
 
-                BOOL resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
-                    || [self _evaluatePathRestriction:resolved query:query];
+                if(pseudoMode != ShadowPseudoSandboxModeOff && shdwPseudoWouldDeny(_context, resolved)) {
+                    pseudoWouldDeny = YES;
+                }
 
-                if(resolvedRestricted) {
-                    restricted = YES;
-                    goto done;
+                if(!shouldCheckPath) {
+                    BOOL resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
+                        || [self _evaluatePathRestriction:resolved query:query];
+
+                    if(resolvedRestricted) {
+                        restricted = YES;
+                        goto done;
+                    }
                 }
             }
         }
@@ -447,10 +524,16 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         done:
+        if(pseudoMode == ShadowPseudoSandboxModeAudit && pseudoWouldDeny && !restricted) {
+            shdwRecordPseudoAudit(path, query.operation);
+        } else if(pseudoMode == ShadowPseudoSandboxModeStrict && pseudoWouldDeny) {
+            restricted = YES;
+        }
+
         if(cacheable) {
             [self _storeVerdict:restricted forKey:cacheKey generation:[store generation] cache:sharedCache];
             const char *cur = [query.path fileSystemRepresentation];
-            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; }
+            if (cur) { strlcpy(lastPathBuf, cur, sizeof(lastPathBuf)); lastVerdict = restricted; lastValid = YES; lastGen = gen; lastEngine = (uintptr_t)self; lastPseudoMode = pseudoMode; }
         }
 
         return restricted;

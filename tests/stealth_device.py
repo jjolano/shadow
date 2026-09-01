@@ -29,7 +29,26 @@ NONCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 CORE_COMMANDS = {
     "selftest", "preflight", "inventory", "import-stock", "launch",
-    "pull-report", "run-hookprobe", "collect", "restore",
+    "pull-report", "run-hookprobe", "run-all", "adapter-matrix", "collect", "restore",
+}
+RUN_ALL_REPORT_IDS = (
+    "dyldprobe", "iossecuritysuite", "jailbreakdetector", "securitytoolkit",
+    "dttjailbreakdetection", "freerasp", "roothider", "batjailbreakguard",
+    "safetynet", "devicesecuritykit", "jailmonkey",
+)
+DETECTOR_RUNNER_OVERRIDE_KEY = "Test_DetectorOverrides"
+RUNNER_BUNDLES = {
+    "iossecuritysuite": "me.jjolano.shadow.test.iossecuritysuite",
+    "dttjailbreakdetection": "me.jjolano.shadow.test.dtt",
+    "freerasp": "me.jjolano.shadow.test.freerasp",
+    "devicesecuritykit": "me.jjolano.shadow.test.devicesecuritykit",
+    "jailmonkey": "me.jjolano.shadow.test.jailmonkey",
+}
+ADAPTER_MATRIX_RUNNERS = {
+    "Adapter_DeviceCheck": ("dttjailbreakdetection", "jailmonkey"),
+    "Adapter_FreeRASP": ("freerasp",),
+    "Adapter_DeviceSecurityKit": ("devicesecuritykit",),
+    "Adapter_IOSSecuritySuite": ("iossecuritysuite",),
 }
 SSH_OPTIONS = (
     "-o", "StrictHostKeyChecking=no",
@@ -104,6 +123,42 @@ def read_json(path: pathlib.Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         fail(f"JSON object required: {path}")
     return value
+
+
+def application_enabled(app: dict[str, Any], legacy_global: bool, migrated: bool) -> bool:
+    if app.get("App_Disabled"):
+        return False
+    if not migrated and legacy_global:
+        return True
+    return bool(app["App_Enabled"]) if "App_Enabled" in app else legacy_global
+
+
+def detector_report_error(value: dict[str, Any], identifier: str) -> str | None:
+    sdk = value.get("sdk")
+    if not isinstance(sdk, dict) or sdk.get("id") != identifier:
+        return f"invalid {identifier} report identity"
+    if type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1:
+        return f"invalid {identifier} report schema"
+    outcome = value.get("outcome")
+    if not isinstance(outcome, str) or outcome not in {"clean", "jailbroken"}:
+        return f"{identifier} outcome is not conclusive"
+    rounds = value.get("rounds")
+    if not isinstance(rounds, list) or not rounds:
+        return f"invalid {identifier} report rounds"
+    all_clean = True
+    for round_value in rounds:
+        checks = round_value.get("checks") if isinstance(round_value, dict) else None
+        clean = round_value.get("clean") if isinstance(round_value, dict) else None
+        if type(clean) is not bool or not isinstance(checks, list) or not checks:
+            return f"{identifier} contains an incomplete round"
+        if any(not isinstance(check, dict) or type(check.get("passed")) is not bool for check in checks):
+            return f"{identifier} contains an invalid check"
+        if clean != all(check["passed"] for check in checks):
+            return f"{identifier} round result is inconsistent"
+        all_clean &= clean
+    if (outcome == "clean") != all_clean:
+        return f"{identifier} outcome is inconsistent"
+    return None
 
 
 def owned_regular(path: pathlib.Path) -> None:
@@ -1064,9 +1119,6 @@ printf 'PS_END\\n'
             fail(f"unsupported bundle ID: {bundle}")
 
     def preferences_remote(self) -> str:
-        result = self.remote("test -d /var/jb", privileged=True)
-        if result.code == 0:
-            return "/var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
     def current_mode(self, bundle: str) -> str:
@@ -1078,14 +1130,130 @@ printf 'PS_END\\n'
             if self.scp_from(remote, path).code:
                 fail("cannot determine requested mode")
             with path.open("rb") as handle:
-                app = plistlib.load(handle).get(bundle, {})
+                prefs = plistlib.load(handle)
+                app = prefs.get(bundle, {})
             if not isinstance(app, dict):
                 fail("preferences app entry is not a dictionary")
-            return "uninjected" if app.get("App_Disabled") else "injected" if app.get("App_Enabled") else "uninjected"
+            enabled = application_enabled(app, bool(prefs.get("Global_Enabled")),
+                                          bool(prefs.get("SingleToggleMigrated")))
+            return "injected" if enabled else "uninjected"
         except (OSError, plistlib.InvalidFileException) as exc:
             fail(f"cannot determine requested mode: {exc}")
         finally:
             path.unlink(missing_ok=True)
+
+    def matrix_preferences(
+        self,
+        original: dict[str, Any],
+        adapter: str,
+        report_ids: tuple[str, ...],
+        disabled: bool,
+    ) -> dict[str, Any]:
+        result = dict(original)
+        for report_id in report_ids:
+            bundle = RUNNER_BUNDLES[report_id]
+            existing = result.get(bundle, {})
+            if not isinstance(existing, dict):
+                fail(f"preferences app entry is not a dictionary: {bundle}")
+            app = dict(existing)
+            if disabled:
+                app[DETECTOR_RUNNER_OVERRIDE_KEY] = {adapter: False}
+            else:
+                app.pop(DETECTOR_RUNNER_OVERRIDE_KEY, None)
+            result[bundle] = app
+        return result
+
+    def preference_metadata(self, remote: str) -> tuple[str, str, str]:
+        result = self.remote(f"stat -c '%u:%g:%a' {shlex.quote(remote)}")
+        fields = result.stdout.strip().split(":") if result.code == 0 else []
+        if len(fields) != 3 or not all(field.isdigit() for field in fields):
+            fail("cannot read preferences metadata")
+        return fields[0], fields[1], fields[2]
+
+    def install_preferences_file(self, source: pathlib.Path, metadata: tuple[str, str, str]) -> None:
+        owned_regular(source)
+        remote = self.preferences_remote()
+        user, group, mode = metadata
+        temporary = f"/var/mobile/Media/.shadow-adapter-matrix-{self.ctx.run_id}-{os.getpid()}-{secrets.token_hex(3)}.plist"
+        capture = self.require_capture()
+        if self.scp_to(source, temporary, stderr=capture.stderr).code:
+            fail("cannot upload adapter matrix preferences")
+        command = (
+            f"install -o {shlex.quote(user)} -g {shlex.quote(group)} -m {shlex.quote(mode)} "
+            f"{shlex.quote(temporary)} {shlex.quote(remote)} && "
+            f"rm -f {shlex.quote(temporary)}"
+        )
+        if self.remote(command, privileged=True, stdout=capture.stdout, stderr=capture.stderr, append=True).code:
+            fail("cannot install adapter matrix preferences")
+        self.remote(
+            "launchctl kill SIGTERM gui/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || launchctl kill SIGTERM user/501/com.apple.cfprefsd.xpc.daemon 2>/dev/null || true"
+        )
+        observed = self.remote(f"sha256sum {shlex.quote(remote)} | cut -d' ' -f1")
+        if observed.code or observed.stdout.strip() != sha256_file(source):
+            fail("adapter matrix preferences hash mismatch")
+
+    def prepare_adapter_matrix_preferences(
+        self,
+        adapter: str,
+        report_ids: tuple[str, ...],
+    ) -> tuple[str, pathlib.Path, tuple[str, str, str], pathlib.Path, pathlib.Path]:
+        capture = self.require_capture()
+        remote = self.preferences_remote()
+        if self.remote(f"test -f {shlex.quote(remote)} && test ! -L {shlex.quote(remote)}").code:
+            fail("preferences file is missing or unsafe")
+        backup = capture.directory / "preferences.before.plist"
+        if self.scp_from(remote, backup, stderr=capture.stderr).code:
+            fail("cannot back up preferences")
+        metadata = self.preference_metadata(remote)
+        try:
+            with backup.open("rb") as handle:
+                original = plistlib.load(handle)
+        except (OSError, plistlib.InvalidFileException) as exc:
+            fail(f"cannot read preferences: {exc}")
+        if not isinstance(original, dict):
+            fail("preferences root is not a dictionary")
+        control = capture.directory / "preferences.control.plist"
+        candidate = capture.directory / "preferences.adapter-off.plist"
+        for path, value in (
+            (control, self.matrix_preferences(original, adapter, report_ids, False)),
+            (candidate, self.matrix_preferences(original, adapter, report_ids, True)),
+        ):
+            with path.open("wb") as handle:
+                plistlib.dump(value, handle, fmt=plistlib.FMT_BINARY, sort_keys=True)
+        event = self.new_event()
+        recovery = "|".join((str(backup), remote, *metadata))
+        self.journal_event(event, "detector-overrides", remote, recovery, "pending")
+        return event, backup, metadata, control, candidate
+
+    def adapter_report_outcomes(
+        self,
+        manifest: pathlib.Path,
+        report_ids: tuple[str, ...],
+    ) -> tuple[dict[str, str], str | None]:
+        value = read_json(manifest)
+        artifacts = value.get("artifacts")
+        if not isinstance(artifacts, list):
+            return {}, "Run All manifest has no artifacts"
+        paths = {
+            item.get("role"): pathlib.Path(item["path"])
+            for item in artifacts
+            if isinstance(item, dict) and isinstance(item.get("role"), str) and isinstance(item.get("path"), str)
+        }
+        outcomes: dict[str, str] = {}
+        for report_id in report_ids:
+            report = paths.get(f"detector-report:{report_id}")
+            if report is None:
+                return {}, f"missing {report_id} report artifact"
+            try:
+                self._evidence_regular(report, f"{report_id} report")
+                value = read_json(report)
+            except DriverError as exc:
+                return {}, str(exc)
+            error = detector_report_error(value, report_id)
+            if error:
+                return {}, error
+            outcomes[report_id] = value["outcome"]
+        return outcomes, None
 
     def launch_mode(self, bundle: str) -> str:
         # One-shot controls must not rewrite cached device preferences.
@@ -1256,6 +1424,15 @@ done
         )
         return f"nohup /var/jb/bin/sh -c {shlex.quote(runner)} </dev/null >{shlex.quote(output)} 2>&1 &"
 
+    def direct_run_all(self, mode: str, executable: str, container: str) -> str:
+        safe = "_MSSafeMode=1 " if mode == "uninjected" else ""
+        return (
+            f"{safe}CFFIXED_USER_HOME={shlex.quote(container)} HOME={shlex.quote(container)} "
+            f"TMPDIR={shlex.quote(container + '/tmp')} {shlex.quote(executable)} "
+            "--shadow-headless-run-all; code=$?; "
+            "printf '__SHADOW_RUN_ALL_EXIT__%s\\n' \"$code\" >&2; exit 0"
+        )
+
     def patch_launch(
         self,
         manifest: pathlib.Path,
@@ -1404,6 +1581,222 @@ done
         )
         return result
 
+    def run_all(self) -> pathlib.Path:
+        bundle = "me.jjolano.shadow.harness"
+        self.prepare_existing()
+        self.verify_device_identity()
+        capture = self.capture_dir("", "run-all")
+        mode = self.launch_mode(bundle)
+        if mode != "injected":
+            fail("Run All requires Shadow enabled for the Harness")
+        container = self.container_for_bundle(bundle)
+        documents = self.documents_for_bundle(bundle, container)
+        reports_remote = f"{documents}/ShadowDetectorTests"
+        report_paths = [f"{reports_remote}/{identifier}.json" for identifier in RUN_ALL_REPORT_IDS]
+        clear_reports = " && ".join(
+            f"(test ! -e {shlex.quote(path)} || (test -f {shlex.quote(path)} && "
+            f"test ! -L {shlex.quote(path)} && rm -f {shlex.quote(path)}))"
+            for path in report_paths
+        )
+        if self.remote(clear_reports, stderr=capture.stderr).code:
+            fail("cannot clear prior Run All reports")
+        nonce = f"run-all-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{os.getpid()}-{secrets.token_hex(3)}"
+        context = self.write_launch_context(bundle, mode, nonce, documents)
+        diagnostic_remote = f"{documents}/{self.report_name(bundle, nonce)}"
+        diagnostic_event = self.prepare_launch_file(diagnostic_remote)
+        transport = self.remote(
+            self.direct_run_all(mode, self.executable(bundle), container),
+            stdout=capture.stdout,
+            stderr=capture.stderr,
+            timeout=960,
+        ).code
+        runner, transport = self.producer_marker(capture.stderr, transport, "__SHADOW_RUN_ALL_EXIT__")
+        artifacts: list[tuple[str, pathlib.Path]] = [("launch-context", context)]
+        errors: list[str] = []
+        if transport:
+            errors.append("Run All transport failed")
+        if runner != 0:
+            errors.append(f"Run All exited {runner}")
+        if not errors:
+            checks = " && ".join(
+                f"test -f {shlex.quote(path)} && test ! -L {shlex.quote(path)}" for path in report_paths
+            )
+            if self.remote(checks, stderr=capture.stderr).code:
+                errors.append("Run All reports are missing or unsafe")
+            else:
+                reports = capture.directory / "reports"
+                reports.mkdir()
+                for identifier, remote in zip(RUN_ALL_REPORT_IDS, report_paths, strict=True):
+                    report = reports / f"{identifier}.json"
+                    if self.scp_from(remote, report, stderr=capture.stderr).code:
+                        errors.append(f"cannot retrieve {identifier} report")
+                        continue
+                    try:
+                        value = read_json(report)
+                    except DriverError as exc:
+                        errors.append(str(exc))
+                        continue
+                    report_error = detector_report_error(value, identifier)
+                    if report_error:
+                        errors.append(report_error)
+                    else:
+                        artifacts.append((f"detector-report:{identifier}", report))
+            if not errors:
+                if self.remote(
+                    f"test -f {shlex.quote(diagnostic_remote)} && test ! -L {shlex.quote(diagnostic_remote)}",
+                    stderr=capture.stderr,
+                ).code:
+                    errors.append("Run All activation report is missing or unsafe")
+                else:
+                    diagnostic = capture.directory / "activation.json"
+                    if self.scp_from(diagnostic_remote, diagnostic, stderr=capture.stderr).code:
+                        errors.append("cannot retrieve Run All activation report")
+                    else:
+                        try:
+                            value = self.validate_producer_report(diagnostic, nonce)
+                            observations = value.get("observations")
+                            activation = observations.get("activation") if isinstance(observations, dict) else None
+                            activation_dict = activation if isinstance(activation, dict) else {}
+                            verdicts = activation_dict.get("verdicts")
+                            fallback_inventory = activation_dict.get("sdk_fallback_inventory")
+                            fallback_units = {"Adapter_DeviceCheck", "Adapter_DeviceSecurityKit", "Adapter_IOSSecuritySuite"}
+                            if value.get("requested_mode") != mode:
+                                errors.append("Run All activation mode mismatch")
+                            elif value.get("producer_exit") != 0 or not verdicts or not isinstance(verdicts, dict) or any(
+                                verdict != "PASS" for verdict in verdicts.values()
+                            ):
+                                errors.append("Run All activation report failed")
+                            elif (
+                                not activation_dict.get("sdk_fallback_observed")
+                                or not isinstance(fallback_inventory, list)
+                                or not fallback_units <= set(fallback_inventory)
+                            ):
+                                errors.append("Run All SDK fallback activation missing")
+                        except DriverError as exc:
+                            errors.append(str(exc))
+                        else:
+                            artifacts.append(("activation-report", diagnostic))
+                self.journal_event(diagnostic_event, "launch-report-file", diagnostic_remote, f"absent|{diagnostic_remote}", "completed")
+        observed = mode if not errors else "SETUP-FAIL"
+        result = self.manifest(
+            "run-all", requested=mode, observed=observed,
+            transport=transport, producer=runner, artifacts=artifacts,
+        )
+        if errors:
+            fail("; ".join(errors))
+        return result
+
+    def adapter_matrix(self, adapter: str) -> pathlib.Path:
+        try:
+            report_ids = ADAPTER_MATRIX_RUNNERS[adapter]
+        except KeyError:
+            fail(f"unsupported adapter matrix ID: {adapter}")
+        self.prepare_existing()
+        self.verify_device_identity()
+        capture = self.capture_dir("", "adapter-matrix")
+        event, backup, metadata_before, control, candidate = self.prepare_adapter_matrix_preferences(adapter, report_ids)
+        errors: list[str] = []
+        restored = False
+        control_manifest: pathlib.Path | None = None
+        candidate_manifest: pathlib.Path | None = None
+        control_outcomes: dict[str, str] = {}
+        candidate_outcomes: dict[str, str] = {}
+        recovery = "|".join((str(backup), self.preferences_remote(), *metadata_before))
+        try:
+            self.install_preferences_file(control, metadata_before)
+            self.journal_event(event, "detector-overrides", self.preferences_remote(), recovery, "completed")
+            try:
+                control_manifest = self.run_all()
+            except DriverError as exc:
+                errors.append(f"control: {exc}")
+            finally:
+                self.capture = capture
+            if control_manifest is not None:
+                control_outcomes, error = self.adapter_report_outcomes(control_manifest, report_ids)
+                if error:
+                    errors.append(f"control: {error}")
+            if not errors:
+                self.install_preferences_file(candidate, metadata_before)
+                try:
+                    candidate_manifest = self.run_all()
+                except DriverError as exc:
+                    errors.append(f"adapter-off: {exc}")
+                finally:
+                    self.capture = capture
+                if candidate_manifest is not None:
+                    candidate_outcomes, error = self.adapter_report_outcomes(candidate_manifest, report_ids)
+                    if error:
+                        errors.append(f"adapter-off: {error}")
+        except DriverError as exc:
+            errors.append(str(exc))
+        finally:
+            self.capture = capture
+            try:
+                self.restore_preferences(backup, metadata=metadata_before)
+                restored = True
+            except DriverError as exc:
+                errors.append(f"restore: {exc}")
+            if restored:
+                self.journal_event(event, "detector-overrides", self.preferences_remote(), recovery, "restored")
+        metadata_after = self.preference_metadata(self.preferences_remote()) if restored else None
+        if metadata_after != metadata_before:
+            errors.append("restored preferences metadata mismatch")
+        summary = capture.directory / "adapter-matrix.json"
+        atomic_json(summary, {
+            "schema_version": 1,
+            "adapter": adapter,
+            "reports": list(report_ids),
+            "coverage": "mapped-isolated-runners",
+            "uncovered": ["SafeDevice"] if adapter == "Adapter_DeviceCheck" else [],
+            "preferences": {
+                "before_sha256": sha256_file(backup),
+                "control_sha256": sha256_file(control),
+                "adapter_off_sha256": sha256_file(candidate),
+                "metadata_before": list(metadata_before),
+                "metadata_after": list(metadata_after) if metadata_after else None,
+                "restored": restored,
+            },
+            "control_manifest": str(control_manifest) if control_manifest else None,
+            "adapter_off_manifest": str(candidate_manifest) if candidate_manifest else None,
+            "control_outcomes": control_outcomes,
+            "adapter_off_outcomes": candidate_outcomes,
+            "changed_reports": [
+                report_id for report_id in report_ids
+                if control_outcomes.get(report_id) != candidate_outcomes.get(report_id)
+            ],
+            "status": "PASS" if not errors else "FAIL",
+            "errors": errors,
+        })
+        artifacts: list[tuple[str, pathlib.Path]] = [
+            ("preferences-before", backup),
+            ("preferences-control", control),
+            ("preferences-adapter-off", candidate),
+            ("adapter-matrix", summary),
+        ]
+        if control_manifest is not None:
+            artifacts.append(("control-manifest", control_manifest))
+        if candidate_manifest is not None:
+            artifacts.append(("adapter-off-manifest", candidate_manifest))
+        result = self.manifest(
+            "adapter-matrix",
+            requested=f"{adapter}:off",
+            observed="PASS" if not errors else "FAIL",
+            transport=0 if not errors else 2,
+            producer=0,
+            artifacts=artifacts,
+        )
+        value = read_json(result)
+        value["cleanup"] = {
+            "event_ids": [event],
+            "journal_sha256": sha256_file(self.journal),
+            "result": "PASS" if restored else "FAIL",
+            "artifacts": [],
+        }
+        atomic_json(result, value)
+        if errors:
+            fail("; ".join(errors))
+        return result
+
     def identity_fixture_directory(self) -> str:
         return f"/var/jb/usr/lib/.shadow-hookprobe-identity-{self.ctx.run_id}"
 
@@ -1423,11 +1816,16 @@ done
         if self.remote(script, stderr=self.require_capture().stderr, append=True).code:
             fail("identity fixture setup is absent or unsafe")
 
-    def producer_marker(self, stderr: pathlib.Path, transport: int) -> tuple[int | str, int]:
+    def producer_marker(
+        self,
+        stderr: pathlib.Path,
+        transport: int,
+        marker: str = "__SHADOW_PRODUCER_EXIT__",
+    ) -> tuple[int | str, int]:
         markers = [
-            line.removeprefix("__SHADOW_PRODUCER_EXIT__")
+            line.removeprefix(marker)
             for line in stderr.read_text(errors="replace").splitlines()
-            if line.startswith("__SHADOW_PRODUCER_EXIT__")
+            if line.startswith(marker)
         ]
         producer: int | str = int(markers[-1]) if markers and markers[-1].isdigit() else "not-applicable"
         if producer == "not-applicable" and transport == 0:
@@ -1698,19 +2096,25 @@ printf 'pid\\t%s\\nlstart\\t%s\\n' "$pid" "$started"
             fail("evidence collection validation failed")
         return result
 
-    def restore_preferences(self, backup: pathlib.Path, requested: str = "") -> None:
+    def restore_preferences(
+        self,
+        backup: pathlib.Path,
+        requested: str = "",
+        metadata: tuple[str, str, str] | None = None,
+    ) -> None:
         owned_regular(backup)
         remote = requested or self.preferences_remote()
         remote_path(remote)
-        if remote.startswith("/var/jb/var/mobile/Library/Preferences/"):
-            owner, mode = "mobile:mobile", "0600"
+        if metadata is not None:
+            user, group, mode = metadata
+        elif remote.startswith("/var/jb/var/mobile/Library/Preferences/"):
+            user, group, mode = "mobile", "mobile", "0600"
         else:
-            owner, mode = "root:wheel", "0644"
+            user, group, mode = "root", "wheel", "0644"
         temporary = f"/var/mobile/Media/.shadow-restore-prefs-{self.ctx.run_id}-{os.getpid()}-{secrets.token_hex(3)}.plist"
         capture = self.require_capture()
         if self.scp_to(backup, temporary, stderr=capture.stderr).code:
             fail("cannot upload restored preferences")
-        user, group = owner.split(":", 1)
         install = (
             f"install -o {shlex.quote(user)} -g {shlex.quote(group)} -m {mode} "
             f"{shlex.quote(temporary)} {shlex.quote(remote)} && rm -f {shlex.quote(temporary)}"
@@ -1950,7 +2354,12 @@ rmdir "$dir"
         capture = self.require_capture()
         if not event:
             fail("invalid cleanup journal event")
-        if action in {"set-mode", "launch-context"}:
+        if action == "detector-overrides":
+            fields = prior.split("|")
+            if len(fields) != 5 or not all(field.isdigit() for field in fields[2:]):
+                fail("invalid detector override recovery record")
+            self.restore_preferences(pathlib.Path(fields[0]), fields[1], (fields[2], fields[3], fields[4]))
+        elif action in {"set-mode", "launch-context"}:
             fields = prior.split("|", 1)
             if len(fields) != 2:
                 fail("invalid preferences recovery record")
@@ -2103,7 +2512,7 @@ rmdir "$dir"
 def selftest() -> None:
     expected = {
         "selftest", "preflight", "inventory", "import-stock", "launch",
-        "pull-report", "run-hookprobe", "collect", "restore",
+        "pull-report", "run-hookprobe", "run-all", "adapter-matrix", "collect", "restore",
     }
     assert CORE_COMMANDS == expected
     assert TASK_LABEL.fullmatch("NOVA-12A")
@@ -2174,13 +2583,57 @@ def selftest() -> None:
         assert driver.producer_marker(marker, 0) == (0, 0)
         marker.write_text("no producer marker\n", encoding="utf-8")
         assert driver.producer_marker(marker, 0) == ("not-applicable", 125)
+        marker.write_text("__SHADOW_RUN_ALL_EXIT__0\n", encoding="utf-8")
+        assert driver.producer_marker(marker, 0, "__SHADOW_RUN_ALL_EXIT__") == (0, 0)
+        assert "--shadow-headless-run-all" in driver.direct_run_all("injected", "/app", "/container")
+        assert driver.preferences_remote() == "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+        assert application_enabled({"App_Enabled": False}, True, False)
+        assert not application_enabled({"App_Disabled": True}, True, False)
+        assert not application_enabled({"App_Enabled": False}, True, True)
+        original_preferences = {
+            RUNNER_BUNDLES["freerasp"]: {
+                "App_Enabled": True,
+                DETECTOR_RUNNER_OVERRIDE_KEY: {"Adapter_DeviceCheck": False},
+            },
+        }
+        control_preferences = driver.matrix_preferences(
+            original_preferences, "Adapter_FreeRASP", ("freerasp",), False,
+        )
+        assert DETECTOR_RUNNER_OVERRIDE_KEY not in control_preferences[RUNNER_BUNDLES["freerasp"]]
+        assert DETECTOR_RUNNER_OVERRIDE_KEY in original_preferences[RUNNER_BUNDLES["freerasp"]]
+        candidate_preferences = driver.matrix_preferences(
+            original_preferences, "Adapter_FreeRASP", ("freerasp",), True,
+        )
+        assert candidate_preferences[RUNNER_BUNDLES["freerasp"]][DETECTOR_RUNNER_OVERRIDE_KEY] == {
+            "Adapter_FreeRASP": False,
+        }
+        assert ADAPTER_MATRIX_RUNNERS["Adapter_DeviceCheck"] == ("dttjailbreakdetection", "jailmonkey")
+        assert ADAPTER_MATRIX_RUNNERS["Adapter_IOSSecuritySuite"] == ("iossecuritysuite",)
+        clean_report = {
+            "schemaVersion": 1, "sdk": {"id": "sdk"}, "outcome": "clean",
+            "rounds": [{"clean": True, "checks": [{"passed": True}]}],
+        }
+        assert detector_report_error(clean_report, "sdk") is None
+        clean_report["schemaVersion"] = 2
+        assert detector_report_error(clean_report, "sdk") == "invalid sdk report schema"
+        clean_report["schemaVersion"] = 1
+        clean_report["outcome"] = []
+        assert detector_report_error(clean_report, "sdk") == "sdk outcome is not conclusive"
+        clean_report["outcome"] = "clean"
+        clean_report["rounds"][0]["checks"][0]["passed"] = False
+        assert detector_report_error(clean_report, "sdk") == "sdk round result is inconsistent"
+        clean_report["rounds"][0]["clean"] = False
+        clean_report["outcome"] = "jailbroken"
+        assert detector_report_error(clean_report, "sdk") is None
+        clean_report["outcome"] = "error"
+        assert detector_report_error(clean_report, "sdk") == "sdk outcome is not conclusive"
         assert driver._run(["/bin/sh", "-c", "read value; test \"$value\" = x"], input_text="x\n").code == 0
-    print("PASS stealth-device selftest (dynamic task labels, full-worktree provenance, restore compatibility)")
+    print("PASS stealth-device selftest (dynamic task labels, adapter matrix, restore compatibility)")
 
 
 def usage() -> None:
     print(
-        "usage: tests/stealth-device.sh {selftest|preflight|inventory|import-stock|launch|pull-report|run-hookprobe|collect|restore}",
+        "usage: tests/stealth-device.sh {selftest|preflight|inventory|import-stock|launch|pull-report|run-hookprobe|run-all|adapter-matrix Adapter_ID|collect|restore}",
         file=sys.stderr,
     )
 
@@ -2207,6 +2660,10 @@ def dispatch(argv: list[str]) -> int:
         result = driver.pull_report(*arguments)
     elif command == "run-hookprobe" and len(arguments) == 2:
         result = driver.run_hookprobe(*arguments)
+    elif command == "run-all" and not arguments:
+        result = driver.run_all()
+    elif command == "adapter-matrix" and len(arguments) == 1:
+        result = driver.adapter_matrix(arguments[0])
     elif command == "collect" and not arguments:
         result = driver.collect()
     elif command == "restore" and not arguments:

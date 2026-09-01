@@ -56,8 +56,7 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetect
        $(FRAMEWORK)/RulesetCompiler.m \
        $(FRAMEWORK)/RulesetStore.m \
        RestrictionTests.m \
-       PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
-       ../ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
+        PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
        $(FRAMEWORK)/SettingsMigration.m \
        ../ShadowCore.dylib/HookAdapterBridge.m \

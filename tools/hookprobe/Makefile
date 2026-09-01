@@ -1,6 +1,6 @@
 # hookprobe — on-device runtime battery for Shadow's hook layer.
 #
-# A bare CLI tool (no Info.plist → nil bundle ID → Shadow's global prefs),
+# A bare CLI tool (no Info.plist, so Shadow recognizes it as a diagnostic),
 # dlopens ShadowCore in-process so the ctor installs the hook layer, then
 # probes each hooked API group against restricted vs control paths.
 #
