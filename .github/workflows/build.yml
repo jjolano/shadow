@@ -30,7 +30,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential fakeroot rsync curl perl xz-utils git libxml2 libtinfo6
-          sudo git clone --recursive --quiet https://github.com/theos/theos.git "$THEOS"
+          # jjolano/theos is upstream Theos plus RootHide support, and carries
+          # provision.lock -- the pinned source for the SDKs below. This lane is
+          # rootful, so the RootHide additions are inert here.
+          sudo git clone --recursive --quiet https://github.com/jjolano/theos.git "$THEOS"
 
           mkdir -p "$RUNNER_TEMP/oldabi/toolchain" "$RUNNER_TEMP/oldabi/sdks" "$THEOS/sdks"
           curl -fL -o "$RUNNER_TEMP/oldabi/toolchain.tar.xz" \
@@ -43,10 +46,13 @@ jobs:
           echo '661d1a8c518025f084d8c1e70dd8767581fb5730fb5950378f0915d840a7b5c3  '"$RUNNER_TEMP/oldabi/iPhoneOS13.7.sdk.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/oldabi/iPhoneOS13.7.sdk.tar.xz" -C "$RUNNER_TEMP/oldabi/sdks"
 
-          curl -fL -o "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" \
-            https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz
-          echo '1c998a5ee7eb8c29e39f0d8c83add9cad1a954342ca0d86204d1b4fe08a921b9  '"$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" | sha256sum -c -
-          sudo tar -xJf "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" -C "$THEOS/sdks"
+          # AltList/libSandy build against 14.5 (see their Makefiles).
+          sudo -E "$THEOS/bin/provision.sh" --downloads sdks/iPhoneOS14.5.sdk
+
+          # The old-ABI toolchain and 13.7 SDK stay in RUNNER_TEMP rather than
+          # $THEOS: build.sh overrides THEOS_SDKS_PATH with OLDABI_SDKS for this
+          # lane, and the cross ld must stay off the host test path. Their pins
+          # are therefore still inline above rather than read from provision.lock.
 
           # install-hookkit-theos.sh writes the HookKit framework into $THEOS/lib;
           # the tree was cloned with sudo, so hand it to the runner user.
