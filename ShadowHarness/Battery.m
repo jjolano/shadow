@@ -387,6 +387,26 @@ NSArray<NSDictionary*>* ShdwBatteryRows(void) {
 	return rows;
 }
 
+static NSDictionary* shdw_pseudo_sandbox_observation(NSString* path) {
+	Class shadowClass = ShdwShadowClass("Shadow");
+	Shadow* shadow = shadowClass ? [shadowClass sharedInstance] : nil;
+	long rawFD = shdw_raw_open(path.fileSystemRepresentation);
+	BOOL rawVisible = rawFD >= 0;
+	if(rawVisible) close((int)rawFD);
+	BOOL filteredVisible = access(path.fileSystemRepresentation, F_OK) == 0;
+	BOOL engineRestricted = shadow && [shadow isPathRestricted:path];
+	NSString* verdict = !shadow || !rawVisible ? @"SETUP-FAIL" :
+		(engineRestricted == !filteredVisible ? @"CONSISTENT" : @"HOOK-GAP");
+
+	return @{
+		@"path" : path,
+		@"raw" : @(rawVisible),
+		@"filtered" : @(filteredVisible),
+		@"engine" : @(engineRestricted),
+		@"verdict" : verdict,
+	};
+}
+
 NSDictionary* ShdwStealthReport(void) {
 	uint64_t reportEnd = mach_continuous_time();
 	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
@@ -420,6 +440,10 @@ NSDictionary* ShdwStealthReport(void) {
 	NSString* mode = context[@"_StealthMode"];
 	if(![mode isEqualToString:@"uninjected"] && ![mode isEqualToString:@"injected"]) {
 		return nil;
+	}
+	if([mode isEqualToString:@"injected"]) {
+		// Install deferred metadata coverage before the battery calls access(2).
+		(void)shdwInstallHarnessSDKFallback();
 	}
 	NSString* forcedFailureID = [fileContext[@"force_failure_id"] isKindOfClass:[NSString class]] ?
 		fileContext[@"force_failure_id"] : nil;
@@ -493,6 +517,8 @@ NSDictionary* ShdwStealthReport(void) {
 		@"canary" : canary,
 		@"observations" : @{
 			@"aggregate" : aggregate,
+			@"pseudo_sandbox" : shdw_pseudo_sandbox_observation(
+				[documents stringByAppendingPathComponent:@".ShadowStealthContext.json"]),
 			@"timing" : @{
 				@"clock" : @"mach_continuous_time",
 				@"start_ticks" : @(gHarnessProbeStart), @"end_ticks" : @(reportEnd),

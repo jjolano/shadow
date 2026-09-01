@@ -13,7 +13,7 @@
     <key>CFBundleURLTypes</key>
     <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-safetynet</string></array></dict></array>
     <key>LSApplicationQueriesSchemes</key>
-    <array><string>cydia</string><string>sileo</string><string>zbra</string><string>filza</string><string>shadow-detectors</string></array>
+    <array><string>sileo</string><string>zbra</string><string>undecimus</string><string>filza</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>UILaunchScreen</key><dict/>
     <key>UIDeviceFamily</key><array><integer>1</integer></array>

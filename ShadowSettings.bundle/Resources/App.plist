@@ -20,21 +20,9 @@
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>id</key>
-			<string>App_Disabled</string>
+			<string>App_Enabled</string>
 			<key>label</key>
-			<string>APP_DISABLE</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>id</key>
-			<string>App_FollowGlobal</string>
-			<key>label</key>
-			<string>FOLLOW_GLOBAL</string>
+			<string>ENABLED</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>

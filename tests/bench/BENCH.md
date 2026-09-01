@@ -1,7 +1,7 @@
 # Shadow performance benchmarks
 
 Measurement rig and results for per-call hook overhead (arm A), launch cost
-(arm B), and detector response (arm C). Re-run instructions per arm below.
+(arm B), and the historical detector response arm (arm C).
 
 ## Baseline pin
 
@@ -67,6 +67,10 @@ primary measure; wall time is coarse one-second device sampling.
 | delta | +0:04.79 | +4 s |
 
 ## Arm C - detector response timing (median of medians, ms)
+
+Historical only. Isolated detector runners now auto-enable Shadow and no
+longer emit the old timing schema, so the injected/uninjected runner and
+collector were removed rather than producing a false stock control.
 
 `first` is the first invocation in a process; `latest` is the latest report after the harness scene re-run. `framework load` is the cold SDK framework load measured by the harness.
 

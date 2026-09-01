@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ "${SHADOW_HARNESS_DPKG_ROOT+x}" = x ]; then
+    DPKG_ROOT=$SHADOW_HARNESS_DPKG_ROOT
+else
+    DPKG_ROOT=""
+    case "$DPKG_MAINTSCRIPT_ARCH" in
+        iphoneos-arm64) DPKG_ROOT="/var/jb" ;;
+    esac
+fi
+
+case "$1" in
+    configure)
+        # dpkg keeps files no longer owned by an upgraded package.
+        FRAMEWORKS="$DPKG_ROOT/Applications/ShadowHarness.app/Frameworks"
+        rm -rf "$FRAMEWORKS/BATJailbreakGuard.framework" \
+               "$FRAMEWORKS/DeviceSecurityKit.framework" \
+               "$FRAMEWORKS/IOSSecuritySuite.framework" \
+               "$FRAMEWORKS/JailbreakDetector.framework" \
+               "$FRAMEWORKS/SecurityToolkit.framework" \
+               "$FRAMEWORKS/Shadow.framework" \
+               "$FRAMEWORKS/TalsecRuntime.framework"
+    ;;
+esac
+
+exit 0

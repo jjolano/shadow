@@ -12,7 +12,7 @@
     <key>SBAppTags</key><array><string>hidden</string></array>
     <key>CFBundleURLTypes</key>
     <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-dsk</string></array></dict></array>
-    <key>LSApplicationQueriesSchemes</key><array><string>shadow-detectors</string></array>
+    <key>LSApplicationQueriesSchemes</key><array><string>cydia</string><string>sileo</string><string>zbra</string><string>filza</string><string>undecimus</string><string>checkra1n</string><string>taurine</string><string>odyssey</string><string>dopamine</string><string>palera1n</string><string>apple-magnifier</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>UILaunchScreen</key><dict/>
     <key>UIDeviceFamily</key><array><integer>1</integer></array>

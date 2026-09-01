@@ -1,33 +1,59 @@
+# The Harness contains its dashboard, Shadow diagnostics, and the dyld probe.
+# SDK detector implementations remain separate applications so startup-
+# sensitive SDKs never share the Harness process or its already-loaded Shadow
+# framework.
 TARGET ?= iphone:clang:14.5:14.0
 ARCHS ?= arm64
-DEPS ?= ../.detector-deps
-FW_BUILD := detector-frameworks
-SHDW_FW_OBJ_DIR := $(shell test -d "$(FW_BUILD)/.theos/obj/debug" && echo "$(FW_BUILD)/.theos/obj/debug" || echo "$(FW_BUILD)/.theos/obj")
-TALSEC_ROOT := $(DEPS)/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64
-TALSEC_DIR := $(TALSEC_ROOT)/TalsecRuntime.framework
+SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj
 
 include $(THEOS)/makefiles/common.mk
+
 APPLICATION_NAME = ShadowHarness
-SN_DIR = $(DEPS)/SafetyNet
-SN_FILES := $(shell find $(SN_DIR)/Sources/SafetyNet -name '*.swift' | sort)
-ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m DetectorDashboard.m StatusViewController.m Battery.m Detectors.m TalsecBridge.swift $(SN_FILES) detector-frameworks/bridges/SafetyNetBridge.swift $(DEPS)/SafetyNet/Sources/SafetyNetObjC/AntiDebugBridge.m ../tests/detectors/ShadowDetector.m $(DEPS)/DTTJailbreakDetection/Sources/DTTJailbreakDetection/DTTJailbreakDetection.m $(DEPS)/JailMonkey/JailMonkey/JailMonkey.m $(DEPS)/JailbreakDetector/main.m
-ShadowHarness_CFLAGS = -fobjc-arc -DSHADOW_HARNESS -Wno-error=deprecated-declarations -I../tests/detectors -I../Shadow.framework/Headers -I$(DEPS)/DTTJailbreakDetection/Sources/DTTJailbreakDetection/include -I$(DEPS)/JailMonkey/JailMonkey -I$(DEPS)/JailbreakDetector -I$(SN_DIR)/Sources/SafetyNetObjC/include -Istubs
-ShadowHarness_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-swift-module-cache -I$(SN_DIR)/Sources/SafetyNetObjC -Iconcurrency -F$(TALSEC_ROOT) -Xcc -Wno-error=unknown-warning-option -Xcc -Wno-error=incomplete-umbrella
-ShadowHarness_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib -rpath @executable_path/Frameworks
-ShadowHarness_LDFLAGS += -F../ -F../vendor/ -F$(TALSEC_ROOT) -lswiftFoundation -framework TalsecRuntime -L$(THEOS)/sdks/iPhoneOS16.5.sdk/usr/lib/swift -lswift_Concurrency
+ShadowHarness_FILES = main.m AppDelegate.m SceneDelegate.m DetectorDashboard.m StatusViewController.m Battery.m Detectors.m ../tools/dyldprobe/main.m ../tests/detectors/ShadowDetector.m
+ShadowHarness_CFLAGS = -fobjc-arc -fmodules-cache-path=/tmp/shadow-harness-module-cache -DSHADOW_HARNESS -DSHDW_DYLDPROBE_EMBEDDED -I../tests/detectors -I../Shadow.framework/Headers
+ShadowHarness_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
+ShadowHarness_LDFLAGS += -F../ -F../vendor/
 ShadowHarness_EXTRA_FRAMEWORKS = Shadow
-ShadowHarness_FRAMEWORKS = UIKit Foundation CryptoKit
+ShadowHarness_FRAMEWORKS = UIKit Foundation
 ShadowHarness_INSTALL_PATH = /Applications
 ShadowHarness_RESOURCE_DIRS = Resources
+
 include $(THEOS_MAKE_PATH)/application.mk
+
+before-stage::
+	$(ECHO_NOTHING)rm -rf \
+		"$(THEOS_STAGING_DIR)/Applications/IOSSecuritySuiteRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/JailbreakDetectorRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/SecurityToolkitRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/DTTJailbreakDetectionRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/FreeRASPRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/RoothiderRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/BATJailbreakGuardRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/SafetyNetRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/DeviceSecurityKitRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/JailMonkeyRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks" \
+		"$(THEOS_STAGING_DIR)/Applications/dyldprobe.app"$(ECHO_END)
+
+ifneq ($(INCLUDE_DETECTOR_RUNNERS),)
 after-stage::
-	$(ECHO_NOTHING)test -d "$(SHDW_FW_OBJ_DIR)" || { echo "detector frameworks not built; run scripts/build-detector-harness.sh first" >&2; exit 1; }$(ECHO_END)
-	$(ECHO_NOTHING)rm -rf "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks"$(ECHO_END)
-	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(SHDW_FW_OBJ_DIR)/IOSSecuritySuite.framework" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(SHDW_FW_OBJ_DIR)/JailbreakDetector.framework" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(SHDW_FW_OBJ_DIR)/SecurityToolkit.framework" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(SHDW_FW_OBJ_DIR)/BATJailbreakGuard.framework" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(SHDW_FW_OBJ_DIR)/DeviceSecurityKit.framework" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)cp -R "$(TALSEC_DIR)" "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
-	$(ECHO_NOTHING)for fw in IOSSecuritySuite JailbreakDetector SecurityToolkit BATJailbreakGuard DeviceSecurityKit TalsecRuntime; do $(TARGET_CODESIGN) -S "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/$$fw.framework/$$fw" || exit 1; done$(ECHO_END)
+	$(ECHO_NOTHING)for app in \
+		../DetectorRunners/IOSSecuritySuite/.theos/_/Applications/IOSSecuritySuiteRunner.app \
+		../DetectorRunners/JailbreakDetector/.theos/_/Applications/JailbreakDetectorRunner.app \
+		../DetectorRunners/SecurityToolkit/.theos/_/Applications/SecurityToolkitRunner.app \
+		../DetectorRunners/DTTJailbreakDetection/.theos/_/Applications/DTTJailbreakDetectionRunner.app \
+		../DetectorRunners/FreeRASP/.theos/_/Applications/FreeRASPRunner.app \
+		../DetectorRunners/Roothider/.theos/_/Applications/RoothiderRunner.app \
+		../DetectorRunners/BATJailbreakGuard/.theos/_/Applications/BATJailbreakGuardRunner.app \
+		../DetectorRunners/SafetyNet/.theos/_/Applications/SafetyNetRunner.app \
+		../DetectorRunners/DeviceSecurityKit/.theos/_/Applications/DeviceSecurityKitRunner.app \
+		../DetectorRunners/JailMonkey/.theos/_/Applications/JailMonkeyRunner.app \
+		../tools/dyldprobe/.theos/_/Applications/dyldprobe.app; do \
+		test -d "$$app" || exit 1; \
+		cp -R "$$app" "$(THEOS_STAGING_DIR)/Applications/"; \
+	done; \
+	test -f "$(SHDW_DYLDPROBE_OBJ_DIR)/shdwtestlib.dylib" || exit 1; \
+	mkdir -p "$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks"; \
+	cp "$(SHDW_DYLDPROBE_OBJ_DIR)/shdwtestlib.dylib" \
+		"$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks/"$(ECHO_END)
+endif

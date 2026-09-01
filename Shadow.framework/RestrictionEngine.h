@@ -12,12 +12,20 @@ typedef struct {
     NSArray<NSString *> *groupContainerPaths;
 } ShadowRestrictionContext;
 
+typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
+    ShadowPseudoSandboxModeOff = 0,
+    ShadowPseudoSandboxModeAudit = 1,
+    ShadowPseudoSandboxModeStrict = 2,
+};
+
 // Complete restriction engine: resolution, ruleset storage/evaluation and
 // generation-aware decision caches behind one internal interface.
 __attribute__((visibility("hidden")))
 @interface ShadowRestrictionEngine : NSObject
 
 - (instancetype)initWithContext:(ShadowRestrictionContext)context;
+
+- (void)configurePseudoSandboxMode:(NSInteger)mode;
 
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 

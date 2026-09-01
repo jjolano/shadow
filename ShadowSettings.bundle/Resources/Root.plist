@@ -8,48 +8,6 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
-			<string>ALWAYS_ON_DESC</string>
-			<key>label</key>
-			<string>GLOBAL_SETTINGS</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>id</key>
-			<string>Global_Enabled</string>
-			<key>label</key>
-			<string>ALWAYS_ON</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>BYPASS_SETTINGS_DESC</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string>SHDWHooksListController</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>icon</key>
-			<string>IcoBypass.png</string>
-			<key>id</key>
-			<string>BypassPresetSummary</string>
-			<key>isController</key>
-			<true/>
-			<key>label</key>
-			<string>BYPASS_SETTINGS</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
 			<string>ROOT_APP_SETTINGS_DESC</string>
 			<key>label</key>
 			<string>ROOT_APP_SETTINGS</string>

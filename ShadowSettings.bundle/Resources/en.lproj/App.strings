@@ -1,5 +1,5 @@
 "APP_SETTINGS" = "Application Settings";
-"APP_SETTINGS_DESC" = "Enables bypass settings for this application. Options not set here inherit the global settings.";
+"APP_SETTINGS_DESC" = "Enable Shadow for this application. Shadow uses its built-in bypass profile.";
 
 "ENABLED" = "Enabled";
 "ENABLED_GLOBAL" = "Enabled (Global)";

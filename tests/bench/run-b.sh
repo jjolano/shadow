@@ -3,7 +3,7 @@
 #
 # Measures cumulative launch CPU (ps TIME) and wall time for a target app,
 # injected vs uninjected, N=5 runs each. The uninjected arm flips
-# App_Disabled in Shadow's prefs (edited LOCALLY, shipped as base64, backed
+# App_Enabled in Shadow's prefs (edited LOCALLY, shipped as base64, backed
 # up and restored; cfprefsd killed between arms).
 #
 # Env: BENCH_TARGET (bundle id, default com.8bit.bitwarden),
@@ -23,17 +23,27 @@ mkdir -p "$OUT"
 SSH=(sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
      -o PreferredAuthentications=password -o PubkeyAuthentication=no "$HOST")
 
-PREFS_REMOTE=/var/jb/var/mobile/Library/Preferences/me.jjolano.shadow.plist
+PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist
 
-# --- pull current prefs, verify the target is injected (App_Disabled absent) ---
+# --- pull current prefs, verify the target is injected ---
 "${SSH[@]}" "cat $PREFS_REMOTE" > /tmp/prefs-current.plist
+
+write_prefs() {
+  local source="$1" b64
+  b64=$(base64 -w0 "$source")
+  {
+    printf '%s\n' "base64 -d > /var/mobile/Media/.shadow-b-prefs.plist <<'PREFS'"
+    printf '%s\n' "$b64"
+    printf '%s\n' 'PREFS'
+    printf '%s\n' "install -o mobile -g mobile -m 0600 /var/mobile/Media/.shadow-b-prefs.plist $PREFS_REMOTE"
+    printf '%s\n' 'rm -f /var/mobile/Media/.shadow-b-prefs.plist'
+    printf '%s\n' 'killall -9 cfprefsd 2>/dev/null || true'
+  } | "$ROOT/scripts/dev.sh"
+}
 
 restore_prefs() {
   if [ -f /tmp/prefs-current.plist ]; then
-    local b64
-    b64=$(base64 -w0 /tmp/prefs-current.plist)
-    printf '%s\n' "$b64" | "${SSH[@]}" "base64 -d > $PREFS_REMOTE && chown mobile:mobile $PREFS_REMOTE && chmod 600 $PREFS_REMOTE" || true
-    printf '%s\n' 'killall -9 cfprefsd 2>/dev/null || true' | "$ROOT/scripts/dev.sh" >/dev/null || true
+    write_prefs /tmp/prefs-current.plist || true
   fi
 }
 trap restore_prefs EXIT
@@ -45,8 +55,15 @@ p = plistlib.load(open('/tmp/prefs-current.plist', 'rb'))
 app = p.get(target)
 if not isinstance(app, dict):
     sys.exit(f"target entry missing in prefs: {target}")
+legacy_global = bool(p.get('Global_Enabled'))
 if app.get('App_Disabled'):
-    sys.exit(f"target is currently App_Disabled: {target} — aborting (restore first)")
+    enabled = False
+elif not p.get('SingleToggleMigrated') and legacy_global:
+    enabled = True
+else:
+    enabled = bool(app['App_Enabled']) if 'App_Enabled' in app else legacy_global
+if not enabled:
+    sys.exit(f"target is currently disabled: {target} — aborting (restore first)")
 print("target injected: OK")
 PY
 
@@ -116,24 +133,30 @@ EOF
 # --- injected arm ---
 arm injected
 
-# --- flip prefs to App_Disabled (local edit, base64 ship) ---
-DISABLED_B64=$(python3 - "$TARGET" <<'PY'
-import base64, plistlib, sys
+# --- disable the app (local edit, base64 ship) ---
+python3 - "$TARGET" <<'PY'
+import plistlib, sys
 target = sys.argv[1]
 p = plistlib.load(open('/tmp/prefs-current.plist', 'rb'))
-p[target]['App_Disabled'] = True
+legacy_global = bool(p.get('Global_Enabled'))
+migrated = bool(p.get('SingleToggleMigrated'))
+for key, value in p.items():
+    if not isinstance(value, dict):
+        continue
+    if value.get('App_Disabled'):
+        enabled = False
+    elif not migrated and legacy_global:
+        enabled = True
+    else:
+        enabled = bool(value['App_Enabled']) if 'App_Enabled' in value else legacy_global
+    value['App_Enabled'] = enabled
+    value.pop('App_Disabled', None)
+p['SingleToggleMigrated'] = True
+p[target]['App_Enabled'] = False
 plistlib.dump(p, open('/tmp/prefs-disabled.plist', 'wb'), fmt=plistlib.FMT_BINARY)
-print(base64.b64encode(open('/tmp/prefs-disabled.plist', 'rb').read()).decode())
 PY
-)
-
-cat <<EOF | "$ROOT/scripts/dev.sh"
-echo "$DISABLED_B64" | base64 -d > $PREFS_REMOTE
-chown mobile:mobile $PREFS_REMOTE
-chmod 600 $PREFS_REMOTE
-killall -9 cfprefsd 2>/dev/null || true
+write_prefs /tmp/prefs-disabled.plist
 sleep 15
-EOF
 
 # --- uninjected arm ---
 arm uninjected

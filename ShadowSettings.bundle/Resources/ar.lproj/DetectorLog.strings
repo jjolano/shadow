@@ -3,13 +3,13 @@
 "APPLICATIONS" = "التطبيقات";
 "ACTIVITY" = "النشاط";
 "CLEAR_LOG" = "مسح السجل";
-"NO_ACTIVITY" = "لا يوجد نشاط كشف مسجل";
+"NO_ACTIVITY" = "لا شيء";
 "SHARE_LOG" = "مشاركة السجل";
 "CLEAR_CONFIRM_TITLE" = "مسح سجل الكاشف؟";
 "CLEAR_CONFIRM_MSG" = "سيؤدي هذا إلى إزالة كل نشاط الكشف المسجل. لا يمكن التراجع عن هذا.";
 "CLEAR_CANCEL" = "إلغاء";
 "CLEAR_CONFIRM" = "مسح";
-"NO_APP_ACTIVITY" = "لا يوجد نشاط كشف مسجل لهذا التطبيق";
+"NO_APP_ACTIVITY" = "لا شيء";
 "EVENT_COUNT_ONE" = "حدث واحد";
 "EVENT_COUNT_MANY" = "%lu أحداث";
 "OPEN_APP_HINT" = "يعرض نشاط الكاشف لهذا التطبيق";

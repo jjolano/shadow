@@ -12,7 +12,7 @@
     <key>SBAppTags</key><array><string>hidden</string></array>
     <key>CFBundleURLTypes</key>
     <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-securitytoolkit</string></array></dict></array>
-    <key>LSApplicationQueriesSchemes</key><array><string>cydia</string><string>sileo</string><string>zbra</string><string>shadow-detectors</string></array>
+    <key>LSApplicationQueriesSchemes</key><array><string>cydia</string><string>installer</string><string>sileo</string><string>zbra</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>UILaunchScreen</key><dict/>
     <key>UIDeviceFamily</key><array><integer>1</integer></array>

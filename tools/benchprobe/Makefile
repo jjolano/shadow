@@ -1,6 +1,6 @@
 # benchprobe — on-device per-call microbenchmark battery for Shadow's hooks.
 #
-# A bare CLI tool (no Info.plist → nil bundle ID → Shadow's global prefs),
+# A bare CLI tool (no Info.plist, so Shadow recognizes it as a diagnostic),
 # dlopens ShadowCore in-process so the ctor installs the hook layer, then
 # times one representative call per hooked API group in a tight loop and
 # emits CSV rows. `--no-shadow` skips the dlopen for the stock arm.

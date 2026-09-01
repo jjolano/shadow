@@ -94,6 +94,23 @@ if [ -e "$clean_pkg/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.le
     fail 'backend-free postinst retained legacy daemon state'
 fi
 
+harness_pkg="$tmp/harness-pkg"
+harness_frameworks="$harness_pkg/Applications/ShadowHarness.app/Frameworks"
+mkdir -p "$harness_frameworks"
+: >"$harness_frameworks/shdwtestlib.dylib"
+: >"$harness_frameworks/keep.txt"
+for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
+    mkdir "$harness_frameworks/$framework.framework"
+done
+env SHADOW_HARNESS_DPKG_ROOT="$harness_pkg" sh "$root/ShadowHarness/layout/DEBIAN/postinst" configure
+assert test -f "$harness_frameworks/shdwtestlib.dylib"
+assert test -f "$harness_frameworks/keep.txt"
+for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
+    if [ -e "$harness_frameworks/$framework.framework" ]; then
+        fail "harness postinst retained $framework.framework"
+    fi
+done
+
 if grep -E '\<pgrep\>|\<seq\>|kill[[:space:]]+-[0-9]' "$root/layout/DEBIAN/prerm" "$root/layout/DEBIAN/postinst" >/dev/null; then
     fail 'forbidden maintainer command remains'
 fi

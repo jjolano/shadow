@@ -1,11 +1,16 @@
 import Darwin
 import Foundation
 
+@_cdecl("shdw_ioss_runner_probe")
+public func shdw_ioss_runner_probe() {}
+
 // ponytail: ObjC-facing bridge over the real IOSSecuritySuite 2.3.0 API so the
 // harness can drive it via NSClassFromString after dlopen without importing Swift.
 
 @objc(IOSSBridge)
 public final class IOSSBridge: NSObject {
+    @objc dynamic public func runnerProbe() {}
+
     @objc public static func amIJailbrokenWithFailedChecks() -> [String: String] {
         let result = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
         var failures: [String: String] = [:]
@@ -60,5 +65,55 @@ public final class IOSSBridge: NSObject {
         let suspicious = ["shadow", "ellekit", "substrate", "substitute", "libhooker", "systemhook", "frida"]
         let loaded = IOSSecuritySuite.findLoadedDylibs() ?? []
         return loaded.filter { path in suspicious.contains { path.localizedCaseInsensitiveContains($0) } }
+    }
+
+    @objc(runnerChecksWithBundleID:)
+    public static func runnerChecks(bundleID: String) -> [[String: Any]] {
+        func check(_ id: String, _ name: String, _ detected: Bool, _ message: String) -> [String: Any] {
+            ["id": id, "name": name, "passed": !detected, "message": message]
+        }
+
+        let jailbreak = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
+        let reverse = IOSSecuritySuite.amIReverseEngineeredWithFailedChecks()
+        let jailbreakMessage = jailbreak.failedChecks.map { $0.failMessage }.joined(separator: "; ")
+        let reverseMessage = reverse.failedChecks.map { $0.failMessage }.joined(separator: "; ")
+        let tampered = IOSSecuritySuite.amITampered([.bundleID(bundleID)]).result
+        let runtimeHooked = IOSSecuritySuite.amIRuntimeHooked(
+            dyldAllowList: [], detectionClass: IOSSBridge.self,
+            selector: #selector(IOSSBridge.runnerProbe), isClassMethod: false)
+        let probeAddress = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "shdw_ioss_runner_probe")
+        let mshooked = probeAddress.map { IOSSecuritySuite.amIMSHooked($0) } ?? true
+        let breakpoint = probeAddress.map {
+            IOSSecuritySuite.hasBreakpointAt(UnsafeRawPointer($0), functionSize: 16)
+        } ?? true
+        let lockdown: Bool
+        if #available(iOS 16, *) {
+            lockdown = IOSSecuritySuite.amIInLockdownMode()
+        } else {
+            lockdown = false
+        }
+        let suspicious = suspiciousDylibs()
+
+        return [
+            check("iossecuritysuite.jailbreak", "Jailbreak", jailbreak.jailbroken,
+                  jailbreakMessage.isEmpty ? "No failed jailbreak checks" : jailbreakMessage),
+            check("iossecuritysuite.reverse", "Reverse engineering", reverse.reverseEngineered,
+                  reverseMessage.isEmpty ? "No failed reverse-engineering checks" : reverseMessage),
+            check("iossecuritysuite.integrity.bundle", "Bundle integrity", tampered,
+                  tampered ? "Bundle identifier mismatch" : "Bundle identifier matches"),
+            check("iossecuritysuite.debugger", "Debugger", IOSSecuritySuite.amIDebugged(), "Debugger probe"),
+            check("iossecuritysuite.parent", "Unexpected parent", IOSSecuritySuite.isParentPidUnexpected(), "Parent probe"),
+            check("iossecuritysuite.emulator", "Emulator", IOSSecuritySuite.amIRunInEmulator(), "Physical device probe"),
+            check("iossecuritysuite.proxy", "Proxy or VPN", IOSSecuritySuite.amIProxied(considerVPNConnectionAsProxy: true), "Proxy probe"),
+            check("iossecuritysuite.lockdown", "Lockdown mode", lockdown, "Lockdown mode probe"),
+            check("iossecuritysuite.runtime_hook", "Runtime hook", runtimeHooked, "Objective-C implementation probe"),
+            check("iossecuritysuite.mshook", "MSHook", mshooked,
+                  probeAddress == nil ? "Runner probe unavailable" : "Function prologue probe"),
+            check("iossecuritysuite.breakpoint", "Breakpoint", breakpoint,
+                  probeAddress == nil ? "Runner probe unavailable" : "Breakpoint probe"),
+            check("iossecuritysuite.watchpoint", "Watchpoint", IOSSecuritySuite.hasWatchpoint(), "Watchpoint probe"),
+            check("iossecuritysuite.dylibs", "Suspicious dylibs", !suspicious.isEmpty,
+                  suspicious.isEmpty ? "No suspicious dylibs" : suspicious.joined(separator: "; ")),
+        ]
     }
 }

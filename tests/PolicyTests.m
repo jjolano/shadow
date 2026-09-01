@@ -49,6 +49,8 @@ static void testPathSanitizer(void) {
 
     CHECK(!shdw_is_restricted_root("/private/preboot"), "stock preboot root allowed");
     CHECK(shdw_is_restricted_root("/private/preboot/x"), "preboot descendant restricted");
+    CHECK(shdw_is_restricted_root("/private/var/jb/.installed_dopamine"), "private var jb alias restricted");
+    CHECK(!shdw_is_restricted_root("/private/var/jb2"), "private var jb prefix boundary allowed");
 
     char* p = shdw_env_sanitized_path("/usr/bin:/var/jb/bin:/private/preboot/x:/preboot/y:/bin");
     CHECK(strcmp(p, "/usr/bin:/bin") == 0, "all jailbreak components dropped, order preserved");

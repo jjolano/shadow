@@ -3,6 +3,7 @@
 #import <Shadow.h>
 #import <Shadow/JBPath.h>
 #import <Shadow/Settings.h>
+#import <Shadow/SHDWPlugin.h>
 
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
@@ -323,35 +324,33 @@ static NSString* const kHeaderReuseID = @"Header";
 		[rows addObject:shdw_row(@"Engine present (framework)", enginePresent ? @"YES" : @"NO")];
 
 		// "Why" rows: the path the stub's gate evaluated, then this app's
-		// own entry in Shadow's prefs. The keys are App_Enabled (per-app
-		// override) and Global_Enabled (always-on); with neither set, the
-		// stub skips this app by design.
+		// own entry in Shadow's prefs. App_Enabled is the only current setting;
+		// a missing value can still inherit the hidden legacy global fallback.
 		[rows addObject:shdw_row(@"Executable path", @(**_NSGetArgv()))];
 
 		NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 		NSUserDefaults* prefs = shdw_prefs();
 		NSDictionary* appSettings = bundleID ? [prefs objectForKey:bundleID] : nil;
-		NSNumber* appDisabled = appSettings ? appSettings[@"App_Disabled"] : nil;
+		NSNumber* appDisabled = appSettings ? appSettings[SHDWAppDisabledID] : nil;
 		NSNumber* appEnabled = appSettings ? appSettings[@"App_Enabled"] : nil;
 		NSNumber* globalEnabled = [prefs objectForKey:@"Global_Enabled"];
+		BOOL enabled = SHDWApplicationEnabled(appSettings, [globalEnabled boolValue],
+			[prefs boolForKey:SHDWSingleToggleMigrationID], NO);
 
 		if(appSettings) {
-			[rows addObject:shdw_row(@"Per-app override",
-				[NSString stringWithFormat:@"present (App_Enabled=%@, App_Disabled=%@)", appEnabled ? appEnabled : @"(unset)", appDisabled ? appDisabled : @"(unset)"])];
+			[rows addObject:shdw_row(@"App_Enabled", appEnabled ? [appEnabled boolValue] ? @"YES" : @"NO" : @"(unset)")];
 		} else {
-			[rows addObject:shdw_row(@"Per-app override", @"absent")];
+			[rows addObject:shdw_row(@"App_Enabled", @"(unset)")];
 		}
-		[rows addObject:shdw_row(@"Global_Enabled", globalEnabled ? [globalEnabled boolValue] ? @"YES" : @"NO" : @"(unreadable)")];
 
 		if([appDisabled boolValue]) {
-			[rows addObject:shdw_row(@"Filter disabled", @"App_Disabled=YES — Shadow skips this app")];
-		} else if([appEnabled boolValue]) {
+			[rows addObject:shdw_row(@"Filter disabled", @"Legacy App_Disabled value")];
+		} else if(enabled && [appEnabled boolValue]) {
 			[rows addObject:shdw_row(@"Filter enabled", @"App_Enabled=YES — Shadow should be active")];
-		} else if([globalEnabled boolValue]) {
-			[rows addObject:shdw_row(@"Filter enabled", @"Global_Enabled=YES — Shadow should be active")];
+		} else if(enabled && !appEnabled && [globalEnabled boolValue]) {
+			[rows addObject:shdw_row(@"Filter enabled", @"Legacy global migration fallback")];
 		} else {
-			[rows addObject:shdw_row(@"Filter disabled",
-				@"App_Enabled and Global_Enabled both off — Shadow skips this app")];
+			[rows addObject:shdw_row(@"Filter disabled", @"App_Enabled is off — Shadow skips this app")];
 		}
 		[rows addObject:shdw_row(@"Hint", @"Check Shadow settings for this app")];
 	}
@@ -363,22 +362,22 @@ static NSString* const kHeaderReuseID = @"Header";
 	NSString* bundleID = [NSBundle mainBundle].bundleIdentifier;
 	NSUserDefaults* prefs = shdw_prefs();
 	NSDictionary* appSettings = bundleID ? [prefs objectForKey:bundleID] : nil;
-	BOOL appDisabled = [appSettings[@"App_Disabled"] boolValue];
 	NSNumber* globalEnabled = [prefs objectForKey:@"Global_Enabled"];
 
-	// App_Disabled overrides the per-app and global enable paths.
-	BOOL appEnabled = [appSettings[@"App_Enabled"] boolValue];
-	BOOL filtered = !appDisabled && (appEnabled || [globalEnabled boolValue]);
+	NSNumber* appEnabled = appSettings[@"App_Enabled"];
+	BOOL filtered = SHDWApplicationEnabled(appSettings, [globalEnabled boolValue],
+		[prefs boolForKey:SHDWSingleToggleMigrationID], NO);
 
 	// Prefer ShadowSettings' merged view (defaults + per-app inheritance);
 	// fall back to the raw suite when the class is unavailable.
 	NSDictionary* merged = shdw_shadow_settings_for(bundleID);
-	if(merged && !appDisabled) {
+	if(merged) {
 		filtered = [merged[@"App_Enabled"] boolValue];
 	}
 
-	NSString* modeDetail = appDisabled ? @"App_Disabled=YES" : appEnabled ? @"App_Enabled=YES (per-app)" :
-		[globalEnabled boolValue] ? @"Global_Enabled=YES" : @"neither key set";
+	NSString* modeDetail = [appSettings[SHDWAppDisabledID] boolValue] ? @"legacy App_Disabled" :
+		appEnabled ? [appEnabled boolValue] ? @"App_Enabled=YES" : @"App_Enabled=NO" :
+		[globalEnabled boolValue] ? @"legacy global migration fallback" : @"App_Enabled unset";
 
 	return shdw_section(@"This app", @[
 		shdw_row(@"Bundle ID", bundleID ? bundleID : @"(nil)"),

@@ -13,12 +13,22 @@
 #import <stdint.h>
 #import <stdlib.h>
 #import <string.h>
+#import <sys/mount.h>
 #import <sys/stat.h>
 #import <unistd.h>
 
+#import "../../DetectorRunners/RunnerSupport.h"
+#if defined(SHDW_DYLDPROBE_EMBEDDED)
+#import "../../ShadowHarness/Battery.h"
+#endif
+
 static uint64_t gProbeStartTicks = 0;
 static mach_timebase_info_data_t gProbeTimebase = {0, 0};
+#if defined(SHDW_DYLDPROBE_EMBEDDED)
+static NSString* const kProbePackagedStressPath = @"@executable_path/Frameworks/shdwtestlib.dylib";
+#else
 static NSString* const kProbePackagedStressPath = @"@executable_path/shdwtestlib.dylib";
+#endif
 
 __attribute__((constructor)) static void probe_clock_start(void) {
     gProbeStartTicks = mach_continuous_time();
@@ -49,12 +59,14 @@ struct rebinding {
     void** replaced;
 };
 
+#if !defined(SHDW_DYLDPROBE_EMBEDDED)
 static int dyldprobe_dummy_dladdr(const void* addr, Dl_info* info) {
     return 0;
 }
 
 // Forward decl: section 8 probes ProbeReport's own address.
 static NSString* ProbeReport(void);
+#endif
 
 typedef struct {
     kern_return_t result;
@@ -84,10 +96,12 @@ static ProbeTaskDyldInfo probe_task_dyld_info(void) {
     return probe;
 }
 
+#if !defined(SHDW_DYLDPROBE_EMBEDDED)
 static struct dyld_all_image_infos* probe_direct_infos(void) {
     ProbeTaskDyldInfo probe = probe_task_dyld_info();
     return probe.valid ? probe.infos : NULL;
 }
+#endif
 
 static NSString* probe_string_at_pointer(const char* pointer) {
     if(!pointer) return @"";
@@ -159,10 +173,14 @@ static NSArray<NSString*>* probe_public_hidden_images(NSString* appPath) {
 }
 
 static NSString* probe_documents_directory(void) {
+#if defined(SHDW_DYLDPROBE_EMBEDDED)
+    return @"/var/mobile/Documents";
+#else
     const char* home = getenv("CFFIXED_USER_HOME");
     if(!home || home[0] != '/') home = getenv("HOME");
     return home && home[0] == '/' ?
         [[NSString stringWithUTF8String:home] stringByAppendingPathComponent:@"Documents"] : nil;
+#endif
 }
 
 static NSDictionary* probe_launch_context(NSString* documents) {
@@ -571,9 +589,9 @@ static NSDictionary* probe_machine_report(NSDictionary* context, NSString** fail
     BOOL callbackContractPassed = [callbackContract[@"status"] isEqualToString:@"PASS"];
     BOOL dyldPassed = callbackContractPassed && addressUUIDPassed;
 
-    struct stat canaryStat;
+    struct statfs canaryStat;
     errno = 0;
-    int statResult = stat("/var/jb", &canaryStat);
+    int statResult = statfs("/var/jb", &canaryStat);
     int statErrno = errno;
     BOOL injected = [mode isEqualToString:@"injected"];
     BOOL canaryPassed = statResult == -1 && statErrno == ENOENT;
@@ -585,7 +603,7 @@ static NSDictionary* probe_machine_report(NSDictionary* context, NSString** fail
             (injected ? @"PASS" : @"CONTROL-INACTIVE"));
     id canary = injected ? @{
         @"status" : canaryPassed ? @"PASS" : @"FAIL",
-        @"probe" : @"stat(/var/jb)",
+        @"probe" : @"statfs(/var/jb)",
         @"result" : @(statResult),
         @"errno" : @(statErrno),
     } : @"CONTROL-INACTIVE";
@@ -666,13 +684,20 @@ static BOOL probe_write_json_report(NSDictionary* report, NSString* path, NSStri
         if(failure) *failure = [NSString stringWithFormat:@"report serialization failed: %@", error.localizedDescription ?: @"unknown"];
         return NO;
     }
-    if(![data writeToFile:path options:NSDataWritingAtomic error:&error]) {
+    BOOL written = NO;
+#if defined(SHDW_DYLDPROBE_EMBEDDED)
+    written = ShdwWriteEvidenceData(data, path);
+#else
+    written = [data writeToFile:path options:NSDataWritingAtomic error:&error];
+#endif
+    if(!written) {
         if(failure) *failure = [NSString stringWithFormat:@"report write failed: %@", error.localizedDescription ?: @"unknown"];
         return NO;
     }
     return YES;
 }
 
+#if !defined(SHDW_DYLDPROBE_EMBEDDED)
 static BOOL probe_write_machine_report(NSString** failure) {
     NSString* documents = probe_documents_directory();
     NSDictionary* context = probe_launch_context(documents);
@@ -682,6 +707,7 @@ static BOOL probe_write_machine_report(NSString** failure) {
         [NSString stringWithFormat:@"dyldprobe-%@.json", context[@"nonce"]]];
     return probe_write_json_report(report, path, failure);
 }
+#endif
 
 static NSDictionary* probe_dashboard_check(NSString* identifier, NSString* name,
                                             BOOL passed, NSString* message) {
@@ -689,18 +715,21 @@ static NSDictionary* probe_dashboard_check(NSString* identifier, NSString* name,
              @"message" : message ?: (passed ? @"Passed" : @"Failed")};
 }
 
-static BOOL probe_write_dashboard_report(NSString** failure) {
+static NSDictionary* probe_dashboard_report(NSDictionary* suppliedContext, NSString** failure) {
     errno = 0;
-    int canaryResult = stat("/var/jb", &(struct stat){0});
+    int canaryResult = statfs("/var/jb", &(struct statfs){0});
     int canaryErrno = errno;
-    BOOL injected = canaryResult == -1 && canaryErrno == ENOENT;
-    NSDictionary* context = @{
-        @"run_id" : @"shadow-harness", @"row_id" : @"dyldprobe",
-        @"requested_mode" : injected ? @"injected" : @"uninjected",
-        @"nonce" : @"dashboard", @"probe_revision" : @"dashboard-v1",
-    };
+    NSDictionary* context = suppliedContext ?: probe_launch_context(probe_documents_directory());
+    if(!context) {
+        BOOL injected = canaryResult == -1 && canaryErrno == ENOENT;
+        context = @{
+            @"run_id" : @"shadow-harness", @"row_id" : @"dyldprobe",
+            @"requested_mode" : injected ? @"injected" : @"uninjected",
+            @"nonce" : @"dashboard", @"probe_revision" : @"dashboard-v1",
+        };
+    }
     NSDictionary* formal = probe_machine_report(context, failure);
-    if(!formal) return NO;
+    if(!formal) return nil;
 
     NSDictionary* observations = formal[@"observations"];
     NSDictionary* dyld = observations[@"dyld"];
@@ -746,6 +775,12 @@ static BOOL probe_write_dashboard_report(NSString** failure) {
         @"rounds" : @[@{@"phase" : @"dyld fidelity", @"clean" : @([outcome isEqualToString:@"clean"]), @"checks" : checks}],
         @"formal" : formal,
     };
+    return dashboard;
+}
+
+static BOOL probe_write_dashboard_report(NSString** failure) {
+    NSDictionary* dashboard = probe_dashboard_report(nil, failure);
+    if(!dashboard) return NO;
     NSString* directory = @"/var/mobile/Documents/ShadowDetectorTests";
     if(![NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil]) {
         if(failure) *failure = @"cannot create dashboard results directory";
@@ -754,6 +789,12 @@ static BOOL probe_write_dashboard_report(NSString** failure) {
     return probe_write_json_report(dashboard,
         [directory stringByAppendingPathComponent:@"dyldprobe.json"], failure);
 }
+
+BOOL SHDWDyldProbeWriteDashboardReport(NSString** failure) {
+    return probe_write_dashboard_report(failure);
+}
+
+#if !defined(SHDW_DYLDPROBE_EMBEDDED)
 
 static void probe_section_3(NSMutableString* out, NSFileManager* fm) {
     [out appendString:@"\n== 3. jailbreak path probes (fileExistsAtPath) ==\n"];
@@ -1016,6 +1057,7 @@ static NSString* ProbeReport(void) {
 
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong, nonatomic) UIWindow* window;
+@property (strong, nonatomic) NSURL* launchURL;
 @end
 
 @implementation AppDelegate {
@@ -1024,7 +1066,17 @@ static NSString* ProbeReport(void) {
 
 - (void)_runForShadowHarness {
     NSString* failure = nil;
-    if(!probe_write_dashboard_report(&failure)) {
+    NSDictionary* parameters = SHDWRunnerParameters(self.launchURL);
+    NSDictionary* context = @{
+        @"run_id" : @"shadow-harness",
+        @"row_id" : @"dyldprobe",
+        @"requested_mode" : @"injected",
+        @"nonce" : parameters[@"nonce"] ?: @"dashboard",
+        @"probe_revision" : @"dashboard-v1",
+    };
+    NSDictionary* dashboard = probe_dashboard_report(context, &failure);
+    NSString* callback = parameters[@"callback"];
+    if(!dashboard || !SHDWRunnerSendReport(dashboard, callback)) {
         _textView.text = [NSString stringWithFormat:@"Dashboard report failed: %@", failure ?: @"unknown error"];
         return;
     }
@@ -1040,6 +1092,7 @@ static NSString* ProbeReport(void) {
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
     NSURL* launchURL = launchOptions[UIApplicationLaunchOptionsURLKey];
+    self.launchURL = launchURL;
     BOOL launchedFromHarness = [launchURL.scheme isEqualToString:@"shadow-dyldprobe"];
     NSString* report = launchedFromHarness ? @"Running dyld fidelity probe…" :
         @"Tap Refresh to run supplemental diagnostics.";
@@ -1072,6 +1125,7 @@ static NSString* ProbeReport(void) {
 
 - (BOOL)application:(UIApplication*)application openURL:(NSURL*)url options:(NSDictionary*)options {
     if(![url.scheme isEqualToString:@"shadow-dyldprobe"]) return NO;
+    self.launchURL = url;
     [self _runForShadowHarness];
     return YES;
 }
@@ -1099,3 +1153,4 @@ int main(int argc, char* argv[]) {
         return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
     }
 }
+#endif

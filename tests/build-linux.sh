@@ -31,7 +31,7 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   Shadow.framework/DpkgRulesGenerator.m \
   Shadow.framework/RestrictionEngine.m Shadow.framework/JBPath.m \
   Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
-  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m ShadowCore.dylib/policy/PseudoSandboxPolicy.m \
+  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m \
   Shadow.framework/HookConfiguration.m Shadow.framework/SettingsMigration.m ShadowCore.dylib/HookAdapterBridge.m tests/CoordinatorTests.m \
   tests/VersionCompareTests.m tests/HookFallbackTests.c \
   -Wl,--export-dynamic \
