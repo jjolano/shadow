@@ -1,47 +1,35 @@
-# Single source of truth for Shadow's build-lane matrix. Sourced by
-# .github/scripts/build-deps.sh and build.sh; the root Makefile reads the
-# same fields via $(shell). Fields: ARCHS, TARGET, SCHEME, FLOOR, CEILING,
-# DEPLOY, DEPLOY_ARM64E, PACKAGE, PACKAGE_ARCH (the deployment fields only
-# apply where they are non-empty).
+# Shadow's build-lane matrix. The fields every project targeting a lane must
+# agree on -- ARCHS, TARGET, SCHEME, DEPLOY, DEPLOY_ARM64E, ABI -- come from
+# $THEOS/bin/lane.sh so Shadow and HookKit cannot drift apart. Only Shadow's own
+# packaging identity and firmware limits are defined here.
 #
-# Consumers must read these fields rather than duplicate package limits.
+# Sourced by .github/scripts/build-deps.sh and build.sh; the root Makefile reads
+# the same fields via $(shell). Consumers must read these fields rather than
+# duplicate package limits.
+
+. "${THEOS:?THEOS must point to Theos}/bin/lane.sh"
 
 shadow_lane_field() { # <lane> <field>
+    # Shared fields are Theos's; only Shadow-specific ones are answered here.
+    case "$2" in
+    FLOOR|CEILING|PACKAGE|PACKAGE_ARCH) ;;
+    *) theos_lane_field "$1" "$2"; return ;;
+    esac
     case "$1:$2" in
-    rootful-legacy:ARCHS)         echo "armv7 armv7s arm64 arm64e" ;;
-    rootful-legacy:TARGET)        echo "iphone:clang:13.7" ;;
-    rootful-legacy:SCHEME)        echo "" ;;
     rootful-legacy:FLOOR)         echo "9.0" ;;
     rootful-legacy:CEILING)       echo "14.0" ;;
-    rootful-legacy:DEPLOY)        echo "9.0" ;;
-    rootful-legacy:DEPLOY_ARM64E) echo "12.0" ;;
     rootful-legacy:PACKAGE)       echo "me.jjolano.shadow.legacy" ;;
     rootful-legacy:PACKAGE_ARCH)  echo "iphoneos-arm" ;;
-    rootful-modern:ARCHS)         echo "arm64 arm64e" ;;
-    rootful-modern:TARGET)        echo "iphone:clang:16.5:14.0" ;;
-    rootful-modern:SCHEME)        echo "" ;;
     rootful-modern:FLOOR)         echo "14.0" ;;
     rootful-modern:CEILING)       echo "" ;;
-    rootful-modern:DEPLOY)        echo "" ;;
-    rootful-modern:DEPLOY_ARM64E) echo "" ;;
     rootful-modern:PACKAGE)       echo "me.jjolano.shadow" ;;
     rootful-modern:PACKAGE_ARCH)  echo "iphoneos-arm" ;;
-    rootless:ARCHS)               echo "arm64 arm64e" ;;
-    rootless:TARGET)              echo "iphone:clang:16.5:15.0" ;;
-    rootless:SCHEME)              echo "rootless" ;;
     rootless:FLOOR)               echo "15.0" ;;
     rootless:CEILING)             echo "" ;;
-    rootless:DEPLOY)              echo "" ;;
-    rootless:DEPLOY_ARM64E)       echo "" ;;
     rootless:PACKAGE)             echo "me.jjolano.shadow" ;;
     rootless:PACKAGE_ARCH)        echo "iphoneos-arm64" ;;
-    roothide:ARCHS)               echo "arm64 arm64e" ;;
-    roothide:TARGET)              echo "iphone:clang:16.5:15.0" ;;
-    roothide:SCHEME)              echo "roothide" ;;
     roothide:FLOOR)               echo "15.0" ;;
     roothide:CEILING)             echo "18.0" ;;
-    roothide:DEPLOY)              echo "" ;;
-    roothide:DEPLOY_ARM64E)       echo "" ;;
     roothide:PACKAGE)             echo "me.jjolano.shadow" ;;
     roothide:PACKAGE_ARCH)        echo "iphoneos-arm64e" ;;
     *) echo "unknown lane '$1' or field '$2'" >&2; return 1 ;;
@@ -49,6 +37,10 @@ shadow_lane_field() { # <lane> <field>
 }
 
 # CLI mode for make $(shell): lanes.sh get <lane> <field>
-if [ "${1:-}" = get ] && [ "$#" -eq 3 ]; then
+# $BASH_SOURCE (unsubscripted) is element 0 under bash and unset under dash,
+# which sources this file via build-lanes.mk -- ${BASH_SOURCE[0]} would be a
+# "Bad substitution" there.
+_lane_self=${BASH_SOURCE:-$0}
+if [ "$_lane_self" = "$0" ] && [ "${1:-}" = get ] && [ "$#" -eq 3 ]; then
     shadow_lane_field "$2" "$3"
 fi

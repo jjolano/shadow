@@ -89,31 +89,21 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
     : # patched: skip vendor compat check on Linux
 }
 
+# Both ABIs' toolchain selection and validation live in $THEOS/bin/lane.sh
+# (sourced via lanes.sh) so Shadow and HookKit cannot disagree about which
+# compiler a lane needs. macOS/Xcode compiles either ABI itself, so
+# theos_abi_args emits nothing there; on Linux it emits SDKBINPATH plus
+# IS_NEW_ABI=1, which wins on stock and roothide Theos alike.
 legacy_args() {
-    local toolchain=${OLDABI_TOOLCHAIN:-$THEOS/toolchain/oldabi/linux/iphone}
-    local sdks=${OLDABI_SDKS:-$THEOS/sdks}
-    [ -x "$toolchain/bin/clang" ] || { echo "missing old-ABI toolchain: $toolchain" >&2; return 1; }
-    [ -d "$sdks/iPhoneOS13.7.sdk" ] || { echo "missing iPhoneOS13.7.sdk under $sdks" >&2; return 1; }
-    LEGACY_ARGS=(
-        "SDKBINPATH=$toolchain/bin"
-        "THEOS_SDKS_PATH=$sdks"
-    )
+    theos_abi_require old rootful-legacy
+    mapfile -t LEGACY_ARGS < <(theos_abi_args old)
 }
 
 modern_args() { # sets MODERN_ARGS for the new arm64e ABI
     MODERN_ARGS=()
-    # macOS/Xcode compiles the new ABI itself; only a Linux cross build needs
-    # the modern toolchain plus IS_NEW_ABI=1 to override Theos' non-macOS
-    # default (which otherwise links the old-ABI libroot). IS_NEW_ABI=1 on the
-    # make command line wins on stock/roothide Theos too, so this does not
-    # depend on the local fork's THEOS_ABI knob.
     [ "$(uname -s)" = Linux ] || return 0
-    local toolchain=${NEWABI_TOOLCHAIN:-$THEOS/toolchain/modern/linux/iphone}
-    [ -x "$toolchain/bin/clang" ] || { echo "missing new-ABI toolchain: $toolchain" >&2; return 1; }
-    MODERN_ARGS=(
-        "SDKBINPATH=$toolchain/bin"
-        "IS_NEW_ABI=1"
-    )
+    theos_abi_require new "${1:-modern lane}"
+    mapfile -t MODERN_ARGS < <(theos_abi_args new)
 }
 
 prepare_scheme_framework() { # rootless|roothide
