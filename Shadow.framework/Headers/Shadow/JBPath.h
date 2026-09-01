@@ -25,7 +25,8 @@
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0) return NO;
-    if (strncmp(path, "/var/jb", 7) == 0) return YES;
+    if (strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) return YES;
+    if (strncmp(path, "/private/var/jb", 15) == 0 && (path[15] == '\0' || path[15] == '/')) return YES;
     if (strncmp(path, "/cores/", 7) == 0) return YES;
     if (strncmp(path, "/private/preboot", 16) == 0) return YES;
     NSString *root = jbroot(@"/");
@@ -68,7 +69,8 @@ static inline NSString* shdw_jbroot_prefix(void) {
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
-    if (strncmp(path, "/var/jb", 7) == 0) return YES;
+    if (strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) return YES;
+    if (strncmp(path, "/private/var/jb", 15) == 0 && (path[15] == '\0' || path[15] == '/')) return YES;
     if (strncmp(path, "/cores/", 7) == 0) return YES;
     if (strncmp(path, "/private/preboot", 16) == 0) return YES;
     if (strncmp(path, "/preboot", 8) == 0) return YES;

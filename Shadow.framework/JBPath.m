@@ -109,6 +109,8 @@ BOOL shdw_is_restricted_root(const char *path) {
 
     if (strncmp(path, "/var/jb", 7) == 0
         && (path[7] == '\0' || path[7] == '/')) return YES;
+    if (strncmp(path, "/private/var/jb", 15) == 0
+        && (path[15] == '\0' || path[15] == '/')) return YES;
     if (strncmp(path, "/cores/", 7) == 0) return YES;
     if (strncmp(path, "/private/preboot", 16) == 0
         && (path[16] == '\0' || path[16] == '/')) return YES;

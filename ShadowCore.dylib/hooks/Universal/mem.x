@@ -118,11 +118,30 @@ static kern_return_t replaced_mach_vm_region_recurse(vm_map_read_t target_task, 
     }
 }
 
+static void shdw_install_memory_hook(SHDWHookSession* hooks, void* target,
+                                     void* replacement, void** original,
+                                     NSString* symbol) {
+    BOOL entrypointInstalled = [hooks hookFunction:target
+                                   withReplacement:replacement
+                                          outOldPtr:original];
+
+    // A shared-cache caller can keep a direct import even when the entrypoint
+    // route is available. The dlsym policy covers dynamic lookups; rebind the
+    // already-loaded direct imports too.
+    [hooks hookRebindSymbol:symbol
+            withReplacement:replacement
+                   outOldPtr:entrypointInstalled ? NULL : original];
+}
+
 void shdw_universal_memory(SHDWHookSession* hooks) {
-    [hooks hookFunction:vm_region_64 withReplacement:replaced_vm_region_64 outOldPtr:(void **) &original_vm_region_64];
-    [hooks hookFunction:vm_region_recurse_64 withReplacement:replaced_vm_region_recurse_64 outOldPtr:(void **) &original_vm_region_recurse_64];
-    [hooks hookFunction:mach_vm_region withReplacement:replaced_mach_vm_region outOldPtr:(void **) &original_mach_vm_region];
-    [hooks hookFunction:mach_vm_region_recurse withReplacement:replaced_mach_vm_region_recurse outOldPtr:(void **) &original_mach_vm_region_recurse];
+    shdw_install_memory_hook(hooks, vm_region_64, replaced_vm_region_64,
+                             (void **) &original_vm_region_64, @"vm_region_64");
+    shdw_install_memory_hook(hooks, vm_region_recurse_64, replaced_vm_region_recurse_64,
+                             (void **) &original_vm_region_recurse_64, @"vm_region_recurse_64");
+    shdw_install_memory_hook(hooks, mach_vm_region, replaced_mach_vm_region,
+                             (void **) &original_mach_vm_region, @"mach_vm_region");
+    shdw_install_memory_hook(hooks, mach_vm_region_recurse, replaced_mach_vm_region_recurse,
+                             (void **) &original_mach_vm_region_recurse, @"mach_vm_region_recurse");
 }
 
 void shdw_universal_memory_verify(void) {

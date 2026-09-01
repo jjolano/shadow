@@ -3,48 +3,19 @@
 #import <UIKit/UIKit.h>
 #import <Shadow/HookConfiguration.h>
 
-id SHDWReadAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key) {
-	if(appID) {
-		NSDictionary* prefs_app = [prefs dictionaryForKey:appID];
-
-		if(prefs_app && [prefs_app objectForKey:key]) {
-			return prefs_app[key];
-		}
-	}
-
-	// Options not overridden for this app inherit the global value.
-	return [prefs objectForKey:key];
+BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID) {
+	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];
+	return SHDWApplicationEnabled(appPrefs,
+		[prefs boolForKey:SHDWGlobalEnabledID],
+		[prefs boolForKey:SHDWSingleToggleMigrationID], NO);
 }
 
-void SHDWWriteAppPref(NSUserDefaults *prefs, NSString *appID, NSString *key, id v) {
-	if(appID) {
-		NSDictionary* prefs_app = [prefs dictionaryForKey:appID];
-		NSMutableDictionary* prefs_app_m = prefs_app ? [prefs_app mutableCopy] : [NSMutableDictionary new];
-
-		prefs_app_m[key] = v;
-
-		[prefs setObject:[prefs_app_m copy] forKey:appID];
-	} else {
-		[prefs setObject:v forKey:key];
-	}
-}
-
-NSUInteger SHDWCountEnabledHooks(NSUserDefaults *prefs, NSString *appID) {
-	NSUInteger count = 0;
-
-	// The canonical hook-key set is the preset keys (every Universal_/Adapter_
-    // setting); global/runtime settings must not inflate the independent-hook count.
-	for(NSString* key in SHDWPresetStandard()) {
-		BOOL enabled = appID
-			? [SHDWReadAppPref(prefs, appID, key) boolValue]
-			: [prefs boolForKey:key];
-
-		if(enabled) {
-			count++;
-		}
-	}
-
-	return count;
+void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled) {
+	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy] ?: [NSMutableDictionary new];
+	appPrefs[SHDWAppEnabledID] = @(enabled);
+	[appPrefs removeObjectForKey:SHDWAppDisabledID];
+	[prefs setBool:YES forKey:SHDWSingleToggleMigrationID];
+	[prefs setObject:[appPrefs copy] forKey:appID];
 }
 
 void SHDWToggleHaptic(void) {

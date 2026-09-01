@@ -15,49 +15,28 @@
 // kUTTypePropertyList keeps the document picker compatible with iOS 9.
 #import <CoreServices/CoreServices.h>
 
-// Preset profiles: batch values for every hook toggle. "standard" mirrors the
-// shipped defaults; "maximum" enables everything including dangerous hooks.
-// Canonical values come from Shadow/HookConfiguration.h (SHDWPresetStandard /
-// SHDWPresetMaximum) — the metadata is the single source of truth.
-
-static BOOL PrefsMatchPreset(NSUserDefaults* prefs, NSDictionary* preset) {
-	for(NSString* key in preset) {
-		if([SHDWReadAppPref(prefs, nil, key) boolValue] != [preset[key] boolValue]) {
-			return NO;
-		}
-	}
-
-	return YES;
-}
-
-// Canonical Shadow preference keys (single source: the framework defaults,
-// plus App_Enabled and the detector log). Per-app override dicts (bundle-ID
-// keys) are recognized by their dictionary value, not listed here.
+// Only activation state and detector evidence are user-owned settings. Legacy
+// activation keys remain importable so old backups keep their behavior.
 static NSSet* SHDWAllowedKeys(void) {
 	static NSSet* keys = nil;
 	static dispatch_once_t onceToken;
 	dispatch_once(&onceToken, ^{
-		NSMutableSet* mutableKeys = [NSMutableSet setWithArray:[SHDWDefaultHookSettings() allKeys]];
-		[mutableKeys addObject:SHDWAppEnabledID];
-		[mutableKeys addObject:@"DetectorLog"];
-		keys = [mutableKeys copy];
+		keys = [NSSet setWithArray:@[
+			SHDWAppEnabledID, SHDWAppDisabledID, SHDWGlobalEnabledID,
+			SHDWSingleToggleMigrationID, @"DetectorLog"
+		]];
 	});
 
 	return keys;
 }
 
-// Validate one value against its key's expected class: switches
-// (Global_Enabled, App_Enabled, Universal_*, Adapter_*) are
-// NSNumber, HK_Library is NSString, DetectorLog is an NSArray of NSString,
+// Validate one value against its key's expected class: activation switches are
+// NSNumber, DetectorLog is an NSArray of NSString,
 // and any other top-level key must be a per-app override dict (bundle ID)
 // whose inner keys follow the same rules. Returns the value (per-app dicts
 // sanitized down to known inner keys) or nil to drop it — a hand-edited
 // backup must never write wrongly-typed values that crash ShadowCore later.
 static id SHDWSanitizeValue(NSString* key, id value) {
-	if([key isEqualToString:SHDWHookLibraryID]) {
-		return [value isKindOfClass:[NSString class]] ? value : nil;
-	}
-
 	if([key isEqualToString:@"DetectorLog"]) {
 		if(![value isKindOfClass:[NSArray class]]) {
 			return nil;
@@ -140,23 +119,12 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
 	NSString* key = [specifier identifier];
 
-	if([key isEqualToString:@"BypassPresetSummary"]) {
-		// Mirror the global bypass page's preset derivation.
-		NSString* presetID = @"custom";
-		if(PrefsMatchPreset(prefs, SHDWPresetStandard())) {
-			presetID = @"standard";
-		} else if(PrefsMatchPreset(prefs, SHDWPresetMaximum())) {
-			presetID = @"maximum";
-		}
-
-		NSString* presetKey = [NSString stringWithFormat:@"PRESET_%@", [presetID uppercaseString]];
-		return [[NSBundle bundleForClass:[self class]] localizedStringForKey:presetKey value:presetID table:@"Hooks"];
-	}
-
 	if([key isEqualToString:@"ApplicationsSummary"]) {
 		NSInteger excluded = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:SHDWAppDisabledID] boolValue]) {
+			if([value isKindOfClass:[NSDictionary class]] &&
+			   ([[value objectForKey:SHDWAppDisabledID] boolValue] ||
+			    ([value objectForKey:SHDWAppEnabledID] && ![[value objectForKey:SHDWAppEnabledID] boolValue]))) {
 				excluded++;
 			}
 		}
@@ -174,13 +142,13 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 
 		NSInteger count = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:@"App_Enabled"] boolValue]
+			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:SHDWAppEnabledID] boolValue]
 				&& ![[value objectForKey:SHDWAppDisabledID] boolValue]) {
 				count++;
 			}
 		}
 
-		return [NSString stringWithFormat:[self localized:@"APPS_CUSTOMIZED_FMT" fallback:@"%ld customized"], (long)count];
+		return [NSString stringWithFormat:[self localized:@"APPS_ENABLED_FMT" fallback:@"%ld enabled"], (long)count];
 	}
 
 	return [prefs objectForKey:[specifier identifier]];
@@ -195,9 +163,8 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 - (void)viewWillAppear:(BOOL)animated {
 	[super viewWillAppear:animated];
 
-	// The summary rows derive from settings that can change on pushed pages
-	// (preset, per-app overrides); refresh them on every return.
-	for(NSString* specID in @[ @"BypassPresetSummary", @"ApplicationsSummary" ]) {
+	// The summary derives from switches changed on pushed app pages.
+	for(NSString* specID in @[ @"ApplicationsSummary" ]) {
 		PSSpecifier* summary = [self specifierForID:specID];
 		if(summary) {
 			[self reloadSpecifier:summary];
@@ -310,6 +277,22 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 		return;
 	}
 
+	// Normalize legacy follow-global state before making App_Enabled explicit.
+	BOOL legacyGlobalEnabled = [sanitized[SHDWGlobalEnabledID] boolValue];
+	BOOL singleToggleMigrated = [sanitized[SHDWSingleToggleMigrationID] boolValue];
+	for(NSString* key in sanitized.allKeys) {
+		id value = sanitized[key];
+		if([value isKindOfClass:[NSDictionary class]]) {
+			NSMutableDictionary* app = [value mutableCopy];
+			app[SHDWAppEnabledID] = @(SHDWApplicationEnabled(value, legacyGlobalEnabled,
+				singleToggleMigrated, NO));
+			[app removeObjectForKey:SHDWAppDisabledID];
+			sanitized[key] = [app copy];
+		}
+	}
+	[sanitized removeObjectForKey:SHDWAppDisabledID];
+	sanitized[SHDWSingleToggleMigrationID] = @YES;
+
 	UIAlertController* confirm = [UIAlertController alertControllerWithTitle:[self localized:@"IMPORT_CONFIRM_TITLE" fallback:@"Import Settings?"] message:[self localized:@"IMPORT_CONFIRM_MSG" fallback:@"This replaces all current settings with the selected file."] preferredStyle:UIAlertControllerStyleAlert];
 
 	[confirm addAction:[UIAlertAction actionWithTitle:[self localized:@"IMPORT_CANCEL" fallback:@"Cancel"] style:UIAlertActionStyleCancel handler:nil]];
@@ -325,8 +308,7 @@ static NSDictionary* SHDWExportablePrefs(NSUserDefaults* prefs) {
 
 		[prefs synchronize];
 
-		// Refresh the pane so the imported state (Global_Enabled switch,
-		// derived summary rows) shows without a respring.
+		// Refresh the derived app summary without a respring.
 		[self reloadSpecifiers];
 
 		UIAlertController* applied = [UIAlertController alertControllerWithTitle:[self localized:@"IMPORT_APPLIED" fallback:@"Settings imported. Respring to apply."] message:nil preferredStyle:UIAlertControllerStyleAlert];

@@ -5,14 +5,15 @@
 #import <Shadow/HookConfiguration.h>
 #import "SettingsMigration.h"
 
+static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides";
+
 @implementation ShadowSettings
 @synthesize defaultSettings, userDefaults;
 
 - (instancetype)init {
     if((self = [super init])) {
-        // Canonical shipped defaults (Shadow/HookConfiguration.h) — the
-        // metadata is the single source of truth. Universal_IOKit is explicit NO
-        // (previously absent-by-omission).
+        // Enabled apps all receive this one built-in profile. Stored hook
+        // values are intentionally ignored.
         defaultSettings = SHDWDefaultHookSettings();
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
@@ -30,13 +31,19 @@
     }
 
     NSDictionary* migratedRoot = SHDWMigratedHookSettings(root);
+    BOOL firstSingleToggleMigration = ![root[SHDWSingleToggleMigrationID] boolValue];
+    BOOL legacyGlobalEnabled = [root[SHDWGlobalEnabledID] boolValue];
     BOOL changed = NO;
     for(NSString* key in migratedRoot) {
         id value = migratedRoot[key];
         if([value isKindOfClass:[NSDictionary class]]) {
-            NSDictionary* migratedApp = SHDWMigratedHookSettings(value);
+            NSMutableDictionary* migratedApp = [SHDWMigratedHookSettings(value) mutableCopy];
+            if(firstSingleToggleMigration && legacyGlobalEnabled &&
+               ![value[SHDWAppDisabledID] boolValue] && ![value[SHDWAppEnabledID] boolValue]) {
+                migratedApp[SHDWAppEnabledID] = @YES;
+            }
             if(![migratedApp isEqual:value]) {
-                [userDefaults setObject:migratedApp forKey:key];
+                [userDefaults setObject:[migratedApp copy] forKey:key];
                 changed = YES;
             }
         } else if(![value isEqual:root[key]]) {
@@ -49,6 +56,10 @@
             [userDefaults removeObjectForKey:key];
             changed = YES;
         }
+    }
+    if(firstSingleToggleMigration) {
+        [userDefaults setBool:YES forKey:SHDWSingleToggleMigrationID];
+        changed = YES;
     }
     if(changed) {
         [userDefaults synchronize];
@@ -72,6 +83,7 @@
     }
 
     NSMutableDictionary* result = [defaultSettings mutableCopy];
+    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
     NSDictionary* filePreferences = nil;
     NSDictionary* fileAppSettings = nil;
@@ -80,64 +92,53 @@
         id fileRoot = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST];
         filePreferences = [fileRoot isKindOfClass:[NSDictionary class]] ? fileRoot : nil;
         id fileSettings = filePreferences[bundleIdentifier];
-        fileAppSettings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
+        fileAppSettings = [fileSettings isKindOfClass:[NSDictionary class]] ? SHDWMigratedHookSettings(fileSettings) : nil;
     }
     if(!app_settings) {
         app_settings = fileAppSettings;
     }
 
-    // Profile selection must be file-authoritative for Harness: otherwise
-    // deleting an explicit maximum profile can leave cfprefsd's old dictionary
-    // active and prevent the normal universal baseline from returning.
-    if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
+    // Test profiles are file-authoritative so cfprefsd cannot retain an old
+    // arm while the device driver swaps the backing plist.
+    if(([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] || isDetectorRunner) &&
        filePreferences) {
         app_settings = fileAppSettings;
     }
 
-    // Per-app kill switch. Distinct from App_Enabled, which means "this app has
-    // per-app overrides" — its NO state is "follow global", so it cannot say
-    // "off". App_Disabled overrides everything including Global_Enabled, and
-    // leaves App_Enabled unset, which is what both ctors gate on: an app the
-    // user has excluded is never hooked at all.
-    if([[app_settings objectForKey:SHDWAppDisabledID] boolValue]) {
-        return [result copy];
-    }
+    BOOL enabled = SHDWApplicationEnabled(app_settings,
+        [userDefaults boolForKey:SHDWGlobalEnabledID],
+        [userDefaults boolForKey:SHDWSingleToggleMigrationID],
+        isDetectorRunner || bundleIdentifier.length == 0);
+    result[SHDWAppEnabledID] = @(enabled);
 
-    BOOL useAppSettings = [[app_settings objectForKey:@"App_Enabled"] boolValue];
-    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
-
-    if(useAppSettings || [userDefaults boolForKey:@"Global_Enabled"] || isDetectorRunner) {
-        // Per-app overrides win; a key the app does not set inherits the
-        // global value (matches the settings UI).
-        [result setObject:@(YES) forKey:@"App_Enabled"];
-
-        for(NSString* key in defaultSettings) {
-            id value = useAppSettings ? [app_settings objectForKey:key] : nil;
-
-            if(!value) {
-                value = [userDefaults objectForKey:key];
-            }
-
-            // Absent everywhere (a key added by an upgrade, or a Sandy-
-            // filtered read): keep the shipped default already in result.
-            // setObject:nil here would throw and abort the whole ctor.
-            if(value) {
-                [result setObject:value forKey:key];
+    if(enabled) {
+        // Not user configuration: the device evidence driver can disable one
+        // adapter for an isolated runner without weakening normal app profiles.
+        NSDictionary* overrides = isDetectorRunner &&
+            [app_settings[kSHDWDetectorRunnerOverridesKey] isKindOfClass:[NSDictionary class]]
+            ? app_settings[kSHDWDetectorRunnerOverridesKey] : nil;
+        for(NSString* key in @[ SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID,
+                                SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID ]) {
+            id value = overrides[key];
+            if([value isKindOfClass:[NSNumber class]]) {
+                result[key] = @([value boolValue]);
             }
         }
 
+        // The isolated IOSSecuritySuite runner dlopens its bridge only after
+        // Core's constructor, then invokes this deferred test profile itself.
+        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.iossecuritysuite"]) {
+            result[SHDWUniversalHarnessBaselineID] = @YES;
+        }
+
         // Harness normally records a universal baseline before SDK-specific
-        // hooks load. Its explicit test profile may opt into a fully prearmed
+        // hooks load. Its explicit test mode may opt into a fully prearmed
         // detector run without changing any other app's behavior.
         if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]) {
             id baseline = [app_settings objectForKey:SHDWUniversalHarnessBaselineID];
             if(baseline != nil) {
                 result[SHDWUniversalHarnessBaselineID] = baseline;
             }
-        }
-
-        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.dtt"]) {
-            result[SHDWAdapterDTTJailbreakDetectionID] = @YES;
         }
     }
 

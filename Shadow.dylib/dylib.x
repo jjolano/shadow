@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 #import "../common.h"
+#import <Shadow/SHDWPlugin.h>
 #import <libSandy.h>
 #import <dlfcn.h>
 
@@ -67,16 +68,10 @@ extern char*** _NSGetArgv();
         app_settings = [fileSettings isKindOfClass:[NSDictionary class]] ? fileSettings : nil;
     }
 
-    // Per-app kill switch (see getPreferencesForIdentifier: in Settings.m).
-    // Checked here rather than left to the payload's own gate so an excluded
-    // app never dlopens ShadowCore at all — the point of the switch is to get
-    // Shadow out of an app's way entirely.
-    if([app_settings[@"App_Disabled"] boolValue]) {
-        return;
-    }
-
-    if(!isDetectorRunner && ![app_settings[@"App_Enabled"] boolValue]
-       && ![defaults boolForKey:@"Global_Enabled"]) {
+    if(!SHDWApplicationEnabled(app_settings,
+        [defaults boolForKey:SHDWGlobalEnabledID],
+        [defaults boolForKey:SHDWSingleToggleMigrationID],
+        isDetectorRunner)) {
         return;
     }
 

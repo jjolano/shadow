@@ -41,8 +41,7 @@ void shdw_universal_objc_methodimpl(SHDWHookSession* hooks) {
 }
 
 void shdw_universal_objc_methodimpl_detector(SHDWHookSession* hooks) {
+    // The ctor already installs this rebind. Repeating the same HookKit
+    // request back-to-back can invalidate the existing import-slot plan.
     shdw_universal_objc_methodimpl(hooks);
-    [hooks hookRebindSymbol:@"method_getImplementation"
-            withReplacement:replaced_method_getImplementation_detector
-                   outOldPtr:NULL];
 }

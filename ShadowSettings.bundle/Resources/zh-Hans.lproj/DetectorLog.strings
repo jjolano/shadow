@@ -3,13 +3,13 @@
 "APPLICATIONS" = "应用";
 "ACTIVITY" = "活动";
 "CLEAR_LOG" = "清除日志";
-"NO_ACTIVITY" = "未记录到检测器活动";
+"NO_ACTIVITY" = "无";
 "SHARE_LOG" = "分享日志";
 "CLEAR_CONFIRM_TITLE" = "清除检测器日志？";
 "CLEAR_CONFIRM_MSG" = "这将删除所有已记录的检测器活动。此操作无法撤销。";
 "CLEAR_CANCEL" = "取消";
 "CLEAR_CONFIRM" = "清除";
-"NO_APP_ACTIVITY" = "未记录此应用的检测器活动";
+"NO_APP_ACTIVITY" = "无";
 "EVENT_COUNT_ONE" = "1 个事件";
 "EVENT_COUNT_MANY" = "%lu 个事件";
 "OPEN_APP_HINT" = "显示此应用的检测器活动";

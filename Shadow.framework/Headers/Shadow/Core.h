@@ -36,6 +36,11 @@ extern _Atomic(uint64_t) shdw_ruleset_generation;
 __attribute__((visibility("default")))
 NSUInteger shdwInternalBusy(void);
 
+// Harness-only deferred adapter pass. Returns NO for processes without the
+// explicit Harness profile or before ShadowCore has loaded.
+__attribute__((visibility("default")))
+BOOL shdwInstallHarnessSDKFallback(void);
+
 __attribute__((visibility("default")))
 @interface Shadow : NSObject
 
@@ -56,6 +61,10 @@ __attribute__((visibility("default")))
 
 + (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid dataRoot:(NSString *)dataRoot;
 + (NSArray<NSString *> *)shdwGroupContainersUnderRoot:(NSString *)root;
+
+// Pseudo sandbox mode is fixed for the injected process: 0 = off, 1 = audit,
+// 2 = strict. ShadowCore applies the resolved per-app setting at startup.
+- (void)shdwConfigurePseudoSandboxMode:(NSInteger)mode;
 
 - (BOOL)isAddrRestricted:(const void *)addr;
 

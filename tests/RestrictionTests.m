@@ -8,7 +8,6 @@
 #import "ranges.h"
 #import "RestrictionEngine.h"
 #import "RestrictionQuery.h"
-#import "../ShadowCore.dylib/policy/PseudoSandboxPolicy.h"
 #import "ShdwPathShim.h"
 #import <unistd.h>
 #import <sys/stat.h>
@@ -54,7 +53,6 @@ static void TestGroupContainersAndMCM(void) {
     RCHECK(![engine isPathRestrictedQuery:q3], "home container exempt");
     ShadowRestrictionQuery *q4 = [ShadowRestrictionQuery queryWithPath:@"/var/containers/Bundle/Application/UUID/App.app/jailbreak-files"];
     RCHECK(![engine isPathRestrictedQuery:q4], "bundle container exempt");
-    RCHECK(shdw_pseudo_is_allowed("/var/mobile/Library/Preferences/.GlobalPreferences.plist"), "carveout .GlobalPreferences allowed");
 }
 
 static void TestMCMMock(void) {
@@ -291,52 +289,114 @@ static void TestNonSandboxed(void) {
     ShadowRestrictionQuery *q = [ShadowRestrictionQuery queryWithPath:@"/private/var/mobile/Containers/Shared/AppGroup/G1/jailbreak-files"];
     RCHECK(![eYes isPathRestrictedQuery:q], "group exempt when sandboxed");
     RCHECK([eNo isPathRestrictedQuery:q], "group NOT exempt when non-sandboxed");
-    RCHECK(shdw_pseudo_enabled() == NO && shdw_pseudo_strict() == NO, "pseudo default OFF");
 }
 
-static void TestPseudoAllowlist(void) {
-    printf("[tests] pseudo allowlist + overlay\n");
-    RCHECK(shdw_pseudo_is_allowed("/var/mobile/Library/Preferences/.GlobalPreferences.plist"), "pseudo carveout .GlobalPreferences");
-    RCHECK(shdw_pseudo_is_allowed("/var/mobile/Library/Preferences/com.apple.foo.plist"), "pseudo carveout com.apple prefs");
-    RCHECK(shdw_pseudo_is_allowed("/var/mobile/Library/SplashBoard/Snapshots/com.apple.bar/file"), "pseudo carveout SplashBoard com.apple");
-    RCHECK(shdw_pseudo_is_allowed("/tmp/com.apple.baz/file"), "pseudo carveout /tmp/com.apple");
-    RCHECK(!shdw_pseudo_is_allowed("/var/mobile/Library/Preferences/com.example.plist"), "non-carveout not allowed");
-    NSString *home = NSHomeDirectory();
-    NSString *homeFile = [home stringByAppendingPathComponent:@"Documents/file"];
-    RCHECK(shdw_pseudo_is_allowed([homeFile UTF8String]), "pseudo container home allowed");
-    NSString *bundle = [Shadow sharedInstance].bundlePath;
-    if(bundle) {
-        NSString *bundleFile = [bundle stringByAppendingPathComponent:@"file"];
-        RCHECK(shdw_pseudo_is_allowed([bundleFile UTF8String]), "pseudo container bundle allowed");
-    } else {
-        RCHECK(NO, "bundlePath nil");
-    }
-    RCHECK(shdw_pseudo_is_allowed("/usr/bin/ssh"), "pseudo stock /usr");
-    RCHECK(shdw_pseudo_is_allowed("/bin/bash"), "pseudo stock /bin");
-    RCHECK(shdw_pseudo_is_allowed("/sbin/launchd"), "pseudo stock /sbin");
-    RCHECK(shdw_pseudo_is_allowed("/Applications/App.app"), "pseudo stock /Applications");
-    RCHECK(shdw_pseudo_is_allowed("/Library/Preferences/x"), "pseudo stock /Library");
-    RCHECK(shdw_pseudo_is_allowed("/System/Library/Frameworks/UIKit.framework"), "pseudo stock /System");
-    RCHECK(!shdw_pseudo_is_allowed("/var/jb/usr/bin/tool"), "pseudo outside stock not allowed");
-    RCHECK(!shdw_pseudo_is_allowed("/private/var/mobile/evil"), "pseudo outside not allowed");
+static BOOL PseudoQuery(ShadowRestrictionEngine* engine, NSString* path,
+                        NSString* workingDirectory, BOOL noFollow) {
+    ShadowRestrictionQuery* query = [ShadowRestrictionQuery queryWithPath:path];
+    query.workingDirectory = workingDirectory;
+    if(noFollow) query.flags |= ShadowRestrictionFlagNoFollow;
+    return [engine isPathRestrictedQuery:query];
+}
 
-shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(2)});
-    RCHECK(shdw_pseudo_enabled() && shdw_pseudo_strict(), "pseudo mode 2 = strict");
-    RCHECK(shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo strict outside denied");
-    RCHECK(shdw_pseudo_should_deny("/private/var/mobile/evil"), "pseudo strict outside denied2");
-    RCHECK(!shdw_pseudo_should_deny("/usr/bin/ssh"), "pseudo strict inside stock not denied (overlay NO)");
-    RCHECK(!shdw_pseudo_should_deny("/var/mobile/Library/Preferences/.GlobalPreferences.plist"), "pseudo strict carveout not denied");
-    RCHECK(!shdw_pseudo_should_deny([homeFile UTF8String]), "pseudo strict container not denied");
-    RCHECK(!shdw_pseudo_should_deny("/Applications/Cydia.app"), "pseudo overlay harness always NO inside allow");
-shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(1)});
-    RCHECK(shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 1 = audit");
-    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo audit only not denied");
-shdw_pseudo_refresh(@{SHDWUniversalPseudoSandboxModeID: @(0)});
-    RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo mode 0 = off");
-    shdw_pseudo_refresh(nil);
-    RCHECK(!shdw_pseudo_enabled() && !shdw_pseudo_strict(), "pseudo reset OFF");
-    RCHECK(!shdw_pseudo_should_deny("/var/jb/bin/tool"), "pseudo OFF not denied");
-    RCHECK(shdw_pseudo_is_allowed("/usr/bin/ssh"), "pseudo is_allowed works when OFF");
+static void PseudoPreservesBelt(ShadowRestrictionEngine* engine, NSString* path, const char* name) {
+    [engine configurePseudoSandboxMode:ShadowPseudoSandboxModeOff];
+    BOOL belt = PseudoQuery(engine, path, nil, NO);
+    [engine configurePseudoSandboxMode:ShadowPseudoSandboxModeStrict];
+    RCHECK(PseudoQuery(engine, path, nil, NO) == belt, name);
+}
+
+static void TestPseudoSandbox(void) {
+    printf("[tests] pseudo sandbox engine modes\n");
+    NSString* home = @"/var/mobile/Containers/Data/Application/PseudoHome";
+    NSString* bundle = @"/var/containers/Bundle/Application/PseudoBundle/App.app";
+    NSString* group = @"/var/mobile/Containers/Shared/AppGroup/PseudoGroup";
+    NSString* outside = @"/var/mobile/Documents/PseudoSandboxProbe";
+    ShadowRestrictionContext context = {
+        .hasAppSandbox = YES,
+        .rootless = shdw_harness_rootless(),
+        .bundlePath = bundle,
+        .homePath = home,
+        .groupContainerPaths = @[group],
+    };
+    ShadowRestrictionEngine* engine = [[ShadowRestrictionEngine alloc] initWithContext:context];
+
+    BOOL offOutside = PseudoQuery(engine, outside, nil, NO);
+    RCHECK(!offOutside, "pseudo default off preserves an allowed outside path");
+
+    [engine configurePseudoSandboxMode:ShadowPseudoSandboxModeAudit];
+    RCHECK(PseudoQuery(engine, outside, nil, NO) == offOutside,
+        "pseudo audit leaves the belt verdict unchanged");
+
+    [engine configurePseudoSandboxMode:ShadowPseudoSandboxModeStrict];
+    RCHECK(PseudoQuery(engine, outside, nil, NO),
+        "pseudo strict denies an otherwise allowed outside path");
+    PseudoPreservesBelt(engine, [home stringByAppendingPathComponent:@"Documents/file"],
+        "pseudo strict preserves home container");
+    PseudoPreservesBelt(engine, [bundle stringByAppendingPathComponent:@"file"],
+        "pseudo strict preserves bundle container");
+    PseudoPreservesBelt(engine, [group stringByAppendingPathComponent:@"file"],
+        "pseudo strict preserves group container");
+    RCHECK(PseudoQuery(engine, [home stringByAppendingString:@"-sibling/file"], nil, NO),
+        "pseudo strict uses a home component boundary");
+    RCHECK(PseudoQuery(engine, [bundle stringByAppendingString:@"-sibling/file"], nil, NO),
+        "pseudo strict uses a bundle component boundary");
+    RCHECK(PseudoQuery(engine, [group stringByAppendingString:@"-sibling/file"], nil, NO),
+        "pseudo strict uses a group component boundary");
+    PseudoPreservesBelt(engine, @"/usr/ShadowPseudoSandboxProbe",
+        "pseudo strict preserves a stock /usr descendant");
+    PseudoPreservesBelt(engine, @"/dev/null", "pseudo strict preserves /dev/null");
+    PseudoPreservesBelt(engine, @"/var/mobile/Library/Preferences/.GlobalPreferences.plist",
+        "pseudo strict preserves global preferences carveout");
+    PseudoPreservesBelt(engine, @"/var/mobile/Library/Preferences/com.apple.foo.plist",
+        "pseudo strict preserves Apple preferences carveout");
+    PseudoPreservesBelt(engine, @"/tmp/com.apple.pseudo/file",
+        "pseudo strict preserves temporary Apple carveout");
+    PseudoPreservesBelt(engine, @"/private/preboot", "pseudo strict preserves the stock preboot root");
+    RCHECK(PseudoQuery(engine, @"/private/var/mobile/Documents/PseudoSandboxProbe", nil, NO),
+        "pseudo strict normalizes private var before enforcing");
+    RCHECK(PseudoQuery(engine, @"../PseudoHome-sibling/file", home, NO),
+        "pseudo strict normalizes relative paths before enforcing");
+
+    char template[] = "/tmp/shdw-pseudo-XXXXXX";
+    char* base = mkdtemp(template);
+    if(!base) {
+        RCHECK(NO, "pseudo symlink fixture created");
+    } else {
+        NSString* root = [NSString stringWithUTF8String:base];
+        NSString* container = [root stringByAppendingPathComponent:@"container"];
+        NSString* target = [root stringByAppendingPathComponent:@"outside"];
+        NSString* link = [container stringByAppendingPathComponent:@"escape"];
+        NSFileManager* fileManager = [NSFileManager defaultManager];
+        BOOL made = [fileManager createDirectoryAtPath:container withIntermediateDirectories:YES attributes:nil error:nil] &&
+            [[NSData data] writeToFile:target atomically:YES] &&
+            [fileManager createSymbolicLinkAtPath:link withDestinationPath:target error:nil];
+        RCHECK(made, "pseudo symlink fixture created");
+
+        if(made) {
+            ShadowRestrictionContext linkContext = {
+                .hasAppSandbox = YES,
+                .rootless = shdw_harness_rootless(),
+                .bundlePath = container,
+                .homePath = container,
+                .groupContainerPaths = @[],
+            };
+            ShadowRestrictionEngine* linkEngine = [[ShadowRestrictionEngine alloc] initWithContext:linkContext];
+            RCHECK(!PseudoQuery(linkEngine, link, nil, NO), "pseudo off permits container symlink");
+            [linkEngine configurePseudoSandboxMode:ShadowPseudoSandboxModeStrict];
+            RCHECK(PseudoQuery(linkEngine, link, nil, NO), "pseudo strict denies container symlink escape");
+            RCHECK(!PseudoQuery(linkEngine, link, nil, YES), "pseudo strict preserves no-follow container link");
+        }
+        [fileManager removeItemAtPath:root error:nil];
+    }
+
+    ShadowRestrictionContext nonSandboxed = context;
+    nonSandboxed.hasAppSandbox = NO;
+    ShadowRestrictionEngine* nonSandboxedEngine = [[ShadowRestrictionEngine alloc] initWithContext:nonSandboxed];
+    BOOL baseline = PseudoQuery(nonSandboxedEngine, outside, nil, NO);
+    [nonSandboxedEngine configurePseudoSandboxMode:ShadowPseudoSandboxModeStrict];
+    RCHECK(PseudoQuery(nonSandboxedEngine, outside, nil, NO) == baseline,
+        "pseudo strict does not apply without an app sandbox");
 }
 
 static void RunRestrictedRangeTests(void) {
@@ -388,7 +448,7 @@ int RunRestrictionTests(void) {
     TestGroupFixture();
     TestSymlinkAlias();
     TestNonSandboxed();
-    TestPseudoAllowlist();
+    TestPseudoSandbox();
     RunRestrictedRangeTests();
     printf("RestrictionTests: %d passed, %d failed\n", rg, rf);
     return rf;

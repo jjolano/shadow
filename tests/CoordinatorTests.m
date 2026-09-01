@@ -11,7 +11,7 @@
 //   - idempotence + escalation ordering,
 //   - install-unit ID ↔ plist pref-key consistency,
 //   - group ↔ capability coverage,
-//   - standard preset == shipped defaults,
+//   - built-in profile enables every additive hook group,
 //   - no dead groups.
 //
 // RunCoordinatorTests() returns the failure count (0 = clean); the harness
@@ -152,11 +152,11 @@ static void TestPlannerUIKit(void) {
     NSDictionary* prefs = DefaultsFor(SHDWUniversalURLSchemeID, NO);
     NSArray* planPref = SHDWHookPlan(prefs, full, SHDWEventUIKitLoaded);
     CHECK(!IDInPlan(planPref, "Universal_URLScheme"), "uikit: URLScheme pref off → dropped");
-    CHECK(!IDInPlan(planPref, "Universal_Foundation_UIKit"), "uikit: Foundation default off → dropped");
+    CHECK(IDInPlan(planPref, "Universal_Foundation_UIKit"), "uikit: URLScheme does not gate Foundation");
 
-    NSDictionary* prefsFnd = DefaultsFor(SHDWUniversalFoundationID, YES);
+    NSDictionary* prefsFnd = DefaultsFor(SHDWUniversalFoundationID, NO);
     NSArray* planFnd = SHDWHookPlan(prefsFnd, full, SHDWEventUIKitLoaded);
-    CHECK(IDInPlan(planFnd, "Universal_Foundation_UIKit"), "uikit: Foundation pref on → present");
+    CHECK(!IDInPlan(planFnd, "Universal_Foundation_UIKit"), "uikit: Foundation pref off → dropped");
 }
 
 static void TestPlannerEscalation(void) {
@@ -210,21 +210,21 @@ static void TestPlannerSDKFallback(void) {
     CHECK(IDInPlan(harnessCtor, "Adapter_FreeRASP"),
           "Harness baseline keeps one-shot FreeRASP coverage");
 
-    NSMutableDictionary* maximumHarnessPrefs = [AllOnPrefs() mutableCopy];
-    maximumHarnessPrefs[SHDWUniversalHarnessBaselineID] = @NO;
-    NSArray* maximumHarnessCtor = SHDWHookPlan(maximumHarnessPrefs, full, SHDWEventCtor);
-    CHECK(!IDInPlan(maximumHarnessCtor, "Adapter_DeviceCheck") &&
-          !IDInPlan(maximumHarnessCtor, "Adapter_DeviceSecurityKit") &&
-          !IDInPlan(maximumHarnessCtor, "Adapter_IOSSecuritySuite"),
-          "Harness maximum profile defers target-dependent SDK adapters");
+    NSMutableDictionary* prearmedHarnessPrefs = [AllOnPrefs() mutableCopy];
+    prearmedHarnessPrefs[SHDWUniversalHarnessBaselineID] = @NO;
+    NSArray* prearmedHarnessCtor = SHDWHookPlan(prearmedHarnessPrefs, full, SHDWEventCtor);
+    CHECK(!IDInPlan(prearmedHarnessCtor, "Adapter_DeviceCheck") &&
+          !IDInPlan(prearmedHarnessCtor, "Adapter_DeviceSecurityKit") &&
+          !IDInPlan(prearmedHarnessCtor, "Adapter_IOSSecuritySuite"),
+          "Harness prearmed mode defers target-dependent SDK adapters");
 
     NSArray* fallback = SHDWHookPlan(harnessPrefs, full, SHDWEventSDKFallback);
     NSArray* expectedFallback = @[
         @"Adapter_DeviceCheck", @"Adapter_DeviceSecurityKit", @"Adapter_IOSSecuritySuite",
     ];
     CHECK([fallback isEqualToArray:expectedFallback], "SDK fallback restores deferred adapters in registry order");
-    CHECK([SHDWHookPlan(maximumHarnessPrefs, full, SHDWEventSDKFallback) isEqualToArray:expectedFallback],
-          "Harness maximum profile installs SDK adapters after detector frameworks load");
+    CHECK([SHDWHookPlan(prearmedHarnessPrefs, full, SHDWEventSDKFallback) isEqualToArray:expectedFallback],
+          "Harness prearmed mode installs SDK adapters after detector frameworks load");
 }
 
 static void TestInstallUnitConsistency(void) {
@@ -288,42 +288,27 @@ static void TestCapabilityCoverage(void) {
     CHECK([seenKeys containsObject:SHDWUniversalDynamicLibrariesExtraID], "dylibex key covered by unit table");
 }
 
-static void TestPresetConsistency(void) {
-    // Standard preset == the shipped defaults over the hook keys (the
-    // "standard" install the UI applies is exactly what the planner sees
-    // when no prefs have been touched).
+static void TestComprehensiveProfile(void) {
     NSDictionary* defaults = SHDWDefaultHookSettings();
-    NSDictionary* standard = SHDWPresetStandard();
+    NSUInteger count = 0;
+    const SHDWPlugin* plugins = SHDWPluginRegistry(&count);
 
-    CHECK([defaults[SHDWAdapterDTTJailbreakDetectionID] boolValue], "targeted DTT adapter defaults on");
-    CHECK([defaults[SHDWAdapterSafeDeviceID] boolValue], "targeted SafeDevice adapter defaults on");
-    CHECK([defaults[SHDWAdapterJailMonkeyID] boolValue], "targeted JailMonkey adapter defaults on");
-    CHECK([standard[SHDWAdapterDTTJailbreakDetectionID] boolValue] &&
-          [standard[SHDWAdapterSafeDeviceID] boolValue] &&
-          [standard[SHDWAdapterJailMonkeyID] boolValue],
-          "adapter switches participate in presets");
-
-    for(NSString* key in defaults) {
-        if([key hasPrefix:@"Universal_"] || [key hasPrefix:@"Adapter_"]) {
-            CHECK([standard[key] isEqual:defaults[key]], "standard preset matches defaults for hook key");
+    for(NSUInteger i = 0; i < count; i++) {
+        if(plugins[i].prefKey) {
+            CHECK([defaults[plugins[i].prefKey] boolValue], "built-in profile enables every additive hook group");
         }
     }
 
-    // Maximum = standard + every dangerous hook flipped on.
-    NSDictionary* maximum = SHDWPresetMaximum();
-    CHECK([maximum[SHDWUniversalSandboxID] boolValue], "maximum preset: sandbox on");
-    CHECK([maximum[SHDWUniversalMemoryID] boolValue], "maximum preset: memory on");
-    CHECK([maximum[SHDWUniversalAntiDebuggingID] boolValue], "maximum preset: antidebugging on");
-    CHECK([maximum[SHDWUniversalFoundationID] boolValue], "maximum preset: foundation on");
-    CHECK([maximum[SHDWAdapterDTTJailbreakDetectionID] boolValue] &&
-          [maximum[SHDWAdapterSafeDeviceID] boolValue] &&
-          [maximum[SHDWAdapterJailMonkeyID] boolValue],
-          "maximum preset: all detector adapters on");
-
-    // The maximum preset's hook keys are a superset of the standard's.
-    for(NSString* key in standard) {
-        CHECK(maximum[key] != nil, "maximum preset covers every standard hook key");
-    }
+    CHECK(![defaults[SHDWUniversalPseudoSandboxModeID] boolValue], "built-in profile leaves alternate pseudo-sandbox mode off");
+    CHECK([defaults[SHDWUniversalPathRewriteID] boolValue], "built-in profile enables path rewriting");
+    CHECK([defaults[SHDWUniversalMemoryLevelHidingID] boolValue], "built-in profile enables memory hiding");
+    CHECK([defaults[SHDWAdapterDTTJailbreakDetectionID] boolValue] &&
+          [defaults[SHDWAdapterSafeDeviceID] boolValue] &&
+          [defaults[SHDWAdapterJailMonkeyID] boolValue],
+          "built-in profile enables descriptor-backed detector adapters");
+    CHECK([defaults[SHDWHookLibraryID] isEqual:@"auto"], "built-in profile uses automatic hook routing");
+    CHECK(defaults[SHDWGlobalEnabledID] == nil && defaults[SHDWAppEnabledID] == nil,
+          "activation state is not part of the hook profile");
 }
 
 static void TestNoDeadGroups(void) {
@@ -343,7 +328,7 @@ static void TestNoDeadGroups(void) {
 
     for(NSString* key in defaults) {
         if(![key hasPrefix:@"Universal_"] && ![key hasPrefix:@"Adapter_"]) {
-            continue;   // Global_Enabled, HK_Library, ... are
+            continue;   // HK_Library is not an install unit
                         // not install units
         }
 
@@ -359,6 +344,9 @@ static void TestSettingsMigration(void) {
         @"Hook_DeviceCheck" : @NO,
         SHDWAdapterFreeRASPID : @YES,
         @"PseudoSandboxMode" : @2,
+        @"MemoryLevelHiding" : @NO,
+        SHDWAppEnabledID : @YES,
+        SHDWAppDisabledID : @YES,
     };
     NSDictionary* migrated = SHDWMigratedHookSettings(legacy);
 
@@ -366,8 +354,23 @@ static void TestSettingsMigration(void) {
     CHECK(![migrated[SHDWAdapterDeviceCheckID] boolValue], "migration: DeviceCheck fans out to its adapter");
     CHECK([migrated[SHDWAdapterFreeRASPID] boolValue], "migration: canonical FreeRASP value wins");
     CHECK([migrated[SHDWUniversalPseudoSandboxModeID] integerValue] == 2, "migration: universal mode moved");
+    CHECK(![migrated[SHDWUniversalMemoryLevelHidingID] boolValue], "migration: memory-level hiding moves");
+    CHECK(![migrated[SHDWAppEnabledID] boolValue] && migrated[SHDWAppDisabledID] == nil,
+          "migration: App_Disabled becomes App_Enabled=NO");
     CHECK(migrated[@"Hook_Filesystem"] == nil && migrated[@"Hook_DeviceCheck"] == nil &&
-          migrated[@"PseudoSandboxMode"] == nil, "migration: legacy keys removed");
+          migrated[@"PseudoSandboxMode"] == nil && migrated[@"MemoryLevelHiding"] == nil,
+          "migration: legacy keys removed");
+}
+
+static void TestApplicationEnabled(void) {
+    CHECK(SHDWApplicationEnabled(@{ SHDWAppEnabledID : @NO }, YES, NO, NO),
+          "activation: old App_Enabled=NO follows legacy global before migration");
+    CHECK(!SHDWApplicationEnabled(@{ SHDWAppEnabledID : @NO }, YES, YES, NO),
+          "activation: migrated App_Enabled=NO overrides legacy global");
+    CHECK(!SHDWApplicationEnabled(@{ SHDWAppEnabledID : @YES, SHDWAppDisabledID : @YES }, YES, NO, NO),
+          "activation: legacy App_Disabled remains off");
+    CHECK(SHDWApplicationEnabled(@{ SHDWAppDisabledID : @YES }, NO, YES, YES),
+          "activation: verification runner force-enable wins");
 }
 
 static int bridgeReplacement;
@@ -400,6 +403,7 @@ static void TestHookAdapterBridge(void) {
     SHDWRegisterUniversalFeatureInstaller(SHDWUniversalFeatureSymbolicLinks, BridgeFeatureInstaller);
     SHDWRequestUniversalFeatures(SHDWUniversalFeatureSymbolicLinks, nil, &bridgeOriginal);
     CHECK(bridgeFeatureCalls == 1, "bridge: adapter feature request invokes the registered universal feature");
+
 }
 
 int RunCoordinatorTests(void) {
@@ -414,9 +418,10 @@ int RunCoordinatorTests(void) {
         TestPlannerSDKFallback();
         TestInstallUnitConsistency();
         TestCapabilityCoverage();
-        TestPresetConsistency();
+        TestComprehensiveProfile();
         TestNoDeadGroups();
         TestSettingsMigration();
+        TestApplicationEnabled();
         TestHookAdapterBridge();
     }
 

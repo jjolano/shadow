@@ -7,7 +7,7 @@
 "BYPASS_SETTINGS_DESC" = "调整越狱检测屏蔽的强度。可能影响应用性能。";
 
 "ROOT_APP_SETTINGS" = "应用设置";
-"ROOT_APP_SETTINGS_DESC" = "如果启用，每个应用的设置将覆盖全局设置。";
+"ROOT_APP_SETTINGS_DESC" = "选择要运行 Shadow 的应用。";
 
 "APPLICATIONS" = "应用";
 

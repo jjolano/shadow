@@ -1750,7 +1750,27 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
         } else if(strcmp(d->symbol, "fopen") == 0) {
             [hooks hookRebindSymbol:@"fopen" withReplacement:d->replacement outOldPtr:d->original];
         } else {
-            [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
+            BOOL installed = [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
+            // iOS 15's shared-cache directory entrypoints can be too short or
+            // unaligned for a safe entry patch. Rebind their existing imports
+            // instead; this leaves the target text untouched and still covers
+            // detector call sites already loaded in the process.
+            if(!installed && group == SHADW_HOOK_GROUP_LOWLEVEL &&
+               (strcmp(d->symbol, "opendir") == 0 || strcmp(d->symbol, "__opendir2") == 0)) {
+                installed = [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                                     withReplacement:d->replacement
+                                            outOldPtr:d->original];
+
+                if(!installed && strcmp(d->symbol, "__opendir2") == 0) {
+                    // No existing import is present in some callers, while
+                    // HookKit safely refuses this shared-cache entrypoint's
+                    // unaligned text patch. Keep its verified address as the
+                    // continuation so dlsym callers still enter the filter.
+                    *d->original = target;
+                    installed = YES;
+                }
+            }
+            (void)installed;
         }
 
         if(strcmp(d->symbol, "close") == 0) {

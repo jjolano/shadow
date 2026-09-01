@@ -93,8 +93,17 @@ if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTI
 fi
 
 dyld_probe=tools/dyldprobe/main.m
-if ! grep -q '@executable_path/shdwtestlib.dylib' "$dyld_probe"; then
+if ! grep -q '@executable_path/Frameworks/shdwtestlib.dylib' "$dyld_probe"; then
     echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
+    rc=1
+fi
+if ! grep -q '[harness-symbol]' [private-harness]/Detectors.m ||
+   ! grep -q 'shdwtestlib.dylib' [private-harness]/Makefile; then
+    echo 'DYLD DRIFT: Harness no longer embeds the dyldprobe runner and stress library'
+    rc=1
+fi
+if grep -q 'shadow-dyldprobe://run' [private-harness]/DetectorDashboard.m; then
+    echo 'DYLD DRIFT: Harness still hands dyldprobe off to a separate app'
     rc=1
 fi
 if [ "$(grep -c 'shdw_path_is_in_main_bundle' ShadowCore.dylib/hooks/Universal/dyld.x)" -lt 5 ]; then
@@ -212,8 +221,112 @@ if ! grep -q 'if(!buf && bufsize == 0)' ShadowCore.dylib/hooks/Universal/libc.x 
     echo 'MOUNT DRIFT: getfsstat buffers must be populated from a full raw snapshot'
     exit 1
 fi
-if grep -q '[harness-symbol]' [private-harness]/AppDelegate.m [private-harness]/SceneDelegate.m; then
+if grep -q '[harness-symbol]' [private-harness]/SceneDelegate.m; then
     echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
+    exit 1
+fi
+if ! grep -q -- '--shadow-headless-run-all' [private-harness]/main.m; then
+    echo 'HARNESS HEADLESS DRIFT: Run All needs a direct executable test mode'
+    exit 1
+fi
+if ! grep -q 'SHDWUniversalHarnessBaselineID] == nil' ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || forcedPrearm' ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'prefs\[SHDWUniversalHarnessBaselineID\] != nil' Shadow.framework/HookConfiguration.m ||
+   ! grep -q '_harnessProfile' ShadowCore.dylib/HookCoordinator.m ||
+   ! grep -q 'app_settings = fileAppSettings' Shadow.framework/Settings.m ||
+   ! grep -q 'filePreferences)' Shadow.framework/Settings.m ||
+   ! grep -q 'result\[SHDWUniversalHarnessBaselineID\] = baseline' Shadow.framework/Settings.m; then
+    echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
+    exit 1
+fi
+if ! grep -q 'sdk_fallback_inventory' [private-harness]/Battery.m ||
+   ! grep -q 'sdk_fallback_observed' [private-harness]/Battery.m ||
+   ! grep -q 'Run All SDK fallback activation missing' tests/[harness-tool].py; then
+    echo 'HARNESS FALLBACK DRIFT: Run All must prove deferred SDK adapter activation'
+    exit 1
+fi
+if ! grep -q 'probe_launch_context(probe_documents_directory())' tools/dyldprobe/main.m ||
+   ! grep -q 'return @"/var/mobile/Documents"' tools/dyldprobe/main.m; then
+    echo 'DYLD DRIFT: embedded probe must inherit the Harness launch mode'
+    exit 1
+fi
+if grep -q 'hasPrefix:@"/var/mobile"' ShadowCore.dylib/hooks/hooks.h ||
+   grep -q 'strncmp(path, "/var/mobile"' ShadowCore.dylib/hooks/hooks.h; then
+    echo 'PATH DRIFT: /var/mobile cannot bypass jailbreak path policy'
+    exit 1
+fi
+if grep -q 'stringByStandardizingPath __attribute__' ShadowCore.dylib/hooks/Universal/NSString.x ||
+   grep -q 'URLByStandardizingPath __attribute__' ShadowCore.dylib/hooks/Universal/NSURL.x; then
+    echo 'PATH DRIFT: lexical path normalization must not be pass-through swizzled'
+    exit 1
+fi
+if ! grep -q 'SHDWRequestUniversalFeatures' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+   grep -q 'shdw_universal_' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+   ! grep -q 'hookRebindSymbol:@"dlsym"' ShadowCore.dylib/hooks/Universal/dyld.x ||
+   ! grep -q 'resolved_getppid = dlsym' ShadowCore.dylib/hooks/Universal/libc_antidebugging.x ||
+   ! grep -q 'HK_IMAGE_EXACT_HEADER' ShadowCore.dylib/SHDWHookSession.m ||
+   grep -q 'HK_REACH_EXACT_IMAGE_SCOPE' ShadowCore.dylib/SHDWHookSession.m; then
+    echo 'HARNESS FALLBACK DRIFT: late-loaded detector imports must be rebound in their exact image'
+    exit 1
+fi
+if ! grep -q 'statfs("/var/jb"' tools/dyldprobe/main.m ||
+   grep -q 'stat("/var/jb"' tools/dyldprobe/main.m; then
+    echo 'DYLD DRIFT: injection canary must use a universally installed filesystem hook'
+    exit 1
+fi
+if ! grep -q 'DeviceSecurityKitRunner' [private-runner]/DeviceSecurityKit/Makefile ||
+   ! grep -q 'devicesecuritykit' [private-runner]/DeviceSecurityKit/AppDelegate.swift; then
+    echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute in its isolated runner'
+    exit 1
+fi
+if grep -q 'SecurityLoggerManager\|prepareForHarness' [private-harness]/Detectors.m; then
+    echo 'HARNESS DSK DRIFT: isolated DeviceSecurityKit logger leaked into the Harness'
+    exit 1
+fi
+if grep -q 'DEBUG-9be1\|[harness-symbol]' [private-harness]/Detectors.m; then
+    echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
+    exit 1
+fi
+if ! grep -q 'INCLUDE_DETECTOR_RUNNERS' [private-harness]/Makefile ||
+   ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' [private-harness]/Makefile ||
+   ! grep -q 'm -C "$ROOT/tools/dyldprobe" stage FINALPACKAGE=1' scripts/build-detector-harness.sh; then
+    echo 'HARNESS PACKAGE DRIFT: final packages must include isolated runners and dyld stress library'
+    exit 1
+fi
+if ! grep -q 'SHDWUniversalSyscallID : @(YES)' Shadow.framework/HookConfiguration.m ||
+   ! grep -q 'SimulatorDetector.threatDetected()' [private-runner]/SecurityToolkit/AppDelegate.swift ||
+   ! grep -q 'HardwareSecurityDetector.threatDetected()' [private-runner]/SecurityToolkit/AppDelegate.swift ||
+   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService' [private-runner]/BATJailbreakGuard/AppDelegate.swift ||
+   ! grep -q 'JailbreakDetectionChecksumCheckService' [private-runner]/BATJailbreakGuard/AppDelegate.swift ||
+   ! grep -q 'JailbreakDetector.detect()' [private-runner]/SafetyNet/AppDelegate.swift ||
+   ! grep -q 'IntegrityValidator.validateCodeSignature()' [private-runner]/SafetyNet/AppDelegate.swift ||
+   ! grep -q 'ProxyDetector.checkVPNAsProxy()' [private-runner]/SafetyNet/AppDelegate.swift ||
+   ! grep -q 'DSKBridge.isReverseEngineered()' [private-runner]/DeviceSecurityKit/AppDelegate.swift ||
+     ! grep -q 'detect_launchd_deplatformized' [private-runner]/Roothider/AppDelegate.m ||
+     ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' [private-runner]/JailMonkey/Makefile ||
+     ! grep -q '\[detector canFork\]' [private-runner]/JailMonkey/AppDelegate.m ||
+    ! grep -q 'iossecuritysuite.watchpoint' [private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+    ! grep -q 'runnerChecksWithBundleID:' [private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+    ! grep -q 'dlopen(framework, RTLD_NOW | RTLD_LOCAL)' [private-runner]/IOSSecuritySuite/AppDelegate.swift ||
+    ! grep -q 'shdwInstallHarnessSDKFallback' [private-runner]/IOSSecuritySuite/AppDelegate.swift; then
+    echo 'HARNESS OPTION DRIFT: detector runners must execute every supported one-shot check'
+    exit 1
+fi
+if ! grep -q '[harness-symbol]' [private-harness]/DetectorDashboard.m ||
+   ! grep -q 'ShdwWriteEvidenceData' [private-harness]/Detectors.m ||
+   ! grep -q 'written = ShdwWriteEvidenceData(data, path);' tools/dyldprobe/main.m; then
+    echo 'HARNESS EVIDENCE I/O DRIFT: detector reports must bypass their own file hooks'
+    exit 1
+fi
+if grep -q 'shdw_load_framework\|shdw_dlopen_framework' [private-harness]/Detectors.m ||
+   ! grep -q 'SHDWRunnerForID' [private-harness]/Detectors.m ||
+   ! grep -q 'SHDWStartEmbeddedDyldProbe' [private-harness]/Detectors.m; then
+    echo 'HARNESS DRIFT: SDKs must run through isolated runners and dyldprobe in-process'
+    exit 1
+fi
+if ! grep -q 'asyncAfter.*30' [private-runner]/FreeRASP/AppDelegate.swift; then
+    echo 'HARNESS DRIFT: FreeRASP must settle before returning its runner report'
     exit 1
 fi
 if ! grep -q 'hookRebindSymbol:@"fopen"' ShadowCore.dylib/hooks/Universal/libc.x; then
@@ -265,6 +378,12 @@ fi
 if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|DeviceCheck' ShadowCore.dylib/hooks/Universal; then
     echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
     exit 1
+fi
+if ! grep -q 'strncmp(path, "/private/var/jb", 15)' Shadow.framework/JBPath.m ||
+   ! grep -q 'private var jb alias restricted' tests/PolicyTests.m ||
+   ! grep -q 'private var jb prefix boundary allowed' tests/PolicyTests.m; then
+    echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
+    rc=1
 fi
 if ! grep -q 'SHDWRequestUniversalFeatures' ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
    ! grep -q 'SHDWAdapterPathIsHidden' ShadowCore.dylib/hooks/Universal/NSFileManager.x ||

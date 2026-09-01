@@ -1,5 +1,0 @@
-"TROUBLESHOOTING" = "Troubleshooting";
-"HOOKING_OVERRIDE" = "Hooking Override";
-"HOOKING_OVERRIDE_DESC" = "Only change this if an app crashes or bypassing fails. Return to Automatic after testing.";
-"HOOKING_OVERRIDE_SELECT" = "Automatic lets Shadow choose the hooking method. Choose a specific backend only when troubleshooting.";
-"AUTOMATIC" = "Automatic (Recommended)";
