@@ -97,6 +97,15 @@ grep -q 'migrated\[SHDWAppEnabledID\] = @NO' src/Shadow.framework/SettingsMigrat
     exit 1
 }
 
+# Shadow runs the fixed full-capability profile when enabled, so migration must
+# prune the plist to the live surface — obsolete hook toggles cannot linger as
+# phantom switches. Enforce the allowlist-and-strip shape.
+grep -q 'liveScalarKeys' src/Shadow.framework/SettingsMigration.m &&
+grep -q 'removeObjectForKey:key' src/Shadow.framework/SettingsMigration.m || {
+    echo 'SETTINGS DRIFT: migration no longer prunes obsolete keys to the live surface'
+    exit 1
+}
+
 for source in "$loader" "$settings"; do
     grep -q 'dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST' "$source" || {
         echo "SETTINGS DRIFT: $source lost the sandboxed per-app fallback"

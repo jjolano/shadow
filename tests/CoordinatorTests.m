@@ -338,6 +338,11 @@ static void TestNoDeadGroups(void) {
 }
 
 static void TestSettingsMigration(void) {
+    // Shadow runs its fixed full-capability profile when enabled; stored hook
+    // toggles no longer take effect, so migration prunes the plist down to the
+    // live surface (activation/migration markers, per-app dicts, harness
+    // baseline) and strips everything else so no obsolete key lingers as a
+    // phantom switch.
     NSDictionary* legacy = @{
         @"Hook_Filesystem" : @NO,
         SHDWUniversalFilesystemID : @YES,
@@ -345,21 +350,41 @@ static void TestSettingsMigration(void) {
         SHDWAdapterFreeRASPID : @YES,
         @"PseudoSandboxMode" : @2,
         @"MemoryLevelHiding" : @NO,
+        @"PseudoSandboxEnabled" : @YES,
+        @"DetectorLog" : @[ @"stale" ],
+        @"CrashCount.com.example" : @3,
         SHDWAppEnabledID : @YES,
         SHDWAppDisabledID : @YES,
     };
     NSDictionary* migrated = SHDWMigratedHookSettings(legacy);
 
-    CHECK([migrated[SHDWUniversalFilesystemID] boolValue], "migration: canonical universal value wins");
-    CHECK(![migrated[SHDWAdapterDeviceCheckID] boolValue], "migration: DeviceCheck fans out to its adapter");
-    CHECK([migrated[SHDWAdapterFreeRASPID] boolValue], "migration: canonical FreeRASP value wins");
-    CHECK([migrated[SHDWUniversalPseudoSandboxModeID] integerValue] == 2, "migration: universal mode moved");
-    CHECK(![migrated[SHDWUniversalMemoryLevelHidingID] boolValue], "migration: memory-level hiding moves");
     CHECK(![migrated[SHDWAppEnabledID] boolValue] && migrated[SHDWAppDisabledID] == nil,
           "migration: App_Disabled becomes App_Enabled=NO");
+    CHECK(migrated[SHDWUniversalFilesystemID] == nil && migrated[SHDWAdapterFreeRASPID] == nil &&
+          migrated[SHDWUniversalPseudoSandboxModeID] == nil && migrated[SHDWUniversalMemoryLevelHidingID] == nil,
+          "migration: obsolete hook/adapter toggles are pruned");
     CHECK(migrated[@"Hook_Filesystem"] == nil && migrated[@"Hook_DeviceCheck"] == nil &&
-          migrated[@"PseudoSandboxMode"] == nil && migrated[@"MemoryLevelHiding"] == nil,
-          "migration: legacy keys removed");
+          migrated[@"PseudoSandboxMode"] == nil && migrated[@"MemoryLevelHiding"] == nil &&
+          migrated[@"PseudoSandboxEnabled"] == nil && migrated[@"DetectorLog"] == nil &&
+          migrated[@"CrashCount.com.example"] == nil,
+          "migration: legacy and residue keys removed");
+
+    // Live keys survive: activation markers, the per-app harness baseline, and
+    // the test-only detector-override dict.
+    NSDictionary* live = SHDWMigratedHookSettings(@{
+        SHDWGlobalEnabledID : @YES,
+        SHDWSingleToggleMigrationID : @YES,
+        SHDWAppEnabledID : @YES,
+        SHDWUniversalHarnessBaselineID : @YES,
+        @"Test_DetectorOverrides" : @{ SHDWAdapterFreeRASPID : @NO },
+        @"Universal_Sandbox" : @NO,
+    });
+    CHECK([live[SHDWGlobalEnabledID] boolValue] && [live[SHDWSingleToggleMigrationID] boolValue] &&
+          [live[SHDWAppEnabledID] boolValue] && [live[SHDWUniversalHarnessBaselineID] boolValue],
+          "migration: live activation and harness keys are preserved");
+    CHECK([live[@"Test_DetectorOverrides"] isKindOfClass:[NSDictionary class]] &&
+          live[@"Universal_Sandbox"] == nil,
+          "migration: test-override dict kept, stray hook scalar pruned");
 }
 
 static void TestApplicationEnabled(void) {
