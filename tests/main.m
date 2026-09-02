@@ -394,8 +394,13 @@ static void testRulesets(void) {
 
     // restricted roots and recursion
     expectRestricted(@"/var/jb descendant (recursion/fast-path)", @"/var/jb/usr/bin/ssh");
-    expectAllowed(@"stock preboot root", @"/private/preboot");
-    CHECK(![shdw() isCPathRestricted:"/private/preboot"], "stock preboot root C surface allowed");
+    // /private/preboot is present on stock iOS but a sandboxed app cannot
+    // open/stat it; modern detectors (FreeRASP 7.1.2, DeviceSecurityKit) treat
+    // successful access as jailbreak evidence, so under an app sandbox Shadow
+    // restricts the bare directory (and its descendants). Internal JBPath
+    // resolution runs under SHADOW_INTERNAL_SCOPE and is unaffected.
+    expectRestricted(@"sandbox preboot root", @"/private/preboot");
+    CHECK([shdw() isCPathRestricted:"/private/preboot"], "sandbox preboot root C surface restricted");
     CHECK([shdw() isCPathRestricted:"/private/preboot/xyz"], "preboot descendant C surface restricted");
     expectRestricted(@"restricted root /private/preboot", @"/private/preboot/xyz");
     expectRestricted(@"restricted root /cores", @"/cores/crash");

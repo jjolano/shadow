@@ -383,10 +383,21 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
             pseudoWouldDeny = shdwPseudoWouldDeny(_context, path);
         }
 
-        // This stock directory must remain reachable: FreeRASP treats an
-        // open failure on the exact path as native jailbreak evidence.
-        if([path isEqualToString:@"/private/preboot"]) {
-            return NO;
+        // /private/preboot and /Library/LaunchDaemons: present on the
+        // filesystem but a stock third-party app sandbox denies open()/stat()
+        // on them. Modern detectors (Talsec FreeRASP 7.1.2 privilegedAccess,
+        // DeviceSecurityKit suspiciousPath) treat *successful* access as
+        // jailbreak evidence — the opposite of the older FreeRASP that read an
+        // open *failure* on /private/preboot as evidence. Restrict them, but
+        // only under an app sandbox (a rootful/unsandboxed process legitimately
+        // reaches these). Internal JBPath resolution runs under
+        // SHADOW_INTERNAL_SCOPE and never reaches this engine, so jbroot
+        // discovery is unaffected.
+        if(_context.hasAppSandbox &&
+           ([path isEqualToString:@"/private/preboot"] ||
+            [path isEqualToString:@"/Library/LaunchDaemons"])) {
+            restricted = YES;
+            goto done;
         }
 
         const char* detectorPath = [path fileSystemRepresentation];
