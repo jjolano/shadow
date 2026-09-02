@@ -1770,6 +1770,27 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                     installed = YES;
                 }
             }
+
+            // sysctl's shared-cache export (iOS 15) can refuse a safe inline
+            // prologue patch, OR a Swift/ObjC detector may reach sysctl through
+            // an import slot the inline patch does not cover. Either way a
+            // detector calling sysctl() for KERN_PROC_ALL bypasses the
+            // process-list filter (observed: SafetyNet suspicious-process
+            // enumeration saw sshd). Additively rebind the sysctl import in
+            // caller images so those call sites route through the filter too;
+            // the inline hook (when it took) still covers direct-branch
+            // callers. Keep the verified export address as the continuation so
+            // the replacement can forward when only the rebind took.
+            if(group == SHADW_HOOK_GROUP_ANTIDEBUG &&
+               strcmp(d->symbol, "sysctl") == 0) {
+                [hooks hookRebindSymbol:@"sysctl"
+                        withReplacement:d->replacement
+                               outOldPtr:d->original];
+                if(d->original && *d->original == NULL) {
+                    *d->original = target;
+                }
+                installed = YES;
+            }
             (void)installed;
         }
 

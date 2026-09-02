@@ -11,6 +11,8 @@
 #import <string.h>
 #import <ctype.h>
 #import <stdlib.h>
+#import <stdio.h>
+#import <unistd.h>
 #import <pthread.h>
 #import <time.h>
 #import <sys/sysctl.h>
@@ -18,6 +20,34 @@
 // libproc.h isn't shipped in the theos SDK; declare the symbols we need
 // (all stable libSystem exports).
 extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+
+// Short process names (kp_proc.p_comm, MAXCOMLEN=16, so truncated) that
+// belong to jailbreak/reverse-engineering daemons. A sandboxed app cannot
+// proc_pidpath() a root daemon (EPERM) — the path classifier then fails open
+// and leaves the process in the enumeration, where a detector reads p_comm
+// and matches "sshd"/"Cydia"/etc. The kinfo record already carries p_comm in
+// hand during filtering, so classify on it directly. Names are matched
+// case-insensitively as substrings against the (possibly 15-char-truncated)
+// comm. Stock-daemon collisions are avoided by using jailbreak-specific
+// tokens only.
+static BOOL shdw_comm_is_restricted(const char* comm) {
+    if(!comm || !comm[0]) return NO;
+    char lower[17];
+    size_t n = 0;
+    for(; comm[n] && n < sizeof(lower) - 1; n++) {
+        lower[n] = (char)tolower((unsigned char)comm[n]);
+    }
+    lower[n] = '\0';
+    static const char* const kRestrictedComm[] = {
+        "sshd", "dropbear", "frida", "cynject", "cycript",
+        "cydia", "sileo", "zebra", "substrate", "substrated",
+        "jailbreakd", "amfid_payload", "launchdhook",
+    };
+    for(size_t i = 0; i < sizeof(kRestrictedComm) / sizeof(kRestrictedComm[0]); i++) {
+        if(strstr(lower, kRestrictedComm[i])) return YES;
+    }
+    return NO;
+}
 
 // --- kinfo_proc classification cache (pid + process start time) -----------
 
@@ -61,7 +91,10 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
 
     char path[PATH_MAX];
     BOOL restricted = NO;
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
+    // p_comm is authoritative even when proc_pidpath EPERMs on a root daemon.
+    if(shdw_comm_is_restricted(p->kp_proc.p_comm)) {
+        restricted = YES;
+    } else if(proc_pidpath(pid, path, sizeof(path)) > 0) {
         NSString *pathStr = @(path);
         NSString *lower = pathStr.lowercaseString;
         if ([lower containsString:@"sshd"] || [lower containsString:@"frida"] ||
