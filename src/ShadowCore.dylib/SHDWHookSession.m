@@ -400,7 +400,18 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
     spec.target.address.struct_size = sizeof(spec.target.address);
     spec.target.address.struct_version = HK_ABI_VERSION_3_0;
     spec.target.address.address = (uintptr_t)function;
-    return shdw_apply_hook_spec(&spec, oldPtr);
+    BOOL installed = shdw_apply_hook_spec(&spec, oldPtr);
+
+    // dladdr remap: a detector that resolves a hooked C function (via
+    // dlsym, which returns the replacement for GOT/dlsym agreement) and
+    // dladdr()s it must see the original's system image, not ShadowCore
+    // (DeviceSecurityKit HookDetector.checkSystemFunctionOrigins). Map the
+    // replacement to the pre-hook function address; replaced_dladdr resolves
+    // the query against it when the original is a genuine (non-Shadow) image.
+    if(installed) {
+        SHDWRememberHookedIMPRemap(replacement, function);
+    }
+    return installed;
 }
 
 - (BOOL)hookRebindSymbol:(NSString*)symbolName
