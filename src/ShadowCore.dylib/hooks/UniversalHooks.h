@@ -20,6 +20,9 @@ void shdw_universal_objc_methodimpl_detector(SHDWHookSession* hooks);
 void shdw_universal_syscall(SHDWHookSession* hooks);
 void shdw_universal_memory(SHDWHookSession* hooks);
 void shdw_universal_sandbox(SHDWHookSession* hooks);
+// Snapshot the pre-injection task exception-port baseline. Must run before
+// ElleKit installs its own task-level handler (EKLaunchExceptionHandler).
+void shdw_exception_ports_snapshot(void);
 void shdw_universal_hide_classes(SHDWHookSession* hooks);
 void shdw_universal_symlookup(SHDWHookSession* hooks);
 void shdw_universal_symaddrlookup(SHDWHookSession* hooks);

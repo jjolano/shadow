@@ -763,24 +763,89 @@ static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char
     }
 }
 
-// task_get_exception_ports: pass-through (conservative). Exception handler
-// ports cannot be attributed to restricted images (a port right carries no
-// owning-image identity), and hiding a legitimate handler would break crash
-// reporting / XPC.
+// task_get_exception_ports: replay the pre-injection baseline for external
+// self-task queries. Shadow's ctor pre-initializes ElleKit's exception-based
+// hooking path (EKLaunchExceptionHandler), which registers a task-level
+// handler right. Detectors (FreeRASP privilegedAccess, DeviceSecurityKit
+// Debugger, RootHider Exception port) enumerate self-task exception ports and
+// treat any handler the app did not install as injection evidence.
 //
-// CONTRACT: this pass-through is only stealth-safe while NO Shadow-side
-// component installs an in-process exception handler — a detector querying
-// its own task's exception ports would otherwise see the foreign handler
-// right and infer injection. Known live caveat: the ctor pre-initializes
-// ElleKit's exception-based hooking path (EKLaunchExceptionHandler,
-// shadowcore.x), which MAY register a task-level handler; if a detector is
-// ever shown probing exception ports, that is the first suspect and the fix
-// is filtering self-task replies here (mask/behavior/flavor attribution).
-// TODO: filter/hide rights attributable to restricted images once
-// attribution exists; deallocate removed rights.
+// shdw_exception_ports_snapshot() records the handler port-name set BEFORE
+// ElleKit installs (called from the coordinator ctor). Any handler slot
+// returned by the kernel whose port is not in that baseline is an injected
+// right: drop it (deallocate the ref the kernel just handed us) and compact
+// the reply so masksCnt/handlers/behaviors/flavors describe exactly the
+// pre-injection configuration. Internal Shadow callers see the raw truth.
+#define SHDW_EXC_SNAPSHOT_MAX 32
+static mach_port_t shdw_exc_baseline_ports[SHDW_EXC_SNAPSHOT_MAX];
+static mach_msg_type_number_t shdw_exc_baseline_count = 0;
+static BOOL shdw_exc_baseline_valid = NO;
+
+void shdw_exception_ports_snapshot(void) {
+    if(shdw_exc_baseline_valid) return;
+    exception_mask_t masks[SHDW_EXC_SNAPSHOT_MAX] = {0};
+    exception_handler_t handlers[SHDW_EXC_SNAPSHOT_MAX] = {0};
+    exception_behavior_t behaviors[SHDW_EXC_SNAPSHOT_MAX] = {0};
+    thread_state_flavor_t flavors[SHDW_EXC_SNAPSHOT_MAX] = {0};
+    mach_msg_type_number_t count = SHDW_EXC_SNAPSHOT_MAX;
+    kern_return_t kr = task_get_exception_ports(mach_task_self(), EXC_MASK_ALL,
+        masks, &count, handlers, behaviors, flavors);
+    if(kr != KERN_SUCCESS) {
+        // No baseline could be read; treat as empty so injected handlers are
+        // still filtered rather than leaking through.
+        shdw_exc_baseline_count = 0;
+        shdw_exc_baseline_valid = YES;
+        return;
+    }
+    for(mach_msg_type_number_t i = 0; i < count && i < SHDW_EXC_SNAPSHOT_MAX; i++) {
+        shdw_exc_baseline_ports[shdw_exc_baseline_count++] = handlers[i];
+        // Release the send ref the query handed us; we only keep the name for
+        // identity comparison, not an owning right.
+        if(handlers[i] != MACH_PORT_NULL) {
+            mach_port_deallocate(mach_task_self(), handlers[i]);
+        }
+    }
+    shdw_exc_baseline_valid = YES;
+}
+
+static BOOL shdw_exc_port_in_baseline(mach_port_t port) {
+    if(port == MACH_PORT_NULL) return YES;
+    for(mach_msg_type_number_t i = 0; i < shdw_exc_baseline_count; i++) {
+        if(shdw_exc_baseline_ports[i] == port) return YES;
+    }
+    return NO;
+}
+
 static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
 static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
-    return original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
+    kern_return_t result = original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
+
+    // Only filter external self-task queries; internal callers and cross-task
+    // queries (task != self) see the raw kernel reply.
+    if(result != KERN_SUCCESS || !isCallerExternal() ||
+       task != mach_task_self() || !shdw_exc_baseline_valid ||
+       !masksCnt || !masks || !old_handlers || !old_behaviors || !old_flavors) {
+        return result;
+    }
+
+    mach_msg_type_number_t in = *masksCnt, out = 0;
+    for(mach_msg_type_number_t i = 0; i < in; i++) {
+        if(shdw_exc_port_in_baseline(old_handlers[i])) {
+            if(out != i) {
+                masks[out] = masks[i];
+                old_handlers[out] = old_handlers[i];
+                old_behaviors[out] = old_behaviors[i];
+                old_flavors[out] = old_flavors[i];
+            }
+            out++;
+        } else if(old_handlers[i] != MACH_PORT_NULL) {
+            // Injected handler right: deallocate the ref the kernel handed the
+            // caller so hiding it does not leak a port name.
+            mach_port_deallocate(mach_task_self(), old_handlers[i]);
+        }
+    }
+    *masksCnt = out;
+    return result;
 }
 
 // connect: block loopback Frida port-scans (ISS ReverseEngineeringToolsChecker).
@@ -839,7 +904,6 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     [hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
     [hooks hookRebindSymbol:@"host_get_special_port" withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
     [hooks hookRebindSymbol:@"task_get_special_port" withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
-    // [hooks hookFunction:task_get_exception_ports withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     [hooks hookRebindSymbol:@"task_for_pid" withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];
     [hooks hookFunction:sigaction withReplacement:replaced_sigaction outOldPtr:(void **) &original_sigaction];
 
