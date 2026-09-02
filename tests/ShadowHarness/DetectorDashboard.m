@@ -15,12 +15,25 @@
 static NSString* const SHDWResultsDirectory = @"/var/mobile/Documents/ShadowDetectorTests";
 NSNotificationName const SHDWDetectorResultsChanged = @"SHDWDetectorResultsChanged";
 
+// App Store distribution classification for a bundled detector. A detector that
+// relies on private/undocumented APIs (raw launchd IPC, csops, arbitrary mach
+// service probing, non-public symbols) cannot pass App Review under Guideline
+// 2.5.1, so its verdict is not representative of what a shippable app would run.
+typedef NS_ENUM(NSInteger, SHDWAppStoreClass) {
+    SHDWAppStoreSafe = 0,       // public-API only; plausible in a shipping app
+    SHDWAppStoreProhibited,     // uses private/undocumented APIs; App Review reject
+    SHDWAppStoreFlawed,         // public API but the check false-positives on stock iOS
+    SHDWAppStoreHarnessArtifact,// residual fails are an artifact of this test harness, not Shadow
+};
+
 @interface SHDWSDK : NSObject
 @property(nonatomic, copy) NSString* identifier;
 @property(nonatomic, copy) NSString* name;
 @property(nonatomic, copy) NSString* version;
 @property(nonatomic, copy) NSString* scheme;
 @property(nonatomic, copy) NSString* sourceURL;
+@property(nonatomic) SHDWAppStoreClass appStoreClass;
+@property(nonatomic, copy) NSString* appStoreNote;
 @end
 
 @implementation SHDWSDK
@@ -33,6 +46,17 @@ static SHDWSDK* SHDWMakeSDK(NSString* identifier, NSString* name, NSString* vers
     sdk.version = version;
     sdk.scheme = scheme;
     sdk.sourceURL = sourceURL;
+    sdk.appStoreClass = SHDWAppStoreSafe;
+    sdk.appStoreNote = nil;
+    return sdk;
+}
+
+static SHDWSDK* SHDWMakeSDKClassified(NSString* identifier, NSString* name, NSString* version,
+                                      NSString* scheme, NSString* sourceURL,
+                                      SHDWAppStoreClass cls, NSString* note) {
+    SHDWSDK* sdk = SHDWMakeSDK(identifier, name, version, scheme, sourceURL);
+    sdk.appStoreClass = cls;
+    sdk.appStoreNote = note;
     return sdk;
 }
 
@@ -42,13 +66,19 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     dispatch_once(&onceToken, ^{
         sdks = @[
             SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"embedded", @"https://github.com/jjolano/shadow/tree/master/tests/tools/dyldprobe"),
-            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
+            SHDWMakeSDKClassified(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite",
+                SHDWAppStoreHarnessArtifact,
+                @"Two residual fails are artifacts of this harness, not Shadow gaps: 'Suspicious dylibs' sees @rpath/Shadow.framework/Shadow because this runner LINKS Shadow at build time (real injection adds no load command), and 'Runtime hook' resolves the bridge probe method inside the dlopened IOSSecuritySuite.framework (neither /System nor the main binary). A shipping app embedding IOSSecuritySuite normally would not reproduce either."),
             SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
             SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
             SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run", @"https://github.com/thii/DTTJailbreakDetection"),
             SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"shadow-detector-freerasp://run", @"https://github.com/talsec/Free-RASP-iOS"),
-            SHDWMakeSDK(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run", @"https://github.com/roothider/JailbreakDetector"),
-            SHDWMakeSDK(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run", @"https://github.com/Basilabt/BATJailbreakGuard"),
+            SHDWMakeSDKClassified(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run", @"https://github.com/roothider/JailbreakDetector",
+                SHDWAppStoreProhibited,
+                @"Not App Store distributable (Guideline 2.5.1): uses private APIs — raw launchd IPC via _os_alloc_once_table + xpc_pipe_routine subsystem/routine, csops(), and arbitrary bootstrap_look_up mach-service probing. A shipping app would be rejected, so its jailbroken verdict is a research baseline, not a real-world threat."),
+            SHDWMakeSDKClassified(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run", @"https://github.com/Basilabt/BATJailbreakGuard",
+                SHDWAppStoreFlawed,
+                @"PreventedAPIs check is unreliable: it flags dlsym(\"system\"/\"posix_spawn\"/\"dlopen\") which resolve on stock iOS too, so it false-positives on a clean device. Public-API only, but this check is not a valid jailbreak signal."),
             SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run", @"https://github.com/DipakPanchasara/SafetyNet"),
             SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run", @"https://github.com/galahador/DeviceSecurityKit"),
             SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"v2.8.5", @"shadow-detector-jailmonkey://run", @"https://github.com/GantMan/jail-monkey"),
@@ -288,6 +318,22 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
     return phase.length ? [phase capitalizedString] : @"Checks";
 }
 
+- (NSString*)tableView:(UITableView*)tableView titleForFooterInSection:(NSInteger)section {
+    // Surface the App Store distribution caveat under the summary so a
+    // jailbroken verdict from a non-shippable detector is read in context.
+    if(section == 0 && _sdk.appStoreNote.length) {
+        NSString* prefix;
+        switch(_sdk.appStoreClass) {
+            case SHDWAppStoreProhibited:      prefix = @"⚠︎ App Store prohibited — "; break;
+            case SHDWAppStoreFlawed:          prefix = @"⚠︎ Unreliable check — "; break;
+            case SHDWAppStoreHarnessArtifact: prefix = @"ⓘ Harness artifact — "; break;
+            default:                          prefix = @""; break;
+        }
+        return [prefix stringByAppendingString:_sdk.appStoreNote];
+    }
+    return nil;
+}
+
 - (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath {
     static NSString* const reuse = @"Detail";
     UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:reuse];
@@ -472,8 +518,17 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
     BOOL running = SHDWRunActive(sdk);
     NSString* outcome = running ? @"running" : SHDWOutcome(report);
     cell.textLabel.text = sdk.name;
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
+    NSString* versionText = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
         SHDWString(SHDWDictionary(report[@"sdk"])[@"version"]) ?: sdk.version];
+    if(sdk.appStoreClass == SHDWAppStoreProhibited) {
+        cell.detailTextLabel.text = [versionText stringByAppendingString:@" · ⚠︎ Not App Store safe"];
+    } else if(sdk.appStoreClass == SHDWAppStoreFlawed) {
+        cell.detailTextLabel.text = [versionText stringByAppendingString:@" · ⚠︎ Unreliable check"];
+    } else if(sdk.appStoreClass == SHDWAppStoreHarnessArtifact) {
+        cell.detailTextLabel.text = [versionText stringByAppendingString:@" · ⓘ Harness artifact"];
+    } else {
+        cell.detailTextLabel.text = versionText;
+    }
     if(running) {
         cell.imageView.image = nil;
         cell.accessoryView = SHDWSpinner();
