@@ -1409,6 +1409,27 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
         return original_dladdr(addr, info);
     }
 
+    // Hooked-method IMP: a detector reading a hooked system method's current
+    // IMP and dladdr()ing it must see the ORIGINAL system image, not
+    // ShadowCore (DeviceSecurityKit SwizzlingDetector.checkSystemMethodOrigins,
+    // ISS amIRuntimeHooked). Resolve the query against the original IMP, but
+    // only when that original itself lives in a non-Shadow image — otherwise
+    // fall through to the normal filtering (never fabricate a system origin for
+    // an address that has none).
+    const void* originalIMP = SHDWOriginalIMPForReplacement(addr);
+    if(originalIMP) {
+        Dl_info originalInfo;
+        memset(&originalInfo, 0, sizeof(originalInfo));
+        int originalResult = original_dladdr(originalIMP, &originalInfo);
+        if(originalResult && !shdw_objc_addr_is_hidden(originalIMP) &&
+           !shdw_is_shadow_runtime_image(originalInfo.dli_fname)) {
+            if(info) {
+                *info = originalInfo;
+            }
+            return originalResult;
+        }
+    }
+
     int result = original_dladdr(addr, info);
 
     // Restricted address (inside a Shadow-owned or JB image): report "not in
