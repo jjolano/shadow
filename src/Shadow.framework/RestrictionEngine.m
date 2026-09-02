@@ -400,6 +400,18 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
             goto done;
         }
 
+        // embedded.mobileprovision: an App Store binary is signed by Apple and
+        // ships NO provisioning profile, so its presence marks a dev/adhoc/
+        // sideloaded (hence jailbroken-context) install. Detectors read it to
+        // flag an "unofficial store" app (FreeRASP unofficialStore, others).
+        // Hide the app's own provisioning profile under a sandbox so the read
+        // fails exactly as it would for a real App Store app. Natural: presents
+        // the stock App-Store appearance rather than forcing a check result.
+        if(_context.hasAppSandbox && [path hasSuffix:@"/embedded.mobileprovision"]) {
+            restricted = YES;
+            goto done;
+        }
+
         const char* detectorPath = [path fileSystemRepresentation];
         if(detectorPath && shdwDetectorPathRestricted(detectorPath)) {
             restricted = YES;
