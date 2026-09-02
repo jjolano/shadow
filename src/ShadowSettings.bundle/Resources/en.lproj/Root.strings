@@ -3,6 +3,10 @@
 "ALWAYS_ON" = "Enable in All Apps";
 "ALWAYS_ON_DESC" = "Enable Shadow in all apps by default. Per-app settings override this.";
 
+"AGGRESSIVE_SETTINGS" = "Detector Neutralization";
+"AGGRESSIVE" = "Aggressive Mode";
+"AGGRESSIVE_DESC" = "By default Shadow presents a stock-looking environment (natural bypass). Aggressive mode additionally forces known detectors' checks to report clean. This is less subtle and can itself be a tell, so leave it off unless a specific detector needs it. Per-app settings override this.";
+
 "ROOT_APP_SETTINGS" = "Application Settings";
 "ROOT_APP_SETTINGS_DESC" = "Choose the applications where Shadow should run.";
 

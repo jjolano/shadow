@@ -56,6 +56,15 @@ void shdw_adapter_devicesecuritykit(SHDWHookSession* hooks) {
     if(imageHeader) {
         SHDWRequestUniversalFeatures(SHDWUniversalFeatureImageRebinding, hooks, imageHeader);
     }
+
+    // Everything below forces SwizzlingDetector.isSwizzled() to return false —
+    // a disable-style neutralizer that overrides the check result rather than
+    // presenting a stock-looking environment. Gate it on the user's aggressive
+    // opt-in; without it the natural dladdr/IMP-origin stealth above stands
+    // alone (which already clears the current DSK build's swizzling probe).
+    if(!shdw_detector_aggressive) {
+        return;
+    }
     // Filtered runner: DeviceSecurityKitRunner.AppDelegate.isSwizzled
     hk_swift_target_t t1 = hk_swift_target_init();
     t1.class_name = "DeviceSecurityKitRunner.AppDelegate";

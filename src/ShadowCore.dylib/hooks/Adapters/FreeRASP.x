@@ -75,7 +75,13 @@ void shdw_adapter_freerasp(SHDWHookSession* hooks) {
                           outOldPtr:(void**)&shdw_freeRASP_originalMachMsg];
         }
     }
-    shdw_freeRASP_installEncryptedBinary(hooks);
+    // isEncryptedBinary() is one of Talsec's own check functions; forcing its
+    // return is a disable-style neutralizer, so it is gated on the user's
+    // aggressive opt-in. The mach_msg / path-hiding above are natural (they
+    // shape neutral APIs to their stock answers) and always run.
+    if(shdw_detector_aggressive) {
+        shdw_freeRASP_installEncryptedBinary(hooks);
+    }
 }
 
 // freeRASP emits inline raw svc calls. Select the generic syscall coverage;

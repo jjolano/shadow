@@ -26,6 +26,9 @@ NSDictionary<NSString*, id>* SHDWMigratedHookSettings(NSDictionary<NSString*, id
         liveScalarKeys = [NSSet setWithArray:@[
             SHDWGlobalEnabledID, SHDWSingleToggleMigrationID,
             SHDWAppEnabledID, SHDWUniversalHarnessBaselineID,
+            // Live at both scopes: the global default (root scalar) and the
+            // per-app override (same key inside an app dict).
+            SHDWDetectorAggressiveID,
         ]];
     });
 

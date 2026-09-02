@@ -28,6 +28,26 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
+			<string>AGGRESSIVE_DESC</string>
+			<key>label</key>
+			<string>AGGRESSIVE_SETTINGS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>id</key>
+			<string>Detector_Aggressive</string>
+			<key>label</key>
+			<string>AGGRESSIVE</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
 			<string>ROOT_APP_SETTINGS_DESC</string>
 			<key>label</key>
 			<string>ROOT_APP_SETTINGS</string>

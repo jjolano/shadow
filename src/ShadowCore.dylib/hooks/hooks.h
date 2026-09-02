@@ -285,6 +285,11 @@ static inline NSDictionary* shdw_restriction_write_options(void) {
 // hook layer to escalate detector-gated coverage.
 extern BOOL shdw_detector_present;
 
+// User opt-in for aggressive detector neutralization (global or per-app). When
+// YES, adapters may run disable-style paths that force a detector's verdict;
+// when NO, only natural stock-shaped bypasses run. See SHDWDetectorAggressiveID.
+extern BOOL shdw_detector_aggressive;
+
 // Emergency kill-switch for the dyld_all_image_infos memory-hiding patch
 // (AR2). The patch is unconditional by default (untrusted callers read the
 // raw struct via task_info / _dyld_get_all_image_infos), but a misbehaving
