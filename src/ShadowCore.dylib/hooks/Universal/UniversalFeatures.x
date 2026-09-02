@@ -3,6 +3,11 @@
 static void shdw_universal_install_image_rebinding(SHDWHookSession* hooks, const void* imageHeader) {
     shdw_universal_rebind_image(hooks, imageHeader);
     shdw_universal_antidebugging_rebind_image(hooks, imageHeader);
+    // Swizzling stealth for late-loaded detector frameworks: route their
+    // class_getMethodImplementation/method_getImplementation imports through
+    // Shadow's original-IMP filter.
+    shdw_universal_objc_rebind_image(hooks, imageHeader);
+    shdw_universal_objc_methodimpl_rebind_image(hooks, imageHeader);
 }
 
 static void shdw_universal_install_filesystem_metadata(SHDWHookSession* hooks, const void* imageHeader) {

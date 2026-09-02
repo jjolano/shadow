@@ -37,8 +37,25 @@ static const void* shdw_adapter_devicesecuritykit_remap_dladdr(const void* addre
     return original && address == SHDWCanOpenURLReplacement() ? original : NULL;
 }
 
+static const void* shdw_devicesecuritykit_image_header(void) {
+    // DSK's swizzling probe lives in DeviceSecurityKit (SwizzlingDetector) or,
+    // for the filtered runner, DeviceSecurityKitRunner. Prefer the library.
+    Class probe = objc_getClass("DeviceSecurityKit.SwizzlingDetector")
+        ?: objc_getClass("DSKBridge");
+    return probe ? dyld_image_header_containing_address((__bridge void*)probe) : NULL;
+}
+
 void shdw_adapter_devicesecuritykit(SHDWHookSession* hooks) {
     SHDWSetDladdrRemapper(shdw_adapter_devicesecuritykit_remap_dladdr);
+
+    // Route the late-loaded DSK framework's class_getMethodImplementation /
+    // method_getImplementation imports through Shadow's swizzling-stealth
+    // filter, so SwizzlingDetector.checkSystemMethodOrigins reads the original
+    // (system) IMP for hooked methods (canOpenURL:, fileExistsAtPath:, ...).
+    const void* imageHeader = shdw_devicesecuritykit_image_header();
+    if(imageHeader) {
+        SHDWRequestUniversalFeatures(SHDWUniversalFeatureImageRebinding, hooks, imageHeader);
+    }
     // Filtered runner: DeviceSecurityKitRunner.AppDelegate.isSwizzled
     hk_swift_target_t t1 = hk_swift_target_init();
     t1.class_name = "DeviceSecurityKitRunner.AppDelegate";

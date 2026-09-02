@@ -45,3 +45,17 @@ void shdw_universal_objc_methodimpl_detector(SHDWHookSession* hooks) {
     // request back-to-back can invalidate the existing import-slot plan.
     shdw_universal_objc_methodimpl(hooks);
 }
+
+// Rebind method_getImplementation in a specific (late-loaded) detector image so
+// a framework dlopen'd after the ctor still sees the original IMP for hooked
+// methods (swizzling stealth). Pairs with shdw_universal_objc_rebind_image.
+void shdw_universal_objc_methodimpl_rebind_image(SHDWHookSession* hooks, const void* imageHeader) {
+    if(!imageHeader) return;
+    if(!original_method_getImplementation) {
+        original_method_getImplementation = method_getImplementation;
+    }
+    [hooks hookRebindSymbol:@"method_getImplementation"
+            withReplacement:replaced_method_getImplementation_detector
+                   outOldPtr:NULL
+              inCallerImage:imageHeader];
+}

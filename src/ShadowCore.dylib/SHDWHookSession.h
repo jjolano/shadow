@@ -42,6 +42,11 @@ typedef NSString* SHDWImageRef;
 // override is skipped and automatic routing stands.
 FOUNDATION_EXPORT void SHDWSetProcessBackendOverride(const char* backendID);
 
+// Map a hooked-method replacement/current IMP back to its original IMP, so a
+// dladdr() on the hooked IMP can resolve to the genuine (system) image instead
+// of ShadowCore. Returns NULL when the address is not a recorded hook IMP.
+FOUNDATION_EXPORT const void* SHDWOriginalIMPForReplacement(const void* address);
+
 FOUNDATION_EXPORT SHDWHookSession* SHDWHookSessionSetCurrent(SHDWHookSession* session);
 FOUNDATION_EXPORT void SHDWHookMessage(Class objcClass, SEL selector,
                                        IMP replacement, IMP* original);

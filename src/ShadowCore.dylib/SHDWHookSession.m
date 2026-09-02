@@ -43,6 +43,44 @@ typedef struct {
 static SHDWOriginalIMP gSHDWOriginalIMPs[256];
 static uint32_t gSHDWOriginalIMPCount;
 
+// Hooked-method IMP remap registry. A detector reads the current IMP of a
+// system method (class_getMethodImplementation) and dladdr()s it to see which
+// image owns it; a hook moves that IMP into ShadowCore, betraying the hook
+// (DeviceSecurityKit SwizzlingDetector.checkSystemMethodOrigins, ISS
+// amIRuntimeHooked). Record replacement->original at hook time so replaced_dladdr
+// can answer a query about a replacement IMP as though it were the original IMP,
+// which still lives in the genuine system framework. Only entries whose original
+// is a real (non-Shadow) image are useful; the dladdr path re-validates.
+typedef struct {
+    uintptr_t replacement;
+    const void* original;
+} SHDWHookedIMPRemap;
+
+static SHDWHookedIMPRemap gSHDWHookedIMPRemaps[256];
+static uint32_t gSHDWHookedIMPRemapCount;
+
+static void SHDWRememberHookedIMPRemap(const void* replacement, const void* original) {
+    if(!replacement || !original || replacement == original) return;
+    uint32_t count = __atomic_load_n(&gSHDWHookedIMPRemapCount, __ATOMIC_ACQUIRE);
+    for(uint32_t i = 0; i < count; i++) {
+        if(gSHDWHookedIMPRemaps[i].replacement == (uintptr_t)replacement) return;
+    }
+    if(count == sizeof(gSHDWHookedIMPRemaps) / sizeof(gSHDWHookedIMPRemaps[0])) return;
+    gSHDWHookedIMPRemaps[count] = (SHDWHookedIMPRemap){ (uintptr_t)replacement, original };
+    __atomic_store_n(&gSHDWHookedIMPRemapCount, count + 1, __ATOMIC_RELEASE);
+}
+
+const void* SHDWOriginalIMPForReplacement(const void* address) {
+    if(!address) return NULL;
+    uint32_t count = __atomic_load_n(&gSHDWHookedIMPRemapCount, __ATOMIC_ACQUIRE);
+    for(uint32_t i = 0; i < count; i++) {
+        if(gSHDWHookedIMPRemaps[i].replacement == (uintptr_t)address) {
+            return gSHDWHookedIMPRemaps[i].original;
+        }
+    }
+    return NULL;
+}
+
 typedef struct {
     uintptr_t start;
     uintptr_t end;
@@ -323,6 +361,24 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
         SHDWRememberOriginalImplementation(methodBefore, (IMP)*oldPtr);
         SHDWRememberOriginalImplementation(
             class_getInstanceMethod(dispatchClass, selector), (IMP)*oldPtr);
+
+        // dladdr remap: a detector that reads the method's post-hook IMP and
+        // dladdr()s it must resolve to the original system image, not
+        // ShadowCore. Record both the replacement pointer and the method's
+        // actual current IMP (the engine may publish a trampoline rather than
+        // the raw replacement) against the original continuation.
+        SHDWRememberHookedIMPRemap(replacement, *oldPtr);
+        Method methodAfter = class_getInstanceMethod(dispatchClass, selector);
+        if(methodAfter) {
+            SHDWRememberHookedIMPRemap((const void*)method_getImplementation(methodAfter), *oldPtr);
+        }
+        // class_getMethodImplementation may return a different pointer than
+        // method_getImplementation (dispatch trampoline); record it too so a
+        // dladdr on either resolves to the original.
+        IMP viaClass = class_getMethodImplementation(dispatchClass, selector);
+        if(viaClass) {
+            SHDWRememberHookedIMPRemap((const void*)viaClass, *oldPtr);
+        }
     }
     return installed;
 }

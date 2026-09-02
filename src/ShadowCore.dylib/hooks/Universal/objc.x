@@ -297,6 +297,34 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
         return NULL;
     }
 
+    // Swizzling stealth: a detector reads a hooked system method's IMP here and
+    // dladdr()s it, expecting a system image (DeviceSecurityKit
+    // SwizzlingDetector.checkSystemMethodOrigins uses class_getMethodImplementation,
+    // not method_getImplementation). Return the original IMP for hooked methods
+    // so the reported IMP stays in its genuine framework. Mirrors the
+    // method_getImplementation stealth in objc_methodimpl.x.
+    if(cls && name) {
+        Method method = class_getInstanceMethod(cls, name);
+        IMP original = method ? SHDWOriginalImplementationForMethod(method) : NULL;
+        if(original) {
+            return original;
+        }
+        if(name == sel_registerName("fileExistsAtPath:")) {
+            void* hookOrig = shdw_universal_file_exists_original();
+            if(hookOrig) return (IMP)hookOrig;
+        }
+        if(name == sel_registerName("canOpenURL:")) {
+            void* hookOrig = SHDWCanOpenURLOriginal();
+            if(hookOrig) return (IMP)hookOrig;
+        }
+        // Last resort: our replacement-IMP remap table (covers HookKit-owned
+        // originals the SHDW method table never recorded).
+        if(result) {
+            const void* remapped = SHDWOriginalIMPForReplacement((const void*)result);
+            if(remapped) return (IMP)remapped;
+        }
+    }
+
     return result;
 }
 
@@ -349,4 +377,16 @@ void shdw_universal_objc(SHDWHookSession* hooks) {
     if(imp_getBlock_ptr) {
         [hooks hookFunction:imp_getBlock_ptr withReplacement:replaced_imp_getBlock outOldPtr:(void **) &original_imp_getBlock];
     }
+}
+
+// Rebind the ObjC-introspection imports in a specific (late-loaded) image, so a
+// detector framework dlopen'd after the ctor still routes
+// class_getMethodImplementation through Shadow's swizzling-stealth filter.
+// method_getImplementation is covered by objc_methodimpl.x's own image rebind.
+void shdw_universal_objc_rebind_image(SHDWHookSession* hooks, const void* imageHeader) {
+    if(!imageHeader || !original_class_getMethodImplementation) return;
+    [hooks hookRebindSymbol:@"class_getMethodImplementation"
+            withReplacement:replaced_class_getMethodImplementation
+                   outOldPtr:NULL
+              inCallerImage:imageHeader];
 }

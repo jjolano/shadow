@@ -68,6 +68,9 @@ void shdw_universal_symaddrlookup_verify(void);
 void shdw_universal_register_features(void);
 void shdw_universal_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
 void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
+// Image-scoped ObjC-introspection rebinds for late-loaded detector frameworks.
+void shdw_universal_objc_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
+void shdw_universal_objc_methodimpl_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
 void shdw_universal_feature_filesystem_metadata(SHDWHookSession* hooks);
 void shdw_universal_feature_symbolic_links(SHDWHookSession* hooks);
 void shdw_universal_feature_launchservices_url_filtering(SHDWHookSession* hooks);
