@@ -73,5 +73,6 @@ void shdw_universal_feature_symbolic_links(SHDWHookSession* hooks);
 void shdw_universal_feature_launchservices_url_filtering(SHDWHookSession* hooks);
 void* shdw_universal_file_exists_original(void);
 void* shdw_universal_file_exists_replacement(void);
+void* shdw_universal_readable_file_original(void);
 
 #endif

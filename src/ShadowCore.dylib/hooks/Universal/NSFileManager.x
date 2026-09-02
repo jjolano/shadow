@@ -1165,16 +1165,26 @@ static void *gShadowFileExistsHook = NULL;
 void* shdw_universal_file_exists_original(void) { return gShadowFileExistsOrig; }
 void* shdw_universal_file_exists_replacement(void) { return gShadowFileExistsHook; }
 
+static void *gShadowReadableOrig = NULL;
+void* shdw_universal_readable_file_original(void) { return gShadowReadableOrig; }
+
 void shdw_universal_filesystem_objc(SHDWHookSession* hooks) {
     Class fmCls = objc_getClass("NSFileManager");
     SEL fmSel = sel_registerName("fileExistsAtPath:");
     Method fm = class_getInstanceMethod(fmCls, fmSel);
     if (fm) gShadowFileExistsOrig = (void*)method_getImplementation(fm);
+    SEL rdSel = sel_registerName("isReadableFileAtPath:");
+    Method rd = class_getInstanceMethod(fmCls, rdSel);
+    if (rd) gShadowReadableOrig = (void*)method_getImplementation(rd);
     %init(shadowhook_NSFileManager);
     if (fm) gShadowFileExistsHook = (void*)method_getImplementation(fm);
     if (!gShadowFileExistsOrig) {
         IMP orig = SHDWOriginalImplementationForMethod(fm);
         if (orig) gShadowFileExistsOrig = (void*)orig;
+    }
+    if (!gShadowReadableOrig && rd) {
+        IMP orig = SHDWOriginalImplementationForMethod(rd);
+        if (orig) gShadowReadableOrig = (void*)orig;
     }
     shdw_universal_feature_symbolic_links(hooks);
 

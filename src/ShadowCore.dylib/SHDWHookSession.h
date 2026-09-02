@@ -46,6 +46,14 @@ FOUNDATION_EXPORT void SHDWSetProcessBackendOverride(const char* backendID);
 // dladdr() on the hooked IMP can resolve to the genuine (system) image instead
 // of ShadowCore. Returns NULL when the address is not a recorded hook IMP.
 FOUNDATION_EXPORT const void* SHDWOriginalIMPForReplacement(const void* address);
+// Record a hooked replacement/current IMP -> original mapping for the dladdr
+// swizzle-origin filter (used by satellites that capture originals directly).
+FOUNDATION_EXPORT void SHDWRememberHookedIMPRemap(const void* replacement, const void* original);
+// Snapshot an instance method IMP before a %hook, then register the
+// replacement->original mapping after, so a detector's dladdr on the hooked IMP
+// resolves to the original's (system) image.
+FOUNDATION_EXPORT void* SHDWSnapshotInstanceMethodIMP(Class cls, SEL sel);
+FOUNDATION_EXPORT void SHDWRegisterHookedInstanceMethod(Class cls, SEL sel, void* originalIMP);
 
 FOUNDATION_EXPORT SHDWHookSession* SHDWHookSessionSetCurrent(SHDWHookSession* session);
 FOUNDATION_EXPORT void SHDWHookMessage(Class objcClass, SEL selector,

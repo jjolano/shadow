@@ -445,7 +445,36 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 %end
 %end
 
+// Pre-hook original IMPs for the NSURLSession methods DeviceSecurityKit's
+// SwizzlingDetector.checkSystemMethodOrigins probes; a dladdr on the hooked IMP
+// must resolve to Foundation, not ShadowCore.
+static const char* const kShadowURLSessionSelectors[] = {
+    "dataTaskWithURL:completionHandler:",
+    "dataTaskWithRequest:completionHandler:",
+    "uploadTaskWithRequest:fromData:completionHandler:",
+};
+
 void shdw_universal_nsurl(SHDWHookSession* hooks) {
+    Class sessionCls = objc_getClass("NSURLSession");
+    void* originals[sizeof(kShadowURLSessionSelectors) / sizeof(kShadowURLSessionSelectors[0])] = {0};
+    Method methods[sizeof(kShadowURLSessionSelectors) / sizeof(kShadowURLSessionSelectors[0])] = {0};
+    for(size_t i = 0; i < sizeof(kShadowURLSessionSelectors) / sizeof(kShadowURLSessionSelectors[0]); i++) {
+        methods[i] = sessionCls ? class_getInstanceMethod(sessionCls, sel_registerName(kShadowURLSessionSelectors[i])) : NULL;
+        if(methods[i]) originals[i] = (void*)method_getImplementation(methods[i]);
+    }
+
     %init(shadowhook_NSURL);
     %init(shadowhook_NSURLSession);
+
+    // Record replacement (post-hook IMP) -> original in the dladdr remap table.
+    for(size_t i = 0; i < sizeof(kShadowURLSessionSelectors) / sizeof(kShadowURLSessionSelectors[0]); i++) {
+        if(methods[i] && originals[i]) {
+            IMP hooked = method_getImplementation(methods[i]);
+            if((void*)hooked != originals[i]) {
+                SHDWRememberHookedIMPRemap((const void*)hooked, originals[i]);
+                IMP viaClass = sessionCls ? class_getMethodImplementation(sessionCls, sel_registerName(kShadowURLSessionSelectors[i])) : NULL;
+                if(viaClass) SHDWRememberHookedIMPRemap((const void*)viaClass, originals[i]);
+            }
+        }
+    }
 }
