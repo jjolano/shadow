@@ -19,8 +19,10 @@ core
 core.*
 # Stray Swift module blobs a mis-cwd'd build can drop at the repo root.
 /Swift-*.swiftmodule
-# Theos mirrors the dyldprobe shared-source object path (../../DetectorRunners
-# in dyldprobe_FILES) as a stamp dir beside the probe; it is build output.
+# Theos mirrors a subproject's cross-tree _FILES (e.g. ../../DetectorRunners in
+# dyldprobe, ../../ShadowHarness in the DeviceSecurityKit runner) as an empty
+# stamp dir named after the escaped path segment; it is build output.
 tests/tools/dyldprobe/DetectorRunners/
+tests/DetectorRunners/*/ShadowHarness/
 __pycache__/
 *.py[cod]

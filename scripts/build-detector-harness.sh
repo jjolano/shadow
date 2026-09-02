@@ -30,6 +30,13 @@ sed -i \
     -e 's/result.urlScheme = await checkURLSchemes()/result.urlScheme = checkURLSchemes()/' \
     -e '/^[[:space:]]*@MainActor$/d' \
     "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/JailbreakDetector.swift"
+# SafetyNet's Swift `import SafetyNetObjC` names an SPM C target that does not
+# exist in Theos' single-module build; the two C symbols it needs come through
+# the runner's bridging header instead (SafetyNetRunner-Bridging.h). Drop the
+# import (idempotent).
+sed -i '/^import SafetyNetObjC$/d' \
+    "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/DebuggerDetector.swift" \
+    "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/IntegrityValidator.swift"
 # The real Roothider repo is a single main.m app whose detect_* functions only
 # LOG findings; the harness compiles it in-process. Filter it (idempotent):
 # redirect LOG to the recorder header, drop the app-scaffolding (NSObject

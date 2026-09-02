@@ -17,8 +17,11 @@ APPLICATION_NAME = SafetyNetRunner
 SafetyNetRunner_FILES = AppDelegate.swift ../RunnerSupport.swift ../RunnerSupport.m \
 	$(SAFETYNET_FILES) $(SAFETYNET_OBJC_DIR)/AntiDebugBridge.m
 SafetyNetRunner_CFLAGS = -I$(SAFETYNET_OBJC_DIR) -I$(SAFETYNET_OBJC_DIR)/include
-SafetyNetRunner_SWIFT_BRIDGING_HEADER = ../RunnerSupportC.h
-SafetyNetRunner_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-detector-safetynet-module-cache -I$(SAFETYNET_OBJC_DIR)
+# Upstream Swift does `import SafetyNetObjC` (an SPM C target). Theos builds one
+# module, so that import is stripped (see build-detector-harness.sh) and the two
+# C symbols reach Swift through this bridging header instead.
+SafetyNetRunner_SWIFT_BRIDGING_HEADER = SafetyNetRunner-Bridging.h
+SafetyNetRunner_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-detector-safetynet-module-cache -I$(SAFETYNET_OBJC_DIR) -I$(SAFETYNET_OBJC_DIR)/include -Xcc -I$(SAFETYNET_OBJC_DIR)/include
 SafetyNetRunner_FRAMEWORKS = UIKit Foundation Security CFNetwork CryptoKit
 SafetyNetRunner_LDFLAGS = -lswiftFoundation
 SafetyNetRunner_INSTALL_PATH = /Applications

@@ -1,7 +1,7 @@
 #import <UIKit/UIKit.h>
 
 #import "../RunnerSupport.h"
-#import "../../.detector-deps/JailMonkey/JailMonkey/JailMonkey.h"
+#import "../../../.detector-deps/JailMonkey/JailMonkey/JailMonkey.h"
 
 @interface JailMonkey (RunnerChecks)
 - (BOOL)checkPaths;
