@@ -38,6 +38,40 @@
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>APP_AGGRESSIVE_DESC</string>
+			<key>id</key>
+			<string>AppAggressiveGroup</string>
+			<key>label</key>
+			<string>AGGRESSIVE_SETTINGS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>id</key>
+			<string>App_AggressiveFollowGlobal</string>
+			<key>label</key>
+			<string>FOLLOW_GLOBAL</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>id</key>
+			<string>Detector_Aggressive</string>
+			<key>label</key>
+			<string>AGGRESSIVE</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>APP_SETTINGS</string>

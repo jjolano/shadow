@@ -7,10 +7,11 @@
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
 
-	// Kept across reloads so the Follow Global toggle can animate this row
+	// Kept across reloads so the Follow Global toggles can animate their rows
 	// in/out (native insert/delete) instead of a full table reload; once
-	// removed, specifierForID: can no longer find it to put it back.
+	// removed, specifierForID: can no longer find them to put them back.
 	PSSpecifier* enabledSpecifier;
+	PSSpecifier* aggressiveSpecifier;
 }
 
 - (NSArray *)specifiers {
@@ -18,21 +19,29 @@
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
 
 		enabledSpecifier = [self specifierForID:@"App_Enabled"];
+		aggressiveSpecifier = [self specifierForID:@"Detector_Aggressive"];
 
 		LSApplicationProxy* proxy = [LSApplicationProxy applicationProxyForIdentifier:[self applicationID]];
 		if(proxy.atl_fastDisplayName.length > 0) {
 			self.title = proxy.atl_fastDisplayName;
 		}
 
-		// Following global = no per-app override; the explicit Enabled row is
-		// hidden until the user opts out of the global setting.
+		// Following global = no per-app override; the explicit row is hidden
+		// until the user opts out of the corresponding global setting.
 		if([self followGlobal]) {
 			[self removeSpecifier:enabledSpecifier animated:NO];
+		}
+		if([self aggressiveFollowGlobal]) {
+			[self removeSpecifier:aggressiveSpecifier animated:NO];
 		}
 
 		[self updateSettingsGroupFooter];
 	}
 	return _specifiers;
+}
+
+- (BOOL)aggressiveFollowGlobal {
+	return SHDWAppAggressiveFollowsGlobal(prefs, [self applicationID]);
 }
 
 - (BOOL)followGlobal {
@@ -66,6 +75,14 @@
 		return @(SHDWAppEnabled(prefs, [self applicationID]));
 	}
 
+	if([key isEqualToString:@"App_AggressiveFollowGlobal"]) {
+		return @([self aggressiveFollowGlobal]);
+	}
+
+	if([key isEqualToString:@"Detector_Aggressive"]) {
+		return @(SHDWAppAggressive(prefs, [self applicationID]));
+	}
+
 	return nil;
 }
 
@@ -92,6 +109,26 @@
 
 	if([key isEqualToString:@"App_Enabled"]) {
 		SHDWWriteAppEnabled(prefs, [self applicationID], [value boolValue]);
+		return;
+	}
+
+	if([key isEqualToString:@"App_AggressiveFollowGlobal"]) {
+		// Same conditional-row pattern as activation: following global clears
+		// the per-app override and hides the explicit switch; opting out seeds
+		// an explicit value from the current effective state and reveals it.
+		if([value boolValue]) {
+			SHDWClearAppAggressive(prefs, [self applicationID]);
+			[self removeSpecifier:aggressiveSpecifier animated:YES];
+		} else {
+			SHDWWriteAppAggressive(prefs, [self applicationID], SHDWAppAggressive(prefs, [self applicationID]));
+			[self insertSpecifier:aggressiveSpecifier afterSpecifier:[self specifierForID:@"App_AggressiveFollowGlobal"] animated:YES];
+			[self reloadSpecifier:aggressiveSpecifier];
+		}
+		return;
+	}
+
+	if([key isEqualToString:@"Detector_Aggressive"]) {
+		SHDWWriteAppAggressive(prefs, [self applicationID], [value boolValue]);
 	}
 }
 

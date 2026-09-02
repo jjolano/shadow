@@ -41,6 +41,37 @@ void SHDWClearAppEnabled(NSUserDefaults *prefs, NSString *appID) {
 	}
 }
 
+BOOL SHDWAppAggressive(NSUserDefaults *prefs, NSString *appID) {
+	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];
+	return SHDWDetectorAggressiveEnabled(appPrefs, [prefs boolForKey:SHDWDetectorAggressiveID]);
+}
+
+void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID, BOOL aggressive) {
+	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy] ?: [NSMutableDictionary new];
+	appPrefs[SHDWDetectorAggressiveID] = @(aggressive);
+	[prefs setObject:[appPrefs copy] forKey:appID];
+}
+
+BOOL SHDWAppAggressiveFollowsGlobal(NSUserDefaults *prefs, NSString *appID) {
+	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];
+	return appPrefs[SHDWDetectorAggressiveID] == nil;
+}
+
+void SHDWClearAppAggressive(NSUserDefaults *prefs, NSString *appID) {
+	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy];
+	if(!appPrefs) {
+		return;
+	}
+	[appPrefs removeObjectForKey:SHDWDetectorAggressiveID];
+	// Leave the dict if other overrides remain (e.g. App_Enabled); otherwise
+	// drop it so a fully-default app leaves no residue.
+	if(appPrefs.count == 0) {
+		[prefs removeObjectForKey:appID];
+	} else {
+		[prefs setObject:[appPrefs copy] forKey:appID];
+	}
+}
+
 void SHDWToggleHaptic(void) {
 	// Fresh instance per event: toggle flips are rare, allocation cost is
 	// irrelevant next to the impact itself.

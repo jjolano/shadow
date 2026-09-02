@@ -107,7 +107,11 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWAdapterIOSSecuritySuiteID : @(YES),
         SHDWAdapterDTTJailbreakDetectionID : @(YES),
         SHDWAdapterSafeDeviceID : @(YES),
-        SHDWAdapterJailMonkeyID : @(YES)
+        SHDWAdapterJailMonkeyID : @(YES),
+        // Off by default: the natural, stock-shaped bypasses run for every
+        // enabled app; disable-style neutralizers only activate when the user
+        // opts into aggressive mode (globally or per app).
+        SHDWDetectorAggressiveID : @(NO)
     };
 }
 

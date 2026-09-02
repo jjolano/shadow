@@ -51,6 +51,24 @@
 #define SHDWAppDisabledID          @"App_Disabled"
 #define SHDWSingleToggleMigrationID @"SingleToggleMigrated"
 
+// Aggressive detector neutralization. Live scalar, resolved like activation:
+// a global default (root scalar) with an optional per-app override (same key
+// inside the app dict; absent = follow global). When on, disable-style adapter
+// paths (which force a detector's check result to "clean") activate in addition
+// to the natural, stock-shaped bypasses. Off = natural bypasses only, so the
+// process looks like a pristine stock device rather than one actively fighting
+// a named detector. Only meaningful when the app is enabled.
+#define SHDWDetectorAggressiveID   @"Detector_Aggressive"
+
+// Resolve the effective aggressive-neutralization state for an app: the per-app
+// override if present, else the global default. Mirrors SHDWApplicationEnabled's
+// global-fallback shape.
+static inline BOOL SHDWDetectorAggressiveEnabled(NSDictionary* appSettings,
+                                                 BOOL globalAggressive) {
+    id appValue = appSettings[SHDWDetectorAggressiveID];
+    return appValue ? [appValue boolValue] : globalAggressive;
+}
+
 static inline BOOL SHDWApplicationEnabled(NSDictionary* appSettings,
                                           BOOL legacyGlobalEnabled,
                                           BOOL singleToggleMigrated,

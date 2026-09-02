@@ -30,16 +30,35 @@ if grep -Eq 'respring:|reset:|exportSettings:|importSettings:|DetectorLog' "$roo
     exit 1
 fi
 
-# The app pane is exactly the Follow Global + App_Enabled switch pair; no
-# revived per-hook or profile controls, and no App_Disabled (the single-toggle
-# backend never writes it).
-if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 2 ] ||
+# The app pane is the activation pair (Follow Global + App_Enabled) plus the
+# aggressive-neutralization pair (Follow Global + Detector_Aggressive): four
+# switches, no revived per-hook or profile controls, and no App_Disabled (the
+# single-toggle backend never writes it). Universal_/Adapter_ per-hook keys must
+# never reappear as UI; Detector_Aggressive is the one allowed detector-mode key.
+if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 4 ] ||
    ! grep -q '<string>App_Enabled</string>' "$app" ||
    ! grep -q '<string>App_FollowGlobal</string>' "$app" ||
+   ! grep -q '<string>Detector_Aggressive</string>' "$app" ||
+   ! grep -q '<string>App_AggressiveFollowGlobal</string>' "$app" ||
    grep -Eq 'App_Disabled|BypassPreset|Universal_|Adapter_' "$app"; then
-    echo 'SETTINGS DRIFT: app pane is not the Follow Global + App_Enabled switch pair'
+    echo 'SETTINGS DRIFT: app pane is not the activation + aggressive switch pairs'
     exit 1
 fi
+
+# Aggressive mode is a live scalar resolved with global fallback (like
+# activation), gated into disable-style adapter paths — never a per-hook knob.
+grep -q 'SHDWDetectorAggressiveID' "$profile" || {
+    echo 'SETTINGS DRIFT: built-in profile lost the Detector_Aggressive default'
+    exit 1
+}
+grep -q 'SHDWDetectorAggressiveID' src/Shadow.framework/SettingsMigration.m || {
+    echo 'SETTINGS DRIFT: Detector_Aggressive not in the live-key allowlist'
+    exit 1
+}
+grep -q 'shdw_detector_aggressive' src/ShadowCore.dylib/hooks/Adapters/DeviceSecurityKit.x || {
+    echo 'SETTINGS DRIFT: disable-style adapter path no longer gated on aggressive mode'
+    exit 1
+}
 
 for obsolete in Hooks Individual Dangerous Adapters Troubleshooting DetectorLog; do
     if [ -e "src/ShadowSettings.bundle/Resources/$obsolete.plist" ]; then

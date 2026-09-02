@@ -25,6 +25,11 @@ BOOL shdw_detector_present = NO;
 // Emergency kill-switch for the dyld_all_image_infos memory-hiding patch.
 BOOL shdw_memory_hiding_enabled = YES;
 
+// User opt-in (global or per-app, resolved in getPreferencesForIdentifier:):
+// when YES, adapters may run disable-style neutralizers that force a detector's
+// check result rather than only shaping a stock-looking environment.
+BOOL shdw_detector_aggressive = NO;
+
 static BOOL _shdw_watcher_enabled = NO;
 static BOOL _shdw_uikit_installed = NO;
 static SHDWHookCoordinator* shdw_coordinator_instance = nil;
@@ -245,6 +250,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
 
         shdw_path_rewrite_configure([prefs[SHDWUniversalPathRewriteID] boolValue]);
         shdw_memory_hiding_enabled = [prefs[SHDWUniversalMemoryLevelHidingID] boolValue];
+        shdw_detector_aggressive = [prefs[SHDWDetectorAggressiveID] boolValue];
 
         Shadow* shadow = [Shadow sharedInstance];
         [shadow shdwConfigurePseudoSandboxMode:[prefs[SHDWUniversalPseudoSandboxModeID] integerValue]];

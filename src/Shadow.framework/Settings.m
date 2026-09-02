@@ -118,6 +118,15 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
         isDetectorRunner || bundleIdentifier.length == 0);
     result[SHDWAppEnabledID] = @(enabled);
 
+    // Aggressive detector neutralization: per-app override, else the global
+    // default. Written into the returned profile so the coordinator/adapters
+    // can gate their disable-style paths on it. Detector runners resolve it the
+    // same way (their app_settings are file-authoritative), so the harness can
+    // exercise natural vs aggressive by writing the key into a runner's profile
+    // or the global scalar; it defaults to NO (natural) like every other app.
+    result[SHDWDetectorAggressiveID] = @(SHDWDetectorAggressiveEnabled(
+        app_settings, [userDefaults boolForKey:SHDWDetectorAggressiveID]));
+
     if(enabled) {
         // Not user configuration: the device evidence driver can disable one
         // adapter for an isolated runner without weakening normal app profiles.
