@@ -171,11 +171,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
     // can fire. Pre-initialize it here so those hooks are handled instead of
     // trapping (observed: EXC_BREAKPOINT SIGTRAP during the dyld unit's
     // install when isPathRestricted re-enters a brk-patched function).
-    // Record the app's exception-port configuration before ElleKit registers
-    // its task-level handler, so task_get_exception_ports can replay the
-    // pre-injection baseline to external detector probes.
-    shdw_exception_ports_snapshot();
-
     void* ekLaunch = dlsym(RTLD_DEFAULT, "EKLaunchExceptionHandler");
     if(ekLaunch) {
         ((mach_port_t (*)(void))ekLaunch)();
