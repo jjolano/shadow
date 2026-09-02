@@ -20,31 +20,23 @@
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>id</key>
-			<string>App_Enabled</string>
+			<string>App_FollowGlobal</string>
 			<key>label</key>
-			<string>ENABLED</string>
+			<string>FOLLOW_GLOBAL</string>
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>footerText</key>
-			<string>APP_DETECTOR_LOG_DESC</string>
-			<key>label</key>
-			<string>APP_DETECTOR_LOG</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string>SHDWDetectorLogListController</string>
+			<string>PSSwitchCell</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
 			<key>id</key>
-			<string>AppDetectorLog</string>
-			<key>isController</key>
-			<true/>
+			<string>App_Enabled</string>
 			<key>label</key>
-			<string>APP_DETECTOR_LOG</string>
+			<string>ENABLED</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
 	</array>
 	<key>title</key>

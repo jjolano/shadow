@@ -103,71 +103,6 @@ static BOOL shdwPseudoWouldDeny(ShadowRestrictionContext context, NSString* path
     return YES;
 }
 
-#ifndef SHADOW_TEST_HARNESS
-#define kPseudoAuditLogKey @"DetectorLog"
-#define kPseudoAuditMarker @"  Pseudo sandbox would deny "
-#define kPseudoAuditCap 100
-
-static dispatch_queue_t shdwPseudoAuditQueue;
-static NSMutableSet* shdwPseudoAuditedKeys;
-
-static BOOL shdwIsPseudoAuditEntry(id value) {
-    return [value isKindOfClass:[NSString class]] &&
-        [(NSString*)value rangeOfString:kPseudoAuditMarker].location != NSNotFound;
-}
-
-static void shdwRecordPseudoAudit(NSString* path, ShadowRestrictionOperation operation) {
-    if(!path.length) return;
-
-    static dispatch_once_t once = 0;
-    dispatch_once(&once, ^{
-        shdwPseudoAuditQueue = dispatch_queue_create("me.jjolano.shadow.pseudo-audit", DISPATCH_QUEUE_SERIAL);
-        shdwPseudoAuditedKeys = [NSMutableSet new];
-    });
-
-    NSString* bundleID = [NSBundle mainBundle].bundleIdentifier ?: @"unknown";
-    NSString* operationName = operation == ShadowRestrictionOperationWrite ? @"write" : @"read";
-    NSString* key = [NSString stringWithFormat:@"%@|%@|%@", bundleID, operationName, path];
-
-    dispatch_async(shdwPseudoAuditQueue, ^{
-        if([shdwPseudoAuditedKeys containsObject:key]) return;
-        [shdwPseudoAuditedKeys addObject:key];
-
-        SHADOW_INTERNAL_SCOPE {
-            NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
-            NSMutableArray* entries = [[defaults arrayForKey:kPseudoAuditLogKey] mutableCopy] ?: [NSMutableArray new];
-            NSUInteger pseudoEntries = 0;
-
-            for(id entry in entries) {
-                if(shdwIsPseudoAuditEntry(entry)) pseudoEntries++;
-            }
-            for(NSUInteger i = 0; pseudoEntries >= kPseudoAuditCap && i < entries.count;) {
-                if(shdwIsPseudoAuditEntry(entries[i])) {
-                    [entries removeObjectAtIndex:i];
-                    pseudoEntries--;
-                } else {
-                    i++;
-                }
-            }
-
-            NSDateFormatter* formatter = [NSDateFormatter new];
-            formatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
-            formatter.dateFormat = @"yyyy-MM-dd HH:mm:ss";
-            NSString* timestamp = [formatter stringFromDate:[NSDate date]];
-            [entries addObject:[NSString stringWithFormat:@"%@  Pseudo sandbox would deny %@ %@  %@",
-                timestamp, operationName, path, bundleID]];
-            [defaults setObject:entries forKey:kPseudoAuditLogKey];
-            [defaults synchronize];
-        }
-    });
-}
-#else
-static void shdwRecordPseudoAudit(NSString* path, ShadowRestrictionOperation operation) {
-    (void)path;
-    (void)operation;
-}
-#endif
-
 static BOOL shdwDetectorWriteDenied(ShadowRestrictionContext context,
                                     ShadowRestrictionQuery* query,
                                     NSString* path) {
@@ -524,9 +459,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         done:
-        if(pseudoMode == ShadowPseudoSandboxModeAudit && pseudoWouldDeny && !restricted) {
-            shdwRecordPseudoAudit(path, query.operation);
-        } else if(pseudoMode == ShadowPseudoSandboxModeStrict && pseudoWouldDeny) {
+        if(pseudoMode == ShadowPseudoSandboxModeStrict && pseudoWouldDeny) {
             restricted = YES;
         }
 
