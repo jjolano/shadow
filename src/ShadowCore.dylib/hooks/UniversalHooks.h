@@ -23,6 +23,10 @@ void shdw_universal_sandbox(SHDWHookSession* hooks);
 // Snapshot the pre-injection task exception-port baseline. Must run before
 // ElleKit installs its own task-level handler (EKLaunchExceptionHandler).
 void shdw_exception_ports_snapshot(void);
+// Rewrite suspicious LC_LOAD_DYLIB names in the main executable's load commands
+// (e.g. a link-time @rpath/Shadow.framework/Shadow) so a raw memory walk of the
+// Mach-O header reads nothing suspicious. Injected Shadow adds no load command.
+void shdw_hide_main_image_loadcmd_names(void);
 void shdw_universal_hide_classes(SHDWHookSession* hooks);
 void shdw_universal_symlookup(SHDWHookSession* hooks);
 void shdw_universal_symaddrlookup(SHDWHookSession* hooks);
