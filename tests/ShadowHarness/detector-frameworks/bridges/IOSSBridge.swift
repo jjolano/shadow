@@ -81,7 +81,13 @@ public final class IOSSBridge: NSObject {
         let runtimeHooked = IOSSecuritySuite.amIRuntimeHooked(
             dyldAllowList: [], detectionClass: IOSSBridge.self,
             selector: #selector(IOSSBridge.runnerProbe), isClassMethod: false)
-        let probeAddress = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "shdw_ioss_runner_probe")
+        // The IOSSecuritySuite framework is dlopen'd RTLD_LOCAL by the runner,
+        // so its @_cdecl probe symbol is not in the global namespace and
+        // dlsym(RTLD_DEFAULT) returns nil (which forced MSHook/Breakpoint to a
+        // false "jailbroken" via the ?? true fallback). RTLD_SELF (-3) searches
+        // from this image onward and resolves the local symbol.
+        let probeAddress = dlsym(UnsafeMutableRawPointer(bitPattern: -3), "shdw_ioss_runner_probe")
+            ?? dlsym(UnsafeMutableRawPointer(bitPattern: -2), "shdw_ioss_runner_probe")
         let mshooked = probeAddress.map { IOSSecuritySuite.amIMSHooked($0) } ?? true
         let breakpoint = probeAddress.map {
             IOSSecuritySuite.hasBreakpointAt(UnsafeRawPointer($0), functionSize: 16)
