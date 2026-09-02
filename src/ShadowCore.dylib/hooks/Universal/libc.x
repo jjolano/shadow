@@ -1858,7 +1858,7 @@ void* shdw_sym_policy_lookup_libc(const char* name) {
 // Reverse of the policy lookup: given a replacement address (what dlsym hands
 // an external caller for a hooked libc symbol), return the original function
 // address so a dladdr() on it resolves to the genuine system image
-// (DeviceSecurityKit HookDetector.checkSystemFunctionOrigins). NULL when the
+// (a function-origin hook check). NULL when the
 // address is not a hooked libc replacement.
 void* shdw_sym_original_for_replacement_libc(const void* addr) {
     if(!addr) {
