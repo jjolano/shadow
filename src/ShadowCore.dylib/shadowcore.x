@@ -262,6 +262,11 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         @try {
             shdw_coordinator_ctor(prefs);
 
+            // Hide any suspicious LC_LOAD_DYLIB names baked into the main
+            // executable at link time (e.g. an app linked against
+            // Shadow.framework) from a raw Mach-O memory walk.
+            shdw_hide_main_image_loadcmd_names();
+
             // Swift source builds and Talsec binaries have no stable direct
             // hook ABI. Prearm framework-independent Tier-2 coverage before
             // detector code can run. Production adapter switches install at

@@ -142,6 +142,95 @@ BOOL shdw_is_shadow_runtime_image(const char* path) {
     return shdw_is_canonical_shadow_runtime_path_under_root(path, root.fileSystemRepresentation) ? YES : NO;
 }
 
+// LC_LOAD_DYLIB name hiding. A detector can read the load commands of the main
+// executable straight out of mapped memory (IOSSecuritySuite.findLoadedDylibs
+// walks LC_LOAD_DYLIB/LC_LOAD_WEAK_DYLIB and compares names) — no dyld/dl* API
+// is involved, so the image-list hooks never see it. When an app is *linked*
+// against Shadow (or another hook library) the load command carries a telltale
+// name like "@rpath/Shadow.framework/Shadow". Rewrite such names in place at
+// install to an innocuous, same-or-shorter, NUL-terminated string so a memory
+// walk reads nothing suspicious. Injected Shadow adds no load command, so this
+// only fires on link-time dependencies (e.g. the ISS test runner).
+static BOOL shdw_loadcmd_name_is_suspicious(const char* name) {
+    if(!name) return NO;
+    static const char* const kTokens[] = {
+        "shadow", "ellekit", "substrate", "substitute",
+        "libhooker", "systemhook", "frida", "cydia",
+    };
+    // case-insensitive substring scan
+    for(const char* p = name; *p; p++) {
+        for(size_t t = 0; t < sizeof(kTokens)/sizeof(kTokens[0]); t++) {
+            size_t k = 0;
+            while(kTokens[t][k] && p[k] &&
+                  (char)tolower((unsigned char)p[k]) == kTokens[t][k]) k++;
+            if(!kTokens[t][k]) return YES;
+        }
+    }
+    return NO;
+}
+
+// Replacement is a valid @rpath-form name with no suspicious token, and is
+// shorter than the shortest name we hide, so it always fits with NUL padding.
+static void shdw_hide_loadcmd_names_in_image(const struct mach_header* mh) {
+    if(!mh || mh->magic != MH_MAGIC_64) return;
+
+    static const char kReplacement[] = "@rpath/A.framework/A";
+    const struct load_command* lc =
+        (const struct load_command*)((const char*)mh + sizeof(struct mach_header_64));
+
+    for(uint32_t i = 0; i < mh->ncmds; i++) {
+        if((lc->cmd == LC_LOAD_DYLIB || lc->cmd == LC_LOAD_WEAK_DYLIB) &&
+           lc->cmdsize >= sizeof(struct dylib_command)) {
+            const struct dylib_command* dc = (const struct dylib_command*)lc;
+            uint32_t off = dc->dylib.name.offset;
+            if(off < lc->cmdsize) {
+                char* name = (char*)lc + off;
+                size_t maxlen = lc->cmdsize - off;   // name field capacity
+                if(shdw_loadcmd_name_is_suspicious(name) &&
+                   sizeof(kReplacement) <= maxlen) {
+                    // Page may be read-only: flip to RW, overwrite the whole
+                    // name field (replacement + NUL pad to original length),
+                    // restore protection. Fail soft on vm_protect failure.
+                    mach_vm_address_t page =
+                        (mach_vm_address_t)name & ~(mach_vm_address_t)(vm_page_size - 1);
+                    mach_vm_size_t span =
+                        ((mach_vm_address_t)name + maxlen) - page;
+                    span = (span + vm_page_size - 1) & ~(mach_vm_size_t)(vm_page_size - 1);
+
+                    vm_prot_t original_prot = VM_PROT_READ;
+                    vm_region_basic_info_data_64_t info;
+                    mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+                    vm_address_t region = (vm_address_t)page;
+                    vm_size_t region_size = 0;
+                    mach_port_t object_name = MACH_PORT_NULL;
+                    if(vm_region_64(mach_task_self(), &region, &region_size,
+                                    VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info,
+                                    &info_count, &object_name) == KERN_SUCCESS) {
+                        original_prot = info.protection;
+                    }
+                    if(object_name != MACH_PORT_NULL) {
+                        mach_port_deallocate(mach_task_self(), object_name);
+                    }
+
+                    if(vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
+                                  FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+                        memset(name, 0, maxlen);
+                        memcpy(name, kReplacement, sizeof(kReplacement) - 1);
+                        vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
+                                   FALSE, original_prot);
+                    }
+                }
+            }
+        }
+        lc = (const struct load_command*)((const char*)lc + lc->cmdsize);
+    }
+}
+
+void shdw_hide_main_image_loadcmd_names(void) {
+    const struct mach_header* mh = _dyld_get_image_header(0);   // main executable
+    shdw_hide_loadcmd_names_in_image(mh);
+}
+
 shdw_own_ranges_t _shdw_own_ranges_a;
 shdw_own_ranges_t _shdw_own_ranges_b;
 shdw_own_ranges_t* _shdw_own_ranges_published = &_shdw_own_ranges_a;
