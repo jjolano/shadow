@@ -12,50 +12,31 @@ NSDictionary<NSString*, id>* SHDWMigratedHookSettings(NSDictionary<NSString*, id
     }
     [migrated removeObjectForKey:SHDWAppDisabledID];
 
-    NSArray<NSArray<NSString*>*>* mappings = @[
-        @[ @"Hook_Filesystem", SHDWUniversalFilesystemID ],
-        @[ @"Hook_URLScheme", SHDWUniversalURLSchemeID ],
-        @[ @"Hook_EnvVars", SHDWUniversalEnvVarsID ],
-        @[ @"Hook_Foundation", SHDWUniversalFoundationID ],
-        @[ @"Hook_MachBootstrap", SHDWUniversalMachBootstrapID ],
-        @[ @"Hook_IOKit", SHDWUniversalIOKitID ],
-        @[ @"Hook_LowLevelC", SHDWUniversalLowLevelCID ],
-        @[ @"Hook_AntiDebugging", SHDWUniversalAntiDebuggingID ],
-        @[ @"Hook_CodeSigning", SHDWUniversalCodeSigningID ],
-        @[ @"Hook_DynamicLibrariesExtra", SHDWUniversalDynamicLibrariesExtraID ],
-        @[ @"Hook_Syscall", SHDWUniversalSyscallID ],
-        @[ @"Hook_Sandbox", SHDWUniversalSandboxID ],
-        @[ @"Hook_Memory", SHDWUniversalMemoryID ],
-        @[ @"Hook_HideApps", SHDWUniversalHideAppsID ],
-        @[ @"PseudoSandboxMode", SHDWUniversalPseudoSandboxModeID ],
-        @[ @"PathRewrite", SHDWUniversalPathRewriteID ],
-        @[ @"MemoryLevelHiding", SHDWUniversalMemoryLevelHidingID ],
-        @[ @"DetectorPatch_DTTJailbreakDetection", SHDWAdapterDTTJailbreakDetectionID ],
-        @[ @"DetectorPatch_SafeDevice", SHDWAdapterSafeDeviceID ],
-        @[ @"DetectorPatch_JailMonkey", SHDWAdapterJailMonkeyID ],
-        @[ @"HarnessUniversalBaseline", SHDWUniversalHarnessBaselineID ],
-    ];
+    // Shadow runs its fixed full-capability profile whenever an app is enabled;
+    // stored hook toggles (Universal_*, Adapter_*, PseudoSandbox*, the legacy
+    // Hook_* names, etc.) no longer take effect. Prune the plist down to the
+    // live surface so obsolete keys can never linger as phantom switches that
+    // reduce capability. Kept scalars are the activation/migration markers and
+    // the per-app harness baseline; dict values are preserved untouched — at
+    // the root they are per-app override dicts, and inside a per-app dict the
+    // Test_DetectorOverrides map (both handled by a separate migration pass).
+    static NSSet* liveScalarKeys = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        liveScalarKeys = [NSSet setWithArray:@[
+            SHDWGlobalEnabledID, SHDWSingleToggleMigrationID,
+            SHDWAppEnabledID, SHDWUniversalHarnessBaselineID,
+        ]];
+    });
 
-    for(NSArray<NSString*>* mapping in mappings) {
-        NSString* legacy = mapping[0];
-        NSString* canonical = mapping[1];
-        id value = settings[legacy];
-        if(value && !migrated[canonical]) {
-            migrated[canonical] = value;
+    for(NSString* key in [migrated allKeys]) {
+        if([migrated[key] isKindOfClass:[NSDictionary class]]) {
+            continue;
         }
-        [migrated removeObjectForKey:legacy];
-    }
-
-    id deviceCheck = settings[@"Hook_DeviceCheck"];
-    if(deviceCheck) {
-        if(!migrated[SHDWAdapterDeviceCheckID]) {
-            migrated[SHDWAdapterDeviceCheckID] = deviceCheck;
-        }
-        if(!migrated[SHDWAdapterFreeRASPID]) {
-            migrated[SHDWAdapterFreeRASPID] = deviceCheck;
+        if(![liveScalarKeys containsObject:key]) {
+            [migrated removeObjectForKey:key];
         }
     }
-    [migrated removeObjectForKey:@"Hook_DeviceCheck"];
 
     return [migrated copy];
 }

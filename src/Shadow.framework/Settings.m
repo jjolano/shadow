@@ -13,19 +13,29 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
 - (instancetype)init {
     if((self = [super init])) {
         // Enabled apps all receive this one built-in profile. Stored hook
-        // values are intentionally ignored.
+        // values are intentionally ignored — getPreferencesForIdentifier:
+        // copies this dictionary directly, so the profile is never read back
+        // through userDefaults. Deliberately no registerDefaults: registering
+        // the fixed profile would re-materialize every hook key into the
+        // persisted plist as a phantom switch and undo the migration prune.
         defaultSettings = SHDWDefaultHookSettings();
 
         userDefaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
         [self migrateLegacyHookSettings];
-        [userDefaults registerDefaults:defaultSettings];
     }
 
     return self;
 }
 
 - (void)migrateLegacyHookSettings {
-    NSDictionary* root = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST];
+    // Read and write the same store. initWithSuiteName: persists through
+    // cfprefsd (on rootless, to /var/jb/var/mobile/...), whereas the literal
+    // SHADOW_PREFS_PLIST path names a different, stale /var/mobile/... file; a
+    // file-sourced snapshot diffs against the wrong store and prunes nothing.
+    // persistentDomainForName: returns exactly this suite's stored keys (no
+    // global/registration domains), so the rebuild below can never drop a
+    // system default.
+    NSDictionary* root = [userDefaults persistentDomainForName:@SHADOW_PREFS_PLIST];
     if(![root isKindOfClass:[NSDictionary class]]) {
         return;
     }
@@ -33,7 +43,13 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
     NSDictionary* migratedRoot = SHDWMigratedHookSettings(root);
     BOOL firstSingleToggleMigration = ![root[SHDWSingleToggleMigrationID] boolValue];
     BOOL legacyGlobalEnabled = [root[SHDWGlobalEnabledID] boolValue];
-    BOOL changed = NO;
+
+    // Rebuild the migrated domain and write it back wholesale with
+    // setPersistentDomain:forName: — a single atomic replace, rather than
+    // per-key setObject:/removeObjectForKey: calls whose removals are the
+    // unreliable half through the cfprefsd bridge. The result is exactly the
+    // pruned shape.
+    NSMutableDictionary* domain = [NSMutableDictionary dictionary];
     for(NSString* key in migratedRoot) {
         id value = migratedRoot[key];
         if([value isKindOfClass:[NSDictionary class]]) {
@@ -42,26 +58,17 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
                ![value[SHDWAppDisabledID] boolValue] && ![value[SHDWAppEnabledID] boolValue]) {
                 migratedApp[SHDWAppEnabledID] = @YES;
             }
-            if(![migratedApp isEqual:value]) {
-                [userDefaults setObject:[migratedApp copy] forKey:key];
-                changed = YES;
-            }
-        } else if(![value isEqual:root[key]]) {
-            [userDefaults setObject:value forKey:key];
-            changed = YES;
-        }
-    }
-    for(NSString* key in root) {
-        if(![root[key] isKindOfClass:[NSDictionary class]] && !migratedRoot[key]) {
-            [userDefaults removeObjectForKey:key];
-            changed = YES;
+            domain[key] = [migratedApp copy];
+        } else {
+            domain[key] = value;
         }
     }
     if(firstSingleToggleMigration) {
-        [userDefaults setBool:YES forKey:SHDWSingleToggleMigrationID];
-        changed = YES;
+        domain[SHDWSingleToggleMigrationID] = @YES;
     }
-    if(changed) {
+
+    if(![domain isEqualToDictionary:root]) {
+        [userDefaults setPersistentDomain:domain forName:@SHADOW_PREFS_PLIST];
         [userDefaults synchronize];
     }
 }
