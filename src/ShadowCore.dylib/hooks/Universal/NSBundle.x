@@ -464,5 +464,9 @@ static void shdw_cache_main_bundle(void) {
 
 void shdw_universal_nsbundle(SHDWHookSession* hooks) {
     shdw_cache_main_bundle();
+    Class cls = objc_getClass("NSBundle");
+    SEL sel = sel_registerName("infoDictionary");
+    void* orig = SHDWSnapshotInstanceMethodIMP(cls, sel);
     %init(shadowhook_NSBundle);
+    SHDWRegisterHookedInstanceMethod(cls, sel, orig);
 }

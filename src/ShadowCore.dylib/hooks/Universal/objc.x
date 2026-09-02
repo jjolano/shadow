@@ -313,6 +313,10 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
             void* hookOrig = shdw_universal_file_exists_original();
             if(hookOrig) return (IMP)hookOrig;
         }
+        if(name == sel_registerName("isReadableFileAtPath:")) {
+            void* hookOrig = shdw_universal_readable_file_original();
+            if(hookOrig) return (IMP)hookOrig;
+        }
         if(name == sel_registerName("canOpenURL:")) {
             void* hookOrig = SHDWCanOpenURLOriginal();
             if(hookOrig) return (IMP)hookOrig;

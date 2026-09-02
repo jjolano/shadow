@@ -59,7 +59,7 @@ typedef struct {
 static SHDWHookedIMPRemap gSHDWHookedIMPRemaps[256];
 static uint32_t gSHDWHookedIMPRemapCount;
 
-static void SHDWRememberHookedIMPRemap(const void* replacement, const void* original) {
+void SHDWRememberHookedIMPRemap(const void* replacement, const void* original) {
     if(!replacement || !original || replacement == original) return;
     uint32_t count = __atomic_load_n(&gSHDWHookedIMPRemapCount, __ATOMIC_ACQUIRE);
     for(uint32_t i = 0; i < count; i++) {
@@ -68,6 +68,29 @@ static void SHDWRememberHookedIMPRemap(const void* replacement, const void* orig
     if(count == sizeof(gSHDWHookedIMPRemaps) / sizeof(gSHDWHookedIMPRemaps[0])) return;
     gSHDWHookedIMPRemaps[count] = (SHDWHookedIMPRemap){ (uintptr_t)replacement, original };
     __atomic_store_n(&gSHDWHookedIMPRemapCount, count + 1, __ATOMIC_RELEASE);
+}
+
+// Snapshot an instance method's current IMP; pair with
+// SHDWRegisterHookedInstanceMethod after the %hook installs to record the
+// replacement->original mapping for the dladdr swizzle-origin filter.
+void* SHDWSnapshotInstanceMethodIMP(Class cls, SEL sel) {
+    if(!cls || !sel) return NULL;
+    Method m = class_getInstanceMethod(cls, sel);
+    return m ? (void*)method_getImplementation(m) : NULL;
+}
+
+void SHDWRegisterHookedInstanceMethod(Class cls, SEL sel, void* originalIMP) {
+    if(!cls || !sel || !originalIMP) return;
+    Method m = class_getInstanceMethod(cls, sel);
+    if(!m) return;
+    IMP hooked = method_getImplementation(m);
+    if((void*)hooked != originalIMP) {
+        SHDWRememberHookedIMPRemap((const void*)hooked, originalIMP);
+        IMP viaClass = class_getMethodImplementation(cls, sel);
+        if(viaClass && (void*)viaClass != originalIMP) {
+            SHDWRememberHookedIMPRemap((const void*)viaClass, originalIMP);
+        }
+    }
 }
 
 const void* SHDWOriginalIMPForReplacement(const void* address) {

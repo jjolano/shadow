@@ -155,7 +155,11 @@ void shdw_universal_user_defaults(SHDWHookSession* hooks) {
 %end
 
 void shdw_universal_nsprocessinfo(SHDWHookSession* hooks) {
+    Class cls = objc_getClass("NSProcessInfo");
+    SEL sel = sel_registerName("environment");
+    void* orig = SHDWSnapshotInstanceMethodIMP(cls, sel);
     %init(shadowhook_NSProcessInfo);
+    SHDWRegisterHookedInstanceMethod(cls, sel, orig);
 }
 
 #import <MobileCoreServices/LSApplicationWorkspace.h>
