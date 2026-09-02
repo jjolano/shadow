@@ -13,24 +13,50 @@ if grep -Rqs --exclude-dir=.theos 'SHDWPreset' src/Shadow.framework src/ShadowCo
     exit 1
 fi
 
-if grep -Eq 'Global_Enabled|SHDWHooksListController|BypassPreset' "$root"; then
-    echo 'SETTINGS DRIFT: root pane exposes global or profile controls'
+if grep -Eq 'SHDWHooksListController|BypassPreset' "$root"; then
+    echo 'SETTINGS DRIFT: root pane exposes profile controls'
     exit 1
 fi
 
-if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 1 ] ||
+# The root pane keeps the global activation switch, the applications list, and
+# About — nothing else. The removed tools (respring/reset/import/export) and
+# the detector log must stay gone.
+grep -q '<string>Global_Enabled</string>' "$root" || {
+    echo 'SETTINGS DRIFT: root pane lost the global activation switch'
+    exit 1
+}
+if grep -Eq 'respring:|reset:|exportSettings:|importSettings:|DetectorLog' "$root"; then
+    echo 'SETTINGS DRIFT: removed tools or detector log returned to the root pane'
+    exit 1
+fi
+
+# The app pane is exactly the Follow Global + App_Enabled switch pair; no
+# revived per-hook or profile controls, and no App_Disabled (the single-toggle
+# backend never writes it).
+if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 2 ] ||
    ! grep -q '<string>App_Enabled</string>' "$app" ||
-   grep -Eq 'App_Disabled|App_FollowGlobal|BypassPreset|Universal_|Adapter_' "$app"; then
-    echo 'SETTINGS DRIFT: app pane is not one App_Enabled switch'
+   ! grep -q '<string>App_FollowGlobal</string>' "$app" ||
+   grep -Eq 'App_Disabled|BypassPreset|Universal_|Adapter_' "$app"; then
+    echo 'SETTINGS DRIFT: app pane is not the Follow Global + App_Enabled switch pair'
     exit 1
 fi
 
-for obsolete in Hooks Individual Dangerous Adapters Troubleshooting; do
+for obsolete in Hooks Individual Dangerous Adapters Troubleshooting DetectorLog; do
     if [ -e "src/ShadowSettings.bundle/Resources/$obsolete.plist" ]; then
         echo "SETTINGS DRIFT: obsolete $obsolete pane returned"
         exit 1
     fi
 done
+
+# The detector log is gone entirely: no controller, no runtime recorder.
+if [ -e src/ShadowSettings.bundle/SHDWDetectorLogListController.m ]; then
+    echo 'SETTINGS DRIFT: detector log controller returned'
+    exit 1
+fi
+if grep -q 'DetectorLog' src/Shadow.framework/RestrictionEngine.m; then
+    echo 'SETTINGS DRIFT: detector log runtime recorder returned'
+    exit 1
+fi
 
 for key in SHDWUniversalFoundationID SHDWUniversalMachBootstrapID SHDWUniversalIOKitID SHDWUniversalSyscallID; do
     grep -q "$key : @(YES)" "$profile" || {
@@ -56,14 +82,12 @@ grep -q 'me.jjolano.shadow.test.iossecuritysuite' "$settings" || {
     exit 1
 }
 
-grep -q 'SHDWSingleToggleMigrationID, @"DetectorLog"' src/ShadowSettings.bundle/SHDWRootListController.m || {
-    echo 'SETTINGS DRIFT: exports no longer preserve single-toggle migration state'
-    exit 1
-}
-
-grep -q 'sanitized\[SHDWSingleToggleMigrationID\] = @YES' src/ShadowSettings.bundle/SHDWRootListController.m &&
-grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' src/ShadowSettings.bundle/SHDWPrefs.m || {
-    echo 'SETTINGS DRIFT: imported and edited app toggles must use explicit single-toggle semantics'
+# A per-app toggle edit takes the app off "follow global" by writing an
+# explicit App_Enabled and stamping the single-toggle migration marker;
+# clearing it (follow global) drops the override key.
+grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' src/ShadowSettings.bundle/SHDWPrefs.m &&
+grep -q 'removeObjectForKey:SHDWAppEnabledID' src/ShadowSettings.bundle/SHDWPrefs.m || {
+    echo 'SETTINGS DRIFT: per-app toggle must use explicit single-toggle semantics with follow-global clear'
     exit 1
 }
 

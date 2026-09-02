@@ -3,38 +3,13 @@
 "ALWAYS_ON" = "Enable in All Apps";
 "ALWAYS_ON_DESC" = "Enable Shadow in all apps by default. Per-app settings override this.";
 
-"BYPASS_SETTINGS" = "Bypass Settings";
-"BYPASS_SETTINGS_DESC" = "Adjust the strength of the jailbreak detection bypass. App performance may be affected.";
-
 "ROOT_APP_SETTINGS" = "Application Settings";
 "ROOT_APP_SETTINGS_DESC" = "Choose the applications where Shadow should run.";
 
 "APPLICATIONS" = "Applications";
 
-"RESPRING" = "Restart SpringBoard";
-"RESPRING_PROMPT" = "This will restart SpringBoard.";
-"RESET" = "Reset Settings";
-"RESET_PROMPT" = "This will reset all settings for Shadow and restart SpringBoard.";
-"RESET_CANCEL" = "Cancel";
-
 "ROOT_ABOUT" = "About";
-
-"ROOT_DETECTOR_LOG" = "Detector Log";
-
-"TOOLS_HDR" = "Tools";
-
-"EXPORT_SETTINGS" = "Export Settings";
-"IMPORT_SETTINGS" = "Import Settings";
 
 "APPS_ENABLED_FMT" = "%ld enabled";
 "APPS_ALL_ENABLED" = "All apps enabled";
-"APPS_CUSTOMIZED_FMT" = "%ld customized";
-
-"IMPORT_CONFIRM_TITLE" = "Import Settings?";
-"IMPORT_CONFIRM_MSG" = "This replaces all current settings with the selected file.";
-"IMPORT_CONFIRM" = "Import";
-"IMPORT_CANCEL" = "Cancel";
-"IMPORT_BAD_FILE" = "The selected file is not a valid Shadow settings backup.";
-"IMPORT_APPLIED" = "Settings imported. Respring to apply.";
-"IMPORT_OK" = "OK";
 "APPS_EXCLUDED_FMT" = "All apps enabled · %ld excluded";

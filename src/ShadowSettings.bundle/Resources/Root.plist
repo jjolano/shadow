@@ -8,6 +8,26 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>footerText</key>
+			<string>ALWAYS_ON_DESC</string>
+			<key>label</key>
+			<string>GLOBAL_SETTINGS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>get</key>
+			<string>readPreferenceValue:</string>
+			<key>id</key>
+			<string>Global_Enabled</string>
+			<key>label</key>
+			<string>ALWAYS_ON</string>
+			<key>set</key>
+			<string>setPreferenceValue:forSpecifier:</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
 			<string>ROOT_APP_SETTINGS_DESC</string>
 			<key>label</key>
 			<string>ROOT_APP_SETTINGS</string>
@@ -46,92 +66,6 @@
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>respring:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>confirmation</key>
-			<dict>
-				<key>cancelTitle</key>
-				<string>RESET_CANCEL</string>
-				<key>okTitle</key>
-				<string>RESPRING</string>
-				<key>prompt</key>
-				<string>RESPRING_PROMPT</string>
-				<key>title</key>
-				<string>RESPRING</string>
-			</dict>
-			<key>icon</key>
-			<string>IcoRespring.png</string>
-			<key>label</key>
-			<string>RESPRING</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>reset:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>confirmation</key>
-			<dict>
-				<key>cancelTitle</key>
-				<string>RESET_CANCEL</string>
-				<key>okTitle</key>
-				<string>RESET</string>
-				<key>prompt</key>
-				<string>RESET_PROMPT</string>
-				<key>title</key>
-				<string>RESET</string>
-			</dict>
-			<key>icon</key>
-			<string>IcoReset.png</string>
-			<key>isDestructive</key>
-			<true/>
-			<key>label</key>
-			<string>RESET</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>TOOLS_HDR</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>exportSettings:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>icon</key>
-			<string>IcoExport.png</string>
-			<key>label</key>
-			<string>EXPORT_SETTINGS</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>importSettings:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>icon</key>
-			<string>IcoImport.png</string>
-			<key>label</key>
-			<string>IMPORT_SETTINGS</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string>SHDWDetectorLogListController</string>
-			<key>icon</key>
-			<string>IcoLog.png</string>
-			<key>isController</key>
-			<true/>
-			<key>label</key>
-			<string>ROOT_DETECTOR_LOG</string>
 		</dict>
 		<dict>
 			<key>cell</key>
