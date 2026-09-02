@@ -1394,6 +1394,19 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
     return addr;
 }
 
+// Map a hooked dyld-introspection replacement back to its original function
+// address (for the dladdr swizzle-origin filter). These are rebind hooks, so
+// dlsym hands external callers the replacement; a detector dladdr()ing it must
+// see libdyld, not ShadowCore.
+static void* shdw_dyld_original_for_replacement(const void* addr) {
+    if(addr == (const void*)replaced_dyld_image_count) return (void*)original_dyld_image_count;
+    if(addr == (const void*)replaced_dyld_get_image_name) return (void*)original_dyld_get_image_name;
+    if(addr == (const void*)replaced_dyld_get_image_header) return (void*)original_dyld_get_image_header;
+    if(addr == (const void*)replaced_dyld_get_image_vmaddr_slide) return (void*)original_dyld_get_image_vmaddr_slide;
+    if(addr == (const void*)replaced_dlopen) return (void*)original_dlopen;
+    return NULL;
+}
+
 static int (*original_dladdr)(const void* addr, Dl_info* info);
 static int replaced_dladdr(const void* addr, Dl_info* info) {
     // Each loader operation clears the thread's error state up front.
@@ -1417,6 +1430,16 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
     // fall through to the normal filtering (never fabricate a system origin for
     // an address that has none).
     const void* originalIMP = SHDWOriginalIMPForReplacement(addr);
+    if(!originalIMP) {
+        // Hooked libc C functions (sysctl, open, stat, access, ...) resolve via
+        // dlsym to their replacement; map that back to the original so the
+        // dladdr resolves to the system image.
+        originalIMP = shdw_sym_original_for_replacement_libc(addr);
+    }
+    if(!originalIMP) {
+        // Hooked dyld-introspection functions (_dyld_image_count etc.).
+        originalIMP = shdw_dyld_original_for_replacement(addr);
+    }
     if(originalIMP) {
         Dl_info originalInfo;
         memset(&originalInfo, 0, sizeof(originalInfo));
