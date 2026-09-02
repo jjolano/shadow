@@ -352,7 +352,7 @@ static void TestPseudoSandbox(void) {
         "pseudo strict preserves Apple preferences carveout");
     PseudoPreservesBelt(engine, @"/tmp/com.apple.pseudo/file",
         "pseudo strict preserves temporary Apple carveout");
-    PseudoPreservesBelt(engine, @"/private/preboot", "pseudo strict preserves the stock preboot root");
+    PseudoPreservesBelt(engine, @"/private/preboot", "pseudo strict agrees with belt on the preboot root");
     RCHECK(PseudoQuery(engine, @"/private/var/mobile/Documents/PseudoSandboxProbe", nil, NO),
         "pseudo strict normalizes private var before enforcing");
     RCHECK(PseudoQuery(engine, @"../PseudoHome-sibling/file", home, NO),
