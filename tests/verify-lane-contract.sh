@@ -3,7 +3,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-. "$ROOT/lanes.sh"
+. "$ROOT/build-support/lanes.sh"
 
 status=0
 
@@ -13,7 +13,7 @@ fail() {
 }
 
 for lane in rootful-legacy rootful-modern rootless roothide; do
-    control="$ROOT/control.$lane"
+    control="$ROOT/packaging/controls/control.$lane"
     [ -f "$control" ] || { fail "$lane has no control file"; continue; }
 
     package=$(shadow_lane_field "$lane" PACKAGE)

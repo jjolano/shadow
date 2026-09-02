@@ -20,7 +20,7 @@
 #import <Foundation/Foundation.h>
 #import "ShdwPathShim.h"
 
-#import "../common.h"
+#import "../src/common.h"
 
 static NSString* gJBPath;      // fixture jbroot; nil = rooted mode
 static NSString* gRulesetsDir; // staged rulesets dir (both modes)

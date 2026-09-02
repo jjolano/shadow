@@ -9,7 +9,7 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 # Keep the package contract with the build-lane contract.  This script runs
 # after packaging, so a mismatched control file cannot silently broaden a
 # lane's supported iOS range.
-. "$ROOT/lanes.sh"
+. "$ROOT/build-support/lanes.sh"
 
 case "$PROFILE" in
     rootful-legacy|rootful-modern|rootless|roothide) ;;

@@ -59,7 +59,7 @@ SHADW_AFUZZ_SEED=123 SHADW_AFUZZ_ITERS=20000 make -C tests afuzz
   on-device probes.
 - Rooted `/usr/lib` reads use the host filesystem; rootless reads use fixtures.
 
-Use `tools/dyldprobe`, `tools/hookprobe`, `ShadowHarness`, and
+Use `tests/tools/dyldprobe`, `tests/tools/hookprobe`, `tests/ShadowHarness`, and
 `tests/stealth-device.sh` for device validation.
 
 `tests/stealth-device.sh run-all` executes Harness Run All headlessly and

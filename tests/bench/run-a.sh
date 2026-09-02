@@ -12,12 +12,12 @@ ITERS=${BENCH_ITERS:-10000}
 HOST=${SHADOW_DEV_HOST:-mobile@10.0.1.160}
 PASS=${SHADOW_DEV_PASS:-alpine}
 OUT="$ROOT/tests/bench/results"
-BIN="$ROOT/tools/benchprobe/.theos/obj/debug/arm64/benchprobe"
+BIN="$ROOT/tests/tools/benchprobe/.theos/obj/debug/arm64/benchprobe"
 
 SSH=(sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
      -o PreferredAuthentications=password -o PubkeyAuthentication=no "$HOST")
 
-cd "$ROOT/tools/benchprobe"
+cd "$ROOT/tests/tools/benchprobe"
 THEOS_PACKAGE_SCHEME=rootless make ARCHS="arm64" TARGET="iphone:clang:16.5:12.0" >/dev/null
 
 # theos' debug sign step leaves the binary unsigned; the kernel SIGKILLs

@@ -5,8 +5,8 @@ ROOT=$(cd "$(dirname "$0")" && pwd)
 cd "$ROOT"
 : "${THEOS:?THEOS must point to Theos}"
 
-# Lane matrix lives in one place; see lanes.sh.
-. "$ROOT/lanes.sh"
+# Lane matrix lives in one place; see build-support/lanes.sh.
+. "$ROOT/build-support/lanes.sh"
 
 PB=${PREBUILT_ROOT:-$ROOT/../prebuilt}
 CONTROL_VAR=_THEOS_DEB_PACKAGE_CONTROL_PATH
@@ -34,7 +34,7 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
     esac
 
     # HookKit is resolved from the Theos install (HookKit repo: make
-    # install-theos), not staged here — see hookkit.mk. AltList and libSandy are
+    # install-theos), not staged here — see build-support/hookkit.mk. AltList and libSandy are
     # still built from source into prebuilt and staged into the lane sandbox.
     local altlist="$PB/altlist/$source_profile/AltList.framework"
     local sandy="$PB/sandy/$source_profile/libsandy.dylib"
@@ -113,12 +113,12 @@ prepare_scheme_framework() { # rootless|roothide
     # match the main build too: a mismatched pass leaves stale caller
     # objects compiled without -DSHADOW_ROOTHIDE while JBPath.m (whose
     # implementations the header inlines replace) recompiles empty.
-    make -C Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
+    make -C src/Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
         ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
         TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
-    cp -R Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
+    cp -R src/Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
 }
 
 last_package() {
@@ -139,7 +139,7 @@ copy_dependency_packages() { # profile
 }
 
 build_lane() { # profile
-    local lane=$1 control="$ROOT/control.$1" package destination
+    local lane=$1 control="$ROOT/packaging/controls/control.$1" package destination
     [ "$lane" = rootful-legacy ] || modern_args
     stage_deps "$lane"
     make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
@@ -172,14 +172,14 @@ build_harness() { # rootful-modern|rootless
     if [ "$lane" = rootless ]; then
         scripts/build-detector-harness.sh
     else
-        make -C ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
+        make -C tests/ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
             ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
             TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
     fi
-    package=$(<ShadowHarness/.theos/last_package)
+    package=$(<tests/ShadowHarness/.theos/last_package)
     case "$package" in
         /*) ;;
-        *) package="$ROOT/ShadowHarness/${package#./}" ;;
+        *) package="$ROOT/tests/ShadowHarness/${package#./}" ;;
     esac
     cp -p "$package" "$ROOT/build/"
 }
@@ -187,9 +187,9 @@ build_harness() { # rootful-modern|rootless
 build_quick() {
     stage_deps rootful-modern
     modern_args
-    make -C Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
-    make -C Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
-    make -C ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    make -C src/Shadow.framework SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    make -C src/Shadow.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    make -C src/ShadowCore.dylib SHADOW_LANE=rootful-modern "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
 }
 
 case ${1:-all} in

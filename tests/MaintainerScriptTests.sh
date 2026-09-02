@@ -30,7 +30,7 @@ run_prerm() {
         FAKE_PROGRAM="$3" FAKE_EXACT_PID="${4:-}" FAKE_EXACT_COMM="${5:-}" \
         FAKE_DECOYS="${6:-}" SHADOW_LAUNCHCTL_BIN="$tmp/bin/launchctl" \
         SHADOW_PS_BIN="$tmp/bin/ps" SHADOW_SLEEP_BIN="$tmp/bin/sleep" \
-        sh "$root/layout/DEBIAN/prerm" upgrade
+        sh "$root/packaging/layout/DEBIAN/prerm" upgrade
 }
 
 run_prerm iphoneos-arm64 live /var/jb/usr/libexec/shadowd
@@ -55,7 +55,7 @@ if kill -0 "$orphan" 2>/dev/null; then fail 'exact orphan survived SIGTERM'; fi
 if env DPKG_MAINTSCRIPT_ARCH=iphoneos-arm64 FAKE_LOG="$tmp/log" FAKE_STATE="$tmp/state" \
     FAKE_PROGRAM=/var/jb/usr/libexec/shadowd SHADOW_LAUNCHCTL_BIN="$tmp/bin/launchctl" \
     SHADOW_PS_BIN="$tmp/bin/ps" SHADOW_SLEEP_BIN="$tmp/bin/sleep" \
-    sh "$root/layout/DEBIAN/prerm" upgrade; then
+    sh "$root/packaging/layout/DEBIAN/prerm" upgrade; then
     fail 'timeout did not abort before dpkg removal'
 fi
 
@@ -68,7 +68,7 @@ cp "$tmp/bin/shdw" "$pkg/usr/local/bin/shdw"
 if env DPKG_MAINTSCRIPT_ARCH=iphoneos-arm64 SHADOW_DPKG_ROOT="$pkg" SHADOW_ROOTFS_ROOT="$tmp/rootfs" \
     FAKE_LOG="$tmp/log" FAKE_STATE="$tmp/state" FAKE_PROGRAM=/unexpected/shadowd \
     SHADOW_LAUNCHCTL_BIN="$tmp/bin/launchctl" SHADOW_PS_BIN="$tmp/bin/ps" SHADOW_SLEEP_BIN="$tmp/bin/sleep" \
-    sh "$root/layout/DEBIAN/postinst" configure; then
+    sh "$root/packaging/layout/DEBIAN/postinst" configure; then
     fail 'mismatched job did not abort before bootstrap'
 fi
 if grep -F -q 'bootstrap system' "$tmp/log"; then fail 'postinst bootstrapped after mismatch'; fi
@@ -88,7 +88,7 @@ cp "$tmp/bin/shdw" "$clean_pkg/usr/local/bin/shdw"
 env DPKG_MAINTSCRIPT_ARCH=iphoneos-arm64 SHADOW_DPKG_ROOT="$clean_pkg" SHADOW_ROOTFS_ROOT="$tmp/rootfs-clean" \
     FAKE_LOG="$tmp/log" FAKE_STATE="$tmp/state" FAKE_PROGRAM=/var/jb/usr/libexec/shadowd \
     SHADOW_LAUNCHCTL_BIN="$tmp/bin/launchctl" SHADOW_PS_BIN="$tmp/bin/ps" SHADOW_SLEEP_BIN="$tmp/bin/sleep" \
-    sh "$root/layout/DEBIAN/postinst" configure
+    sh "$root/packaging/layout/DEBIAN/postinst" configure
 if [ -e "$clean_pkg/var/mobile/Library/Preferences/me.jjolano.shadowd/shadowd.ledger" ] ||
    [ -e "$clean_pkg/var/log/shadowd.log" ]; then
     fail 'backend-free postinst retained legacy daemon state'
@@ -102,7 +102,7 @@ mkdir -p "$harness_frameworks"
 for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
     mkdir "$harness_frameworks/$framework.framework"
 done
-env SHADOW_HARNESS_DPKG_ROOT="$harness_pkg" sh "$root/ShadowHarness/layout/DEBIAN/postinst" configure
+env SHADOW_HARNESS_DPKG_ROOT="$harness_pkg" sh "$root/tests/ShadowHarness/layout/DEBIAN/postinst" configure
 assert test -f "$harness_frameworks/shdwtestlib.dylib"
 assert test -f "$harness_frameworks/keep.txt"
 for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
@@ -111,7 +111,7 @@ for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakD
     fi
 done
 
-if grep -E '\<pgrep\>|\<seq\>|kill[[:space:]]+-[0-9]' "$root/layout/DEBIAN/prerm" "$root/layout/DEBIAN/postinst" >/dev/null; then
+if grep -E '\<pgrep\>|\<seq\>|kill[[:space:]]+-[0-9]' "$root/packaging/layout/DEBIAN/prerm" "$root/packaging/layout/DEBIAN/postinst" >/dev/null; then
     fail 'forbidden maintainer command remains'
 fi
 

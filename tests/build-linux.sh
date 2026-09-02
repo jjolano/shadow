@@ -21,18 +21,18 @@ clang -fobjc-arc -fobjc-runtime=gnustep-2.0 -fblocks $COV_FLAGS \
   $OBJC_FLAGS \
   -include tests/hdr/dispatch/once.h -include tests/hdr/CoreFoundation/CFBundle.h \
   -Itests/hdr \
-  -IShadow.framework/Headers -IShadow.framework -Itests \
+  -Isrc/Shadow.framework/Headers -Isrc/Shadow.framework -Itests \
   -Ivendor/HookKit.framework/Headers \
-  -IShadowCore.dylib/hooks -IShadowCore.dylib/hooks/Universal \
+  -Isrc/ShadowCore.dylib/hooks -Isrc/ShadowCore.dylib/hooks/Universal \
   tests/main.m tests/ShdwPathShim.m tests/fsinterpose.c tests/ShadowFilter.m \
   tests/detectors/ShadowDetector.m tests/Fuzz.m \
-  Shadow.framework/Core.m Shadow.framework/Ruleset.m \
-  Shadow.framework/Core+Utilities.m \
-  Shadow.framework/DpkgRulesGenerator.m \
-  Shadow.framework/RestrictionEngine.m Shadow.framework/JBPath.m \
-  Shadow.framework/RulesetCompiler.m Shadow.framework/RulesetStore.m \
-  tests/RestrictionTests.m tests/PolicyTests.m ShadowCore.dylib/policy/EnvironmentPolicy.m \
-  Shadow.framework/HookConfiguration.m Shadow.framework/SettingsMigration.m ShadowCore.dylib/HookAdapterBridge.m tests/CoordinatorTests.m \
+  src/Shadow.framework/Core.m src/Shadow.framework/Ruleset.m \
+  src/Shadow.framework/Core+Utilities.m \
+  src/Shadow.framework/DpkgRulesGenerator.m \
+  src/Shadow.framework/RestrictionEngine.m src/Shadow.framework/JBPath.m \
+  src/Shadow.framework/RulesetCompiler.m src/Shadow.framework/RulesetStore.m \
+  tests/RestrictionTests.m tests/PolicyTests.m src/ShadowCore.dylib/policy/EnvironmentPolicy.m \
+  src/Shadow.framework/HookConfiguration.m src/Shadow.framework/SettingsMigration.m src/ShadowCore.dylib/HookAdapterBridge.m tests/CoordinatorTests.m \
   tests/VersionCompareTests.m tests/HookFallbackTests.c \
   -Wl,--export-dynamic \
   -Wl,--wrap=access -Wl,--wrap=realpath -Wl,--wrap=open \

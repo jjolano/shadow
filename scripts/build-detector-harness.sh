@@ -105,18 +105,18 @@ patch_talsec() {
 }
 patch_talsec "$ROOT/.detector-deps/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework"
 patch_talsec "$ROOT/.detector-deps/Free-RASP-iOS-6.4.0/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework"
-m -C "$ROOT/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+m -C "$ROOT/src/Shadow.framework" THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
-m -C "$ROOT/Shadow.framework" stage THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
+m -C "$ROOT/src/Shadow.framework" stage THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
-m -C "$ROOT/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+m -C "$ROOT/tests/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
     "${RUNNER_ARGS[@]}" \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
-m -C "$ROOT/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+m -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache \
@@ -124,12 +124,12 @@ m -C "$ROOT/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 
 for runner in \
     IOSSecuritySuite JailbreakDetector SecurityToolkit DTTJailbreakDetection \
     FreeRASP Roothider BATJailbreakGuard SafetyNet DeviceSecurityKit JailMonkey; do
-    m -C "$ROOT/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+    m -C "$ROOT/tests/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
         TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
         "${RUNNER_ARGS[@]}" \
         ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache \
         ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache
 done
-m -C "$ROOT/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
+m -C "$ROOT/tests/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-    THEOS_LIBRARY_PATH="$ROOT/Shadow.framework/.theos/obj/debug" INCLUDE_DETECTOR_RUNNERS=1
+    THEOS_LIBRARY_PATH="$ROOT/src/Shadow.framework/.theos/obj/debug" INCLUDE_DETECTOR_RUNNERS=1

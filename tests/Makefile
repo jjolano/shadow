@@ -4,7 +4,7 @@
 # Foundation, so it compiles and runs on any host, macOS or Linux).
 verify-path-rewrite:
 	$(CC) -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test \
-		verify-path-rewrite.c ../ShadowCore.dylib/hooks/Universal/path_rewrite.c
+		verify-path-rewrite.c ../src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
 	/tmp/opencode/rewrite-test
 
 verify-device-driver:
@@ -39,11 +39,11 @@ UNAME := $(shell uname)
 ifeq ($(UNAME),Darwin)
 
 CC ?= clang
-FRAMEWORK = ../Shadow.framework
+FRAMEWORK = ../src/Shadow.framework
 VENDOR = ../vendor
 
 CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS
-INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../ShadowCore.dylib/hooks -I../ShadowCore.dylib/hooks/Universal \
+INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../src/ShadowCore.dylib/hooks -I../src/ShadowCore.dylib/hooks/Universal \
        -I$(VENDOR)/HookKit.framework/Headers
 
 SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
@@ -56,10 +56,10 @@ SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetect
        $(FRAMEWORK)/RulesetCompiler.m \
        $(FRAMEWORK)/RulesetStore.m \
        RestrictionTests.m \
-        PolicyTests.m ../ShadowCore.dylib/policy/EnvironmentPolicy.m \
+        PolicyTests.m ../src/ShadowCore.dylib/policy/EnvironmentPolicy.m \
        $(FRAMEWORK)/HookConfiguration.m \
        $(FRAMEWORK)/SettingsMigration.m \
-       ../ShadowCore.dylib/HookAdapterBridge.m \
+       ../src/ShadowCore.dylib/HookAdapterBridge.m \
        CoordinatorTests.m \
        VersionCompareTests.m HookFallbackTests.c
 

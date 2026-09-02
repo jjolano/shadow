@@ -62,9 +62,22 @@ Building requires [Theos](https://theos.dev). Build pinned dependencies first, t
 
 The available lanes are `rootful-legacy`, `rootful-modern`, `rootless`, and `roothide`; `rootful` builds both rootful packages when both toolchains are available. Legacy Linux builds default to `$THEOS/toolchain/oldabi/linux/iphone` (Clang 11) and `$THEOS/sdks/iPhoneOS13.7.sdk`; `OLDABI_TOOLCHAIN` and `OLDABI_SDKS` can override those locations. Modern dependency builds use HookKit's canonical 3.0 facade; set `HOOKKIT_CANONICAL_DEB` to use a locally built package. The legacy lane remains on the old-ABI HookKit package and accepts `HOOKKIT_LEGACY_DEB`. Modern lanes require macOS/Xcode 12 or newer for the new arm64e ABI, and RootHide uses the [RootHide Theos fork](https://github.com/roothide/theos). Every package is rejected if its architecture set, deployment targets, ABI marker, metadata, loader paths, or required payload is wrong.
 
+Do not run more than one lane build at a time. `stage_deps` installs each lane's AltList/libSandy/HookKit into shared, mutable locations (`vendor/` and `$THEOS/lib`), so concurrent lane builds clobber each other's dependency slices.
+
 Continuous integration builds and verifies the legacy lane on Ubuntu and all three modern lanes on macOS (`.github/workflows/build.yml`).
 
-A host-side test harness for the decision engine — no device, no Theos, no simulator — lives in `tests/`. Run `make -C tests test`; Linux supports the full Docker-backed suite and macOS a native subset. See `tests/README.md` for details. The harness runs on every push and pull request (`.github/workflows/tests.yml`). The `tools/` directory contains on-device probes (`dyldprobe`, `hookprobe`) used for QA.
+A host-side test harness for the decision engine — no device, no Theos, no simulator — lives in `tests/`. Run `make -C tests test`; Linux supports the full Docker-backed suite and macOS a native subset. See `tests/README.md` for details. The harness runs on every push and pull request (`.github/workflows/tests.yml`). `tests/tools/` contains on-device probes (`dyldprobe`, `hookprobe`) used for QA.
+
+## Repository Layout
+
+| Path | Contents |
+| --- | --- |
+| `src/` | Shipping components: `Shadow.framework`, `Shadow.dylib`, `ShadowCore.dylib`, `ShadowSettings.bundle`, `shdw`, and shared `common.h`. |
+| `build-support/` | Build glue read by the root and subproject Makefiles: `lanes.sh` (the lane matrix), `build-lanes.mk`, `hookkit.mk`. |
+| `packaging/` | Debian control templates (`controls/control.<lane>`) and the staged `layout/` (maintainer scripts, launch daemons, default `DEBIAN/control`). |
+| `tests/` | Host decision-engine harness plus device tooling: `ShadowHarness`, `DetectorRunners`, and `tools/` probes. |
+| `docs/` | SDK audit and compatibility research notes. |
+| `scripts/`, `.github/` | Build/release scripts and CI. |
 
 ## Legal
 

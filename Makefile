@@ -1,11 +1,16 @@
-include build-lanes.mk
+include build-support/build-lanes.mk
+
+# Package metadata + maintainer scripts live under packaging/layout/ (kept out
+# of the project root). Local to this Makefile: the subprojects keep their own
+# conventional layout/ dirs, so this must never be exported to them.
+THEOS_LAYOUT_DIR_NAME := packaging/layout
 
 include $(THEOS)/makefiles/common.mk
-SUBPROJECTS += Shadow.framework
-SUBPROJECTS += Shadow.dylib
-SUBPROJECTS += ShadowCore.dylib
-SUBPROJECTS += ShadowSettings.bundle
-SUBPROJECTS += shdw
+SUBPROJECTS += src/Shadow.framework
+SUBPROJECTS += src/Shadow.dylib
+SUBPROJECTS += src/ShadowCore.dylib
+SUBPROJECTS += src/ShadowSettings.bundle
+SUBPROJECTS += src/shdw
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
 # The rootless scheme stages the whole layout/ under /var/jb. Select the

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../ShadowCore.dylib/SHDWHookFallback.h"
+#include "../src/ShadowCore.dylib/SHDWHookFallback.h"
 
 int RunHookFallbackTests(void) {
     int failed = 0;

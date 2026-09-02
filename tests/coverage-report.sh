@@ -35,7 +35,7 @@ echo "=== engine methods vs hooked API groups ==="
 # scratch dir so they never pollute the repo.
 mkdir -p /tmp/covout
 method_percent() {
-    (cd /tmp/covout && $GCOV -o "/src/tests/harness-$1" -f "/src/Shadow.framework/$1.m" 2>/dev/null) \
+    (cd /tmp/covout && $GCOV -o "/src/tests/harness-$1" -f "/src/src/Shadow.framework/$1.m" 2>/dev/null) \
         | awk -v pat="$2" '
             /^Function .*/ { fn = $0 }
             /^Lines executed/ && fn ~ pat { print $2; found = 1; exit }

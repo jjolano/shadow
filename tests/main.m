@@ -234,7 +234,7 @@ static int stageAndExec(int argc, const char** argv) {
         [NSString stringWithFormat:@"shdw-harness-%d-%s", getpid(), gRootless ? "rootless" : "rooted"]];
 
     NSString* rulesetsSrc = (gDetect || gDetector || gShipped)
-        ? [srcDir stringByAppendingPathComponent:@"../Shadow.framework/layout/Library/Shadow/Rulesets"]
+        ? [srcDir stringByAppendingPathComponent:@"../src/Shadow.framework/layout/Library/Shadow/Rulesets"]
         : [srcDir stringByAppendingPathComponent:@"fixtures/rulesets"];
     NSString* rulesetsDst = [work stringByAppendingPathComponent:
         (gRootless ? @"jb/Library/Shadow/Rulesets" : @"root/Library/Shadow/Rulesets")];

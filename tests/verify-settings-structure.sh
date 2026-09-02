@@ -1,14 +1,14 @@
 #!/bin/sh
 set -eu
 
-root=ShadowSettings.bundle/Resources/Root.plist
-app=ShadowSettings.bundle/Resources/App.plist
-runtime=ShadowCore.dylib/shadowcore.x
-loader=Shadow.dylib/dylib.x
-settings=Shadow.framework/Settings.m
-profile=Shadow.framework/HookConfiguration.m
+root=src/ShadowSettings.bundle/Resources/Root.plist
+app=src/ShadowSettings.bundle/Resources/App.plist
+runtime=src/ShadowCore.dylib/shadowcore.x
+loader=src/Shadow.dylib/dylib.x
+settings=src/Shadow.framework/Settings.m
+profile=src/Shadow.framework/HookConfiguration.m
 
-if grep -Rqs --exclude-dir=.theos 'SHDWPreset' Shadow.framework ShadowCore.dylib ShadowSettings.bundle; then
+if grep -Rqs --exclude-dir=.theos 'SHDWPreset' src/Shadow.framework src/ShadowCore.dylib src/ShadowSettings.bundle; then
     echo 'SETTINGS DRIFT: preset API or UI returned'
     exit 1
 fi
@@ -26,7 +26,7 @@ if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 1 ] ||
 fi
 
 for obsolete in Hooks Individual Dangerous Adapters Troubleshooting; do
-    if [ -e "ShadowSettings.bundle/Resources/$obsolete.plist" ]; then
+    if [ -e "src/ShadowSettings.bundle/Resources/$obsolete.plist" ]; then
         echo "SETTINGS DRIFT: obsolete $obsolete pane returned"
         exit 1
     fi
@@ -56,19 +56,19 @@ grep -q 'me.jjolano.shadow.test.iossecuritysuite' "$settings" || {
     exit 1
 }
 
-grep -q 'SHDWSingleToggleMigrationID, @"DetectorLog"' ShadowSettings.bundle/SHDWRootListController.m || {
+grep -q 'SHDWSingleToggleMigrationID, @"DetectorLog"' src/ShadowSettings.bundle/SHDWRootListController.m || {
     echo 'SETTINGS DRIFT: exports no longer preserve single-toggle migration state'
     exit 1
 }
 
-grep -q 'sanitized\[SHDWSingleToggleMigrationID\] = @YES' ShadowSettings.bundle/SHDWRootListController.m &&
-grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' ShadowSettings.bundle/SHDWPrefs.m || {
+grep -q 'sanitized\[SHDWSingleToggleMigrationID\] = @YES' src/ShadowSettings.bundle/SHDWRootListController.m &&
+grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' src/ShadowSettings.bundle/SHDWPrefs.m || {
     echo 'SETTINGS DRIFT: imported and edited app toggles must use explicit single-toggle semantics'
     exit 1
 }
 
-grep -q 'SHDWAppDisabledID.*SHDWAppEnabledID' Shadow.framework/SettingsMigration.m ||
-grep -q 'migrated\[SHDWAppEnabledID\] = @NO' Shadow.framework/SettingsMigration.m || {
+grep -q 'SHDWAppDisabledID.*SHDWAppEnabledID' src/Shadow.framework/SettingsMigration.m ||
+grep -q 'migrated\[SHDWAppEnabledID\] = @NO' src/Shadow.framework/SettingsMigration.m || {
     echo 'SETTINGS DRIFT: legacy App_Disabled migration is missing'
     exit 1
 }
