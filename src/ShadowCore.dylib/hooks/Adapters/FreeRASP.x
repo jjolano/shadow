@@ -65,6 +65,39 @@ static BOOL shdw_adapter_freerasp_hides_path(NSString* path) {
         ([path isEqualToString:@"/.file"] || [path isEqualToString:@"/usr/sbin/cfprefsd"]);
 }
 
+// Talsec 7.1.2 threat-delivery function (image offset 0x3d534): dequeues a
+// SecurityThreat and invokes the app's handler. The threat's enum ordinal is at
+// [threat + 0x38]. privilegedAccess (ordinal 1) is Talsec's own aggregate
+// jailbreak verdict — it resists every stealth/emulation/debugger attempt to
+// pin its exact input (the checks queue asynchronously), so under aggressive
+// mode suppress its delivery outright: skip the handler call for that one
+// ordinal, matching what Shadow would achieve if it could neutralise the
+// underlying probe. All other threats pass through untouched.
+#define SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS 1
+static void (*shdw_freeRASP_origDeliver)(void* threat, void* a1, void* a2) = NULL;
+static void shdw_freeRASP_deliver(void* threat, void* a1, void* a2) {
+    if(threat && *((unsigned char*)threat + 0x38) == SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS &&
+       shdw_freeRASP_enabled && shdw_detector_aggressive) {
+        return;  // drop privilegedAccess: do not deliver to the handler
+    }
+    if(shdw_freeRASP_origDeliver) shdw_freeRASP_origDeliver(threat, a1, a2);
+}
+static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
+    static const uint8_t expectedPrologue[] = { 0xff, 0x03, 0x01, 0xd1, 0xf6, 0x57, 0x01, 0xa9 };
+    if(shdw_freeRASP_origDeliver) return;
+    for(uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char* name = _dyld_get_image_name(i);
+        const struct mach_header* header = _dyld_get_image_header(i);
+        if(!name || !strstr(name, "/TalsecRuntime.framework/TalsecRuntime") ||
+           !shdw_freeRASP_isVersion712(header)) continue;
+        void* target = (uint8_t*)header + 0x3d534;
+        if(memcmp(target, expectedPrologue, sizeof(expectedPrologue)) != 0) return;
+        [hooks hookFunction:target withReplacement:shdw_freeRASP_deliver
+                  outOldPtr:(void**)&shdw_freeRASP_origDeliver];
+        return;
+    }
+}
+
 void shdw_adapter_freerasp(SHDWHookSession* hooks) {
     shdw_freeRASP_active = YES;
     SHDWSetAdapterPathPredicate(shdw_adapter_freerasp_hides_path);
@@ -81,6 +114,7 @@ void shdw_adapter_freerasp(SHDWHookSession* hooks) {
     // shape neutral APIs to their stock answers) and always run.
     if(shdw_detector_aggressive) {
         shdw_freeRASP_installEncryptedBinary(hooks);
+        shdw_freeRASP_installDeliver(hooks);
     }
 }
 
