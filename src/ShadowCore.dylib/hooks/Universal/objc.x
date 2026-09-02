@@ -298,11 +298,11 @@ static IMP replaced_class_getMethodImplementation(Class cls, SEL name) {
     }
 
     // Swizzling stealth: a detector reads a hooked system method's IMP here and
-    // dladdr()s it, expecting a system image (DeviceSecurityKit
-    // SwizzlingDetector.checkSystemMethodOrigins uses class_getMethodImplementation,
-    // not method_getImplementation). Return the original IMP for hooked methods
-    // so the reported IMP stays in its genuine framework. Mirrors the
-    // method_getImplementation stealth in objc_methodimpl.x.
+    // dladdr()s it, expecting a system image (a swizzle-origin check that reads
+    // via class_getMethodImplementation, not method_getImplementation). Return
+    // the original IMP for hooked methods so the reported IMP stays in its
+    // genuine framework. Mirrors the method_getImplementation stealth in
+    // objc_methodimpl.x.
     if(cls && name) {
         Method method = class_getInstanceMethod(cls, name);
         IMP original = method ? SHDWOriginalImplementationForMethod(method) : NULL;

@@ -765,10 +765,10 @@ static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char
 
 // task_get_exception_ports: a jailbreak's exception-based hooking engine
 // (ElleKit's EKLaunchExceptionHandler) registers a task-level handler right,
-// and detectors (FreeRASP privilegedAccess, DeviceSecurityKit
-// checkExceptionPorts, RootHider Exception port) treat ANY non-null handler as
-// injection evidence. Return an empty handler set for external self-task
-// queries so the process looks pristine; internal Shadow callers see truth.
+// and detectors (privileged-access / debugger / exception-port probes) treat
+// ANY non-null handler as injection evidence. Return an empty handler set for
+// external self-task queries so the process looks pristine; internal Shadow
+// callers see truth.
 static kern_return_t (*original_task_get_exception_ports)(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors);
 static kern_return_t replaced_task_get_exception_ports(task_t task, exception_mask_t exception_mask, exception_mask_array_t masks, mach_msg_type_number_t *masksCnt, exception_handler_array_t old_handlers, exception_behavior_array_t old_behaviors, exception_flavor_array_t old_flavors) {
     kern_return_t result = original_task_get_exception_ports(task, exception_mask, masks, masksCnt, old_handlers, old_behaviors, old_flavors);
@@ -784,13 +784,12 @@ static kern_return_t replaced_task_get_exception_ports(task_t task, exception_ma
     // A freshly-launched app under Shadow must look like a pristine process
     // with no task-level exception handler: a jailbreak's exception-based
     // hooking engine (ElleKit's EKLaunchExceptionHandler) installs one, and
-    // detectors (DeviceSecurityKit checkExceptionPorts, FreeRASP
-    // privilegedAccess, RootHider) flag ANY non-null handler for the
-    // debugger-relevant masks. The pre-injection snapshot is unreliable —
-    // ElleKit may register its handler in its own load constructor, before the
-    // ShadowCore ctor can snapshot — so drop every handler right the query
-    // would return, matching a stock app that installed none. Internal callers
-    // (above) still see the real ports for Shadow's own use.
+    // exception-port probes flag ANY non-null handler for the debugger-relevant
+    // masks. A pre-injection snapshot is unreliable — ElleKit may register its
+    // handler in its own load constructor, before the ShadowCore ctor could
+    // snapshot — so drop every handler right the query would return, matching a
+    // stock app that installed none. Internal callers (above) still see the
+    // real ports for Shadow's own use.
     for(mach_msg_type_number_t i = 0; i < *masksCnt; i++) {
         if(old_handlers[i] != MACH_PORT_NULL) {
             mach_port_deallocate(mach_task_self(), old_handlers[i]);
@@ -921,7 +920,7 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     }
     // Additive import rebind: the inline hook on the shared-cache export does
     // not cover a statically-linked Swift detector's direct call
-    // (DeviceSecurityKit checkExceptionPorts), the same gap seen with sysctl.
+    // (a task exception-port probe), the same gap seen with sysctl.
     // Rebind the import so those call sites route through the filter too; keep
     // the resolved export as the continuation when only the rebind takes.
     [hooks hookRebindSymbol:@"task_get_exception_ports"

@@ -143,14 +143,14 @@ BOOL shdw_is_shadow_runtime_image(const char* path) {
 }
 
 // LC_LOAD_DYLIB name hiding. A detector can read the load commands of the main
-// executable straight out of mapped memory (IOSSecuritySuite.findLoadedDylibs
+// executable straight out of mapped memory (an integrity checker walking
 // walks LC_LOAD_DYLIB/LC_LOAD_WEAK_DYLIB and compares names) — no dyld/dl* API
 // is involved, so the image-list hooks never see it. When an app is *linked*
 // against Shadow (or another hook library) the load command carries a telltale
 // name like "@rpath/Shadow.framework/Shadow". Rewrite such names in place at
 // install to an innocuous, same-or-shorter, NUL-terminated string so a memory
 // walk reads nothing suspicious. Injected Shadow adds no load command, so this
-// only fires on link-time dependencies (e.g. the ISS test runner).
+// only fires on link-time dependencies (e.g. a test runner that links Shadow).
 static BOOL shdw_loadcmd_name_is_suspicious(const char* name) {
     if(!name) return NO;
     static const char* const kTokens[] = {
@@ -1424,10 +1424,10 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
 
     // Hooked-method IMP: a detector reading a hooked system method's current
     // IMP and dladdr()ing it must see the ORIGINAL system image, not
-    // ShadowCore (DeviceSecurityKit SwizzlingDetector.checkSystemMethodOrigins,
-    // ISS amIRuntimeHooked). Resolve the query against the original IMP, but
-    // only when that original itself lives in a non-Shadow image — otherwise
-    // fall through to the normal filtering (never fabricate a system origin for
+    // ShadowCore (swizzle-origin and runtime-hook checks that resolve a
+    // method's IMP). Resolve the query against the original IMP, but only when
+    // that original itself lives in a non-Shadow image — otherwise fall through
+    // to the normal filtering (never fabricate a system origin for
     // an address that has none).
     const void* originalIMP = SHDWOriginalIMPForReplacement(addr);
     if(!originalIMP) {

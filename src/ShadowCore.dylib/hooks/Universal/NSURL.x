@@ -445,9 +445,8 @@ static void _shdw_deliverBlockedCompletion(void (^completionHandler)(void)) {
 %end
 %end
 
-// Pre-hook original IMPs for the NSURLSession methods DeviceSecurityKit's
-// SwizzlingDetector.checkSystemMethodOrigins probes; a dladdr on the hooked IMP
-// must resolve to Foundation, not ShadowCore.
+// Pre-hook original IMPs for the NSURLSession methods a swizzle-origin check
+// probes; a dladdr on the hooked IMP must resolve to Foundation, not ShadowCore.
 static const char* const kShadowURLSessionSelectors[] = {
     "dataTaskWithURL:completionHandler:",
     "dataTaskWithRequest:completionHandler:",
