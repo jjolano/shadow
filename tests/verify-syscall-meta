@@ -1,5 +1,5 @@
 #!/bin/sh
-# Verifies the hook-registry metadata in ShadowCore.dylib/hooks:
+# Verifies the hook-registry metadata in src/ShadowCore.dylib/hooks:
 #
 #   raw syscalls (hooks/RawSyscalls.def — single source of truth for the
 #   syscall(2)/__syscall(2) intercept set):
@@ -25,7 +25,7 @@
 # Reads source text only; run from the repo root: tests/verify-syscall-meta.sh
 set -e
 
-HOOKDIR=ShadowCore.dylib/hooks
+HOOKDIR=src/ShadowCore.dylib/hooks
 DEF="$HOOKDIR/Universal/RawSyscalls.def"
 SYSCALL="$HOOKDIR/Universal/syscall.x"
 LIBC="$HOOKDIR/Universal/libc.x"

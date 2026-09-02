@@ -10,8 +10,8 @@ WORK_BASE=${WORK:-/tmp}
 RUN=$(mktemp -d "$WORK_BASE/shadow-deps.XXXXXX")
 trap 'rm -rf "$RUN"' EXIT
 
-# Lane matrix lives in one place; see lanes.sh.
-. "$ROOT/lanes.sh"
+# Lane matrix lives in one place; see build-support/lanes.sh.
+. "$ROOT/build-support/lanes.sh"
 
 # HookKit is provisioned into Theos (see .github/scripts/install-hookkit-theos.sh
 # and the HOOKKIT pin in build.yml), not built here.

@@ -2,7 +2,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/JBPath.h>
-#import "../ShadowCore.dylib/policy/EnvironmentPolicy.h"
+#import "../src/ShadowCore.dylib/policy/EnvironmentPolicy.h"
 #import "ranges.h"
 #import <string.h>
 #import <stdlib.h>

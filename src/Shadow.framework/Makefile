@@ -1,4 +1,4 @@
-include ../build-lanes.mk
+include ../../build-support/build-lanes.mk
 include $(THEOS)/makefiles/common.mk
 
 FRAMEWORK_NAME = Shadow
@@ -14,7 +14,7 @@ Shadow_CFLAGS = -fobjc-arc -fvisibility=hidden -IHeaders
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 Shadow_CFLAGS += -DSHADOW_ROOTHIDE
 endif
-Shadow_LDFLAGS = -Wl,-x -F../vendor/
+Shadow_LDFLAGS = -Wl,-x -F../../vendor/
 # The roothide scheme module forces -install_name "@loader_path/.jbroot...";
 # our explicit @rpath install_name would override it (instance LDFLAGS come
 # after internal LDFLAGS), breaking roothide's .jbroot symlink resolution.

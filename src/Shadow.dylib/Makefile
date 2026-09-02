@@ -1,9 +1,9 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
 # LOGOS_DEFAULT_GENERATOR = internal
 
-include ../build-lanes.mk
+include ../../build-support/build-lanes.mk
 include $(THEOS)/makefiles/common.mk
-include ../hookkit.mk
+include ../../build-support/hookkit.mk
 
 TWEAK_NAME = Shadow
 

@@ -26,8 +26,8 @@
 
 #import <Foundation/Foundation.h>
 #import <Shadow/HookConfiguration.h>
-#import "../Shadow.framework/SettingsMigration.h"
-#import "../ShadowCore.dylib/HookAdapterBridge.h"
+#import "../src/Shadow.framework/SettingsMigration.h"
+#import "../src/ShadowCore.dylib/HookAdapterBridge.h"
 
 #import <string.h>
 #import <stdio.h>

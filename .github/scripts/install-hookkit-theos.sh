@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Provision the pinned HookKit into $THEOS for one Shadow lane. HookKit is
-# consumed from the Theos install (see hookkit.mk), not vendored, so CI runs
+# consumed from the Theos install (see build-support/hookkit.mk), not vendored, so CI runs
 # this before build-deps.sh/build.sh. Local developers manage their own Theos
 # HookKit (HookKit repo: make install-theos) and do not need this.
 set -euo pipefail
@@ -27,6 +27,6 @@ git -C "$WORK/hookkit" checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
 }
 
 # Build and stage just this lane's framework into $THEOS at the location
-# hookkit.mk resolves. install-theos.sh owns the lane -> path layout.
+# build-support/hookkit.mk resolves. install-theos.sh owns the lane -> path layout.
 bash "$WORK/hookkit/scripts/install-theos.sh" "$LANE"
 echo "provisioned HookKit ($HOOKKIT) for $LANE into $THEOS"

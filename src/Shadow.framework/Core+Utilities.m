@@ -1,6 +1,6 @@
 #import <Shadow/Core+Utilities.h>
 
-#import "../vendor/apple/dyld_priv.h"
+#import "../../vendor/apple/dyld_priv.h"
 
 extern char*** _NSGetArgv();
 

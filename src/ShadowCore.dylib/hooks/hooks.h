@@ -121,9 +121,9 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 #define MSHookMessageEx SHDWHookMessage
 
 // private symbols
-#import "../../vendor/apple/dyld_priv.h"
-#import "../../vendor/apple/codesign.h"
-#import "../../vendor/apple/ptrace.h"
+#import "../../../vendor/apple/dyld_priv.h"
+#import "../../../vendor/apple/codesign.h"
+#import "../../../vendor/apple/ptrace.h"
 
 // C0-2 caller classification for isCallerExternal(): YES = this caller must
 // be shown FILTERED results (app code, embedded/static detectors, system

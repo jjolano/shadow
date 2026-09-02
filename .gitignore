@@ -14,8 +14,13 @@ artifacts/
 # via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
 vendor/HookKit.framework/
 .detector-deps/
-[private-harness]/concurrency/
+tests/[private-harness]/concurrency/
 core
 core.*
+# Stray Swift module blobs a mis-cwd'd build can drop at the repo root.
+/Swift-*.swiftmodule
+# Theos mirrors the dyldprobe shared-source object path (../../[private-runner]
+# in dyldprobe_FILES) as a stamp dir beside the probe; it is build output.
+tests/tools/dyldprobe/[private-runner]/
 __pycache__/
 *.py[cod]

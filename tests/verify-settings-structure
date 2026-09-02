@@ -1,15 +1,15 @@
 #!/bin/sh
 set -eu
 
-hooks=ShadowSettings.bundle/Resources/Hooks.plist
-troubleshooting=ShadowSettings.bundle/Resources/Troubleshooting.plist
-controller=ShadowSettings.bundle/SHDWTroubleshootingListController.m
-dangerous=ShadowSettings.bundle/Resources/Dangerous.plist
-individual=ShadowSettings.bundle/Resources/Individual.plist
-adapters=ShadowSettings.bundle/Resources/Adapters.plist
-runtime=ShadowCore.dylib/shadowcore.x
-loader=Shadow.dylib/dylib.x
-settings=Shadow.framework/Settings.m
+hooks=src/ShadowSettings.bundle/Resources/Hooks.plist
+troubleshooting=src/ShadowSettings.bundle/Resources/Troubleshooting.plist
+controller=src/ShadowSettings.bundle/SHDWTroubleshootingListController.m
+dangerous=src/ShadowSettings.bundle/Resources/Dangerous.plist
+individual=src/ShadowSettings.bundle/Resources/Individual.plist
+adapters=src/ShadowSettings.bundle/Resources/Adapters.plist
+runtime=src/ShadowCore.dylib/shadowcore.x
+loader=src/Shadow.dylib/dylib.x
+settings=src/Shadow.framework/Settings.m
 
 if grep -q '<string>HK_Library</string>' "$hooks"; then
     echo 'SETTINGS DRIFT: backend picker returned to the main Hooks page'
@@ -58,7 +58,7 @@ for plist in "$individual" "$dangerous"; do
     fi
 done
 
-grep -q 'SHDWMigratedHookSettings' Shadow.framework/SettingsMigration.m || {
+grep -q 'SHDWMigratedHookSettings' src/Shadow.framework/SettingsMigration.m || {
     echo 'SETTINGS DRIFT: renamed hook preferences no longer migrate'
     exit 1
 }

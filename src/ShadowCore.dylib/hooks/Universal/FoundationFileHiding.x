@@ -799,7 +799,7 @@ void shdw_universal_nsfileversion(SHDWHookSession* hooks) {
 // Foundation module declares no NSTask), so the vendored Apple header is the
 // only class declaration in this TU. It carries no availability guards, so
 // all selectors below hook unconditionally.
-#import "../../../vendor/apple/NSTask.h"
+#import "../../../../vendor/apple/NSTask.h"
 
 // The vendored header predates the designated initializer (macOS 10.13 /
 // iOS 11 era); declare it here so the hook and its %orig compile against a

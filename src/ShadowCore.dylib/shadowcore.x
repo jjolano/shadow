@@ -17,7 +17,7 @@
 #include <mach/mach.h>
 
 #import "HookCoordinator.h"
-#import "../vendor/apple/dyld_priv.h"
+#import "../../vendor/apple/dyld_priv.h"
 
 // Set by an exact detector-adapter match or behavioral tripwires.
 BOOL shdw_detector_present = NO;

@@ -108,12 +108,12 @@ reviewed_delta() { # <surface> <symbol>
     case "$1:$2" in
         objc-runtime:objc_enumerateClasses)
             rg -Fq 'dlsym(RTLD_DEFAULT, "objc_enumerateClasses")' \
-"$ROOT/ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x" || return 1
-echo "runtime-gated in ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x"
+"$ROOT/src/ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x" || return 1
+    echo "runtime-gated in src/ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x"
             ;;
         filesystem:mkfifoat|filesystem:mknodat)
-rg -Fq "{ \"$2\"" "$ROOT/ShadowCore.dylib/hooks/Universal/libc.x" && \
-rg -Fq "SYS_$2" "$ROOT/ShadowCore.dylib/hooks/Universal/RawSyscalls.def" || return 1
+rg -Fq "{ \"$2\"" "$ROOT/src/ShadowCore.dylib/hooks/Universal/libc.x" && \
+rg -Fq "SYS_$2" "$ROOT/src/ShadowCore.dylib/hooks/Universal/RawSyscalls.def" || return 1
             echo "runtime-gated libc and raw-syscall policy"
             ;;
         *) return 1 ;;
@@ -137,7 +137,7 @@ probe_required_delta() { # <surface> <symbol>
 
 reviewed_floor() {
     rg -Fq 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' \
-"$ROOT/ShadowCore.dylib/hooks/Universal/sandbox.x" || return 1
+"$ROOT/src/ShadowCore.dylib/hooks/Universal/sandbox.x" || return 1
     echo "F_GETPATH and F_GETPATH_NOFIRMLINK are filtered for external callers"
 }
 

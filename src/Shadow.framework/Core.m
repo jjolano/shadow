@@ -11,7 +11,7 @@
 #import <pwd.h>
 #import <stdlib.h>
 
-#import "../vendor/apple/dyld_priv.h"
+#import "../../vendor/apple/dyld_priv.h"
 #import "../common.h"
 
 // C0-2: Shadow-internal read scope flag. Shadow-owned code wraps its own

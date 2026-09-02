@@ -1,8 +1,8 @@
 INSTALL_TARGET_PROCESSES = SpringBoard
 
-include ../build-lanes.mk
+include ../../build-support/build-lanes.mk
 include $(THEOS)/makefiles/common.mk
-include ../hookkit.mk
+include ../../build-support/hookkit.mk
 
 # The payload is a plain library, not a DynamicLibraries tweak: it must load
 # only through the stub's gated dlopen, never through the runtime's own
