@@ -19,11 +19,38 @@ void shdw_path_rewrite_configure(BOOL enabled) {
 }
 
 static int (*original_access)(const char* pathname, int mode);
+// Jailbreak artifacts that are bind-mounted OVER real system locations
+// (Dopamine's .fakelib) or written into system dirs, which a stock device
+// never has. They can't go through the ruleset/RestrictionEngine path gate:
+// systemhook.dylib in particular is the injection dylib every app (including
+// the ones Shadow spawns) loads, so hiding it from Shadow's own internal
+// dlopen/spawn breaks injection. Instead deny them ONLY here, only for external
+// callers — a detector's access() sees ENOENT while Shadow's internal loader
+// (isCallerExternal()==NO) still resolves them normally.
+static BOOL shdw_access_is_external_only_hidden(const char* pathname) {
+    if(!pathname) return NO;
+    static const char* const paths[] = {
+        "/usr/lib/systemhook.dylib",
+        "/usr/lib/sandbox.plist",
+        "/var/log/launchdhook.log",
+        NULL,
+    };
+    for(int i = 0; paths[i]; i++) {
+        if(strcmp(pathname, paths[i]) == 0) return YES;
+    }
+    return NO;
+}
+
 static int replaced_access(const char* pathname, int mode) {
     if (shdw_is_fast_allowed_cpath(pathname)) return original_access(pathname, mode);
     int caller_errno = errno;
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
+
+    if(ext && shdw_access_is_external_only_hidden(pathname)) {
+        errno = ENOENT;
+        return -1;
+    }
 
     if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
         errno = caller_errno;
@@ -395,6 +422,37 @@ static int shdw_replaced_getmntinfo_r_np(struct statfs** mntbufp, int flags, cha
 }
 
 static int (*original_statfs)(const char* pathname, struct statfs* buf);
+
+// A jailbreak bindfs (Dopamine's .fakelib) mounted OVER a stock system path
+// leaves statfs(<stock path>) reporting a jailbreak f_mntfromname while
+// f_mntonname stays the stock path itself. A probe that expects a stock system
+// path to live on the root filesystem (f_mntonname == "/") flags the divergent
+// mount point. For an external caller querying such a path, rewrite ONLY the
+// two name fields the probe reads to the rootfs record; leave fsid/type/flags/
+// geometry as the kernel reported them so nothing else the caller relies on
+// changes. Returns YES if it reshaped. `pathname` is the query path (a stock
+// location like /usr/lib), used to confirm the mount shadows a system dir.
+static BOOL shdw_statfs_reshape_over_system(const char* pathname, struct statfs* buf) {
+    if(!buf || !pathname) return NO;
+    // Only stock system prefixes a jailbreak would bind over.
+    static const char* const roots[] = { "/usr/lib", "/usr/libexec", "/System", NULL };
+    BOOL underSystem = NO;
+    for(int i = 0; roots[i]; i++) {
+        size_t n = strlen(roots[i]);
+        if(strncmp(pathname, roots[i], n) == 0 && (pathname[n] == '\0' || pathname[n] == '/')) {
+            underSystem = YES;
+            break;
+        }
+    }
+    if(!underSystem) return NO;
+
+    struct statfs root;
+    if(original_statfs("/", &root) != 0) return NO;
+    strlcpy(buf->f_mntonname, root.f_mntonname, sizeof(buf->f_mntonname));
+    strlcpy(buf->f_mntfromname, root.f_mntfromname, sizeof(buf->f_mntfromname));
+    return YES;
+}
+
 static int replaced_statfs(const char* pathname, struct statfs* buf) {
     if(!isCallerExternal()) {
         return original_statfs(pathname, buf);
@@ -408,9 +466,13 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
     int result = original_statfs(pathname, buf);
 
     if(result == 0 && buf && shdw_filter_mounts(buf, 1, YES) == 0) {
-        // The mount record itself is restricted: deny rather than present it.
-        errno = ENOENT;
-        return -1;
+        // The mount record itself is restricted (a jailbreak bindfs). If it
+        // shadows a stock system path the caller legitimately queries, reshape
+        // its name fields to the rootfs it covers; otherwise deny.
+        if(!shdw_statfs_reshape_over_system(pathname, buf)) {
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     return result;
