@@ -787,15 +787,30 @@ static kern_return_t replaced_task_get_exception_ports(task_t task, exception_ma
     // exception-port probes flag ANY non-null handler for the debugger-relevant
     // masks. A pre-injection snapshot is unreliable — ElleKit may register its
     // handler in its own load constructor, before the ShadowCore ctor could
-    // snapshot — so drop every handler right the query would return, matching a
-    // stock app that installed none. Internal callers (above) still see the
-    // real ports for Shadow's own use.
+    // snapshot — so drop every handler right the query would return.
+    //
+    // Shape matters as much as content: on a stock process the kernel coalesces
+    // every requested mask under the shared null handler into a SINGLE record
+    // (mask=union, port/behavior/flavor=0), so a query returns count==1, not 0.
+    // Returning an empty set is itself anomalous — a probe that flags count!=1
+    // (roothider) trips on the emptiness. Collapse to one null-handler record:
+    // release every real port, OR the masks into slot 0, zero its handler/
+    // behavior/flavor, and report count=1. This satisfies both "any non-null
+    // handler" probes and "exactly one null record" probes. Internal callers
+    // (above) still see the real ports for Shadow's own use.
+    exception_mask_t unionMask = 0;
     for(mach_msg_type_number_t i = 0; i < *masksCnt; i++) {
+        unionMask |= masks[i];
         if(old_handlers[i] != MACH_PORT_NULL) {
             mach_port_deallocate(mach_task_self(), old_handlers[i]);
         }
     }
-    *masksCnt = 0;
+    if(unionMask == 0) unionMask = EXC_MASK_ALL;
+    masks[0] = unionMask;
+    old_handlers[0] = MACH_PORT_NULL;
+    old_behaviors[0] = 0;
+    old_flavors[0] = 0;
+    *masksCnt = 1;
     return result;
 }
 

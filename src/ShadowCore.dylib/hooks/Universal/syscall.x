@@ -619,6 +619,18 @@ static void shdw_csops_sanitize_status(uint32_t* flags) {
     *flags &= ~CS_INSTALLER;
     *flags &= ~CS_ENTITLEMENTS_VALIDATED;
     *flags &= ~CS_DEBUGGED;
+
+    // Aggressive only: a store-distributed app carries the kernel-set
+    // anti-tamper pair CS_HARD|CS_KILL (the App Store signature enables "kill
+    // if invalid"); a development/ad-hoc-signed binary — like an injected test
+    // process — lacks them. A probe that treats the ABSENCE of CS_HARD/CS_KILL
+    // as evidence (roothider's mislabelled "jit-allow" = !(CS_HARD|CS_KILL))
+    // then flags the process. Set them to complete the store-app appearance.
+    // Natural mode leaves the real signing shape untouched (no fabricated
+    // capabilities), so this only runs when the user opts in.
+    if(shdw_detector_aggressive) {
+        *flags |= (CS_HARD | CS_KILL);
+    }
 }
 
 // Shared post-success csops policy, applied only after the original call
@@ -631,7 +643,15 @@ static void shdw_csops_sanitize_status(uint32_t* flags) {
 // keeps the strict policy). Returns YES when the call must be converted into
 // a denial (errno set), NO to pass through.
 static BOOL shdw_csops_apply_after_success(unsigned int ops, void* useraddr, size_t usersize, const void* caller) {
-    if(ops == CS_OPS_STATUS && useraddr && usersize >= sizeof(uint32_t)) {
+    if(ops == CS_OPS_STATUS && useraddr) {
+        // CS_OPS_STATUS always writes a 4-byte status word on success,
+        // regardless of the `usersize` the caller declared: passing
+        // usersize=0 (as some probes deliberately do to slip past a naive
+        // `usersize >= 4` guard) does NOT stop the kernel from filling the
+        // word, so the sanitiser must run whenever the kernel actually wrote
+        // it. Guard only on a real success having occurred (checked by the
+        // callers before invoking this) and a non-NULL destination.
+        (void)usersize;
         shdw_csops_sanitize_status((uint32_t *) useraddr);
         return NO;
     }
