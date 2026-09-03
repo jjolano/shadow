@@ -1,4 +1,5 @@
 #import "UniversalHooks.h"
+#import <xpc/xpc.h>
 
 // Single shared bootstrap-service matcher for every bootstrap hook in this
 // file and for the sandbox_check mach-lookup denial in sandbox.x (extern
@@ -188,6 +189,103 @@ static kern_return_t replaced_mach_port_names(ipc_space_t task, mach_port_name_a
     return original_mach_port_names(task, names, namesCnt, types, typesCnt);
 }
 
+// --- launchd XPC probes (Dopamine jailbreak-server / deplatformized) ---
+//
+// Dopamine patches launchd to answer two out-of-band xpc_pipe_routine queries
+// on the bootstrap pipe that a stock launchd does not:
+//   1. a "jb-domain" request whose reply carries the jailbreak root as
+//      "root-path" (detect_launchd_jbserver);
+//   2. subsystem 3 / routine 815, which stock launchd rejects with error 154
+//      but the patched one answers with a services dictionary
+//      (detect_launchd_deplatformized).
+// Neutralise both for external callers by making the reply look stock: strip a
+// leaked "root-path", and force error 154 on the 815 routine. Internal callers
+// pass through untouched.
+
+// libxpc private entry points (declared here; not in the public SDK headers).
+// Use the SDK's xpc_object_t (an ObjC bridged type) to match the existing
+// declarations of the xpc_dictionary_* accessors from <xpc/xpc.h>.
+extern int xpc_pipe_routine(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply);
+extern int xpc_pipe_routine_with_flags(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply, uint32_t flags);
+
+// Returns YES if the request is one of the two jailbreak-only launchd routines,
+// and reports which via *isDeplatformized.
+static BOOL shdw_xpc_request_is_jb(xpc_object_t request, BOOL* isDeplatformized) {
+    if(isDeplatformized) *isDeplatformized = NO;
+    if(!request) return NO;
+
+    // detect_launchd_jbserver: request sets "jb-domain".
+    if(xpc_dictionary_get_uint64(request, "jb-domain") != 0) {
+        return YES;
+    }
+    // detect_launchd_deplatformized: subsystem 3, routine 815.
+    if(xpc_dictionary_get_uint64(request, "subsystem") == 3 &&
+       xpc_dictionary_get_uint64(request, "routine") == 815) {
+        if(isDeplatformized) *isDeplatformized = YES;
+        return YES;
+    }
+    return NO;
+}
+
+// The stock launchd answer for each probe:
+//  - jb-server (jb-domain): a stock launchd has no jailbreak-server routine, so
+//    the call fails. detect_launchd_jbserver returns early on any non-zero
+//    result and only reports when the call SUCCEEDS with a reply, so return a
+//    non-zero error and no reply — the probe then sees nothing.
+//  - deplatformized (routine 815): stock launchd rejects it with error 154,
+//    which the probe treats as the clean outcome. Return 154 with an
+//    { error: 154 } reply so either check path (rc==154 or reply error==154)
+//    reads as stock.
+#define SHDW_XPC_STOCK_JB_ERR      1     // any non-zero: "routine unavailable"
+#define SHDW_XPC_DEPLATFORM_ERR    154
+
+static xpc_object_t shdw_xpc_deplatform_reply(void) {
+    xpc_object_t dict = xpc_dictionary_create(NULL, NULL, 0);
+    if(dict) {
+        xpc_dictionary_set_int64(dict, "error", SHDW_XPC_DEPLATFORM_ERR);
+    }
+    return dict;
+}
+
+// Shared handler for both pipe-routine variants: returns YES and sets *outRC if
+// the request is a jailbreak probe that must be answered with a stock result.
+static BOOL shdw_xpc_neutralize(xpc_object_t request, xpc_object_t* reply, int* outRC) {
+    BOOL deplatform = NO;
+    if(!shdw_xpc_request_is_jb(request, &deplatform)) {
+        return NO;
+    }
+    if(deplatform) {
+        if(reply) *reply = shdw_xpc_deplatform_reply();
+        *outRC = SHDW_XPC_DEPLATFORM_ERR;
+    } else {
+        if(reply) *reply = NULL;
+        *outRC = SHDW_XPC_STOCK_JB_ERR;
+    }
+    return YES;
+}
+
+static int (*original_xpc_pipe_routine)(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply);
+static int replaced_xpc_pipe_routine(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply) {
+    if(isCallerExternal()) {
+        int rc = 0;
+        if(shdw_xpc_neutralize(request, reply, &rc)) {
+            return rc;
+        }
+    }
+    return original_xpc_pipe_routine(pipe, request, reply);
+}
+
+static int (*original_xpc_pipe_routine_with_flags)(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply, uint32_t flags);
+static int replaced_xpc_pipe_routine_with_flags(xpc_object_t pipe, xpc_object_t request, xpc_object_t* reply, uint32_t flags) {
+    if(isCallerExternal()) {
+        int rc = 0;
+        if(shdw_xpc_neutralize(request, reply, &rc)) {
+            return rc;
+        }
+    }
+    return original_xpc_pipe_routine_with_flags(pipe, request, reply, flags);
+}
+
 void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     // Rebind bootstrap_check_in / bootstrap_look_up through the IMPORT-SLOT
     // lane, not an ElleKit entry patch. The public `bootstrap_look_up` is a
@@ -223,6 +321,12 @@ void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
 
     sym = shdw_resolve_libsystem("_mach_port_names");
     if(sym) [hooks hookFunction:sym withReplacement:replaced_mach_port_names outOldPtr:(void **) &original_mach_port_names];
+
+    // launchd XPC jailbreak-probe neutralizers. Rebind through the import-slot
+    // lane (same reason as bootstrap_look_up: these are libxpc re-exports an
+    // entry patch can miss). Skipped cleanly if the symbols are absent.
+    [hooks hookRebindSymbol:@"xpc_pipe_routine" withReplacement:(void*)replaced_xpc_pipe_routine outOldPtr:(void **) &original_xpc_pipe_routine];
+    [hooks hookRebindSymbol:@"xpc_pipe_routine_with_flags" withReplacement:(void*)replaced_xpc_pipe_routine_with_flags outOldPtr:(void **) &original_xpc_pipe_routine_with_flags];
 }
 
 void shdw_universal_mach_bootstrap_verify(void) {
