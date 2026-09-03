@@ -27,6 +27,35 @@ static int (*original_access)(const char* pathname, int mode);
 // dlopen/spawn breaks injection. Instead deny them ONLY here, only for external
 // callers — a detector's access() sees ENOENT while Shadow's internal loader
 // (isCallerExternal()==NO) still resolves them normally.
+// Data-container leaf directories a jailbreak app leaves scattered under
+// /var/mobile/Library (WebKit, HTTPStorages, Caches, Preferences, …) and
+// /var/root. A probe enumerates <known-jb-bundle-id> under each of those dirs;
+// a stock device never has these apps, so the residue is jailbreak evidence.
+// The full container path is not a fixed string (many parent dirs), so match
+// structurally: a /var/{mobile,root}/Library/ path whose final component begins
+// with a known jailbreak app's bundle id.
+static BOOL shdw_path_is_jb_app_container(const char* pathname) {
+    if(!pathname) return NO;
+    const char* rest = NULL;
+    if(strncmp(pathname, "/var/mobile/Library/", 20) == 0) rest = pathname + 20;
+    else if(strncmp(pathname, "/var/root/Library/", 18) == 0) rest = pathname + 18;
+    if(!rest) return NO;
+
+    const char* leaf = strrchr(rest, '/');
+    leaf = leaf ? leaf + 1 : rest;  // final path component
+
+    static const char* const jbAppIDs[] = {
+        "com.xina.jailbreak", "com.opa334.Dopamine", "com.tigisoftware.Filza",
+        "org.coolstar.SileoStore", "ws.hbang.Terminal", "xyz.willy.Zebra",
+        NULL,
+    };
+    for(int i = 0; jbAppIDs[i]; i++) {
+        size_t n = strlen(jbAppIDs[i]);
+        if(strncmp(leaf, jbAppIDs[i], n) == 0) return YES;  // leaf is <id> or <id>.<suffix>
+    }
+    return NO;
+}
+
 static BOOL shdw_access_is_external_only_hidden(const char* pathname) {
     if(!pathname) return NO;
     static const char* const paths[] = {
@@ -38,7 +67,7 @@ static BOOL shdw_access_is_external_only_hidden(const char* pathname) {
     for(int i = 0; paths[i]; i++) {
         if(strcmp(pathname, paths[i]) == 0) return YES;
     }
-    return NO;
+    return shdw_path_is_jb_app_container(pathname);
 }
 
 static int replaced_access(const char* pathname, int mode) {
