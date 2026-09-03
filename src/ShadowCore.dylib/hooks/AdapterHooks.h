@@ -11,5 +11,6 @@ void shdw_adapter_freerasp_prepare_preferences(NSMutableDictionary* prefs);
 void shdw_adapter_freerasp(SHDWHookSession* hooks);
 void shdw_adapter_devicesecuritykit(SHDWHookSession* hooks);
 void shdw_adapter_iossecuritysuite(SHDWHookSession* hooks);
+void shdw_adapter_batjailbreakguard(SHDWHookSession* hooks);
 
 #endif

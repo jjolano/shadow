@@ -100,6 +100,7 @@ static NSArray* ExpectedCtorOrder(void) {
         @"Universal_DynamicLibrariesExtra",
         @"Adapter_DeviceSecurityKit",
         @"Adapter_IOSSecuritySuite",
+        @"Adapter_BATJailbreakGuard",
     ];
 }
 
