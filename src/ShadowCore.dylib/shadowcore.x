@@ -148,6 +148,7 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit,         NULL },
     { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit,          NULL },
     { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite,           NULL },
+    { "Adapter_BATJailbreakGuard",             shdw_adapter_batjailbreakguard,          NULL },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
     { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
     { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },

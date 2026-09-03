@@ -33,9 +33,10 @@
     "Universal_Foundation_UIKit", \
     "Adapter_DeviceSecurityKit", \
     "Adapter_IOSSecuritySuite", \
+    "Adapter_BATJailbreakGuard", \
     "Policy_Path", \
     "Policy_Environment", \
     "Policy_Process", \
     "Policy_PseudoSandbox"
 
-#define SHDW_PLUGIN_COUNT 31
+#define SHDW_PLUGIN_COUNT 32

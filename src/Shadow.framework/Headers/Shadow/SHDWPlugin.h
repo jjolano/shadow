@@ -43,6 +43,7 @@
 #define SHDWAdapterDTTJailbreakDetectionID    @"Adapter_DTTJailbreakDetection"
 #define SHDWAdapterSafeDeviceID               @"Adapter_SafeDevice"
 #define SHDWAdapterJailMonkeyID               @"Adapter_JailMonkey"
+#define SHDWAdapterBATJailbreakGuardID        @"Adapter_BATJailbreakGuard"
 
 #define SHDWHookLibraryID          @"HK_Library"
 #define SHDWAppEnabledID           @"App_Enabled"
