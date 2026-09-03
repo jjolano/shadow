@@ -24,15 +24,46 @@ BOOL shdw_bootstrap_service_restricted(const char* name) {
 
 // Hides a right obtained from a SUCCESSFUL bootstrap call: deallocates the
 // send right we own, clears the output port, and reports the stock
-// unknown-service error. Never fabricates a failure over a real one — the
+// sandbox-denied error. Never fabricates a failure over a real one — the
 // callers only reach this after the original SUCCEEDED.
+//
+// The code returned must match what a stock, sandboxed app sees when it looks
+// up a service it is not entitled to reach. On iOS that is
+// BOOTSTRAP_NOT_PRIVILEGED (1100), NOT BOOTSTRAP_UNKNOWN_SERVICE (1102):
+// launchd knows the name but the sandbox denies the lookup, so the caller gets
+// "not privileged", not "no such service". Some detectors treat 1102 (and even
+// success) as jailbreak evidence while 1100 is the ordinary sandbox answer, so
+// returning the true stock code both conceals the right and avoids the
+// fingerprint of the wrong failure mode.
+#ifndef BOOTSTRAP_NOT_PRIVILEGED
+#define BOOTSTRAP_NOT_PRIVILEGED 1100
+#endif
 static kern_return_t shdw_bootstrap_hide_right(mach_port_t* sp) {
     if(sp && *sp != MACH_PORT_NULL) {
         mach_port_deallocate(mach_task_self(), *sp);
         *sp = MACH_PORT_NULL;
     }
 
-    return BOOTSTRAP_UNKNOWN_SERVICE;
+    return BOOTSTRAP_NOT_PRIVILEGED;
+}
+
+// Normalises a completed bootstrap_look_up for a restricted service name to the
+// stock sandbox-denied shape. A jailbreak that registers these names makes the
+// lookup SUCCEED (a live send right) — hidden via shdw_bootstrap_hide_right.
+// But the jailbreak's launchd can also answer a KNOWN name with a non-stock
+// error such as BOOTSTRAP_UNKNOWN_SERVICE (1102); a probe that reads 1102 (or
+// success) as jailbreak evidence and only 1100 as clean then still fires. For a
+// restricted name, collapse EITHER outcome to the single stock code a
+// sandboxed app sees for a service it may not reach: BOOTSTRAP_NOT_PRIVILEGED.
+static kern_return_t shdw_bootstrap_normalize_lookup(kern_return_t result, const char* service_name, mach_port_t* sp) {
+    if(!shdw_bootstrap_service_restricted(service_name)) {
+        return result;
+    }
+    if(result == KERN_SUCCESS) {
+        return shdw_bootstrap_hide_right(sp);
+    }
+    // Any non-stock failure code for a name we conceal is itself a tell.
+    return BOOTSTRAP_NOT_PRIVILEGED;
 }
 
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
@@ -58,11 +89,7 @@ static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* serv
 
     kern_return_t result = original_bootstrap_look_up(bp, service_name, sp);
 
-    if(result == KERN_SUCCESS && shdw_bootstrap_service_restricted(service_name)) {
-        return shdw_bootstrap_hide_right(sp);
-    }
-
-    return result;
+    return shdw_bootstrap_normalize_lookup(result, service_name, sp);
 }
 
 // --- bootstrap *2/*3/per_user siblings (private libxpc API, runtime-
@@ -114,11 +141,7 @@ static kern_return_t replaced_bootstrap_look_up2(mach_port_t bp, const char* ser
 
     kern_return_t result = original_bootstrap_look_up2(bp, service_name, sp, target_pid, flags);
 
-    if(result == KERN_SUCCESS && shdw_bootstrap_service_restricted(service_name)) {
-        return shdw_bootstrap_hide_right(sp);
-    }
-
-    return result;
+    return shdw_bootstrap_normalize_lookup(result, service_name, sp);
 }
 
 static kern_return_t (*original_bootstrap_look_up3)(mach_port_t bp, const char* service_name, mach_port_t* sp, pid_t target_pid, uint64_t flags, uint64_t* flags_out);
@@ -129,11 +152,7 @@ static kern_return_t replaced_bootstrap_look_up3(mach_port_t bp, const char* ser
 
     kern_return_t result = original_bootstrap_look_up3(bp, service_name, sp, target_pid, flags, flags_out);
 
-    if(result == KERN_SUCCESS && shdw_bootstrap_service_restricted(service_name)) {
-        return shdw_bootstrap_hide_right(sp);
-    }
-
-    return result;
+    return shdw_bootstrap_normalize_lookup(result, service_name, sp);
 }
 
 static kern_return_t (*original_bootstrap_look_up_per_user)(mach_port_t bp, const char* service_name, uid_t user_id, mach_port_t* sp);
@@ -144,11 +163,7 @@ static kern_return_t replaced_bootstrap_look_up_per_user(mach_port_t bp, const c
 
     kern_return_t result = original_bootstrap_look_up_per_user(bp, service_name, user_id, sp);
 
-    if(result == KERN_SUCCESS && shdw_bootstrap_service_restricted(service_name)) {
-        return shdw_bootstrap_hide_right(sp);
-    }
-
-    return result;
+    return shdw_bootstrap_normalize_lookup(result, service_name, sp);
 }
 
 // --- pass-through surfaces (conservative; see each comment) ---
@@ -174,8 +189,18 @@ static kern_return_t replaced_mach_port_names(ipc_space_t task, mach_port_name_a
 }
 
 void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
-    [hooks hookFunction:bootstrap_check_in withReplacement:replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
-    [hooks hookFunction:bootstrap_look_up withReplacement:replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
+    // Rebind bootstrap_check_in / bootstrap_look_up through the IMPORT-SLOT
+    // lane, not an ElleKit entry patch. The public `bootstrap_look_up` is a
+    // libSystem re-export of a libxpc entry; entry-patching its shared-cache
+    // text does NOT intercept an injected app whose own lazy-bound stub reaches
+    // the function through a different path (observed decisively: a runner's
+    // bootstrap_look_up("cy:…") still returned the live 1102 while access()
+    // hooks in the same call frame — installed via this rebind lane — were
+    // filtered, and a magic-name sentinel in the entry-patched replacement
+    // never fired). Rewriting the caller's import pointer catches the call
+    // wherever the implementation lives, the same way `access` is hooked.
+    [hooks hookRebindSymbol:@"bootstrap_check_in" withReplacement:(void*)replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
+    [hooks hookRebindSymbol:@"bootstrap_look_up" withReplacement:(void*)replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 
     // Runtime-resolve the private siblings; skip cleanly when absent.
     void* sym = shdw_resolve_libsystem("_bootstrap_check_in2");
