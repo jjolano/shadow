@@ -487,6 +487,22 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
         return original_statfs(pathname, buf);
     }
 
+    // /private/preboot exists on stock iOS and is READ-ONLY there; a jailbreak
+    // remounts it writable to stage its bootstrap, so a probe reading a cleared
+    // MNT_RDONLY ("preboot writeable") treats it as evidence. The path is
+    // otherwise restricted (denied) to hide the jailbreak's contents, but a
+    // hard denial here zeroes the caller's buffer — which the writeable probe
+    // ALSO reads as evidence (flags & MNT_RDONLY == 0). So special-case it
+    // BEFORE the restriction deny: let the query succeed but force the stock
+    // read-only flag. Its directory contents stay hidden via the path hooks.
+    if(pathname && strcmp(pathname, "/private/preboot") == 0) {
+        int result = original_statfs(pathname, buf);
+        if(result == 0 && buf) {
+            buf->f_flags |= MNT_RDONLY;
+        }
+        return result;
+    }
+
     if([_shadow isCPathRestricted:pathname]) {
         errno = ENOENT;
         return -1;
