@@ -212,8 +212,22 @@ static void shdw_hide_loadcmd_names_in_image(const struct mach_header* mh) {
                         mach_port_deallocate(mach_task_self(), object_name);
                     }
 
-                    if(vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
-                                  FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS) {
+                    // The load commands live in the code-signed __TEXT segment,
+                    // whose max_protection is r-x — a plain vm_protect(READ|WRITE)
+                    // is denied (KERN_PROTECTION_FAILURE). Request VM_PROT_COPY,
+                    // which forces a private copy-on-write page and RAISES
+                    // max_protection to include WRITE, so the mapping detaches
+                    // from the read-only file backing and the edit sticks
+                    // (a later fault can no longer reload the original bytes).
+                    kern_return_t kp1 = vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
+                                  FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+                    if(kp1 != KERN_SUCCESS) {
+                        // Fall back to a plain writable request on kernels that
+                        // reject VM_PROT_COPY here.
+                        kp1 = vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
+                                  FALSE, VM_PROT_READ | VM_PROT_WRITE);
+                    }
+                    if(kp1 == KERN_SUCCESS) {
                         memset(name, 0, maxlen);
                         memcpy(name, kReplacement, sizeof(kReplacement) - 1);
                         vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)span,
@@ -226,9 +240,35 @@ static void shdw_hide_loadcmd_names_in_image(const struct mach_header* mh) {
     }
 }
 
+// Locate the process's real main executable. _dyld_get_image_header(0) is NOT
+// reliable: under some jailbreaks the injected launch dylib (e.g. Dopamine's
+// systemhook.dylib) occupies image 0, so index 0 is the hook library, not the
+// app. Scan the image list for the single MH_EXECUTE image, which is always the
+// main program regardless of load order.
+static const struct mach_header* shdw_main_executable_image(void) {
+    uint32_t count = _dyld_image_count();
+    for(uint32_t i = 0; i < count; i++) {
+        const struct mach_header* mh = _dyld_get_image_header(i);
+        if(mh && (mh->magic == MH_MAGIC_64 || mh->magic == MH_MAGIC) &&
+           mh->filetype == MH_EXECUTE) {
+            return mh;
+        }
+    }
+    return _dyld_get_image_header(0);   // fallback: better than nothing
+}
+
 void shdw_hide_main_image_loadcmd_names(void) {
-    const struct mach_header* mh = _dyld_get_image_header(0);   // main executable
-    shdw_hide_loadcmd_names_in_image(mh);
+    // Hide suspicious LC_LOAD_DYLIB names in the real main executable. Also
+    // sweep index 0 when it differs (an injected launch dylib), since a probe
+    // that likewise reads _dyld_get_image_header(0)'s load commands would see
+    // that image — belt and suspenders for both parsing strategies.
+    const struct mach_header* mainExe = shdw_main_executable_image();
+    shdw_hide_loadcmd_names_in_image(mainExe);
+
+    const struct mach_header* image0 = _dyld_get_image_header(0);
+    if(image0 && image0 != mainExe) {
+        shdw_hide_loadcmd_names_in_image(image0);
+    }
 }
 
 shdw_own_ranges_t _shdw_own_ranges_a;
