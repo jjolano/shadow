@@ -51,6 +51,11 @@ jobs:
           sudo rm -rf /opt/theos/lib/HookKit.framework/Headers
           sudo cp -R /tmp/hookkit/Headers /opt/theos/lib/HookKit.framework/Headers
 
+      - name: HookKit ABI drift check (headers)
+        env:
+          THEOS: /opt/theos
+        run: sh scripts/check-hookkit-abi.sh --headers-only rootful-modern
+
       # The toolchain image (~10 min to build) is cached as a docker-archive
       # tarball keyed on the Dockerfile; a restore makes the subsequent
       # `docker build` reuse the loaded layers.
