@@ -387,21 +387,33 @@ void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     [hooks hookRebindSymbol:@"bootstrap_check_in" withReplacement:(void*)replaced_bootstrap_check_in outOldPtr:(void **) &original_bootstrap_check_in];
     [hooks hookRebindSymbol:@"bootstrap_look_up" withReplacement:(void*)replaced_bootstrap_look_up outOldPtr:(void **) &original_bootstrap_look_up];
 
-    // Runtime-resolve the private siblings; skip cleanly when absent.
-    void* sym = shdw_resolve_libsystem("_bootstrap_check_in2");
-    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in2 outOldPtr:(void **) &original_bootstrap_check_in2];
-
-    sym = shdw_resolve_libsystem("_bootstrap_check_in3");
-    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_check_in3 outOldPtr:(void **) &original_bootstrap_check_in3];
-
-    sym = shdw_resolve_libsystem("_bootstrap_look_up2");
-    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up2 outOldPtr:(void **) &original_bootstrap_look_up2];
-
-    sym = shdw_resolve_libsystem("_bootstrap_look_up3");
-    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up3 outOldPtr:(void **) &original_bootstrap_look_up3];
-
-    sym = shdw_resolve_libsystem("_bootstrap_look_up_per_user");
-    if(sym) [hooks hookFunction:sym withReplacement:replaced_bootstrap_look_up_per_user outOldPtr:(void **) &original_bootstrap_look_up_per_user];
+    // Private libxpc bootstrap siblings. The public bootstrap_look_up/check_in
+    // above route through these internally, and an entry patch on the resolved
+    // libxpc address catches those internal calls. But a detector can also call
+    // a sibling DIRECTLY through its own import stub — the re-exported-symbol
+    // path where an entry patch silently no-ops (see the rebind rationale
+    // above). Try the entry patch first (covers internal/direct-branch callers
+    // and captures the true original); only if it is refused fall back to an
+    // import-slot rebind, exactly as the mach_msg hook does. Skipped cleanly if
+    // the symbol is absent.
+    // dlsym name carries the leading underscore (`_bootstrap_look_up2`); the
+    // rebind lane matches the C name without it (`bootstrap_look_up2`).
+    #define SHDW_HOOK_BOOTSTRAP_SIBLING(dlname, rebindname, repl, orig)          \
+        do {                                                                     \
+            void* _s = shdw_resolve_libsystem(dlname);                           \
+            if(_s && ![hooks hookFunction:_s withReplacement:(void*)(repl)      \
+                                 outOldPtr:(void**)&(orig)]) {                    \
+                [hooks hookRebindSymbol:@rebindname withReplacement:(void*)(repl) \
+                              outOldPtr:(void**)&(orig)];                        \
+            }                                                                    \
+        } while(0)
+    SHDW_HOOK_BOOTSTRAP_SIBLING("_bootstrap_check_in2", "bootstrap_check_in2", replaced_bootstrap_check_in2, original_bootstrap_check_in2);
+    SHDW_HOOK_BOOTSTRAP_SIBLING("_bootstrap_check_in3", "bootstrap_check_in3", replaced_bootstrap_check_in3, original_bootstrap_check_in3);
+    SHDW_HOOK_BOOTSTRAP_SIBLING("_bootstrap_look_up2", "bootstrap_look_up2", replaced_bootstrap_look_up2, original_bootstrap_look_up2);
+    SHDW_HOOK_BOOTSTRAP_SIBLING("_bootstrap_look_up3", "bootstrap_look_up3", replaced_bootstrap_look_up3, original_bootstrap_look_up3);
+    SHDW_HOOK_BOOTSTRAP_SIBLING("_bootstrap_look_up_per_user", "bootstrap_look_up_per_user", replaced_bootstrap_look_up_per_user, original_bootstrap_look_up_per_user);
+    #undef SHDW_HOOK_BOOTSTRAP_SIBLING
+    void* sym = NULL; (void)sym;
 
     sym = shdw_resolve_libsystem("_pid_for_task");
     if(sym) [hooks hookFunction:sym withReplacement:replaced_pid_for_task outOldPtr:(void **) &original_pid_for_task];
