@@ -1,14 +1,14 @@
-Package: me.jjolano.shadow
+Package: @PACKAGE@
 Name: Shadow
 Pre-Depends: dpkg
-Depends: firmware (>= 15.0), com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 3.0.0)
+Depends: @FIRMWARE@, com.opa334.altlist, com.opa334.libsandy, me.jjolano.fmwk.hookkit (>= 3.0.0)
 Suggests: com.ps.injectionfoundation
 Recommends: mobilesubstrate, preferenceloader
 Provides: me.jjolano.shadow.beta
 Replaces: me.jjolano.shadow.beta, me.jjolano.shadow.legacy
 Conflicts: me.jjolano.shadow.beta, me.jjolano.shadow.legacy
 Version: 4.0.0
-Architecture: iphoneos-arm
+Architecture: @PACKAGE_ARCH@
 Description: A modern jailbreak detection bypass.
 Maintainer: jjolano
 Author: jjolano
