@@ -12,8 +12,21 @@ typedef vm_map_t vm_map_read_t;
 // intervals removes the mapping enumeration leak while leaving every other
 // region byte-identical to stock. Regions that cannot be classified pass
 // through UNCHANGED (protection is never mutated).
+// A targeted probe reads the protection of the region that BACKS a specific
+// function it names (detect_jb_payload passes &vm_region_64 as the search
+// address and flags protection != VM_PROT_READ). Under Shadow the named symbol
+// is rebound into ShadowCore, so the query lands in a restricted image. Neither
+// answer is right: returning ShadowCore's executable __TEXT reveals injection
+// (protection has EXECUTE), and skipping to the next region leaks a neighbouring
+// mapping's protection. A stock process would find that function in a system
+// library whose region reports VM_PROT_READ. So when an external caller's query
+// address falls INSIDE a restricted region (a targeted point query, not the
+// start-of-region step an enumeration loop makes), keep the region but present
+// the stock read-only protection and drop the object name — the mapping looks
+// like an ordinary system __TEXT instead of an injected or skipped region.
 static kern_return_t (*original_vm_region_64)(vm_map_read_t target_task, vm_address_t* address, vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name);
 static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address_t* address, vm_size_t* size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t* infoCnt, mach_port_t* object_name) {
+    vm_address_t queryAddr = address ? *address : 0;
     for(;;) {
         kern_return_t result = original_vm_region_64(target_task, address, size, flavor, info, infoCnt, object_name);
 
@@ -22,6 +35,26 @@ static kern_return_t replaced_vm_region_64(vm_map_read_t target_task, vm_address
         }
 
         if(!isCallerExternal() || flavor == VM_REGION_TOP_INFO || !shdw_addr_is_restricted((void *) *address)) {
+            return result;
+        }
+
+        // Targeted point query: the caller's search address lies STRICTLY
+        // inside the restricted region just returned (queryAddr > region start).
+        // An enumeration loop instead steps to successive region starts, where
+        // queryAddr == region start; excluding equality leaves enumeration on
+        // the skip path so mappings are still hidden, while a point query at a
+        // function address gets the stock read-only mapping. Present it as a
+        // read-only system __TEXT rather than skipping (which would leak the
+        // next region's protection) or exposing ShadowCore's executable text.
+        if(flavor == VM_REGION_BASIC_INFO_64 && infoCnt && *infoCnt >= VM_REGION_BASIC_INFO_COUNT_64 &&
+           *address < queryAddr && queryAddr < *address + *size) {
+            vm_region_basic_info_64_t basic = (vm_region_basic_info_64_t) info;
+            basic->protection = VM_PROT_READ;
+            basic->max_protection = VM_PROT_READ;
+            if(object_name && *object_name != MACH_PORT_NULL) {
+                mach_port_deallocate(mach_task_self(), *object_name);
+                *object_name = MACH_PORT_NULL;
+            }
             return result;
         }
 
