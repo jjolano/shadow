@@ -47,6 +47,10 @@ static const SHDWPlugin kSHDWPlugins[] = {
     // UIKit-load groups (the classes only exist once UIKit is loaded).
     { "Universal_URLScheme",          SHDWUniversalURLSchemeID,              SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
     { "Universal_Foundation_UIKit",   SHDWUniversalFoundationID,             SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
+    // LAContext + Security passcode-status neutralizer; self-gates on aggressive
+    // mode internally. UIKit phase (LocalAuthentication/Security load with the
+    // app UI). Message+function mix, so declare the message-capable UIKit slot.
+    { "Universal_PasscodeStatus",     NULL,                                  SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
     { "Adapter_DeviceSecurityKit",    SHDWAdapterDeviceSecurityKitID,        SHDWPhaseSDKFallback, SHDWCapabilityMessage,     1, 0 },
     { "Adapter_IOSSecuritySuite",     SHDWAdapterIOSSecuritySuiteID,         SHDWPhaseSDKFallback, SHDWCapabilityFunction,    1, 0 },
     // Function-lane adapter; self-gates on aggressive mode internally (like

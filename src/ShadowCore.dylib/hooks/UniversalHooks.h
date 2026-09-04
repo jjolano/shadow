@@ -9,6 +9,7 @@ void shdw_universal_filesystem_c(SHDWHookSession* hooks);
 void shdw_universal_envvars_c(SHDWHookSession* hooks);
 void shdw_universal_envpolicy(SHDWHookSession* hooks);
 void shdw_universal_nsprocessinfo(SHDWHookSession* hooks);
+void shdw_universal_passcode_status(SHDWHookSession* hooks);
 void shdw_universal_mach_bootstrap(SHDWHookSession* hooks);
 void shdw_universal_iokit(SHDWHookSession* hooks);
 void shdw_universal_low_level_c(SHDWHookSession* hooks);

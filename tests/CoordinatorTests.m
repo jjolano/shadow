@@ -143,7 +143,7 @@ static void TestPlannerUIKit(void) {
     SHDWCapabilities full = SHDWCapMessage | SHDWCapFunction | SHDWCapInline | SHDWCapPrivateSym;
 
     NSArray* plan = SHDWHookPlan(AllOnPrefs(), full, SHDWEventUIKitLoaded);
-    CHECK(([plan isEqualToArray:@[ @"Universal_URLScheme", @"Universal_Foundation_UIKit" ]]), "uikit plan == the two UIKit-class units, in order");
+    CHECK(([plan isEqualToArray:@[ @"Universal_URLScheme", @"Universal_Foundation_UIKit", @"Universal_PasscodeStatus" ]]), "uikit plan == the UIKit-class units, in order");
 
     // Message backend required by the UIKit groups.
     NSArray* planFish = SHDWHookPlan(AllOnPrefs(), SHDWCapFunction, SHDWEventUIKitLoaded);

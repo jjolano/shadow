@@ -31,6 +31,7 @@
     "Universal_HideApps", \
     "Universal_URLScheme", \
     "Universal_Foundation_UIKit", \
+    "Universal_PasscodeStatus", \
     "Adapter_DeviceSecurityKit", \
     "Adapter_IOSSecuritySuite", \
     "Adapter_BATJailbreakGuard", \
@@ -39,4 +40,4 @@
     "Policy_Process", \
     "Policy_PseudoSandbox"
 
-#define SHDW_PLUGIN_COUNT 32
+#define SHDW_PLUGIN_COUNT 33
