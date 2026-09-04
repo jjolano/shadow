@@ -67,6 +67,23 @@ static kern_return_t shdw_bootstrap_normalize_lookup(kern_return_t result, const
     return BOOTSTRAP_NOT_PRIVILEGED;
 }
 
+// Fast-path for an external lookup of a restricted name: a sandboxed stock app
+// is denied these before any IPC leaves the process, so return
+// BOOTSTRAP_NOT_PRIVILEGED WITHOUT calling the original. Besides concealing the
+// right, this removes a timing side-channel — a probe that times a restricted
+// prefix (cy:/lh:) against a plain name (detect_launchd_ipchook) would see the
+// hooked path run the real launchd round-trip PLUS our work and flag the added
+// latency; short-circuiting makes the concealed lookup FASTER than the control,
+// and the probe only flags slower results. Returns YES if it handled the call.
+static BOOL shdw_bootstrap_shortcircuit_restricted(const char* service_name, mach_port_t* sp, kern_return_t* out) {
+    if(!shdw_bootstrap_service_restricted(service_name)) {
+        return NO;
+    }
+    if(sp) *sp = MACH_PORT_NULL;
+    *out = BOOTSTRAP_NOT_PRIVILEGED;
+    return YES;
+}
+
 static kern_return_t (*original_bootstrap_check_in)(mach_port_t bp, const char* service_name, mach_port_t* sp);
 static kern_return_t replaced_bootstrap_check_in(mach_port_t bp, const char* service_name, mach_port_t* sp) {
     if(!isCallerExternal()) {
@@ -88,9 +105,12 @@ static kern_return_t replaced_bootstrap_look_up(mach_port_t bp, const char* serv
         return original_bootstrap_look_up(bp, service_name, sp);
     }
 
-    kern_return_t result = original_bootstrap_look_up(bp, service_name, sp);
+    kern_return_t shortcircuit;
+    if(shdw_bootstrap_shortcircuit_restricted(service_name, sp, &shortcircuit)) {
+        return shortcircuit;
+    }
 
-    return shdw_bootstrap_normalize_lookup(result, service_name, sp);
+    return original_bootstrap_look_up(bp, service_name, sp);
 }
 
 // --- bootstrap *2/*3/per_user siblings (private libxpc API, runtime-
