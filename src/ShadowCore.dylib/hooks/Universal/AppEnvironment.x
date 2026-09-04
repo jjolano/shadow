@@ -1,6 +1,8 @@
 // App-visible environment spoofing (merged: UIApplication, NSUserDefaults, NSProcessInfo, LSApplicationWorkspace).
 // Entry functions keep their per-group names — dylib.x's installer table calls them individually.
 #import "UniversalHooks.h"
+#import <Security/Security.h>
+#import <LocalAuthentication/LocalAuthentication.h>
 
 %group shadowhook_UIApplication
 %hook UIApplication
@@ -192,12 +194,111 @@ void shdw_universal_user_defaults(SHDWHookSession* hooks) {
 %end
 %end
 
-void shdw_universal_nsprocessinfo(SHDWHookSession* hooks) {
+ void shdw_universal_nsprocessinfo(SHDWHookSession* hooks) {
     Class cls = objc_getClass("NSProcessInfo");
     SEL sel = sel_registerName("environment");
     void* orig = SHDWSnapshotInstanceMethodIMP(cls, sel);
     %init(shadowhook_NSProcessInfo);
     SHDWRegisterHookedInstanceMethod(cls, sel, orig);
+}
+
+// --- passcode-status probe (aggressive-gated) ---
+//
+// A probe infers "is a device passcode set?" three ways and treats FAILURE of
+// each as evidence:
+//   1. -[LAContext canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:]
+//   2. SecItemAdd of a kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly item
+//   3. SecKeyCreateRandomKey for a Secure-Enclave key gated on the passcode
+// This is NOT a jailbreak signal: a stock device with NO passcode set — or an
+// app lacking the keychain-access-group entitlement (errSecMissingEntitlement,
+// -34018) — fails all three identically. So neutralising it is disable-style,
+// gated on aggressive mode, and reports the "passcode is set" outcome for
+// external callers only. Internal callers and natural mode are untouched.
+
+extern BOOL shdw_detector_aggressive;
+
+typedef int32_t shdw_os_status_t;
+typedef const void* shdw_cf_dictionary_ref_t;
+typedef const void* shdw_cf_type_ref_t;
+typedef const void* shdw_sec_key_ref_t;
+typedef const void** shdw_cf_type_ref_out_t;
+
+#ifndef errSecSuccess
+#define errSecSuccess 0
+#endif
+
+%group shadowhook_LAContext
+%hook LAContext
+- (BOOL)canEvaluatePolicy:(NSInteger)policy error:(NSError**)error __attribute__((annotate("hookkit:allow_inherited"))) {
+    if(shdw_detector_aggressive && isCallerExternal()) {
+        // LAPolicyDeviceOwnerAuthentication == 2. Report evaluable (passcode
+        // set) and clear any error the caller passed in.
+        if(policy == 2) {
+            if(error) *error = nil;
+            return YES;
+        }
+    }
+    return %orig;
+}
+%end
+%end
+
+static shdw_os_status_t (*shdw_orig_SecItemAdd)(shdw_cf_dictionary_ref_t attributes, shdw_cf_type_ref_out_t result);
+static shdw_os_status_t shdw_replaced_SecItemAdd(shdw_cf_dictionary_ref_t attributes, shdw_cf_type_ref_out_t result) {
+    shdw_os_status_t status = shdw_orig_SecItemAdd(attributes, result);
+    // Only rewrite a FAILED add for an external caller under aggressive mode:
+    // the probe reads any non-errSecSuccess as "no passcode". A stock device
+    // with a passcode returns errSecSuccess, so this matches that shape without
+    // fabricating on the success path.
+    if(shdw_detector_aggressive && isCallerExternal() && status != errSecSuccess) {
+        return errSecSuccess;
+    }
+    return status;
+}
+
+static shdw_sec_key_ref_t (*shdw_orig_SecKeyCreateRandomKey)(shdw_cf_dictionary_ref_t params, shdw_cf_type_ref_out_t error);
+static shdw_sec_key_ref_t shdw_replaced_SecKeyCreateRandomKey(shdw_cf_dictionary_ref_t params, shdw_cf_type_ref_out_t error) {
+    shdw_sec_key_ref_t key = shdw_orig_SecKeyCreateRandomKey(params, error);
+    // The probe only checks the result is non-null. When a Secure-Enclave key
+    // creation fails for want of a passcode, fall back to an ordinary in-memory
+    // key so the caller sees a valid SecKeyRef — but only external + aggressive.
+    if(!key && shdw_detector_aggressive && isCallerExternal()) {
+        // Build a minimal 256-bit EC key request with no access control /
+        // Secure-Enclave requirement, which does not depend on a passcode.
+        NSDictionary* fallback = @{
+            (__bridge id)kSecAttrKeyType: (__bridge id)kSecAttrKeyTypeECSECPrimeRandom,
+            (__bridge id)kSecAttrKeySizeInBits: @256,
+            (__bridge id)kSecPrivateKeyAttrs: @{ (__bridge id)kSecAttrIsPermanent: @NO },
+        };
+        shdw_cf_type_ref_t innerErr = NULL;
+        key = shdw_orig_SecKeyCreateRandomKey((__bridge shdw_cf_dictionary_ref_t)fallback,
+                                              (shdw_cf_type_ref_out_t)&innerErr);
+        if(key && error) *error = NULL;   // hide the original failure
+    }
+    return key;
+}
+
+void shdw_universal_passcode_status(SHDWHookSession* hooks) {
+    // ObjC: LAContext. Snapshot+register so a detector reading the current IMP
+    // still resolves to the original (consistent with other ObjC hooks).
+    Class cls = objc_getClass("LAContext");
+    if(cls) {
+        SEL sel = sel_registerName("canEvaluatePolicy:error:");
+        void* orig = SHDWSnapshotInstanceMethodIMP(cls, sel);
+        %init(shadowhook_LAContext);
+        SHDWRegisterHookedInstanceMethod(cls, sel, orig);
+    }
+
+    // C: Security.framework. Rebind lane (cold detection-facing calls), skipped
+    // cleanly when the symbols are absent.
+    void* sym = shdw_resolve_libsystem("SecItemAdd");
+    if(sym) {
+        [hooks hookRebindSymbol:@"SecItemAdd" withReplacement:(void*)shdw_replaced_SecItemAdd outOldPtr:(void**)&shdw_orig_SecItemAdd];
+    }
+    sym = shdw_resolve_libsystem("SecKeyCreateRandomKey");
+    if(sym) {
+        [hooks hookRebindSymbol:@"SecKeyCreateRandomKey" withReplacement:(void*)shdw_replaced_SecKeyCreateRandomKey outOldPtr:(void**)&shdw_orig_SecKeyCreateRandomKey];
+    }
 }
 
 #import <MobileCoreServices/LSApplicationWorkspace.h>

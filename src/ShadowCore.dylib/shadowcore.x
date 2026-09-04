@@ -146,6 +146,7 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Universal_HideApps",                   shdw_universal_hide_apps,                NULL },
     { "Universal_URLScheme",                  shdw_universal_url_scheme,               NULL },
     { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit,         NULL },
+    { "Universal_PasscodeStatus",             shdw_universal_passcode_status,          NULL },
     { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit,          NULL },
     { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite,           NULL },
     { "Adapter_BATJailbreakGuard",             shdw_adapter_batjailbreakguard,          NULL },
