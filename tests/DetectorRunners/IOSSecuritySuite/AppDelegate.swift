@@ -5,6 +5,19 @@ import UIKit
 @_silgen_name("shdwInstallHarnessSDKFallback")
 private func shdwInstallHarnessSDKFallback() -> Bool
 
+// A probe class that lives in the RUNNER'S MAIN BINARY. IOSSecuritySuite's
+// amIRuntimeHooked inspects a method's IMP and passes only when it resides in
+// the main executable or a system framework. A real app integration passes one
+// of its own main-binary classes; the IOSSBridge lives in the dlopen'd
+// IOSSecuritySuite.framework, so using it would make ISS flag its own framework
+// as injected (a harness artifact). The bridge resolves this class by name
+// (NSClassFromString("ShadowIOSSRuntimeProbe")) and inspects its runnerProbe,
+// which correctly dladdr-resolves to this main executable.
+@objc(ShadowIOSSRuntimeProbe)
+final class ShadowIOSSRuntimeProbe: NSObject {
+    @objc dynamic func runnerProbe() {}
+}
+
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
   var window: UIWindow?

@@ -78,9 +78,22 @@ public final class IOSSBridge: NSObject {
         let jailbreakMessage = jailbreak.failedChecks.map { $0.failMessage }.joined(separator: "; ")
         let reverseMessage = reverse.failedChecks.map { $0.failMessage }.joined(separator: "; ")
         let tampered = IOSSecuritySuite.amITampered([.bundleID(bundleID)]).result
+        // amIRuntimeHooked verifies a method's IMP lives in the main executable
+        // or a system framework, flagging any other image as an injected hook.
+        // A real integration passes one of the APP's OWN classes (compiled into
+        // the main binary). Driving it with IOSSBridge — which is compiled into
+        // the dlopen'd IOSSecuritySuite.framework — would make ISS flag its own
+        // framework, a harness-embedding artifact unrelated to Shadow. Resolve
+        // the runner's main-binary probe class (registered in its AppDelegate)
+        // and inspect THAT, matching how an app would call this API. Fall back
+        // to the bridge class only if the runner did not provide one.
+        let detectionClass: AnyClass = NSClassFromString("ShadowIOSSRuntimeProbe") ?? IOSSBridge.self
+        let detectionSelector: Selector = (detectionClass == IOSSBridge.self)
+            ? #selector(IOSSBridge.runnerProbe)
+            : NSSelectorFromString("runnerProbe")
         let runtimeHooked = IOSSecuritySuite.amIRuntimeHooked(
-            dyldAllowList: [], detectionClass: IOSSBridge.self,
-            selector: #selector(IOSSBridge.runnerProbe), isClassMethod: false)
+            dyldAllowList: [], detectionClass: detectionClass,
+            selector: detectionSelector, isClassMethod: false)
         // The IOSSecuritySuite framework is dlopen'd RTLD_LOCAL by the runner,
         // so its @_cdecl probe symbol is not in the global namespace and
         // dlsym(RTLD_DEFAULT) returns nil (which forced MSHook/Breakpoint to a
