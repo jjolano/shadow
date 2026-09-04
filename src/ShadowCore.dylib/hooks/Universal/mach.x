@@ -306,6 +306,73 @@ static int replaced_xpc_pipe_routine_with_flags(xpc_object_t pipe, xpc_object_t 
     return original_xpc_pipe_routine_with_flags(pipe, request, reply, flags);
 }
 
+// --- launchd jailbreak Mach-server probe (Dopamine "DOPAMINE" magic) ---
+//
+// detect_launchd_jb_mach_server hand-rolls a Mach message to launchd carrying
+// the magic 0x444F50414D494E45 ("DOPAMINE") and msgh_id 0x40000000|206, then a
+// paired MACH_RCV for the reply. On a device WITHOUT Dopamine's launchd patch
+// the send fails (MACH_SEND_INVALID_DEST) — but the probe LOGS that failure as
+// a finding, so it fires on a stock device too (a self-inflicted false
+// positive). To present the clean outcome, intercept the magic exchange: drop
+// the real send (return success) and synthesize the paired receive as a reply
+// whose status is non-zero, so neither of the probe's log branches
+// (send-error, or status==0 with a jbRootPath) triggers.
+//
+// Scope is tight: only a MACH_SEND whose body carries the exact magic is
+// touched, and only for external callers; every other mach_msg passes straight
+// through. A thread-local flag pairs the dropped send with the next receive on
+// the same thread (the probe issues them back-to-back).
+#define SHDW_JBSERVER_MACH_MAGIC 0x444F50414D494E45ULL
+
+static _Thread_local BOOL shdw_jbserver_send_pending = NO;
+
+static mach_msg_return_t (*original_mach_msg)(mach_msg_header_t*, mach_msg_option_t,
+    mach_msg_size_t, mach_msg_size_t, mach_port_name_t, mach_msg_timeout_t, mach_port_name_t);
+
+// The message layout the probe uses: header, then two uint64 (magic, action).
+typedef struct {
+    mach_msg_header_t hdr;
+    uint64_t magic;
+    uint64_t action;
+} shdw_jbserver_msg_t;
+
+static mach_msg_return_t replaced_mach_msg(mach_msg_header_t* msg, mach_msg_option_t option,
+    mach_msg_size_t sendSize, mach_msg_size_t receiveLimit, mach_port_name_t receiveName,
+    mach_msg_timeout_t timeout, mach_port_name_t notify) {
+
+    if(isCallerExternal() && msg) {
+        // Outbound magic message → drop the send, arm the paired receive.
+        if((option & MACH_SEND_MSG) && sendSize >= sizeof(shdw_jbserver_msg_t) &&
+           ((const shdw_jbserver_msg_t*)msg)->magic == SHDW_JBSERVER_MACH_MAGIC) {
+            shdw_jbserver_send_pending = YES;
+            return MACH_MSG_SUCCESS;   // pretend the send succeeded
+        }
+        // The receive that the probe issues right after the magic send: return a
+        // minimal successful reply with a non-zero status word. The probe's
+        // reply layout is { {hdr, magic, action}, status, … }; status sits
+        // immediately after the 8-byte magic + 8-byte action following the
+        // header. Setting it non-zero makes the probe treat the server as
+        // "present but not a jailbreak" and log nothing.
+        if((option & MACH_RCV_MSG) && shdw_jbserver_send_pending) {
+            shdw_jbserver_send_pending = NO;
+            if(receiveLimit >= sizeof(shdw_jbserver_msg_t) + sizeof(uint64_t)) {
+                shdw_jbserver_msg_t* base = (shdw_jbserver_msg_t*) msg;
+                base->hdr.msgh_bits = 0;
+                base->hdr.msgh_size = sizeof(shdw_jbserver_msg_t) + sizeof(uint64_t);
+                base->hdr.msgh_remote_port = MACH_PORT_NULL;
+                base->hdr.msgh_local_port = MACH_PORT_NULL;
+                base->magic = SHDW_JBSERVER_MACH_MAGIC;
+                base->action = 0;
+                *(uint64_t*)((uint8_t*)msg + sizeof(shdw_jbserver_msg_t)) = (uint64_t)-1; // status != 0
+                return MACH_MSG_SUCCESS;
+            }
+            return MACH_RCV_TOO_LARGE;
+        }
+    }
+
+    return original_mach_msg(msg, option, sendSize, receiveLimit, receiveName, timeout, notify);
+}
+
 void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     // Rebind bootstrap_check_in / bootstrap_look_up through the IMPORT-SLOT
     // lane, not an ElleKit entry patch. The public `bootstrap_look_up` is a
@@ -347,6 +414,12 @@ void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     // entry patch can miss). Skipped cleanly if the symbols are absent.
     [hooks hookRebindSymbol:@"xpc_pipe_routine" withReplacement:(void*)replaced_xpc_pipe_routine outOldPtr:(void **) &original_xpc_pipe_routine];
     [hooks hookRebindSymbol:@"xpc_pipe_routine_with_flags" withReplacement:(void*)replaced_xpc_pipe_routine_with_flags outOldPtr:(void **) &original_xpc_pipe_routine_with_flags];
+
+    // launchd jailbreak Mach-server probe: intercept only the DOPAMINE-magic
+    // exchange (see replaced_mach_msg). Rebind the import slot so the probe's
+    // own mach_msg call routes through us; mach_msg is a shared-cache re-export
+    // an entry patch can miss.
+    [hooks hookRebindSymbol:@"mach_msg" withReplacement:(void*)replaced_mach_msg outOldPtr:(void **) &original_mach_msg];
 }
 
 void shdw_universal_mach_bootstrap_verify(void) {
