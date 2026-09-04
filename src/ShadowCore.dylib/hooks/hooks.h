@@ -244,6 +244,11 @@ void shdw_own_ranges_refresh(void);
 // protected-image hiding predicate.
 BOOL shdw_is_shadow_runtime_image(const char* path);
 
+// Real main-executable resolution (see dyld.x). Do NOT use image index 0: a
+// rootless jailbreak's launch dylib (systemhook) sits there instead of the app.
+const struct mach_header* shdw_main_executable_image_index(uint32_t* outIndex);
+const char* shdw_main_executable_name(void);
+
 #define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
 
 // ponytail: fast allowed-path check for tight loops (perfprobe). User-library

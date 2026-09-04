@@ -27,8 +27,18 @@ static BOOL shdw_addr_in_main_image(const void* addr) {
     static dispatch_once_t once = 0;
 
     dispatch_once(&once, ^{
-        const struct mach_header* mh = _dyld_get_image_header(0);
-        intptr_t slide = _dyld_get_image_vmaddr_slide(0);
+        // NOT _dyld_get_image_header(0): when a dylib is inserted at load time
+        // (a jailbreak launch dylib, a DYLD_INSERT entry, any injector) it can
+        // occupy image index 0, so index 0 is a DYLIB, not the app. Confirmed
+        // on-device: image0 was a load-inserted dylib (filetype MH_DYLIB) while
+        // the app was MH_EXECUTE at a later index. Measuring index 0's span
+        // would exempt that dylib instead of the app, defeating the "host app's
+        // own code is never hidden" guarantee and risking a wrong dladdr /
+        // ObjC-introspection answer for the app's own classes. Resolve the real
+        // main executable by scanning for the single MH_EXECUTE image.
+        uint32_t mainIndex = 0;
+        const struct mach_header* mh = shdw_main_executable_image_index(&mainIndex);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(mainIndex);
 
         if(!mh) {
             return;
@@ -103,7 +113,9 @@ static BOOL shdw_path_is_main_image(const char* path) {
         return NO;
     }
 
-    const char* mainPath = _dyld_get_image_name(0);
+    // Not _dyld_get_image_name(0): a load-inserted dylib can hold index 0, so
+    // that returns the wrong image. Resolve the real MH_EXECUTE image's name.
+    const char* mainPath = shdw_main_executable_name();
 
     if(!mainPath || !mainPath[0]) {
         return NO;

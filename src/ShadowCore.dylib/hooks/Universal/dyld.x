@@ -241,20 +241,39 @@ static void shdw_hide_loadcmd_names_in_image(const struct mach_header* mh) {
 }
 
 // Locate the process's real main executable. _dyld_get_image_header(0) is NOT
-// reliable: under some jailbreaks the injected launch dylib (e.g. Dopamine's
-// systemhook.dylib) occupies image 0, so index 0 is the hook library, not the
-// app. Scan the image list for the single MH_EXECUTE image, which is always the
-// main program regardless of load order.
-static const struct mach_header* shdw_main_executable_image(void) {
+// reliable: when anything is inserted at load time — a jailbreak launch dylib
+// (e.g. Dopamine's systemhook), a DYLD_INSERT_LIBRARIES entry, or any
+// injector — that dylib can occupy image 0, so index 0 is a library, not the
+// app. Every process has exactly one MH_EXECUTE image (an OS invariant,
+// independent of jailbreak or injector), so scan for it: that is always the
+// main program regardless of load order. Returns the header and, if outIndex is
+// non-NULL, the image index (so callers can fetch the matching vmaddr slide /
+// image name — those APIs are index-keyed and must agree with the header).
+const struct mach_header* shdw_main_executable_image_index(uint32_t* outIndex) {
     uint32_t count = _dyld_image_count();
     for(uint32_t i = 0; i < count; i++) {
         const struct mach_header* mh = _dyld_get_image_header(i);
         if(mh && (mh->magic == MH_MAGIC_64 || mh->magic == MH_MAGIC) &&
            mh->filetype == MH_EXECUTE) {
+            if(outIndex) *outIndex = i;
             return mh;
         }
     }
+    if(outIndex) *outIndex = 0;
     return _dyld_get_image_header(0);   // fallback: better than nothing
+}
+
+// The name (path) of the real main executable — the index-consistent
+// counterpart to _dyld_get_image_name(0), which returns the wrong image when a
+// launch dylib sits at index 0.
+const char* shdw_main_executable_name(void) {
+    uint32_t idx = 0;
+    (void)shdw_main_executable_image_index(&idx);
+    return _dyld_get_image_name(idx);
+}
+
+static const struct mach_header* shdw_main_executable_image(void) {
+    return shdw_main_executable_image_index(NULL);
 }
 
 void shdw_hide_main_image_loadcmd_names(void) {
