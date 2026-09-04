@@ -511,7 +511,13 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 
         if(!checkable) {
             if(!isWrite) {
-                NSString* jbpath = [@"/var/jb" stringByAppendingString:path];
+                // Not a literal "/var/jb": that is only the legacy-rootless
+                // (Dopamine/palera1n) bootstrap. On roothide the jbroot is a
+                // random-named dir under /private/preboot with no /var/jb at
+                // all, so a hardcoded prefix would probe a nonexistent path and
+                // wrongly report "not restricted". shdw_jbroot_prefix() resolves
+                // the active jbroot for whatever jailbreak is installed.
+                NSString* jbpath = [shdw_jbroot_prefix() stringByAppendingString:path];
                 int errno_old = errno;
                 BOOL exists = (access([jbpath fileSystemRepresentation], F_OK) == 0);
                 errno = errno_old;
@@ -536,7 +542,8 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
             NSString* check_path = path;
 
             if(_context.rootless) {
-                check_path = [@"/var/jb" stringByAppendingString:path];
+                // Active jbroot, not a hardcoded /var/jb (wrong on roothide).
+                check_path = [shdw_jbroot_prefix() stringByAppendingString:path];
             }
 
             if(access([check_path fileSystemRepresentation], F_OK) != 0) {
