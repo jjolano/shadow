@@ -88,7 +88,45 @@ static BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
             nil];
     });
 
-    return [restrictedSuites containsObject:suitename];
+    if([restrictedSuites containsObject:suitename]) {
+        return YES;
+    }
+
+    // A cfprefsd-hook probe passes a jailbreak daemon/pref plist PATH as the
+    // suite name (e.g. /basebin/LaunchDaemons/com.opa334.Dopamine.idownloadd or
+    // /var/mobile/Library/Preferences/xyz.willy.Zebra) and treats any readable
+    // value as evidence the jailbreak's cfprefsd is answering for it. A stock
+    // cfprefsd returns nothing for these. Match the jailbreak plist namespaces
+    // by path so the read is answered with nil for external callers. These are
+    // never legitimate app suite names.
+    if([suitename hasPrefix:@"/basebin/"] ||
+       [suitename hasPrefix:@"/Library/LaunchDaemons/"] ||
+       [suitename hasPrefix:@"/var/jb/"] ||
+       [suitename containsString:@"/LaunchDaemons/com.opa334"] ||
+       [suitename containsString:@"/LaunchDaemons/jailbreakd"]) {
+        return YES;
+    }
+
+    // Known jailbreak-app preference domains a stock device never has.
+    static NSArray<NSString*>* jbPrefIDs = nil;
+    static dispatch_once_t prefOnce;
+    dispatch_once(&prefOnce, ^{
+        jbPrefIDs = @[
+            @"com.opa334.choicyprefs", @"com.opa334.craneprefs",
+            @"com.spark.snowboardprefs", @"com.tigisoftware.Filza",
+            @"org.coolstar.SileoStore", @"ru.domo.cocoatop64",
+            @"ws.hbang.Terminal", @"xyz.willy.Zebra",
+            @"us.diatr.shshd", @"com.opa334.sandyd",
+        ];
+    });
+    NSString* leaf = suitename.lastPathComponent;
+    for(NSString* pref in jbPrefIDs) {
+        if([leaf isEqualToString:pref]) {
+            return YES;
+        }
+    }
+
+    return NO;
 }
 
 %group shadowhook_NSUserDefaults
