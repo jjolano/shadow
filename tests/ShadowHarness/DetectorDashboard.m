@@ -66,9 +66,7 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     dispatch_once(&onceToken, ^{
         sdks = @[
             SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"embedded", @"https://github.com/jjolano/shadow/tree/master/tests/tools/dyldprobe"),
-            SHDWMakeSDKClassified(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite",
-                SHDWAppStoreHarnessArtifact,
-                @"Two residual fails are artifacts of this harness, not Shadow gaps: 'Suspicious dylibs' sees @rpath/Shadow.framework/Shadow because this runner LINKS Shadow at build time (real injection adds no load command), and 'Runtime hook' resolves the bridge probe method inside the dlopened IOSSecuritySuite.framework (neither /System nor the main binary). A shipping app embedding IOSSecuritySuite normally would not reproduce either."),
+            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
             SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
             SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
             SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run", @"https://github.com/thii/DTTJailbreakDetection"),
