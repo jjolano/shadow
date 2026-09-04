@@ -162,6 +162,20 @@ build_lane() { # profile
     destination="$ROOT/build/$(basename "$package")"
     cp -p "$package" "$destination"
     scripts/check-compat.sh "$lane" "$destination"
+    # HookKit ABI drift advisory: Shadow links the Theos-installed HookKit
+    # (build-support/hookkit.mk). This surfaces — but does not fail the build on
+    # — a HookKit update that adds/removes/renames the ABI surface Shadow's
+    # binding layer depends on, so it can be reviewed and adopted. Set
+    # SHADOW_HOOKKIT_ABI_STRICT=1 to make drift fatal.
+    if [ -f "$ROOT/scripts/check-hookkit-abi.sh" ]; then
+        if ! "$ROOT/scripts/check-hookkit-abi.sh" "$lane"; then
+            if [ "${SHADOW_HOOKKIT_ABI_STRICT:-0}" = 1 ]; then
+                echo "HookKit ABI drift is fatal (SHADOW_HOOKKIT_ABI_STRICT=1)" >&2
+                return 1
+            fi
+            echo "WARNING: HookKit ABI drift detected for $lane (advisory; build continues)" >&2
+        fi
+    fi
     copy_dependency_packages "$lane"
 }
 
