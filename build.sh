@@ -139,7 +139,8 @@ copy_dependency_packages() { # profile
 }
 
 build_lane() { # profile
-    local lane=$1 control="$ROOT/packaging/controls/control.$1" package destination
+    local lane=$1 control="$STAGE/control.$1" package destination
+    scripts/gen-control.sh "$lane" > "$control"
     [ "$lane" = rootful-legacy ] || modern_args
     stage_deps "$lane"
     make clean "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}"
