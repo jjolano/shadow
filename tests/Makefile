@@ -3,9 +3,9 @@
 # Pure-C check for the svc path-munging logic (path_rewrite.c — no
 # Foundation, so it compiles and runs on any host, macOS or Linux).
 verify-path-rewrite:
-	$(CC) -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test \
+	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-rewrite-test \
 		verify-path-rewrite.c ../src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
-	/tmp/opencode/rewrite-test
+	/tmp/shadow-rewrite-test
 
 verify-device-driver:
 	python3 stealth_device.py selftest
