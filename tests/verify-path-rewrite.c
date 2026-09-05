@@ -3,8 +3,8 @@
 // Foundation, so it compiles and runs on the build host).
 //
 // Build and run:
-//   cc -std=c99 -Wall -Wextra -o /tmp/opencode/rewrite-test tests/verify-path-rewrite.c src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
-//   /tmp/opencode/rewrite-test
+//   cc -std=c99 -Wall -Wextra -o /tmp/shadow-rewrite-test tests/verify-path-rewrite.c src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
+//   /tmp/shadow-rewrite-test
 
 #include <assert.h>
 #include <stdio.h>
