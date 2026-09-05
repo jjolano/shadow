@@ -194,9 +194,9 @@ if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' src/Shadow
    ! grep -q '@"/usr/sbin/cfprefsd"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
    ! grep -q 'msg->msgh_bits == 0x1513' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
    ! grep -q '0x444f50414d494e45ULL' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'shdw_freeRASP_isVersion712' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'shdw_freeRASP_versionForHeader' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
    ! grep -q '0x4c90' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'expectedPrologue' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+   ! grep -q 'Prologue' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
    ! grep -q 'port == 2222' src/ShadowCore.dylib/hooks/Universal/sandbox.x ||
    ! grep -q 'shdw_adapter_freerasp_prepare_preferences' src/ShadowCore.dylib/shadowcore.x; then
     echo 'DEVICECHECK DRIFT: freeRASP must execute its real start entrypoint'

@@ -13,8 +13,8 @@ fail() {
 }
 
 for lane in rootful-legacy rootful-modern rootless roothide; do
-    control="$ROOT/packaging/controls/control.$lane"
-    [ -f "$control" ] || { fail "$lane has no control file"; continue; }
+    template="$ROOT/packaging/controls/control.$lane.in"
+    [ -f "$template" ] || { fail "$lane has no control template"; continue; }
 
     package=$(shadow_lane_field "$lane" PACKAGE)
     floor=$(shadow_lane_field "$lane" FLOOR)
@@ -22,8 +22,9 @@ for lane in rootful-legacy rootful-modern rootless roothide; do
     target=$(shadow_lane_field "$lane" TARGET)
     sdk=${target#iphone:clang:}
     sdk=${sdk%%:*}
-    deps=$(sed -n 's/^Depends: //p' "$control")
-    actual_package=$(sed -n 's/^Package: //p' "$control")
+    rendered=$("$ROOT/scripts/gen-control.sh" "$lane") || { fail "$lane control template failed to render"; continue; }
+    deps=$(printf '%s\n' "$rendered" | sed -n 's/^Depends: //p')
+    actual_package=$(printf '%s\n' "$rendered" | sed -n 's/^Package: //p')
 
     [ -n "$sdk" ] && [ "$sdk" != "$target" ] || fail "$lane has no SDK in TARGET '$target'"
     [ "$actual_package" = "$package" ] || fail "$lane package '$actual_package' != '$package'"

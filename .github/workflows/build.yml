@@ -107,6 +107,11 @@ jobs:
           # the tree was cloned with sudo, so hand it to the runner user.
           sudo chown -R "$(id -un)" "$THEOS"
 
+          # roothide/theos carries no bin/lane.sh; backfill the shared lane
+          # matrix from jjolano/theos (single source per build-support/lanes.sh).
+          curl -fL -o "$THEOS/bin/lane.sh" \
+            https://raw.githubusercontent.com/jjolano/theos/master/bin/lane.sh
+
       - name: Build and verify
         run: |
           .github/scripts/install-hookkit-theos.sh "${{ matrix.flavor }}"
