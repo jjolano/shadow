@@ -103,6 +103,15 @@ jobs:
           sudo mkdir -p "$THEOS/sdks"
           sudo tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$THEOS/sdks"
 
+          # The detector-harness runners pin the 14.5 SDK (see their TARGET
+          # lines and the FreeRASP compat-framework symlinks). jjolano/theos
+          # carries it in provision.lock, so fetch it the same way the legacy
+          # job does (URL+sha pinned there, not here).
+          curl -fL -o "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" \
+            https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS14.5.sdk.tar.xz
+          echo '1c998a5ee7eb8c29e39f0d8c83add9cad1a954342ca0d86204d1b4fe08a921b9  '"$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" | shasum -a 256 -c -
+          sudo tar -xJf "$RUNNER_TEMP/iPhoneOS14.5.sdk.tar.xz" -C "$THEOS/sdks"
+
           # install-hookkit-theos.sh writes the HookKit framework into $THEOS/lib;
           # the tree was cloned with sudo, so hand it to the runner user.
           sudo chown -R "$(id -un)" "$THEOS"
