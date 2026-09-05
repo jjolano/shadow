@@ -122,6 +122,11 @@ jobs:
             https://raw.githubusercontent.com/jjolano/theos/master/bin/lane.sh
 
       - name: Build and verify
+        env:
+          # HookKit ABI drift is a review gate, not noise: a HookKit update
+          # that adds/removes/renames ABI surface Shadow binds to must fail
+          # loudly so it gets adapted, not shipped around silently.
+          SHADOW_HOOKKIT_ABI_STRICT: 1
         run: |
           .github/scripts/install-hookkit-theos.sh "${{ matrix.flavor }}"
           .github/scripts/build-deps.sh "${{ matrix.flavor }}"

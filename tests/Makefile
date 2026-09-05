@@ -77,6 +77,9 @@ test-rooted: harness
 adversary-rooted: harness
 	./harness --rooted --adversary
 
+detect-rooted: harness
+	./harness --rooted --detect
+
 detector: harness
 	./harness --detector
 
@@ -118,6 +121,9 @@ test-rooted: harness
 adversary-rooted: harness
 	$(RUN) tests/harness --rooted --adversary
 
+detect-rooted: harness
+	$(RUN) tests/harness --rooted --detect
+
 detector: harness
 	$(RUN) tests/harness --detector
 
@@ -147,4 +153,4 @@ clean:
 
 endif
 
-.PHONY: stage-hookkit-headers test test-rooted detect adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
+.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
