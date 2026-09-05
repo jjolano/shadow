@@ -48,22 +48,26 @@ BATJailbreakGuard_INSTALL_PATH = /Library/Frameworks
 
 DSK_DIR = $(DEPS)/DeviceSecurityKit/Sources/DeviceSecurityKit
 FRAMEWORK_NAME += DeviceSecurityKit
-# ponytail: SwizzlingDetector excluded -- `import ObjectiveC` crashes the
-# theos Swift 5.8 frontend (signal 4); the adapter neutralizes isSwizzled via
-# the hk_swift_hook path instead, so no runner verdict is lost.
 DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Detectors/JailbreakDetector.swift \
     $(DSK_DIR)/Detectors/DebuggerDetector.swift \
     $(DSK_DIR)/Detectors/HookDetector.swift \
+    $(DSK_DIR)/Detectors/SwizzlingDetector.swift \
     $(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
     $(DSK_DIR)/Detectors/FridaDetector.swift \
     $(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
+    $(DSK_DIR)/Detectors/EmulatorDetector.swift \
     $(DSK_DIR)/Lists/JailbreakListOptions.swift \
     $(DSK_DIR)/Lists/DebuggerDetectorList.swift \
     $(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
+    $(DSK_DIR)/Lists/EmulatorDetectorListOptions.swift \
     $(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
+    $(DSK_DIR)/SecurityLogger/SecurityLogger.swift \
+    $(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
+    $(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
+    $(DSK_DIR)/SystemImageValidator.swift \
+    $(DSK_DIR)/FunctionAddress.swift \
     $(STUBS)/SignatureUpdateManager.swift \
-    $(STUBS)/DSKStubs.swift \
     $(BRIDGES)/DSKBridge.swift
 DeviceSecurityKit_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-fw-module-cache
 DeviceSecurityKit_FRAMEWORKS = UIKit Foundation DeviceCheck

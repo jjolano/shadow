@@ -24,10 +24,7 @@ public final class DSKBridge: NSObject {
         HookDetector.collectEvidence()
     }
     @objc public static func isSwizzled() -> Bool {
-        // Real SwizzlingDetector excluded from the build (import ObjectiveC
-        // crashes the old frontend); the adapter covers isSwizzled via
-        // hk_swift_hook, so report unswizzled here like the device would.
-        false
+        SwizzlingDetector.isSwizzled()
     }
     @objc public static func isFridaDetected() -> Bool {
         FridaDetector.isFridaDetected()
@@ -48,9 +45,11 @@ public final class DSKBridge: NSObject {
             .sorted()
     }
     @objc public static func emulatorInfo() -> [String: Any] {
-        // EmulatorDetector needs DeviceCheck + newer-Swift concurrency the
-        // theos Swift 5.8 frontend cannot compile; the runner reports it as
-        // unsupported rather than dropping the check row.
-        return ["detected": false, "methods": ["unsupported-toolchain"], "confidence": Float(0)]
+        let result = EmulatorDetector.detectEmulator()
+        return [
+            "detected": result.isEmulator,
+            "methods": result.detectionMethods,
+            "confidence": result.confidence,
+        ]
     }
 }
