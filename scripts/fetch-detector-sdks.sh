@@ -70,7 +70,10 @@ fi
 
 if { [ "$SDK" = all ] || [ "$SDK" = devicesecuritykit ]; } &&
     [ ! -f "$DEPS/DeviceSecurityKit/Package.swift" ]; then
-    git clone --depth 1 https://github.com/galahador/DeviceSecurityKit.git "$DEPS/DeviceSecurityKit"
+    # Pin v.0.40.0 (matches the "0.40.0-filtered" harness label): later
+    # upstream adds newer-Swift concurrency the theos Swift 5.8 frontend
+    # cannot compile (signal 4 on implicit _Concurrency imports).
+    git clone --depth 1 --branch v.0.40.0 https://github.com/galahador/DeviceSecurityKit.git "$DEPS/DeviceSecurityKit"
 fi
 
 if { [ "$SDK" = all ] || [ "$SDK" = jailmonkey ]; } &&
