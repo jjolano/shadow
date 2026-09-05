@@ -2,33 +2,10 @@
 
 #import <stdio.h>
 
-// Descriptor-driven install for the DeviceCheck group's ABI-sensitive
-// third-party rooted/jailbroken property hooks (see the header).
-//
-// Install behavior:
-//   - class absent at install  -> skip silently
-//   - method absent            -> skip silently
-//   - encoding 'B' or 'c'      -> BOOL-returning hook (row policy false/true)
-//   - encoding '@'             -> object-returning hook (nil)
-//   - anything else            -> fail open: leave the real method untouched,
-//                                 log once
-//
-// The two probes each get THREE descriptor rows (scalar, object, pointer) so a
-// single row carries exactly one accepted return encoding; at install only
-// the row matching the method's runtime encoding fires — the other rows
-// skip.
-//
-// Install route: the passed message-capable hook session (the DeviceCheck adapter
-// receives it from the coordinator), NOT the global HKHookMessage default.
-
-// One logged-unknown guard shared by every row: once a class+selector with an
-// unrecognized return encoding is seen, note it and move on.
+// Descriptor table install.
 static char s_loggedUnknown[256] = { 0 };
 
-// Descriptor table. Step 1: the two ABI-sensitive probes. Each probe gets
-// THREE rows — scalar ('B'/'c', false), object ('@', nil), and pointer ('^',
-// NULL). Exactly one row matches any given runtime encoding. Both probes are
-// zero-argument instance methods.
+// Descriptor table.
 const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "UBReportMetadataDevice", "is_rooted",  DCHMethodInstance, '@', 0, DCHPolicyFalse },
@@ -37,7 +14,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, '@', 0, DCHPolicyFalse },
     { "EnrollParameters",       "jailbroken", DCHMethodInstance, '^', 0, DCHPolicyFalse },
 
-    // Step 2, batch 1: Apple/device classes.
+    // Step 2, batch 1.
     { "DCDevice",                 "isSupported",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "DCAppAttestService",       "isSupported",          DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "UIDevice",                 "isJailbroken",         DCHMethodClass,    'B', 0, DCHPolicyFalse },
@@ -53,7 +30,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "ANSMetadata",              "computeIsJailbroken",  DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "ANSMetadata",              "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
 
-    // Step 2, batch 2: SDK/detection-helper classes.
+    // Batch 2.
     { "AppsFlyerUtils",           "isJailBreakon",        DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "AppsFlyerUtils",           "isJailbrokenWithSkipAdvancedJailbreakValidation:", DCHMethodClass, 'B', 1, DCHPolicyFalse },
     { "jailBreak",                "isJailBreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
@@ -63,7 +40,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "UtilitySystem",            "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "GemaltoConfiguration",     "isJailbreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
 
-    // Step 2, batch 3: configuration/device-info classes.
+    // Batch 3.
     { "CPWRDeviceInfo",           "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "CPWRSessionInfo",          "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "KSSystemInfo",             "isJailbroken",         DCHMethodClass,    'B', 0, DCHPolicyFalse },
@@ -71,8 +48,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "EMDskppConfigurationBuilder", "jailbreakStatus",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "FCRSystemMetadata",        "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
 
-    // Step 2, batch 4: VOS detector + misc classes. AWMyDeviceGeneralInfo
-    // is the one TRUE policy row.
+    // Batch 4.
     { "v_VDMap",                  "isJailbrokenDetected",        DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "v_VDMap",                  "isJailBrokenDetectedByVOS",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "v_VDMap",                  "isDFPHookedDetecedByVOS",     DCHMethodInstance, 'B', 0, DCHPolicyFalse },
@@ -86,7 +62,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "DigiPassHandler",          "rootedDeviceTestResult", DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "AWMyDeviceGeneralInfo",    "isCompliant",          DCHMethodInstance, 'B', 0, DCHPolicyTrue },
 
-    // Step 2, batch 5: DTX/JailbreakDetection classes.
+    // Batch 5.
     { "DTXSessionInfo",           "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "DTXDeviceInfo",            "isJailbroken",         DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "JailbreakDetection",       "jailbroken",           DCHMethodInstance, 'B', 0, DCHPolicyFalse },
@@ -98,7 +74,7 @@ const DCHDescriptor shdw_devicecheck_descriptors[] = {
     { "jailBrokenJudge",          "boolIsjailbreak",      DCHMethodInstance, 'B', 0, DCHPolicyFalse },
     { "FBAdBotDetector",          "isJailBrokenDevice",   DCHMethodInstance, 'B', 0, DCHPolicyFalse },
 
-    // Step 2, batch 6: final classes.
+    // Batch 6.
     { "TNGDeviceTool",            "isJailBreak",          DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "TNGDeviceTool",            "isJailBreak_file",     DCHMethodClass,    'B', 0, DCHPolicyFalse },
     { "TNGDeviceTool",            "isJailBreak_cydia",    DCHMethodClass,    'B', 0, DCHPolicyFalse },
@@ -134,9 +110,7 @@ static DCHTarget shdw_dch_target(const DCHDescriptor* desc) {
 
 static IMP shdw_dch_replacement_imp(const DCHDescriptor* desc) {
     if(desc->encoding == '@') {
-        // Step-1 table carries zero-arg object rows only (the two probes);
-        // a one-arg '@' row has no IMP and must not reach the resolver
-        // (argCount guard in the install loop).
+        // Zero-arg object rows only; a one-arg '@' row has no IMP.
         return (IMP) &shdw_dch_imp0_obj_nil;
     }
 
@@ -186,7 +160,7 @@ NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks, DCHTarget enab
         const char* encoding = method_getTypeEncoding(method);
 
         if(!encoding) {
-            NSLog(@"[Shadow] DeviceCheck: skipping %s%s%s: missing type encoding",
+            NSLog(@"[Shadow] DeviceCheck: skipping %s%s%s",
                 desc->kind == DCHMethodClass ? "+" : "-",
                 desc->className, desc->selector);
             continue;
@@ -200,17 +174,14 @@ NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks, DCHTarget enab
 
         if(!rowMatches) {
             if(shdw_dch_encoding_is_unknown(e0)) {
-                // Fail open: leave the real method untouched. Log once per
-                // class+selector (both rows of a probe share the key, so a
-                // dual-row probe logs exactly once).
                 char key[256];
                 snprintf(key, sizeof(key), "%s%s%s",
                     desc->kind == DCHMethodClass ? "+" : "-",
                     desc->className, desc->selector);
 
                 if(strcmp(s_loggedUnknown, key) != 0) {
-                    NSLog(@"[Shadow] DeviceCheck: skipping %s: unsupported return encoding %s",
-                        key, encoding);
+                    NSLog(@"[Shadow] DeviceCheck: skipping %s",
+                        key);
                     snprintf(s_loggedUnknown, sizeof(s_loggedUnknown), "%s", key);
                 }
             }

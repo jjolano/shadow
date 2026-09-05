@@ -307,15 +307,7 @@ void shdw_universal_passcode_status(SHDWHookSession* hooks) {
 
 // use of LSApplicationWorkspace seems to be known for getting App Store rejected, but you never know...
 
-// TODO: LaunchServices/MobileInstallation payload content filtering —
-// restricted app IDs inside allowed install plists (LSApplicationProxy
-// reads of /var/mobile/Library/MobileInstallation or LS install records)
-// are not yet filtered; needs the NSFileManager/NSString read paths to
-// post-filter plist payloads by bundle ID.
-
-// C0-3: hidden-app predicate — restricted bundle URL OR case-insensitive
-// restricted bundle ID. Applied to every proxy-returning surface so a proxy
-// can't leak through a variant that only checks one of the two signals.
+// Hidden-app predicate.
 static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
     NSMutableArray* result_filtered = [NSMutableArray arrayWithCapacity:proxies.count];
 
@@ -449,14 +441,7 @@ static NSArray* shdw_filter_application_proxies(NSArray* proxies) {
 }
 %end
 
-// C0-3: direct proxy construction — closes the TODO above for the
-// materialization path: a caller that read an allowed install plist can
-// resolve individual proxies by identifier/URL, so nil-out the constructors
-// for restricted apps instead of only filtering the workspace arrays.
-// initWithCoder: is intentionally NOT hooked — the workspace arrays are
-// already filtered, the identifier is stored under private coder keys (no
-// reliable decode without breaking stock unarchiving), and returning nil
-// mid-unarchive can abort LaunchServices internals.
+// Direct proxy construction.
 %hook LSApplicationProxy
 + (instancetype)applicationProxyForIdentifier:(NSString *)identifier __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && identifier && [_shadow isBundleIDRestricted:identifier]) {

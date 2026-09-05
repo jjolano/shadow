@@ -440,8 +440,7 @@ static void testExistenceGates(void) {
 // -[Shadow isPathRestricted:options:] / isURLRestricted:options: and the file
 // error factory — so this pins the contracts the hooks RELY on, catching a
 // regression in one entry point (e.g. a write hook reverting to read intent)
-// even without the runtime. Mirrors the engine side of
-// docs/HOOK-OUTPUT-AUDIT.md.
+// even without the runtime.
 static void testDifferentialCoherence(void) {
     printf("[tests] differential coherence (classification/error contracts)\n");
 

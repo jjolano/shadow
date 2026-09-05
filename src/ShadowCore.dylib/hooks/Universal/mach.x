@@ -198,28 +198,14 @@ static kern_return_t replaced_pid_for_task(task_port_t task, pid_t* pid) {
     return original_pid_for_task(task, pid);
 }
 
-// mach_port_names: pass-through (conservative). Port NAME integers cannot be
-// attributed to restricted images without introspecting every right, and the
-// JB service acquisition this would expose is already gated at
-// bootstrap_look_up/task_for_pid. TODO: filter rights attributable to
-// restricted images once a per-port attribution exists; deallocate removed
-// rights and rebuild the arrays.
+// mach_port_names: pass-through.
 static kern_return_t (*original_mach_port_names)(ipc_space_t task, mach_port_name_array_t* names, mach_msg_type_number_t* namesCnt, mach_port_type_array_t* types, mach_msg_type_number_t* typesCnt);
 static kern_return_t replaced_mach_port_names(ipc_space_t task, mach_port_name_array_t* names, mach_msg_type_number_t* namesCnt, mach_port_type_array_t* types, mach_msg_type_number_t* typesCnt) {
     return original_mach_port_names(task, names, namesCnt, types, typesCnt);
 }
 
-// --- launchd XPC probes (Dopamine jailbreak-server / deplatformized) ---
-//
-// Dopamine patches launchd to answer two out-of-band xpc_pipe_routine queries
-// on the bootstrap pipe that a stock launchd does not:
-//   1. a "jb-domain" request whose reply carries the jailbreak root as
-//      "root-path" (detect_launchd_jbserver);
-//   2. subsystem 3 / routine 815, which stock launchd rejects with error 154
-//      but the patched one answers with a services dictionary
-//      (detect_launchd_deplatformized).
-// Neutralise both for external callers by making the reply look stock: strip a
-// leaked "root-path", and force error 154 on the 815 routine. Internal callers
+// --- launchd XPC probes ---
+// Neutralise patched-launchd replies for external callers. Internal callers
 // pass through untouched.
 
 // libxpc private entry points (declared here; not in the public SDK headers).
@@ -234,11 +220,9 @@ static BOOL shdw_xpc_request_is_jb(xpc_object_t request, BOOL* isDeplatformized)
     if(isDeplatformized) *isDeplatformized = NO;
     if(!request) return NO;
 
-    // detect_launchd_jbserver: request sets "jb-domain".
     if(xpc_dictionary_get_uint64(request, "jb-domain") != 0) {
         return YES;
     }
-    // detect_launchd_deplatformized: subsystem 3, routine 815.
     if(xpc_dictionary_get_uint64(request, "subsystem") == 3 &&
        xpc_dictionary_get_uint64(request, "routine") == 815) {
         if(isDeplatformized) *isDeplatformized = YES;

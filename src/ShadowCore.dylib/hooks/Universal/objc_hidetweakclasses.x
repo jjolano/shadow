@@ -16,14 +16,8 @@ static Class replaced_NSClassFromString(NSString* aClassName) {
     return result;
 }
 
-// --- Class lookup / enumeration (plan Wave 1c): the result's image is
-// classified, so classes whose data lives in a protected image (Shadow,
-// HookKit, libSandy, substrate/substitute/ellekit) never resolve
-// for external callers. objc_getRequiredClass is deliberately NOT hooked: it
-// aborts the process when the class is missing, so a suppressed class would
-// turn a benign miss into a hard crash (its fatal contract) — and its abort
-// semantics make it a useless probe for a detector that wants a clean
-// yes/no signal.
+// --- Class lookup / enumeration. Not hooked: objc_getRequiredClass
+// (fatal contract).
 
 static Class (*original_objc_getClass)(const char* name);
 static Class replaced_objc_getClass(const char* name) {
@@ -445,9 +439,7 @@ void shdw_universal_hide_classes(SHDWHookSession* hooks) {
     // address hooks because they have no import slot to rewrite.
     [hooks hookRebindSymbol:@"NSClassFromString" withReplacement:replaced_NSClassFromString outOldPtr:(void **) &original_NSClassFromString];
 
-    // Class lookup / enumeration (plan Wave 1c). objc_getRequiredClass is
-    // skipped: its fatal contract (abort on missing class) makes a filtered
-    // miss a crash, and it is not a usable probe.
+    // Class lookup / enumeration. objc_getRequiredClass is skipped.
     [hooks hookRebindSymbol:@"objc_getClass" withReplacement:replaced_objc_getClass outOldPtr:(void **) &original_objc_getClass];
     [hooks hookRebindSymbol:@"objc_lookUpClass" withReplacement:replaced_objc_lookUpClass outOldPtr:(void **) &original_objc_lookUpClass];
     [hooks hookRebindSymbol:@"objc_getMetaClass" withReplacement:replaced_objc_getMetaClass outOldPtr:(void **) &original_objc_getMetaClass];

@@ -639,15 +639,8 @@ static pid_t replaced_vfork(void) {
     return original_vfork();
 }
 
-// --- system/popen/wordexp: the executed binary is /bin/sh, so the execve
-// path check cannot fire on the command itself; any whitespace-separated
-// token that looks like a path (starts with '~' or contains '/') and names a
-// restricted path denies the whole command with the exec family's ENOENT
-// style (wordexp uses WRDE_NOSPACE, below). A bare '~' resolves to the
-// caller's own home — for app-origin callers never a restricted path — but
-// the check stays uniform across the three surfaces. ponytail: no shell
-// grammar parsing — quoted paths are not split; add a parser if a detector
-// probes through quoting. ---
+// --- system/popen/wordexp: the executed binary is /bin/sh, so tokens that
+// look like paths and name a restricted path deny the whole command.
 
 static BOOL shdw_command_hides_restricted_path(const char* command) {
     if(!command) {
@@ -933,11 +926,7 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     if(sym_misc) {
         [hooks hookFunction:sym_misc withReplacement:replaced_task_get_exception_ports outOldPtr:(void **) &original_task_get_exception_ports];
     }
-    // Additive import rebind: the inline hook on the shared-cache export does
-    // not cover a statically-linked Swift detector's direct call
-    // (a task exception-port probe), the same gap seen with sysctl.
-    // Rebind the import so those call sites route through the filter too; keep
-    // the resolved export as the continuation when only the rebind takes.
+    // Additive import rebind for statically-linked call sites.
     [hooks hookRebindSymbol:@"task_get_exception_ports"
             withReplacement:replaced_task_get_exception_ports
                    outOldPtr:(void **) &original_task_get_exception_ports];

@@ -76,7 +76,6 @@ A host-side test harness for the decision engine — no device, no Theos, no sim
 | `build-support/` | Build glue read by the root and subproject Makefiles: `lanes.sh` (the lane matrix), `build-lanes.mk`, `hookkit.mk`. |
 | `packaging/` | Debian control templates (`controls/control.<lane>`) and the staged `layout/` (maintainer scripts, launch daemons, default `DEBIAN/control`). |
 | `tests/` | Host decision-engine harness plus device tooling: `ShadowHarness`, `DetectorRunners`, and `tools/` probes. |
-| `docs/` | SDK audit and compatibility research notes. |
 | `scripts/`, `.github/` | Build/release scripts and CI. |
 
 ## Legal

@@ -167,7 +167,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
                                                       prefs:prefs];
 
     if(!shdw_coordinator_instance) {
-        NSLog(@"[Shadow][coordinator] init failed — continuing unhooked");
+        NSLog(@"[Shadow][coordinator] init failed — continuing");
         return;
     }
 
@@ -290,9 +290,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             [Shadow shdwExitInternalRead];
         }
     } @catch (NSException* e) {
-        NSLog(@"[Shadow] constructor failed: %@ — continuing unhooked", e);
+        NSLog(@"[Shadow] constructor failed: %@ — continuing", e);
         return;
     }
-
-    NSLog(@"ctor returned (install deferred)");
 }

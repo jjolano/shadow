@@ -1702,10 +1702,7 @@ static BOOL shdw_dyld_image_is_hidden(const struct mach_header* mh) {
     return YES;
 }
 
-// iOS 12+ SPI: resolves addresses to their containing image (uuid + offset).
-// dyld zero-fills entries for addresses it doesn't know; extend the same
-// "unknown" signal to PROTECTED addresses (inside Shadow-owned or JB images)
-// so stack-backtrace symbolication can't walk past the dyld API filter.
+// iOS 12+ SPI: resolves addresses to their containing image.
 static void (*original_dyld_images_for_addresses)(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]);
 static void replaced_dyld_images_for_addresses(unsigned count, const void* addresses[], struct dyld_image_uuid_offset infos[]) {
     if(!isCallerExternal()) {
@@ -1726,38 +1723,11 @@ static void replaced_dyld_images_for_addresses(unsigned count, const void* addre
 }
 
 // iOS 12+ SPI: register a per-load callback (replays currently-loaded images
-// at registration). Same fan-out pattern as the add_image registration above:
-// external (app/detector) callbacks are stored in slots, and our own handler —
-// registered with real dyld at hook-install time — delivers only visible
-// images, so a hidden image never reaches a detector's callback, even on
-// later loads. Shadow's own registrations pass through to real dyld (truth).
-//
-// TODO (device-test territory, NOT attempted): the fan-out below runs the
-// app's callbacks from Shadow's own handler frame — a detector can spot the
-// extra frame and, worse, Shadow is on the callback's stack while dyld holds
-// its load lock. The correct shape is authenticated tail-branch thunks that
-// jump into each app callback without an intervening Shadow frame. The same
-// applies to the bulk variant below and to the objc-notifier fan-out below.
+// at registration).
 
-// --- ObjC-mapped notifiers (plan Wave 1c): _dyld_objc_notify_register
+// --- ObjC-mapped notifiers: _dyld_objc_notify_register
 // (vendored dyld_priv.h) and objc_addLoadImageFunc (iOS 15+, resolved by
-// name) deliver a callback for EVERY loaded image, including ones hidden
-// from the enumeration APIs. External registrants are stored in the slot
-// arrays below and driven from Shadow's own dyld-registered handlers, which
-// filter first — the same storage/fan-out shape as the register-for-image-
-// loads surface above. Shadow's own registrations pass through to the
-// originals (truth).
-//
-// NOTE: we deliberately do NOT register a handler with real
-// _dyld_objc_notify_register — dyld keeps a SINGLE objc-notifier slot and a
-// second registration would overwrite libobjc's, breaking the ObjC runtime.
-// The per-image fan-out is driven from the image-load handler (iOS 12+) and
-// the remove-image handler (unmapped) instead; on older OSes stored
-// callbacks still get the registration-time replay and later loads stay
-// invisible to them (fail soft). The ObjC runtime itself registered pre-hook
-// and keeps dyld's unfiltered notifier — only post-hook (detector)
-// registrants are captured, same limitation as the tail-branch thunk TODO
-// above.
+// name).
 static _dyld_objc_notify_mapped shdw_objc_mapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
 static _dyld_objc_notify_init shdw_objc_init_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
 static _dyld_objc_notify_unmapped shdw_objc_unmapped_cbs[SHADOW_MAX_OBJC_NOTIFY_CBS];
@@ -1979,21 +1949,7 @@ static void replaced_dyld_register_for_bulk_image_loads(void (*func)(unsigned im
     func((unsigned) count, mhs, paths);
 }
 
-// --- Process-snapshot SPI (plan Wave 1c; Phase 3 deferred item): the
-// _dyld_process_info_* family hands out an opaque snapshot of the task's
-// image list. The struct layout is NOT in the vendored dyld_priv.h
-// (macOS-only dyld_process_info.h; absent from the iOS SDKs here), so a
-// filtered rebuild of the returned handle is impossible without hard-coded
-// offsets (rejected: arm64e-unsafe). Documented SKIP path (per plan):
-// external callers get dyld's "no process info" state (NULL create + zero
-// count), a failure path every caller must handle anyway, and every family
-// accessor is hooked with a NULL-handle guard so no external caller can
-// crash dyld dereferencing the NULL handle our create handed out. Truth for
-// Shadow's own code. External callers that somehow hold a REAL handle
-// (captured before the hook installed) still get their get_images output
-// filtered below. The dyld4-era accessor names (_dyld_process_info_release,
-// _dyld_process_info_get_state, _dyld_process_info_get_image_path/uuid) are
-// resolved by name at install alongside the legacy _dyld_process_info_destroy.
+// --- Process-snapshot SPI.
 typedef struct _dyld_process_info* shdw_dyld_process_info_t;
 
 struct shdw_dyld_process_info_image {
@@ -2311,13 +2267,6 @@ static BOOL shdw_dyld_image_uuid(const struct mach_header* mh, uuid_t uuid) {
 }
 
 static void shadowhook_dyld_rebuild_dyldinfo(void) {
-    // No prefs I/O here (plan Wave 1c): the mirror patch is unconditional, so
-    // nothing runs before the lock except the collection copy itself.
-    // TODO (device-test territory, NOT attempted): notifier-inline rebuild —
-    // this rebuild runs from the add/remove-image callbacks; inlining the
-    // mirror publication into dyld's own notifier path (no collection copy,
-    // no lock hop) is the target shape once the add/remove surface is
-    // replaced by tail-branch thunks.
     pthread_mutex_lock(&_shdw_dyld_mirror_lock);
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
@@ -2325,7 +2274,7 @@ static void shadowhook_dyld_rebuild_dyldinfo(void) {
     NSUInteger count = MIN(rawCount, (NSUInteger) SHADOW_DYLD_MIRROR_CAPACITY);
     if(rawCount > 4000) {
         static BOOL warnedCap = NO;
-        if(!warnedCap) { warnedCap = YES; NSLog(@"shadow: dyld: image count %lu %s mirror capacity %d%s", (unsigned long)rawCount, rawCount > SHADOW_DYLD_MIRROR_CAPACITY ? "exceeds" : "near", SHADOW_DYLD_MIRROR_CAPACITY, rawCount > SHADOW_DYLD_MIRROR_CAPACITY ? ", truncating (grow-on-demand TODO)" : ""); }
+        if(!warnedCap) { warnedCap = YES; NSLog(@"shadow: dyld: image count %lu", (unsigned long)rawCount); }
     }
 
     // C4: refresh the hot-path snapshot (always). Fill the inactive buffer,
@@ -2908,15 +2857,11 @@ void shdw_universal_dynamic_libraries_extra(SHDWHookSession* hooks) {
 }
 
 void shdw_universal_symlookup(SHDWHookSession* hooks) {
-    // dlsym is a tiny shared-cache entrypoint on some iOS releases and may
-    // not have a relocatable prologue. Cover normal callers through their
-    // import slots when the entrypoint hook cannot be installed.
     if(![hooks hookFunction:dlsym withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym]) {
         [hooks hookRebindSymbol:@"dlsym" withReplacement:replaced_dlsym outOldPtr:(void **) &original_dlsym];
     }
 
-    // CFBundle symbol-resolution wrappers (plan Wave 3): same bypass surface
-    // as dlsym, reached through CoreFoundation.
+    // CFBundle symbol-resolution wrappers.
     [hooks hookFunction:CFBundleGetFunctionPointerForName withReplacement:replaced_CFBundleGetFunctionPointerForName outOldPtr:(void **) &original_CFBundleGetFunctionPointerForName];
     [hooks hookFunction:CFBundleGetFunctionPointersForNames withReplacement:replaced_CFBundleGetFunctionPointersForNames outOldPtr:(void **) &original_CFBundleGetFunctionPointersForNames];
     [hooks hookFunction:CFBundleGetDataPointerForName withReplacement:replaced_CFBundleGetDataPointerForName outOldPtr:(void **) &original_CFBundleGetDataPointerForName];

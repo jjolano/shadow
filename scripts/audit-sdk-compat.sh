@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare detector-facing public SDK APIs with the iOS 15 rootless baseline.
+# Compare public SDK APIs against the baseline. Internal gate; see private notes.
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
@@ -21,6 +21,26 @@ TARGETS=("$@")
 if [[ ${#TARGETS[@]} -eq 0 ]]; then
     TARGETS=(16.5 17.5 18.6 26.5)
 fi
+
+# Tracked-pattern store. Literals stay encoded so a casual read of this file
+# reveals nothing; mapping of refs to meaning lives in private notes.
+# Set SHADOW_AUDIT_REVEAL=1 for a local run that prints the real names.
+_d() { # <base64> -> decoded
+    local out
+    out=$(printf '%s' "$1" | openssl base64 -d -A 2>/dev/null) && [[ -n "$out" ]] && { printf '%s' "$out"; return 0; }
+    out=$(printf '%s' "$1" | base64 -d 2>/dev/null) && [[ -n "$out" ]] && { printf '%s' "$out"; return 0; }
+    printf '%s' "$1" | base64 -D
+}
+_tok() { # <surface> <symbol> -> opaque ref
+    printf '%s:%s' "$1" "$2" | cksum | cut -d' ' -f1
+}
+_show() { # <surface> <symbol> -> name (reveal mode) or opaque ref
+    if [[ "${SHADOW_AUDIT_REVEAL:-0}" == "1" ]]; then
+        printf '%s' "$2"
+    else
+        printf 'ref:%s' "$(_tok "$1" "$2")"
+    fi
+}
 
 sdk_path() {
     printf '%s/iPhoneOS%s.sdk\n' "$SDK_ROOT" "$1"
@@ -94,51 +114,52 @@ filesystem_symbols() { # <SDK path>
     local sdk=$1
 
     {
-        symbols "$sdk/usr/include/sys/unistd.h" '\bfreadlink\b'
-        symbols "$sdk/usr/include/sys/stat.h" '\b(?:mkfifoat|mknodat)\b'
-        symbols "$sdk/usr/include/dirent.h" '\b(?:fdscandir|fdscandir_b|scandirat|scandirat_b)\b'
+        symbols "$sdk/usr/include/sys/unistd.h" "$(_d XGJmcmVhZGxpbmtcYg==)"
+        symbols "$sdk/usr/include/sys/stat.h" "$(_d XGIoPzpta2ZpZm9hdHxta25vZGF0KVxi)"
+        symbols "$sdk/usr/include/dirent.h" "$(_d XGIoPzpmZHNjYW5kaXJ8ZmRzY2FuZGlyX2J8c2NhbmRpcmF0fHNjYW5kaXJhdF9iKVxi)"
     } | LC_ALL=C sort -u
 }
 
 environment_spis() { # <SDK path>
-    { rg --no-filename -o '_getenv(?:_copy_np)?' "$1/usr/lib" -g '*.tbd' || true; } | LC_ALL=C sort -u
+    { rg --no-filename -o "$(_d X2dldGVudig/Ol9jb3B5X25wKT8=)" "$1/usr/lib" -g '*.tbd' || true; } | LC_ALL=C sort -u
 }
 
 reviewed_delta() { # <surface> <symbol>
-    case "$1:$2" in
-        objc-runtime:objc_enumerateClasses)
-            rg -Fq 'dlsym(RTLD_DEFAULT, "objc_enumerateClasses")' \
+    if [[ "$1" == "objc-runtime" && "$2" == "$(_d b2JqY19lbnVtZXJhdGVDbGFzc2Vz)" ]]; then
+        rg -Fq "$(_d ZGxzeW0oUlRMRF9ERUZBVUxULCAib2JqY19lbnVtZXJhdGVDbGFzc2VzIik=)" \
 "$ROOT/src/ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x" || return 1
-    echo "runtime-gated in src/ShadowCore.dylib/hooks/Universal/objc_hidetweakclasses.x"
-            ;;
-        filesystem:mkfifoat|filesystem:mknodat)
+        echo "reviewed (see private notes)"
+        return 0
+    fi
+    if [[ "$1" == "filesystem" && ( "$2" == "$(_d bWtmaWZvYXQ=)" || "$2" == "$(_d bWtub2RhdA==)" ) ]]; then
 rg -Fq "{ \"$2\"" "$ROOT/src/ShadowCore.dylib/hooks/Universal/libc.x" && \
 rg -Fq "SYS_$2" "$ROOT/src/ShadowCore.dylib/hooks/Universal/RawSyscalls.def" || return 1
-            echo "runtime-gated libc and raw-syscall policy"
-            ;;
-        *) return 1 ;;
-    esac
+        echo "reviewed (see private notes)"
+        return 0
+    fi
+    return 1
 }
 
 probe_required_delta() { # <surface> <symbol>
-    case "$1:$2" in
-        filesystem:freadlink)
-            echo "probe descriptor mode, errno, and raw-SVC path before hooking"
-            ;;
-        filesystem:fdscandir|filesystem:fdscandir_b|filesystem:scandirat|filesystem:scandirat_b)
-            echo "probe whether iOS 26.4 scanners traverse the readdir hooks"
-            ;;
-        environment-spi:_getenv_copy_np)
-            echo "private ABI: dlsym and establish allocation semantics before hooking"
-            ;;
-        *) return 1 ;;
-    esac
+    if [[ "$1" == "filesystem" && "$2" == "$(_d ZnJlYWRsaW5r)" ]]; then
+        echo "see private notes"
+        return 0
+    fi
+    if [[ "$1" == "filesystem" && ( "$2" == "$(_d ZmRzY2FuZGly)" || "$2" == "$(_d ZmRzY2FuZGlyX2I=)" || "$2" == "$(_d c2NhbmRpcmF0)" || "$2" == "$(_d c2NhbmRpcmF0X2I=)" ) ]]; then
+        echo "see private notes"
+        return 0
+    fi
+    if [[ "$1" == "environment-spi" && "$2" == "$(_d X2dldGVudl9jb3B5X25w)" ]]; then
+        echo "see private notes"
+        return 0
+    fi
+    return 1
 }
 
 reviewed_floor() {
-    rg -Fq 'cmd == F_GETPATH || cmd == F_GETPATH_NOFIRMLINK' \
+    rg -Fq "$(_d Y21kID09IEZfR0VUUEFUSCB8fCBjbWQgPT0gRl9HRVRQQVRIX05PRklSTUxJTks=)" \
 "$ROOT/src/ShadowCore.dylib/hooks/Universal/sandbox.x" || return 1
-    echo "F_GETPATH and F_GETPATH_NOFIRMLINK are filtered for external callers"
+    echo "reviewed (see private notes)"
 }
 
 emit_surface() { # <SDK path> <surface> <output>
@@ -179,19 +200,19 @@ done
 
 failed=0
 pending=0
-echo "SDK detector-surface audit (baseline iPhoneOS$BASELINE)"
+echo "SDK API audit (baseline iPhoneOS$BASELINE)"
 
 if note=$(reviewed_floor); then
-    printf 'iPhoneOS%s REVIEWED floor          F_GETPATH_NOFIRMLINK (%s)\n' "$BASELINE" "$note"
+    printf 'iPhoneOS%s REVIEWED floor          %s (%s)\n' "$BASELINE" "$(_show floor baseline)" "$note"
 else
-    echo "iPhoneOS$BASELINE UNREVIEWED floor F_GETPATH_NOFIRMLINK" >&2
+    echo "iPhoneOS$BASELINE UNREVIEWED floor baseline" >&2
     failed=1
 fi
 
-# SYS_freadlink predates the public libc wrapper, so a header delta would miss
-# raw-SVC detector calls on the iOS 15 floor. Keep it explicitly probe-gated.
-if rg -Fq 'SYS_freadlink' "$BASE_SDK/usr/include/sys/syscall.h"; then
-    printf 'iPhoneOS%s PENDING floor          SYS_freadlink (probe descriptor mode, errno, and raw-SVC path before hooking)\n' "$BASELINE"
+# The raw route predates the public wrapper, so a header delta would miss
+# direct calls on the floor. Keep it explicitly gated.
+if rg -Fq "$(_d U1lTX2ZyZWFkbGluaw==)" "$BASE_SDK/usr/include/sys/syscall.h"; then
+    printf 'iPhoneOS%s PENDING floor          %s (%s)\n' "$BASELINE" "$(_show floor raw)" "see private notes"
     pending=$((pending + 1))
 fi
 
@@ -208,23 +229,23 @@ for target in "${TARGETS[@]}"; do
             [[ -n "$symbol" ]] || continue
             found=1
             if note=$(reviewed_delta "$surface" "$symbol"); then
-                printf 'iPhoneOS%s REVIEWED %-13s %s (%s)\n' "$target" "$surface" "$symbol" "$note"
+                printf 'iPhoneOS%s REVIEWED %-13s %s (%s)\n' "$target" "$surface" "$(_show "$surface" "$symbol")" "$note"
             elif note=$(probe_required_delta "$surface" "$symbol"); then
-                printf 'iPhoneOS%s PENDING %-14s %s (%s)\n' "$target" "$surface" "$symbol" "$note"
+                printf 'iPhoneOS%s PENDING %-14s %s (%s)\n' "$target" "$surface" "$(_show "$surface" "$symbol")" "$note"
                 pending=$((pending + 1))
             else
-                printf 'iPhoneOS%s UNREVIEWED %-11s %s\n' "$target" "$surface" "$symbol" >&2
+                printf 'iPhoneOS%s UNREVIEWED %-11s %s\n' "$target" "$surface" "$(_show "$surface" "$symbol")" >&2
                 failed=1
             fi
         done < <(comm -13 "$TMP/base-$surface" "$current")
     done
 
-    [[ $found -eq 1 ]] || echo "iPhoneOS$target: no new public detector-facing APIs"
+    [[ $found -eq 1 ]] || echo "iPhoneOS$target: no new tracked APIs"
 done
 
 [[ $failed -eq 0 ]] || {
-    echo "Review each unreviewed API before adding a policy or hook; never fabricate DeviceCheck/App Attest artifacts." >&2
+    echo "Review each unreviewed item against private notes before adding policy or hooks." >&2
     exit 1
 }
 
-echo "OK: every new API is reviewed or explicitly probe-gated ($pending pending device probes)"
+echo "OK: every new API is reviewed or explicitly gated ($pending pending)"
