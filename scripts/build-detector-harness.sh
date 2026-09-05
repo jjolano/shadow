@@ -12,29 +12,36 @@ if [ "$(uname -s)" = Linux ]; then
     RUNNER_ARGS=("TARGET_CC=$THEOS/toolchain/linux/iphone/bin/clang" "TARGET_CXX=$THEOS/toolchain/linux/iphone/bin/clang++" "SWIFTBINPATH=$THEOS/toolchain/linux/iphone/bin")
 fi
 m() { make "$@" ${ABI_ARGS[@]+"${ABI_ARGS[@]}"}; }
+# Portable in-place sed: BSD sed (macOS runners) needs `-i ''`, GNU sed
+# needs bare `-i`. Detect once; every call below goes through sedi.
+if sed -i '' 's/^//' /dev/null >/dev/null 2>&1; then
+    sedi() { sed -i '' "$@"; }
+else
+    sedi() { sed -i "$@"; }
+fi
 "$ROOT/scripts/fetch-detector-sdks.sh" all
 # BATJailbreakGuard's DynamicLib service uses String(validatingCString:), a
 # Swift 5.9+ stdlib init absent from the 14.5 SDK's stdlib; validatingUTF8 is
 # equivalent for the dylib names it reads from the image list (idempotent).
-sed -i 's/String(validatingCString: cName)/String(validatingUTF8: cName)/' \
+sedi 's/String(validatingCString: cName)/String(validatingUTF8: cName)/' \
     "$ROOT/.detector-deps/BATJailbreakGuard/Sources/BATJailbreakGuard/Service/Sub/DynamicLib/JailbreakDetectionDynamicLibraryCheckService.swift"
 # JailMonkey's RN isDebuggedMode bridge stores a BOOL into a BOOL* (compiles
 # under RN without -Werror); fix the type (idempotent).
-sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeActived = [self isDebugged];/' \
+sedi 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeActived = [self isDebugged];/' \
     "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
 # isJailbroken's tuyul() stores its own const char* return in a char* (an error
 # under this toolchain's -Werror); the pointer is only read, so const-qualify
 # it (idempotent).
-sed -i 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
+sedi 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # isJailbroken's isDebugged() aborts the runner via assert() when its sysctl
 # fails; a crash yields no callback and stalls Run All on the 90s timeout.
 # Return NO instead — identical on the success path (idempotent).
-sed -i 's/^\(\s*\)assert(junk == 0);/\1if(junk != 0) return NO;/' \
+sedi 's/^\(\s*\)assert(junk == 0);/\1if(junk != 0) return NO;/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # isJailbroken logs every probe hit to syslog (DEBUGGING); silence it — the
 # runner already records each verdict in its report checks (idempotent).
-sed -i 's/^BOOL DEBUGGING = YES;/BOOL DEBUGGING = NO;/' \
+sedi 's/^BOOL DEBUGGING = YES;/BOOL DEBUGGING = NO;/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # SwiftyJBD's JailBreak.swift is a bare two-method fragment (no enclosing type,
 # no imports) that cannot compile as-is. Wrap it into `struct SwiftyJBD` with
@@ -51,7 +58,7 @@ PY
 # This Linux Theos Swift toolchain has no iOS _Concurrency module. SafetyNet's
 # jailbreak detector only awaits its main-thread URL-scheme call, so make that
 # one-shot path synchronous; the runner invokes the same underlying checks.
-sed -i \
+sedi \
     -e 's/static func detect() async -> Result/static func detect() -> Result/' \
     -e 's/result.urlScheme = await checkURLSchemes()/result.urlScheme = checkURLSchemes()/' \
     -e '/^[[:space:]]*@MainActor$/d' \
@@ -60,7 +67,7 @@ sed -i \
 # exist in Theos' single-module build; the two C symbols it needs come through
 # the runner's bridging header instead (SafetyNetRunner-Bridging.h). Drop the
 # import (idempotent).
-sed -i '/^import SafetyNetObjC$/d' \
+sedi '/^import SafetyNetObjC$/d' \
     "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/DebuggerDetector.swift" \
     "$ROOT/.detector-deps/SafetyNet/Sources/SafetyNet/Detectors/IntegrityValidator.swift"
 # The real Roothider repo is a single main.m app whose detect_* functions only
@@ -117,7 +124,7 @@ PY
 patch_talsec() {
     local m="$1/Modules/TalsecRuntime.swiftmodule"
     for f in "$m"/*.swiftinterface; do
-        sed -i \
+        sedi \
             -e 's|^// swift-compiler-version: .*|// swift-compiler-version: Apple Swift version 5.8 (swift-5.8-RELEASE)|' \
             -e '/^import _Concurrency$/d' \
             -e '/^import _StringProcessing$/d' \
