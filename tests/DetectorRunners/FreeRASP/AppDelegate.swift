@@ -96,7 +96,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       watcherMailAddress: nil,
       isProd: true
     ))
-    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+    // ponytail: Timer avoids the typed trailing-closure overload of
+    // asyncAfter that crashes the theos Swift 5.8 frontend on the runner
+    // image's newer SDK (signal 4 in adjustFunctionTypeForConcurrency).
+    Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
       self?.finish()
     }
   }

@@ -335,7 +335,7 @@ if grep -q 'shdw_load_framework\|shdw_dlopen_framework' tests/ShadowHarness/Dete
     echo 'HARNESS DRIFT: SDKs must run through isolated runners and dyldprobe in-process'
     exit 1
 fi
-if ! grep -q 'asyncAfter.*30' tests/DetectorRunners/FreeRASP/AppDelegate.swift; then
+if ! grep -q 'scheduledTimer.*30' tests/DetectorRunners/FreeRASP/AppDelegate.swift; then
     echo 'HARNESS DRIFT: FreeRASP must settle before returning its runner report'
     exit 1
 fi
