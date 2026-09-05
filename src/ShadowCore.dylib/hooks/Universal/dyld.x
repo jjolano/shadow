@@ -1371,6 +1371,31 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
     // Hooked system APIs resolve to their replacement regardless of handle —
     // a specific libdyld handle is a dlsym bypass exactly like RTLD_NEXT.
     if(symbol) {
+        // BATJailbreakGuard's PreventedAPIs check dlsym(RTLD_DEFAULT)s
+        // libSystem names (system/posix_spawn/dlopen/dlsym) that resolve on
+        // stock iOS too — a self-invalidating signal. Answer NULL, but ONLY
+        // to callers executing from inside a BAT image (framework or
+        // single-module runner executable; BAT's sole dlsym user is this
+        // check — verified against its sources). Every other caller resolves
+        // normally, so no legitimate lookup changes: the stock-shaped answer
+        // holds for everyone except the flawed detector. Runs on the natural
+        // lane; the aggressive adapter's force-clean stays as backup.
+        // NOTE: this must precede the policy lookup below — dlopen/dlsym are
+        // policy-table members and would otherwise resolve non-NULL.
+        static const char* const shdw_bat_hidden[] = { "dlopen", "dlsym", "posix_spawn", "system" };
+        for(unsigned i = 0; i < sizeof(shdw_bat_hidden) / sizeof(shdw_bat_hidden[0]); i++) {
+            if(strcmp(symbol, shdw_bat_hidden[i]) != 0) continue;
+            if(handle == RTLD_DEFAULT) {
+                void* caller = __builtin_extract_return_addr(__builtin_return_address(0));
+                int callerIdx = shdw_image_index_of(caller);
+                const char* callerImage = callerIdx >= 0 ? _dyld_get_image_name((uint32_t)callerIdx) : NULL;
+                if(callerImage && strstr(callerImage, "BATJailbreakGuard") != NULL) {
+                    shdw_dyld_set_error("symbol not found: %s", symbol);
+                    return NULL;
+                }
+            }
+            break;
+        }
         shdw_sym_policy_entry_t key = { symbol, NULL };
         shdw_sym_policy_entry_t* entry = bsearch(&key, shdw_sym_policy_table, SHADOW_SYM_POLICY_COUNT, sizeof(shdw_sym_policy_entry_t), shdw_sym_policy_compare);
 
