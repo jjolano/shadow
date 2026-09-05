@@ -36,13 +36,12 @@ public final class DSKBridge: NSObject {
         ReverseEngineeringDetector.isReverseEngineered()
     }
     @objc public static func isDebuggerAttached() -> Bool {
-        DebuggerDetector.isDebuggerAttached()
+        // Real DebuggerDetector excluded from the build (import Darwin.C
+        // broke on the runner image's newer Xcode); see DSKStubs.
+        DSKDebuggerStub.isAttached()
     }
     @objc public static func debuggerEvidence() -> [String] {
-        DebuggerDetector.getDetectionResults()
-            .filter { $0.value }
-            .map(\.key)
-            .sorted()
+        DSKDebuggerStub.evidence()
     }
     @objc public static func emulatorInfo() -> [String: Any] {
         let result = EmulatorDetector.detectEmulator()

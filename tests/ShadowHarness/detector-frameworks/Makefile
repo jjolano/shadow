@@ -48,9 +48,14 @@ BATJailbreakGuard_INSTALL_PATH = /Library/Frameworks
 
 DSK_DIR = $(DEPS)/DeviceSecurityKit/Sources/DeviceSecurityKit
 FRAMEWORK_NAME += DeviceSecurityKit
+# ponytail: DebuggerDetector excluded -- `import Darwin.C` resolves on
+# Xcode 16.4's SDK but the runner image moved to a newer Xcode whose Swift
+# frontend rejects it (same signal-4 family as the earlier _Concurrency /
+# ObjectiveC exclusions). The runner keeps its debugger row via
+# DSKStubs.debuggerInfo; native ptrace/sysctl coverage lives in the
+# IOSSecuritySuite + JailMonkey runners.
 DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Detectors/JailbreakDetector.swift \
-    $(DSK_DIR)/Detectors/DebuggerDetector.swift \
     $(DSK_DIR)/Detectors/HookDetector.swift \
     $(DSK_DIR)/Detectors/SwizzlingDetector.swift \
     $(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
@@ -68,6 +73,7 @@ DeviceSecurityKit_FILES = \
     $(DSK_DIR)/SystemImageValidator.swift \
     $(DSK_DIR)/FunctionAddress.swift \
     $(STUBS)/SignatureUpdateManager.swift \
+    $(STUBS)/DSKStubs.swift \
     $(BRIDGES)/DSKBridge.swift
 DeviceSecurityKit_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-fw-module-cache
 DeviceSecurityKit_FRAMEWORKS = UIKit Foundation DeviceCheck
