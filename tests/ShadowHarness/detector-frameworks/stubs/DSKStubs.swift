@@ -8,9 +8,14 @@ import Foundation
 //  - SecurityLogger: the bridge configures .silent; all detector call
 //    sites are log-only.
 //  - SystemImageValidator: dladdr-path prefix check against the three
-//    obfuscated system prefixes; replicated verbatim minus the obfuscator.
+//    prefixes decoded from the real obfuscator ('/usr/lib/',
+//    '/System/Library/', '/Library/Apple/'); replicated verbatim minus
+//    the obfuscator.
 //  - FunctionAddress: bit-cast of a function value to its code address;
 //    verbatim copy (no concurrency use).
+// EmulatorDetector + its list options are excluded from the build (DeviceCheck
+// + concurrency the old frontend cannot compile); the bridge reports that
+// row as unsupported-toolchain.
 
 public final class SecurityLogger {
     public enum LogLevel: Int {

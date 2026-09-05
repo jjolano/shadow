@@ -45,11 +45,9 @@ public final class DSKBridge: NSObject {
             .sorted()
     }
     @objc public static func emulatorInfo() -> [String: Any] {
-        let result = EmulatorDetector.detectEmulator()
-        return [
-            "detected": result.isEmulator,
-            "methods": result.detectionMethods,
-            "confidence": result.confidence,
-        ]
+        // EmulatorDetector needs DeviceCheck + newer-Swift concurrency the
+        // theos Swift 5.8 frontend cannot compile; the runner reports it as
+        // unsupported rather than dropping the check row.
+        return ["detected": false, "methods": ["unsupported-toolchain"], "confidence": Float(0)]
     }
 }
