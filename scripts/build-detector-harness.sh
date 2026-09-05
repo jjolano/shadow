@@ -159,6 +159,11 @@ m -C "$ROOT/tests/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_
     ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
+# Roothider's filtered main.m imports <xpc/xpc.h>, absent from the 14.5
+# SDK: point the whole harness build at the vendored xpc headers (same copy
+# build.sh stages for libSandy).
+export ADDITIONAL_CFLAGS="${ADDITIONAL_CFLAGS:-} -I$ROOT/.github/vendor"
+export ADDITIONAL_OBJCFLAGS="${ADDITIONAL_OBJCFLAGS:-} -I$ROOT/.github/vendor"
 m -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
