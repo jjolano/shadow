@@ -1,47 +1,11 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
-// Raw svc interception (the "Accepted Residual" from HOOK-FIX-PLAN.md:216):
-// inline `svc` syscalls never pass through libc wrappers, so the
-// syscall(2)/__syscall(2) hooks in syscall.x cannot see them. Real (non-
-// public) detectors emit their own svc sites in their own code and query
-// jailbreak paths directly.
-//
-// This file scans every loaded image's __TEXT for the ARM64 svc opcode
-// (the 16-bit immediate varies between emitters; XNU ignores it) and
-// redirects each site with a `bl` to a naked trampoline. The trampoline
-// applies the SAME path policy as the syscall(2) dispatch (RawSyscalls.def
-// categories + isCPathRestricted / shdw_at_path_denied) and, when denied,
-// either rewrites the caller's path buffer in place (natural-ENOENT rewrite,
-// see the helper below) or returns the synthetic raw-svc error the kernel
-// would have produced for a real ENOENT: x0 = 2 with the carry flag set
-// (the arm64 syscall convention; libc wrappers and detectors alike read
-// carry via cset/b.cs). Allowed calls execute the original svc and return
-// with the kernel's own register/flag state.
-//
-// Recursion safety: the trampoline helper calls libc (getcwd/F_GETPATH via
-// the *at policy) and Foundation (isCPathRestricted), so system images
-// (/System, /usr) are NEVER patched — a patched libSystem svc site would
-// re-enter the trampoline from inside the helper. Detector code lives in
-// the app bundle and third-party dylibs, which is exactly what gets
-// scanned. Shadow's own images are skipped too (the trampolines' own svc
-// sites must never be re-patched, and Shadow's code sees truth anyway).
-//
-// Every live-code write is serialized and wrapped in a stop-the-world window:
-// task_threads() snapshots the process, every other thread is suspended for
-// vm_protect/write/reprotect, then resumed. A concurrent trigger waits on the
-// same recursive lock; a thread created after the snapshot can still run, so
-// the patch remains fail-soft if the protection change cannot be made.
-//
-// Ceilings (ponytail): (1) only PATH/AT categories are filtered — raw-svc
-// ptrace PT_DENY_ATTACH and sysctl probes still bypass (pre-existing
-// exposure, separate vector); (2) sites farther than ±128MB from the
-// trampoline (bl range) are skipped fail-soft; (3) JIT'd and anonymous
-// executable mappings are intentionally not patched: live scanning can
-// destabilize an app, so raw-svc coverage is limited to loaded images; (4)
-// arm64-only:
-// the rootful-legacy armv7 lane gets an empty installer (the ARM64 svc
-// convention and this file's encoding scan are arm64 — an armv7 port would
-// need the Thumb/ARM-mode encodings).
+// Raw svc interception: inline `svc` syscalls never pass through libc
+// wrappers, so the syscall(2)/__syscall(2) hooks in syscall.x cannot see
+// them. This file scans loaded images' __TEXT for svc sites and redirects
+// each site to a trampoline applying the same path policy as the syscall(2)
+// dispatch. System images are never patched (re-entrancy); Shadow's own
+// images are skipped too. Arm64 only.
 //
 // A kernel-side sysent hook was considered (catch every svc, JIT or not)
 // but is not implementable on modern iOS: sy_call must point at
@@ -513,7 +477,7 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
     }
 
     if(atomic_exchange_explicit(&shdw_svc_far_site_seen, NO, memory_order_relaxed)) {
-        NSLog(@"[Shadow][svc] svc site out of bl range in %s, skipped (fail soft)", where);
+        NSLog(@"[Shadow][svc] svc site skipped in %s", where);
     }
 }
 

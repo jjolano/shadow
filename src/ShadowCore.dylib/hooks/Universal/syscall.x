@@ -834,31 +834,7 @@ static char*** replaced_NSGetEnviron(void) {
     return snapshot ? snapshot : original_NSGetEnviron();
 }
 
-// todo: research on "supervised syscalls"
-//
-// syscall/__syscall/csops are hooked on a REBIND-ONLY lane, not `hooks`
-// (auto-cover [INLINE, REBIND]). These libsystem_kernel exports are reached
-// by most callers through a direct/pre-resolved branch inside the dyld
-// shared cache rather than a rebindable GOT/import slot, so litehook's rebind
-// backend finds zero matched slots and auto-cover falls back to
-// HKStrategyInline: litehook_hook_memory patches the LIVE target's own
-// prologue (unprotect -> memcpy 20 non-atomic bytes -> reprotect), with no
-// synchronization against other threads. syscall()/csops() are among the
-// hottest, most concurrently-called functions in any process; another thread
-// reliably calls one of them during that exact write window and faults
-// EXC_BAD_ACCESS/SIGBUS KERN_PROTECTION_FAILURE on the still-non-executable
-// page. Reproduced deterministically on-device (co.communico.brampton,
-// 3/3 launches, same signature) — this is a HookKit-level inline-patch race,
-// not specific to these replacement functions; flagged upstream.
-// HK3's symbol-rebind request never attempts the inline fallback: a zero-match
-// target simply fails safe, which these calls already treat as "skip cleanly"
-// (return value unchecked, matching the runtime-resolved siblings below).
-// Coverage loss (raw syscall dispatch
-// filtering / csops self-mark protection go unhooked on devices where these
-// symbols aren't GOT-rebindable) is preferable to crashing the target app.
-// Revert to `hooks` once HookKit's inline-patch path is made safe against
-// concurrent execution of the target (thread suspension during the write, or
-// an atomically-visible single-instruction redirect into an out-of-line stub).
+// syscall/__syscall/csops are hooked on a REBIND-ONLY lane, not `hooks`.
 void shdw_universal_syscall(SHDWHookSession* hooks) {
     [hooks hookRebindSymbol:@"syscall" withReplacement:replaced_syscall outOldPtr:(void **) &original_syscall];
     [hooks hookRebindSymbol:@"csops" withReplacement:replaced_csops outOldPtr:(void **) &original_csops];
@@ -873,9 +849,6 @@ void shdw_universal_syscall(SHDWHookSession* hooks) {
     }
 
     // Misc sibling surfaces: runtime-resolved, skipped cleanly when absent.
-    // Also symbol-rebind-only (bisection isolation, see the note above): these are
-    // fewer/colder than syscall/csops but still direct-branch libsystem_kernel
-    // exports, so leaving them on the inline-capable lane is the same hazard.
     void* sym_misc = shdw_resolve_libsystem("_sysctlbyname");
     if(sym_misc) {
         [hooks hookRebindSymbol:@"_sysctlbyname" withReplacement:replaced_sysctlbyname outOldPtr:(void **) &original_sysctlbyname];

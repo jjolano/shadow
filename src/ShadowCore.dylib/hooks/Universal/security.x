@@ -18,9 +18,7 @@
 //   - internal Shadow callers: real result
 //   - undecidable cases (signing info unavailable): real result (fail-open)
 //
-// Self-entitlement probes (SecTaskCopyValueForEntitlement) are deliberately
-// NOT hooked: entitlements reflect signing identity, not jailbreak state,
-// and faking them risks breaking entitlement-gated system services.
+// Self-entitlement probes are not hooked.
 //
 // Lane: REBIND-only (hookRebindSymbol). Validity checks are cold one-shot
 // calls, but they sit exactly on the byte-comparison surface this contract

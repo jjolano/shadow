@@ -279,10 +279,6 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 }
 
 - (BOOL)isWritableFileAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
-    // TODO: stock-path rootful writeability hiding is out of scope — on a
-    // rootful jailbreak stock (non-jb) paths are legitimately writable and we
-    // do not claim otherwise. Write intent is passed so restricted paths are
-    // denied even when the probe target does not exist yet.
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
         return NO;
     }

@@ -532,10 +532,7 @@ static BOOL shdw_wrapper_source_restricted(NSFileWrapper* w) {
     return self;
 }
 
-// initSymbolicLinkWithDestinationURL: intentionally NOT hooked — it only
-// records the destination (no I/O at construction, so nothing can leak) and
-// stock never returns nil from it, so a filtered nil would be a
-// stock-impossible answer for the exact value the caller supplied.
+// Not hooked.
 
 - (BOOL)matchesContentsOfURL:(NSURL *)url __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isURLRestricted:url]) {
@@ -835,9 +832,7 @@ void shdw_universal_nsfileversion(SHDWHookSession* hooks) {
     return %orig;
 }
 
-// -launchPath intentionally NOT hooked: it only reports the configured path,
-// and filtering it would corrupt the task's own configuration (the path is
-// what -launch executes); the denial lives in -launch.
+// Not hooked.
 
 %end
 %end
