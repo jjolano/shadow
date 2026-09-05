@@ -24,7 +24,10 @@ public final class DSKBridge: NSObject {
         HookDetector.collectEvidence()
     }
     @objc public static func isSwizzled() -> Bool {
-        SwizzlingDetector.isSwizzled()
+        // Real SwizzlingDetector excluded from the build (import ObjectiveC
+        // crashes the old frontend); the adapter covers isSwizzled via
+        // hk_swift_hook, so report unswizzled here like the device would.
+        false
     }
     @objc public static func isFridaDetected() -> Bool {
         FridaDetector.isFridaDetected()

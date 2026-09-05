@@ -48,11 +48,13 @@ BATJailbreakGuard_INSTALL_PATH = /Library/Frameworks
 
 DSK_DIR = $(DEPS)/DeviceSecurityKit/Sources/DeviceSecurityKit
 FRAMEWORK_NAME += DeviceSecurityKit
+# ponytail: SwizzlingDetector excluded -- `import ObjectiveC` crashes the
+# theos Swift 5.8 frontend (signal 4); the adapter neutralizes isSwizzled via
+# the hk_swift_hook path instead, so no runner verdict is lost.
 DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Detectors/JailbreakDetector.swift \
     $(DSK_DIR)/Detectors/DebuggerDetector.swift \
     $(DSK_DIR)/Detectors/HookDetector.swift \
-    $(DSK_DIR)/Detectors/SwizzlingDetector.swift \
     $(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
     $(DSK_DIR)/Detectors/FridaDetector.swift \
     $(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
