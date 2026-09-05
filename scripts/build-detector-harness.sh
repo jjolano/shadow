@@ -27,6 +27,15 @@ sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedMod
 # it (idempotent).
 sed -i 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
+# isJailbroken's isDebugged() aborts the runner via assert() when its sysctl
+# fails; a crash yields no callback and stalls Run All on the 90s timeout.
+# Return NO instead — identical on the success path (idempotent).
+sed -i 's/^\(\s*\)assert(junk == 0);/\1if(junk != 0) return NO;/' \
+    "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
+# isJailbroken logs every probe hit to syslog (DEBUGGING); silence it — the
+# runner already records each verdict in its report checks (idempotent).
+sed -i 's/^BOOL DEBUGGING = YES;/BOOL DEBUGGING = NO;/' \
+    "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # SwiftyJBD's JailBreak.swift is a bare two-method fragment (no enclosing type,
 # no imports) that cannot compile as-is. Wrap it into `struct SwiftyJBD` with
 # Foundation/UIKit imports so the SwiftyJBD runner can call

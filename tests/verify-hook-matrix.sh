@@ -317,7 +317,9 @@ if ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfigur
    ! grep -q 'isJailbrokenRunner' tests/DetectorRunners/isJailbroken/Makefile ||
    ! grep -q 'SwiftyJBD.isJailbroken()' tests/DetectorRunners/SwiftyJBD/AppDelegate.swift ||
    ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' tests/DetectorRunners/SwiftyJBD/Makefile ||
-   ! grep -q 'SwiftyJBDRunner' tests/DetectorRunners/SwiftyJBD/Makefile; then
+   ! grep -q 'SwiftyJBDRunner' tests/DetectorRunners/SwiftyJBD/Makefile ||
+   ! grep -q 'RoothiderRunner_CODESIGN_FLAGS' tests/DetectorRunners/Roothider/Makefile ||
+   ! grep -q 'application-identifier' tests/DetectorRunners/Roothider/Resources/RoothiderRunner.entitlements; then
     echo 'HARNESS OPTION DRIFT: detector runners must execute every supported one-shot check'
     exit 1
 fi

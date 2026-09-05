@@ -21,4 +21,9 @@ SDK runner applications, and an embedded dyld fidelity probe. The standalone
 * **isJailbroken** `main@60a5f55` — GPL-3.0 (test-only use) — 44 suspicious paths, symlink lstat, fork(), sandbox write, obfuscated dyld image-name scan (frida/cycript/substrate/`0Shadow.dylib`), sysctl P_TRACED debugger, iOS-on-Mac — ObjC, compiled into its runner
 * **SwiftyJBD JailBreak-Detection** `main@6f5f1d9` — unlicensed upstream (test-only use) — cydia:// URL, filesystem, fopen, /private write behind one `isJailbroken()` verdict; upstream ships a two-method fragment, wrapped into `struct SwiftyJBD` at build time — Swift, compiled into its runner
 
-Runners write versioned JSON reports under `/var/mobile/Documents/ShadowDetectorTests` (`<id>.json` with `sdk`, `outcome`, `rounds[].checks[]`). The dashboard (`DetectorDashboard.m:38 SHDWSDKs()`) reads those files and shows each round and raw check message. The dyld row runs the embedded probe directly in the Harness process. A `clean` outcome requires completed checks; incomplete detector results are shown as `error`/`Inconclusive`. All runners target `iphone:clang:14.5:14.0 ARCHS arm64`, `LSMinimumSystemVersion 14.0`; DeviceSecurityKit gates at runtime via `@available(iOS 15,*)`.
+Runners write versioned JSON reports under `/var/mobile/Documents/ShadowDetectorTests` (`<id>.json` with `sdk`, `outcome`, `rounds[].checks[]`).
+
+Test-rig use only — do not redistribute the built package: two runner SDKs are
+compiled in from sources with restrictive terms (isJailbroken is GPL-3.0,
+SwiftyJBD JailBreak-Detection is unlicensed upstream), so the `.deb` is a
+test artifact, not a shippable product. The dashboard (`DetectorDashboard.m:38 SHDWSDKs()`) reads those files and shows each round and raw check message. The dyld row runs the embedded probe directly in the Harness process. A `clean` outcome requires completed checks; incomplete detector results are shown as `error`/`Inconclusive`. All runners target `iphone:clang:14.5:14.0 ARCHS arm64`, `LSMinimumSystemVersion 14.0`; DeviceSecurityKit gates at runtime via `@available(iOS 15,*)`.
