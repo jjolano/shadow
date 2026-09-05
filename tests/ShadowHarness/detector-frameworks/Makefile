@@ -67,7 +67,6 @@ DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
     $(DSK_DIR)/Lists/EmulatorDetectorListOptions.swift \
     $(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLogger.swift \
     $(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
     $(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
     $(DSK_DIR)/SystemImageValidator.swift \
