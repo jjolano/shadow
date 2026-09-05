@@ -48,27 +48,14 @@ BATJailbreakGuard_INSTALL_PATH = /Library/Frameworks
 
 DSK_DIR = $(DEPS)/DeviceSecurityKit/Sources/DeviceSecurityKit
 FRAMEWORK_NAME += DeviceSecurityKit
-# ponytail: DebuggerDetector excluded -- `import Darwin.C` resolves on
-# Xcode 16.4's SDK but the runner image moved to a newer Xcode whose Swift
-# frontend rejects it (same signal-4 family as the earlier _Concurrency /
-# ObjectiveC exclusions). The runner keeps its debugger row via
-# DSKStubs.debuggerInfo; native ptrace/sysctl coverage lives in the
-# IOSSecuritySuite + JailMonkey runners.
+# ponytail: DeviceSecurityKit ships only stubs here -- every real detector
+# file trips the theos Swift 5.8 frontend's signal 4 on the runner image's
+# newer Xcode SDK (implicit _Concurrency/_StringProcessing imports, `import
+# Darwin.C`, `import ObjectiveC`, String(format:)). The isolated runner
+# compiles the same stubs; verdict rows report unsupported-toolchain where
+# a real check cannot run. Native file/dyld/debugger coverage lives in the
+# IOSSecuritySuite + JailMonkey + SafetyNet runners.
 DeviceSecurityKit_FILES = \
-    $(DSK_DIR)/Detectors/JailbreakDetector.swift \
-    $(DSK_DIR)/Detectors/HookDetector.swift \
-    $(DSK_DIR)/Detectors/SwizzlingDetector.swift \
-    $(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
-    $(DSK_DIR)/Detectors/FridaDetector.swift \
-    $(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
-    $(DSK_DIR)/Lists/JailbreakListOptions.swift \
-    $(DSK_DIR)/Lists/DebuggerDetectorList.swift \
-    $(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
-    $(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
-    $(DSK_DIR)/SystemImageValidator.swift \
-    $(DSK_DIR)/FunctionAddress.swift \
     $(STUBS)/SignatureUpdateManager.swift \
     $(STUBS)/DSKStubs.swift \
     $(BRIDGES)/DSKBridge.swift

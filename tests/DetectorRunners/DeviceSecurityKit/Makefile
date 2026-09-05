@@ -6,20 +6,6 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = DeviceSecurityKitRunner
 DeviceSecurityKitRunner_FILES = AppDelegate.swift ../RunnerSupport.swift ../RunnerSupport.m \
-	$(DSK_DIR)/Detectors/JailbreakDetector.swift \
-	$(DSK_DIR)/Detectors/HookDetector.swift \
-	$(DSK_DIR)/Detectors/SwizzlingDetector.swift \
-	$(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
-	$(DSK_DIR)/Detectors/FridaDetector.swift \
-	$(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
-	$(DSK_DIR)/Lists/JailbreakListOptions.swift \
-	$(DSK_DIR)/Lists/DebuggerDetectorList.swift \
-	$(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
-	$(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
-	$(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
-	$(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
-	$(DSK_DIR)/SystemImageValidator.swift \
-	$(DSK_DIR)/FunctionAddress.swift \
 	../../ShadowHarness/detector-frameworks/stubs/SignatureUpdateManager.swift \
 	../../ShadowHarness/detector-frameworks/stubs/DSKStubs.swift \
 	../../ShadowHarness/detector-frameworks/bridges/DSKBridge.swift

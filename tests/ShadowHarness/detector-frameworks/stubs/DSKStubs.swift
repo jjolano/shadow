@@ -1,16 +1,10 @@
 import Foundation
 
-// ponytail: compile-shims for DeviceSecurityKit support files the theos
-// Swift 5.8 frontend cannot compile (signal 4 on implicit
-// _Concurrency/_StringProcessing imports, tripped by `canImport(os.log)`
-// + lazy OSLog in SecurityLogger.swift):
-//  - SecurityLogger: log-only; the bridge configures the manager .silent.
-//    Plain methods (not @autoclosure) to match every real call site.
-//  - DSKDebuggerStub: DebuggerDetector is excluded too (`import Darwin.C`
-//    no longer resolves on the runner image's newer Xcode SDK). On-device
-//    the harness is never ptraced, so not-attached is the correct verdict;
-//    native debugger coverage lives in the IOSSecuritySuite + JailMonkey
-//    runners.
+// ponytail: DeviceSecurityKit ships stub-only in the harness (see the
+// Makefile note): every real detector file crashes the theos Swift 5.8
+// frontend on the runner image's newer Xcode SDK. Each row reports a static
+// verdict the runner treats as a skip (unsupported-toolchain), so the DSK
+// section stays present without pretending to check anything.
 
 public final class SecurityLogger {
     public enum LogLevel: Int {
@@ -31,7 +25,20 @@ public final class SecurityLogger {
     public static func redact(_ value: String) -> String { value }
 }
 
-public enum DSKDebuggerStub {
-    public static func isAttached() -> Bool { false }
-    public static func evidence() -> [String] { [] }
+public final class SecurityLoggerManager {
+    public static let shared = SecurityLoggerManager()
+    public func configure(_ configuration: SecurityLoggerConfiguration) {}
+    public func currentConfiguration() -> SecurityLoggerConfiguration { .default }
+}
+
+public struct SecurityLoggerConfiguration {
+    public static let `default` = SecurityLoggerConfiguration()
+    public static let silent = SecurityLoggerConfiguration()
+}
+
+public enum DSKStubVerdict {
+    public static let methods = ["unsupported-toolchain"]
+    public static func info() -> [String: Any] {
+        ["detected": false, "methods": methods, "confidence": Float(0)]
+    }
 }
