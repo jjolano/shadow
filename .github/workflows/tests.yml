@@ -26,7 +26,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Provision Theos lane matrix
+        run: |
+          # verify-lane-contract.sh reads shared lane fields (TARGET etc.)
+          # from $THEOS/bin/lane.sh (build-support/lanes.sh); only that file
+          # is needed, so sparse-checkout it from jjolano/theos rather than
+          # cloning all of Theos.
+          sudo mkdir -p /opt/theos/bin
+          rm -rf "$RUNNER_TEMP/lane-theos"
+          git clone --quiet --depth 1 --filter=blob:none --sparse \
+            https://github.com/jjolano/theos.git "$RUNNER_TEMP/lane-theos"
+          git -C "$RUNNER_TEMP/lane-theos" sparse-checkout set --skip-checks bin/lane.sh
+          sudo cp "$RUNNER_TEMP/lane-theos/bin/lane.sh" /opt/theos/bin/lane.sh
+          test -f /opt/theos/bin/lane.sh
+
       - name: Build lane and package metadata contract
+        env:
+          THEOS: /opt/theos
         run: sh tests/verify-lane-contract.sh
 
   linux-gnustep:
@@ -54,7 +70,7 @@ jobs:
       - name: HookKit ABI drift check (headers)
         env:
           THEOS: /opt/theos
-        run: sh scripts/check-hookkit-abi.sh --headers-only rootful-modern
+        run: bash scripts/check-hookkit-abi.sh --headers-only rootful-modern
 
       # The toolchain image (~10 min to build) is cached as a docker-archive
       # tarball keyed on the Dockerfile; a restore makes the subsequent

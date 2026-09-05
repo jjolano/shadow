@@ -904,11 +904,13 @@ static const AdvProbe kAdvProbes[] = {
     { "case variant /var/mobile/JAILBREAK-FILES", "/var/mobile/JAILBREAK-FILES", NO, NO, YES, YES,
       "GNUstep evaluates CONTAINS case-insensitively (Cocoa is case-sensitive: on-device this variant is allowed — documented divergence)" },
 
-    // Mode-divergent paths (fast-path prefix semantics differ).
-    { "jbroot sibling /var/jb-backup", "/var/jb-backup", NO, NO, NO, YES,
-      "rootless fast-path is a /var/jb string prefix; rooted has no rule for the sibling" },
-    { "jbroot sibling child /var/jb2/foo", "/var/jb2/foo", NO, NO, NO, YES,
-      "same /var/jb prefix semantics (rootless); nothing there on device (rooted)" },
+    // jbroot siblings: the restricted-root fast-path requires a path
+    // boundary (/var/jb + '/' or end), so a sibling merely sharing the
+    // string prefix is not inside the jbroot and stays allowed.
+    { "jbroot sibling /var/jb-backup", "/var/jb-backup", NO, NO, NO, NO,
+      "prefix boundary: sibling of the jbroot is not inside it" },
+    { "jbroot sibling child /var/jb2/foo", "/var/jb2/foo", NO, NO, NO, NO,
+      "prefix boundary: sibling subtree is not inside the jbroot" },
 
     // Fast paths and prefixes.
     { "preboot prefix /private/preboot/jb-abc", "/private/preboot/jb-abc", NO, NO, YES, YES,
