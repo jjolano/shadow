@@ -1322,27 +1322,32 @@ typedef struct {
     const char* path;
     BOOL write;   // C0-1 write probe (skips existence gates; the only way
                   // /usr/lib probes get device-accurate verdicts on a host)
+    BOOL expRooted;    // expected verdict in rooted mode
+    BOOL expRootless;  // expected verdict in rootless mode
 } Probe;
 
 static const Probe kProbes[] = {
-    { "fopen /Applications/Cydia.app", "/Applications/Cydia.app", NO },
-    { "access /var/jb/Applications/Cydia.app", "/var/jb/Applications/Cydia.app", NO },
-    { "access /var/jb/usr/bin/ssh", "/var/jb/usr/bin/ssh", NO },
-    { "access /cores/crash.dump", "/cores/crash.dump", NO },
-    { "access /private/preboot/jb-abc", "/private/preboot/jb-abc", NO },
-    { "access /private/preboot/jb-abc/usr/bin/sshd", "/private/preboot/jb-abc/usr/bin/sshd", NO },
-    { "dlopen /usr/lib/libsubstrate.dylib", "/usr/lib/libsubstrate.dylib", YES },
-    { "dlopen /usr/lib/libsubstitute.0.dylib", "/usr/lib/libsubstitute.0.dylib", YES },
-    { "dlopen /usr/lib/libjailbreak.dylib", "/usr/lib/libjailbreak.dylib", YES },
-    { "dlopen /usr/lib/libsystem_kernel.dylib", "/usr/lib/libsystem_kernel.dylib", YES },
-    { "fopen /tmp/randomfile", "/tmp/randomfile", NO },
-    { "fopen /tmp/com.apple.installer", "/tmp/com.apple.installer", NO },
-    { "access /var/root/.ssh/authorized_keys", "/var/root/.ssh/authorized_keys", NO },
-    { "fopen /var/mobile/Documents/notes.txt", "/var/mobile/Documents/notes.txt", NO },
-    { "access /var/mobile/evil", "/var/mobile/evil", NO },
-    { "access /opt/jb/optool", "/opt/jb/optool", NO },
-    { "fopen /var/containers/Bundle/Application/ABCDEF/App.app/App", "/var/containers/Bundle/Application/ABCDEF/App.app/App", NO },
-    { "access /Library/MobileSubstrate/MobileSubstrate.dylib", "/Library/MobileSubstrate/MobileSubstrate.dylib", NO },
+    { "fopen /Applications/Cydia.app", "/Applications/Cydia.app", NO, YES, YES },
+    { "access /var/jb/Applications/Cydia.app", "/var/jb/Applications/Cydia.app", NO, YES, YES },
+    { "access /var/jb/usr/bin/ssh", "/var/jb/usr/bin/ssh", NO, YES, YES },
+    { "access /cores/crash.dump", "/cores/crash.dump", NO, YES, YES },
+    { "access /private/preboot/jb-abc", "/private/preboot/jb-abc", NO, YES, YES },
+    { "access /private/preboot/jb-abc/usr/bin/sshd", "/private/preboot/jb-abc/usr/bin/sshd", NO, YES, YES },
+    { "dlopen /usr/lib/libsubstrate.dylib", "/usr/lib/libsubstrate.dylib", YES, YES, YES },
+    { "dlopen /usr/lib/libsubstitute.0.dylib", "/usr/lib/libsubstitute.0.dylib", YES, YES, YES },
+    { "dlopen /usr/lib/libjailbreak.dylib", "/usr/lib/libjailbreak.dylib", YES, YES, YES },
+    { "dlopen /usr/lib/libsystem_kernel.dylib", "/usr/lib/libsystem_kernel.dylib", YES, NO, NO },
+    // /tmp + structure-veto paths diverge by mode: rootless gates non-jbroot
+    // reads (allowed), rooted has no gate so the whitelist/structure vetoes
+    // decide (restricted).
+    { "fopen /tmp/randomfile", "/tmp/randomfile", NO, YES, NO },
+    { "fopen /tmp/com.apple.installer", "/tmp/com.apple.installer", NO, YES, NO },
+    { "access /var/root/.ssh/authorized_keys", "/var/root/.ssh/authorized_keys", NO, YES, YES },
+    { "fopen /var/mobile/Documents/notes.txt", "/var/mobile/Documents/notes.txt", NO, NO, NO },
+    { "access /var/mobile/evil", "/var/mobile/evil", NO, YES, YES },
+    { "access /opt/jb/optool", "/opt/jb/optool", NO, YES, NO },
+    { "fopen /var/containers/Bundle/Application/ABCDEF/App.app/App", "/var/containers/Bundle/Application/ABCDEF/App.app/App", NO, NO, NO },
+    { "access /Library/MobileSubstrate/MobileSubstrate.dylib", "/Library/MobileSubstrate/MobileSubstrate.dylib", NO, YES, YES },
 };
 
 static void runDetect(void) {
@@ -1354,19 +1359,30 @@ static void runDetect(void) {
         BOOL got = p.write
             ? [shdw() isPathRestricted:path options:writeOptions()]
             : [shdw() isPathRestricted:path];
+        BOOL expected = gRootless ? p.expRootless : p.expRooted;
 
-        printf("  %-52s → %s\n", p.name, got ? "RESTRICTED" : "allowed");
+        if(got == expected) {
+            gPass++;
+            printf("  %-52s → %s\n", p.name, got ? "RESTRICTED" : "allowed");
+        } else {
+            gFail++;
+            printf("LEAK: %s (expected %s, got %s)\n", p.name,
+                expected ? "restricted" : "allowed",
+                got ? "restricted" : "allowed");
+        }
     }
 
-    // schemes / bundle IDs / protected names
-    printf("  %-52s → %s\n", "openURL cydia://", [shdw() isSchemeRestricted:@"cydia"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "openURL Cydia:// (case variant)", [shdw() isSchemeRestricted:@"Cydia"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "openURL http://", [shdw() isSchemeRestricted:@"http"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "LSApplicationWorkspace com.saurik.Cydia", [shdw() isBundleIDRestricted:@"com.saurik.Cydia"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "LSApplicationWorkspace COM.SAURIK.CYDIA", [shdw() isBundleIDRestricted:@"COM.SAURIK.CYDIA"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "LSApplicationWorkspace com.apple.mobilesafari", [shdw() isBundleIDRestricted:@"com.apple.mobilesafari"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "image name /usr/lib/libSandy.dylib", [shdw() isProtectedImagePath:@"/usr/lib/libSandy.dylib"] ? "RESTRICTED" : "allowed");
-    printf("  %-52s → %s\n", "image name /System/Library/Frameworks/UIKit.framework", [shdw() isProtectedImagePath:@"/System/Library/Frameworks/UIKit.framework"] ? "RESTRICTED" : "allowed");
+    // schemes / bundle IDs / protected names (mode-independent: ruleset
+    // predicates, verified against testSchemesAndIDs/testProtectedNames).
+    CHECK([shdw() isSchemeRestricted:@"cydia"], "detect scheme cydia restricted");
+    CHECK([shdw() isSchemeRestricted:@"Cydia"], "detect scheme case-variant restricted");
+    CHECK(![shdw() isSchemeRestricted:@"http"], "detect scheme http allowed");
+    CHECK([shdw() isBundleIDRestricted:@"com.saurik.Cydia"], "detect bundle ID restricted");
+    CHECK([shdw() isBundleIDRestricted:@"COM.SAURIK.CYDIA"], "detect bundle ID case-variant restricted");
+    CHECK(![shdw() isBundleIDRestricted:@"com.apple.mobilesafari"], "detect app bundle ID allowed");
+    CHECK([shdw() isProtectedImagePath:@"/usr/lib/libSandy.dylib"], "detect libSandy protected");
+    CHECK(![shdw() isProtectedImagePath:@"/System/Library/Frameworks/UIKit.framework"], "detect stock framework allowed");
+    printf("=== %d passed, %d failed\n", gPass, gFail);
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,7 +1486,7 @@ int main(int argc, const char** argv) {
 
         if(gDetect) {
             runDetect();
-            return 0;
+            return gFail ? 1 : 0;
         }
 
         if(gAdversary) {

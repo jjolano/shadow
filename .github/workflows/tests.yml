@@ -45,6 +45,27 @@ jobs:
           THEOS: /opt/theos
         run: sh tests/verify-lane-contract.sh
 
+      # Static source checks: no device, no toolchain, no docker — pure
+      # grep/awk over the tree. They run here (seconds) instead of after
+      # the ~10-min image build so drift fails fast.
+      - name: Hook→engine matrix drift check
+        run: sh tests/verify-hook-matrix.sh
+
+      - name: Raw syscall metadata check
+        run: sh tests/verify-syscall-meta.sh
+
+      - name: Settings information architecture check
+        run: sh tests/verify-settings-structure.sh
+
+      # Pure-C check for the svc path-munging logic (no Foundation:
+      # compiles and runs on any host with cc).
+      - name: svc path-rewrite check
+        run: make -C tests verify-path-rewrite
+
+      # Device-driver logic selftest (host-only, no device needed).
+      - name: Device driver selftest
+        run: make -C tests verify-device-driver
+
   linux-gnustep:
     runs-on: ubuntu-latest
     steps:
@@ -114,14 +135,8 @@ jobs:
       - name: Engine coverage (gcov) vs hooked API groups
         run: make -C tests coverage
 
-      - name: Hook→engine matrix drift check
-        run: sh tests/verify-hook-matrix.sh
-
-      - name: Raw syscall metadata check
-        run: sh tests/verify-syscall-meta.sh
-
-      - name: Settings information architecture check
-        run: sh tests/verify-settings-structure.sh
+      - name: Detector-probe battery (shipped rulesets, asserted)
+        run: make -C tests detect
 
   macos-foundation:
     runs-on: macos-latest
@@ -148,6 +163,9 @@ jobs:
 
       - name: Adversary evasion battery (rooted)
         run: make -C tests adversary-rooted
+
+      - name: Detector-probe battery (rooted, asserted)
+        run: make -C tests detect-rooted
 
       - name: Fuzz (invariant properties, seeded)
         run: make -C tests fuzz
