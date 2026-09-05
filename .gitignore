@@ -26,3 +26,5 @@ tests/tools/dyldprobe/DetectorRunners/
 tests/DetectorRunners/*/ShadowHarness/
 __pycache__/
 *.py[cod]
+# Maintainer-local notes. Never committed; never force-add.
+private/
