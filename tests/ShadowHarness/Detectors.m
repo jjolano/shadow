@@ -21,6 +21,7 @@ static NSArray<NSString *> *SHDWDetectorIDs(void) {
         @"dyldprobe", @"iossecuritysuite", @"jailbreakdetector", @"securitytoolkit",
         @"dttjailbreakdetection", @"freerasp", @"roothider", @"batjailbreakguard",
         @"safetynet", @"devicesecuritykit", @"jailmonkey",
+        @"isjailbroken", @"swiftyjbd",
     ];
 }
 
@@ -40,6 +41,8 @@ static NSDictionary *SHDWRunnerForID(NSString *identifier) {
             @"safetynet": @{ @"scheme": @"shadow-detector-safetynet", @"bundle": @"me.jjolano.shadow.test.safetynet" },
             @"devicesecuritykit": @{ @"scheme": @"shadow-detector-dsk", @"bundle": @"me.jjolano.shadow.test.devicesecuritykit" },
             @"jailmonkey": @{ @"scheme": @"shadow-detector-jailmonkey", @"bundle": @"me.jjolano.shadow.test.jailmonkey" },
+            @"isjailbroken": @{ @"scheme": @"shadow-detector-isjb", @"bundle": @"me.jjolano.shadow.test.isjailbroken" },
+            @"swiftyjbd": @{ @"scheme": @"shadow-detector-swiftyjbd", @"bundle": @"me.jjolano.shadow.test.swiftyjbd" },
         };
     });
     return runners[identifier];

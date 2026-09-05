@@ -32,6 +32,8 @@ before-stage::
 		"$(THEOS_STAGING_DIR)/Applications/SafetyNetRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/DeviceSecurityKitRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/JailMonkeyRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/isJailbrokenRunner.app" \
+		"$(THEOS_STAGING_DIR)/Applications/SwiftyJBDRunner.app" \
 		"$(THEOS_STAGING_DIR)/Applications/ShadowHarness.app/Frameworks" \
 		"$(THEOS_STAGING_DIR)/Applications/dyldprobe.app"$(ECHO_END)
 
@@ -48,6 +50,8 @@ after-stage::
 		../DetectorRunners/SafetyNet/.theos/_/Applications/SafetyNetRunner.app \
 		../DetectorRunners/DeviceSecurityKit/.theos/_/Applications/DeviceSecurityKitRunner.app \
 		../DetectorRunners/JailMonkey/.theos/_/Applications/JailMonkeyRunner.app \
+		../DetectorRunners/isJailbroken/.theos/_/Applications/isJailbrokenRunner.app \
+		../DetectorRunners/SwiftyJBD/.theos/_/Applications/SwiftyJBDRunner.app \
 		../tools/dyldprobe/.theos/_/Applications/dyldprobe.app; do \
 		test -d "$$app" || exit 1; \
 		cp -R "$$app" "$(THEOS_STAGING_DIR)/Applications/"; \

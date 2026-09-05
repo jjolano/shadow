@@ -63,7 +63,7 @@ Use `tests/tools/dyldprobe`, `tests/tools/hookprobe`, `tests/ShadowHarness`, and
 `tests/stealth-device.sh` for device validation.
 
 `tests/stealth-device.sh run-all` executes Harness Run All headlessly and
-captures its eleven detector reports as device evidence.
+captures its thirteen detector reports as device evidence.
 
 ## Layout
 

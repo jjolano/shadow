@@ -77,3 +77,21 @@ if { [ "$SDK" = all ] || [ "$SDK" = jailmonkey ]; } &&
     [ ! -f "$DEPS/JailMonkey/JailMonkey/JailMonkey.m" ]; then
     git clone --depth 1 --branch v2.8.5 https://github.com/GantMan/jail-monkey.git "$DEPS/JailMonkey"
 fi
+
+if { [ "$SDK" = all ] || [ "$SDK" = isjailbroken ]; } &&
+    [ ! -f "$DEPS/isJailbroken/isJailbroken/JB.m" ]; then
+    git init "$DEPS/isJailbroken"
+    git -C "$DEPS/isJailbroken" remote add origin https://github.com/avltree9798/isJailbroken.git
+    git -C "$DEPS/isJailbroken" fetch --depth 1 origin 60a5f55965c7e44ab74d0414652ff4df55045c1f
+    git -C "$DEPS/isJailbroken" checkout --detach FETCH_HEAD
+fi
+
+# ponytail: SwiftyJBD is a two-method Swift fragment (no enclosing type) — clone
+# for reference; the runner wraps JailBreak.swift into a type at build time.
+if { [ "$SDK" = all ] || [ "$SDK" = swiftyjbd ]; } &&
+    [ ! -f "$DEPS/SwiftyJBD/JailBreak.swift" ]; then
+    git init "$DEPS/SwiftyJBD"
+    git -C "$DEPS/SwiftyJBD" remote add origin https://github.com/TheSwiftyCoder/JailBreak-Detection.git
+    git -C "$DEPS/SwiftyJBD" fetch --depth 1 origin 6f5f1d9622934c048c64c8b6a68942d2ece3a5f0
+    git -C "$DEPS/SwiftyJBD" checkout --detach FETCH_HEAD
+fi

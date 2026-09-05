@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleDisplayName</key><string>isJailbroken Runner</string>
+    <key>CFBundleExecutable</key><string>isJailbrokenRunner</string>
+    <key>CFBundleIdentifier</key><string>me.jjolano.shadow.test.isjailbroken</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>isJailbrokenRunner</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>SBAppTags</key><array><string>hidden</string></array>
+    <key>CFBundleURLTypes</key>
+    <array><dict><key>CFBundleURLSchemes</key><array><string>shadow-detector-isjb</string></array></dict></array>
+    <key>LSApplicationQueriesSchemes</key><array><string>cydia</string></array>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>UILaunchScreen</key><dict/>
+    <key>UIDeviceFamily</key><array><integer>1</integer></array>
+</dict>
+</plist>

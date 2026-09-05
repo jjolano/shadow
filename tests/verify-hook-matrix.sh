@@ -308,8 +308,16 @@ if ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfigur
      ! grep -q '\[detector canFork\]' tests/DetectorRunners/JailMonkey/AppDelegate.m ||
     ! grep -q 'iossecuritysuite.watchpoint' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
     ! grep -q 'runnerChecksWithBundleID:' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-    ! grep -q 'dlopen(framework, RTLD_NOW | RTLD_LOCAL)' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift ||
-    ! grep -q 'shdwInstallHarnessSDKFallback' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift; then
+   ! grep -q 'dlopen(framework, RTLD_NOW | RTLD_LOCAL)' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift ||
+   ! grep -q 'shdwInstallHarnessSDKFallback' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift ||
+   ! grep -q 'isJb()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
+   ! grep -q 'isInjectedWithDynamicLibrary()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
+   ! grep -q 'isDebugged()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
+   ! grep -q 'ISJB_DIR)/JB.m' tests/DetectorRunners/isJailbroken/Makefile ||
+   ! grep -q 'isJailbrokenRunner' tests/DetectorRunners/isJailbroken/Makefile ||
+   ! grep -q 'SwiftyJBD.isJailbroken()' tests/DetectorRunners/SwiftyJBD/AppDelegate.swift ||
+   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' tests/DetectorRunners/SwiftyJBD/Makefile ||
+   ! grep -q 'SwiftyJBDRunner' tests/DetectorRunners/SwiftyJBD/Makefile; then
     echo 'HARNESS OPTION DRIFT: detector runners must execute every supported one-shot check'
     exit 1
 fi

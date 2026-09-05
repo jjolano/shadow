@@ -35,6 +35,7 @@ RUN_ALL_REPORT_IDS = (
     "dyldprobe", "iossecuritysuite", "jailbreakdetector", "securitytoolkit",
     "dttjailbreakdetection", "freerasp", "roothider", "batjailbreakguard",
     "safetynet", "devicesecuritykit", "jailmonkey",
+    "isjailbroken", "swiftyjbd",
 )
 DETECTOR_RUNNER_OVERRIDE_KEY = "Test_DetectorOverrides"
 RUNNER_BUNDLES = {

@@ -22,6 +22,23 @@ sed -i 's/String(validatingCString: cName)/String(validatingUTF8: cName)/' \
 # under RN without -Werror); fix the type (idempotent).
 sed -i 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeActived = [self isDebugged];/' \
     "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
+# isJailbroken's tuyul() stores its own const char* return in a char* (an error
+# under this toolchain's -Werror); the pointer is only read, so const-qualify
+# it (idempotent).
+sed -i 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
+    "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
+# SwiftyJBD's JailBreak.swift is a bare two-method fragment (no enclosing type,
+# no imports) that cannot compile as-is. Wrap it into `struct SwiftyJBD` with
+# Foundation/UIKit imports so the SwiftyJBD runner can call
+# SwiftyJBD.isJailbroken() (idempotent).
+python3 - "$ROOT/.detector-deps/SwiftyJBD/JailBreak.swift" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+if 'struct SwiftyJBD' not in s:
+    s = 'import Foundation\nimport UIKit\n\nstruct SwiftyJBD {\n' + s + '\n}\n'
+    open(p, 'w').write(s)
+PY
 # This Linux Theos Swift toolchain has no iOS _Concurrency module. SafetyNet's
 # jailbreak detector only awaits its main-thread URL-scheme call, so make that
 # one-shot path synchronous; the runner invokes the same underlying checks.
@@ -130,7 +147,8 @@ m -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roo
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache
 for runner in \
     IOSSecuritySuite JailbreakDetector SecurityToolkit DTTJailbreakDetection \
-    FreeRASP Roothider BATJailbreakGuard SafetyNet DeviceSecurityKit JailMonkey; do
+    FreeRASP Roothider BATJailbreakGuard SafetyNet DeviceSecurityKit JailMonkey \
+    isJailbroken SwiftyJBD; do
     m -C "$ROOT/tests/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
         TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
         "${RUNNER_ARGS[@]}" \

@@ -80,6 +80,10 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
             SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run", @"https://github.com/DipakPanchasara/SafetyNet"),
             SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run", @"https://github.com/galahador/DeviceSecurityKit"),
             SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"v2.8.5", @"shadow-detector-jailmonkey://run", @"https://github.com/GantMan/jail-monkey"),
+            SHDWMakeSDKClassified(@"isjailbroken", @"isJailbroken", @"main@60a5f55", @"shadow-detector-isjb://run", @"https://github.com/avltree9798/isJailbroken",
+                SHDWAppStoreFlawed,
+                @"Sandbox-write check is unreliable: it writes to a relative path (its own container, which succeeds on stock iOS), so it false-positives on a clean device. Public-API only, but this check is not a valid jailbreak signal."),
+            SHDWMakeSDK(@"swiftyjbd", @"SwiftyJBD JailBreak-Detection", @"main@6f5f1d9", @"shadow-detector-swiftyjbd://run", @"https://github.com/TheSwiftyCoder/JailBreak-Detection"),
         ];
     });
     return sdks;
