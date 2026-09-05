@@ -156,7 +156,7 @@ m -C "$ROOT/src/Shadow.framework" stage THEOS_PACKAGE_SCHEME=rootless TARGET=iph
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
 m -C "$ROOT/tests/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-    "${RUNNER_ARGS[@]}" \
+    ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
 m -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
@@ -170,7 +170,7 @@ for runner in \
     isJailbroken SwiftyJBD; do
     m -C "$ROOT/tests/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
         TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-        "${RUNNER_ARGS[@]}" \
+        ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
         ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache \
         ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache
 done
