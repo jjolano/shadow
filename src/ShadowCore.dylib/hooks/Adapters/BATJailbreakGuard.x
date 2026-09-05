@@ -4,9 +4,10 @@
 // (system / posix_spawn / dlopen / dlsym) resolve via dlsym(RTLD_DEFAULT, …).
 // They resolve on a pristine, un-jailbroken App Store device too, so the check
 // flags stock iOS — a self-invalidating signal, not evidence of Shadow or the
-// jailbreak. No stock-shaped ("natural") answer clears it without also lying to
-// a legitimate app, so neutralising it is disable-style: only under aggressive
-// mode do we force its verdict to false.
+// jailbreak. The natural answer lives in replaced_dlsym (dyld.x): answer NULL
+// only to callers inside a BAT image, which changes nothing for legitimate
+// lookups. Forcing the verdict below stays as the aggressive backup (e.g. if
+// a future toolchain inlines the lookup into app code past the image check).
 //
 // Anchor (rebuild-stable, no hardcoded offsets): the check's public entry point
 // `JailbreakDetectionPreventedAPICheckService.isJailbreakDetected()` is exported
