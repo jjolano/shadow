@@ -34,9 +34,10 @@ sedi 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeA
     "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
 # isJailbroken's tuyul() stores its own const char* return in a char* (an error
 # under this toolchain's -Werror); the pointer is only read, so const-qualify
-# it (idempotent; matches leading whitespace and an optional const already
-# present so re-runs stay no-ops).
-sedi 's/^\(\s*\)\(const \)*char\* ptr = tuyul/\1const char* ptr = tuyul/' \
+# it (idempotent: BSD sed lacks \(..\)* group repetition, so match the two
+# spellings as separate -e scripts instead).
+sedi -e 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
+    -e 's/^\(\s*\)const  *char\* ptr = tuyul/\1const char* ptr = tuyul/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # isJailbroken's isDebugged() aborts the runner via assert() when its sysctl
 # fails; a crash yields no callback and stalls Run All on the 90s timeout.
