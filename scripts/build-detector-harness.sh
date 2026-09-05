@@ -13,12 +13,15 @@ if [ "$(uname -s)" = Linux ]; then
 fi
 m() { make "$@" ${ABI_ARGS[@]+"${ABI_ARGS[@]}"}; }
 # Portable in-place sed: BSD sed (macOS runners) needs `-i ''`, GNU sed
-# needs bare `-i`. Detect once; every call below goes through sedi.
-if sed -i '' 's/^//' /dev/null >/dev/null 2>&1; then
+# needs bare `-i`. Probe on a temp file (/dev/null is unreadable-as-input
+# to GNU sed, so both flavors fail there and the probe must use a file).
+_sed_probe=$(mktemp) && echo x > "$_sed_probe"
+if sed -i '' 's/^//' "$_sed_probe" >/dev/null 2>&1; then
     sedi() { sed -i '' "$@"; }
 else
     sedi() { sed -i "$@"; }
 fi
+rm -f "$_sed_probe"
 "$ROOT/scripts/fetch-detector-sdks.sh" all
 # BATJailbreakGuard's DynamicLib service uses String(validatingCString:), a
 # Swift 5.9+ stdlib init absent from the 14.5 SDK's stdlib; validatingUTF8 is
