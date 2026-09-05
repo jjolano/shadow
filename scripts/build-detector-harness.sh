@@ -34,15 +34,14 @@ sedi 's/BOOL \*isDebuggedModeActived = \[self isDebugged\];/BOOL isDebuggedModeA
     "$ROOT/.detector-deps/JailMonkey/JailMonkey/JailMonkey.m"
 # isJailbroken's tuyul() stores its own const char* return in a char* (an error
 # under this toolchain's -Werror); the pointer is only read, so const-qualify
-# it (idempotent: BSD sed lacks \(..\)* group repetition, so match the two
-# spellings as separate -e scripts instead).
-sedi -e 's/^\(\s*\)char\* ptr = tuyul/\1const char* ptr = tuyul/' \
-    -e 's/^\(\s*\)const  *char\* ptr = tuyul/\1const char* ptr = tuyul/' \
+# it (idempotent; BRE-portable: [[:space:]] instead of \s, no \(..\)*).
+sedi -e 's/^[[:space:]]*char\* ptr = tuyul/            const char* ptr = tuyul/' \
+    -e 's/^[[:space:]]*const  *char\* ptr = tuyul/            const char* ptr = tuyul/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # isJailbroken's isDebugged() aborts the runner via assert() when its sysctl
 # fails; a crash yields no callback and stalls Run All on the 90s timeout.
 # Return NO instead — identical on the success path (idempotent).
-sedi 's/^\(\s*\)assert(junk == 0);/\1if(junk != 0) return NO;/' \
+sedi 's/^[[:space:]]*assert(junk == 0);/            if(junk != 0) return NO;/' \
     "$ROOT/.detector-deps/isJailbroken/isJailbroken/JB.m"
 # isJailbroken logs every probe hit to syslog (DEBUGGING); silence it — the
 # runner already records each verdict in its report checks (idempotent).
