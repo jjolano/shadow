@@ -62,12 +62,8 @@ DeviceSecurityKit_FILES = \
     $(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
     $(DSK_DIR)/Lists/EmulatorDetectorListOptions.swift \
     $(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLogger.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
-    $(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
-    $(DSK_DIR)/SystemImageValidator.swift \
-    $(DSK_DIR)/FunctionAddress.swift \
     $(STUBS)/SignatureUpdateManager.swift \
+    $(STUBS)/DSKStubs.swift \
     $(BRIDGES)/DSKBridge.swift
 DeviceSecurityKit_SWIFTFLAGS = -swift-version 5 -module-cache-path /tmp/shadow-harness-fw-module-cache
 DeviceSecurityKit_FRAMEWORKS = UIKit Foundation DeviceCheck
