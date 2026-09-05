@@ -44,11 +44,8 @@ public final class DSKBridge: NSObject {
         DSKDebuggerStub.evidence()
     }
     @objc public static func emulatorInfo() -> [String: Any] {
-        let result = EmulatorDetector.detectEmulator()
-        return [
-            "detected": result.isEmulator,
-            "methods": result.detectionMethods,
-            "confidence": result.confidence,
-        ]
+        // EmulatorDetector excluded from the build (String(format:) trips
+        // the old frontend's signal 4); the runner reports unsupported.
+        ["detected": false, "methods": ["unsupported-toolchain"], "confidence": Float(0)]
     }
 }

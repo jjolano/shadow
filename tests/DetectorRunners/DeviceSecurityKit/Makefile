@@ -12,11 +12,9 @@ DeviceSecurityKitRunner_FILES = AppDelegate.swift ../RunnerSupport.swift ../Runn
 	$(DSK_DIR)/Detectors/DylibInjectionDetector.swift \
 	$(DSK_DIR)/Detectors/FridaDetector.swift \
 	$(DSK_DIR)/Detectors/ReverseEngineeringDetector.swift \
-	$(DSK_DIR)/Detectors/EmulatorDetector.swift \
 	$(DSK_DIR)/Lists/JailbreakListOptions.swift \
 	$(DSK_DIR)/Lists/DebuggerDetectorList.swift \
 	$(DSK_DIR)/Lists/ReverseEngineeringListsOptions.swift \
-	$(DSK_DIR)/Lists/EmulatorDetectorListOptions.swift \
 	$(DSK_DIR)/StringObfuscator/StringObfuscator.swift \
 	$(DSK_DIR)/SecurityLogger/SecurityLoggerConfiguration.swift \
 	$(DSK_DIR)/SecurityLogger/SecurityLoggerManager.swift \
