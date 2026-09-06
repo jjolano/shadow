@@ -84,7 +84,7 @@
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
 		<string>SELF LIKE '*/libShadow*'</string>
 		<string>SELF LIKE '/var/jb/usr/lib/*libShadow*'</string>
-		<string>SELF LIKE '*ShadowCore*'</string>
+		<string>SELF LIKE '*/ShadowCore.dylib'</string>
 		<string>SELF LIKE '/usr/lib/libSandy*'</string>
 		<string>SELF LIKE '/var/jb/usr/lib/libSandy*'</string>
 		<string>SELF LIKE '*/Cydia.app*'</string>
