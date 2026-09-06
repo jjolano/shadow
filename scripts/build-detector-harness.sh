@@ -160,26 +160,30 @@ m -C "$ROOT/tests/ShadowHarness/detector-frameworks" stage FINALPACKAGE=1 THEOS_
     ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
     ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache \
     ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-framework-module-cache
-# Roothider's filtered main.m imports <xpc/xpc.h>, absent from the 14.5
-# SDK: point the harness builds at the vendored xpc headers (same copy
-# build.sh stages for libSandy). Command-line ADDITIONAL_*FLAGS below
-# override the environment, so append -I to each invocation instead.
-XPC_INC="-I$ROOT/.github/vendor"
+# Roothider's filtered main.m imports <xpc/xpc.h>. The 14.5 SDK already ships
+# xpc headers, so no vendored copy is needed — passing it duplicates
+# module.modulemap and breaks the clang module build with "redefinition of
+# module 'XPC'". Keep empty (history: CI commit e808b9d added the vendor
+# path for an older SDK layout).
+XPC_INC=""
 m -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:16.5:15.0 ARCHS="arm64 arm64e" \
     THEOS_LIBRARY_PATH=/tmp/shadow-dyldprobe-lib \
     "ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache $XPC_INC" \
     "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-dyldprobe-module-cache $XPC_INC"
-for runner in \
-    IOSSecuritySuite JailbreakDetector SecurityToolkit DTTJailbreakDetection \
-    FreeRASP Roothider BATJailbreakGuard SafetyNet DeviceSecurityKit JailMonkey \
-    isJailbroken SwiftyJBD; do
-    m -C "$ROOT/tests/DetectorRunners/$runner" stage FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
-        TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-        ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
-        "ADDITIONAL_CFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache $XPC_INC" \
-        "ADDITIONAL_OBJCFLAGS=-fmodules-cache-path=/tmp/shadow-detector-runner-module-cache $XPC_INC"
-done
+# Detectors run embedded in the harness (SHDWEmbedded.m/EmbeddedDrivers.swift);
+# the old isolated runner apps are deleted — see DetectorRunners/README, so
+# no per-runner build loop. Only dyldprobe still builds standalone above
+# (shdwtestlib.dylib provider).
+# Stage TalsecRuntime for the harness app bundle: the embedded FreeRASP
+# driver (EmbeddedDrivers.swift via TalsecBridge.swift) links it, and the
+# harness loads it from @executable_path/Frameworks at launch.
+TALSEC_FW_DIR=/tmp/shadow-harness-talsec
+rm -rf "$TALSEC_FW_DIR"
+mkdir -p "$TALSEC_FW_DIR"
+cp -R "$ROOT/.detector-deps/Free-RASP-iOS-7.1.2/Talsec/TalsecRuntime.xcframework/ios-arm64/TalsecRuntime.framework" "$TALSEC_FW_DIR/"
 m -C "$ROOT/tests/ShadowHarness" package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless \
     TARGET=iphone:clang:14.5:14.0 ARCHS="arm64" \
-    THEOS_LIBRARY_PATH="$ROOT/src/Shadow.framework/.theos/obj/debug" INCLUDE_DETECTOR_RUNNERS=1
+    THEOS_LIBRARY_PATH="$ROOT/src/Shadow.framework/.theos/obj/debug" \
+    ${RUNNER_ARGS[@]+"${RUNNER_ARGS[@]}"} \
+    TALSEC_FW_DIR="$TALSEC_FW_DIR"

@@ -11,15 +11,28 @@ fi
 
 case "$1" in
     configure)
-        # dpkg keeps files no longer owned by an upgraded package.
+        # dpkg keeps files no longer owned by an upgraded package. The
+        # isolated runner apps are deleted (detectors run embedded now);
+        # remove their stale bundles on upgrade. Frameworks/ keeps only
+        # shdwtestlib.dylib + TalsecRuntime.framework (both still shipped).
+        rm -rf \
+            "$DPKG_ROOT/Applications/IOSSecuritySuiteRunner.app" \
+            "$DPKG_ROOT/Applications/JailbreakDetectorRunner.app" \
+            "$DPKG_ROOT/Applications/SecurityToolkitRunner.app" \
+            "$DPKG_ROOT/Applications/DTTJailbreakDetectionRunner.app" \
+            "$DPKG_ROOT/Applications/FreeRASPRunner.app" \
+            "$DPKG_ROOT/Applications/RoothiderRunner.app" \
+            "$DPKG_ROOT/Applications/BATJailbreakGuardRunner.app" \
+            "$DPKG_ROOT/Applications/SafetyNetRunner.app" \
+            "$DPKG_ROOT/Applications/DeviceSecurityKitRunner.app" \
+            "$DPKG_ROOT/Applications/JailMonkeyRunner.app" \
+            "$DPKG_ROOT/Applications/isJailbrokenRunner.app" \
+            "$DPKG_ROOT/Applications/SwiftyJBDRunner.app" \
+            "$DPKG_ROOT/Applications/dyldprobe.app"
         FRAMEWORKS="$DPKG_ROOT/Applications/ShadowHarness.app/Frameworks"
-        rm -rf "$FRAMEWORKS/BATJailbreakGuard.framework" \
-               "$FRAMEWORKS/DeviceSecurityKit.framework" \
-               "$FRAMEWORKS/IOSSecuritySuite.framework" \
-               "$FRAMEWORKS/JailbreakDetector.framework" \
-               "$FRAMEWORKS/SecurityToolkit.framework" \
-               "$FRAMEWORKS/Shadow.framework" \
-               "$FRAMEWORKS/TalsecRuntime.framework"
+        # Stale detector frameworks from older layouts only; the five
+        # embedded-detector frameworks + TalsecRuntime still ship.
+        rm -rf "$FRAMEWORKS/Shadow.framework"
     ;;
 esac
 

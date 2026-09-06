@@ -17,7 +17,7 @@
 #import <sys/stat.h>
 #import <unistd.h>
 
-#import "../../DetectorRunners/RunnerSupport.h"
+#import "dyldprobe_support.h"
 #if defined(SHDW_DYLDPROBE_EMBEDDED)
 #import "../../ShadowHarness/Battery.h"
 #endif
@@ -1065,24 +1065,26 @@ static NSString* ProbeReport(void) {
 }
 
 - (void)_runForShadowHarness {
+    // Standalone app mode only (the harness embeds the probe in-process via
+    // SHDWDyldProbeWriteDashboardReport). Reports persist straight to the
+    // results directory — no TCP transport since the runners were deleted.
     NSString* failure = nil;
-    NSDictionary* parameters = SHDWRunnerParameters(self.launchURL);
+    NSString* nonce = SHDWDyldProbeQueryValue(self.launchURL, @"nonce") ?: @"dashboard";
     NSDictionary* context = @{
         @"run_id" : @"shadow-harness",
         @"row_id" : @"dyldprobe",
         @"requested_mode" : @"injected",
-        @"nonce" : parameters[@"nonce"] ?: @"dashboard",
+        @"nonce" : nonce,
         @"probe_revision" : @"dashboard-v1",
     };
     NSDictionary* dashboard = probe_dashboard_report(context, &failure);
-    NSString* callback = parameters[@"callback"];
-    if(!dashboard || !SHDWRunnerSendReport(dashboard, callback)) {
+    NSString* dir = probe_documents_directory();
+    NSString* path = [dir stringByAppendingPathComponent:@"ShadowDetectorTests/dyldprobe.json"];
+    if(!dashboard || !probe_write_json_report(dashboard, path, &failure)) {
         _textView.text = [NSString stringWithFormat:@"Dashboard report failed: %@", failure ?: @"unknown error"];
         return;
     }
     _textView.text = @"dyld fidelity report complete";
-    [[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"shadow-detectors://refresh"]
-        options:@{} completionHandler:nil];
 }
 
 - (void)_refresh {

@@ -102,14 +102,19 @@ mkdir -p "$harness_frameworks"
 for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
     mkdir "$harness_frameworks/$framework.framework"
 done
+mkdir -p "$harness_pkg/Applications/IOSSecuritySuiteRunner.app"
 env SHADOW_HARNESS_DPKG_ROOT="$harness_pkg" sh "$root/tests/ShadowHarness/layout/DEBIAN/postinst" configure
 assert test -f "$harness_frameworks/shdwtestlib.dylib"
 assert test -f "$harness_frameworks/keep.txt"
-for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit Shadow TalsecRuntime; do
-    if [ -e "$harness_frameworks/$framework.framework" ]; then
-        fail "harness postinst retained $framework.framework"
-    fi
+for framework in BATJailbreakGuard DeviceSecurityKit IOSSecuritySuite JailbreakDetector SecurityToolkit TalsecRuntime; do
+    assert test -d "$harness_frameworks/$framework.framework"
 done
+if [ -e "$harness_frameworks/Shadow.framework" ]; then
+    fail "harness postinst retained Shadow.framework"
+fi
+if [ -e "$harness_pkg/Applications/IOSSecuritySuiteRunner.app" ]; then
+    fail "harness postinst retained a deleted runner app"
+fi
 
 if grep -E '\<pgrep\>|\<seq\>|kill[[:space:]]+-[0-9]' "$root/packaging/layout/DEBIAN/prerm" "$root/packaging/layout/DEBIAN/postinst" >/dev/null; then
     fail 'forbidden maintainer command remains'

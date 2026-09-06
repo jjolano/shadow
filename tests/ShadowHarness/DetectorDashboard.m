@@ -66,24 +66,24 @@ static NSArray<SHDWSDK*>* SHDWSDKs(void) {
     dispatch_once(&onceToken, ^{
         sdks = @[
             SHDWMakeSDK(@"dyldprobe", @"dyldprobe", @"1.0.0", @"embedded", @"https://github.com/jjolano/shadow/tree/master/tests/tools/dyldprobe"),
-            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"shadow-detector-iossecuritysuite://run", @"https://github.com/securing/IOSSecuritySuite"),
-            SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"shadow-detector-jailbreakdetector://run", @"https://github.com/conmulligan/JailbreakDetector.swift"),
-            SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"shadow-detector-securitytoolkit://run", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
-            SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"shadow-detector-dtt://run", @"https://github.com/thii/DTTJailbreakDetection"),
-            SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"shadow-detector-freerasp://run", @"https://github.com/talsec/Free-RASP-iOS"),
-            SHDWMakeSDKClassified(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"shadow-detector-roothider://run", @"https://github.com/roothider/JailbreakDetector",
+            SHDWMakeSDK(@"iossecuritysuite", @"IOSSecuritySuite", @"2.3.0", @"embedded", @"https://github.com/securing/IOSSecuritySuite"),
+            SHDWMakeSDK(@"jailbreakdetector", @"JailbreakDetector.swift", @"main@b6afe56", @"embedded", @"https://github.com/conmulligan/JailbreakDetector.swift"),
+            SHDWMakeSDK(@"securitytoolkit", @"iOS Security Toolkit", @"2.0.0", @"embedded", @"https://github.com/EXXETA/iOS-Security-Toolkit"),
+            SHDWMakeSDK(@"dttjailbreakdetection", @"DTTJailbreakDetection", @"0.2.0+cedd424", @"embedded", @"https://github.com/thii/DTTJailbreakDetection"),
+            SHDWMakeSDK(@"freerasp", @"freeRASP", @"7.1.2", @"embedded", @"https://github.com/talsec/Free-RASP-iOS"),
+            SHDWMakeSDKClassified(@"roothider", @"Roothider JailbreakDetector", @"main@5b3d0be", @"embedded", @"https://github.com/roothider/JailbreakDetector",
                 SHDWAppStoreProhibited,
                 @"Not App Store distributable (Guideline 2.5.1): uses private APIs — raw launchd IPC via _os_alloc_once_table + xpc_pipe_routine subsystem/routine, csops(), and arbitrary bootstrap_look_up mach-service probing. A shipping app would be rejected, so its jailbroken verdict is a research baseline, not a real-world threat."),
-            SHDWMakeSDKClassified(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"shadow-detector-bat://run", @"https://github.com/Basilabt/BATJailbreakGuard",
+            SHDWMakeSDKClassified(@"batjailbreakguard", @"BATJailbreakGuard", @"main@spm", @"embedded", @"https://github.com/Basilabt/BATJailbreakGuard",
                 SHDWAppStoreFlawed,
                 @"PreventedAPIs check is unreliable: it flags dlsym(\"system\"/\"posix_spawn\"/\"dlopen\") which resolve on stock iOS too, so it false-positives on a clean device. Public-API only, but this check is not a valid jailbreak signal."),
-            SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"shadow-detector-safetynet://run", @"https://github.com/DipakPanchasara/SafetyNet"),
-            SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"shadow-detector-dsk://run", @"https://github.com/galahador/DeviceSecurityKit"),
-            SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"v2.8.5", @"shadow-detector-jailmonkey://run", @"https://github.com/GantMan/jail-monkey"),
-            SHDWMakeSDKClassified(@"isjailbroken", @"isJailbroken", @"main@60a5f55", @"shadow-detector-isjb://run", @"https://github.com/avltree9798/isJailbroken",
+            SHDWMakeSDK(@"safetynet", @"SafetyNet", @"main@spm", @"embedded", @"https://github.com/DipakPanchasara/SafetyNet"),
+            SHDWMakeSDK(@"devicesecuritykit", @"DeviceSecurityKit", @"0.40.0-filtered", @"embedded", @"https://github.com/galahador/DeviceSecurityKit"),
+            SHDWMakeSDK(@"jailmonkey", @"JailMonkey", @"v2.8.5", @"embedded", @"https://github.com/GantMan/jail-monkey"),
+            SHDWMakeSDKClassified(@"isjailbroken", @"isJailbroken", @"main@60a5f55", @"embedded", @"https://github.com/avltree9798/isJailbroken",
                 SHDWAppStoreFlawed,
                 @"Sandbox-write check is unreliable: it writes to a relative path (its own container, which succeeds on stock iOS), so it false-positives on a clean device. Public-API only, but this check is not a valid jailbreak signal."),
-            SHDWMakeSDK(@"swiftyjbd", @"SwiftyJBD JailBreak-Detection", @"main@6f5f1d9", @"shadow-detector-swiftyjbd://run", @"https://github.com/TheSwiftyCoder/JailBreak-Detection"),
+            SHDWMakeSDK(@"swiftyjbd", @"SwiftyJBD JailBreak-Detection", @"main@6f5f1d9", @"embedded", @"https://github.com/TheSwiftyCoder/JailBreak-Detection"),
         ];
     });
     return sdks;
@@ -294,7 +294,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
         [[NSNotificationCenter defaultCenter] postNotificationName:SHDWDetectorResultsChanged object:nil];
         if(!ok){
             UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Detector unavailable"
-                 message:[NSString stringWithFormat:@"No isolated runner for %@.", self->_sdk.identifier]
+                 message:[NSString stringWithFormat:@"No embedded detector for %@.", self->_sdk.identifier]
                 preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];

@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>application-identifier</key>
-	<string>SHDWTEST01.me.jjolano.shadow.test.roothider</string>
+	<string>SHDWTEST01.me.jjolano.shadow.harness</string>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>SHDWTEST01.me.jjolano.shadow.test.roothider</string>
+		<string>SHDWTEST01.me.jjolano.shadow.harness</string>
 	</array>
 </dict>
 </plist>

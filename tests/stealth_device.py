@@ -38,12 +38,15 @@ RUN_ALL_REPORT_IDS = (
     "isjailbroken", "swiftyjbd",
 )
 DETECTOR_RUNNER_OVERRIDE_KEY = "Test_DetectorOverrides"
+# Adapter-matrix overrides target the harness's embedded detectors (which read
+# the harness profile), not per-runner apps — the isolated runners are deleted.
+HARNESS_BUNDLE = "me.jjolano.shadow.harness"
 RUNNER_BUNDLES = {
-    "iossecuritysuite": "me.jjolano.shadow.test.iossecuritysuite",
-    "dttjailbreakdetection": "me.jjolano.shadow.test.dtt",
-    "freerasp": "me.jjolano.shadow.test.freerasp",
-    "devicesecuritykit": "me.jjolano.shadow.test.devicesecuritykit",
-    "jailmonkey": "me.jjolano.shadow.test.jailmonkey",
+    "iossecuritysuite": HARNESS_BUNDLE,
+    "dttjailbreakdetection": HARNESS_BUNDLE,
+    "freerasp": HARNESS_BUNDLE,
+    "devicesecuritykit": HARNESS_BUNDLE,
+    "jailmonkey": HARNESS_BUNDLE,
 }
 ADAPTER_MATRIX_RUNNERS = {
     "Adapter_DeviceCheck": ("dttjailbreakdetection", "jailmonkey"),

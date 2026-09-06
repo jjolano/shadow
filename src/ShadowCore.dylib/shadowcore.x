@@ -249,8 +249,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             if([effectivePrefs[SHDWAdapterFreeRASPID] boolValue]) {
                 shdw_adapter_freerasp_prepare_preferences(effectivePrefs);
             }
-            if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
-               effectivePrefs[SHDWUniversalHarnessBaselineID] == nil) {
+            if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]) {
                 effectivePrefs[SHDWUniversalHarnessBaselineID] = @YES;
             }
             prefs = [effectivePrefs copy];
@@ -283,11 +282,15 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             // Harness sets this false only for its explicit prearmed mode.
             // Prearm the detector-only units before its first real detector
             // runs; normal Harness launches retain the universal baseline.
+            // Embedded detectors (harness links Talsec/DeviceSecurityKit/IOSSB
+            // frameworks directly) count as an active detector presence, same
+            // as the old isolated runners' linked images did.
             BOOL harnessPrearmed = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
                 ![prefs[SHDWUniversalHarnessBaselineID] boolValue];
+            BOOL embeddedDetectors = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"];
             BOOL forcedPrearm = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."] ||
                 bundleIdentifier.length == 0;
-            if(hasActiveDetectorAdapter || harnessPrearmed || forcedPrearm) {
+            if(hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm) {
                 shdw_detector_present = YES;
                 shdw_detector_write_policy_set_enabled(YES);
                 [shdw_coordinator_instance prearmDetector];

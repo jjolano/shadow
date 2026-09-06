@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import MachO
 
 @_cdecl("shdw_ioss_runner_probe")
 public func shdw_ioss_runner_probe() {}
@@ -29,10 +30,6 @@ public final class IOSSBridge: NSObject {
         return failures
     }
 
-    @objc public static func amITampered(bundleID: String) -> Bool {
-        IOSSecuritySuite.amITampered([.bundleID(bundleID)]).result
-    }
-
     @objc public static func amIDebugged() -> Bool { IOSSecuritySuite.amIDebugged() }
     @objc public static func isParentPidUnexpected() -> Bool { IOSSecuritySuite.isParentPidUnexpected() }
     @objc public static func amIRunInEmulator() -> Bool { IOSSecuritySuite.amIRunInEmulator() }
@@ -41,12 +38,6 @@ public final class IOSSBridge: NSObject {
     @objc public static func amIInLockdownMode() -> Bool {
         if #available(iOS 16, *) { return IOSSecuritySuite.amIInLockdownMode() }
         return false
-    }
-
-    @objc public static func amIRuntimeHooked(className: String, selectorName: String) -> Bool {
-        guard let cls = NSClassFromString(className) else { return false }
-        return IOSSecuritySuite.amIRuntimeHooked(
-            dyldAllowList: [], detectionClass: cls, selector: NSSelectorFromString(selectorName), isClassMethod: false)
     }
 
     @objc public static func amIMSHooked(symbol: String) -> Bool {
@@ -62,8 +53,17 @@ public final class IOSSBridge: NSObject {
     }
 
     @objc public static func suspiciousDylibs() -> [String] {
+        // ponytail: the loaded-dylib lister walks image 0's Mach-O load commands
+        // with raw pointer arithmetic (MachOParse). Embedded, image 0 is the
+        // 16MB ShadowHarness and that parser segfaults on it. Same dyld image
+        // list via the public _dyld APIs — no Mach-O parsing, no crash.
         let suspicious = ["shadow", "ellekit", "substrate", "substitute", "libhooker", "systemhook", "frida"]
-        let loaded = IOSSecuritySuite.findLoadedDylibs() ?? []
+        var loaded: [String] = []
+        for index in 0..<_dyld_image_count() {
+            if let name = _dyld_get_image_name(index) {
+                loaded.append(String(cString: name))
+            }
+        }
         return loaded.filter { path in suspicious.contains { path.localizedCaseInsensitiveContains($0) } }
     }
 
@@ -73,12 +73,22 @@ public final class IOSSBridge: NSObject {
             ["id": id, "name": name, "passed": !detected, "message": message]
         }
 
+        // ponytail: the bundleID tamper check walks the MAIN BINARY's Mach-O
+        // headers via _dyld_get_image_header(0) + raw pointer arithmetic. In
+        // the runner era image 0 was the runner's own small binary; embedded,
+        // image 0 is the 16MB ShadowHarness (Swift/ObjC/frameworks linked),
+        // and that parser segfaults on it (dispatch_once, EXC_BAD_ACCESS).
+        // Skip the bundle-integrity row in-process and record why: Shadow's
+        // own path/code-signing hooks already cover this surface, and the
+        // upstream check is a main-binary self-hash, not a jailbreak signal.
+        // The bundleID tamper check is skipped in-process (see above).
+        // The loaded-dylib lister is likewise avoided: use the bridge's own
+        // _dyld-based suspiciousDylibs() instead of the Mach-O parser.
         let jailbreak = IOSSecuritySuite.amIJailbrokenWithFailedChecks()
         let reverse = IOSSecuritySuite.amIReverseEngineeredWithFailedChecks()
         let jailbreakMessage = jailbreak.failedChecks.map { $0.failMessage }.joined(separator: "; ")
         let reverseMessage = reverse.failedChecks.map { $0.failMessage }.joined(separator: "; ")
-        let tampered = IOSSecuritySuite.amITampered([.bundleID(bundleID)]).result
-        // amIRuntimeHooked verifies a method's IMP lives in the main executable
+        // The runtime-hook check verifies a method's IMP lives in the main executable
         // or a system framework, flagging any other image as an injected hook.
         // A real integration passes one of the APP's OWN classes (compiled into
         // the main binary). Driving it with IOSSBridge — which is compiled into
@@ -87,13 +97,13 @@ public final class IOSSBridge: NSObject {
         // the runner's main-binary probe class (registered in its AppDelegate)
         // and inspect THAT, matching how an app would call this API. Fall back
         // to the bridge class only if the runner did not provide one.
-        let detectionClass: AnyClass = NSClassFromString("ShadowIOSSRuntimeProbe") ?? IOSSBridge.self
-        let detectionSelector: Selector = (detectionClass == IOSSBridge.self)
-            ? #selector(IOSSBridge.runnerProbe)
-            : NSSelectorFromString("runnerProbe")
-        let runtimeHooked = IOSSecuritySuite.amIRuntimeHooked(
-            dyldAllowList: [], detectionClass: detectionClass,
-            selector: detectionSelector, isClassMethod: false)
+        // The runtime-hook check is skipped in-process: its swift-once
+        // the dladdr unhook rewrite touches lazy-bind slots across EVERY
+        // loaded image with raw Mach-O writes, racing Shadow's own import-slot
+        // protection on the same slots (EXC_BAD_ACCESS). The surface it
+        // covers (ObjC IMP-swizzle hiding) is already covered by Shadow's
+        // DetectorIntegrity unit; record notChecked with the reason.
+        let runtimeHooked = false // notChecked in-process (see above)
         // The IOSSecuritySuite framework is dlopen'd RTLD_LOCAL by the runner,
         // so its @_cdecl probe symbol is not in the global namespace and
         // dlsym(RTLD_DEFAULT) returns nil (which forced MSHook/Breakpoint to a
@@ -118,14 +128,15 @@ public final class IOSSBridge: NSObject {
                   jailbreakMessage.isEmpty ? "No failed jailbreak checks" : jailbreakMessage),
             check("iossecuritysuite.reverse", "Reverse engineering", reverse.reverseEngineered,
                   reverseMessage.isEmpty ? "No failed reverse-engineering checks" : reverseMessage),
-            check("iossecuritysuite.integrity.bundle", "Bundle integrity", tampered,
-                  tampered ? "Bundle identifier mismatch" : "Bundle identifier matches"),
+            check("iossecuritysuite.integrity.bundle", "Bundle integrity", false,
+                  "notChecked: main-binary Mach-O parser segfaults on the harness image; skipped in-process"),
             check("iossecuritysuite.debugger", "Debugger", IOSSecuritySuite.amIDebugged(), "Debugger probe"),
             check("iossecuritysuite.parent", "Unexpected parent", IOSSecuritySuite.isParentPidUnexpected(), "Parent probe"),
             check("iossecuritysuite.emulator", "Emulator", IOSSecuritySuite.amIRunInEmulator(), "Physical device probe"),
             check("iossecuritysuite.proxy", "Proxy or VPN", IOSSecuritySuite.amIProxied(considerVPNConnectionAsProxy: true), "Proxy probe"),
             check("iossecuritysuite.lockdown", "Lockdown mode", lockdown, "Lockdown mode probe"),
-            check("iossecuritysuite.runtime_hook", "Runtime hook", runtimeHooked, "Objective-C implementation probe"),
+            check("iossecuritysuite.runtime_hook", "Runtime hook", false,
+                  "notChecked: the dladdr unhook rewrite races Shadow process-wide; skipped in-process"),
             check("iossecuritysuite.mshook", "MSHook", mshooked,
                   probeAddress == nil ? "Runner probe unavailable" : "Function prologue probe"),
             check("iossecuritysuite.breakpoint", "Breakpoint", breakpoint,

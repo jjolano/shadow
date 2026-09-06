@@ -1,20 +1,31 @@
 #import "Detectors.h"
 #import "Battery.h"
 #import "DetectorDashboard.h"
+#import "SHDWEmbeddedSwift.h"
 
 #import <Shadow.h>
 #import <UIKit/UIKit.h>
-
-#import <arpa/inet.h>
-#import <errno.h>
-#import <netinet/in.h>
-#import <sys/socket.h>
 #import <unistd.h>
 
 extern BOOL SHDWDyldProbeWriteDashboardReport(NSString **failure);
+extern NSDictionary *SHDWEmbeddedRunDetector(NSString *identifier);
 
 static NSString * const kSHDWResultsDirectory = @"/var/mobile/Documents/ShadowDetectorTests";
-static const NSUInteger kSHDWMaxEnvelopeBytes = 8 * 1024 * 1024;
+
+// Embedded engine: every detector runs sequentially in-process on a serial
+// worker queue, writing its report straight to the results directory. No
+// app flips, no URL schemes, no TCP. dyldprobe was already embedded; the
+// other twelve moved in via SHDWEmbedded.m + EmbeddedDrivers.swift.
+static BOOL gSHDWRunning = NO;
+static BOOL gSHDWRunAll = NO;
+static NSUInteger gSHDWRunAllIndex = 0;
+static NSString *gSHDWIdentifier;
+// Watchdog generation: SHDWFinishCurrent only advances the chain for the
+// run it was armed for. A late driver finish or stale timer for an older
+// generation is ignored (its report, if any, is already on disk).
+static NSUInteger gSHDWGeneration = 0;
+static dispatch_block_t gSHDWRunAllCompletion;
+static dispatch_queue_t gSHDWEmbeddedQueue;
 
 static NSArray<NSString *> *SHDWDetectorIDs(void) {
     return @[
@@ -25,61 +36,8 @@ static NSArray<NSString *> *SHDWDetectorIDs(void) {
     ];
 }
 
-static NSDictionary *SHDWRunnerForID(NSString *identifier) {
-    static NSDictionary *runners;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        runners = @{
-            @"dyldprobe": @{ @"scheme": @"shadow-dyldprobe", @"bundle": @"me.jjolano.dyldprobe" },
-            @"iossecuritysuite": @{ @"scheme": @"shadow-detector-iossecuritysuite", @"bundle": @"me.jjolano.shadow.test.iossecuritysuite" },
-            @"jailbreakdetector": @{ @"scheme": @"shadow-detector-jailbreakdetector", @"bundle": @"me.jjolano.shadow.test.jailbreakdetector" },
-            @"securitytoolkit": @{ @"scheme": @"shadow-detector-securitytoolkit", @"bundle": @"me.jjolano.shadow.test.securitytoolkit" },
-            @"dttjailbreakdetection": @{ @"scheme": @"shadow-detector-dtt", @"bundle": @"me.jjolano.shadow.test.dtt" },
-            @"freerasp": @{ @"scheme": @"shadow-detector-freerasp", @"bundle": @"me.jjolano.shadow.test.freerasp" },
-            @"roothider": @{ @"scheme": @"shadow-detector-roothider", @"bundle": @"me.jjolano.shadow.test.roothider" },
-            @"batjailbreakguard": @{ @"scheme": @"shadow-detector-bat", @"bundle": @"me.jjolano.shadow.test.bat" },
-            @"safetynet": @{ @"scheme": @"shadow-detector-safetynet", @"bundle": @"me.jjolano.shadow.test.safetynet" },
-            @"devicesecuritykit": @{ @"scheme": @"shadow-detector-dsk", @"bundle": @"me.jjolano.shadow.test.devicesecuritykit" },
-            @"jailmonkey": @{ @"scheme": @"shadow-detector-jailmonkey", @"bundle": @"me.jjolano.shadow.test.jailmonkey" },
-            @"isjailbroken": @{ @"scheme": @"shadow-detector-isjb", @"bundle": @"me.jjolano.shadow.test.isjailbroken" },
-            @"swiftyjbd": @{ @"scheme": @"shadow-detector-swiftyjbd", @"bundle": @"me.jjolano.shadow.test.swiftyjbd" },
-        };
-    });
-    return runners[identifier];
-}
-
-static NSString *SHDWQueryEscape(NSString *value) {
-    NSMutableCharacterSet *allowed = [[NSCharacterSet alphanumericCharacterSet] mutableCopy];
-    [allowed addCharactersInString:@"-._~"];
-    return [value stringByAddingPercentEncodingWithAllowedCharacters:allowed] ?: @"";
-}
-
-static BOOL SHDWReadFully(int fd, void *buffer, size_t length) {
-    uint8_t *cursor = buffer;
-    while (length) {
-        ssize_t received = recv(fd, cursor, length, 0);
-        if (received <= 0) return NO;
-        cursor += received;
-        length -= (size_t)received;
-    }
-    return YES;
-}
-
-static int gSHDWListener = -1;
-static uint16_t gSHDWPort = 0;
-static NSString *gSHDWIdentifier;
-static NSString *gSHDWNonce;
-static BOOL gSHDWRunning = NO;
-static BOOL gSHDWRunAll = NO;
-static NSUInteger gSHDWRunAllIndex = 0;
-static dispatch_block_t gSHDWRunAllCompletion;
-static dispatch_queue_t gSHDWTransportQueue;
-
-static void SHDWCloseListener(void) {
-    int listener = gSHDWListener;
-    gSHDWListener = -1;
-    gSHDWPort = 0;
-    if (listener >= 0) close(listener);
+static BOOL SHDWKnowsDetector(NSString *identifier) {
+    return [SHDWDetectorIDs() containsObject:identifier];
 }
 
 static void SHDWNotifyResults(void) {
@@ -108,13 +66,13 @@ static void SHDWWriteFailure(NSString *identifier, NSString *message) {
         @"outcome": @"error",
         @"generatedAt": [NSISO8601DateFormatter.new stringFromDate:[NSDate date]],
         @"rounds": @[@{
-            @"phase": @"transport",
+            @"phase": @"embedded",
             @"clean": @NO,
             @"checks": @[@{
-                @"id": @"runner.transport",
-                @"name": @"Runner transport",
+                @"id": @"embedded.run",
+                @"name": @"Embedded run",
                 @"passed": @NO,
-                @"message": message ?: @"Runner did not return a report",
+                @"message": message ?: @"Detector did not return a report",
             }],
         }],
     });
@@ -122,178 +80,108 @@ static void SHDWWriteFailure(NSString *identifier, NSString *message) {
 
 static void SHDWRunNextDetector(void);
 
-static void SHDWFinishCurrent(BOOL success, NSString *message) {
-    NSString *identifier = gSHDWIdentifier;
+static void SHDWFinishCurrentGen(BOOL success, NSString *identifier, NSString *message, NSUInteger generation) {
+    if (generation != gSHDWGeneration) return;
     BOOL runningAll = gSHDWRunAll;
-    SHDWCloseListener();
     gSHDWIdentifier = nil;
-    gSHDWNonce = nil;
     gSHDWRunning = NO;
     if (!success && identifier.length) SHDWWriteFailure(identifier, message);
     SHDWNotifyResults();
 
     if (runningAll) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SHDWRunNextDetector();
-        });
+        SHDWRunNextDetector();
     }
 }
 
-static void SHDWHandleEnvelope(NSData *data, NSString *identifier, NSString *nonce) {
-    if (!data.length) {
-        SHDWFinishCurrent(NO, @"Runner callback returned no data");
-        return;
-    }
 
-    NSError *error = nil;
-    id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-    NSDictionary *envelope = [object isKindOfClass:[NSDictionary class]] ? object : nil;
-    NSDictionary *report = [envelope[@"report"] isKindOfClass:[NSDictionary class]] ? envelope[@"report"] : nil;
-    NSDictionary *sdk = [report[@"sdk"] isKindOfClass:[NSDictionary class]] ? report[@"sdk"] : nil;
-    BOOL valid = envelope && [envelope[@"nonce"] isEqual:nonce] &&
-        [envelope[@"identifier"] isEqual:identifier] &&
-        [sdk[@"id"] isEqual:identifier] && [report[@"rounds"] isKindOfClass:[NSArray class]];
-    if (!valid) {
-        SHDWFinishCurrent(NO, error.localizedDescription ?: @"Invalid runner callback");
-        return;
-    }
 
-    if (SHDWWriteReport(identifier, report)) {
-        SHDWFinishCurrent(YES, nil);
-    } else {
-        SHDWFinishCurrent(NO, @"Cannot persist runner report");
-    }
-}
-
-static void SHDWAcceptCallback(NSString *identifier, NSString *nonce) {
-    int listener = gSHDWListener;
-    if (listener < 0) return;
-    if (!gSHDWTransportQueue) gSHDWTransportQueue = dispatch_queue_create("me.jjolano.shadow.detector-transport", DISPATCH_QUEUE_SERIAL);
-    dispatch_async(gSHDWTransportQueue, ^{
-        struct sockaddr_in address = {0};
-        socklen_t addressLength = sizeof(address);
-        int client = accept(listener, (struct sockaddr *)&address, &addressLength);
-        if (client < 0) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (gSHDWRunning && [gSHDWNonce isEqual:nonce]) SHDWFinishCurrent(NO, @"Runner callback connection failed");
-            });
-            return;
-        }
-        struct timeval timeout = {10, 0};
-        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        uint32_t networkLength = 0;
-        BOOL complete = SHDWReadFully(client, &networkLength, sizeof(networkLength));
-        uint32_t length = ntohl(networkLength);
-        NSMutableData *data = nil;
-        if (complete && length > 0 && length <= kSHDWMaxEnvelopeBytes) {
-            data = [NSMutableData dataWithLength:length];
-            complete = SHDWReadFully(client, data.mutableBytes, length);
-        } else {
-            complete = NO;
-        }
-        shutdown(client, SHUT_RDWR);
-        close(client);
-        if (!complete || !data.length) {
-            // RASP port checks connect and close without sending a callback.
-            // Keep the listener alive for the runner's real framed envelope.
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (gSHDWRunning && [gSHDWNonce isEqual:nonce]) {
-                    SHDWAcceptCallback(identifier, nonce);
-                }
-            });
-            return;
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!gSHDWRunning || ![gSHDWNonce isEqual:nonce]) return;
-            SHDWHandleEnvelope(data, identifier, nonce);
-        });
+// One detector, synchronously, on the worker queue. dyldprobe keeps its
+// existing entry point; everything else goes through the embedded drivers.
+// A per-detector watchdog (FreeRASP needs ~35s) writes an error report if
+// the driver hangs instead of stalling the chain forever.
+static void SHDWRunEmbeddedGen(NSString *identifier, NSUInteger generation) {
+    uint64_t start = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
+    // Progress marker FIRST: proves the chain reached this detector even if
+    // the driver never returns (hang/crash). The driver overwrites it with
+    // the real report on success.
+    SHDWWriteReport(identifier, @{
+        @"schemaVersion": @1,
+        @"sdk": @{ @"id": identifier, @"name": identifier, @"version": @"unknown" },
+        @"outcome": @"error",
+        @"generatedAt": [NSISO8601DateFormatter.new stringFromDate:[NSDate date]],
+        @"rounds": @[@{
+            @"phase": @"embedded",
+            @"clean": @NO,
+            @"checks": @[@{
+                @"id": @"embedded.started",
+                @"name": @"Embedded run",
+                @"passed": @NO,
+                @"message": @"Detector started, no result yet",
+            }],
+        }],
     });
-}
-
-static BOOL SHDWStartListener(NSString *identifier, NSString **callbackURL) {
-    int listener = socket(AF_INET, SOCK_STREAM, 0);
-    if (listener < 0) return NO;
-    int reuse = 1;
-    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    struct sockaddr_in address = {0};
-    address.sin_len = sizeof(address);
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = 0;
-    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(listener, 1) != 0) {
-        close(listener);
-        return NO;
-    }
-    socklen_t addressLength = sizeof(address);
-    if (getsockname(listener, (struct sockaddr *)&address, &addressLength) != 0) {
-        close(listener);
-        return NO;
-    }
-    NSString *nonce = NSUUID.UUID.UUIDString.lowercaseString;
-    gSHDWListener = listener;
-    gSHDWPort = ntohs(address.sin_port);
-    gSHDWIdentifier = [identifier copy];
-    gSHDWNonce = nonce;
-    gSHDWRunning = YES;
-    if (callbackURL) {
-        *callbackURL = [NSString stringWithFormat:@"shdw-tcp://127.0.0.1:%u/result?nonce=%@",
-            gSHDWPort, SHDWQueryEscape(nonce)];
-    }
-    SHDWAcceptCallback(identifier, nonce);
-    return YES;
-}
-
-static void SHDWRunnerLaunchFailed(NSString *nonce, NSString *message) {
-    if (gSHDWRunning && [gSHDWNonce isEqual:nonce]) SHDWFinishCurrent(NO, message);
-}
-
-static BOOL SHDWStartEmbeddedDyldProbe(void) {
-    if (gSHDWRunning) return NO;
-    gSHDWIdentifier = @"dyldprobe";
-    gSHDWNonce = NSUUID.UUID.UUIDString.lowercaseString;
-    gSHDWRunning = YES;
-    NSString *nonce = [gSHDWNonce copy];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSDictionary *report = nil;
+    if ([identifier isEqualToString:@"dyldprobe"]) {
         NSString *failure = nil;
         BOOL success = SHDWDyldProbeWriteDashboardReport(&failure);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!gSHDWRunning || ![gSHDWNonce isEqual:nonce]) return;
-            SHDWFinishCurrent(success, failure ?: @"Embedded dyldprobe failed");
-        });
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        if (gSHDWRunning && [gSHDWNonce isEqual:nonce])
-            SHDWFinishCurrent(NO, @"Embedded dyldprobe timed out");
-    });
-    return YES;
+        if (!success) {
+            SHDWFinishCurrentGen(NO, identifier, failure ?: @"Embedded dyldprobe failed", generation);
+            return;
+        }
+        // dyldprobe persists its own report; nothing more to write.
+        SHDWFinishCurrentGen(YES, identifier, nil, generation);
+        return;
+    }
+    @try {
+        report = SHDWEmbeddedRunDetector(identifier);
+    } @catch (NSException *e) {
+        report = nil;
+    }
+    uint64_t elapsed = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - start;
+    if (generation != gSHDWGeneration) return;
+    if (![report isKindOfClass:[NSDictionary class]]) {
+        SHDWFinishCurrentGen(NO, identifier, @"Detector did not return a report", generation);
+        return;
+    }
+    NSMutableDictionary *stamped = [report mutableCopy];
+    NSMutableDictionary *timing = [[report[@"timing"] isKindOfClass:[NSDictionary class]]
+        ? report[@"timing"] : @{} mutableCopy];
+    timing[@"elapsed_ns"] = @(elapsed);
+    stamped[@"timing"] = timing;
+    if (!SHDWWriteReport(identifier, stamped)) {
+        SHDWFinishCurrentGen(NO, identifier, @"Cannot persist detector report", generation);
+        return;
+    }
+    SHDWFinishCurrentGen(YES, identifier, nil, generation);
 }
 
 static BOOL SHDWStartDetector(NSString *identifier) {
-    if ([identifier isEqualToString:@"dyldprobe"]) return SHDWStartEmbeddedDyldProbe();
-    NSDictionary *runner = SHDWRunnerForID(identifier);
-    NSString *scheme = runner[@"scheme"];
-    if (!scheme.length || gSHDWRunning) return NO;
-
-    NSString *callback = nil;
-    if (!SHDWStartListener(identifier, &callback)) return NO;
-    NSString *nonce = [gSHDWNonce copy];
-    NSString *urlString = [NSString stringWithFormat:@"%@://run?nonce=%@&callback=%@",
-        scheme, SHDWQueryEscape(nonce), SHDWQueryEscape(callback)];
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (!url) {
-        SHDWRunnerLaunchFailed(nonce, @"Runner URL could not be constructed");
-        return NO;
+    // NOTE: no gSHDWRunning re-entrancy gate. The watchdog below can fire
+    // while a hung driver still occupies the worker queue; the chain must
+    // still advance. Serialization comes from the serial queue + the
+    // watchdog generation check, not from this flag.
+    if (!SHDWKnowsDetector(identifier)) return NO;
+    if (!gSHDWEmbeddedQueue) {
+        gSHDWEmbeddedQueue = dispatch_queue_create(
+            "me.jjolano.shadow.detector-embedded", DISPATCH_QUEUE_SERIAL);
     }
-    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:^(BOOL success) {
-        if (!success) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                SHDWRunnerLaunchFailed(nonce, @"Runner application is not installed or did not accept its URL");
-            });
-        }
-    }];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(90 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        SHDWRunnerLaunchFailed(nonce, @"Runner callback timed out");
+    gSHDWIdentifier = [identifier copy];
+    gSHDWRunning = YES;
+    SHDWNotifyResults();
+    NSString *current = [identifier copy];
+    NSUInteger generation = ++gSHDWGeneration;
+    dispatch_async(gSHDWEmbeddedQueue, ^{
+        SHDWRunEmbeddedGen(current, generation);
+    });
+    // Watchdog: FreeRASP settles ~30s; nothing should exceed 120s. On
+    // timeout the chain records an error and moves on — a hung detector
+    // must not stall the other eleven. The driver itself is synchronous
+    // and cannot be cancelled; the generation check keeps a late finish
+    // from double-advancing (SHDWFinishCurrent is idempotent per run:
+    // gSHDWRunning is already NO).
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        SHDWFinishCurrentGen(NO, current, @"Detector timed out", generation);
     });
     return YES;
 }
@@ -310,7 +198,7 @@ static void SHDWRunNextDetector(void) {
     }
     NSString *identifier = identifiers[gSHDWRunAllIndex++];
     if (!SHDWStartDetector(identifier)) {
-        SHDWWriteFailure(identifier, @"Runner could not be started");
+        SHDWWriteFailure(identifier, @"Detector could not be started");
         SHDWNotifyResults();
         dispatch_async(dispatch_get_main_queue(), ^{
             SHDWRunNextDetector();
@@ -332,7 +220,7 @@ void SHDWRunAllDetectorsWithCompletion(dispatch_block_t completion) {
 }
 
 BOOL SHDWRunDetectorWithID(NSString *identifier) {
-    if (gSHDWRunAll || gSHDWRunning || !SHDWRunnerForID(identifier)) return NO;
+    if (gSHDWRunAll || gSHDWRunning || !SHDWKnowsDetector(identifier)) return NO;
     return SHDWStartDetector(identifier);
 }
 

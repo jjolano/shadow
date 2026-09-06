@@ -229,8 +229,8 @@ if ! grep -q -- '--shadow-headless-run-all' tests/ShadowHarness/main.m; then
     echo 'HARNESS HEADLESS DRIFT: Run All needs a direct executable test mode'
     exit 1
 fi
-if ! grep -q 'SHDWUniversalHarnessBaselineID] == nil' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
+if ! grep -q 'SHDWUniversalHarnessBaselineID] = @YES' src/ShadowCore.dylib/shadowcore.x ||
+   ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
    ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/ShadowCore.dylib/shadowcore.x ||
    ! grep -q 'prefs\[SHDWUniversalHarnessBaselineID\] != nil' src/Shadow.framework/HookConfiguration.m ||
    ! grep -q '_harnessProfile' src/ShadowCore.dylib/HookCoordinator.m ||
@@ -275,12 +275,12 @@ if ! grep -q 'statfs("/var/jb"' tests/tools/dyldprobe/main.m ||
     echo 'DYLD DRIFT: injection canary must use a universally installed filesystem hook'
     exit 1
 fi
-if ! grep -q 'DeviceSecurityKitRunner' tests/DetectorRunners/DeviceSecurityKit/Makefile ||
-   ! grep -q 'devicesecuritykit' tests/DetectorRunners/DeviceSecurityKit/AppDelegate.swift; then
-    echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute in its isolated runner'
+if ! grep -q 'DeviceSecurityKit' tests/ShadowHarness/Makefile ||
+   ! grep -q 'devicesecuritykit' tests/ShadowHarness/EmbeddedDrivers.swift; then
+    echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute embedded in the harness'
     exit 1
 fi
-if grep -q 'SecurityLoggerManager\|prepareForHarness' tests/ShadowHarness/Detectors.m; then
+if grep -q 'SecurityLoggerManager.shared' tests/ShadowHarness/Detectors.m tests/ShadowHarness/SHDWEmbedded.m tests/ShadowHarness/EmbeddedDrivers.swift; then
     echo 'HARNESS DSK DRIFT: isolated DeviceSecurityKit logger leaked into the Harness'
     exit 1
 fi
@@ -288,39 +288,43 @@ if grep -q 'DEBUG-9be1\|shdw_write_run_all_debug_state' tests/ShadowHarness/Dete
     echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
     exit 1
 fi
-if ! grep -q 'INCLUDE_DETECTOR_RUNNERS' tests/ShadowHarness/Makefile ||
-   ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' tests/ShadowHarness/Makefile ||
+if ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' tests/ShadowHarness/Makefile ||
    ! grep -q 'm -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1' scripts/build-detector-harness.sh; then
-    echo 'HARNESS PACKAGE DRIFT: final packages must include isolated runners and dyld stress library'
+    echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
     exit 1
 fi
 if ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfiguration.m ||
-   ! grep -q 'SimulatorDetector.threatDetected()' tests/DetectorRunners/SecurityToolkit/AppDelegate.swift ||
-   ! grep -q 'HardwareSecurityDetector.threatDetected()' tests/DetectorRunners/SecurityToolkit/AppDelegate.swift ||
-   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService' tests/DetectorRunners/BATJailbreakGuard/AppDelegate.swift ||
-   ! grep -q 'JailbreakDetectionChecksumCheckService' tests/DetectorRunners/BATJailbreakGuard/AppDelegate.swift ||
-   ! grep -q 'JailbreakDetector.detect()' tests/DetectorRunners/SafetyNet/AppDelegate.swift ||
-   ! grep -q 'IntegrityValidator.validateCodeSignature()' tests/DetectorRunners/SafetyNet/AppDelegate.swift ||
-   ! grep -q 'ProxyDetector.checkVPNAsProxy()' tests/DetectorRunners/SafetyNet/AppDelegate.swift ||
-   ! grep -q 'DSKBridge.isReverseEngineered()' tests/DetectorRunners/DeviceSecurityKit/AppDelegate.swift ||
-     ! grep -q 'detect_launchd_deplatformized' tests/DetectorRunners/Roothider/AppDelegate.m ||
-     ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' tests/DetectorRunners/JailMonkey/Makefile ||
-     ! grep -q '\[detector canFork\]' tests/DetectorRunners/JailMonkey/AppDelegate.m ||
+   ! grep -q 'statuses\["rootPrivileges"\]' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'statuses\["hardwareCryptography"\]' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetectionChecksumCheckService()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetector.detect()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'IntegrityValidator.validateCodeSignature()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'ProxyDetector.checkVPNAsProxy()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'isReverseEngineered' tests/ShadowHarness/EmbeddedDrivers.swift ||
+    ! grep -q 'detect_launchd_deplatformized' tests/ShadowHarness/SHDWEmbedded.m ||
+    ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' tests/ShadowHarness/Makefile ||
+    ! grep -q 'SHDWEmbeddedCanSpawn' tests/ShadowHarness/SHDWEmbedded.m ||
     ! grep -q 'iossecuritysuite.watchpoint' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q '_dyld_image_count()' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q 'notChecked: main-binary Mach-O parser segfaults' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q '\.findLoadedDylibs(' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'IOSSecuritySuite.amIRuntimeHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'FishHookChecker.denyFishHook\|MSHookFunctionChecker.denyMSHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'FishHookChecker\.denyFishHook\|MSHookFunctionChecker\.denyMSHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'amITampered(\[\|\.amITampered(' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
     ! grep -q 'runnerChecksWithBundleID:' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'dlopen(framework, RTLD_NOW | RTLD_LOCAL)' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift ||
-   ! grep -q 'shdwInstallHarnessSDKFallback' tests/DetectorRunners/IOSSecuritySuite/AppDelegate.swift ||
-   ! grep -q 'isJb()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
-   ! grep -q 'isInjectedWithDynamicLibrary()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
-   ! grep -q 'isDebugged()' tests/DetectorRunners/isJailbroken/AppDelegate.m ||
-   ! grep -q 'ISJB_DIR)/JB.m' tests/DetectorRunners/isJailbroken/Makefile ||
-   ! grep -q 'isJailbrokenRunner' tests/DetectorRunners/isJailbroken/Makefile ||
-   ! grep -q 'SwiftyJBD.isJailbroken()' tests/DetectorRunners/SwiftyJBD/AppDelegate.swift ||
-   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' tests/DetectorRunners/SwiftyJBD/Makefile ||
-   ! grep -q 'SwiftyJBDRunner' tests/DetectorRunners/SwiftyJBD/Makefile ||
-   ! grep -q 'RoothiderRunner_CODESIGN_FLAGS' tests/DetectorRunners/Roothider/Makefile ||
-   ! grep -q 'application-identifier' tests/DetectorRunners/Roothider/Resources/RoothiderRunner.entitlements; then
-    echo 'HARNESS OPTION DRIFT: detector runners must execute every supported one-shot check'
+   ! grep -q 'runnerChecksWithBundleID:' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q 'shdwInstallHarnessSDKFallback' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'isJb()' tests/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'isInjectedWithDynamicLibrary()' tests/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'isDebugged()' tests/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'ISJB_DIR)/JB.m' tests/ShadowHarness/Makefile ||
+   ! grep -q 'SwiftyJBD.isJailbroken()' tests/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' tests/ShadowHarness/Makefile ||
+   ! grep -q 'ShadowHarness_CODESIGN_FLAGS' tests/ShadowHarness/Makefile ||
+   ! grep -q 'application-identifier' tests/ShadowHarness/Resources/ShadowHarness.entitlements; then
+    echo 'HARNESS OPTION DRIFT: embedded detectors must execute every supported one-shot check'
     exit 1
 fi
 if ! grep -q 'ShdwReadEvidenceData' tests/ShadowHarness/DetectorDashboard.m ||
@@ -330,13 +334,13 @@ if ! grep -q 'ShdwReadEvidenceData' tests/ShadowHarness/DetectorDashboard.m ||
     exit 1
 fi
 if grep -q 'shdw_load_framework\|shdw_dlopen_framework' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'SHDWRunnerForID' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'SHDWStartEmbeddedDyldProbe' tests/ShadowHarness/Detectors.m; then
-    echo 'HARNESS DRIFT: SDKs must run through isolated runners and dyldprobe in-process'
+   ! grep -q 'SHDWKnowsDetector' tests/ShadowHarness/Detectors.m ||
+   ! grep -q 'SHDWEmbeddedRunDetector' tests/ShadowHarness/Detectors.m; then
+    echo 'HARNESS DRIFT: SDKs must run embedded in-process (no app flips)'
     exit 1
 fi
-if ! grep -q 'scheduledTimer.*30' tests/DetectorRunners/FreeRASP/AppDelegate.swift; then
-    echo 'HARNESS DRIFT: FreeRASP must settle before returning its runner report'
+if ! grep -q 'scheduledTimer.*30' tests/ShadowHarness/EmbeddedDrivers.swift; then
+    echo 'HARNESS DRIFT: FreeRASP must settle before returning its report'
     exit 1
 fi
 if ! grep -q 'hookRebindSymbol:@"fopen"' src/ShadowCore.dylib/hooks/Universal/libc.x; then

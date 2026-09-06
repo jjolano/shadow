@@ -6,11 +6,11 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = dyldprobe
 
-# RunnerSupport.m is shared with the detector runners. Theos validates FILES as
-# literal paths (no vpath), so it must be listed with its ../../ prefix; the
-# generated object mirror lands in .theos/DetectorRunners/ (gitignored with the
-# rest of .theos).
-dyldprobe_FILES = main.m ../../DetectorRunners/RunnerSupport.m
+# RunnerSupport.m used to be shared with the detector runner apps (TCP
+# transport). The runners are deleted — detectors run embedded in the
+# harness — so dyldprobe only needs the query-string helper it still uses,
+# provided by dyldprobe_support.m in this directory.
+dyldprobe_FILES = main.m
 dyldprobe_FRAMEWORKS = UIKit Foundation
 dyldprobe_CFLAGS = -fobjc-arc
 dyldprobe_CODESIGN_FLAGS = -Sentitlements.plist
