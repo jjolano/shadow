@@ -4,7 +4,6 @@
 #import <objc/runtime.h>
 
 #include <dlfcn.h>
-#include <stdlib.h>
 #include <string.h>
 
 static BOOL shdw_string_has_suffix(const char* value, const char* suffix) {
@@ -38,41 +37,14 @@ static BOOL shdw_has_bool_method(Class cls, const char* selector, BOOL classMeth
     return encoding && (encoding[0] == 'B' || encoding[0] == 'c');
 }
 
-static __attribute__((unused)) BOOL shdw_has_iossecuritysuite_classes(void) {
-    int count = objc_getClassList(NULL, 0);
-    if(count <= 0) return NO;
-
-    Class __unsafe_unretained *classes =
-        (Class __unsafe_unretained *)calloc((size_t)count, sizeof(Class));
-    if(!classes) return NO;
-
-    int filled = objc_getClassList(classes, count);
-    const char *suiteImage = NULL, *jailbreakImage = NULL, *runtimeImage = NULL;
-
-    for(int i = 0; i < filled && i < count; i++) {
-        const char* name = class_getName(classes[i]);
-        const char* image = class_getImageName(classes[i]);
-
-        if(shdw_string_has_suffix(name, "16IOSSecuritySuite") ||
-           shdw_string_has_suffix(name, ".IOSSecuritySuite")) {
-            suiteImage = image;
-        } else if(shdw_string_has_suffix(name, "16JailbreakChecker") ||
-                  shdw_string_has_suffix(name, ".JailbreakChecker")) {
-            jailbreakImage = image;
-        } else if(shdw_string_has_suffix(name, "18RuntimeHookChecker") ||
-                  shdw_string_has_suffix(name, ".RuntimeHookChecker")) {
-            runtimeImage = image;
-        }
-    }
-
-    free(classes);
-    return suiteImage && jailbreakImage && runtimeImage &&
-        strcmp(suiteImage, jailbreakImage) == 0 && strcmp(suiteImage, runtimeImage) == 0;
-}
-
 static BOOL shdw_detect_iossecuritysuite(void) {
-    return shdw_has_image_suffix("/IOSSecuritySuite.framework/IOSSecuritySuite") ||
-        shdw_has_iossecuritysuite_classes();
+    // ponytail: image check only at ctor. objc_getClassList realizes every
+    // ObjC class (realizeAllClasses), which faults Swift singleton metadata
+    // mid-dyld-init on Swift-heavy apps (Google Maps EXC_BAD_ACCESS at PC=0).
+    // Class-name matching adds no detection the image check misses: SPM
+    // static embeds have no separate image but also expose no ObjC entry
+    // (pure Swift, no ObjC methods to hook), so there is nothing to prearm.
+    return shdw_has_image_suffix("/IOSSecuritySuite.framework/IOSSecuritySuite");
 }
 
 static BOOL shdw_detect_freerasp(void) {
