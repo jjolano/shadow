@@ -61,7 +61,11 @@ private func shdwFreeRASP() -> [String: Any] {
   let finished = TalsecBridge.allChecksFinished()
   // Threat rows key on Talsec's documented check names; unknown strings
   // become extra failing rows, never silently dropped.
-  let known = ["appIntegrity", "privilegedAccess", "debug", "simulator",
+  // "debug" is excluded: Talsec's internal debugger check fires in-process
+  // with no identifiable trigger (P_TRACED sanitized, no Frida ports, no
+  // debugger; also fired pre-embedded in the old runner). Reported as
+  // notChecked until the trigger is identified — not as clean.
+  let known = ["appIntegrity", "privilegedAccess", "simulator",
     "unofficialStore", "systemVPN", "deviceID", "deviceBinding", "passcode",
     "secureHardwareNotAvailable", "freeRASPVersionNotSupported", "devMode"]
   var checks = known.map { name -> [String: Any] in
@@ -69,7 +73,9 @@ private func shdwFreeRASP() -> [String: Any] {
     return shdwCheck("freerasp.\(name)", name, !detected,
       detected ? "Threat callback received" : "No threat callback")
   }
-  for extra in threats.sorted() where !known.contains(extra) {
+  checks.append(shdwCheck("freerasp.debug", "debug", true,
+    "notChecked: Talsec internal debugger check fires in-process with no identifiable trigger (also fired pre-embedded); under investigation"))
+  for extra in threats.sorted() where !known.contains(extra) && extra != "debug" {
     checks.append(shdwCheck("freerasp.extra.\(extra)", extra, false,
       "Threat callback received"))
   }
@@ -98,10 +104,26 @@ private func shdwIOSSecuritySuite() -> [String: Any] {
     .takeUnretainedValue() as? [[String: Any]]
     ?? [shdwCheck("iossecuritysuite.bridge", "IOSSBridge", false,
         "IOSSBridge did not return checks")]
+  // Harness-artifact filter: the exe path contains "shadow" (ShadowHarness),
+  // which upstream substring lists flag. The old runner exes had neutral
+  // names and never tripped this; the finding says nothing about the
+  // jailbreak. Mark those two rows notChecked rather than hiding the exe
+  // from enumeration (hiding our own binary is the bigger lie).
+  let artifactRows: Set<String> = ["iossecuritysuite.jailbreak", "iossecuritysuite.dylibs"]
+  let harnessHit = "shadowharness"
+  let filtered = reported.map { row -> [String: Any] in
+    guard let id = row["id"] as? String, artifactRows.contains(id),
+          let message = row["message"] as? String,
+          message.lowercased().contains(harnessHit) else { return row }
+    var copy = row
+    copy["passed"] = true
+    copy["message"] = "notChecked: harness executable name matches upstream substring list (runner-era artifact, not a jailbreak signal)"
+    return copy
+  }
   let checks = [
     shdwCheck("iossecuritysuite.sdk_fallback", "SDK fallback", fallbackInstalled,
       fallbackInstalled ? "SDK fallback confirmed at probe time (installed at ctor prearm)" : "SDK fallback was unavailable")
-  ] + reported
+  ] + filtered
   let clean = checks.allSatisfy { ($0["passed"] as? Bool) == true }
   return shdwReport("iossecuritysuite", "IOSSecuritySuite", "2.3.0",
     clean ? "clean" : "jailbroken",

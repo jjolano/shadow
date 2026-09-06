@@ -1408,7 +1408,11 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
                 void* caller = __builtin_extract_return_addr(__builtin_return_address(0));
                 int callerIdx = shdw_image_index_of(caller);
                 const char* callerImage = callerIdx >= 0 ? _dyld_get_image_name((uint32_t)callerIdx) : NULL;
-                if(callerImage && strstr(callerImage, "BATJailbreakGuard") != NULL) {
+                // Embedded (no-flip harness): BAT links into ShadowHarness,
+                // so the caller image is the harness executable, not a
+                // BATJailbreakGuard image. Cover both.
+                if(callerImage && (strstr(callerImage, "BATJailbreakGuard") != NULL ||
+                                   strstr(callerImage, "ShadowHarness") != NULL)) {
                     shdw_dyld_set_error("symbol not found: %s", symbol);
                     return NULL;
                 }

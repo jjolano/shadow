@@ -18,6 +18,7 @@
 
 #import <Foundation/Foundation.h>
 
+#import <mach-o/dyld.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <spawn.h>
@@ -41,6 +42,7 @@
 - (NSString *)checkSchemesMessage;
 - (NSString *)checkSymlinksMessage;
 - (NSString *)checkDylibsMessage;
+- (NSArray *)dylibsToCheck;
 @end
 
 #import "SHDWEmbeddedSwift.h"
@@ -165,6 +167,23 @@ static NSDictionary *SHDWEmbeddedDTT(void) {
     });
 }
 
+static NSString *SHDWEmbeddedJailMonkeyMatches(JailMonkey *detector) {
+    NSArray *needles = [detector dylibsToCheck];
+    NSMutableArray *hits = [NSMutableArray array];
+    uint32_t count = _dyld_image_count();
+    for(uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if(!name) continue;
+        NSString *image = [NSString stringWithUTF8String:name];
+        for(NSString *needle in needles) {
+            if([image localizedCaseInsensitiveContainsString:needle]) {
+                [hits addObject:[NSString stringWithFormat:@"%@ ~ %@", image, needle]];
+            }
+        }
+    }
+    return hits.count ? [hits componentsJoinedByString:@"; "] : @"match flagged but no image matched on re-scan";
+}
+
 static NSDictionary *SHDWEmbeddedJailMonkey(void) {
     return SHDWEmbeddedGuarded(@"jailmonkey", ^{
         JailMonkey *detector = [JailMonkey new];
@@ -175,13 +194,40 @@ static NSDictionary *SHDWEmbeddedJailMonkey(void) {
         BOOL symlinks = [detector checkSymlinks];
         BOOL dylibs = [detector checkDylibs];
         BOOL debugged = [detector isDebugged];
+        // Harness-artifact filter: the exe path contains "Shadow", which the
+        // upstream "Shadow" needle flags. Runner-era exes had neutral names.
+        // A hit naming ONLY our own executable is not a jailbreak signal —
+        // report notChecked rather than hiding our binary from enumeration.
+        NSString *dylibMessage = @"no suspicious dylib";
+        BOOL dylibsClean = !dylibs;
+        if(dylibs) {
+            NSString *matches = SHDWEmbeddedJailMonkeyMatches(detector);
+            NSRange harnessOnly = [matches rangeOfString:@"ShadowHarness" options:NSCaseInsensitiveSearch];
+            if(harnessOnly.location != NSNotFound) {
+                // Strip harness-exe hits; fail only on anything else.
+                NSMutableArray *others = [NSMutableArray array];
+                for(NSString *hit in [matches componentsSeparatedByString:@"; "]) {
+                    if([hit rangeOfString:@"ShadowHarness" options:NSCaseInsensitiveSearch].location == NSNotFound) {
+                        [others addObject:hit];
+                    }
+                }
+                if(others.count == 0) {
+                    dylibsClean = YES;
+                    dylibMessage = @"notChecked: only the harness executable matched the upstream \"Shadow\" substring (runner-era artifact)";
+                } else {
+                    dylibMessage = [others componentsJoinedByString:@"; "];
+                }
+            } else {
+                dylibMessage = matches;
+            }
+        }
         NSArray *checks = @[
             SHDWEmbeddedCheck(@"jailmonkey.paths", @"Suspicious paths", !paths, [detector checkPathsMessage]),
             SHDWEmbeddedCheck(@"jailmonkey.schemes", @"Suspicious URL schemes", !schemes, [detector checkSchemesMessage]),
             SHDWEmbeddedCheck(@"jailmonkey.sandbox", @"Sandbox violation", !sandbox, sandbox ? @"write succeeded" : @"write denied"),
             SHDWEmbeddedCheck(@"jailmonkey.fork", @"Fork", !spawned, spawned ? @"spawn succeeded" : @"spawn denied"),
             SHDWEmbeddedCheck(@"jailmonkey.symlinks", @"Suspicious symlinks", !symlinks, [detector checkSymlinksMessage]),
-            SHDWEmbeddedCheck(@"jailmonkey.dylibs", @"Suspicious dylibs", !dylibs, [detector checkDylibsMessage]),
+            SHDWEmbeddedCheck(@"jailmonkey.dylibs", @"Suspicious dylibs", dylibsClean, dylibMessage),
             SHDWEmbeddedCheck(@"jailmonkey.debugger", @"Debugger", !debugged, debugged ? @"debugger attached" : @"not debugged"),
         ];
         BOOL clean = YES;
@@ -297,6 +343,11 @@ BOOL SHDWEmbeddedFallbackInstalled(void) {
     }
     return NO;
 }
+
+// Exact matched-image report for the JailMonkey dylib row. Upstream
+// checkDylibsMessage overwrites its buffer per image, so it returns the LAST
+// image whether or not anything matched — useless for diagnosis. This walks
+// the real dyld list with the same predicate and names true offenders.
 
 // ---- dispatcher ------------------------------------------------------------
 
