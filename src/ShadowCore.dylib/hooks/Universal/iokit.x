@@ -149,6 +149,83 @@ static kern_return_t replaced_IOServiceOpen(io_service_t service, task_port_t ow
     return original_IOServiceOpen(service, owningTask, type, connect);
 }
 
+// Property-table exfiltration without a matching-dict probe: a detector
+// holding a service object (matched by class, or iterated from the root)
+// reads its properties for jailbreak strings (IOPropertyName, version,
+// bundle identifiers). IORegistryEntryCreateCFProperty is already used
+// internally by shdw_iokit_service_restricted above, so only filter when
+// the RESULT carries a restricted string — never the whole table (a NULL
+// whole-table answer for a live service contradicts the handle in hand).
+// Only VERIFIED jailbreak tokens match (same stance as the service-name
+// gate); stock property values pass through byte-identical.
+static BOOL shdw_iokit_property_value_restricted(CFTypeRef value) {
+    if(!value) return NO;
+    CFTypeID stringID = CFStringGetTypeID();
+    if(CFGetTypeID(value) == stringID) {
+        char buf[256];
+        if(CFStringGetCString((CFStringRef)value, buf, sizeof(buf), kCFStringEncodingUTF8))
+            return shdw_iokit_service_name_restricted(buf);
+        return NO;
+    }
+    if(CFGetTypeID(value) == CFArrayGetTypeID()) {
+        CFIndex n = CFArrayGetCount((CFArrayRef)value);
+        if(n < 0 || n > 128) return NO;  // malformed: fail open
+        for(CFIndex i = 0; i < n; i++)
+            if(shdw_iokit_property_value_restricted(CFArrayGetValueAtIndex((CFArrayRef)value, i)))
+                return YES;
+        return NO;
+    }
+    if(CFGetTypeID(value) == CFDictionaryGetTypeID()) {
+        CFIndex n = CFDictionaryGetCount((CFDictionaryRef)value);
+        if(n <= 0 || n > 64) return NO;  // malformed: fail open
+        const void* keys[64];
+        const void* vals[64];
+        CFDictionaryGetKeysAndValues((CFDictionaryRef)value, keys, vals);
+        for(CFIndex i = 0; i < n; i++)
+            if(shdw_iokit_property_value_restricted(vals[i])) return YES;
+        return NO;
+    }
+    return NO;
+}
+
+static CFTypeRef (*original_IORegistryEntryCreateCFProperty)(io_service_t service, CFStringRef key, CFAllocatorRef allocator, IOOptionBits options);
+static CFTypeRef replaced_IORegistryEntryCreateCFProperty(io_service_t service, CFStringRef key, CFAllocatorRef allocator, IOOptionBits options) {
+    CFTypeRef result = original_IORegistryEntryCreateCFProperty(service, key, allocator, options);
+    if(isCallerExternal() && result && shdw_iokit_property_value_restricted(result)) {
+        CFRelease(result);
+        return NULL;  // stock shape for an absent property
+    }
+    return result;
+}
+
+static kern_return_t (*original_IORegistryEntryCreateCFProperties)(io_service_t service, CFMutableDictionaryRef* properties, CFAllocatorRef allocator, IOOptionBits options);
+static kern_return_t replaced_IORegistryEntryCreateCFProperties(io_service_t service, CFMutableDictionaryRef* properties, CFAllocatorRef allocator, IOOptionBits options) {
+    kern_return_t kr = original_IORegistryEntryCreateCFProperties(service, properties, allocator, options);
+    if(!isCallerExternal() || kr != kIOReturnSuccess || !properties || !*properties) return kr;
+    // Strip restricted values key-by-key; an emptied table stays a valid
+    // (empty) table — never a NULL table for a live service.
+    CFMutableDictionaryRef table = *properties;
+    CFIndex n = CFDictionaryGetCount(table);
+    if(n <= 0 || n > 256) return kr;  // malformed: fail open
+    const void* keys[256];
+    const void* vals[256];
+    CFDictionaryGetKeysAndValues(table, keys, vals);
+    for(CFIndex i = 0; i < n; i++)
+        if(shdw_iokit_property_value_restricted(vals[i]))
+            CFDictionaryRemoveValue(table, keys[i]);
+    return kr;
+}
+
+static CFTypeRef (*original_IORegistryEntrySearchCFProperty)(io_service_t service, const io_name_t plane, CFStringRef key, CFAllocatorRef allocator, IOOptionBits options);
+static CFTypeRef replaced_IORegistryEntrySearchCFProperty(io_service_t service, const io_name_t plane, CFStringRef key, CFAllocatorRef allocator, IOOptionBits options) {
+    CFTypeRef result = original_IORegistryEntrySearchCFProperty(service, plane, key, allocator, options);
+    if(isCallerExternal() && result && shdw_iokit_property_value_restricted(result)) {
+        CFRelease(result);
+        return NULL;
+    }
+    return result;
+}
+
 void shdw_universal_iokit(SHDWHookSession* hooks) {
     [hooks hookFunction:IOServiceGetMatchingServices withReplacement:replaced_IOServiceGetMatchingServices outOldPtr:(void **) &original_IOServiceGetMatchingServices];
     [hooks hookFunction:IOServiceOpen withReplacement:replaced_IOServiceOpen outOldPtr:(void **) &original_IOServiceOpen];
@@ -161,6 +238,21 @@ void shdw_universal_iokit(SHDWHookSession* hooks) {
 
     if(sym) {
         [hooks hookFunction:sym withReplacement:replaced_IOServiceGetMatchingService outOldPtr:(void **) &original_IOServiceGetMatchingService];
+    }
+
+    // Property-table exfiltration (see above): stable IOKitLib exports,
+    // resolved at runtime and skipped cleanly when absent.
+    sym = shdw_resolve_libsystem("_IORegistryEntryCreateCFProperty");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IORegistryEntryCreateCFProperty outOldPtr:(void **) &original_IORegistryEntryCreateCFProperty];
+    }
+    sym = shdw_resolve_libsystem("_IORegistryEntryCreateCFProperties");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IORegistryEntryCreateCFProperties outOldPtr:(void **) &original_IORegistryEntryCreateCFProperties];
+    }
+    sym = shdw_resolve_libsystem("_IORegistryEntrySearchCFProperty");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IORegistryEntrySearchCFProperty outOldPtr:(void **) &original_IORegistryEntrySearchCFProperty];
     }
 }
 
@@ -189,6 +281,9 @@ static const shdw_iokit_sym_policy_entry_t shdw_iokit_sym_policy_table[] = {
     { "IOServiceGetMatchingServices", (void*)&replaced_IOServiceGetMatchingServices, (void* const*)&original_IOServiceGetMatchingServices },
     { "IOServiceGetMatchingService", (void*)&replaced_IOServiceGetMatchingService, (void* const*)&original_IOServiceGetMatchingService },
     { "IOServiceOpen", (void*)&replaced_IOServiceOpen, (void* const*)&original_IOServiceOpen },
+    { "IORegistryEntryCreateCFProperties", (void*)&replaced_IORegistryEntryCreateCFProperties, (void* const*)&original_IORegistryEntryCreateCFProperties },
+    { "IORegistryEntryCreateCFProperty", (void*)&replaced_IORegistryEntryCreateCFProperty, (void* const*)&original_IORegistryEntryCreateCFProperty },
+    { "IORegistryEntrySearchCFProperty", (void*)&replaced_IORegistryEntrySearchCFProperty, (void* const*)&original_IORegistryEntrySearchCFProperty },
 };
 
 void* shdw_sym_policy_lookup_iokit(const char* name) {

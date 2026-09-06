@@ -1276,11 +1276,13 @@ static void replaced_objc_addLoadImageFunc(void (*func)(const struct mach_header
 static const struct mach_header* replaced_NSAddImage(const char* image_name, uint32_t options);
 static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, const char* symbolName, uint32_t options);
 static int32_t replaced_NSVersionOfRunTimeLibrary(const char* libraryName);
+static int replaced_NSCreateObjectFileImageFromFile(const char* pathName, void* objectFileImage);
 
 // Sorted by name (strcmp order) for bsearch — keep it sorted when adding
 // entries, or lookups silently miss.
 static const shdw_sym_policy_entry_t shdw_sym_policy_table[] = {
     { "NSAddImage", (void *)&replaced_NSAddImage },
+    { "NSCreateObjectFileImageFromFile", (void *)&replaced_NSCreateObjectFileImageFromFile },
     { "NSLookupSymbolInImage", (void *)&replaced_NSLookupSymbolInImage },
     { "NSVersionOfRunTimeLibrary", (void *)&replaced_NSVersionOfRunTimeLibrary },
     { "_dyld_find_unwind_sections", (void *)&replaced_dyld_find_unwind_sections },
@@ -2149,6 +2151,26 @@ static const struct mach_header* replaced_NSAddImage(const char* image_name, uin
     return original_NSAddImage(image_name, options);
 }
 
+// NSCreateObjectFileImageFromFile: legacy loader bypass around the dlopen
+// resolver (shdw_universal_dynamic_libraries_extra). __API_UNAVAILABLE on
+// iOS — resolved by name at install, skipped silently where absent (same
+// discipline as NSAddImage above). A restricted path denies with
+// NSObjectFileImageFailure (0), dyld's own failure signal. Typed as
+// (const char*, void*) — the out-param is an opaque image handle the hook
+// never dereferences, and the int return matches the two-value enum.
+static int (*original_NSCreateObjectFileImageFromFile)(const char* pathName, void* objectFileImage);
+static int replaced_NSCreateObjectFileImageFromFile(const char* pathName, void* objectFileImage) {
+    if(!isCallerExternal()) {
+        return original_NSCreateObjectFileImageFromFile(pathName, objectFileImage);
+    }
+
+    if(shdw_dyld_path_restricted(pathName)) {
+        return 0;  // NSObjectFileImageFailure
+    }
+
+    return original_NSCreateObjectFileImageFromFile(pathName, objectFileImage);
+}
+
 static void* (*original_NSLookupSymbolInImage)(const struct mach_header* image, const char* symbolName, uint32_t options);
 static void* replaced_NSLookupSymbolInImage(const struct mach_header* image, const char* symbolName, uint32_t options) {
     if(!isCallerExternal()) {
@@ -2843,6 +2865,14 @@ void shdw_universal_dyld(SHDWHookSession* hooks) {
 
     if(nsversion_ptr) {
         [hooks hookFunction:nsversion_ptr withReplacement:replaced_NSVersionOfRunTimeLibrary outOldPtr:(void **) &original_NSVersionOfRunTimeLibrary];
+    }
+
+    // NSCreateObjectFileImageFromFile: same legacy-loader discipline —
+    // resolved by name, skipped silently where absent.
+    void* nscreateimage_ptr = dlsym(RTLD_DEFAULT, "NSCreateObjectFileImageFromFile");
+
+    if(nscreateimage_ptr) {
+        [hooks hookFunction:nscreateimage_ptr withReplacement:replaced_NSCreateObjectFileImageFromFile outOldPtr:(void **) &original_NSCreateObjectFileImageFromFile];
     }
 }
 

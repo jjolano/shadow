@@ -51,6 +51,13 @@ SHADW_RAWSYSCALL(SYS_lstat64,          2, PATH,       P2I)
 SHADW_RAWSYSCALL(SYS_stat64_extended,  4, PATH,       XATTR4)
 SHADW_RAWSYSCALL(SYS_lstat64_extended, 4, PATH,       XATTR4)
 SHADW_RAWSYSCALL(SYS_readlink,         3, PATH,       READLINK)
+// SYS_freadlink predates the libc wrapper (number on the 15.6 floor,
+// declaration iOS 16+): same fd-based policy as the fstat family — resolve
+// via F_GETPATH, fail open when the fd has no nameable path. Probe-gated
+// (SDK-RESEARCH.md): raw-SVC callers bypass the libc hook entirely.
+#ifdef SYS_freadlink
+SHADW_RAWSYSCALL(SYS_freadlink,        3, FREADLINK,  READLINK)
+#endif
 SHADW_RAWSYSCALL(SYS_pathconf,         2, PATH,       P2I)
 SHADW_RAWSYSCALL(SYS_openat,           4, AT,         OPENAT)
 SHADW_RAWSYSCALL(SYS_fstatat,          4, AT,         FSTATAT)

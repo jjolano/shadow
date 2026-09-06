@@ -19,6 +19,7 @@ int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data) {
 // libproc.h isn't shipped in the theos SDK; declare the symbols we need
 // (all stable libSystem exports).
 extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+extern int proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize);
 extern int proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
 extern int proc_listallpids(void* buffer, int buffersize);
 extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
@@ -138,6 +139,51 @@ uid_t replaced_geteuid(void) {
     return 501;
 }
 
+// getgid/getegid: cross-API consistency with the uid fake above. On a rootful
+// jailbreak the app runs gid 0 as well as uid 0; faking uid->501 while leaving
+// gid 0 manufactures a (uid=501, gid=0) pair stock iOS never produces — a
+// contradiction a detector reads directly. Answer the stock mobile group (501)
+// to external callers so the identity is coherent; Shadow-internal callers keep
+// truth. On rootless the process is already 501:501 and both are inert. Same
+// rebind lane + late-image replay shape as getuid/getppid.
+gid_t (*original_getgid)(void);
+static gid_t (*resolved_getgid)(void);
+gid_t replaced_getgid(void) {
+    if(!isCallerExternal()) {
+        gid_t (*getgid_impl)(void) = original_getgid ?: resolved_getgid;
+        return getgid_impl ? getgid_impl() : 0;
+    }
+
+    return 501;
+}
+
+gid_t (*original_getegid)(void);
+static gid_t (*resolved_getegid)(void);
+gid_t replaced_getegid(void) {
+    if(!isCallerExternal()) {
+        gid_t (*getegid_impl)(void) = original_getegid ?: resolved_getegid;
+        return getegid_impl ? getegid_impl() : 0;
+    }
+
+    return 501;
+}
+
+// issetugid: under DYLD injection (systemhook / DYLD_INSERT_LIBRARIES) this
+// commonly returns 1 (tainted environment). Shadow scrubs every DYLD_* env
+// channel to look clean, so a leftover issetugid()==1 is a standalone
+// injection tell that contradicts the scrubbed environment. Answer 0 (stock
+// untainted) to external callers; internal callers keep truth.
+int (*original_issetugid)(void);
+static int (*resolved_issetugid)(void);
+int replaced_issetugid(void) {
+    if(!isCallerExternal()) {
+        int (*issetugid_impl)(void) = original_issetugid ?: resolved_issetugid;
+        return issetugid_impl ? issetugid_impl() : 0;
+    }
+
+    return 0;
+}
+
 // getrusage(RUSAGE_CHILDREN): a detector spawns a child to test execution
 // and measures its CPU usage to infer a jailbreak. Zero the child-accounting
 // fields for external callers so the probe sees a child that never ran.
@@ -192,6 +238,34 @@ int replaced_proc_listallpids(void* buffer, int buffersize) {
     return shdw_proc_pids_filtered((pid_t*) buffer, count);
 }
 
+int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
+int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize) {
+    if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
+        // Jailbreak daemon: deny the per-pid path query the same way
+        // proc_pidinfo denies per-pid inspection. EPERM matches what an
+        // unprivileged caller sees for processes it may not inspect
+        // (same errno as replaced_proc_pidinfo above).
+        errno = EPERM;
+        return 0;
+    }
+
+    return original_proc_pidpath(pid, buffer, buffersize);
+}
+
+// proc_pidpath_audittoken: same policy as proc_pidpath (EPERM for a
+// restricted process). The audit_token_t (mach/message.h, via hooks.h's
+// <mach/mach.h>) carries the pid at val[4] (AU_TOKEN_PID) — same as the
+// sandbox_check_by_audit_token hook in sandbox.x.
+int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
+int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize) {
+    if(isCallerExternal() && token && shdw_pid_is_restricted((pid_t)token->val[4])) {
+        errno = EPERM;
+        return 0;
+    }
+
+    return original_proc_pidpath_audittoken(token, buffer, buffersize);
+}
+
 int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
     if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
@@ -231,6 +305,18 @@ void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const voi
         resolved_geteuid = dlsym(RTLD_DEFAULT, "geteuid");
     if(original_geteuid || resolved_geteuid)
         [hooks hookRebindSymbol:@"geteuid" withReplacement:replaced_geteuid outOldPtr:NULL inCallerImage:imageHeader];
+    if(!resolved_getgid)
+        resolved_getgid = dlsym(RTLD_DEFAULT, "getgid");
+    if(original_getgid || resolved_getgid)
+        [hooks hookRebindSymbol:@"getgid" withReplacement:replaced_getgid outOldPtr:NULL inCallerImage:imageHeader];
+    if(!resolved_getegid)
+        resolved_getegid = dlsym(RTLD_DEFAULT, "getegid");
+    if(original_getegid || resolved_getegid)
+        [hooks hookRebindSymbol:@"getegid" withReplacement:replaced_getegid outOldPtr:NULL inCallerImage:imageHeader];
+    if(!resolved_issetugid)
+        resolved_issetugid = dlsym(RTLD_DEFAULT, "issetugid");
+    if(original_issetugid || resolved_issetugid)
+        [hooks hookRebindSymbol:@"issetugid" withReplacement:replaced_issetugid outOldPtr:NULL inCallerImage:imageHeader];
 }
 
 void shdw_universal_antidebugging(SHDWHookSession* hooks) {

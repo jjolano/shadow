@@ -538,6 +538,115 @@ void shdw_universal_feature_launchservices_url_filtering(SHDWHookSession* hooks)
 %end
 %end
 
+// --- MobileInstallation private app-enumeration (strip JB entries) ---
+//
+// Detectors that do not care about App Store rules enumerate installed
+// apps through the MobileInstallation private framework instead of
+// LSApplicationWorkspace:
+//   MobileInstallationEnumerateAllInstalledItemDictionaries,
+//   MobileInstallationCopyInstalledDeveloperAppsForLaunchServices,
+//   MobileInstallationGetContainerizedAppBundleRecordsForLaunchServices.
+// The results are CFDictionaries keyed by CFBundleIdentifier (with
+// bundle/container paths under neighbouring keys). Strip entries whose
+// bundle ID is restricted (isBundleIDRestricted) or whose bundle/container
+// path is restricted (isCPathRestricted) — the same predicate pair the
+// LSApplicationWorkspace filter above applies. Sandboxed apps cannot reach
+// installd anyway; when the call fails the error passes through untouched.
+//
+// Runtime-resolved via the rebind lane (no link against the private
+// framework — theos links only public SDKs); skipped cleanly when the
+// process never loads MobileInstallation (most App Store apps).
+// Only these three enumeration exports are hooked: the Lookup/Uninstall/
+// Install/State APIs take different shapes and stay untouched.
+
+// CFBundleIdentifier key present in every MobileInstallation item dict.
+static CFStringRef shdw_mi_bundle_id_key(void) {
+    static CFStringRef key = NULL;
+    static dispatch_once_t once = 0;
+    dispatch_once(&once, ^{ key = CFSTR("CFBundleIdentifier"); });
+    return key;
+}
+
+static BOOL shdw_mi_item_is_restricted(CFDictionaryRef item) {
+    if(!item || CFGetTypeID(item) != CFDictionaryGetTypeID()) return NO;
+    CFStringRef bid = CFDictionaryGetValue(item, shdw_mi_bundle_id_key());
+    if(bid && CFGetTypeID(bid) == CFStringGetTypeID()) {
+        if([_shadow isBundleIDRestricted:(__bridge NSString*)bid]) return YES;
+    }
+    // Bundle/container paths: check every string value that looks like an
+    // absolute path — item dicts carry BundlePath/Container/DataDirectory
+    // under version-stable keys, but key names are private; scanning values
+    // is key-name-independent.
+    CFIndex count = CFDictionaryGetCount(item);
+    if(count <= 0 || count > 64) return NO;  // malformed: fail open
+    const void* keys[64];
+    const void* values[64];
+    CFDictionaryGetKeysAndValues(item, keys, values);
+    for(CFIndex i = 0; i < count; i++) {
+        if(values[i] && CFGetTypeID(values[i]) == CFStringGetTypeID()) {
+            CFStringRef s = (CFStringRef)values[i];
+            CFIndex len = CFStringGetLength(s);
+            if(len < 1 || len > PATH_MAX) continue;
+            char buf[PATH_MAX];
+            if(CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8)
+               && buf[0] == '/' && [_shadow isCPathRestricted:buf]) return YES;
+        }
+    }
+    return NO;
+}
+
+// Compact restricted entries out of a CFArray of item dicts: copy into a
+// mutable array, strip restricted items, return the filtered copy (+1,
+// caller-owned like the original Copy result). The original is released by
+// the caller wrapper when a new object was returned.
+static CFArrayRef shdw_mi_filter_item_array(CFArrayRef array) {
+    if(!array || CFGetTypeID(array) != CFArrayGetTypeID()) return array;
+    CFIndex count = CFArrayGetCount(array);
+    if(count <= 0) return array;
+    CFMutableArrayRef mutable = CFArrayCreateMutableCopy(NULL, count, array);
+    if(!mutable) return array;  // OOM: fail open with the stock array
+    for(CFIndex i = CFArrayGetCount(mutable) - 1; i >= 0; i--) {
+        CFDictionaryRef item = CFArrayGetValueAtIndex(mutable, i);
+        if(shdw_mi_item_is_restricted(item)) CFArrayRemoveValueAtIndex(mutable, i);
+    }
+    return mutable;  // +1, caller-owned like the original Copy result
+}
+
+static CFArrayRef (*original_MIEnumerateAll)(CFDictionaryRef options, CFArrayRef* error);
+static CFArrayRef replaced_MIEnumerateAll(CFDictionaryRef options, CFArrayRef* error) {
+    CFArrayRef result = original_MIEnumerateAll(options, error);
+    if(!isCallerExternal() || !result) return result;
+    CFArrayRef filtered = shdw_mi_filter_item_array(result);
+    if(filtered != result) CFRelease(result);
+    return filtered;
+}
+
+static CFArrayRef (*original_MICopyInstalledDeveloperApps)(void);
+static CFArrayRef replaced_MICopyInstalledDeveloperApps(void) {
+    CFArrayRef result = original_MICopyInstalledDeveloperApps();
+    if(!isCallerExternal() || !result) return result;
+    CFArrayRef filtered = shdw_mi_filter_item_array(result);
+    if(filtered != result) CFRelease(result);
+    return filtered;
+}
+
+static CFArrayRef (*original_MIGetContainerizedAppRecords)(void);
+static CFArrayRef replaced_MIGetContainerizedAppRecords(void) {
+    CFArrayRef result = original_MIGetContainerizedAppRecords();
+    if(!isCallerExternal() || !result) return result;
+    CFArrayRef filtered = shdw_mi_filter_item_array(result);
+    if(filtered != result) CFRelease(result);
+    return filtered;
+}
+
+static void shdw_mi_hook_enumeration(SHDWHookSession* hooks, const char* symbol,
+                                     void* replacement, void** original) {
+    void* sym = shdw_resolve_libsystem(symbol);
+    if(sym) [hooks hookFunction:sym withReplacement:replacement outOldPtr:original];
+    else [hooks hookRebindSymbol:[NSString stringWithUTF8String:symbol + 1]
+                 withReplacement:replacement outOldPtr:original];
+}
+
 void shdw_universal_hide_apps(SHDWHookSession* hooks) {
     %init(shadowhook_LSApplicationWorkspace);
     shdw_universal_feature_launchservices_url_filtering(hooks);
@@ -546,4 +655,14 @@ void shdw_universal_hide_apps(SHDWHookSession* hooks) {
     if(workspace && class_getInstanceMethod(workspace, @selector(installedApplications))) {
         %init(shadowhook_LSApplicationWorkspaceInstalledApplications);
     }
+
+    // MobileInstallation enumeration (private, App-Store-ignoring
+    // detectors). dlsym-resolved; skipped cleanly when absent.
+    // ponytail: dlsym spelling carries the leading underscore.
+    shdw_mi_hook_enumeration(hooks, "_MobileInstallationEnumerateAllInstalledItemDictionaries",
+                             (void*)replaced_MIEnumerateAll, (void**)&original_MIEnumerateAll);
+    shdw_mi_hook_enumeration(hooks, "_MobileInstallationCopyInstalledDeveloperAppsForLaunchServices",
+                             (void*)replaced_MICopyInstalledDeveloperApps, (void**)&original_MICopyInstalledDeveloperApps);
+    shdw_mi_hook_enumeration(hooks, "_MobileInstallationGetContainerizedAppBundleRecordsForLaunchServices",
+                             (void*)replaced_MIGetContainerizedAppRecords, (void**)&original_MIGetContainerizedAppRecords);
 }

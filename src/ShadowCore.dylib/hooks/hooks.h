@@ -346,6 +346,9 @@ typedef enum {
     SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
     SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
     SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
+#ifdef SYS_freadlink
+    SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
+#endif
 } shdw_raw_syscall_category_t;
 
 shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
@@ -470,6 +473,12 @@ extern uid_t (*original_getuid)(void);
 extern uid_t replaced_getuid(void);
 extern uid_t (*original_geteuid)(void);
 extern uid_t replaced_geteuid(void);
+extern gid_t (*original_getgid)(void);
+extern gid_t replaced_getgid(void);
+extern gid_t (*original_getegid)(void);
+extern gid_t replaced_getegid(void);
+extern int (*original_issetugid)(void);
+extern int replaced_issetugid(void);
 extern int (*original_getrusage)(int who, struct rusage* usage);
 extern int replaced_getrusage(int who, struct rusage* usage);
 extern int (*original_getrlimit)(int resource, struct rlimit* rlp);
@@ -480,6 +489,10 @@ extern int (*original_proc_listallpids)(void* buffer, int buffersize);
 extern int replaced_proc_listallpids(void* buffer, int buffersize);
 extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+extern int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
+extern int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+extern int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
+extern int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize);
 
 // Symbol policy lookups for the C-function hook groups (libc/mach/sandbox/
 // mem). The dlsym hook in dyld.x consults these after its own table misses,

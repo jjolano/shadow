@@ -138,6 +138,19 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
         return 1;
     }
 
+#ifdef SYS_freadlink
+    if(cat == SHADW_RAW_CAT_FREADLINK) {
+        // Raw freadlink(fd): same fd policy as the syscall(2) dispatch —
+        // F_GETPATH, fail open when the fd has no nameable path. The
+        // trampoline ignores errno and synthesizes the raw return.
+        char fdpath[PATH_MAX];
+        if(fcntl((int)a0, F_GETPATH, fdpath) != -1 && [_shadow isCPathRestricted:fdpath]) {
+            return 1;
+        }
+        return 0;
+    }
+#endif
+
     return 0;
 }
 
