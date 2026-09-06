@@ -96,6 +96,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     NSUInteger _installerCount;
     uint64_t _installedBits;          // bitset: bit i = unit i installed
     BOOL _escalated;
+    BOOL _prearmed;
     BOOL _sdkFallbackInstalled;
     BOOL _harnessProfile;
     BOOL _installing;                 // re-entrancy guard (see installEventSync:)
@@ -482,14 +483,21 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 }
 
 - (void)prearmDetector {
-    if(__atomic_exchange_n(&_escalated, YES, __ATOMIC_ACQ_REL)) {
+    if(__atomic_exchange_n(&_prearmed, YES, __ATOMIC_ACQ_REL)) {
         return;
     }
 
     // Explicit detector adapters are known during construction, before any
     // detector code can be on the stack. Install Tier 2 now; the asynchronous
     // path remains for behavioral discoveries made inside intercepted calls.
+    // Also install the SDK-fallback event now: the harness's embedded
+    // detectors call installHarnessSDKFallback from a worker queue, and the
+    // old ordering (prearm consumes the one-shot first) starved it.
     [self installEvent:SHDWEventDetectorEscalation];
+    if(_harnessProfile) {
+        [self installEvent:SHDWEventSDKFallback];
+        __atomic_store_n(&_sdkFallbackInstalled, YES, __ATOMIC_RELEASE);
+    }
 }
 
 - (BOOL)installHarnessSDKFallback {

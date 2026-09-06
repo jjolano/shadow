@@ -90,7 +90,6 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
     }
 
     NSMutableDictionary* result = [defaultSettings mutableCopy];
-    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
     NSDictionary* app_settings = bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
     NSDictionary* filePreferences = nil;
     NSDictionary* fileAppSettings = nil;
@@ -107,7 +106,7 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
 
     // Test profiles are file-authoritative so cfprefsd cannot retain an old
     // arm while the device driver swaps the backing plist.
-    if(([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] || isDetectorRunner) &&
+    if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
        filePreferences) {
         app_settings = fileAppSettings;
     }
@@ -115,7 +114,7 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
     BOOL enabled = SHDWApplicationEnabled(app_settings,
         [userDefaults boolForKey:SHDWGlobalEnabledID],
         [userDefaults boolForKey:SHDWSingleToggleMigrationID],
-        isDetectorRunner || bundleIdentifier.length == 0);
+        [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] || bundleIdentifier.length == 0);
     result[SHDWAppEnabledID] = @(enabled);
 
     // Aggressive detector neutralization: per-app override, else the global
@@ -129,8 +128,9 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
 
     if(enabled) {
         // Not user configuration: the device evidence driver can disable one
-        // adapter for an isolated runner without weakening normal app profiles.
-        NSDictionary* overrides = isDetectorRunner &&
+        // adapter for the harness's embedded detectors without weakening
+        // normal app profiles.
+        NSDictionary* overrides = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
             [app_settings[kSHDWDetectorRunnerOverridesKey] isKindOfClass:[NSDictionary class]]
             ? app_settings[kSHDWDetectorRunnerOverridesKey] : nil;
         for(NSString* key in @[ SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID,
@@ -139,12 +139,6 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
             if([value isKindOfClass:[NSNumber class]]) {
                 result[key] = @([value boolValue]);
             }
-        }
-
-        // The isolated IOSSecuritySuite runner dlopens its bridge only after
-        // Core's constructor, then invokes this deferred test profile itself.
-        if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.test.iossecuritysuite"]) {
-            result[SHDWUniversalHarnessBaselineID] = @YES;
         }
 
         // Harness normally records a universal baseline before SDK-specific
