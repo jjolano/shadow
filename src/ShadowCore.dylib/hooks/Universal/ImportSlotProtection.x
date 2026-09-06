@@ -16,12 +16,18 @@ static kern_return_t (*original_vm_protect_imports)(vm_map_t, vm_address_t,
                                                      vm_size_t, boolean_t,
                                                      vm_prot_t);
 static kern_return_t replaced_vm_protect_imports(vm_map_t task,
-                                                  vm_address_t address,
-                                                  vm_size_t size,
-                                                  boolean_t setMaximum,
-                                                  vm_prot_t protection) {
+                                                   vm_address_t address,
+                                                   vm_size_t size,
+                                                   boolean_t setMaximum,
+                                                   vm_prot_t protection) {
     if(isCallerExternal() &&
        shdw_is_import_slot_rewrite(task, address, size, setMaximum, protection)) {
+        // The write itself is refused, but the attempt proves an unhooker is
+        // active: trip the detector escalation (Tier-2) and queue a slot
+        // repair for direct-store undos the guard cannot see. Both are async
+        // — this path runs on the attacker's stack.
+        shdw_detector_detected("import_slot");
+        SHDWRequestRebindRepair();
         return KERN_PROTECTION_FAILURE;
     }
 

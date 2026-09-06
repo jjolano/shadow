@@ -1,5 +1,6 @@
 #import "SHDWHookSession.h"
 #import "SHDWHookFallback.h"
+#import "hooks/Universal/rebind_slots.h"
 
 #import <HookKit/HookKit.h>
 #import <HookKit/HookKitArtifacts.h>
@@ -104,30 +105,33 @@ const void* SHDWOriginalIMPForReplacement(const void* address) {
     return NULL;
 }
 
-typedef struct {
-    uintptr_t start;
-    uintptr_t end;
-} SHDWImportSlotRange;
+// Process-global rebind journal. Count is the only mutated-scalar field and
+// is published with release/acquire pairing (same discipline as the IMP
+// remap tables above): writers append entries then bump the count, readers
+// snapshot the count then touch only indices below it. Slot entries are
+// never mutated in place except the expected-value refresh in
+// shdw_rebind_slots_note, which the repair loop tolerates (worst case it
+// stores a just-superseded value and the next event repairs again).
+static shdw_rebind_slots_t gSHDWRebindSlots;
 
-static SHDWImportSlotRange gSHDWImportSlots[2048];
-static uint32_t gSHDWImportSlotCount;
-
-static void SHDWRememberImportSlot(uintptr_t start, size_t size) {
-    if(!start) return;
+static void SHDWRememberImportSlot(uintptr_t start, size_t size, uintptr_t expected) {
+    if(!start || !expected) return;
     if(!size) size = sizeof(void*);
 
-    uintptr_t end = size > UINTPTR_MAX - start ? UINTPTR_MAX : start + size;
-    uint32_t count = __atomic_load_n(&gSHDWImportSlotCount, __ATOMIC_ACQUIRE);
-    for(uint32_t i = 0; i < count; i++) {
-        if(gSHDWImportSlots[i].start == start && gSHDWImportSlots[i].end == end) return;
+    uint32_t overflowedBefore = __atomic_load_n(&gSHDWRebindSlots.overflowed, __ATOMIC_ACQUIRE);
+    shdw_rebind_slots_note(&gSHDWRebindSlots, start, size, expected);
+    // Publish for acquire-load readers (note() mutates the table in place;
+    // installs are serialized on the coordinator queues, same as before).
+    __atomic_store_n(&gSHDWRebindSlots.count, gSHDWRebindSlots.count, __ATOMIC_RELEASE);
+    // Log the overflow transition once; every later drop stays silent but
+    // latched in overflowed for the verify pass.
+    if(!overflowedBefore && __atomic_load_n(&gSHDWRebindSlots.overflowed, __ATOMIC_ACQUIRE)) {
+        NSLog(@"[Shadow] rebind journal full (%u slots) — further slots unguarded+unrepaired",
+              __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE));
     }
-    if(count == sizeof(gSHDWImportSlots) / sizeof(gSHDWImportSlots[0])) return;
-
-    gSHDWImportSlots[count] = (SHDWImportSlotRange){ start, end };
-    __atomic_store_n(&gSHDWImportSlotCount, count + 1, __ATOMIC_RELEASE);
 }
 
-static void SHDWRememberImportSlots(hk_report_t* report) {
+static void SHDWRememberImportSlots(hk_report_t* report, uintptr_t fallbackExpected) {
     hk_artifact_snapshot_t* snapshot = NULL;
     if(!report || hk_report_copy_artifacts(report, &snapshot) != HK_STATUS_OK || !snapshot) return;
 
@@ -136,22 +140,38 @@ static void SHDWRememberImportSlots(hk_report_t* report) {
         hk_artifact_t artifact;
         if(hk_artifact_snapshot_copy_at(snapshot, i, &artifact) == HK_STATUS_OK &&
            hk_artifact_is_import_slot(&artifact)) {
+            // Ground truth is what HookKit actually wrote; the spec's
+            // replacement is only the fallback when the artifact omits it.
+            uintptr_t expected = artifact.replacement_pointer
+                ? (uintptr_t)artifact.replacement_pointer : fallbackExpected;
             SHDWRememberImportSlot(artifact.import_slot_address ?: artifact.address,
-                                   artifact.size);
+                                   artifact.size, expected);
         }
     }
 
     hk_artifact_snapshot_release(snapshot);
 }
 
+// Drop journaled slots owned by an unmapped image (see rebind_slots.h).
+// Repair must never dereference a stale slot address.
+void SHDWRebindForgetRange(uintptr_t base, uintptr_t end) {
+    shdw_rebind_slots_forget_range(&gSHDWRebindSlots, base, end);
+}
+
+// Check-then-store repair over the journaled slots. Returns repaired count.
+uint32_t SHDWRebindRepairSlots(void) {
+    uint32_t count = __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE);
+    uint32_t repaired = shdw_rebind_slots_repair(&gSHDWRebindSlots, count);
+    if(repaired) {
+        NSLog(@"[Shadow] rebind repair: restored %u import slots", repaired);
+    }
+    return repaired;
+}
+
 BOOL SHDWRangeOverlapsProtectedImportSlots(uintptr_t address, size_t size) {
     if(!address || !size) return NO;
-    uintptr_t end = size > UINTPTR_MAX - address ? UINTPTR_MAX : address + size;
-    uint32_t count = __atomic_load_n(&gSHDWImportSlotCount, __ATOMIC_ACQUIRE);
-    for(uint32_t i = 0; i < count; i++) {
-        if(address < gSHDWImportSlots[i].end && end > gSHDWImportSlots[i].start) return YES;
-    }
-    return NO;
+    uint32_t count = __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE);
+    return shdw_rebind_slots_overlap(&gSHDWRebindSlots, count, address, size) ? YES : NO;
 }
 
 static void SHDWRememberOriginalImplementation(Method method, IMP original) {
@@ -288,7 +308,7 @@ static BOOL shdw_apply_hook_spec_once(
     }
     if(spec->target_kind == HK_TARGET_FUNCTION_SYMBOL &&
        (spec->required_reach & HK_REACH_EXISTING_IMPORTS)) {
-        SHDWRememberImportSlots(commitReport);
+        SHDWRememberImportSlots(commitReport, (uintptr_t)spec->replacement);
     }
     if(oldPtr) {
         void* original = hk_original_slot_load(hk_hook_original_slot(hook));
@@ -447,14 +467,30 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
 }
 
 - (BOOL)hookRebindSymbol:(NSString*)symbolName
-          withReplacement:(void*)replacement
-                 outOldPtr:(void**)oldPtr
-             inCallerImage:(const void*)imageHeader {
+           withReplacement:(void*)replacement
+                  outOldPtr:(void**)oldPtr
+              inCallerImage:(const void*)imageHeader {
+    return [self hookRebindSymbol:symbolName
+                  withReplacement:replacement
+                         outOldPtr:oldPtr
+                     inCallerImage:imageHeader
+                           journal:YES];
+}
+
+- (BOOL)hookRebindSymbol:(NSString*)symbolName
+           withReplacement:(void*)replacement
+                  outOldPtr:(void**)oldPtr
+              inCallerImage:(const void*)imageHeader
+                    journal:(BOOL)journal {
     if(!symbolName.length || !replacement) {
         if(oldPtr) {
             *oldPtr = NULL;
         }
         return NO;
+    }
+
+    if(journal) {
+        SHDWRebindJournalNote(symbolName.UTF8String, replacement);
     }
 
     hk_hook_spec_t spec;

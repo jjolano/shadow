@@ -1127,6 +1127,17 @@ void shdw_universal_dyld_updatelibs(const struct mach_header* mh, intptr_t vmadd
             shadowhook_dyld_rebuild_dyldinfo();
         }
     }
+
+    // Anti-fishhook repair (event-only, no timer). The slot scan is O(slots)
+    // pointer reads — negligible next to the mirror rebuild above — and
+    // reverts any direct-store unhook of an existing rebind. A brand-new
+    // image's own imports are covered by the scoped HookKit replay, but only
+    // once a detector is engaged (normal launches pay nothing): before that
+    // the adapter install-time rebinds stand alone, as before.
+    SHDWRebindRepairSlots();
+    if(shdw_detector_present && !_shdw_dyld_replay_in_progress) {
+        SHDWRequestRebindRepairImage(mh);
+    }
 }
 
 // Forward decl: ObjC unmapped-notifier fan-out (defined with the notifier
@@ -1148,6 +1159,14 @@ void shdw_universal_dyld_updatelibs_r(const struct mach_header* mh, intptr_t vma
     // over the same addresses. Unconditional: the span is dropped by address,
     // so it costs one scan of a tiny table and never re-asks the engine.
     shdw_restricted_ranges_note_remove(mh, vmaddr_slide);
+
+    // Same for the rebind journal: import slots lived in the unmapped image's
+    // __DATA, so their addresses are stale. Repair must never dereference
+    // them again (unmapped read = crash, reused mapping = wild store).
+    uintptr_t unmappedBase = 0, unmappedEnd = 0;
+    if(shdw_image_span(mh, vmaddr_slide, &unmappedBase, &unmappedEnd)) {
+        SHDWRebindForgetRange(unmappedBase, unmappedEnd);
+    }
 
     NSArray* _dyld_collection = [_shdw_dyld_collection copy];
     NSDictionary* dylibToRemove = nil;

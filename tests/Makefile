@@ -7,6 +7,12 @@ verify-path-rewrite:
 		verify-path-rewrite.c ../src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
 	/tmp/shadow-rewrite-test
 
+# Pure-C check for the anti-fishhook journal/repair core (rebind_slots.h).
+verify-rebind-repair:
+	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-rebind-test \
+		verify-rebind-repair.c
+	/tmp/shadow-rebind-test
+
 verify-device-driver:
 	python3 stealth_device.py selftest
 	./stealth-device.sh selftest
@@ -153,4 +159,4 @@ clean:
 
 endif
 
-.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-device-driver
+.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-rebind-repair verify-device-driver

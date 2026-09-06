@@ -369,6 +369,13 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     // Idempotency is handled by _installedBits: a unit already installed by an
     // earlier event is skipped, so a re-entrant call from a detector trip
     // during an install is a no-op for already-installed units.
+    if(event == SHDWEventDetectorEscalation) {
+        // Anti-fishhook repair before Tier-2 installs: a detector that undid
+        // GOT rebinds (direct store, bypassing the vm_protect guard) gets its
+        // work reverted first, so the escalation builds on intact hooks.
+        // Pure memory compare/store — safe on either queue.
+        SHDWRebindRepairSlots();
+    }
     NSArray<NSString*>* plan = SHDWPluginPlan(self.prefs, self.backends.capabilities, event);
 
     if(!plan.count) {
@@ -460,6 +467,10 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 
 + (BOOL)shdw_installHarnessSDKFallback {
     return gSHDWActivationCoordinator ? [gSHDWActivationCoordinator installHarnessSDKFallback] : NO;
+}
+
++ (SHDWHookSession*)shdw_sharedHookSession {
+    return gSHDWActivationCoordinator ? gSHDWActivationCoordinator.backends.hooks : nil;
 }
 
 @end
