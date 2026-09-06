@@ -62,6 +62,12 @@
 // FAIL by design. New detection-hot hooks go rebind-first; deviating needs a
 // written rationale here.
 //
+// Rebinds self-heal against anti-fishhook undos: every rebind journals its
+// import slots (SHDWHookSession.m) and specs (RebindRepair.x); slot stores
+// are re-applied on image events + detector escalation, and late-loaded
+// images get a scoped replay. The vm_protect guard (ImportSlotProtection.x)
+// stays narrow by design — repair, not blocking, covers exotic writers.
+//
 // ---------------------------------------------------------------------------
 
 // Resolve a libsystem C export by its Mach-O symbol name (e.g. "_signal") for

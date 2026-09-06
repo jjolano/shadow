@@ -21,9 +21,17 @@ typedef NSString* SHDWImageRef;
           withReplacement:(void*)replacement
                  outOldPtr:(void**)oldPtr;
 - (BOOL)hookRebindSymbol:(NSString*)symbolName
-          withReplacement:(void*)replacement
-                 outOldPtr:(void**)oldPtr
-             inCallerImage:(const void*)imageHeader;
+           withReplacement:(void*)replacement
+                  outOldPtr:(void**)oldPtr
+              inCallerImage:(const void*)imageHeader;
+// No-journal variant for the repair loop (RebindRepair.x): replaying a
+// journaled spec must not append to the journal it is iterating, or every
+// image event would grow it by the full spec count.
+- (BOOL)hookRebindSymbol:(NSString*)symbolName
+           withReplacement:(void*)replacement
+                  outOldPtr:(void**)oldPtr
+              inCallerImage:(const void*)imageHeader
+                    journal:(BOOL)journal;
 
 - (SHDWImageRef)openImage:(NSString*)path;
 - (void)closeImage:(SHDWImageRef)image;
@@ -61,5 +69,21 @@ FOUNDATION_EXPORT void SHDWHookMessage(Class objcClass, SEL selector,
 FOUNDATION_EXPORT IMP SHDWOriginalImplementationForMethod(Method method);
 FOUNDATION_EXPORT BOOL SHDWRangeOverlapsProtectedImportSlots(uintptr_t address,
                                                               size_t size);
+
+// Rebind journal + repair (anti-fishhook). Journal storage lives in
+// RebindRepair.x; the slot table it pairs with lives in SHDWHookSession.m.
+FOUNDATION_EXPORT void SHDWRebindJournalNote(const char* symbolName, void* replacement);
+// Check-then-store repair over all journaled slots; returns repaired count.
+FOUNDATION_EXPORT uint32_t SHDWRebindRepairSlots(void);
+// HookKit replay of the spec journal scoped to one image header (late-loaded
+// images). No-ops on a NULL session/header.
+FOUNDATION_EXPORT void SHDWRebindRepairImage(SHDWHookSession* session, const void* imageHeader);
+// Coalesced async repair requests (safe to call from inside hooks):
+// slots-only, and slots + image replay for a fresh header.
+FOUNDATION_EXPORT void SHDWRequestRebindRepair(void);
+FOUNDATION_EXPORT void SHDWRequestRebindRepairImage(const void* imageHeader);
+// Drop journaled slots owned by an unmapped address range, so repair never
+// dereferences stale slot addresses after an image unloads.
+FOUNDATION_EXPORT void SHDWRebindForgetRange(uintptr_t base, uintptr_t end);
 
 #endif

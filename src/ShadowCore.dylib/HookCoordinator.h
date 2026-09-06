@@ -38,6 +38,9 @@ typedef SHDWPluginInstaller SHDWHookInstaller;
 - (void)escalateWithReason:(NSString*)reason;
 - (BOOL)installHarnessSDKFallback;
 + (BOOL)shdw_installHarnessSDKFallback;
+// Process-global hook session for event-driven repair paths (RebindRepair.x)
+// that run outside any installer. Nil until the ctor finishes.
++ (SHDWHookSession*)shdw_sharedHookSession;
 
 @end
 
