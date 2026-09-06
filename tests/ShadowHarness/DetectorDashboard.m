@@ -157,6 +157,7 @@ static NSString* SHDWOutcomeTitle(NSString* outcome) {
     if([outcome isEqualToString:@"jailbroken"]) return @"Jailbroken";
     if([outcome isEqualToString:@"error"]) return @"Error";
     if([outcome isEqualToString:@"running"]) return @"Running";
+    if([outcome isEqualToString:@"pending"]) return @"Pending";
     return @"Not run";
 }
 
@@ -165,6 +166,7 @@ static NSString* SHDWOutcomeSymbol(NSString* outcome) {
     if([outcome isEqualToString:@"jailbroken"]) return @"xmark.circle.fill";
     if([outcome isEqualToString:@"error"]) return @"exclamationmark.triangle.fill";
     if([outcome isEqualToString:@"running"]) return @"clock.fill";
+    if([outcome isEqualToString:@"pending"]) return @"ellipsis.circle";
     return @"circle";
 }
 
@@ -173,6 +175,14 @@ static UIColor* SHDWOutcomeColor(NSString* outcome) {
     if([outcome isEqualToString:@"jailbroken"]) return UIColor.systemRedColor;
     if([outcome isEqualToString:@"error"]) return UIColor.systemOrangeColor;
     return UIColor.systemGrayColor;
+}
+
+// Row display outcome during a Run All pass: queued detectors read "pending"
+// rather than their stale prior report, so a fresh pass visibly resets the
+// list and fills in top-to-bottom. Finished/current rows fall through to the
+// normal running/report outcome resolved by the caller.
+static NSString* SHDWPassOutcome(SHDWSDK* sdk) {
+    return SHDWDetectorRunAllState(sdk.identifier) == SHDWDetectorPassPending ? @"pending" : nil;
 }
 
 static NSMutableDictionary<NSString*, NSDictionary*>* SHDWActiveRuns(void) {
@@ -199,7 +209,15 @@ static void SHDWEndRun(SHDWSDK* sdk) {
 }
 
 static BOOL SHDWRunActive(SHDWSDK* sdk) {
-    if(SHDWAllDetectorsRunning()) return YES;
+    // During a Run All pass, only the in-flight detector is "running"; rows
+    // that already finished read their fresh report, queued rows show Pending
+    // (see SHDWRunAllRowOutcome). Single runs fall through to SHDWActiveRuns.
+    switch(SHDWDetectorRunAllState(sdk.identifier)) {
+        case SHDWDetectorPassRunning: return YES;
+        case SHDWDetectorPassPending:
+        case SHDWDetectorPassDone:    return NO;
+        case SHDWDetectorPassIdle:    break;
+    }
     NSDictionary* state = SHDWActiveRuns()[sdk.identifier];
     if(!state) return NO;
 
@@ -353,7 +371,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
 
     if(indexPath.section == 0) {
         BOOL running = SHDWRunActive(_sdk);
-        NSString* outcome = running ? @"running" : SHDWOutcome(_report);
+        NSString* outcome = running ? @"running" : (SHDWPassOutcome(_sdk) ?: SHDWOutcome(_report));
         if(indexPath.row == 0) {
             cell.textLabel.text = @"Status";
             cell.detailTextLabel.text = SHDWOutcomeTitle(outcome);
@@ -518,7 +536,7 @@ static UIActivityIndicatorView* SHDWSpinner(void) {
     SHDWSDK* sdk = SHDWSDKs()[indexPath.row];
     NSDictionary* report = SHDWReport(sdk);
     BOOL running = SHDWRunActive(sdk);
-    NSString* outcome = running ? @"running" : SHDWOutcome(report);
+    NSString* outcome = running ? @"running" : (SHDWPassOutcome(sdk) ?: SHDWOutcome(report));
     cell.textLabel.text = sdk.name;
     NSString* versionText = [NSString stringWithFormat:@"%@ · %@", SHDWOutcomeTitle(outcome),
         SHDWString(SHDWDictionary(report[@"sdk"])[@"version"]) ?: sdk.version];

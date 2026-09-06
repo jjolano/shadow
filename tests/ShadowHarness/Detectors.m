@@ -20,6 +20,9 @@ static BOOL gSHDWRunning = NO;
 static BOOL gSHDWRunAll = NO;
 static NSUInteger gSHDWRunAllIndex = 0;
 static NSString *gSHDWIdentifier;
+// Identifier currently executing within a Run All pass; nil between detectors
+// and when no pass is active. Drives per-row settling in the dashboard.
+static NSString *gSHDWRunAllCurrent;
 // Watchdog generation: SHDWFinishCurrent only advances the chain for the
 // run it was armed for. A late driver finish or stale timer for an older
 // generation is ignored (its report, if any, is already on disk).
@@ -84,6 +87,7 @@ static void SHDWFinishCurrentGen(BOOL success, NSString *identifier, NSString *m
     if (generation != gSHDWGeneration) return;
     BOOL runningAll = gSHDWRunAll;
     gSHDWIdentifier = nil;
+    gSHDWRunAllCurrent = nil;
     gSHDWRunning = NO;
     if (!success && identifier.length) SHDWWriteFailure(identifier, message);
     SHDWNotifyResults();
@@ -197,6 +201,7 @@ static void SHDWRunNextDetector(void) {
         return;
     }
     NSString *identifier = identifiers[gSHDWRunAllIndex++];
+    gSHDWRunAllCurrent = [identifier copy];
     if (!SHDWStartDetector(identifier)) {
         SHDWWriteFailure(identifier, @"Detector could not be started");
         SHDWNotifyResults();
@@ -230,4 +235,17 @@ NSArray<NSString *> *SHDWAllDetectorIDs(void) {
 
 BOOL SHDWAllDetectorsRunning(void) {
     return gSHDWRunAll || gSHDWRunning;
+}
+
+SHDWDetectorPassState SHDWDetectorRunAllState(NSString *identifier) {
+    if (!gSHDWRunAll) return SHDWDetectorPassIdle;
+    if ([identifier isEqualToString:gSHDWRunAllCurrent]) return SHDWDetectorPassRunning;
+    // gSHDWRunAllIndex points at the NEXT detector to start; everything before
+    // the current one has already produced its report, everything after is
+    // queued. Find this detector's slot and compare against the frontier.
+    NSArray<NSString *> *ids = SHDWDetectorIDs();
+    NSUInteger slot = [ids indexOfObject:identifier];
+    if (slot == NSNotFound) return SHDWDetectorPassIdle;
+    NSUInteger current = gSHDWRunAllCurrent ? [ids indexOfObject:gSHDWRunAllCurrent] : gSHDWRunAllIndex;
+    return slot < current ? SHDWDetectorPassDone : SHDWDetectorPassPending;
 }
