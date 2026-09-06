@@ -16,6 +16,16 @@ verify-rebind-repair:
 verify-device-driver:
 	python3 stealth_device.py selftest
 	./stealth-device.sh selftest
+	python3 harness-regression.py --selftest
+
+# On-device harness regression (opt-in — needs a jailbroken device, mutates and
+# restores its prefs, ~4 min). NOT part of `make` or CI. Runs all 13 embedded
+# detectors under aggressive mode via a real SpringBoard launch and asserts the
+# outcome + notChecked set against harness-expected.json.
+#   make -C tests harness-regression DEVICE=mobile@10.0.1.160 [DEB=path/to.deb]
+harness-regression:
+	@test -n "$(DEVICE)" || { echo 'set DEVICE=mobile@host' >&2; exit 2; }
+	python3 harness-regression.py --device $(DEVICE) $(if $(DEB),--deb $(DEB),)
 
 # Builds the real Shadow.framework decision sources against a host Foundation
 # with a path shim.
@@ -159,4 +169,4 @@ clean:
 
 endif
 
-.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-rebind-repair verify-device-driver
+.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-rebind-repair verify-device-driver harness-regression

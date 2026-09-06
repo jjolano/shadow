@@ -65,6 +65,23 @@ Use `tests/tools/dyldprobe`, `tests/tools/hookprobe`, `tests/ShadowHarness`, and
 `tests/stealth-device.sh run-all` executes Harness Run All headlessly and
 captures its thirteen detector reports as device evidence.
 
+`tests/harness-regression.py` is the opt-in on-device regression check: it
+deploys the harness, runs all thirteen detectors under aggressive mode via a
+real SpringBoard launch (not headless — so `freerasp.debug`, which only fires
+on the orphaned nohup environment, stays clean), and asserts each detector's
+outcome and its `notChecked` check-ids against `tests/harness-expected.json`. A
+new `notChecked` id (a real check quietly downgraded to a pass) or a flipped
+row fails; known artifacts stay green. It mutates and restores device prefs, so
+it is NOT part of `make` or CI — run it when touching anti-detection code:
+
+```sh
+make -C tests harness-regression DEVICE=mobile@10.0.1.160
+make -C tests harness-regression DEVICE=mobile@10.0.1.160 DEB=../build/me.jjolano.shadow.harness_1.0.0_iphoneos-arm64.deb
+python3 tests/harness-regression.py --device mobile@10.0.1.160 --update   # rebaseline after a verified change
+```
+
+Its pure-logic checks run in CI via `make -C tests verify-device-driver`.
+
 ## Layout
 
 - `main.m`, `*Tests.m`, `Fuzz.m` — runner and batteries

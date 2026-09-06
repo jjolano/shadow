@@ -1,0 +1,35 @@
+{
+  "_comment": "Expected outcome of a foreground (real SpringBoard launch) Run All of the embedded ShadowHarness under aggressive mode. Regenerate with: tests/harness-regression.py --update after a verified-clean device run. Each detector must report outcome=clean; notChecked lists the exact check ids allowed to pass by being marked notChecked (a harness artifact or opt-in diagnostic) rather than by a real hook. A NEW notChecked id, or a real check flipping to fail, is a regression.",
+  "_launch": "foreground",
+  "_mode": "aggressive",
+  "detectors": {
+    "batjailbreakguard": { "outcome": "clean", "notChecked": [] },
+    "devicesecuritykit": { "outcome": "clean", "notChecked": [] },
+    "dttjailbreakdetection": { "outcome": "clean", "notChecked": [] },
+    "dyldprobe": { "outcome": "clean", "notChecked": [] },
+    "freerasp": { "outcome": "clean", "notChecked": ["freerasp.debug"] },
+    "iossecuritysuite": {
+      "outcome": "clean",
+      "notChecked": [
+        "iossecuritysuite.dylibs",
+        "iossecuritysuite.integrity.bundle",
+        "iossecuritysuite.jailbreak",
+        "iossecuritysuite.runtime_hook"
+      ]
+    },
+    "isjailbroken": { "outcome": "clean", "notChecked": [] },
+    "jailbreakdetector": { "outcome": "clean", "notChecked": [] },
+    "jailmonkey": { "outcome": "clean", "notChecked": ["jailmonkey.dylibs"] },
+    "roothider": { "outcome": "clean", "notChecked": [] },
+    "safetynet": {
+      "outcome": "clean",
+      "notChecked": [
+        "safetynet.antidebug",
+        "safetynet.breakpoint",
+        "safetynet.mshook"
+      ]
+    },
+    "securitytoolkit": { "outcome": "clean", "notChecked": [] },
+    "swiftyjbd": { "outcome": "clean", "notChecked": [] }
+  }
+}
