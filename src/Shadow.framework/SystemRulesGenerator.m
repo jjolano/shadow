@@ -50,6 +50,102 @@ static const SystemZone kSystemZones[] = {
 
 static const NSUInteger kSystemZoneCount = sizeof(kSystemZones) / sizeof(kSystemZones[0]);
 
+// Finding 2 (rootless live-walk poisoning): stock depth-1 children for the
+// zones that are depth-1. On rootless there is no snapshot, so a live walk
+// would bake JB-created direct children into FileSystemStructure as stock.
+// Intersect live children with this curated set; unknown children are dropped
+// (non-compliant -> deny) and emitted as blacklist dirs. Snapshot path
+// unaffected (gated on !snapshotUsed below). Generous on purpose: over-
+// including a plausible stock name only risks missing a JB dir that reuses a
+// stock name (still caught by JailbreakMisc blacklist); under-including would
+// deny a stock path.
+static BOOL ShdwIsStockDepth1Child(NSString* zonePath, NSString* child) {
+    static NSDictionary* stock = nil;
+    static dispatch_once_t onceToken = 0;
+    dispatch_once(&onceToken, ^{
+        // Union of: live iOS 15.8.3 listings (iPhone9,3) + iPhoneOS16.5.sdk.
+        // Over-including is safe (a JB dir reusing a stock name still hits
+        // the JailbreakMisc blacklist); under-including denies a stock path.
+        stock = @{
+            @"/Library" : [NSSet setWithArray:@[
+                @"Application Support", @"Assistant", @"Audio", @"Bluetooth",
+                @"Caches",
+                @"Carrier Bundles", @"ColorPickers", @"Developer",
+                @"Filesystems", @"Fonts", @"Frameworks",
+                @"Internet Plug-Ins", @"Keyboard", @"Keyboards",
+                @"Keychains", @"LaunchAgents", @"LaunchDaemons", @"Logs",
+                @"Managed Preferences", @"MobileDevice", @"MusicUISupport",
+                @"PreferenceBundles", @"Preferences",
+                @"Printers", @"Profiles", @"RegionFeatures", @"Ringtones",
+                @"Sounds",
+                @"Spotlight", @"StagedExtensions", @"Updates",
+                @"Wallpaper", @"WebKit", @"dsc"
+            ]],
+            @"/System" : [NSSet setWithArray:@[
+                @"Library", @"Applications", @"iOSSupport", @"Cryptexes",
+                @"Developer", @"DriverKit"
+            ]],
+            @"/System/Library" : [NSSet setWithArray:@[
+                @"Accessibility", @"AccessibilityBundles", @"Accounts",
+                @"AMSEngagement", @"AppPlaceholders", @"AppleMediaServices",
+                @"ApplePTP", @"AppleUSBDevice", @"Application Support",
+                @"AppRemovalServices", @"AppSignatures",
+                @"AssetTypeDescriptors", @"Assistant",
+                @"Audio", @"AWD", @"BackBoard", @"Backup",
+                @"BridgeManifests", @"BulletinDistributor", @"CacheDelete",
+                @"Caches", @"CardKit", @"CardServices", @"Carrier Bundles",
+                @"ColorPickers", @"ColorSync", @"Components",
+                @"CompositeServices", @"ControlCenter", @"CoreAccessories",
+                @"CoreAS", @"CoreDuet", @"CoreImage",
+                @"CoreServices", @"CountryBundles", @"CryptoTokenKit",
+                @"DataAccess", @"DataClassMigrators",
+                @"DefaultsConfigurations",
+                @"Developer", @"DeviceOMatic", @"DifferentialPrivacy",
+                @"DistributedEvaluation", @"DoNotDisturb",
+                @"DriverExtensions", @"DuetActivityScheduler",
+                @"DuetExpertCenter", @"DuetKnowledgeBase", @"Extensions",
+                @"FDR", @"FeatureFlags", @"Filesystems", @"Fitness",
+                @"Fonts", @"fps",
+                @"Frameworks", @"Health", @"HIDPlugins", @"IdentityServices",
+                @"Internet Plug-Ins",
+                @"Jet", @"KerberosPlugins", @"Keyboard", @"KeyboardLayouts",
+                @"KeyboardParameters", @"Keyboards", @"LaunchAgents",
+                @"LaunchDaemons", @"Lexicons", @"LifecyclePolicy",
+                @"LinguisticData", @"LocationBundles",
+                @"Lockdown", @"Logging", @"Media", @"MediaCapture",
+                @"MediaStreamPlugins", @"Messages",
+                @"Migration", @"NanoLaunchDaemons",
+                @"NanoLaunchDaemonsAltAccount", @"NanoPreferenceBundles",
+                @"NanoTimeKit", @"NetworkServiceProxy", @"Obliteration",
+                @"OnBoardingBundles", @"PairedSyncServices",
+                @"PerfPowerTelemetry", @"Photos", @"PreferenceBundles",
+                @"PreferenceManifests", @"PreferenceManifestsInternal",
+                @"Preferences", @"PreferencesSyncBundles", @"PreinstalledAssets",
+                @"PreinstalledAssetsV2", @"Previews", @"Printers",
+                @"PrivateFrameworks", @"ProceduralWallpaper",
+                @"ProductDocuments", @"QuickLook", @"Recents",
+                @"RelevanceEngine", @"RunningBoard", @"Security",
+                @"SESStorage", @"Sandbox", @"ScreenReader",
+                @"SetupAssistantBundles", @"SmsFilter", @"Snippets",
+                @"SoftwareUpdateCertificates", @"Sounds",
+                @"Spotlight", @"SpringBoardPlugins", @"SyncBundles",
+                @"System", @"SystemConfiguration",
+                // Candidate — confirm on-device, kept to avoid false denies:
+                // SystemExtensions.
+                @"TextInput", @"ThermalMonitor", @"Trial", @"TTSPlugins",
+                @"UsageBundles", @"UserEventPlugins", @"UserManagement",
+                @"UserNotifications", @"Video",
+                @"VideoCodecs", @"VideoDecoders", @"VideoEncoders",
+                @"VideoProcessors", @"VoiceServices",
+                @"Wallpaper", @"Watch", @"WRM", @"xpc"
+            ]]
+        };
+    });
+    NSSet* allowed = [stock objectForKey:zonePath];
+    // Unknown zones (e.g. Cryptexes, always-live sealed mounts): keep.
+    return allowed ? [allowed containsObject:child] : YES;
+}
+
 // Cryptex volumes (/System/Cryptexes and children) are sealed, read-only, signed
 // IMG4 mounts: never part of the system APFS snapshot, and jailbreak files can
 // never appear in them. They must always be read from the live filesystem.
@@ -450,6 +546,27 @@ static BOOL IsCryptexZone(NSString* zonePath) {
         liveWalkOK = [self _walkStructureZonesWithPrefix:nil into:structure];
     }
 
+    // Finding 2: intersect live-walk depth-1 children with the stock set.
+    // Snapshot builds skip this (structure is already stock). Unknown direct
+    // children are dropped here and stay non-compliant (deny) via the
+    // compliance veto — no separate blacklist entry needed for enforcement.
+    if(!snapshotUsed) {
+        for(NSString* zone in @[@"/Library", @"/System", @"/System/Library"]) {
+            NSString* stdZone = [Shadow getStandardizedPath:zone];
+            NSMutableArray* children = [structure objectForKey:stdZone];
+            if(!children || [children count] == 0) {
+                continue;
+            }
+            NSMutableArray* kept = [NSMutableArray arrayWithCapacity:[children count]];
+            for(NSString* child in children) {
+                if(ShdwIsStockDepth1Child(zone, child)) {
+                    [kept addObject:child];
+                }
+            }
+            [structure setObject:kept forKey:stdZone];
+        }
+    }
+
     if(!liveWalkOK || [structure count] == 0) {
         fprintf(stderr, "error: SystemRules: failed to walk system zones\n");
         return nil;
@@ -639,6 +756,16 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
             || [ruleset isBundleIDRestricted:[proxy bundleIdentifier]]) {
                 restricted = YES;
                 break;
+            }
+        }
+
+        // Finding 9: curated path rules miss novel JB apps. Any bundle under
+        // a known JB root (/var/jb, /private/preboot, dynamic jbroot) counts
+        // as restricted even when no curated rule hits it.
+        if(!restricted) {
+            NSString* bundlePath = [[proxy bundleURL] path];
+            if(bundlePath && shdw_is_restricted_root([bundlePath fileSystemRepresentation])) {
+                restricted = YES;
             }
         }
 

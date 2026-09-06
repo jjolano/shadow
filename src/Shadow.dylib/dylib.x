@@ -23,8 +23,12 @@ extern char*** _NSGetArgv();
     NSString* executablePath = @(**_NSGetArgv());
     NSString* bundleType = [[executablePath stringByDeletingLastPathComponent] pathExtension];
 
-    // Only load Shadow for applications in /var.
-    if(![bundleType isEqualToString:@"app"]) {
+    // Only load Shadow for applications in /var. Mirror Core.m sandbox logic:
+    // an appex inside .app is still sandboxed app content (.app/...appex).
+    BOOL isApp = [bundleType isEqualToString:@"app"];
+    BOOL isAppexInApp = [bundleType isEqualToString:@"appex"] && [executablePath containsString:@".app/"];
+
+    if(!isApp && !isAppexInApp) {
         return;
     }
 
@@ -36,6 +40,9 @@ extern char*** _NSGetArgv();
         || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"]
         || isDetectorRunner;
 
+    // Platform binaries, loaders and the jbroot itself stay unhooked:
+    // stability (no detector surface there) + SpringBoard excluded above for
+    // the same reason. Verification apps bypass for on-device testing.
     if(!isVerificationApp && ([executablePath hasPrefix:@"/Applications"]
     || [executablePath hasPrefix:@"/System"]
     || [executablePath hasPrefix:@"/private/preboot"]

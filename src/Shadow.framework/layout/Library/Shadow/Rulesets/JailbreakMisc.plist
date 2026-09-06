@@ -30,6 +30,8 @@
 		<string>/usr/libexec/sftp-server</string>
 		<string>/usr/lib/ABDYLD.dylib</string>
 		<string>/usr/lib/ABSubLoader.dylib</string>
+		<string>/usr/lib/ShadowCore.dylib</string>
+		<string>/var/jb/usr/lib/ShadowCore.dylib</string>
 		<string>/Applications/palera1nLoader.app</string>
 		<string>/usr/sbin/frida-server</string>
 		<string>/usr/lib/frida</string>
@@ -82,6 +84,7 @@
 		<string>SELF LIKE[c] '/usr/lib/*ellekit*'</string>
 		<string>SELF LIKE '*/libShadow*'</string>
 		<string>SELF LIKE '/var/jb/usr/lib/*libShadow*'</string>
+		<string>SELF LIKE '*ShadowCore*'</string>
 		<string>SELF LIKE '/usr/lib/libSandy*'</string>
 		<string>SELF LIKE '/var/jb/usr/lib/libSandy*'</string>
 		<string>SELF LIKE '*/Cydia.app*'</string>
@@ -92,6 +95,8 @@
 		<string>SELF LIKE '*/dyldprobe.app*'</string>
 		<string>SELF LIKE '/usr/bin/shdw*'</string>
 		<string>SELF LIKE '/var/jb/usr/bin/shdw*'</string>
+		<string>SELF LIKE '/usr/local/bin/shdw*'</string>
+		<string>SELF LIKE '/var/jb/usr/local/bin/shdw*'</string>
 	</array>
 	<key>BlacklistURLSchemes</key>
 	<array>

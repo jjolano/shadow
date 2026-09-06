@@ -11,22 +11,45 @@
 #if !defined(SHADOW_ROOTHIDE) && !defined(SHADOW_TEST_HARNESS)
 
 // Runtime jbroot probe with 1s TTL, SHADOW_INTERNAL_SCOPE for device file ops.
-// Probe order: env JBROOT/SHADOW_JBROOT, realpath /var/jb, scan /private/preboot/*/jb, fallback compile-time prefix.
+// Probe order: env JBROOT/SHADOW_JBROOT (bootstrap hint only, allowlisted),
+// realpath /var/jb, scan /private/preboot/*/jb, fallback compile-time prefix.
+// Finding 4: env is poisonable via in-app setenv (over-blocking oracle for up
+// to the 1s TTL), so it is honored ONLY pre-first-resolve and ONLY when it
+// points under /private/preboot or /var/jb (/private/var/jb) — never
+// /var/mobile, containers, or app paths. Once a real prefix resolves, env is
+// ignored on re-probes. 1s TTL retained (re-probe cost), now poison-proof.
 
 static NSString *sJBRoot = nil;
 static NSTimeInterval sJBRootExpiry = 0;
+static BOOL sJBRootEverResolved = NO; // set once a non-empty prefix resolves
+
+// Allowlist for the env bootstrap hint: real jbroots live under
+// /private/preboot/<uuid>/jb (roothide/Dopamine) or /var/jb (legacy
+// rootless). Anything else — /var/mobile, /var/containers, /tmp,
+// app-container paths — is rejected even if it exists.
+static BOOL shdw_env_jbroot_allowed(const char *env) {
+    if(!env || !env[0]) return NO;
+    if(strncmp(env, "/private/preboot/", 17) == 0) return YES;
+    if(strcmp(env, "/var/jb") == 0 ||
+       strncmp(env, "/var/jb/", 8) == 0) return YES;
+    if(strcmp(env, "/private/var/jb") == 0 ||
+       strncmp(env, "/private/var/jb/", 16) == 0) return YES;
+    return NO;
+}
 
 static NSString* shdw_probe_jbroot(void) {
-    // 1. env JBROOT / SHADOW_JBROOT
-    const char *env = getenv("JBROOT");
-    if (!env || !env[0]) env = getenv("SHADOW_JBROOT");
-    if (env && env[0]) {
-        NSString *p = [NSString stringWithUTF8String:env];
-        BOOL exists = NO;
-        SHADOW_INTERNAL_SCOPE {
-            exists = [[NSFileManager defaultManager] fileExistsAtPath:p];
+    // 1. env JBROOT / SHADOW_JBROOT — bootstrap hint only, allowlisted
+    if(!(sJBRootEverResolved && sJBRoot && [sJBRoot length] > 0)) {
+        const char *env = getenv("JBROOT");
+        if (!env || !env[0]) env = getenv("SHADOW_JBROOT");
+        if (env && env[0] && shdw_env_jbroot_allowed(env)) {
+            NSString *p = [NSString stringWithUTF8String:env];
+            BOOL exists = NO;
+            SHADOW_INTERNAL_SCOPE {
+                exists = [[NSFileManager defaultManager] fileExistsAtPath:p];
+            }
+            if (exists) return p;
         }
-        if (exists) return p;
     }
 
     // 2. realpath /var/jb
@@ -77,7 +100,8 @@ NSString* shdw_jbroot_prefix(void) {
 
     NSString *fresh = shdw_probe_jbroot();
     sJBRoot = [fresh copy];
-    sJBRootExpiry = now + 1.0;
+    sJBRootExpiry = now + 1.0; // 1s TTL retained; env no longer re-poisons (see above)
+    if([sJBRoot length] > 0) sJBRootEverResolved = YES;
     return sJBRoot;
 }
 

@@ -6,14 +6,35 @@
 
 #import <Shadow.h>
 #import <Shadow/SystemRulesGenerator.h>
+#import <Shadow/JBPath.h>
 
 
 
 // Watcher daemon (-d): regenerates the installed-apps ruleset when apps are
 // installed or uninstalled. App installs arrive in bursts (restores), so each
 // notification bumps a generation counter and only the event that stays idle
-// for kWatcherDebounceNs actually regenerates.
-static const int64_t kWatcherDebounceNs = 5 * NSEC_PER_SEC;
+// for kWatcherDebounceNs actually regenerates. 2s (was 5s): short enough that
+// a detector racing a fresh JB-app install still sees it, long enough to
+// coalesce restore bursts.
+static const int64_t kWatcherDebounceNs = 2 * NSEC_PER_SEC;
+
+// dpkg installs (tweaks, CLI tools) do not always post an app notification,
+// so the debounced fire also checks /Library/dpkg/info mtime and regenerates
+// the dpkg ruleset when it moved. Cheap stat-only gate; postinst -g remains
+// the authoritative full regen.
+static double shdw_dpkg_info_mtime(void) {
+    double latest = 0;
+    for(NSString* p in @[JBPath(@"/Library/dpkg/info"), JBPath(@"/var/lib/dpkg/info")]) {
+        NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:p error:nil];
+        double m = attrs ? [[attrs fileModificationDate] timeIntervalSinceReferenceDate] : 0;
+        if(m > latest) {
+            latest = m;
+        }
+    }
+    return latest;
+}
+
+static double gLastDpkgMtime = 0;
 
 static void setup_watcher(void) {
     static int32_t notify_tokens[2];
@@ -37,12 +58,21 @@ static void setup_watcher(void) {
                 } else if(result == -1) {
                     fprintf(stderr, "error: failed to regenerate installed-apps ruleset\n");
                 }
+
+                double cur = shdw_dpkg_info_mtime();
+                if(gLastDpkgMtime != 0 && cur != gLastDpkgMtime) {
+                    if([SystemRulesGenerator writeDpkgRuleset] == 1) {
+                        fprintf(stderr, "dpkg ruleset regenerated (info changed)\n");
+                    }
+                }
+                gLastDpkgMtime = cur;
             }
         });
     };
 
     // Run once at startup: covers installs that happened while stopped and
     // the first-ever boot where postinst's -g already ran (harmless no-op).
+    gLastDpkgMtime = shdw_dpkg_info_mtime();
     onChange();
 
     notify_register_dispatch("com.apple.mobile.application_installed", &notify_tokens[0], queue, ^(int token) {

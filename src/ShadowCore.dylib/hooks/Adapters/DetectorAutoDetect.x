@@ -3,6 +3,7 @@
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
 
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,6 +16,15 @@ static BOOL shdw_string_has_suffix(const char* value, const char* suffix) {
 static BOOL shdw_has_image_suffix(const char* suffix) {
     for(uint32_t i = 0; i < _dyld_image_count(); i++) {
         if(shdw_string_has_suffix(_dyld_get_image_name(i), suffix)) return YES;
+    }
+    return NO;
+}
+
+static BOOL shdw_has_image_substring(const char* substr) {
+    if(!substr || !substr[0]) return NO;
+    for(uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char* name = _dyld_get_image_name(i);
+        if(name && strstr(name, substr)) return YES;
     }
     return NO;
 }
@@ -60,13 +70,46 @@ static __attribute__((unused)) BOOL shdw_has_iossecuritysuite_classes(void) {
         strcmp(suiteImage, jailbreakImage) == 0 && strcmp(suiteImage, runtimeImage) == 0;
 }
 
-static __attribute__((unused)) BOOL shdw_detect_iossecuritysuite(void) {
+static BOOL shdw_detect_iossecuritysuite(void) {
     return shdw_has_image_suffix("/IOSSecuritySuite.framework/IOSSecuritySuite") ||
         shdw_has_iossecuritysuite_classes();
 }
 
-static __attribute__((unused)) BOOL shdw_detect_freerasp(void) {
+static BOOL shdw_detect_freerasp(void) {
     return shdw_has_image_suffix("/TalsecRuntime.framework/TalsecRuntime");
+}
+
+static BOOL shdw_detect_devicesecuritykit(void) {
+    // Real library exposes SwizzlingDetector/DSKBridge; the filtered runner
+    // embeds the same probe in DeviceSecurityKitRunner. SPM static embeds
+    // have no separate image, so check classes first, image second.
+    if(objc_getClass("DeviceSecurityKit.SwizzlingDetector") || objc_getClass("DSKBridge")) return YES;
+    return shdw_has_image_suffix("/DeviceSecurityKit.framework/DeviceSecurityKit") ||
+        shdw_has_image_substring("DeviceSecurityKit");
+}
+
+static BOOL shdw_detect_bat(void) {
+    // BAT ships as SPM embed or runner; anchor on the image name plus the
+    // exported PreventedAPIs entry (same anchor the adapter hooks — dlsym is
+    // a dyld hash lookup, and the ctor calls this before hooks install, so
+    // internal-caller short-circuit keeps it a clean lookup afterwards).
+    if(shdw_has_image_substring("BATJailbreakGuard")) return YES;
+    if(dlsym(RTLD_DEFAULT, "$s17BATJailbreakGuard42JailbreakDetectionPreventedAPICheckServiceC02isD8DetectedSbyF")) return YES;
+    if(dlsym(RTLD_DEFAULT, "$s23BATJailbreakGuardRunner42JailbreakDetectionPreventedAPICheckServiceC02isD8DetectedSbyF")) return YES;
+    return NO;
+}
+
+// Ctor prearm predicate: YES when any known detector is linked at launch.
+// Apple's DeviceCheck framework is deliberately NOT a signal (benign
+// AppAttest use would de-stealth); the DeviceCheck adapter's detectors are
+// the DTT/SafeDevice/JailMonkey trio below.
+static BOOL shdw_detect_dtt(void);
+static BOOL shdw_detect_safedevice(void);
+static BOOL shdw_detect_jailmonkey(void);
+BOOL shdw_adapter_has_known_detector(void) {
+    return shdw_detect_dtt() || shdw_detect_safedevice() || shdw_detect_jailmonkey() ||
+        shdw_detect_freerasp() || shdw_detect_iossecuritysuite() ||
+        shdw_detect_devicesecuritykit() || shdw_detect_bat();
 }
 
 static BOOL shdw_detect_dtt(void) {

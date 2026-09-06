@@ -196,7 +196,10 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
     return [[self currentSnapshot] generation];
 }
 
-// 1s-gated directory and per-file change check.
+// 1s-gated directory and per-file change check. Finding 10: the 1s gate
+// means a ruleset edit lands at most ~1s late (plus the 0.5s decision TTLs
+// above it); the gate is also a timing side-channel (scan vs no-scan
+// latency), verdicts identical either way.
 - (void)checkForChanges {
     // C0-2: the dir/file mtime stats are Shadow's own reads — see
     // _loadSnapshot. _reloadRulesets nests a _loadSnapshot scope; the depth
