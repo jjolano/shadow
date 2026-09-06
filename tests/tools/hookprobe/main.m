@@ -148,7 +148,7 @@ static const CanonicalRegression kCanonicalRegressions[] = {
     { "N-02",   { "NSProcessInfo|environment sanitized", "libc|getenv(DYLD_INSERT_LIBRARIES)" } },
     { "N-03",   { "LSApplicationWorkspace|applicationProxyForIdentifier(restricted)" } },
     { "N-04",   { "NSFileVersion|currentVersionOfItemAtURL(restricted)" } },
-    { "N-05",   { "DeviceCheck|DCDevice.isSupported baseline", "DeviceCheck|DCDevice.isSupported" } },
+    { "N-05",   { "DeviceCheck|DCDevice.isSupported baseline", "DeviceCheck|DCDevice.isSupported", "DeviceCheck|DCDevice.generateToken" } },
     { "N-06",   { "LSApplicationWorkspace|applicationsAvailableForHandlingURLScheme(restricted)" } },
     { "N-07",   { "UIImage|imageNamed(inBundle:) baseline", "UIImage|imageNamed(inBundle:)" } },
     { "N-08",   { "NSBundle|bundleWithPath(shadowfwk)", "NSBundle|mainBundle(control)" } },
@@ -768,6 +768,43 @@ static void probeDeviceCheckPost(void) {
 
     BOOL post = (BOOL)(intptr_t)[gDCDevice performSelector:NSSelectorFromString(@"isSupported")];
     report(@"DeviceCheck", @"DCDevice.isSupported", !post, post ? @"YES (not hooked)" : @"NO (hooked)");
+
+    // Forge witness: generateTokenWithCompletionHandler: must fail closed
+    // with featureUnsupported (nil token), delivered async — never inline.
+    // NSInvocation-based (tool links only Foundation): the completion block
+    // signature is (NSData*, NSError*).
+    SEL tokenSel = NSSelectorFromString(@"generateTokenWithCompletionHandler:");
+    if(post || ![gDCDevice respondsToSelector:tokenSel]) {
+        skip(@"DeviceCheck", @"DCDevice.generateToken", @"unavailable (isSupported not hooked or selector missing)");
+        return;
+    }
+    NSMethodSignature* sig = [gDCDevice methodSignatureForSelector:tokenSel];
+    if(!sig || sig.numberOfArguments < 3) {
+        skip(@"DeviceCheck", @"DCDevice.generateToken", @"no method signature");
+        return;
+    }
+    __block BOOL calledInline = NO, calledAsync = NO;
+    __block id gotToken = (id)@"unset", gotError = nil;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL inCall = YES;
+    void (^completion)(id, id) = ^(id token, id error) {
+        gotToken = token; gotError = error;
+        if(inCall) calledInline = YES; else calledAsync = YES;
+        dispatch_semaphore_signal(sem);
+    };
+    NSInvocation* inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setTarget:gDCDevice];
+    [inv setSelector:tokenSel];
+    void (^cb)(id, id) = completion;
+    [inv setArgument:&cb atIndex:2];
+    [inv invoke];
+    inCall = NO;
+    BOOL done = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0;
+    BOOL errOK = done && [gotError isKindOfClass:[NSError class]] &&
+        [[(NSError*)gotError domain] isEqualToString:@"com.apple.DeviceCheck.error"] &&
+        [(NSError*)gotError code] == 1;  // DCErrorFeatureUnsupported
+    report(@"DeviceCheck", @"DCDevice.generateToken", done && gotToken == nil && errOK && !calledInline && calledAsync,
+        !done ? @"completion never fired" : [NSString stringWithFormat:@"token=%@ err=%@ inline=%d async=%d", gotToken, gotError, calledInline, calledAsync]);
 }
 
 // ---------------------------------------------------------------------------
