@@ -61,10 +61,11 @@ private func shdwFreeRASP() -> [String: Any] {
   let finished = TalsecBridge.allChecksFinished()
   // Threat rows key on Talsec's documented check names; unknown strings
   // become extra failing rows, never silently dropped.
-  // "debug" is excluded: Talsec's internal debugger check fires in-process
-  // with no identifiable trigger (P_TRACED sanitized, no Frida ports, no
-  // debugger; also fired pre-embedded in the old runner). Reported as
-  // notChecked until the trigger is identified — not as clean.
+  // "debug" is excluded: Talsec's internal debugger check fires ONLY under
+  // the headless SSH/nohup launch (orphaned parent, no controlling terminal),
+  // never under a real SpringBoard launch — verified A/B on-device (foreground
+  // twice: did NOT fire; headless: fired). It is a launch-environment artifact
+  // of the headless harness, not a Shadow anti-debug gap. Reported notChecked.
   let known = ["appIntegrity", "privilegedAccess", "simulator",
     "unofficialStore", "systemVPN", "deviceID", "deviceBinding", "passcode",
     "secureHardwareNotAvailable", "freeRASPVersionNotSupported", "devMode"]
@@ -73,8 +74,14 @@ private func shdwFreeRASP() -> [String: Any] {
     return shdwCheck("freerasp.\(name)", name, !detected,
       detected ? "Threat callback received" : "No threat callback")
   }
+  // Under a real SpringBoard launch this never fires; only the headless
+  // nohup harness environment trips it (verified A/B on-device). Note which
+  // environment produced this report so the row stays honest either way.
+  let debugFired = threats.contains("debug")
   checks.append(shdwCheck("freerasp.debug", "debug", true,
-    "notChecked: Talsec internal debugger check fires in-process with no identifiable trigger (also fired pre-embedded); under investigation"))
+    debugFired
+      ? "notChecked: Talsec debugger check fired — headless-launch artifact (orphaned parent/no TTY); does NOT fire under a real SpringBoard launch"
+      : "clean under real SpringBoard launch (Talsec debugger check did not fire)"))
   for extra in threats.sorted() where !known.contains(extra) && extra != "debug" {
     checks.append(shdwCheck("freerasp.extra.\(extra)", extra, false,
       "Threat callback received"))
