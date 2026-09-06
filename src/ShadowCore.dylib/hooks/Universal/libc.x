@@ -165,6 +165,58 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
     return result;
 }
 
+// freadlink (iOS 16+ public in unistd.h; SYS_freadlink already present on
+// the 15.6 floor): same policy as readlink, but the link is named by
+// descriptor — resolve via F_GETPATH through the shared fd cache
+// (shdw_fd_path_restricted, PathPolicy.m) and fail open when the fd has no
+// nameable path (tty/pipe/socket). Runtime-gated like mkfifoat/mknodat:
+// skipped cleanly where libSystem lacks the export.
+static ssize_t (*original_freadlink)(int fd, char* buf, size_t bufsize);
+static ssize_t replaced_freadlink(int fd, char* buf, size_t bufsize) {
+    if(!isCallerExternal()) {
+        return original_freadlink(fd, buf, bufsize);
+    }
+
+    // buf NULL or bufsize 0: stock fails (EFAULT/EINVAL); replay before
+    // classification so a malformed call keeps its stock error.
+    if(buf == NULL || bufsize == 0) {
+        return original_freadlink(fd, buf, bufsize);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    // Read into a temp buffer first (same content check as readlink): a
+    // link in a safe location can still name a restricted path.
+    char content[PATH_MAX];
+    ssize_t result = original_freadlink(fd, content, sizeof(content));
+
+    if(result != -1 && result < (ssize_t) sizeof(content)) {
+        content[result] = '\0';
+
+        if([_shadow isCPathRestricted:content]) {
+            errno = EACCES;
+            return -1;
+        }
+
+        size_t copy_len = (size_t) result;
+
+        if(copy_len > bufsize) {
+            copy_len = bufsize;
+        }
+
+        if(copy_len > 0) {
+            memcpy(buf, content, copy_len);
+        }
+
+        return (ssize_t) copy_len;
+    }
+
+    return result;
+}
+
 // Shared dirfd→path classification for the *at family, the fd→path cache and
 // the readlink target resolver live in policy/PathPolicy.m (also used by the
 // raw-syscall surface in syscall.x — one resolver for every *at hook).
@@ -1727,6 +1779,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
     { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 METADATA, METADATA },
     { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               METADATA, METADATA },
+    { "freadlink",              (void*)&replaced_freadlink,                (void**)&original_freadlink,                LIBC,   0 },   // iOS 16+ export; SYS_freadlink on 15.6 floor
     { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC },
     { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC },
     { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC },
@@ -1788,11 +1841,16 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "getppid",                (void*)&replaced_getppid,                  (void**)&original_getppid,                  ANTIDBG,  ANTIDBG },
     { "getuid",                 (void*)&replaced_getuid,                   (void**)&original_getuid,                   ANTIDBG,  ANTIDBG },
     { "geteuid",                (void*)&replaced_geteuid,                 (void**)&original_geteuid,                 ANTIDBG,  ANTIDBG },
+    { "getgid",                 (void*)&replaced_getgid,                   (void**)&original_getgid,                   ANTIDBG,  ANTIDBG },
+    { "getegid",                (void*)&replaced_getegid,                 (void**)&original_getegid,                 ANTIDBG,  ANTIDBG },
+    { "issetugid",              (void*)&replaced_issetugid,                (void**)&original_issetugid,                ANTIDBG,  ANTIDBG },
     { "getrusage",              (void*)&replaced_getrusage,                (void**)&original_getrusage,                ANTIDBG,  ANTIDBG },
     { "getrlimit",              (void*)&replaced_getrlimit,                (void**)&original_getrlimit,                ANTIDBG,  ANTIDBG },
     { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
     { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
     { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
+    { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0 },
+    { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0 },
 };
 
 #undef LIBC

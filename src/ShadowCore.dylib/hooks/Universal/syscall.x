@@ -455,6 +455,23 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                 }
             } break;
 
+#ifdef SYS_freadlink
+            case SHADW_RAW_CAT_FREADLINK: {
+                // Raw freadlink(fd): same fd policy as the libc.x
+                // freadlink hook — fail open when the fd has no nameable
+                // path. Number present from the 15.6 floor; the libc
+                // declaration is iOS 16+.
+                int fd = (int) va_arg(inspect, intptr_t);
+                char pathname[PATH_MAX];
+
+                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+#endif
+
             case SHADW_RAW_CAT_PATH: {
                 const char* pathname = va_arg(inspect, const char *);
 
@@ -500,11 +517,17 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                     shdw_proc_mib_kind_t kind = shdw_proc_mib_kind(sysctl_mib, sysctl_miblen);
 
                     if(kind == SHADW_PROC_MIB_PID_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
-                        // Remove trace flags from our own process record.
-                        // NOTE: the raw per-pid path deliberately does NOT rewrite
-                        // e_ppid (the libc per-pid hook and the list filter do) —
-                        // preserved as-is.
-                        shdw_proc_sanitize_self_trace_flags((struct kinfo_proc *) sysctl_oldp);
+                        // Full self-record sanitize: trace flags AND e_ppid=1,
+                        // matching the libc per-pid hook (libc_antidebugging.x)
+                        // and the KERN_PROC_ALL list filter. A detector reading
+                        // its own parent via the RAW syscall must see the same 1
+                        // that getppid()/proc_pidinfo/libc sysctl report — else
+                        // the raw path is a cross-API contradiction (real parent
+                        // here, 1 everywhere else). The sanitizer is a plain
+                        // struct-field write under the identical buffer guard, so
+                        // there is no reentrancy/safety cost the trace-only path
+                        // was avoiding.
+                        shdw_proc_sanitize_self_record((struct kinfo_proc *) sysctl_oldp);
                     }
 
                     // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
@@ -533,6 +556,9 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             case SHADW_RAW_CAT_PATH:
             case SHADW_RAW_CAT_AT:
             case SHADW_RAW_CAT_FDXATTR:
+#ifdef SYS_freadlink
+            case SHADW_RAW_CAT_FREADLINK:
+#endif
             case SHADW_RAW_CAT_PTRACE:
                 break;
         }

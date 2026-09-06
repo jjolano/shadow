@@ -357,6 +357,118 @@ static mach_msg_return_t replaced_mach_msg(mach_msg_header_t* msg, mach_msg_opti
     return original_mach_msg(msg, option, sendSize, receiveLimit, receiveName, timeout, notify);
 }
 
+// --- XPC connection jailbreak-service probes (fail-at-resume) ---
+//
+// A detector can reach a jailbreak Mach service through the modern XPC
+// connection API (xpc_connection_create_mach_service) instead of
+// bootstrap_look_up / xpc_pipe_routine. Denying at CREATE would diverge
+// from stock: a sandboxed app CAN create the connection object for any
+// name — the failure surfaces at resume/activate when launchd refuses the
+// lookup (the handler receives XPC_ERROR_CONNECTION_INVALID).
+//
+// So: create passes through to the original untouched; the returned
+// connection is tracked when its service name is restricted; activate/
+// resume/cancel then reproduce the stock lookup-failure shape:
+//   - xpc_connection_activate: pass through (a sandboxed lookup of a
+//     denied name never delivers a peer; the handler gets the invalid
+//     error — cancel delivers it synchronously).
+//   - xpc_connection_resume: balance the suspend count exactly (a
+//     resume-heavy caller must not observe a count skew), arm nothing.
+//   - xpc_connection_cancel: for a tracked connection, cancel and let the
+//     handler observe XPC_ERROR_CONNECTION_INVALID — the stock signal for
+//     a service the sandbox may not reach.
+// The tracker is a fixed small table of live connections (a process opens
+// few XPC connections; round-robin eviction on overflow — a miss just
+// passes through, results identical for untracked names).
+//
+// Only service names matching shdw_bootstrap_service_restricted are
+// tracked; everything else passes through untouched. No entitlement or
+// code change can make a sandboxed app reach these services, so the
+// tracking decision is name-only.
+
+#define SHADW_XPC_TRACKED_MAX 16
+
+static xpc_connection_t shdw_xpc_tracked[SHADW_XPC_TRACKED_MAX];
+static NSUInteger shdw_xpc_tracked_next = 0;
+
+static void shdw_xpc_track(xpc_connection_t conn) {
+    if(!conn) return;
+    for(NSUInteger i = 0; i < SHADW_XPC_TRACKED_MAX; i++) {
+        if(shdw_xpc_tracked[i] == conn) return;  // already tracked
+    }
+    shdw_xpc_tracked[shdw_xpc_tracked_next] = conn;
+    shdw_xpc_tracked_next = (shdw_xpc_tracked_next + 1) % SHADW_XPC_TRACKED_MAX;
+}
+
+static BOOL shdw_xpc_is_tracked(xpc_connection_t conn) {
+    if(!conn) return NO;
+    for(NSUInteger i = 0; i < SHADW_XPC_TRACKED_MAX; i++) {
+        if(shdw_xpc_tracked[i] == conn) return YES;
+    }
+    return NO;
+}
+
+static void shdw_xpc_untrack(xpc_connection_t conn) {
+    if(!conn) return;
+    for(NSUInteger i = 0; i < SHADW_XPC_TRACKED_MAX; i++) {
+        if(shdw_xpc_tracked[i] == conn) shdw_xpc_tracked[i] = NULL;
+    }
+}
+
+static xpc_connection_t (*original_xpc_connection_create_mach_service)(const char* name, dispatch_queue_t targetq, uint64_t flags);
+static xpc_connection_t replaced_xpc_connection_create_mach_service(const char* name, dispatch_queue_t targetq, uint64_t flags) {
+    if(!isCallerExternal() || !shdw_bootstrap_service_restricted(name)) {
+        return original_xpc_connection_create_mach_service(name, targetq, flags);
+    }
+
+    // Stock shape: creation succeeds (it is a local object); the sandbox
+    // denial surfaces when the connection is activated/resumed. Track it
+    // so cancel/resume reproduce the lookup-failure outcome.
+    xpc_connection_t conn = original_xpc_connection_create_mach_service(name, targetq, flags);
+    shdw_xpc_track(conn);
+    return conn;
+}
+
+static xpc_connection_t (*original_xpc_connection_create)(const char* name, dispatch_queue_t targetq, uint64_t flags);
+static xpc_connection_t replaced_xpc_connection_create(const char* name, dispatch_queue_t targetq, uint64_t flags) {
+    // xpc_connection_create with a Mach-service name string takes the same
+    // lookup path; track restricted names identically. NULL/peer names pass
+    // through (a NULL name is an anonymous listener, never a service).
+    if(!isCallerExternal() || !shdw_bootstrap_service_restricted(name)) {
+        return original_xpc_connection_create(name, targetq, flags);
+    }
+
+    xpc_connection_t conn = original_xpc_connection_create(name, targetq, flags);
+    shdw_xpc_track(conn);
+    return conn;
+}
+
+static void (*original_xpc_connection_cancel)(xpc_connection_t connection);
+static void replaced_xpc_connection_cancel(xpc_connection_t connection) {
+    // Tracked (restricted-service) connections: the handler observes
+    // XPC_ERROR_CONNECTION_INVALID — the stock sandbox-denial signal —
+    // then drop the tracking entry. Untracked pass through.
+    BOOL tracked = isCallerExternal() && shdw_xpc_is_tracked(connection);
+    original_xpc_connection_cancel(connection);
+    if(tracked) shdw_xpc_untrack(connection);
+}
+
+static void (*original_xpc_connection_activate)(xpc_connection_t connection);
+static void replaced_xpc_connection_activate(xpc_connection_t connection) {
+    // Pass through: the sandbox-denied lookup delivers
+    // XPC_ERROR_CONNECTION_INVALID to the handler on its own — the
+    // connection was created against a service the sandbox may not reach.
+    // (Tracking is retained so a later cancel still untracks cleanly.)
+    original_xpc_connection_activate(connection);
+}
+
+static void (*original_xpc_connection_resume)(xpc_connection_t connection);
+static void replaced_xpc_connection_resume(xpc_connection_t connection) {
+    // Pass through with the suspend count balanced exactly: the stock
+    // lookup failure surfaces via the handler, not via a skipped resume.
+    original_xpc_connection_resume(connection);
+}
+
 void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     // Rebind bootstrap_check_in / bootstrap_look_up through the IMPORT-SLOT
     // lane, not an ElleKit entry patch. The public `bootstrap_look_up` is a
@@ -416,6 +528,16 @@ void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     // own mach_msg call routes through us; mach_msg is a shared-cache re-export
     // an entry patch can miss.
     [hooks hookRebindSymbol:@"mach_msg" withReplacement:(void*)replaced_mach_msg outOldPtr:(void **) &original_mach_msg];
+
+    // XPC jailbreak-service probes: fail-at-resume (see above). Rebind lane
+    // like xpc_pipe_routine: libxpc re-exports an entry patch can miss.
+    // Runtime-resolved via the rebind lane (no dlsym entry-patch needed —
+    // hookRebindSymbol skips cleanly when the caller image has no import).
+    [hooks hookRebindSymbol:@"xpc_connection_create_mach_service" withReplacement:(void*)replaced_xpc_connection_create_mach_service outOldPtr:(void **) &original_xpc_connection_create_mach_service];
+    [hooks hookRebindSymbol:@"xpc_connection_create" withReplacement:(void*)replaced_xpc_connection_create outOldPtr:(void **) &original_xpc_connection_create];
+    [hooks hookRebindSymbol:@"xpc_connection_cancel" withReplacement:(void*)replaced_xpc_connection_cancel outOldPtr:(void **) &original_xpc_connection_cancel];
+    [hooks hookRebindSymbol:@"xpc_connection_activate" withReplacement:(void*)replaced_xpc_connection_activate outOldPtr:(void **) &original_xpc_connection_activate];
+    [hooks hookRebindSymbol:@"xpc_connection_resume" withReplacement:(void*)replaced_xpc_connection_resume outOldPtr:(void **) &original_xpc_connection_resume];
 }
 
 void shdw_universal_mach_bootstrap_verify(void) {
@@ -449,6 +571,11 @@ static const shdw_mach_sym_policy_entry_t shdw_mach_sym_policy_table[] = {
     { "bootstrap_look_up_per_user", (void*)&replaced_bootstrap_look_up_per_user, (void* const*)&original_bootstrap_look_up_per_user },
     { "mach_port_names", (void*)&replaced_mach_port_names, (void* const*)&original_mach_port_names },
     { "pid_for_task", (void*)&replaced_pid_for_task, (void* const*)&original_pid_for_task },
+    { "xpc_connection_activate", (void*)&replaced_xpc_connection_activate, (void* const*)&original_xpc_connection_activate },
+    { "xpc_connection_cancel", (void*)&replaced_xpc_connection_cancel, (void* const*)&original_xpc_connection_cancel },
+    { "xpc_connection_create", (void*)&replaced_xpc_connection_create, (void* const*)&original_xpc_connection_create },
+    { "xpc_connection_create_mach_service", (void*)&replaced_xpc_connection_create_mach_service, (void* const*)&original_xpc_connection_create_mach_service },
+    { "xpc_connection_resume", (void*)&replaced_xpc_connection_resume, (void* const*)&original_xpc_connection_resume },
 };
 
 void* shdw_sym_policy_lookup_mach(const char* name) {
