@@ -235,6 +235,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
                                 SHDWAdapterJailMonkeyID ]) {
             hasActiveDetectorAdapter |= [prefs[key] boolValue];
         }
+        // Behavioral prearm for image/class-linked detectors whose adapters
+        // are always-on (FreeRASP/Talsec, DeviceSecurityKit, IOSSecuritySuite,
+        // BAT): their presence at ctor means detector code will run, so arm
+        // Tier-2 now. Harness baseline unaffected: the harness links none of
+        // these, and SDKFallback deferral is planner-gated, not prearm-gated.
+        hasActiveDetectorAdapter |= shdw_adapter_has_known_detector();
 
         // The adapter's raw-syscall coverage is additive to the universal
         // groups and follows its own switch.

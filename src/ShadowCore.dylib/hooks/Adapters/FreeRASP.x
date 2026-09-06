@@ -17,6 +17,14 @@ static BOOL shdw_freeRASP_isEncryptedBinary(void) {
 // read the LC_UUID (otool -l), then one-time RE the two function offsets and
 // their first 8 bytes, and append below. Unknown UUIDs install nothing
 // (fail-safe: the row simply stays red until pinned).
+//
+// Coverage split (aggressive default stays NO — see SHDWDetectorAggressiveID):
+//   * natural (always on): mach_msg marker filter + /.file + cfprefsd path
+//     hiding + generic syscall policy (prepare_preferences forces
+//     SHDWUniversalSyscallID). Stock-shaped answers, no verdict forcing.
+//   * aggressive only: isEncryptedBinary forced YES + privilegedAccess
+//     (threat ordinal 1) delivery suppression. Both override a detector
+//     verdict rather than shaping the environment, so they stay opt-in.
 typedef struct {
     uint8_t uuid[16];
     uint32_t encryptedBinaryOffset;
@@ -36,6 +44,14 @@ static const shdw_freeRASP_version_t shdw_freeRASP_versions[] = {
         .deliverOffset = 0x3d534,
         .deliverPrologue = { 0xff, 0x03, 0x01, 0xd1, 0xf6, 0x57, 0x01, 0xa9 },
     },
+    // TODO: second pinned row for the next TalsecRuntime version. Fill in the
+    // observed LC_UUID from the debug log below, then one-time RE the two
+    // offsets + first 8 prologue bytes and append, e.g.:
+    // { .uuid = { 0x.., ... (16 bytes, otool -l) },
+    //   .encryptedBinaryOffset = 0x....,
+    //   .encryptedBinaryPrologue = { 0x.., ... (8 bytes) },
+    //   .deliverOffset = 0x......,
+    //   .deliverPrologue = { 0x.., ... (8 bytes) } },
 };
 #define SHDW_FREERASP_VERSION_COUNT (sizeof(shdw_freeRASP_versions) / sizeof(shdw_freeRASP_versions[0]))
 
@@ -61,6 +77,36 @@ static const shdw_freeRASP_version_t* shdw_freeRASP_versionForHeader(const struc
     return NULL;
 }
 
+// Logs the observed TalsecRuntime LC_UUID on version mismatch so pinning the
+// next version is one RE step (UUID from the log + offsets/prologues from a
+// one-time disassembly). Debug builds only (NSLog is compiled out in
+// release); no logic change — unknown UUIDs still install nothing.
+static void shdw_freeRASP_logUnknownUUID(const struct mach_header* header, const char* name) {
+    // NSLog compiles out in release (common.h), so the whole scan is
+    // debug-only; the casts keep -Werror quiet in release builds.
+    (void)header; (void)name;
+#ifdef DEBUG
+    if(!header || header->magic != MH_MAGIC_64) return;
+    const struct load_command* command = (const void*)((const struct mach_header_64*)header + 1);
+    const uint8_t* end = (const uint8_t*)command + header->sizeofcmds;
+    for(uint32_t i = 0; i < header->ncmds; i++) {
+        if((const uint8_t*)command + sizeof(*command) > end ||
+           command->cmdsize < sizeof(*command) || (const uint8_t*)command + command->cmdsize > end) return;
+        if(command->cmd == LC_UUID && command->cmdsize >= sizeof(struct uuid_command)) {
+            const uint8_t* uuid = ((const struct uuid_command*)command)->uuid;
+            NSLog(@"[Shadow][FreeRASP] unknown TalsecRuntime UUID for %s: "
+                  @"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x "
+                  @"(add a row to shdw_freeRASP_versions)",
+                  name ? name : "?",
+                  uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
+                  uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
+            return;
+        }
+        command = (const void*)((const uint8_t*)command + command->cmdsize);
+    }
+#endif
+}
+
 static void shdw_freeRASP_installEncryptedBinary(SHDWHookSession* hooks) {
     if(shdw_freeRASP_originalEncryptedBinary) return;
 
@@ -69,7 +115,7 @@ static void shdw_freeRASP_installEncryptedBinary(SHDWHookSession* hooks) {
         const struct mach_header* header = _dyld_get_image_header(i);
         if(!name || !strstr(name, "/TalsecRuntime.framework/TalsecRuntime")) continue;
         const shdw_freeRASP_version_t* version = shdw_freeRASP_versionForHeader(header);
-        if(!version) continue;
+        if(!version) { shdw_freeRASP_logUnknownUUID(header, name); continue; }
 
         void* target = (uint8_t*)header + version->encryptedBinaryOffset;
         if(memcmp(target, version->encryptedBinaryPrologue, sizeof(version->encryptedBinaryPrologue)) != 0) return;
@@ -121,7 +167,7 @@ static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
         const struct mach_header* header = _dyld_get_image_header(i);
         if(!name || !strstr(name, "/TalsecRuntime.framework/TalsecRuntime")) continue;
         const shdw_freeRASP_version_t* version = shdw_freeRASP_versionForHeader(header);
-        if(!version) continue;
+        if(!version) { shdw_freeRASP_logUnknownUUID(header, name); continue; }
         void* target = (uint8_t*)header + version->deliverOffset;
         if(memcmp(target, version->deliverPrologue, sizeof(version->deliverPrologue)) != 0) return;
         [hooks hookFunction:target withReplacement:shdw_freeRASP_deliver

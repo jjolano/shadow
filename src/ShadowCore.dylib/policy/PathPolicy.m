@@ -106,6 +106,8 @@ BOOL shdw_is_jb_probe(const char* path) {
         || strstr(path, "/.bootstrapped_") != NULL
         || strstr(path, "/var/lib/dpkg") != NULL
         || strstr(path, "/var/lib/apt") != NULL
+        || strstr(path, "ShadowCore") != NULL
+        || strstr(path, "Shadow.dylib") != NULL
         || strstr(path, "/usr/lib/libhooker.dylib") != NULL
         || strstr(path, "/usr/lib/libsubstrate.dylib") != NULL
         || strstr(path, "/usr/lib/libsubstitute") != NULL
@@ -244,7 +246,10 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
 // futimes/fchdir/fgetxattr/flistxattr/fgetattrlist): F_GETPATH is a syscall
 // per call, and the fstat family runs on every fd touch. The path is resolved
 // once per fd and cached; the close hook invalidates the entry, so a reused
-// fd can never inherit a stale path. The same entry carries the per-dirfd
+// fd can never inherit a stale path. Finding 10: fixed 16-slot round-robin,
+// close-invalidated — no TTL window, so no staleness beyond eviction (a miss
+// just re-resolves, results identical). Residual is timing-only (hit vs
+// re-resolve latency). The same entry carries the per-dirfd
 // options dict for the *at family (shdw_at_path_denied), built once per
 // dirfd and reused read-only — the engine only reads the dict, so a cached
 // one is safe to share across calls. Fixed-size table, round-robin eviction —
@@ -320,7 +325,8 @@ void shdw_fd_cache_invalidate(int fd) {
 // and build the options dictionary for every entry. Cache both per DIR* so
 // only the per-entry child check runs; invalidated on closedir because DIR*
 // pointers get reused. Fixed-size table, round-robin eviction on overflow
-// (a miss just re-resolves — results stay identical). A valid directory
+// (a miss just re-resolves — results stay identical). Finding 10: same
+// timing-only residual as the fd cache. A valid directory
 // vnode whose path can't be resolved is cached as DENIED: entries are hidden
 // (fail closed) rather than exposed unfiltered.
 #define SHADW_READDIR_CACHE_SIZE 16

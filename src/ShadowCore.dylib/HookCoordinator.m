@@ -99,6 +99,10 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     BOOL _sdkFallbackInstalled;
     BOOL _harnessProfile;
     BOOL _installing;                 // re-entrancy guard (see installEventSync:)
+    NSUInteger _pendingEvents;          // bitset over SHDWLifecycleEvent: events
+                                        // that arrived while _installing, replayed
+                                        // on drain (a dropped UIKit event would
+                                        // otherwise lose its hooks forever)
     NSArray<NSString*>* _ctorInventory;
     NSArray<NSString*>* _postLoadInventory;
     NSArray<NSString*>* _postDetectorInventory;
@@ -343,9 +347,13 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     // executing on would deadlock (observed: "_dispatch_sync_f_slow: called on
     // queue already owned by current thread" — the ShadowHarness crash).
     // _installing is set BEFORE dispatch_sync so the dyld callback's
-    // installEvent call is caught by this guard. A nested install is a no-op:
-    // _installedBits makes installEventSync idempotent per unit.
+    // installEvent call is caught by this guard. A nested install is pended,
+    // not lost: its event bit joins _pendingEvents and is replayed when the
+    // current install drains below (a dropped UIKit event would otherwise
+    // lose its hooks for the rest of the process). _installedBits keeps the
+    // replay idempotent per unit.
     if(_installing) {
+        _pendingEvents |= (1UL << (NSUInteger)event);
         return 0;
     }
 
@@ -357,15 +365,33 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         installed = [self installEventSync:event];
     });
 
+    // Drain pended events (dyld callbacks / trips that fired mid-install).
+    // Terminates: escalation is one-shot (_escalated), UIKit fires once, and
+    // repeats are _installedBits no-ops. Stays under _installing so nested
+    // trips during the replay pend again instead of recursing.
+    while(_pendingEvents) {
+        NSUInteger pending = _pendingEvents;
+        _pendingEvents = 0;
+
+        for(NSUInteger e = SHDWEventCtor; e <= SHDWEventSDKFallback; e++) {
+            if((pending >> e) & 1UL) {
+                dispatch_sync(self.lifecycleQueue, ^{
+                    installed += [self installEventSync:(SHDWLifecycleEvent)e];
+                });
+            }
+        }
+    }
+
     _installing = NO;
 
     return installed;
 }
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
-    // Worker function for installEvent / escalateWithReason. Runs on the
-    // lifecycle queue, or on main for the ObjC-heavy detector escalation.
-    // Does NOT manage _installing — installEvent: owns that flag.
+    // Worker function for installEvent. Always runs on the lifecycle queue
+    // (callers block in dispatch_sync, including main-thread escalation);
+    // the install itself never runs on main. Does NOT manage _installing or
+    // _pendingEvents — installEvent: owns those.
     // Idempotency is handled by _installedBits: a unit already installed by an
     // earlier event is skipped, so a re-entrant call from a detector trip
     // during an install is a no-op for already-installed units.
@@ -438,11 +464,21 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         return;
     }
 
-    // Tier-2 installs ObjC hooks, so run it on the main queue after the
-    // detector's intercepted stack has unwound.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self installEventSync:SHDWEventDetectorEscalation];
-    });
+    // Tier-2 installs ObjC hooks. Close the verdict race for main-thread
+    // probes (canOpenURL / LSWorkspace run on main almost always): install
+    // synchronously through the serializing installEvent: so the verdict
+    // returns after Tier-2 is present (the install still runs on the
+    // lifecycle queue; the caller just blocks for it). Off-main trips keep
+    // the async hop so the intercepted stack unwinds first. Both paths own
+    // the _installing re-entrancy guard and _installedBits idempotence via
+    // installEvent:.
+    if([NSThread isMainThread]) {
+        [self installEvent:SHDWEventDetectorEscalation];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self installEvent:SHDWEventDetectorEscalation];
+        });
+    }
 }
 
 - (void)prearmDetector {

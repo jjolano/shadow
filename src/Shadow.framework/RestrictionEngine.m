@@ -37,6 +37,9 @@ static BOOL shdwDetectorPathRestricted(const char* path) {
 // nonexistent path is cached, and if the jailbreak file appears within the
 // window a probe gets a stale "allowed". Ruleset reloads already invalidate
 // via the generation tag; this shrinks the filesystem-appearance window.
+// Finding 10 residual: the 0.5s window is also a timing side-channel (hit vs
+// miss latency can reveal a recent identical probe), but verdicts stay
+// identical so only timing leaks. Count limits (1024/1024) unchanged.
 static const NSTimeInterval kShadowDecisionCacheTTL = 0.5;
 
 // Restricted roots single source via JBPath (shdw_is_restricted_root).
@@ -313,6 +316,9 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         // ponytail: per-thread last-path cache for tight loops. Most probes hit same 2-3 paths.
         // Isolated per-engine: TestNonSandboxed creates two engines with different
         // contexts (sandboxed vs not) that must not share the same cached verdict.
+        // Finding 10: single-entry, gen/engine/mode-tagged; stale only until the
+        // next distinct path or ruleset bump. Same timing-only residual as the
+        // 0.5s tier caches (hit is faster, verdict identical).
         static __thread char lastPathBuf[PATH_MAX] = {0};
         static __thread BOOL lastVerdict = NO;
         static __thread BOOL lastValid = NO;

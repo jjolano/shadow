@@ -29,7 +29,17 @@ extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 // hand during filtering, so classify on it directly. Names are matched
 // case-insensitively as substrings against the (possibly 15-char-truncated)
 // comm. Stock-daemon collisions are avoided by using jailbreak-specific
-// tokens only.
+// tokens only. Single source: the same table backs the executable-path
+// substring check below (unified — the old pid-path checks matched only
+// sshd/frida/dropbear while kinfo matched the full list).
+static const char* const kRestrictedComm[] = {
+    "sshd", "dropbear", "frida", "cynject", "cycript",
+    "cydia", "sileo", "zebra", "substrate", "substrated",
+    "jailbreakd", "amfid_payload", "launchdhook",
+};
+static const size_t kRestrictedCommCount =
+    sizeof(kRestrictedComm) / sizeof(kRestrictedComm[0]);
+
 static BOOL shdw_comm_is_restricted(const char* comm) {
     if(!comm || !comm[0]) return NO;
     char lower[17];
@@ -38,13 +48,21 @@ static BOOL shdw_comm_is_restricted(const char* comm) {
         lower[n] = (char)tolower((unsigned char)comm[n]);
     }
     lower[n] = '\0';
-    static const char* const kRestrictedComm[] = {
-        "sshd", "dropbear", "frida", "cynject", "cycript",
-        "cydia", "sileo", "zebra", "substrate", "substrated",
-        "jailbreakd", "amfid_payload", "launchdhook",
-    };
-    for(size_t i = 0; i < sizeof(kRestrictedComm) / sizeof(kRestrictedComm[0]); i++) {
+    for(size_t i = 0; i < kRestrictedCommCount; i++) {
         if(strstr(lower, kRestrictedComm[i])) return YES;
+    }
+    return NO;
+}
+
+// Executable-path substring check sharing kRestrictedComm (single source).
+// Lowercase path expected. "frida" already covers "frida-server", so no
+// separate token. Conservative by design: every token is jailbreak-specific
+// (no stock iOS path contains these), so widening the pid-path checks from
+// 3 tokens to the full table adds no stock false-positive surface.
+static BOOL shdw_path_has_restricted_token(NSString* lower) {
+    if(!lower || [lower length] == 0) return NO;
+    for(size_t i = 0; i < kRestrictedCommCount; i++) {
+        if([lower containsString:@(kRestrictedComm[i])]) return YES;
     }
     return NO;
 }
@@ -52,7 +70,7 @@ static BOOL shdw_comm_is_restricted(const char* comm) {
 // --- kinfo_proc classification cache (pid + process start time) -----------
 
 #define SHADW_PROC_CACHE_SIZE 32
-#define SHADW_PROC_CACHE_TTL 5  // seconds
+#define SHADW_PROC_CACHE_TTL 5  // seconds; keyed pid+starttime so reuse is safe
 
 typedef struct {
     pid_t pid;
@@ -95,10 +113,8 @@ BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
     if(shdw_comm_is_restricted(p->kp_proc.p_comm)) {
         restricted = YES;
     } else if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        NSString *pathStr = @(path);
-        NSString *lower = pathStr.lowercaseString;
-        if ([lower containsString:@"sshd"] || [lower containsString:@"frida"] ||
-            [lower containsString:@"dropbear"]) {
+        NSString *lower = [@(path) lowercaseString];
+        if (shdw_path_has_restricted_token(lower)) {
             restricted = YES;
         } else {
             restricted = [_shadow isCPathRestricted:path];
@@ -132,21 +148,25 @@ BOOL shdw_pid_restricted_uncached(pid_t pid) {
         return NO;  // unclassifiable: keep (same fail-open rule as the caches)
     }
 
+    NSString *lower = [@(path) lowercaseString];
+    if(shdw_path_has_restricted_token(lower)) return YES;
     return [_shadow isCPathRestricted:path];
 }
 
 // --- libproc pid classification cache (pid only) ---------------------------
 // Classification is pid-only (libproc hands us no start time), so the cache
-// keys on pid alone with a short TTL — a reused pid can inherit a stale
-// verdict for at most TTL seconds, and a miss just re-classifies, so results
-// stay identical. Same fail-open rule as the sysctl path: an unclassifiable
-// process (proc_pidpath EPERM) is kept — denying legitimate processes would
-// corrupt process counts on stock devices. The lock is never held across
-// classification (isCPathRestricted is an ObjC call that could re-enter
-// hooked code).
+// keys on pid alone with a short 2s TTL — a reused pid can inherit a stale
+// verdict for at most 2s, and a miss just re-classifies, so results stay
+// identical. Residual timing side-channel: a detector watching enumeration
+// latency/timing across the TTL boundary can infer cache hits, but verdicts
+// stay identical so nothing is exposed beyond timing. Same fail-open rule
+// as the sysctl path: an unclassifiable process (proc_pidpath EPERM) is
+// kept — denying legitimate processes would corrupt process counts on stock
+// devices. The lock is never held across classification (isCPathRestricted
+// is an ObjC call that could re-enter hooked code).
 
 #define SHADW_PID_CACHE_SIZE 32
-#define SHADW_PID_CACHE_TTL 5  // seconds
+#define SHADW_PID_CACHE_TTL 2  // seconds; pid-only key (no start time), so shorter than PROC TTL
 
 typedef struct {
     pid_t pid;
@@ -179,10 +199,8 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
     BOOL restricted = NO;
 
     if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        NSString *p = @(path);
-        NSString *lower = p.lowercaseString;
-        if ([lower containsString:@"sshd"] || [lower containsString:@"frida"] ||
-            [lower containsString:@"dropbear"] || [lower containsString:@"frida-server"]) {
+        NSString *lower = [@(path) lowercaseString];
+        if (shdw_path_has_restricted_token(lower)) {
             restricted = YES;
         } else {
             restricted = [_shadow isCPathRestricted:path];

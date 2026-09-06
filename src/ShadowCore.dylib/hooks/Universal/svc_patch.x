@@ -5,7 +5,10 @@
 // them. This file scans loaded images' __TEXT for svc sites and redirects
 // each site to a trampoline applying the same path policy as the syscall(2)
 // dispatch. System images are never patched (re-entrancy); Shadow's own
-// images are skipped too. Arm64 only.
+// images are skipped too. Arm64 only: the !__arm64__ (armv7, rootful-legacy)
+// lane is an intentionally empty stub — inline svc sites on 32-bit are NOT
+// intercepted, only the syscall(2)/__syscall(2) rebind lane in syscall.x
+// covers them. No functional change to hooking lanes here.
 //
 // A kernel-side sysent hook was considered (catch every svc, JIT or not)
 // but is not implementable on modern iOS: sy_call must point at

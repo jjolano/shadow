@@ -114,6 +114,13 @@ case "$1" in
     configure)
         mkdir -p "$ROOTFS_ROOT/var/mobile/Library/Preferences"
         touch "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+        # Perms oracle note (Finding 5): this stays root:wheel 0644 on purpose.
+        # 0600 would break sandboxed reads — the in-process file fallback
+        # (Settings.m:99-102, dylib.x:63-69) runs as mobile and needs o+r, and
+        # libSandy's file grant is a sandbox extension, not a DAC override, so
+        # group/other-read is required. In-process reads stay indistinguishable
+        # from stock ENOENT via the JailbreakMisc blacklist; only out-of-band
+        # readers can observe the mode bits.
         chown root:wheel "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
         chmod 0644 "$ROOTFS_ROOT/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
