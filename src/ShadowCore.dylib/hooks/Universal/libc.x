@@ -1786,6 +1786,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "ptrace",                 (void*)&replaced_ptrace,                   (void**)&original_ptrace,                   ANTIDBG,  ANTIDBG },
     { "sysctl",                 (void*)&replaced_sysctl,                   (void**)&original_sysctl,                   ANTIDBG,  ANTIDBG },
     { "getppid",                (void*)&replaced_getppid,                  (void**)&original_getppid,                  ANTIDBG,  ANTIDBG },
+    { "getuid",                 (void*)&replaced_getuid,                   (void**)&original_getuid,                   ANTIDBG,  ANTIDBG },
+    { "geteuid",                (void*)&replaced_geteuid,                 (void**)&original_geteuid,                 ANTIDBG,  ANTIDBG },
     { "getrusage",              (void*)&replaced_getrusage,                (void**)&original_getrusage,                ANTIDBG,  ANTIDBG },
     { "getrlimit",              (void*)&replaced_getrlimit,                (void**)&original_getrlimit,                ANTIDBG,  ANTIDBG },
     { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },

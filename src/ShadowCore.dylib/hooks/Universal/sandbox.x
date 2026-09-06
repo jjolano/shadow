@@ -822,8 +822,8 @@ static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t a
             const struct sockaddr_in *sin = (const struct sockaddr_in *)addr;
             if(sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
                 uint16_t port = ntohs(sin->sin_port);
-                if(port == 27042 || port == 4444 || port == 2222 ||
-                   port == 1337 || port == 44 || port == 22) {
+                if(port == 27042 || port == 27043 || port == 4444 || port == 1234 ||
+                   port == 2222 || port == 1337 || port == 44 || port == 22) {
                     shdw_detector_detected("connect");
                     errno = ECONNREFUSED;
                     return -1;
@@ -833,8 +833,8 @@ static int replaced_connect(int sockfd, const struct sockaddr *addr, socklen_t a
             const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)addr;
             if(IN6_IS_ADDR_LOOPBACK(&sin6->sin6_addr)) {
                 uint16_t port = ntohs(sin6->sin6_port);
-                if(port == 27042 || port == 4444 || port == 2222 ||
-                   port == 1337 || port == 44 || port == 22) {
+                if(port == 27042 || port == 27043 || port == 4444 || port == 1234 ||
+                   port == 2222 || port == 1337 || port == 44 || port == 22) {
                     shdw_detector_detected("connect");
                     errno = ECONNREFUSED;
                     return -1;

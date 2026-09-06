@@ -466,6 +466,10 @@ extern int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldl
 extern int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
 extern pid_t (*original_getppid)(void);
 extern pid_t replaced_getppid(void);
+extern uid_t (*original_getuid)(void);
+extern uid_t replaced_getuid(void);
+extern uid_t (*original_geteuid)(void);
+extern uid_t replaced_geteuid(void);
 extern int (*original_getrusage)(int who, struct rusage* usage);
 extern int replaced_getrusage(int who, struct rusage* usage);
 extern int (*original_getrlimit)(int resource, struct rlimit* rlp);

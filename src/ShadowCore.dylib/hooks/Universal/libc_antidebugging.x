@@ -111,6 +111,33 @@ pid_t replaced_getppid(void) {
     return 1;
 }
 
+// getuid/geteuid: App Store apps never run as root — uid 0 in-process is a
+// jailbreak artifact detectors check directly (BAT RootUser). Answer the
+// stock mobile user (501) to external callers; Shadow-internal callers keep
+// truth. Same shape as replaced_getppid above (rebind lane + late-image
+// replay via the resolved fallback).
+uid_t (*original_getuid)(void);
+static uid_t (*resolved_getuid)(void);
+uid_t replaced_getuid(void) {
+    if(!isCallerExternal()) {
+        uid_t (*getuid_impl)(void) = original_getuid ?: resolved_getuid;
+        return getuid_impl ? getuid_impl() : 0;
+    }
+
+    return 501;
+}
+
+uid_t (*original_geteuid)(void);
+static uid_t (*resolved_geteuid)(void);
+uid_t replaced_geteuid(void) {
+    if(!isCallerExternal()) {
+        uid_t (*geteuid_impl)(void) = original_geteuid ?: resolved_geteuid;
+        return geteuid_impl ? geteuid_impl() : 0;
+    }
+
+    return 501;
+}
+
 // getrusage(RUSAGE_CHILDREN): a detector spawns a child to test execution
 // and measures its CPU usage to infer a jailbreak. Zero the child-accounting
 // fields for external callers so the probe sees a child that never ran.
@@ -196,6 +223,14 @@ void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const voi
         resolved_getppid = dlsym(RTLD_DEFAULT, "getppid");
     if(original_getppid || resolved_getppid)
         [hooks hookRebindSymbol:@"getppid" withReplacement:replaced_getppid outOldPtr:NULL inCallerImage:imageHeader];
+    if(!resolved_getuid)
+        resolved_getuid = dlsym(RTLD_DEFAULT, "getuid");
+    if(original_getuid || resolved_getuid)
+        [hooks hookRebindSymbol:@"getuid" withReplacement:replaced_getuid outOldPtr:NULL inCallerImage:imageHeader];
+    if(!resolved_geteuid)
+        resolved_geteuid = dlsym(RTLD_DEFAULT, "geteuid");
+    if(original_geteuid || resolved_geteuid)
+        [hooks hookRebindSymbol:@"geteuid" withReplacement:replaced_geteuid outOldPtr:NULL inCallerImage:imageHeader];
 }
 
 void shdw_universal_antidebugging(SHDWHookSession* hooks) {
