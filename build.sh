@@ -180,25 +180,6 @@ build_lane() { # profile
     copy_dependency_packages "$lane"
 }
 
-build_harness() { # rootful-modern|rootless
-    local lane=$1 package scheme=
-    [ "$lane" = rootless ] && scheme=rootless
-    modern_args
-    if [ "$lane" = rootless ]; then
-        scripts/build-detector-harness.sh
-    else
-        make -C tests/ShadowHarness package FINALPACKAGE=1 ${scheme:+THEOS_PACKAGE_SCHEME=$scheme} \
-            ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-            TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
-    fi
-    package=$(<tests/ShadowHarness/.theos/last_package)
-    case "$package" in
-        /*) ;;
-        *) package="$ROOT/tests/ShadowHarness/${package#./}" ;;
-    esac
-    cp -p "$package" "$ROOT/build/"
-}
-
 build_quick() {
     stage_deps rootful-modern
     modern_args
@@ -209,12 +190,12 @@ build_quick() {
 
 case ${1:-all} in
     rootful-legacy) build_lane rootful-legacy ;;
-    rootful-modern) build_lane rootful-modern; build_harness rootful-modern ;;
-    rootful) build_lane rootful-legacy; build_lane rootful-modern; build_harness rootful-modern ;;
-    rootless) build_lane rootless; build_harness rootless ;;
+    rootful-modern) build_lane rootful-modern ;;
+    rootful) build_lane rootful-legacy; build_lane rootful-modern ;;
+    rootless) build_lane rootless ;;
     roothide) build_lane roothide ;;
     quick) build_quick ;;
     deps) stage_deps "${2:-rootful-modern}" ;;
-    all) build_lane rootless; build_harness rootless; build_lane rootful-legacy; build_lane rootful-modern; build_harness rootful-modern; build_lane roothide ;;
+    all) build_lane rootless; build_lane rootful-legacy; build_lane rootful-modern; build_lane roothide ;;
     *) echo "usage: $0 [all|rootful|rootful-legacy|rootful-modern|rootless|roothide|quick|deps PROFILE]" >&2; exit 2 ;;
 esac
