@@ -22,8 +22,12 @@
 #       symbol arrays, per-group verify arrays) are gone, and the dlsym
 #       symbol policy iterates the same descriptor array.
 #
-# Reads source text only; run from the repo root: tests/verify-syscall-meta.sh
+# Reads source text only; run from the repo root: sh tests/verify-syscall-meta.sh
+# (make -C tests syscall-meta cds up first).
 set -e
+
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
 
 HOOKDIR=src/ShadowCore.dylib/hooks
 DEF="$HOOKDIR/Universal/RawSyscalls.def"

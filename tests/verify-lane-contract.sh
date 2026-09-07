@@ -3,6 +3,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
 . "$ROOT/build-support/lanes.sh"
 
 status=0
