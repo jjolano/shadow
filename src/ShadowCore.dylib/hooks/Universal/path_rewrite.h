@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+// True for a non-NULL POSIX absolute path. Natural rewrite of a relative
+// *at operand is unsafe because its meaning comes from dirfd, not process cwd.
+int shdw_path_is_absolute(const char *path);
+
 // Offset of the byte to munge in a NUL-terminated path string, or
 // (size_t)-1 when there is nothing safe to munge (empty string, trailing
 // slash). The munged byte flips the middle of the FINAL path component to

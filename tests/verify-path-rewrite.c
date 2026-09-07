@@ -22,6 +22,14 @@ static void expect_munge(const char *orig, const char *expected) {
 }
 
 int main(void) {
+    // Only absolute *at operands may use the in-place natural-ENOENT rewrite;
+    // relative names must retain their dirfd-derived meaning.
+    assert(shdw_path_is_absolute("/var/jb"));
+    assert(shdw_path_is_absolute("/"));
+    assert(!shdw_path_is_absolute("d0"));
+    assert(!shdw_path_is_absolute(""));
+    assert(!shdw_path_is_absolute(NULL));
+
     // Absolute path: middle of the final component flips to 0x01.
     expect_munge("/var/jb/usr/bin/ssh", "/var/jb/usr/bin/s\x01h");
     // Two-char final component.
