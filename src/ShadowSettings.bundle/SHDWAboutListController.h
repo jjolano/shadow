@@ -11,4 +11,5 @@
 - (void)openGitHub:(id)sender;
 - (void)openKofi:(id)sender;
 - (void)openChangeLog:(id)sender;
+- (void)resetSettings:(id)sender;
 @end

@@ -1,4 +1,6 @@
 #import <Shadow/JBPath.h>
+#import <Shadow/Settings.h>
+#import <UIKit/UIKit.h>
 
 #import "SHDWAboutListController.h"
 
@@ -174,6 +176,20 @@
 
 - (void)openChangeLog:(id)sender {
 	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"] options:@{} completionHandler:nil];
+}
+
+- (void)resetSettings:(id)sender {
+	// Destructive: confirm before wiping. Clear the whole persistent domain so
+	// the global toggle, aggressive mode, and every per-app override drop back
+	// to defaults in one atomic write.
+	UIAlertController* alert = [UIAlertController alertControllerWithTitle:[self localized:@"RESET_SETTINGS"] message:[self localized:@"RESET_CONFIRM"] preferredStyle:UIAlertControllerStyleAlert];
+
+	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"RESET_CANCEL"] style:UIAlertActionStyleCancel handler:nil]];
+	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"RESET_SETTINGS"] style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
+		[[ShadowSettings sharedInstance] reset];
+	}]];
+
+	[self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)dealloc {

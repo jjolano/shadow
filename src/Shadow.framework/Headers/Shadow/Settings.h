@@ -11,5 +11,6 @@ __attribute__((visibility("default")))
 + (instancetype)sharedInstance;
 
 - (NSDictionary<NSString *, id> *)getPreferencesForIdentifier:(NSString *)bundleIdentifier;
+- (void)reset;
 @end
 #endif

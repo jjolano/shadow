@@ -85,6 +85,25 @@
 			<key>label</key>
 			<string>VISIT_KOFI</string>
 		</dict>
+
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>RESET_SETTINGS_DESC</string>
+			<key>label</key>
+			<string>RESET_HDR</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
+			<string>resetSettings:</string>
+			<key>isDestructive</key>
+			<true/>
+			<key>label</key>
+			<string>RESET_SETTINGS</string>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>ABOUT_TITLE</string>

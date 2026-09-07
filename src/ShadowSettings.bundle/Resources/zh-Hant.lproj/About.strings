@@ -13,3 +13,9 @@
     "VISIT_KOFI" = "\U5728Ko-fi\U6253\U8cde\U652f\U6301\U6211";
     "VISIT_CHANGELOG" = "查看更新日誌";
 "DEVELOPER" = "開發者";
+
+"RESET_HDR" = "重置";
+"RESET_SETTINGS" = "重置設定";
+"RESET_SETTINGS_DESC" = "將所有Shadow設定還原為預設值。所有個別應用程式設定都將被清除。";
+"RESET_CONFIRM" = "這將把所有Shadow設定還原為預設值。此操作無法復原。";
+"RESET_CANCEL" = "取消";
