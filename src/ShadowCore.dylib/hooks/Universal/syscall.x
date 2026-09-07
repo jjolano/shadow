@@ -115,6 +115,84 @@ static long shdw_fwd_ATMODEDEV(int number, va_list args) {
 }
 #endif
 
+// Phase 1 mutator shapes: plain (path, int/ids) and fd (fd, value...).
+// All unconditional — the SYS_ numbers exist since the 15.6 floor.
+static long shdw_fwd_PATH3I(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (uid_t) a2, (gid_t) a3);
+}
+
+static long shdw_fwd_PATHMD(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (mode_t) a2, (dev_t) a3);
+}
+
+static long shdw_fwd_PATHOFF(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (off_t) a2);
+}
+
+static long shdw_fwd_FDOFF(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (off_t) a2);
+}
+
+static long shdw_fwd_FDMODE(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (mode_t) a2);
+}
+
+static long shdw_fwd_FDUIDGID(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (uid_t) a2, (gid_t) a3);
+}
+
+// Phase 2 copy/clone shapes: (path, path, ...) and (dirfd, path, dirfd,
+// path, ...) / (fd, dirfd, path, ...). Trailing slots (state/flags) are
+// read and forwarded untouched — never inspected.
+static long shdw_fwd_PATHPATH(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (const char *) a2, (void *) a3, (uint32_t) a4);
+}
+
+static long shdw_fwd_CLONEAT(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (const char *) a2, (int) a3, (const char *) a4, (uint32_t) a5);
+}
+
+static long shdw_fwd_FDPATH(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (int) a2, (const char *) a3, (uint32_t) a4);
+}
+
 static long shdw_fwd_CSOPS(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
     intptr_t a2 = va_arg(args, intptr_t);
@@ -163,6 +241,14 @@ static long shdw_fwd_PTRACE(int number, va_list args) {
     intptr_t a4 = va_arg(args, intptr_t);
 
     return original_syscall(number, (int) a1, (pid_t) a2, (caddr_t) a3, (int) a4);
+}
+
+// Phase 4: kill(pid, sig) — same (pid) inspection as the libc hook.
+static long shdw_fwd_KILL(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (pid_t) a1, (int) a2);
 }
 
 static long shdw_fwd_GETATTRLIST(int number, va_list args) {
@@ -386,6 +472,92 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                 }
             } break;
 
+            // Phase 1 mutators: plain-path deny ENOENT (rmdir contract),
+            // fd variants resolve via F_GETPATH + EBADF (futimes contract),
+            // fail open when the fd has no nameable path.
+            case SHADW_RAW_CAT_PATH3I:
+            case SHADW_RAW_CAT_PATHMD:
+            case SHADW_RAW_CAT_PATHOFF: {
+                const char* pathname = va_arg(inspect, const char *);
+
+                if([_shadow isCPathRestricted:pathname]) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            // Phase 2 copy/clone: BOTH endpoints classified (src exfil or
+            // dst materialization). clonefileat resolves each path against
+            // its own dirfd (linkat pattern); fclonefileat checks the src
+            // fd via the cache, dst via dirfd. Deny ENOENT (path contract).
+            case SHADW_RAW_CAT_PATHPATH: {
+                const char* from = va_arg(inspect, const char *);
+                const char* to = va_arg(inspect, const char *);
+
+                if((from && [_shadow isCPathRestricted:from]) ||
+                   (to && [_shadow isCPathRestricted:to])) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_CLONEAT: {
+                int srcfd = (int) va_arg(inspect, intptr_t);
+                const char* src = va_arg(inspect, const char *);
+                int dstfd = (int) va_arg(inspect, intptr_t);
+                const char* dst = va_arg(inspect, const char *);
+
+                if(shdw_at_path_denied(srcfd, src) || shdw_at_path_denied(dstfd, dst)) {
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_FDPATH: {
+                int srcfd = (int) va_arg(inspect, intptr_t);
+                int dstfd = (int) va_arg(inspect, intptr_t);
+                const char* dst = va_arg(inspect, const char *);
+                char pathname[PATH_MAX];
+
+                if(fcntl(srcfd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                    errno = EBADF;
+                    va_end(inspect);
+                    return -1;
+                }
+
+                if(shdw_at_path_denied(dstfd, dst)) {
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            // Phase 4: kill liveness probe — ESRCH agrees with the
+            // sysctl/libproc filtered lists. Self-signals pass through.
+            case SHADW_RAW_CAT_KILL: {
+                pid_t pid = (pid_t) va_arg(inspect, intptr_t);
+
+                if(pid > 0 && pid != getpid() && shdw_pid_is_restricted(pid)) {
+                    errno = ESRCH;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            case SHADW_RAW_CAT_FDOFF:
+            case SHADW_RAW_CAT_FDMODE:
+            case SHADW_RAW_CAT_FDUIDGID: {
+                int fd = (int) va_arg(inspect, intptr_t);
+                char pathname[PATH_MAX];
+
+                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                    errno = EBADF;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
             case SHADW_RAW_CAT_SYSCTL: {
                 sysctl_mib = (int *) va_arg(inspect, intptr_t);
                 sysctl_miblen = (u_int) va_arg(inspect, intptr_t);
@@ -554,6 +726,16 @@ static long shdw_syscall_dispatch(int number, va_list args) {
 
             case SHADW_RAW_CAT_NONE:
             case SHADW_RAW_CAT_PATH:
+            case SHADW_RAW_CAT_PATH3I:
+            case SHADW_RAW_CAT_PATHMD:
+            case SHADW_RAW_CAT_PATHOFF:
+            case SHADW_RAW_CAT_PATHPATH:
+            case SHADW_RAW_CAT_CLONEAT:
+            case SHADW_RAW_CAT_FDPATH:
+            case SHADW_RAW_CAT_KILL:
+            case SHADW_RAW_CAT_FDOFF:
+            case SHADW_RAW_CAT_FDMODE:
+            case SHADW_RAW_CAT_FDUIDGID:
             case SHADW_RAW_CAT_AT:
             case SHADW_RAW_CAT_FDXATTR:
 #ifdef SYS_freadlink

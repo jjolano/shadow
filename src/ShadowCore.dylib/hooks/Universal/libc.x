@@ -11,6 +11,11 @@
 #import <sys/resource.h>
 #import <sys/attr.h>
 #import <sys/snapshot.h>
+#import <copyfile.h>
+#import <sys/clonefile.h>
+#import <glob.h>
+#import <fts.h>
+#import <ftw.h>
 
 _Atomic BOOL shdw_path_rewrite_active = NO;
 
@@ -903,6 +908,417 @@ static int replaced_closedir(DIR* dirp) {
     return original_closedir(dirp);
 }
 
+// --- Phase 3: dir-enumeration conveniences. scandir/glob/fts/nftw all
+// bottom out at readdir/getdirentries64 (already filtered), but they
+// BUFFER results: a detector calling them sees unfiltered snapshots.
+// So: post-success output filters reusing the same per-entry policy.
+// scandir: compact namelist in place (caller's selector/compar already
+// ran; survivors keep their selected+sorted order). Restricted parent
+// itself → empty list, NOT an error (stock empty-directory shape).
+// NOTE: freed with free(), NOT a per-entry free — compact in place, never
+// free individual entries (the caller frees namelist[i] + namelist).
+static BOOL shdw_scandir_entry_restricted(const char* dirpath, const char* name) {
+    char joined[PATH_MAX * 2];
+    int n = snprintf(joined, sizeof(joined), "%s/%s", dirpath, name);
+    return n > 0 && n < (int)sizeof(joined) && [_shadow isCPathRestricted:joined];
+}
+
+static int shdw_scandir_filter(const char* dirpath, struct dirent*** namelist, int count) {
+    if(count <= 0 || !namelist || !*namelist) {
+        return count;
+    }
+    struct dirent** list = *namelist;
+    int out = 0;
+    for(int i = 0; i < count; i++) {
+        @autoreleasepool {
+            if(list[i] && !shdw_scandir_entry_restricted(dirpath, list[i]->d_name)) {
+                list[out++] = list[i];
+            } else if(list[i]) {
+                free(list[i]);
+            }
+        }
+    }
+    return out;
+}
+
+static int (*original_scandir)(const char* dirname, struct dirent*** namelist,
+    int (*selector)(const struct dirent*), int (*compar)(const struct dirent**, const struct dirent**));
+static int replaced_scandir(const char* dirname, struct dirent*** namelist,
+    int (*selector)(const struct dirent*), int (*compar)(const struct dirent**, const struct dirent**)) {
+    if(!isCallerExternal()) {
+        return original_scandir(dirname, namelist, selector, compar);
+    }
+
+    if(dirname && [_shadow isCPathRestricted:dirname]) {
+        if(namelist) {
+            *namelist = NULL;
+        }
+        return 0;  // stock empty-directory shape, not an error
+    }
+
+    int count = original_scandir(dirname, namelist, selector, compar);
+
+    if(count > 0 && namelist && *namelist && dirname) {
+        count = shdw_scandir_filter(dirname, namelist, count);
+    }
+
+    return count;
+}
+
+#ifdef __BLOCKS__
+static int (*original_scandir_b)(const char* dirname, struct dirent*** namelist,
+    int (^selector)(const struct dirent*), int (^compar)(const struct dirent**, const struct dirent**));
+static int replaced_scandir_b(const char* dirname, struct dirent*** namelist,
+    int (^selector)(const struct dirent*), int (^compar)(const struct dirent**, const struct dirent**)) {
+    if(!isCallerExternal()) {
+        return original_scandir_b(dirname, namelist, selector, compar);
+    }
+
+    if(dirname && [_shadow isCPathRestricted:dirname]) {
+        if(namelist) {
+            *namelist = NULL;
+        }
+        return 0;
+    }
+
+    int count = original_scandir_b(dirname, namelist, selector, compar);
+
+    if(count > 0 && namelist && *namelist && dirname) {
+        count = shdw_scandir_filter(dirname, namelist, count);
+    }
+
+    return count;
+}
+#endif
+
+// glob: post-success filter of gl_pathv (pattern already expanded; each
+// match is a concrete path). Compact in place, fix gl_pathc/gl_matchc,
+// free removed strings. Emptied → GLOB_NOMATCH (stock contract when
+// nothing matches and GLOB_NOCHECK is unset); with GLOB_NOCHECK the
+// pattern itself is the single result — filter it too.
+static BOOL shdw_glob_entry_restricted(const char* path) {
+    return path && [_shadow isCPathRestricted:path];
+}
+
+static int shdw_glob_filter(glob_t* pglob) {
+    if(!pglob || !pglob->gl_pathv) {
+        return 0;
+    }
+    size_t out = pglob->gl_offs;  // reserved slots stay put
+    for(size_t i = pglob->gl_offs; i < pglob->gl_offs + pglob->gl_pathc; i++) {
+        @autoreleasepool {
+            if(pglob->gl_pathv[i] && !shdw_glob_entry_restricted(pglob->gl_pathv[i])) {
+                pglob->gl_pathv[out++] = pglob->gl_pathv[i];
+            } else if(pglob->gl_pathv[i]) {
+                free(pglob->gl_pathv[i]);
+                pglob->gl_pathv[i] = NULL;
+            }
+        }
+    }
+    size_t kept = out - pglob->gl_offs;
+    pglob->gl_pathv[out] = NULL;
+    pglob->gl_pathc = kept;
+    pglob->gl_matchc = (int)kept;
+    return (int)kept;
+}
+
+static int (*original_glob)(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_t* pglob);
+static int replaced_glob(const char* pattern, int flags, int (*errfunc)(const char*, int), glob_t* pglob) {
+    if(!isCallerExternal()) {
+        return original_glob(pattern, flags, errfunc, pglob);
+    }
+
+    int ret = original_glob(pattern, flags, errfunc, pglob);
+
+    if(ret == 0 && pglob && shdw_glob_filter(pglob) == 0) {
+        return GLOB_NOMATCH;
+    }
+
+    return ret;
+}
+
+static void (*original_globfree)(glob_t* pglob);
+static void replaced_globfree(glob_t* pglob) {
+    // Pass-through: replaced_glob compacts WITHOUT reallocating (same
+    // buffer, fewer entries, NULL-terminated), so the stock globfree
+    // frees exactly what it always freed. Hooked only for dlsym-policy
+    // agreement (GOT-vs-dlsym comparison).
+    return original_globfree(pglob);
+}
+
+#ifdef __BLOCKS__
+static int (*original_glob_b)(const char* pattern, int flags, int (^errblk)(const char*, int), glob_t* pglob);
+static int replaced_glob_b(const char* pattern, int flags, int (^errblk)(const char*, int), glob_t* pglob) {
+    if(!isCallerExternal()) {
+        return original_glob_b(pattern, flags, errblk, pglob);
+    }
+
+    int ret = original_glob_b(pattern, flags, errblk, pglob);
+
+    if(ret == 0 && pglob && shdw_glob_filter(pglob) == 0) {
+        return GLOB_NOMATCH;
+    }
+
+    return ret;
+}
+#endif
+
+// fts: wrap the traversal at fts_read/fts_children — skip restricted
+// NODES by advancing to the next sibling (fts_link), never by failing
+// the walk. fts_open paths are pre-screened (restricted ROOT fails with
+// ENOENT like opendir); children of a restricted dir never surface
+// because the parent node itself is skipped first.
+static BOOL shdw_fts_entry_restricted(FTSENT* ent) {
+    if(!ent || !ent->fts_accpath) {
+        return NO;
+    }
+    return [_shadow isCPathRestricted:ent->fts_accpath];
+}
+
+static FTS* (*original_fts_open)(char* const* path_argv, int options, int (*compar)(const FTSENT**, const FTSENT**));
+static FTS* replaced_fts_open(char* const* path_argv, int options, int (*compar)(const FTSENT**, const FTSENT**)) {
+    if(!isCallerExternal()) {
+        return original_fts_open(path_argv, options, compar);
+    }
+
+    // Pre-screen roots: any restricted root fails the open (stock
+    // opendir-on-restricted shape). Mixed roots: let it open, filter
+    // per-node below.
+    if(path_argv) {
+        BOOL allRestricted = YES;
+        BOOL anyPath = NO;
+        for(char* const* p = path_argv; *p; p++) {
+            anyPath = YES;
+            if(![_shadow isCPathRestricted:*p]) {
+                allRestricted = NO;
+                break;
+            }
+        }
+        if(anyPath && allRestricted) {
+            errno = ENOENT;
+            return NULL;
+        }
+    }
+
+    return original_fts_open(path_argv, options, compar);
+}
+
+static FTSENT* (*original_fts_read)(FTS* ftsp);
+static FTSENT* replaced_fts_read(FTS* ftsp) {
+    if(!isCallerExternal()) {
+        return original_fts_read(ftsp);
+    }
+
+    FTSENT* ent;
+    while((ent = original_fts_read(ftsp)) != NULL) {
+        @autoreleasepool {
+            if(!shdw_fts_entry_restricted(ent)) {
+                break;
+            }
+        }
+        // Restricted node: skip its entire subtree by telling fts to not
+        // descend, then continue to the next entry.
+        if(ent->fts_info == FTS_D) {
+            fts_set(ftsp, ent, FTS_SKIP);
+        }
+    }
+    return ent;
+}
+
+static FTSENT* (*original_fts_children)(FTS* ftsp, int instr);
+static FTSENT* replaced_fts_children(FTS* ftsp, int instr) {
+    if(!isCallerExternal()) {
+        return original_fts_children(ftsp, instr);
+    }
+
+    FTSENT* head = original_fts_children(ftsp, instr);
+    // Unlink restricted nodes from the sibling chain in place (fts_link).
+    // Head may itself be restricted — advance past it.
+    FTSENT** link = &head;
+    while(*link) {
+        @autoreleasepool {
+            if(!shdw_fts_entry_restricted(*link)) {
+                link = &(*link)->fts_link;
+            } else {
+                *link = (*link)->fts_link;
+            }
+        }
+    }
+    return head;
+}
+
+// ftw/nftw: wrap the user callback — restricted paths are silently
+// skipped (return 0, continue walk), never reported. The callback runs
+// on our frame, so isCallerExternal() is read HERE (hook frame), not
+// inside the trampoline.
+static _Thread_local BOOL shdw_ftw_filtering = NO;
+static _Thread_local int (*shdw_ftw_userfn)(const char*, const struct stat*, int) = NULL;
+static _Thread_local int (*shdw_nftw_userfn)(const char*, const struct stat*, int, struct FTW*) = NULL;
+
+static int shdw_ftw_trampoline(const char* path, const struct stat* sb, int typeflag) {
+    if(shdw_ftw_filtering && path && [_shadow isCPathRestricted:path]) {
+        return 0;  // skip: continue walk without calling user fn
+    }
+    return shdw_ftw_userfn ? shdw_ftw_userfn(path, sb, typeflag) : 0;
+}
+
+static int shdw_nftw_trampoline(const char* path, const struct stat* sb, int typeflag, struct FTW* ftwbuf) {
+    if(shdw_ftw_filtering && path && [_shadow isCPathRestricted:path]) {
+        // Skip restricted nodes without aborting the walk. nftw has no
+        // FTW_ACTIONRETVAL/FTW_SKIP_SUBTREE on this SDK (plain BSD ftw.h:
+        // FTW_F/D/DNR/DP/NS/SL/SLN only), so returning 0 continues the
+        // walk — the restricted dir's CHILDREN are each classified on
+        // their own callback and skipped the same way. No abort, no leak.
+        (void)ftwbuf;
+        (void)typeflag;
+        return 0;
+    }
+    return shdw_nftw_userfn ? shdw_nftw_userfn(path, sb, typeflag, ftwbuf) : 0;
+}
+
+static int (*original_ftw)(const char* path, int (*fn)(const char*, const struct stat*, int), int nopenfd);
+static int replaced_ftw(const char* path, int (*fn)(const char*, const struct stat*, int), int nopenfd) {
+    if(!isCallerExternal()) {
+        return original_ftw(path, fn, nopenfd);
+    }
+
+    if(path && [_shadow isCPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    shdw_ftw_filtering = YES;
+    shdw_ftw_userfn = fn;
+    int ret = original_ftw(path, shdw_ftw_trampoline, nopenfd);
+    shdw_ftw_filtering = NO;
+    shdw_ftw_userfn = NULL;
+    return ret;
+}
+
+static int (*original_nftw)(const char* path, int (*fn)(const char*, const struct stat*, int, struct FTW*), int nopenfd, int flags);
+static int replaced_nftw(const char* path, int (*fn)(const char*, const struct stat*, int, struct FTW*), int nopenfd, int flags) {
+    if(!isCallerExternal()) {
+        return original_nftw(path, fn, nopenfd, flags);
+    }
+
+    if(path && [_shadow isCPathRestricted:path]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    shdw_ftw_filtering = YES;
+    shdw_nftw_userfn = fn;
+    int ret = original_nftw(path, shdw_nftw_trampoline, nopenfd, flags);
+    shdw_ftw_filtering = NO;
+    shdw_nftw_userfn = NULL;
+    return ret;
+}
+
+// --- Phase 4: CFPreferences (same suite gate as NSUserDefaults).
+// NSUserDefaults sits ON TOP of CFPreferences: a detector calling the CF
+// layer directly bypasses the NSUserDefaults hooks entirely
+// (AppEnvironment.x shadowhook_NSUserDefaults). The suite predicate is
+// duplicated here (not shared: AppEnvironment.x's copy is TU-static, and
+// a cross-TU extern would need hooks.h plumbing for one predicate).
+// Keep in sync with shdw_nsuserdefaults_suite_restricted in
+// AppEnvironment.x. Stock shapes: reads → nil/empty, sync → false.
+// Writes pass through — a denied write would itself be observable, and
+// nobody legitimate reads a restricted suite.
+static BOOL shdw_cf_suite_restricted(CFStringRef applicationID) {
+    if(!applicationID) {
+        return NO;
+    }
+    NSString* suitename = (__bridge NSString*)applicationID;
+    if(suitename.length == 0) {
+        return NO;
+    }
+
+    static NSSet* restrictedSuites = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        restrictedSuites = [NSSet setWithObjects:
+            @"com.saurik.Cydia",
+            @"com.saurik.Cydia.Startup",
+            @"org.coolstar.sileo",
+            @"org.coolstar.coolstor",
+            @"com.unc0ver",
+            @"com.cydia",
+            @"com.jailbreak",
+            @"com.opa334.trollstore",
+            @"com.opa334.sileo",
+            nil];
+    });
+
+    if([restrictedSuites containsObject:suitename]) {
+        return YES;
+    }
+
+    if([suitename hasPrefix:@"/basebin/"] ||
+       [suitename hasPrefix:@"/Library/LaunchDaemons/"] ||
+       [suitename hasPrefix:@"/var/jb/"] ||
+       [suitename containsString:@"/LaunchDaemons/com.opa334"] ||
+       [suitename containsString:@"/LaunchDaemons/jailbreakd"]) {
+        return YES;
+    }
+
+    static NSArray<NSString*>* jbPrefIDs = nil;
+    static dispatch_once_t prefOnce;
+    dispatch_once(&prefOnce, ^{
+        jbPrefIDs = @[
+            @"com.opa334.choicyprefs", @"com.opa334.craneprefs",
+            @"com.spark.snowboardprefs", @"com.tigisoftware.Filza",
+            @"org.coolstar.SileoStore", @"ru.domo.cocoatop64",
+            @"ws.hbang.Terminal", @"xyz.willy.Zebra",
+            @"us.diatr.shshd", @"com.opa334.sandyd",
+        ];
+    });
+    NSString* leaf = suitename.lastPathComponent;
+    for(NSString* pref in jbPrefIDs) {
+        if([leaf isEqualToString:pref]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static CFPropertyListRef (*original_CFPreferencesCopyAppValue)(CFStringRef key, CFStringRef applicationID);
+static CFPropertyListRef replaced_CFPreferencesCopyAppValue(CFStringRef key, CFStringRef applicationID) {
+    if(isCallerExternal() && shdw_cf_suite_restricted(applicationID)) {
+        shdw_detector_detected("nsuserdefaults");
+        return NULL;
+    }
+    return original_CFPreferencesCopyAppValue(key, applicationID);
+}
+
+static CFPropertyListRef (*original_CFPreferencesCopyValue)(CFStringRef key, CFStringRef applicationID, CFStringRef userName, CFStringRef hostName);
+static CFPropertyListRef replaced_CFPreferencesCopyValue(CFStringRef key, CFStringRef applicationID, CFStringRef userName, CFStringRef hostName) {
+    if(isCallerExternal() && shdw_cf_suite_restricted(applicationID)) {
+        shdw_detector_detected("nsuserdefaults");
+        return NULL;
+    }
+    return original_CFPreferencesCopyValue(key, applicationID, userName, hostName);
+}
+
+static CFDictionaryRef (*original_CFPreferencesCopyMultiple)(CFArrayRef keysToFetch, CFStringRef applicationID, CFStringRef userName, CFStringRef hostName);
+static CFDictionaryRef replaced_CFPreferencesCopyMultiple(CFArrayRef keysToFetch, CFStringRef applicationID, CFStringRef userName, CFStringRef hostName) {
+    if(isCallerExternal() && shdw_cf_suite_restricted(applicationID)) {
+        shdw_detector_detected("nsuserdefaults");
+        // Stock empty-dict shape: +1 dictionary the caller owns (Copy
+        // rule); never a shared singleton a caller could mutate.
+        return CFDictionaryCreate(NULL, NULL, NULL, 0, NULL, NULL);
+    }
+    return original_CFPreferencesCopyMultiple(keysToFetch, applicationID, userName, hostName);
+}
+
+static Boolean (*original_CFPreferencesAppSynchronize)(CFStringRef applicationID);
+static Boolean replaced_CFPreferencesAppSynchronize(CFStringRef applicationID) {
+    if(isCallerExternal() && shdw_cf_suite_restricted(applicationID)) {
+        return false;
+    }
+    return original_CFPreferencesAppSynchronize(applicationID);
+}
+
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
     if (shdw_is_fast_allowed_cpath(pathname)) return original_fopen(pathname, mode);
@@ -1667,6 +2083,304 @@ static int replaced_fchmodat(int dirfd, const char* path, mode_t mode, int flags
     return original_fchmodat(dirfd, path, mode, flags);
 }
 
+// --- Plain-path metadata mutators (Phase 1 gaps). One (path) or
+// (path, id/id) or (path, value...) shape, single-path policy, ENOENT on
+// denial — same contract as replaced_rmdir/pathconf above. fd variants use
+// shdw_fd_path_restricted + EBADF like replaced_futimes above.
+static int (*original_mkdir)(const char* pathname, mode_t mode);
+static int replaced_mkdir(const char* pathname, mode_t mode) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_mkdir(pathname, mode);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_chmod)(const char* pathname, mode_t mode);
+static int replaced_chmod(const char* pathname, mode_t mode) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_chmod(pathname, mode);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_lchmod)(const char* pathname, mode_t mode);
+static int replaced_lchmod(const char* pathname, mode_t mode) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_lchmod(pathname, mode);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_fchmod)(int fd, mode_t mode);
+static int replaced_fchmod(int fd, mode_t mode) {
+    if(!isCallerExternal()) {
+        return original_fchmod(fd, mode);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_fchmod(fd, mode);
+}
+
+static int (*original_chown)(const char* pathname, uid_t owner, gid_t group);
+static int replaced_chown(const char* pathname, uid_t owner, gid_t group) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_chown(pathname, owner, group);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_lchown)(const char* pathname, uid_t owner, gid_t group);
+static int replaced_lchown(const char* pathname, uid_t owner, gid_t group) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_lchown(pathname, owner, group);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_fchown)(int fd, uid_t owner, gid_t group);
+static int replaced_fchown(int fd, uid_t owner, gid_t group) {
+    if(!isCallerExternal()) {
+        return original_fchown(fd, owner, group);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_fchown(fd, owner, group);
+}
+
+static int (*original_mknod)(const char* pathname, mode_t mode, dev_t dev);
+static int replaced_mknod(const char* pathname, mode_t mode, dev_t dev) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_mknod(pathname, mode, dev);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_mkfifo)(const char* pathname, mode_t mode);
+static int replaced_mkfifo(const char* pathname, mode_t mode) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_mkfifo(pathname, mode);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_truncate)(const char* pathname, off_t length);
+static int replaced_truncate(const char* pathname, off_t length) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_truncate(pathname, length);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_ftruncate)(int fd, off_t length);
+static int replaced_ftruncate(int fd, off_t length) {
+    if(!isCallerExternal()) {
+        return original_ftruncate(fd, length);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_ftruncate(fd, length);
+}
+
+static int (*original_chflags)(const char* pathname, __uint32_t flags);
+static int replaced_chflags(const char* pathname, __uint32_t flags) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_chflags(pathname, flags);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_lchflags)(const char* pathname, __uint32_t flags);
+static int replaced_lchflags(const char* pathname, __uint32_t flags) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_lchflags(pathname, flags);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_fchflags)(int fd, __uint32_t flags);
+static int replaced_fchflags(int fd, __uint32_t flags) {
+    if(!isCallerExternal()) {
+        return original_fchflags(fd, flags);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_fchflags(fd, flags);
+}
+
+static int (*original_futimens)(int fd, const struct timespec times[2]);
+static int replaced_futimens(int fd, const struct timespec times[2]) {
+    if(!isCallerExternal()) {
+        return original_futimens(fd, times);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_futimens(fd, times);
+}
+
+static int (*original_lutimes)(const char* pathname, const struct timeval times[2]);
+static int replaced_lutimes(const char* pathname, const struct timeval times[2]) {
+    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+        return original_lutimes(pathname, times);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+// --- Phase 2: copy/clone (dual-path + fd-state coverage). A detector can
+// exfiltrate a restricted file to a readable location (copyfile/clonefile
+// src→dst), or materialize restricted CONTENT at a readable path
+// (fcopyfile/fclonefileat on fds resolved via COPYFILE_STATE fds or
+// dirfd). So: classify BOTH endpoints, and resolve fd endpoints through
+// the COPYFILE_STATE (copyfile_state_get SRC/DST_FILENAME or _FD) or the
+// dirfd — never just the string args.
+
+// Resolves one copyfile_state endpoint to a restricted verdict: prefers
+// the FILENAME string when set (exact path), else the FD via the fd cache.
+// Fail open (NO) when neither is set — an unset endpoint can't name a
+// restricted path.
+static BOOL shdw_copyfile_state_endpoint_restricted(copyfile_state_t state, uint32_t fnFlag, uint32_t fdFlag) {
+    if(state) {
+        const char* fn = NULL;
+        if(copyfile_state_get(state, fnFlag, (void*)&fn) == 0 && fn && fn[0]) {
+            if([_shadow isCPathRestricted:fn]) {
+                return YES;
+            }
+        } else {
+            int fd = -1;
+            if(copyfile_state_get(state, fdFlag, &fd) == 0 && fd >= 0) {
+                if(shdw_fd_path_restricted(fd)) {
+                    return YES;
+                }
+            }
+        }
+    }
+    return NO;
+}
+
+static int (*original_copyfile)(const char* from, const char* to, copyfile_state_t state, copyfile_flags_t flags);
+static int replaced_copyfile(const char* from, const char* to, copyfile_state_t state, copyfile_flags_t flags) {
+    if(!isCallerExternal()) {
+        return original_copyfile(from, to, state, flags);
+    }
+
+    // String args first (cheap, no state deref); then the state endpoints,
+    // which may name DIFFERENT paths than the strings (COPYFILE_STATE fds
+    // override when set).
+    if((from && [_shadow isCPathRestricted:from]) ||
+       (to && [_shadow isCPathRestricted:to]) ||
+       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_SRC_FILENAME, COPYFILE_STATE_SRC_FD) ||
+       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_DST_FILENAME, COPYFILE_STATE_DST_FD)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_copyfile(from, to, state, flags);
+}
+
+static int (*original_fcopyfile)(int from_fd, int to_fd, copyfile_state_t state, copyfile_flags_t flags);
+static int replaced_fcopyfile(int from_fd, int to_fd, copyfile_state_t state, copyfile_flags_t flags) {
+    if(!isCallerExternal()) {
+        return original_fcopyfile(from_fd, to_fd, state, flags);
+    }
+
+    if(shdw_fd_path_restricted(from_fd) || shdw_fd_path_restricted(to_fd) ||
+       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_SRC_FILENAME, COPYFILE_STATE_SRC_FD) ||
+       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_DST_FILENAME, COPYFILE_STATE_DST_FD)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return original_fcopyfile(from_fd, to_fd, state, flags);
+}
+
+static int (*original_clonefile)(const char* src, const char* dst, uint32_t flags);
+static int replaced_clonefile(const char* src, const char* dst, uint32_t flags) {
+    if(!isCallerExternal()) {
+        return original_clonefile(src, dst, flags);
+    }
+
+    if((src && [_shadow isCPathRestricted:src]) ||
+       (dst && [_shadow isCPathRestricted:dst])) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_clonefile(src, dst, flags);
+}
+
+static int (*original_clonefileat)(int src_dirfd, const char* src, int dst_dirfd, const char* dst, uint32_t flags);
+static int replaced_clonefileat(int src_dirfd, const char* src, int dst_dirfd, const char* dst, uint32_t flags) {
+    if(!isCallerExternal()) {
+        return original_clonefileat(src_dirfd, src, dst_dirfd, dst, flags);
+    }
+
+    // Both path arguments are resolved against their own dirfd (linkat pattern).
+    if(shdw_at_path_denied(src_dirfd, src) || shdw_at_path_denied(dst_dirfd, dst)) {
+        return -1;
+    }
+
+    return original_clonefileat(src_dirfd, src, dst_dirfd, dst, flags);
+}
+
+static int (*original_fclonefileat)(int srcfd, int dst_dirfd, const char* dst, uint32_t flags);
+static int replaced_fclonefileat(int srcfd, int dst_dirfd, const char* dst, uint32_t flags) {
+    if(!isCallerExternal()) {
+        return original_fclonefileat(srcfd, dst_dirfd, dst, flags);
+    }
+
+    if(shdw_fd_path_restricted(srcfd)) {
+        errno = EBADF;
+        return -1;
+    }
+
+    if(shdw_at_path_denied(dst_dirfd, dst)) {
+        return -1;
+    }
+
+    return original_fclonefileat(srcfd, dst_dirfd, dst, flags);
+}
+
 static int (*original_rmdir)(const char* pathname);
 static int replaced_rmdir(const char* pathname) {
     if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
@@ -1807,6 +2521,55 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "utimes",                 (void*)&replaced_utimes,                   (void**)&original_utimes,                   LIBC,   LIBC },
     { "futimes",                (void*)&replaced_futimes,                  (void**)&original_futimes,                  LIBC,   LIBC },
     { "fchdir",                 (void*)&replaced_fchdir,                   (void**)&original_fchdir,                   LIBC,   LIBC },
+    // Phase 1 mutators: plain-path deny ENOENT (rmdir contract), fd deny
+    // EBADF (futimes contract). All present since the 15.6 floor.
+    { "mkdir",                  (void*)&replaced_mkdir,                    (void**)&original_mkdir,                    LIBC,   LIBC },
+    { "chmod",                  (void*)&replaced_chmod,                    (void**)&original_chmod,                    LIBC,   LIBC },
+    { "lchmod",                 (void*)&replaced_lchmod,                   (void**)&original_lchmod,                   LIBC,   LIBC },
+    { "fchmod",                 (void*)&replaced_fchmod,                   (void**)&original_fchmod,                   LIBC,   LIBC },
+    { "chown",                  (void*)&replaced_chown,                    (void**)&original_chown,                    LIBC,   LIBC },
+    { "lchown",                 (void*)&replaced_lchown,                   (void**)&original_lchown,                   LIBC,   LIBC },
+    { "fchown",                 (void*)&replaced_fchown,                   (void**)&original_fchown,                   LIBC,   LIBC },
+    { "mknod",                  (void*)&replaced_mknod,                    (void**)&original_mknod,                    LIBC,   LIBC },
+    { "mkfifo",                 (void*)&replaced_mkfifo,                   (void**)&original_mkfifo,                   LIBC,   LIBC },
+    { "truncate",               (void*)&replaced_truncate,                 (void**)&original_truncate,                 LIBC,   LIBC },
+    { "ftruncate",              (void*)&replaced_ftruncate,                (void**)&original_ftruncate,               LIBC,   LIBC },
+    { "chflags",                (void*)&replaced_chflags,                  (void**)&original_chflags,                 LIBC,   LIBC },
+    { "lchflags",               (void*)&replaced_lchflags,                 (void**)&original_lchflags,                LIBC,   LIBC },
+    { "fchflags",               (void*)&replaced_fchflags,                 (void**)&original_fchflags,                LIBC,   LIBC },
+    { "futimens",               (void*)&replaced_futimens,                 (void**)&original_futimens,                LIBC,   LIBC },
+    { "lutimes",                (void*)&replaced_lutimes,                  (void**)&original_lutimes,                 LIBC,   LIBC },
+    // Phase 2 copy/clone: dual-endpoint (src+dst) classification. Present
+    // since the 15.6 floor; fd/state resolution fails open.
+    { "copyfile",               (void*)&replaced_copyfile,                (void**)&original_copyfile,               LIBC,   LIBC },
+    { "fcopyfile",              (void*)&replaced_fcopyfile,               (void**)&original_fcopyfile,              LIBC,   LIBC },
+    { "clonefile",              (void*)&replaced_clonefile,               (void**)&original_clonefile,              LIBC,   LIBC },
+    { "clonefileat",            (void*)&replaced_clonefileat,             (void**)&original_clonefileat,            LIBC,   LIBC },
+    { "fclonefileat",           (void*)&replaced_fclonefileat,            (void**)&original_fclonefileat,           LIBC,   LIBC },
+    // Phase 3 dir-enum conveniences: post-success output filters over the
+    // already-filtered readdir/getdirentries64 substrate. globfree is a
+    // pass-through for dlsym-policy agreement (no realloc in the filter).
+    { "scandir",                (void*)&replaced_scandir,                 (void**)&original_scandir,                LIBC,   LIBC },
+#ifdef __BLOCKS__
+    { "scandir_b",              (void*)&replaced_scandir_b,               (void**)&original_scandir_b,              LIBC,   0 },
+#endif
+    { "glob",                   (void*)&replaced_glob,                    (void**)&original_glob,                   LIBC,   LIBC },
+    { "globfree",               (void*)&replaced_globfree,                (void**)&original_globfree,               LIBC,   0 },
+#ifdef __BLOCKS__
+    { "glob_b",                 (void*)&replaced_glob_b,                  (void**)&original_glob_b,                 LIBC,   0 },
+#endif
+    { "fts_open",               (void*)&replaced_fts_open,                (void**)&original_fts_open,               LIBC,   LIBC },
+    { "fts_read",               (void*)&replaced_fts_read,                (void**)&original_fts_read,               LIBC,   LIBC },
+    { "fts_children",           (void*)&replaced_fts_children,            (void**)&original_fts_children,           LIBC,   0 },
+    { "ftw",                    (void*)&replaced_ftw,                     (void**)&original_ftw,                    LIBC,   LIBC },
+    { "nftw",                   (void*)&replaced_nftw,                    (void**)&original_nftw,                   LIBC,   LIBC },
+    // Phase 4 CFPreferences: same suite gate as NSUserDefaults (predicate
+    // lives in AppEnvironment.x). Reads denied, sync fails closed, writes
+    // pass through (unobservable).
+    { "CFPreferencesCopyAppValue", (void*)&replaced_CFPreferencesCopyAppValue, (void**)&original_CFPreferencesCopyAppValue, LIBC, LIBC },
+    { "CFPreferencesCopyValue", (void*)&replaced_CFPreferencesCopyValue, (void**)&original_CFPreferencesCopyValue, LIBC, LIBC },
+    { "CFPreferencesCopyMultiple", (void*)&replaced_CFPreferencesCopyMultiple, (void**)&original_CFPreferencesCopyMultiple, LIBC, LIBC },
+    { "CFPreferencesAppSynchronize", (void*)&replaced_CFPreferencesAppSynchronize, (void**)&original_CFPreferencesAppSynchronize, LIBC, 0 },
     { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC },
     { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC },
     { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC },
@@ -1851,6 +2614,13 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
     { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0 },
     { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0 },
+    // Phase 4: kill(pid, 0) liveness probe — ESRCH agrees with filtered lists.
+    { "kill",                   (void*)&replaced_kill,                     (void**)&original_kill,                     ANTIDBG,  ANTIDBG },
+    // Phase 4 pass-throughs (dlsym-policy agreement only — bodies forward
+    // untouched; see libc_antidebugging.x rationale per symbol).
+    { "uname",                  (void*)&replaced_uname,                   (void**)&original_uname,                   ANTIDBG,  0 },
+    { "getifaddrs",             (void*)&replaced_getifaddrs,              (void**)&original_getifaddrs,              ANTIDBG,  0 },
+    { "ioctl",                  (void*)&replaced_ioctl,                   (void**)&original_ioctl,                   ANTIDBG,  0 },
 };
 
 #undef LIBC

@@ -5,6 +5,8 @@
 #import <string.h>
 #import <stdlib.h>
 #import <sys/resource.h>
+#import <sys/utsname.h>
+#import <ifaddrs.h>
 #import <unistd.h>
 
 int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
@@ -282,11 +284,59 @@ int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int b
     // process's BSD info must say the same — a detector comparing
     // getppid() against pbi_ppid would otherwise see the real parent.
     if(ret > 0 && isCallerExternal() && pid == getpid() && flavor == SHADOW_PROC_PIDTBSDINFO
-    && buffer && buffersize >= sizeof(struct shdw_proc_bsdinfo_prefix)) {
+    && buffer && buffersize >= (int)sizeof(struct shdw_proc_bsdinfo_prefix)) {
         ((struct shdw_proc_bsdinfo_prefix*) buffer)->pbi_ppid = 1;
     }
 
     return ret;
+}
+
+// kill: signal-based daemon liveness probe (kill(pid, 0)). A restricted
+// pid answers ESRCH — the stock "no such process" a filtered-out daemon
+// must present so kill(0-probe) agrees with the sysctl/libproc lists.
+// Self-signals pass through (an app signaling itself is legitimate);
+// restricted non-self pids are rejected BEFORE the original runs (never
+// deliver-then-fail). Fail open for unclassifiable pids.
+int (*original_kill)(pid_t pid, int sig);
+int replaced_kill(pid_t pid, int sig) {
+    if(isCallerExternal() && pid > 0 && pid != getpid() && shdw_pid_is_restricted(pid)) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    return original_kill(pid, sig);
+}
+
+// uname: stock answer, no fabrication. The kernel version carries no
+// jailbreak signal on its own (detectors pair it with other evidence),
+// and forging it would contradict every other version channel
+// (NSProcessInfo, UIDevice, dyld). Hooked only to keep the symbol in the
+// dlsym policy table (GOT-vs-dlsym agreement) — body is pass-through.
+int (*original_uname)(struct utsname* buf);
+int replaced_uname(struct utsname* buf) {
+    return original_uname(buf);
+}
+
+// getifaddrs: pass-through (conservative). Interface enumeration is not a
+// file-evidence channel — jailbreaks add no interfaces stock lacks, and
+// filtering a real interface would break networking. Hooked only for
+// dlsym-policy agreement, like getrlimit above.
+int (*original_getifaddrs)(struct ifaddrs** ifap);
+int replaced_getifaddrs(struct ifaddrs** ifap) {
+    return original_getifaddrs(ifap);
+}
+
+// ioctl: pass-through (conservative). The request space is unbounded and
+// no verified JB ioctl signature is probe-gated, so any filtering here
+// would be speculation — a wrong deny breaks drivers. Hooked only for
+// dlsym-policy agreement.
+int (*original_ioctl)(int fd, unsigned long request, ...);
+int replaced_ioctl(int fd, unsigned long request, ...) {
+    va_list args;
+    va_start(args, request);
+    void* argp = va_arg(args, void*);
+    va_end(args);
+    return original_ioctl(fd, request, argp);
 }
 
 void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const void* imageHeader) {

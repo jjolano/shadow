@@ -27,6 +27,13 @@
 #import <bootstrap.h>
 #import <spawn.h>
 #import <objc/runtime.h>
+#import <copyfile.h>
+#import <sys/clonefile.h>
+#import <glob.h>
+#import <fts.h>
+#import <ftw.h>
+#import <sys/utsname.h>
+#import <ifaddrs.h>
 
 #import "../../common.h"
 #import <Shadow.h>
@@ -346,6 +353,16 @@ typedef enum {
     SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
     SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
     SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
+    SHADW_RAW_CAT_PATH3I,        // (path, uid/gid/int, ...) mutators: chown/lchown
+    SHADW_RAW_CAT_PATHMD,        // (path, mode, dev) mutators: mknod
+    SHADW_RAW_CAT_PATHOFF,       // (path, off_t) mutators: truncate
+    SHADW_RAW_CAT_FDOFF,         // (fd, off_t) mutators: ftruncate (EBADF)
+    SHADW_RAW_CAT_FDMODE,        // (fd, mode) mutators: fchmod (EBADF)
+    SHADW_RAW_CAT_FDUIDGID,      // (fd, uid, gid) mutators: fchown (EBADF)
+    SHADW_RAW_CAT_PATHPATH,      // (path, path, ...) copy: copyfile (both ends)
+    SHADW_RAW_CAT_CLONEAT,       // (dirfd, path, dirfd, path, ...) clone: clonefileat
+    SHADW_RAW_CAT_FDPATH,        // (fd, dirfd, path, ...) clone: fclonefileat
+    SHADW_RAW_CAT_KILL,          // kill(pid, sig) liveness probe (ESRCH)
 #ifdef SYS_freadlink
     SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
 #endif
@@ -493,6 +510,20 @@ extern int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
 extern int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 extern int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
 extern int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize);
+// Phase 4: kill liveness probe (libc_antidebugging.x, ANTIDBG group)
+extern int (*original_kill)(pid_t pid, int sig);
+extern int replaced_kill(pid_t pid, int sig);
+// Phase 4 pass-throughs (bodies forward untouched; dlsym-policy agreement)
+extern int (*original_uname)(struct utsname* buf);
+extern int replaced_uname(struct utsname* buf);
+extern int (*original_getifaddrs)(struct ifaddrs** ifap);
+extern int replaced_getifaddrs(struct ifaddrs** ifap);
+extern int (*original_ioctl)(int fd, unsigned long request, ...);
+extern int replaced_ioctl(int fd, unsigned long request, ...);
+// Phase 1 mutators + Phase 2 copy/clone + Phase 4 CFPreferences are
+// libc.x-file-local (static original_/replaced_ pairs + table rows in the
+// same TU). Declaring them extern here would collide with the statics,
+// so no hooks.h externs (same rule as the Phase 3 note below).
 
 // Symbol policy lookups for the C-function hook groups (libc/mach/sandbox/
 // mem). The dlsym hook in dyld.x consults these after its own table misses,
