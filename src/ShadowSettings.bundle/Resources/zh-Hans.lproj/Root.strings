@@ -28,8 +28,6 @@
 
 "APPS_ENABLED_FMT" = "%ld 个已启用";
 "APPS_ALL_ENABLED" = "所有应用已启用";
-"APPS_CUSTOMIZED_FMT" = "%ld 个已自定义";
-"APPS_ALL_FOLLOW_GLOBAL" = "所有应用跟随全局设置";
 
 "IMPORT_CONFIRM_TITLE" = "导入设置？";
 "IMPORT_CONFIRM_MSG" = "这将用所选文件替换所有当前设置。";

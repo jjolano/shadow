@@ -17,6 +17,31 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"About" target:self];
+
+		// Mirror the root pane: the actionable rows get small rounded icons so
+		// the About options read like the rest of the bundle. SFSymbols are
+		// preferred (tint-aware, no asset churn); the pre-iOS 13 bundle floor
+		// falls back to plain rows.
+		if(@available(iOS 13, *)) {
+			for(NSDictionary* mapping in @[
+				@{ @"spec": @"AboutChangelog", @"symbol": @"newspaper" },
+				@{ @"spec": @"AboutGitHub", @"symbol": @"chevron.left.forwardslash.chevron.right" },
+				@{ @"spec": @"AboutKofi", @"symbol": @"cup.and.saucer" },
+				@{ @"spec": @"AboutReset", @"symbol": @"arrow.counterclockwise" },
+			]) {
+				PSSpecifier* row = [self specifierForID:mapping[@"spec"]];
+				if(row) {
+					UIImageConfiguration* config = [UIImageSymbolConfiguration
+						configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
+					NSString* symbol = mapping[@"symbol"];
+					UIImage* icon = [[UIImage systemImageNamed:symbol withConfiguration:config]
+						imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+					if(icon) {
+						[row setProperty:icon forKey:@"iconImage"];
+					}
+				}
+			}
+		}
 	}
 
 	return _specifiers;
