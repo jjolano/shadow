@@ -13,9 +13,9 @@ concurrency:
 env:
   THEOS: /opt/theos
   # HookKit is consumed from the Theos install, not vendored. CI provisions the
-  # pinned commit per lane (scripts/install-theos.sh <lane> in the HookKit repo)
+  # pinned commit per lane (tools/release/install-theos.sh <lane> in the HookKit repo)
   # before building Shadow; local devs manage their own Theos HookKit.
-  HOOKKIT: 8f29e7168a7c9bbe9f1829afd3516a24b95ec79e
+  HOOKKIT: af17d64def73be78f46f55c82592726ee4afeb74
 
 jobs:
   legacy:
@@ -93,7 +93,7 @@ jobs:
       - name: Install Theos
         run: |
           brew install dpkg ldid
-          sudo git clone --recursive --quiet https://github.com/roothide/theos.git "$THEOS"
+          sudo git clone --recursive --quiet https://github.com/jjolano/theos.git "$THEOS"
           # Xcode 16's iOS SDK dropped private-framework tbds (Preferences et
           # al); stage the pinned 16.5 SDK so dependency framework links
           # (AltList -> Preferences) resolve.
@@ -115,11 +115,6 @@ jobs:
           # install-hookkit-theos.sh writes the HookKit framework into $THEOS/lib;
           # the tree was cloned with sudo, so hand it to the runner user.
           sudo chown -R "$(id -un)" "$THEOS"
-
-          # roothide/theos carries no bin/lane.sh; backfill the shared lane
-          # matrix from jjolano/theos (single source per build-support/lanes.sh).
-          curl -fL -o "$THEOS/bin/lane.sh" \
-            https://raw.githubusercontent.com/jjolano/theos/master/bin/lane.sh
 
       - name: Build and verify
         env:

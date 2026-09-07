@@ -28,5 +28,5 @@ git -C "$WORK/hookkit" checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
 
 # Build and stage just this lane's framework into $THEOS at the location
 # build-support/hookkit.mk resolves. install-theos.sh owns the lane -> path layout.
-bash "$WORK/hookkit/scripts/install-theos.sh" "$LANE"
+bash "$WORK/hookkit/tools/release/install-theos.sh" "$LANE"
 echo "provisioned HookKit ($HOOKKIT) for $LANE into $THEOS"
