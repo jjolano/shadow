@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+int shdw_path_is_absolute(const char *path) {
+    return path != NULL && path[0] == '/';
+}
+
 size_t shdw_path_munge_offset(const char *path) {
     size_t len = strlen(path);
 

@@ -127,7 +127,8 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
         // trampoline; fstatat/fstatat64 are read-only and safe).
         size_t moff = shdw_path_munge_offset(path);
 
-        if(shdw_path_rewrite_enabled()
+        if(shdw_path_is_absolute(path)
+           && shdw_path_rewrite_enabled()
            && shdw_svc_rewriteable((int)sysno, a2)
            && moff != (size_t)-1
            && shdw_path_buf_writable(path + moff)

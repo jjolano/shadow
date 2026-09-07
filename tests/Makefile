@@ -9,6 +9,10 @@ verify-path-rewrite:
 		verify-path-rewrite.c ../src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
 	/tmp/shadow-rewrite-test
 
+# Host check of the actual fstatat/faccessat hook bodies with policy doubles.
+verify-at-path-rewrite:
+	python3 verify-at-path-rewrite.py
+
 # Pure-C record filter and static snapshot-query contract.
 verify-mount-filter:
 	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-mount-filter-test \
@@ -54,9 +58,9 @@ syscall-meta:
 settings-structure:
 	sh verify-settings-structure.sh
 
-test: verify-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
+test: verify-path-rewrite verify-at-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean

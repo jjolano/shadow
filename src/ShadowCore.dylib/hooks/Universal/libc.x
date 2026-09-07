@@ -800,7 +800,9 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
-    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+    if(shdw_path_is_absolute(pathname)
+       && [_shadow isCPathRestricted:pathname]
+       && shdw_libc_try_rewrite(pathname)) {
         return original_fstatat(dirfd, pathname, buf, flags);   // natural ENOENT
     }
 
@@ -821,7 +823,11 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
-    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+    // Relative operands must be classified against dirfd by shdw_at_path_denied.
+    // The direct classification is only safe for absolute paths.
+    BOOL restricted = shdw_path_is_absolute(pathname) && [_shadow isCPathRestricted:pathname];
+
+    if(restricted && shdw_libc_try_rewrite(pathname)) {
         errno = caller_errno;
         return original_faccessat(dirfd, pathname, mode, flags);   // natural ENOENT
     }
@@ -836,7 +842,6 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
 
     // Restricted-root paths: deny unconditionally for external callers
     if(result != -1) {
-        BOOL restricted = [_shadow isCPathRestricted:pathname];
         if(restricted && (shdw_is_restricted_root(pathname) || ext)) {
             errno = ENOENT;
             return -1;
