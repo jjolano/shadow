@@ -1,8 +1,8 @@
 name: harness
 
 # Public contract checks (no device, no engine build): lane/package
-# contract, static source checks, pure-C checks, and the device-driver
-# selftest. The engine-harness jobs (GNUstep/macOS builds) moved to the
+# contract, static source checks, pure-C checks, and maintainer scripts.
+# The engine-harness jobs (GNUstep/macOS builds) moved to the
 # private repo with the full harness.
 
 on:
