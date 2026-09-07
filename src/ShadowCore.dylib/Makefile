@@ -15,7 +15,13 @@ ShadowCore_LIBRARIES = sandy
 ShadowCore_FRAMEWORKS = Foundation IOKit
 ShadowCore_EXTRA_FRAMEWORKS = Shadow HookKit
 ShadowCore_PRIVATE_FRAMEWORKS = MobileCoreServices
-ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I../Shadow.framework/Headers $(SHADOW_HOOKKIT_CFLAGS)
+# Generated single-source-of-truth header for the JB identifier arrays (see
+# build-support/jb-identifiers.plist). Rendered into a gitignored build dir and
+# added to the include path; AppEnvironment.x #includes it. Generation is wired
+# below via before-all:: so it precedes every compile, including parallel ones.
+SHADOW_GEN_DIR = .gen
+SHADOW_JB_IDENTIFIERS_H = $(SHADOW_GEN_DIR)/jb-identifiers.h
+ShadowCore_CFLAGS = -fobjc-arc -fvisibility=hidden -I. -I hooks -I$(SHADOW_GEN_DIR) -I../Shadow.framework/Headers $(SHADOW_HOOKKIT_CFLAGS)
 ShadowCore_LOGOSFLAGS = -c generator=hookkit -c hook_inheritance=allow_inherited
 ifneq ($(SHADOW_LANE),rootful-legacy)
 ShadowCore_CFLAGS += -DSHADOW_CANONICAL_HOOKKIT=1
@@ -40,3 +46,17 @@ ShadowCore_LDFLAGS += -lroothide
 endif
 
 include $(THEOS_MAKE_PATH)/library.mk
+
+# Render the generated identifier header before any compilation. The generator
+# is deterministic and leaves an unchanged output untouched (safe under -j and
+# repeated builds); it exits non-zero on bad input, failing the build rather
+# than compiling stale data.
+SHADOW_JB_PLIST = ../../build-support/jb-identifiers.plist
+SHADOW_GEN_JB = ../../scripts/gen-jb-identifiers.py
+
+before-all::
+	@mkdir -p $(SHADOW_GEN_DIR)
+	python3 $(SHADOW_GEN_JB) $(SHADOW_JB_PLIST) $(SHADOW_JB_IDENTIFIERS_H)
+
+internal-clean::
+	rm -rf $(SHADOW_GEN_DIR)

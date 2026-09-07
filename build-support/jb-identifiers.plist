@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Single source of truth for jailbreak-app identifier lists that have no
+  restriction-ruleset home. scripts/gen-jb-identifiers.py renders these into a
+  generated C header of `static const char* const` arrays; the arrays are baked
+  into ShadowCore at compile time exactly as the previous inline literals were,
+  so runtime lookup behaviour is unchanged (see AppEnvironment.x
+  shdw_nsuserdefaults_suite_restricted).
+
+  Categories have distinct match semantics:
+    * NSUserDefaultsSuites: exact full suite name.
+    * JBPreferenceDomainIDs: exact last path component.
+
+  Order is preserved as-authored. Add identifiers here, not in source.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSUserDefaultsSuites</key>
+	<array>
+		<string>com.saurik.Cydia</string>
+		<string>com.saurik.Cydia.Startup</string>
+		<string>org.coolstar.sileo</string>
+		<string>org.coolstar.coolstor</string>
+		<string>com.unc0ver</string>
+		<string>com.cydia</string>
+		<string>com.jailbreak</string>
+		<string>com.opa334.trollstore</string>
+		<string>com.opa334.sileo</string>
+	</array>
+	<key>JBPreferenceDomainIDs</key>
+	<array>
+		<string>com.opa334.choicyprefs</string>
+		<string>com.opa334.craneprefs</string>
+		<string>com.spark.snowboardprefs</string>
+		<string>com.tigisoftware.Filza</string>
+		<string>org.coolstar.SileoStore</string>
+		<string>ru.domo.cocoatop64</string>
+		<string>ws.hbang.Terminal</string>
+		<string>xyz.willy.Zebra</string>
+		<string>us.diatr.shshd</string>
+		<string>com.opa334.sandyd</string>
+	</array>
+</dict>
+</plist>

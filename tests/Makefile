@@ -62,9 +62,15 @@ syscall-meta:
 settings-structure:
 	sh verify-settings-structure.sh
 
-test: verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
+# JB-identifier codegen contract: renders its own header (no Theos), compiles
+# the generated arrays with the host cc, and checks generator validation +
+# AppEnvironment.x consumer wiring.
+jb-identifiers:
+	python3 verify-jb-identifiers.py
+
+test: verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers stage-hookkit-headers clean
