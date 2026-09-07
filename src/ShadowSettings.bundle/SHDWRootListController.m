@@ -25,10 +25,12 @@
 	NSString* key = [specifier identifier];
 
 	if([key isEqualToString:@"ApplicationsSummary"]) {
-		// Count apps that deviate from the global settings: an app "follows
+		// Count apps not following the global settings: an app "follows
 		// global" until it writes an explicit activation override (App_Enabled)
 		// or a per-app aggressive override (Detector_Aggressive). Legacy
 		// App_Disabled counts too, since it also overrides the global toggle.
+		// The subtext is a bare number; with no overrides there is nothing to
+		// display, so omit the label entirely.
 		NSInteger customized = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
 			if([value isKindOfClass:[NSDictionary class]] &&
@@ -40,10 +42,10 @@
 		}
 
 		if(customized == 0) {
-			return [self localized:@"APPS_ALL_FOLLOW_GLOBAL" fallback:@"All apps follow global"];
+			return nil;
 		}
 
-		return [NSString stringWithFormat:[self localized:@"APPS_CUSTOMIZED_FMT" fallback:@"%ld customized"], (long)customized];
+		return [NSString stringWithFormat:@"%ld", (long)customized];
 	}
 
 	return [prefs objectForKey:[specifier identifier]];
