@@ -7,12 +7,14 @@
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
 
-	// Kept across reloads so the single Follow Global toggle can animate both
+	// Kept across reloads so the single Follow Global toggle can animate the
 	// per-app rows in/out (native insert/delete) instead of a full table
 	// reload; once removed, specifierForID: can no longer find them to put
-	// them back.
+	// them back. The Neutralization group header rides with its row, since an
+	// empty group would otherwise linger under Follow Global.
 	PSSpecifier* enabledSpecifier;
 	PSSpecifier* aggressiveSpecifier;
+	PSSpecifier* aggressiveGroupSpecifier;
 }
 
 - (NSArray *)specifiers {
@@ -21,6 +23,7 @@
 
 		enabledSpecifier = [self specifierForID:@"App_Enabled"];
 		aggressiveSpecifier = [self specifierForID:@"Detector_Aggressive"];
+		aggressiveGroupSpecifier = [self specifierForID:@"AppAggressiveGroup"];
 
 		LSApplicationProxy* proxy = [LSApplicationProxy applicationProxyForIdentifier:[self applicationID]];
 		if(proxy.atl_fastDisplayName.length > 0) {
@@ -29,10 +32,12 @@
 
 		// One Follow Global toggle governs the whole app: following global =
 		// no per-app overrides, so both the activation and aggressive rows are
-		// hidden until the user opts out.
+		// hidden — together with the now-empty Neutralization group header —
+		// until the user opts out.
 		if([self followGlobal]) {
 			[self removeSpecifier:enabledSpecifier animated:NO];
 			[self removeSpecifier:aggressiveSpecifier animated:NO];
+			[self removeSpecifier:aggressiveGroupSpecifier animated:NO];
 		}
 
 		[self updateSettingsGroupFooter];
@@ -93,13 +98,15 @@
 			SHDWClearAppAggressive(prefs, [self applicationID]);
 			[self removeSpecifier:aggressiveSpecifier animated:YES];
 			[self removeSpecifier:enabledSpecifier animated:YES];
+			[self removeSpecifier:aggressiveGroupSpecifier animated:YES];
 		} else {
 			SHDWWriteAppEnabled(prefs, [self applicationID], SHDWAppEnabled(prefs, [self applicationID]));
 			SHDWWriteAppAggressive(prefs, [self applicationID], SHDWAppAggressive(prefs, [self applicationID]));
 			// App_Enabled sits under the activation group (after the toggle);
 			// Detector_Aggressive sits under its own group header.
 			[self insertSpecifier:enabledSpecifier afterSpecifier:[self specifierForID:@"App_FollowGlobal"] animated:YES];
-			[self insertSpecifier:aggressiveSpecifier afterSpecifier:[self specifierForID:@"AppAggressiveGroup"] animated:YES];
+			[self insertSpecifier:aggressiveGroupSpecifier afterSpecifier:enabledSpecifier animated:YES];
+			[self insertSpecifier:aggressiveSpecifier afterSpecifier:aggressiveGroupSpecifier animated:YES];
 			[self reloadSpecifier:enabledSpecifier];
 			[self reloadSpecifier:aggressiveSpecifier];
 		}
