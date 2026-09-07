@@ -3,6 +3,10 @@
 #import "UniversalHooks.h"
 #import <Security/Security.h>
 #import <LocalAuthentication/LocalAuthentication.h>
+// Generated from build-support/jb-identifiers.plist (single source of truth);
+// see scripts/gen-jb-identifiers.py. Provides shdw_jb_nsuserdefaults_suites[]
+// and shdw_jb_preference_domain_ids[], NULL-terminated.
+#import "jb-identifiers.h"
 
 %group shadowhook_UIApplication
 %hook UIApplication
@@ -79,20 +83,16 @@ BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
         return NO;
     }
 
+    // Exact-match set built from the generated array (values authored in
+    // build-support/jb-identifiers.plist); same NSSet lookup as before.
     static NSSet* restrictedSuites = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        restrictedSuites = [NSSet setWithObjects:
-            @"com.saurik.Cydia",
-            @"com.saurik.Cydia.Startup",
-            @"org.coolstar.sileo",
-            @"org.coolstar.coolstor",
-            @"com.unc0ver",
-            @"com.cydia",
-            @"com.jailbreak",
-            @"com.opa334.trollstore",
-            @"com.opa334.sileo",
-            nil];
+        NSMutableArray<NSString*>* suites = [NSMutableArray new];
+        for(const char* const* p = shdw_jb_nsuserdefaults_suites; *p; p++) {
+            [suites addObject:[NSString stringWithUTF8String:*p]];
+        }
+        restrictedSuites = [NSSet setWithArray:suites];
     });
 
     if([restrictedSuites containsObject:suitename]) {
@@ -114,17 +114,17 @@ BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
         return YES;
     }
 
-    // Known jailbreak-app preference domains a stock device never has.
+    // Known jailbreak-app preference domains a stock device never has. Built
+    // from the generated array (values authored in
+    // build-support/jb-identifiers.plist); same leaf exact-match as before.
     static NSArray<NSString*>* jbPrefIDs = nil;
     static dispatch_once_t prefOnce;
     dispatch_once(&prefOnce, ^{
-        jbPrefIDs = @[
-            @"com.opa334.choicyprefs", @"com.opa334.craneprefs",
-            @"com.spark.snowboardprefs", @"com.tigisoftware.Filza",
-            @"org.coolstar.SileoStore", @"ru.domo.cocoatop64",
-            @"ws.hbang.Terminal", @"xyz.willy.Zebra",
-            @"us.diatr.shshd", @"com.opa334.sandyd",
-        ];
+        NSMutableArray<NSString*>* ids = [NSMutableArray new];
+        for(const char* const* p = shdw_jb_preference_domain_ids; *p; p++) {
+            [ids addObject:[NSString stringWithUTF8String:*p]];
+        }
+        jbPrefIDs = [ids copy];
     });
     NSString* leaf = suitename.lastPathComponent;
     for(NSString* pref in jbPrefIDs) {
