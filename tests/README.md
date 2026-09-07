@@ -8,6 +8,7 @@ directory containing `bin/lane.sh`; a full Theos installation is not required.
 | Check | Command |
 | --- | --- |
 | svc path-rewrite (pure C) | `make -C tests verify-path-rewrite` |
+| fresh fd/DIR path policy (host doubles) | `make -C tests verify-fd-path-freshness` |
 | mount filtering (pure C + static query contract) | `make -C tests verify-mount-filter` |
 | rebind journal/repair (pure C) | `make -C tests verify-rebind-repair` |
 | lane/package contract | `sh tests/verify-lane-contract.sh` |

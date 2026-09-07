@@ -9,7 +9,6 @@
 #import <Shadow/JBPath.h>
 
 #import <string.h>
-#import <pthread.h>
 #import <sys/stat.h>
 #import <limits.h>
 
@@ -68,21 +67,6 @@ BOOL shdw_detector_c_write_path_denied(const char* path) {
         [NSString stringWithUTF8String:path]);
 }
 
-// Shared fd cache size (fd→path for the fstat family, per-dirfd options for
-// the *at family): fixed-size table, round-robin eviction.
-#define SHADW_FD_CACHE_SIZE 16
-
-typedef struct {
-    int fd;
-    char path[PATH_MAX];
-    BOOL valid;            // F_GETPATH succeeded (fd has a nameable path)
-    CFDictionaryRef options; // retained; per-dirfd options for the *at family
-} shdw_fd_cache_entry_t;
-
-static shdw_fd_cache_entry_t shdw_fd_cache[SHADW_FD_CACHE_SIZE];
-static NSUInteger shdw_fd_cache_next = 0;
-static pthread_mutex_t shdw_fd_cache_lock = PTHREAD_MUTEX_INITIALIZER;
-
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
 // statically linked into the app binary (which has no image name at all for
@@ -129,20 +113,27 @@ BOOL shdw_is_jb_probe(const char* path) {
 // dirfd is a fingerprint, ENOENT is what a stock device answers for a path
 // query that must not succeed.
 shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* out, size_t outlen) {
+    int saved_errno = errno;
+
     if(path == NULL || path[0] == '\0') {
         // No path semantics to classify here — EFAULT/EINVAL come from the kernel.
+        errno = saved_errno;
         return SHADW_DIRFD_ORIGINAL;
     }
 
     if(path[0] == '/') {
+        errno = saved_errno;
         return SHADW_DIRFD_ABSOLUTE;
     }
 
     if(dirfd == AT_FDCWD) {
-        return getcwd(out, outlen) ? SHADW_DIRFD_OK : SHADW_DIRFD_DENY;
+        shdw_dirfd_status_t status = getcwd(out, outlen) ? SHADW_DIRFD_OK : SHADW_DIRFD_DENY;
+        errno = saved_errno;
+        return status;
     }
 
     if(fcntl(dirfd, F_GETPATH, out) != -1) {
+        errno = saved_errno;
         return SHADW_DIRFD_OK;
     }
 
@@ -150,11 +141,13 @@ shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* o
 
     if(fstat(dirfd, &st) == 0 && S_ISDIR(st.st_mode)) {
         // Valid directory vnode that can't be named: fail closed.
+        errno = saved_errno;
         return SHADW_DIRFD_DENY;
     }
 
     // Invalid or non-directory descriptor: the kernel reports the genuine
     // error (EBADF/ENOTDIR) — never synthesize one here.
+    errno = saved_errno;
     return SHADW_DIRFD_ORIGINAL;
 }
 
@@ -167,6 +160,7 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
         return NO;
     }
 
+    int saved_errno = errno;
     char parent[PATH_MAX];
     shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
 
@@ -179,58 +173,10 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
         errno = ENOENT;
         return YES;
     } else if(status == SHADW_DIRFD_OK) {
-        // Per-dirfd options dict, cached in the shared fd cache entry (same
-        // 16-slot round-robin table, same close-hook invalidation, so a
-        // reused fd can never inherit a stale parent). The engine only reads
-        // the dict, so the cached one is reused read-only. Built under the
-        // lock like the readdir cache; AT_FDCWD is never cached — getcwd
-        // changes under a chdir. One ref is held for the check below (fresh
-        // CFRetain on a hit, the build's retain on a miss) and released once.
-        CFDictionaryRef options = NULL;
-        NSUInteger hit = SHADW_FD_CACHE_SIZE; // index of the dirfd's entry, when found
-
-        pthread_mutex_lock(&shdw_fd_cache_lock);
-
-        for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
-            if(shdw_fd_cache[i].fd == dirfd) {
-                hit = i;
-
-                if(shdw_fd_cache[i].options) {
-                    options = CFRetain(shdw_fd_cache[i].options);
-                }
-
-                break;
-            }
-        }
-
-        if(!options && dirfd != AT_FDCWD) {
-            NSDictionary* fresh = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]};
-
-            NSUInteger slot;
-
-            if(hit != SHADW_FD_CACHE_SIZE) {
-                slot = hit; // upgrade the path-only entry in place
-            } else {
-                slot = shdw_fd_cache_next;
-                shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
-
-                if(shdw_fd_cache[slot].options) {
-                    CFRelease(shdw_fd_cache[slot].options);
-                }
-            }
-
-            shdw_fd_cache[slot].fd = dirfd;
-            shdw_fd_cache[slot].valid = YES;
-            strlcpy(shdw_fd_cache[slot].path, parent, sizeof(shdw_fd_cache[slot].path));
-            shdw_fd_cache[slot].options = CFRetain((__bridge CFDictionaryRef)fresh);
-            options = CFRetain((__bridge CFDictionaryRef)fresh);
-        }
-
-        pthread_mutex_unlock(&shdw_fd_cache_lock);
-
         NSString* path = [NSString stringWithUTF8String:pathname];
-        BOOL restricted = [_shadow isPathRestricted:path options:(__bridge NSDictionary*)options];
-        CFRelease(options);
+        BOOL restricted = [_shadow isPathRestricted:path options:@{
+            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
+        }];
 
         if(restricted) {
             errno = ENOENT;
@@ -239,122 +185,20 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     }
 
     // SHADW_DIRFD_ORIGINAL: let the kernel answer.
+    errno = saved_errno;
     return NO;
 }
 
-// fd→path cache for the fd-based hooks (fstat/fstatfs/fstatvfs/fpathconf/
-// futimes/fchdir/fgetxattr/flistxattr/fgetattrlist): F_GETPATH is a syscall
-// per call, and the fstat family runs on every fd touch. The path is resolved
-// once per fd and cached; the close hook invalidates the entry, so a reused
-// fd can never inherit a stale path. Finding 10: fixed 16-slot round-robin,
-// close-invalidated — no TTL window, so no staleness beyond eviction (a miss
-// just re-resolves, results identical). Residual is timing-only (hit vs
-// re-resolve latency). The same entry carries the per-dirfd
-// options dict for the *at family (shdw_at_path_denied), built once per
-// dirfd and reused read-only — the engine only reads the dict, so a cached
-// one is safe to share across calls. Fixed-size table, round-robin eviction —
-// a miss just re-resolves. The lock is never held across isCPathRestricted
-// (an ObjC call that could re-enter hooked code); F_GETPATH itself runs under
-// the lock so a close+reuse race can't store a stale entry.
+// fd→path classification for the fd-based hooks. F_GETPATH is deliberately
+// resolved for every decision: an fd can be replaced by dup2 or renamed by a
+// raw syscall without passing a cache-invalidation hook.
 BOOL shdw_fd_path_restricted(int fd) {
-    if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) {
-        return NO;
-    }
-
+    int saved_errno = errno;
     char pathname[PATH_MAX];
-    BOOL valid = NO;
-
-    pthread_mutex_lock(&shdw_fd_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
-        if(shdw_fd_cache[i].fd == fd) {
-            valid = shdw_fd_cache[i].valid;
-
-            if(valid) {
-                strlcpy(pathname, shdw_fd_cache[i].path, sizeof(pathname));
-            }
-
-            pthread_mutex_unlock(&shdw_fd_cache_lock);
-            return valid ? [_shadow isCPathRestricted:pathname] : NO;
-        }
-    }
-
-    valid = fcntl(fd, F_GETPATH, pathname) != -1;
-
-    NSUInteger slot = shdw_fd_cache_next;
-    shdw_fd_cache_next = (shdw_fd_cache_next + 1) % SHADW_FD_CACHE_SIZE;
-
-    if(shdw_fd_cache[slot].options) {
-        CFRelease(shdw_fd_cache[slot].options);
-    }
-
-    shdw_fd_cache[slot].fd = fd;
-    shdw_fd_cache[slot].valid = valid;
-    shdw_fd_cache[slot].options = NULL;
-
-    if(valid) {
-        strlcpy(shdw_fd_cache[slot].path, pathname, sizeof(shdw_fd_cache[slot].path));
-    }
-
-    pthread_mutex_unlock(&shdw_fd_cache_lock);
-
-    return valid ? [_shadow isCPathRestricted:pathname] : NO;
-}
-
-void shdw_fd_cache_invalidate(int fd) {
-    pthread_mutex_lock(&shdw_fd_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_FD_CACHE_SIZE; i++) {
-        if(shdw_fd_cache[i].fd == fd) {
-            shdw_fd_cache[i].fd = -1;
-            shdw_fd_cache[i].valid = NO;
-
-            if(shdw_fd_cache[i].options) {
-                CFRelease(shdw_fd_cache[i].options);
-                shdw_fd_cache[i].options = NULL;
-            }
-
-            break;
-        }
-    }
-
-    pthread_mutex_unlock(&shdw_fd_cache_lock);
-}
-
-// readdir/readdir_r used to resolve the DIR*'s parent path (dirfd + F_GETPATH)
-// and build the options dictionary for every entry. Cache both per DIR* so
-// only the per-entry child check runs; invalidated on closedir because DIR*
-// pointers get reused. Fixed-size table, round-robin eviction on overflow
-// (a miss just re-resolves — results stay identical). Finding 10: same
-// timing-only residual as the fd cache. A valid directory
-// vnode whose path can't be resolved is cached as DENIED: entries are hidden
-// (fail closed) rather than exposed unfiltered.
-#define SHADW_READDIR_CACHE_SIZE 16
-
-typedef struct {
-    DIR* dirp;
-    CFDictionaryRef options; // retained; NULL when no filtering applies
-    BOOL denied;             // valid dir vnode, path unresolvable: hide entries
-} shdw_readdir_cache_entry_t;
-
-static shdw_readdir_cache_entry_t shdw_readdir_cache[SHADW_READDIR_CACHE_SIZE];
-
-static NSUInteger shdw_readdir_cache_next = 0;
-static pthread_mutex_t shdw_readdir_cache_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static void shdw_readdir_cache_clear_locked(DIR* dirp) {
-    for(NSUInteger i = 0; i < SHADW_READDIR_CACHE_SIZE; i++) {
-        if(shdw_readdir_cache[i].dirp == dirp) {
-            if(shdw_readdir_cache[i].options) {
-                CFRelease(shdw_readdir_cache[i].options);
-            }
-
-            shdw_readdir_cache[i].dirp = NULL;
-            shdw_readdir_cache[i].options = NULL;
-            shdw_readdir_cache[i].denied = NO;
-            break;
-        }
-    }
+    BOOL restricted = fcntl(fd, F_GETPATH, pathname) != -1 &&
+        [_shadow isCPathRestricted:pathname];
+    errno = saved_errno;
+    return restricted;
 }
 
 // Returns a retained options dict for the DIR*'s parent path (caller must
@@ -362,63 +206,26 @@ static void shdw_readdir_cache_clear_locked(DIR* dirp) {
 // is a valid directory vnode whose path can't be resolved: entries must be
 // hidden (fail closed). *denied is never set for an invalid DIR* — the
 // original readdir fails on its own with the genuine EBADF.
-NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied) {
-    pthread_mutex_lock(&shdw_readdir_cache_lock);
-
+NSDictionary* shdw_readdir_options(DIR* dirp, BOOL* denied) {
+    int saved_errno = errno;
     *denied = NO;
-    NSDictionary* result = nil;
-    BOOL cached = NO;
+    char pathname[PATH_MAX];
+    shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd(dirp), ".", pathname, sizeof(pathname));
 
-    for(NSUInteger i = 0; i < SHADW_READDIR_CACHE_SIZE; i++) {
-        if(shdw_readdir_cache[i].dirp == dirp) {
-            cached = YES;
-
-            if(shdw_readdir_cache[i].options) {
-                result = (__bridge NSDictionary*)CFRetain(shdw_readdir_cache[i].options);
-            }
-
-            *denied = shdw_readdir_cache[i].denied;
-            break;
-        }
+    if(status == SHADW_DIRFD_OK) {
+        NSDictionary* options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
+        errno = saved_errno;
+        return (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);
     }
 
-    if(!cached) {
-        char pathname[PATH_MAX];
-        NSDictionary* options = nil;
-        BOOL deniedEntry = NO;
-
-        if(fcntl(dirfd(dirp), F_GETPATH, pathname) != -1) {
-            options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
-            result = (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);
-        } else if(errno != EBADF) {
-            // Valid vnode whose path can't be named: fail closed.
-            deniedEntry = YES;
-            *denied = YES;
-        }
-
-        // errno == EBADF: invalid DIR*; the original readdir fails on its own.
-
-        // Evict the next slot (may drop a live DIR*'s entry; a miss just re-resolves).
-        NSUInteger slot = shdw_readdir_cache_next;
-        shdw_readdir_cache_next = (shdw_readdir_cache_next + 1) % SHADW_READDIR_CACHE_SIZE;
-
-        if(shdw_readdir_cache[slot].options) {
-            CFRelease(shdw_readdir_cache[slot].options);
-        }
-
-        shdw_readdir_cache[slot].dirp = dirp;
-        shdw_readdir_cache[slot].options = options ? CFRetain((__bridge CFDictionaryRef)options) : NULL;
-        shdw_readdir_cache[slot].denied = deniedEntry;
+    if(status == SHADW_DIRFD_DENY) {
+        *denied = YES;
+        errno = ENOENT;
+    } else {
+        errno = saved_errno;
     }
 
-    pthread_mutex_unlock(&shdw_readdir_cache_lock);
-    return result;
-}
-
-void shdw_readdir_cache_clear(DIR* dirp) {
-    pthread_mutex_lock(&shdw_readdir_cache_lock);
-    shdw_readdir_cache_clear_locked(dirp);
-    pthread_mutex_unlock(&shdw_readdir_cache_lock);
+    return nil;
 }
 
 // Classifies a readlink result: absolute targets are checked directly;

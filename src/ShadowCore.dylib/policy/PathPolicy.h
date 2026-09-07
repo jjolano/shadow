@@ -3,11 +3,10 @@
 
 // Path/fd/dirfd classification shared by the libc and raw-syscall hook
 // surfaces (hooks/libc.x, hooks/syscall.x): dirfd-aware *at classification,
-// the fd→path cache, the readdir DIR* cache, readlink target resolution and
+// fresh fd/DIR path resolution, readlink target resolution and
 // the detector-probe classifiers. No caller classification here — the
-// isCallerExternal() gates stay at the hook sites — and every errno the
-// policy sets (ENOENT/EBADF/EACCES) is set by these helpers exactly as the
-// original per-file code did.
+// isCallerExternal() gates stay at the hook sites. Non-denial classification
+// preserves caller errno; denial helpers set their documented policy errno.
 
 #import <Foundation/Foundation.h>
 #import <dirent.h>
@@ -32,29 +31,17 @@ shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* o
 BOOL shdw_at_path_denied(int dirfd, const char* pathname);
 
 // fd→path classification for the fd-based hooks (fstat/fstatfs/fpathconf/
-// fgetxattr/...): the path is resolved once per fd via F_GETPATH and
-// cached; the close hook calls shdw_fd_cache_invalidate so a reused fd can
-// never inherit a stale path. stdio descriptors are exempt (they never
-// carry a restricted path and F_GETPATH on them is noise). Returns YES when
-// the fd's path is restricted; an fd with no nameable path (tty/pipe/
-// socket) is never restricted.
+// fgetxattr/...): resolves F_GETPATH for every decision, so dup/rename/raw
+// syscall mutations cannot retain a stale name. Returns YES when the fd's
+// path is restricted; an fd with no nameable path (tty/pipe/socket) is never
+// restricted. Leaves errno unchanged when it returns.
 BOOL shdw_fd_path_restricted(int fd);
 
-// Invalidates the fd's cached path (called by the close hook before the
-// original close runs).
-void shdw_fd_cache_invalidate(int fd);
-
 // readdir/readdir_r support: resolves the DIR*'s parent path (dirfd +
-// F_GETPATH) once per DIR* and builds the options dictionary for every
-// entry, cached until closedir. Returns a RETAINED options dict for the
-// DIR*'s parent path (caller must CFRelease) or NULL when no filtering
-// applies; sets *denied when the DIR* is a valid directory vnode whose path
-// can't be resolved — entries must be hidden (fail closed).
-NSDictionary* shdw_readdir_cache_options(DIR* dirp, BOOL* denied);
-
-// Invalidates the DIR*'s cache entry (called by the closedir hook; DIR*
-// pointers get reused).
-void shdw_readdir_cache_clear(DIR* dirp);
+// F_GETPATH) for every call and builds a RETAINED options dictionary (caller
+// must CFRelease). Sets *denied when the DIR* is a valid directory vnode
+// whose path can't be resolved — entries must be hidden (fail closed).
+NSDictionary* shdw_readdir_options(DIR* dirp, BOOL* denied);
 
 // Classifies a readlink result: absolute targets are checked directly;
 // relative targets resolve against the directory CONTAINING the link (that's

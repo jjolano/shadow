@@ -490,7 +490,7 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             // Phase 2 copy/clone: BOTH endpoints classified (src exfil or
             // dst materialization). clonefileat resolves each path against
             // its own dirfd (linkat pattern); fclonefileat checks the src
-            // fd via the cache, dst via dirfd. Deny ENOENT (path contract).
+            // fd fresh, dst via dirfd. Deny ENOENT (path contract).
             case SHADW_RAW_CAT_PATHPATH: {
                 const char* from = va_arg(inspect, const char *);
                 const char* to = va_arg(inspect, const char *);
@@ -519,9 +519,8 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                 int srcfd = (int) va_arg(inspect, intptr_t);
                 int dstfd = (int) va_arg(inspect, intptr_t);
                 const char* dst = va_arg(inspect, const char *);
-                char pathname[PATH_MAX];
 
-                if(fcntl(srcfd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                if(shdw_fd_path_restricted(srcfd)) {
                     errno = EBADF;
                     va_end(inspect);
                     return -1;
@@ -549,9 +548,8 @@ static long shdw_syscall_dispatch(int number, va_list args) {
             case SHADW_RAW_CAT_FDMODE:
             case SHADW_RAW_CAT_FDUIDGID: {
                 int fd = (int) va_arg(inspect, intptr_t);
-                char pathname[PATH_MAX];
 
-                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                if(shdw_fd_path_restricted(fd)) {
                     errno = EBADF;
                     va_end(inspect);
                     return -1;
@@ -615,12 +613,11 @@ static long shdw_syscall_dispatch(int number, va_list args) {
 
             case SHADW_RAW_CAT_FDXATTR: {
                 int fd = (int) va_arg(inspect, intptr_t);
-                char pathname[PATH_MAX];
 
                 // Same fd policy as the libc.x fgetxattr/flistxattr hooks:
-                // resolve via F_GETPATH, fail open when the path can't be
-                // named (the descriptor is legitimate — tty/pipe/socket).
-                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                // resolve fresh, fail open when the path can't be named (the
+                // descriptor is legitimate — tty/pipe/socket).
+                if(shdw_fd_path_restricted(fd)) {
                     errno = ENOENT;
                     va_end(inspect);
                     return -1;
@@ -634,9 +631,8 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                 // path. Number present from the 15.6 floor; the libc
                 // declaration is iOS 16+.
                 int fd = (int) va_arg(inspect, intptr_t);
-                char pathname[PATH_MAX];
 
-                if(fcntl(fd, F_GETPATH, pathname) != -1 && [_shadow isCPathRestricted:pathname]) {
+                if(shdw_fd_path_restricted(fd)) {
                     errno = ENOENT;
                     va_end(inspect);
                     return -1;
