@@ -182,7 +182,7 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
 
 // freadlink (iOS 16+ public in unistd.h; SYS_freadlink already present on
 // the 15.6 floor): same policy as readlink, but the link is named by
-// descriptor — resolve via F_GETPATH through the shared fd cache
+// descriptor — resolve via F_GETPATH through the shared fresh fd policy
 // (shdw_fd_path_restricted, PathPolicy.m) and fail open when the fd has no
 // nameable path (tty/pipe/socket). Runtime-gated like mkfifoat/mknodat:
 // skipped cleanly where libSystem lacks the export.
@@ -232,20 +232,10 @@ static ssize_t replaced_freadlink(int fd, char* buf, size_t bufsize) {
     return result;
 }
 
-// Shared dirfd→path classification for the *at family, the fd→path cache and
-// the readlink target resolver live in policy/PathPolicy.m (also used by the
-// raw-syscall surface in syscall.x — one resolver for every *at hook).
-
-// The close hook is installed by whichever group installs first (libc or
-// libc_lowlevel — both use the fd cache); the guard keeps the second group
-// from double-hooking close on the same substitutor.
-static BOOL shdw_close_hooked = NO;
-
-static int (*original_close)(int fd);
-static int replaced_close(int fd) {
-    shdw_fd_cache_invalidate(fd);
-    return original_close(fd);
-}
+// Shared dirfd→path classification for the *at family, fresh fd/DIR
+// resolution and the readlink target resolver live in policy/PathPolicy.m
+// (also used by the raw-syscall surface in syscall.x — one resolver for every
+// *at hook).
 
 static ssize_t (*original_readlinkat)(int dirfd, const char* pathname, char* buf, size_t bufsize);
 static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsize) {
@@ -569,7 +559,6 @@ static BOOL shdw_mount_argument_restricted(const char* pathname) {
 }
 
 static BOOL shdw_mount_fd_restricted(int fd) {
-    if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) return NO;
     int savedErrno = errno;
     BOOL restricted = NO;
     SHADOW_INTERNAL_SCOPE {
@@ -865,8 +854,8 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     return result;
 }
 
-// readdir/readdir_r filtering: the DIR* cache (parent path + options dict,
-// denied-vnode fail-closed) lives in policy/PathPolicy.m; the per-entry
+// readdir/readdir_r filtering: fresh DIR* parent resolution (including the
+// denied-vnode fail-closed fallback) lives in policy/PathPolicy.m; the per-entry
 // child check runs here, external-caller-gated.
 
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
@@ -876,7 +865,7 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
     }
 
     BOOL denied = NO;
-    NSDictionary* options = shdw_readdir_cache_options(dirp, &denied);
+    NSDictionary* options = shdw_readdir_options(dirp, &denied);
 
     if(denied) {
         // Fail closed: an unresolvable directory exposes nothing.
@@ -907,9 +896,10 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
         }
     }
 
-    // options is retained by shdw_readdir_cache_options: release on every
-    // path after the retain, incl. end-of-stream/error (CFRelease(nil) is a no-op).
-    CFRelease((__bridge CFDictionaryRef)options);
+    // Options are retained only when parent resolution succeeds.
+    if(options) {
+        CFRelease((__bridge CFDictionaryRef)options);
+    }
 
     return result;
 }
@@ -921,7 +911,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
     }
 
     BOOL denied = NO;
-    NSDictionary* options = shdw_readdir_cache_options(dirp, &denied);
+    NSDictionary* options = shdw_readdir_options(dirp, &denied);
 
     if(denied) {
         // Fail closed: an unresolvable directory exposes nothing.
@@ -946,17 +936,12 @@ static struct dirent* replaced_readdir(DIR* dirp) {
         } while(result);
     }
 
-    // options is retained by shdw_readdir_cache_options: release on every
-    // path after the retain, incl. end-of-stream/error (CFRelease(nil) is a no-op).
-    CFRelease((__bridge CFDictionaryRef)options);
+    // Options are retained only when parent resolution succeeds.
+    if(options) {
+        CFRelease((__bridge CFDictionaryRef)options);
+    }
 
     return result;
-}
-
-static int (*original_closedir)(DIR* dirp);
-static int replaced_closedir(DIR* dirp) {
-    shdw_readdir_cache_clear(dirp);
-    return original_closedir(dirp);
 }
 
 // --- Phase 3: dir-enumeration conveniences. scandir/glob/fts/nftw all
@@ -2276,7 +2261,7 @@ static int replaced_lutimes(const char* pathname, const struct timeval times[2])
 // dirfd — never just the string args.
 
 // Resolves one copyfile_state endpoint to a restricted verdict: prefers
-// the FILENAME string when set (exact path), else the FD via the fd cache.
+// the FILENAME string when set (exact path), else the FD via fresh F_GETPATH.
 // Fail open (NO) when neither is set — an unset endpoint can't name a
 // restricted path.
 static BOOL shdw_copyfile_state_endpoint_restricted(copyfile_state_t state, uint32_t fnFlag, uint32_t fdFlag) {
@@ -2449,13 +2434,10 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
 // getmntinfo_r_np, utimensat on < iOS 11) are skipped cleanly — NULL there
 // is expected and never a verify failure (verifyGroups = 0).
 //
-// Group semantics, byte-identical to the old per-group code:
-//   - close is installed by whichever of libc / libc_lowlevel runs first
-//     (the shdw_close_hooked guard still enforces single install), and is
-//     verified by libc_lowlevel only;
-//   - utimensat is installed but excluded from verify (it was iOS-11-gated
-//     with an @available check; dlsym is that check now);
-//   - the optional runtime-resolved families are installed, never verified.
+// Group semantics, byte-identical to the old per-group code: utimensat is
+// installed but excluded from verify (it was iOS-11-gated with an @available
+// check; dlsym is that check now); the optional runtime-resolved families are
+// installed, never verified.
 typedef struct {
     const char* symbol;     // dlsym name (C identifier, unmangled)
     void* replacement;      // the hook replacement
@@ -2487,7 +2469,6 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                METADATA, METADATA },
     { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC },
     { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC },
-    { "closedir",               (void*)&replaced_closedir,                 (void**)&original_closedir,                 LIBC,   LIBC },
     { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    METADATA, METADATA },
     { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
@@ -2595,9 +2576,6 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fstat64",                (void*)&replaced_fstat64,                  (void**)&original_fstat64,                  LOW,    0 },
     { "fstatat64",              (void*)&replaced_fstatat64,                (void**)&original_fstatat64,                LOW,    0 },
 
-    // close: installed by whichever of libc / lowlevel runs first
-    { "close",                  (void*)&replaced_close,                    (void**)&original_close,                    LIBC | LOW, LOW },
-
     // antidebugging group
     { "ptrace",                 (void*)&replaced_ptrace,                   (void**)&original_ptrace,                   ANTIDBG,  ANTIDBG },
     { "sysctl",                 (void*)&replaced_sysctl,                   (void**)&original_sysctl,                   ANTIDBG,  ANTIDBG },
@@ -2658,10 +2636,6 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
 
         if(!(d->installGroups & group)) {
             continue;
-        }
-
-        if(strcmp(d->symbol, "close") == 0 && shdw_close_hooked) {
-            continue;  // already installed by the other group
         }
 
         // Runtime-resolve; absent optional symbols skip cleanly, absent
@@ -2767,9 +2741,6 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             (void)installed;
         }
 
-        if(strcmp(d->symbol, "close") == 0) {
-            shdw_close_hooked = YES;
-        }
     }
     [Shadow shdwExitInternalRead];
 }

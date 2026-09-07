@@ -13,6 +13,10 @@ verify-path-rewrite:
 verify-at-path-rewrite:
 	python3 verify-at-path-rewrite.py
 
+# Host check of the actual fresh fd/DIR path-policy bodies with mutation doubles.
+verify-fd-path-freshness:
+	python3 verify-fd-path-freshness.py
+
 # Host check of the actual raw-SVC add-image callback and initializer bodies.
 verify-svc-self-image:
 	python3 verify-svc-self-image.py
@@ -77,9 +81,9 @@ verify-rules-generation:
 verify-binary-compat:
 	bash BinaryCompatTests.sh
 
-test: verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
+test: verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat stage-hookkit-headers clean
