@@ -4,6 +4,35 @@
 #import <Foundation/Foundation.h>
 #include <string.h>
 
+// Pure matching against a root captured by the caller; never discovers a root.
+static inline BOOL shdw_is_restricted_root_with_prefix(const char * _Nullable path, const char * _Nullable root) {
+    if (!path || !path[0]) return NO;
+    if (strcmp(path, "/private/preboot") == 0) return NO;
+#ifndef SHADOW_ROOTHIDE
+    if (strcmp(path, "/preboot") == 0) return NO;
+#endif
+    if (strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) return YES;
+    if (strncmp(path, "/private/var/jb", 15) == 0 && (path[15] == '\0' || path[15] == '/')) return YES;
+    if (strncmp(path, "/cores/", 7) == 0) return YES;
+#if defined(SHADOW_ROOTHIDE) || defined(SHADOW_TEST_HARNESS)
+    if (strncmp(path, "/private/preboot", 16) == 0) return YES;
+#else
+    if (strncmp(path, "/private/preboot", 16) == 0 && (path[16] == '\0' || path[16] == '/')) return YES;
+#endif
+#if defined(SHADOW_TEST_HARNESS) && !defined(SHADOW_ROOTHIDE)
+    if (strncmp(path, "/preboot", 8) == 0) return YES;
+#elif !defined(SHADOW_ROOTHIDE)
+    if (strncmp(path, "/preboot", 8) == 0 && (path[8] == '\0' || path[8] == '/')) return YES;
+#endif
+    size_t length = root ? strlen(root) : 0;
+    if (!length || strncmp(path, root, length) != 0) return NO;
+#if defined(SHADOW_ROOTHIDE) || defined(SHADOW_TEST_HARNESS)
+    return YES;
+#else
+    return root[length - 1] == '/' || path[length] == '\0' || path[length] == '/';
+#endif
+}
+
 // Jailbreak-root path seam. Three rootless conventions exist in the wild:
 // - Rooted (unc0ver/checkra1n rootful): everything lives at the real root.
 // - Legacy rootless (Dopamine/palera1n): fixed /var/jb bootstrap.
@@ -25,17 +54,9 @@
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0) return NO;
-    if (strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) return YES;
-    if (strncmp(path, "/private/var/jb", 15) == 0 && (path[15] == '\0' || path[15] == '/')) return YES;
-    if (strncmp(path, "/cores/", 7) == 0) return YES;
-    if (strncmp(path, "/private/preboot", 16) == 0) return YES;
+    if (shdw_is_restricted_root_with_prefix(path, NULL)) return YES;
     NSString *root = jbroot(@"/");
-    if (root) {
-        const char *r = [root fileSystemRepresentation];
-        size_t rl = strlen(r);
-        if (rl > 0 && strncmp(path, r, rl) == 0) return YES;
-    }
-    return NO;
+    return shdw_is_restricted_root_with_prefix(path, [root fileSystemRepresentation]);
 }
 static inline BOOL shdw_is_restricted_root_c(const char *path) { return shdw_is_restricted_root(path); }
 static inline BOOL shdw_path_contains_restricted_root_c(const char *path) {
@@ -69,16 +90,11 @@ static inline NSString* shdw_jbroot_prefix(void) {
 static inline BOOL shdw_is_restricted_root(const char *path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
-    if (strncmp(path, "/var/jb", 7) == 0 && (path[7] == '\0' || path[7] == '/')) return YES;
-    if (strncmp(path, "/private/var/jb", 15) == 0 && (path[15] == '\0' || path[15] == '/')) return YES;
-    if (strncmp(path, "/cores/", 7) == 0) return YES;
-    if (strncmp(path, "/private/preboot", 16) == 0) return YES;
-    if (strncmp(path, "/preboot", 8) == 0) return YES;
+    if (shdw_is_restricted_root_with_prefix(path, NULL)) return YES;
     // Harness: fixture jbroot via realpath("/var/jb") wrap
     char resolved[PATH_MAX];
     if (realpath("/var/jb", resolved)) {
-        size_t rl = strlen(resolved);
-        if (rl > 0 && strncmp(path, resolved, rl) == 0) return YES;
+        return shdw_is_restricted_root_with_prefix(path, resolved);
     }
     return NO;
 }

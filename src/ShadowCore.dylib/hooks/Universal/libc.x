@@ -347,8 +347,7 @@ static int replaced_creat(const char* pathname, mode_t mode) {
 }
 
 // Shared mount sanitizer: iterates the first `count` records of `buf`,
-// REMOVES restricted mounts (f_mntonname or f_mntfromname classified via
-// isCPathRestricted), compacts the survivors in place and returns the
+// removes hidden mounts, compacts the survivors in place and returns the
 // filtered count. The buffer is caller-owned — libc's static mount table is
 // never mutated. The stock-represented root record gets MNT_RDONLY in
 // f_flags only when `statfsFlags` is YES: statvfs-family f_flag carries only
@@ -366,15 +365,11 @@ static int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
     for(int i = 0; i < count; i++) {
         struct statfs* rec = &buf[i];
 
-        // Per-record decision lives in filters.h (pure, harness-testable);
-        // the isCPathRestricted verdicts are computed here because they need
-        // the Objective-C engine.
-        int restricted = [_shadow isCPathRestricted:rec->f_mntonname]
-            || [_shadow isCPathRestricted:rec->f_mntfromname];
-
+        int restricted = [_shadow isMountPathRestricted:rec->f_mntonname]
+            || [_shadow isMountPathRestricted:rec->f_mntfromname];
         if(!shdw_mount_filter(rec->f_mntonname, rec->f_mntfromname,
             (uint32_t*) &rec->f_flags, statfsFlags, restricted)) {
-            continue;  // restricted mount: removed, compacted away below
+            continue;  // hidden mount: removed, compacted away below
         }
 
         if(out != i) {
@@ -539,6 +534,44 @@ static BOOL shdw_statfs_reshape_over_system(const char* pathname, struct statfs*
     return YES;
 }
 
+static BOOL shdw_mount_argument_restricted(const char* pathname) {
+    if(!pathname || !pathname[0]) return NO;
+    if(pathname[0] == '/') return [_shadow isMountPathRestricted:pathname];
+
+    int savedErrno = errno;
+    BOOL restricted = NO;
+    SHADOW_INTERNAL_SCOPE {
+        char cwd[PATH_MAX], joined[PATH_MAX * 2];
+        // Avoid getcwd's metadata-scan fallback; only name the directory vnode.
+        int fd = open(".", O_RDONLY | O_CLOEXEC);
+        if(fd != -1) {
+            if(fcntl(fd, F_GETPATH, cwd) != -1) {
+                int n = snprintf(joined, sizeof(joined), "%s/%s", cwd, pathname);
+                if(n > 0 && n < (int)sizeof(joined)) {
+                    restricted = [_shadow isMountPathRestricted:joined];
+                }
+            }
+            close(fd);
+        }
+    }
+    errno = savedErrno;
+    return restricted;
+}
+
+static BOOL shdw_mount_fd_restricted(int fd) {
+    if(fd == fileno(stderr) || fd == fileno(stdout) || fd == fileno(stdin)) return NO;
+    int savedErrno = errno;
+    BOOL restricted = NO;
+    SHADOW_INTERNAL_SCOPE {
+        char pathname[PATH_MAX];
+        if(fcntl(fd, F_GETPATH, pathname) != -1) {
+            restricted = [_shadow isMountPathRestricted:pathname];
+        }
+    }
+    errno = savedErrno;
+    return restricted;
+}
+
 static int replaced_statfs(const char* pathname, struct statfs* buf) {
     if(!isCallerExternal()) {
         return original_statfs(pathname, buf);
@@ -560,7 +593,7 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
         return result;
     }
 
-    if([_shadow isCPathRestricted:pathname]) {
+    if(shdw_mount_argument_restricted(pathname)) {
         errno = ENOENT;
         return -1;
     }
@@ -586,7 +619,7 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
         return original_fstatfs(fd, buf);
     }
 
-    if(shdw_fd_path_restricted(fd)) {
+    if(shdw_mount_fd_restricted(fd)) {
         errno = EBADF;
         return -1;
     }
@@ -607,7 +640,7 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
         return original_statvfs(pathname, buf);
     }
 
-    if([_shadow isCPathRestricted:pathname]) {
+    if(shdw_mount_argument_restricted(pathname)) {
         errno = ENOENT;
         return -1;
     }
@@ -649,7 +682,7 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
     // restriction checks run once here instead of via the hooked fstatfs
     struct statfs st;
 
-    if(shdw_fd_path_restricted(fd)) {
+    if(shdw_mount_fd_restricted(fd)) {
         errno = EBADF;
         return -1;
     }

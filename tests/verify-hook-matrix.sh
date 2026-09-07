@@ -38,6 +38,7 @@ trap 'rm -f "$entries"' 0 HUP INT TERM
 matrix_entries() {
     cat <<'EOF'
 isCPathRestricted|libc libc_lowlevel dyld sandbox syscall AppEnvironment svc_patch
+isMountPathRestricted|libc
 isPathRestricted:options:|libc libc_lowlevel dyld sandbox syscall NSFileManager NSString NSData NSArray NSDictionary NSFileHandle NSBundle NSProcessInfo
 isURLRestricted:options:|NSFileManager NSURL NSString NSData NSArray NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
 isSchemeRestricted|LSApplicationWorkspace
@@ -450,7 +451,8 @@ if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|Devi
     echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
     exit 1
 fi
-if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/JBPath.m; then
+if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/Headers/Shadow/JBPath.h ||
+   ! grep -q 'shdw_is_restricted_root_with_prefix(path, NULL)' src/Shadow.framework/JBPath.m; then
     echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
     rc=1
 fi

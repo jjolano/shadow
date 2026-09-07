@@ -69,6 +69,8 @@ __attribute__((visibility("default")))
 - (BOOL)isAddrRestricted:(const void *)addr;
 
 - (BOOL)isCPathRestricted:(const char *)path;
+// Absolute mount names: current snapshot, lexical matching, no refresh/resolve.
+- (BOOL)isMountPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
 - (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options;
 

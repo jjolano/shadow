@@ -9,6 +9,13 @@ verify-path-rewrite:
 		verify-path-rewrite.c ../src/ShadowCore.dylib/hooks/Universal/path_rewrite.c
 	/tmp/shadow-rewrite-test
 
+# Pure-C record filter and static snapshot-query contract.
+verify-mount-filter:
+	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-mount-filter-test \
+		verify-mount-filter.c
+	/tmp/shadow-mount-filter-test
+	python3 verify-mount-query.py
+
 # Pure-C check for the anti-fishhook journal/repair core (rebind_slots.h).
 verify-rebind-repair:
 	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-rebind-test \
@@ -47,9 +54,9 @@ syscall-meta:
 settings-structure:
 	sh verify-settings-structure.sh
 
-test: verify-path-rewrite verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
+test: verify-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean
