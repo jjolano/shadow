@@ -546,7 +546,13 @@ static void shdw_svc_patch_image(const struct mach_header* mh, intptr_t slide, c
 // registration (the dyld.x hook passes Shadow-internal callers through), so
 // the registration replay covers every already-loaded image — including the
 // app binary — before the app runs.
+static const struct mach_header* shdw_svc_own_image = NULL;
+
 static void shdw_svc_image_add(const struct mach_header* mh, intptr_t slide) {
+    if(!shdw_svc_own_image || mh == shdw_svc_own_image) {
+        return;
+    }
+
     for(uint32_t i = 0; i < _dyld_image_count(); i++) {
         if(_dyld_get_image_header(i) == mh) {
             const char* path = _dyld_get_image_name(i);
@@ -569,6 +575,12 @@ void shdw_svc_patch_install(void) {
         return;
     }
 
+    Dl_info info = {0};
+    if(!dladdr((const void*)shdw_svc_patch_install, &info) || !info.dli_fbase) {
+        return;
+    }
+
+    shdw_svc_own_image = (const struct mach_header*)info.dli_fbase;
     installed = YES;
     _dyld_register_func_for_add_image(shdw_svc_image_add);
 }
