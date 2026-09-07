@@ -1,4 +1,5 @@
 #import "UniversalHooks.h"
+#import "../../policy/EnvironmentPolicy.h"
 #import <pthread.h>
 #import <mach/vm_region.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -1421,6 +1422,15 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
             }
             break;
         }
+        // Raw `environ` data symbol: its importer slot is rebound to Shadow's
+        // filtered cell, so dlsym must hand external callers the SAME address
+        // (&shdw_env_published_array) or a GOT-vs-dlsym comparison diverges.
+        // dlsym returns the address OF the variable, which is exactly what an
+        // importer slot points at.
+        if(strcmp(symbol, "environ") == 0 && shdw_env_published_array) {
+            return (void*)&shdw_env_published_array;
+        }
+
         shdw_sym_policy_entry_t key = { symbol, NULL };
         shdw_sym_policy_entry_t* entry = bsearch(&key, shdw_sym_policy_table, SHADOW_SYM_POLICY_COUNT, sizeof(shdw_sym_policy_entry_t), shdw_sym_policy_compare);
 

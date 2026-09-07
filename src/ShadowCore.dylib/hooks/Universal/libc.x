@@ -1217,69 +1217,18 @@ static int replaced_nftw(const char* path, int (*fn)(const char*, const struct s
 // --- Phase 4: CFPreferences (same suite gate as NSUserDefaults).
 // NSUserDefaults sits ON TOP of CFPreferences: a detector calling the CF
 // layer directly bypasses the NSUserDefaults hooks entirely
-// (AppEnvironment.x shadowhook_NSUserDefaults). The suite predicate is
-// duplicated here (not shared: AppEnvironment.x's copy is TU-static, and
-// a cross-TU extern would need hooks.h plumbing for one predicate).
-// Keep in sync with shdw_nsuserdefaults_suite_restricted in
-// AppEnvironment.x. Stock shapes: reads → nil/empty, sync → false.
+// (AppEnvironment.x shadowhook_NSUserDefaults). The suite predicate is the
+// AppEnvironment.x single source (shdw_nsuserdefaults_suite_restricted),
+// declared in hooks.h — no duplicated tables here.
+// Stock shapes: reads → nil/empty, sync → false.
 // Writes pass through — a denied write would itself be observable, and
 // nobody legitimate reads a restricted suite.
 static BOOL shdw_cf_suite_restricted(CFStringRef applicationID) {
     if(!applicationID) {
         return NO;
     }
-    NSString* suitename = (__bridge NSString*)applicationID;
-    if(suitename.length == 0) {
-        return NO;
-    }
 
-    static NSSet* restrictedSuites = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        restrictedSuites = [NSSet setWithObjects:
-            @"com.saurik.Cydia",
-            @"com.saurik.Cydia.Startup",
-            @"org.coolstar.sileo",
-            @"org.coolstar.coolstor",
-            @"com.unc0ver",
-            @"com.cydia",
-            @"com.jailbreak",
-            @"com.opa334.trollstore",
-            @"com.opa334.sileo",
-            nil];
-    });
-
-    if([restrictedSuites containsObject:suitename]) {
-        return YES;
-    }
-
-    if([suitename hasPrefix:@"/basebin/"] ||
-       [suitename hasPrefix:@"/Library/LaunchDaemons/"] ||
-       [suitename hasPrefix:@"/var/jb/"] ||
-       [suitename containsString:@"/LaunchDaemons/com.opa334"] ||
-       [suitename containsString:@"/LaunchDaemons/jailbreakd"]) {
-        return YES;
-    }
-
-    static NSArray<NSString*>* jbPrefIDs = nil;
-    static dispatch_once_t prefOnce;
-    dispatch_once(&prefOnce, ^{
-        jbPrefIDs = @[
-            @"com.opa334.choicyprefs", @"com.opa334.craneprefs",
-            @"com.spark.snowboardprefs", @"com.tigisoftware.Filza",
-            @"org.coolstar.SileoStore", @"ru.domo.cocoatop64",
-            @"ws.hbang.Terminal", @"xyz.willy.Zebra",
-            @"us.diatr.shshd", @"com.opa334.sandyd",
-        ];
-    });
-    NSString* leaf = suitename.lastPathComponent;
-    for(NSString* pref in jbPrefIDs) {
-        if([leaf isEqualToString:pref]) {
-            return YES;
-        }
-    }
-
-    return NO;
+    return shdw_nsuserdefaults_suite_restricted((__bridge NSString*)applicationID);
 }
 
 static CFPropertyListRef (*original_CFPreferencesCopyAppValue)(CFStringRef key, CFStringRef applicationID);
@@ -2459,7 +2408,7 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
 typedef struct {
     const char* symbol;     // dlsym name (C identifier, unmangled)
     void* replacement;      // the hook replacement
-    void** original;        // original-slot out pointer
+    void** original;        // original-slot out pointer (NULL = TU-local cell, see below)
     uint32_t installGroups; // bitmask: hooked when one of these groups installs
     uint32_t verifyGroups;  // bitmask: NULL original is a verify failure here (required)
 } shdw_hook_desc_t;
@@ -2608,6 +2557,16 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "getegid",                (void*)&replaced_getegid,                 (void**)&original_getegid,                 ANTIDBG,  ANTIDBG },
     { "issetugid",              (void*)&replaced_issetugid,                (void**)&original_issetugid,                ANTIDBG,  ANTIDBG },
     { "getrusage",              (void*)&replaced_getrusage,                (void**)&original_getrusage,                ANTIDBG,  ANTIDBG },
+    // wait family: rusage/siginfo out-param zeroing (matches getrusage
+    // above). waitpid is a pure pass-through for dlsym-policy agreement
+    // (no resource out-param to sanitize); installed, never verified.
+    // wait4/wait3/waitid have no original cell (outOldPtr NULL): only the
+    // out-param is sanitized post-success, never forwarded — same pattern
+    // as the execle/execlp/execl/execv sandbox rows.
+    { "wait4",                  (void*)&replaced_wait4,                    NULL,                                         ANTIDBG,  0 },
+    { "waitpid",                (void*)&replaced_waitpid,                  NULL,                                         ANTIDBG,  0 },
+    { "wait3",                  (void*)&replaced_wait3,                    NULL,                                         ANTIDBG,  0 },
+    { "waitid",                 (void*)&replaced_waitid,                   NULL,                                         ANTIDBG,  0 },
     { "getrlimit",              (void*)&replaced_getrlimit,                (void**)&original_getrlimit,                ANTIDBG,  ANTIDBG },
     { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
     { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
@@ -2628,6 +2587,10 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 #undef LOW
 #undef ANTIDBG
 #undef METADATA
+
+// Fills a NULL-original row's continuation cell from the pre-hook dlsym at
+// install (wait family). Defined below, next to the dlsym policy.
+static void shdw_libc_resolve_null_original(const char* symbol, void* target);
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
@@ -2651,11 +2614,24 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
         }
 
         // Runtime-resolve; absent optional symbols skip cleanly, absent
-        // required ones surface in the group's verify pass.
+        // required ones surface in the group's verify pass. NULL-original
+        // rows (wait family) resolve the same way — the target doubles as
+        // their continuation (see shdw_libc_resolve_null_original).
         void* target = dlsym(RTLD_DEFAULT, d->symbol);
 
         if(!target) {
             continue;
+        }
+
+        if(!d->original) {
+            // NULL-original rows (wait family): the pre-hook target is the
+            // continuation. Captured BEFORE the dladdr alias check below
+            // (which `continue`s past aliases without installing): an alias
+            // that never installs must not leave a stale cell behind, and
+            // resolving here keeps the cell in lockstep with the install.
+            // The alias check still gates the hookFunction call per row —
+            // wait4/waitpid/wait3/waitid are real exports, never aliases.
+            shdw_libc_resolve_null_original(d->symbol, target);
         }
 
         // Optional compatibility exports may resolve to a modern alias
@@ -2766,12 +2742,43 @@ void shdw_universal_filesystem_c_verify(void) {
     shdw_libc_verify_group("libc", SHADW_HOOK_GROUP_LIBC);
 }
 
+// NULL-original continuations: rows installed with outOldPtr NULL (wait
+// family) forward through the pre-hook dlsym captured below at install.
+// Same shape as the sandbox resolved_fork fallback: the replacement reads
+// the cell per call, and the dlsym policy treats a resolved cell as
+// installed.
+static void* shdw_wait_continuations[4];
+
+static void shdw_libc_resolve_null_original(const char* symbol, void* target) {
+    static const char* const names[] = { "wait4", "waitpid", "wait3", "waitid" };
+
+    for(size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if(strcmp(symbol, names[i]) == 0) {
+            shdw_wait_continuations[i] = target;
+            return;
+        }
+    }
+}
+
+void* shdw_libc_null_original(const char* symbol) {
+    static const char* const names[] = { "wait4", "waitpid", "wait3", "waitid" };
+
+    for(size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if(strcmp(symbol, names[i]) == 0) {
+            return shdw_wait_continuations[i];
+        }
+    }
+
+    return NULL;
+}
+
 // Symbol policy for the libc C-function groups (see dyld.x's
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound libc
 // export to its replacement for external callers, so the GOT-vs-dlsym
 // comparison agrees. Guarded by the original pointer: a symbol only resolves
 // to its replacement when the hook actually installed (original != NULL), so
 // runtime-conditional symbols that are absent on a given OS stay absent.
+// NULL-original rows (wait family) gate on their resolved continuation cell.
 void* shdw_sym_policy_lookup_libc(const char* name) {
     if(!name) {
         return NULL;
@@ -2781,7 +2788,11 @@ void* shdw_sym_policy_lookup_libc(const char* name) {
         const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
 
         if(strcmp(name, d->symbol) == 0) {
-            if(d->original && *d->original == NULL) {
+            if(!d->original) {
+                return shdw_libc_null_original(name) ? d->replacement : NULL;
+            }
+
+            if(*d->original == NULL) {
                 return NULL;  // runtime-conditional symbol not installed
             }
 
@@ -2795,7 +2806,8 @@ void* shdw_sym_policy_lookup_libc(const char* name) {
 // Reverse of the policy lookup: given a replacement address (what dlsym hands
 // an external caller for a hooked libc symbol), return the original function
 // address so a dladdr() on it resolves to the genuine system image
-// (a function-origin hook check). NULL when the
+// (a function-origin hook check). NULL-original rows resolve through the
+// same continuation cells. NULL when the
 // address is not a hooked libc replacement.
 void* shdw_sym_original_for_replacement_libc(const void* addr) {
     if(!addr) {
@@ -2803,8 +2815,13 @@ void* shdw_sym_original_for_replacement_libc(const void* addr) {
     }
     for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
         const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
-        if(d->replacement == addr && d->original && *d->original) {
-            return *d->original;
+        if(d->replacement == addr) {
+            if(!d->original) {
+                return shdw_libc_null_original(d->symbol);
+            }
+            if(*d->original) {
+                return *d->original;
+            }
         }
     }
     return NULL;

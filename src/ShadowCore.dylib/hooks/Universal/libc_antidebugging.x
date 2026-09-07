@@ -6,6 +6,7 @@
 #import <stdlib.h>
 #import <sys/resource.h>
 #import <sys/utsname.h>
+#import <sys/wait.h>
 #import <ifaddrs.h>
 #import <unistd.h>
 
@@ -67,7 +68,7 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
             errno = ENOENT;
             return -1;
         }
-    } else if(kind == SHADW_PROC_MIB_ARGS2_OTHER) {
+    } else if(kind == SHADW_PROC_MIB_ARGS2_OTHER || kind == SHADW_PROC_MIB_ARGS_OTHER) {
         if(shdw_pid_is_restricted(name[2])) {
             errno = ENOENT;
             return -1;
@@ -92,9 +93,9 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
         shdw_proc_sanitize_self_record((struct kinfo_proc*) oldp);
     }
 
-    // Own KERN_PROCARGS2: the kernel payload is the raw launch argv/envp;
+    // Own KERN_PROCARGS(2): the kernel payload is the raw launch argv/envp;
     // rebuild it to agree with the filtered NSProcessInfo/getenv views.
-    if(ret == 0 && kind == SHADW_PROC_MIB_ARGS2_SELF && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
+    if(ret == 0 && (kind == SHADW_PROC_MIB_ARGS2_SELF || kind == SHADW_PROC_MIB_ARGS_SELF) && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
         shdw_procargs2_filter(oldp, oldlenp);
     }
 
@@ -202,6 +203,80 @@ int replaced_getrusage(int who, struct rusage* usage) {
     return result;
 }
 
+// Shared child-accounting zeroing for the wait family (wait4/wait3/waitpid
+// with rusage, waitid with siginfo): external callers never see a real
+// child's resource usage — same stock shape as the getrusage(CHILDREN)
+// hook above (a child that never ran). Sandboxed app spawns already fail,
+// but a successful wait (e.g. reaping a Foundation-spawned helper) must
+// still agree with the zeroed getrusage view.
+static void shdw_wait_zero_rusage(struct rusage* usage) {
+    if(usage) {
+        memset(usage, 0, sizeof(*usage));
+    }
+}
+
+// wait4/waitpid/wait3: only the rusage OUT-param is sanitized, never the
+// pid/status contract. Zeroing a post-success out-param cannot contradict
+// the reaping semantics the caller relies on; child-pid identities pass
+// through untouched. Continuations live in libc.x's NULL-original cells
+// (void* shdw_libc_null_original answers the pre-hook dlsym captured at
+// install; same shape as the sandbox resolved_fork fallback) — read per
+// call, never cached here, so a late install is picked up without a stale copy.
+void* shdw_libc_null_original(const char* symbol);
+
+static pid_t shdw_wait4_via(pid_t pid, int* status, int options, struct rusage* rusage) {
+    void* fn = shdw_libc_null_original("wait4");
+    return fn ? ((pid_t (*)(pid_t, int*, int, struct rusage*))fn)(pid, status, options, rusage) : -1;
+}
+
+static pid_t shdw_waitpid_via(pid_t pid, int* status, int options) {
+    void* fn = shdw_libc_null_original("waitpid");
+    return fn ? ((pid_t (*)(pid_t, int*, int))fn)(pid, status, options) : -1;
+}
+
+static pid_t shdw_wait3_via(int* status, int options, struct rusage* rusage) {
+    void* fn = shdw_libc_null_original("wait3");
+    return fn ? ((pid_t (*)(int*, int, struct rusage*))fn)(status, options, rusage) : -1;
+}
+
+static int shdw_waitid_via(idtype_t idtype, id_t id, siginfo_t* infop, int options) {
+    void* fn = shdw_libc_null_original("waitid");
+    return fn ? ((int (*)(idtype_t, id_t, siginfo_t*, int))fn)(idtype, id, infop, options) : -1;
+}
+
+pid_t replaced_wait4(pid_t pid, int* status, int options, struct rusage* rusage) {
+    pid_t result = shdw_wait4_via(pid, status, options, rusage);
+
+    if(result > 0 && rusage && isCallerExternal()) {
+        shdw_wait_zero_rusage(rusage);
+    }
+
+    return result;
+}
+
+pid_t replaced_waitpid(pid_t pid, int* status, int options) {
+    return shdw_waitpid_via(pid, status, options);
+}
+
+pid_t replaced_wait3(int* status, int options, struct rusage* rusage) {
+    pid_t result = shdw_wait3_via(status, options, rusage);
+
+    if(result > 0 && rusage && isCallerExternal()) {
+        shdw_wait_zero_rusage(rusage);
+    }
+
+    return result;
+}
+
+// waitid(idtype, id, infop, options): Darwin's siginfo_t carries NO
+// child-CPU-time fields (unlike Linux si_utime/si_stime), so there is no
+// resource snapshot to sanitize — pass through. Hooked only to keep the
+// symbol in the dlsym policy table (GOT-vs-dlsym agreement), same as the
+// waitpid pass-through above.
+int replaced_waitid(idtype_t idtype, id_t id, siginfo_t* infop, int options) {
+    return shdw_waitid_via(idtype, id, infop, options);
+}
+
 // getrlimit: pass-through (conservative). RLIMIT probes are not a reliable
 // jailbreak signal — legitimate apps set/read limits routinely — so no
 // fabrication here; the hook exists for coverage and to keep the symbol in
@@ -220,9 +295,34 @@ int replaced_getrlimit(int resource, struct rlimit* rlp) {
 
 int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
 int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
+    // NULL-buffer probe: the caller asks for the COUNT (or just validates
+    // the args) without handing us a buffer. Filtered size semantics match
+    // KERN_PROC_ALL (ProcessPolicy.m): compute the filtered count from a
+    // real enumeration so the two channels agree on the same daemon-free
+    // number. Fail open to the raw count on any error.
+    if(!buffer || buffersize <= 0) {
+        int raw = original_proc_listpids(type, typeinfo, buffer, buffersize);
+
+        if(raw <= 0 || !isCallerExternal()) {
+            return raw;
+        }
+
+        int cap = raw;
+        pid_t* tmp = malloc((size_t)cap * sizeof(pid_t));
+
+        if(!tmp) {
+            return raw;
+        }
+
+        int got = original_proc_listpids(type, typeinfo, tmp, cap * (int)sizeof(pid_t));
+        int filtered = got > 0 ? shdw_proc_pids_filtered(tmp, got) : raw;
+        free(tmp);
+        return got > 0 ? filtered : raw;
+    }
+
     int count = original_proc_listpids(type, typeinfo, buffer, buffersize);
 
-    if(count <= 0 || !buffer || !isCallerExternal()) {
+    if(count <= 0 || !isCallerExternal()) {
         return count;
     }
 
@@ -231,9 +331,29 @@ int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int b
 
 int (*original_proc_listallpids)(void* buffer, int buffersize);
 int replaced_proc_listallpids(void* buffer, int buffersize) {
+    if(!buffer || buffersize <= 0) {
+        int raw = original_proc_listallpids(buffer, buffersize);
+
+        if(raw <= 0 || !isCallerExternal()) {
+            return raw;
+        }
+
+        int cap = raw;
+        pid_t* tmp = malloc((size_t)cap * sizeof(pid_t));
+
+        if(!tmp) {
+            return raw;
+        }
+
+        int got = original_proc_listallpids(tmp, cap * (int)sizeof(pid_t));
+        int filtered = got > 0 ? shdw_proc_pids_filtered(tmp, got) : raw;
+        free(tmp);
+        return got > 0 ? filtered : raw;
+    }
+
     int count = original_proc_listallpids(buffer, buffersize);
 
-    if(count <= 0 || !buffer || !isCallerExternal()) {
+    if(count <= 0 || !isCallerExternal()) {
         return count;
     }
 
@@ -280,12 +400,16 @@ int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int b
 
     int ret = original_proc_pidinfo(pid, flavor, arg, buffer, buffersize);
 
-    // Cross-API consistency: getppid() reports parent 1, so the own
-    // process's BSD info must say the same — a detector comparing
-    // getppid() against pbi_ppid would otherwise see the real parent.
+    // Cross-API consistency: getppid() reports parent 1 and the sysctl
+    // self-record is fully sanitized (trace flags + ppid), so the own
+    // PROC_PIDTBSDINFO must say the same — a detector comparing channels
+    // must see one agreed record. pbi_flags shares the proc.h P_TRACED/
+    // P_SELECT bits; mask the same pair ProcessPolicy.m clears.
     if(ret > 0 && isCallerExternal() && pid == getpid() && flavor == SHADOW_PROC_PIDTBSDINFO
     && buffer && buffersize >= (int)sizeof(struct shdw_proc_bsdinfo_prefix)) {
-        ((struct shdw_proc_bsdinfo_prefix*) buffer)->pbi_ppid = 1;
+        struct shdw_proc_bsdinfo_prefix* bsd = (struct shdw_proc_bsdinfo_prefix*) buffer;
+        bsd->pbi_flags &= ~(0x00000040u | 0x00000800u);
+        bsd->pbi_ppid = 1;
     }
 
     return ret;

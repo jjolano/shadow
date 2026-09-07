@@ -498,6 +498,11 @@ extern int (*original_issetugid)(void);
 extern int replaced_issetugid(void);
 extern int (*original_getrusage)(int who, struct rusage* usage);
 extern int replaced_getrusage(int who, struct rusage* usage);
+// wait family (libc_antidebugging.x): rusage/siginfo out-param zeroing only
+extern pid_t replaced_wait4(pid_t pid, int* status, int options, struct rusage* rusage);
+extern pid_t replaced_waitpid(pid_t pid, int* status, int options);
+extern pid_t replaced_wait3(int* status, int options, struct rusage* rusage);
+extern int replaced_waitid(idtype_t idtype, id_t id, siginfo_t* infop, int options);
 extern int (*original_getrlimit)(int resource, struct rlimit* rlp);
 extern int replaced_getrlimit(int resource, struct rlimit* rlp);
 extern int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
@@ -542,6 +547,10 @@ void* shdw_sym_original_for_replacement_libc(const void* addr);
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).
 extern void shdw_sandbox_invalidate_cwd(void);
+// Shared NSUserDefaults/CFPreferences suite gate (AppEnvironment.x defines;
+// libc.x CFPreferences hooks consume). Same TU-linkage discipline as the
+// objc predicates below: one definition, extern declaration here.
+extern BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename);
 // Shared across the objc satellites (Universal/objc.x defines;
 // Universal/objc_hidetweakclasses.x and Universal/objc_methodimpl.x consume):
 // class/address/image hiding predicates and the

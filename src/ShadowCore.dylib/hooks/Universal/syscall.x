@@ -597,8 +597,8 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                     return -1;
                 }
 
-                // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
-                if(kind == SHADW_PROC_MIB_ARGS2_OTHER && shdw_pid_restricted_uncached(sysctl_mib[2])) {
+                // KERN_PROCARGS(2) is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS(2), pid}.
+                if((kind == SHADW_PROC_MIB_ARGS2_OTHER || kind == SHADW_PROC_MIB_ARGS_OTHER) && shdw_pid_restricted_uncached(sysctl_mib[2])) {
                     errno = ENOENT;
                     va_end(inspect);
                     return -1;
@@ -702,9 +702,9 @@ static long shdw_syscall_dispatch(int number, va_list args) {
                         shdw_proc_sanitize_self_record((struct kinfo_proc *) sysctl_oldp);
                     }
 
-                    // Own KERN_PROCARGS2: rebuild the raw payload to agree with the
+                    // Own KERN_PROCARGS(2): rebuild the raw payload to agree with the
                     // filtered NSProcessInfo/getenv views.
-                    if(kind == SHADW_PROC_MIB_ARGS2_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
+                    if((kind == SHADW_PROC_MIB_ARGS2_SELF || kind == SHADW_PROC_MIB_ARGS_SELF) && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp > (size_t) sizeof(int)) {
                         shdw_procargs2_filter(sysctl_oldp, sysctl_oldlenp);
                     }
                 }
@@ -977,6 +977,11 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             return ret;
         }
 
+        static const char procargsPrefix[] = "kern.procargs";
+
+        // "kern.procargs" is a PREFIX of "kern.procargs2.": match the
+        // "kern.procargs2." form first, then the legacy "kern.procargs."
+        // form (exact-prefix + pid digits, so one can't shadow the other).
         static const char procargs2Prefix[] = "kern.procargs2.";
 
         if(strncmp(name, procargs2Prefix, sizeof(procargs2Prefix) - 1) == 0) {
@@ -994,6 +999,28 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             int ret = original(name, oldp, oldlenp, newp, newlen);
 
             // Own payload: rebuild to agree with the filtered argv/env views.
+            if(ret == 0 && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
+                shdw_procargs2_filter(oldp, oldlenp);
+            }
+
+            return ret;
+        }
+
+        if(strncmp(name, procargsPrefix, sizeof(procargsPrefix) - 1) == 0
+        && name[sizeof(procargsPrefix) - 1] == '.') {
+            pid_t pid = (pid_t) atoi(name + sizeof(procargsPrefix));
+
+            if(pid != getpid()) {
+                if(shdw_pid_restricted_uncached(pid)) {
+                    errno = ENOENT;
+                    return -1;
+                }
+
+                return original(name, oldp, oldlenp, newp, newlen);
+            }
+
+            int ret = original(name, oldp, oldlenp, newp, newlen);
+
             if(ret == 0 && oldp && oldlenp && *oldlenp > (size_t) sizeof(int)) {
                 shdw_procargs2_filter(oldp, oldlenp);
             }
@@ -1025,9 +1052,11 @@ static int replaced___sysctlbyname(const char* name, void* oldp, size_t* oldlenp
 // variables, the safe-mode flags, and jailbreak PATH components): a scan of
 // *environ must agree with getenv() and NSProcessInfo.environment, or a
 // detector comparing the two channels sees the contradiction.
-// NOTE: direct reads of the raw `environ` symbol are not covered (the
-// snapshot is our own storage by contract; remedying the symbol itself
-// needs a libSystem data-symbol rebind — not attempted).
+// Direct reads of the raw `environ` data symbol ARE covered: external
+// importers' `environ` slot is rebound (below, in shdw_universal_syscall) to
+// a Shadow-owned cell pointing at a filtered copy of the array. This hook
+// still handles the _NSGetEnviron() function channel; the two agree because
+// both consult the same EnvironmentPolicy filter.
 
 extern char*** _NSGetEnviron(void);
 
@@ -1037,7 +1066,10 @@ static char*** replaced_NSGetEnviron(void) {
         return original_NSGetEnviron();
     }
 
-    char*** snapshot = shdw_env_filtered_snapshot(environ);
+    // Filter the REAL array: the `environ` symbol is rebound process-wide to
+    // Shadow's filtered copy, so reading it here would double-filter (harmless
+    // but wasteful). shdw_env_real() is the true source.
+    char*** snapshot = shdw_env_filtered_snapshot(shdw_env_real());
 
     return snapshot ? snapshot : original_NSGetEnviron();
 }
@@ -1076,6 +1108,22 @@ void shdw_universal_syscall(SHDWHookSession* hooks) {
     if(sym_misc) {
         [hooks hookRebindSymbol:@"_NSGetEnviron" withReplacement:replaced_NSGetEnviron outOldPtr:(void **) &original_NSGetEnviron];
     }
+
+    // Raw `environ` data-symbol rebind: capture the real cell (&environ) via
+    // the unhooked _NSGetEnviron() and publish the first filtered generation
+    // BEFORE rebinding, so an importer's slot only ever resolves to a
+    // fully-built filtered array. The slot is rebound to
+    // &shdw_env_published_array — dereferencing it yields the filtered char**,
+    // exactly environ's shape. The rebind is process-wide (ShadowCore's own
+    // slot included), so Shadow's own code that needs the TRUE array (child
+    // spawns propagating DYLD_INSERT_LIBRARIES to systemhook) reads
+    // shdw_env_real() rather than `environ` (see sandbox.x exec family).
+    // Late-loaded detector images get the same rebind via the RebindRepair
+    // spec journal replay.
+    shdw_env_capture_real_environ(_NSGetEnviron());
+    [hooks hookRebindSymbol:@"environ"
+            withReplacement:(void*)&shdw_env_published_array
+                   outOldPtr:NULL];
 
     // Raw svc #0x80 interception (svc_patch.x): loaded-image writes are
     // serialized and stop-the-world before app code can execute them.
