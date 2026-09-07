@@ -53,6 +53,111 @@ if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 3 ] ||
     exit 1
 fi
 
+# Preferences' PSSpecifier controller cannot run in the public Linux host
+# checks. Execute its actual remove/insert call sequence against the plist IDs
+# instead, covering initial follow-global state and repeated off/on restores.
+controller=src/ShadowSettings.bundle/SHDWAppListController.m
+python3 - "$controller" "$app" <<'PY'
+import plistlib
+import re
+import sys
+from pathlib import Path
+
+
+def block(source, marker):
+    start = source.index(marker)
+    opening = source.index("{", start)
+    depth = 1
+    for position in range(opening + 1, len(source)):
+        if source[position] == "{":
+            depth += 1
+        elif source[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening:position + 1]
+    raise AssertionError(marker)
+
+
+def operations(source):
+    calls = re.compile(
+        r'\[self removeSpecifier:(?P<remove>\w+) animated:[^]]+\];'
+        r'|\[self insertSpecifier:(?P<insert>\w+) '
+        r'afterSpecifier:(?P<after>.*?) animated:YES\];'
+    )
+    result = []
+    for call in calls.finditer(source):
+        if call.group("remove"):
+            result.append(("remove", call.group("remove"), None))
+            continue
+        after = call.group("after")
+        identifier = re.search(r'specifierForID:@"([^"]+)"', after)
+        result.append(("insert", call.group("insert"),
+                       identifier.group(1) if identifier else after.strip()))
+    return result
+
+
+source = Path(sys.argv[1]).read_text()
+with open(sys.argv[2], "rb") as stream:
+    plist_ids = [item["id"] for item in plistlib.load(stream)["items"]]
+
+specifiers = block(source, "- (NSArray *)specifiers")
+setter = block(source, "- (void)setPreferenceValue:")
+initial = block(specifiers, "if([self followGlobal])")
+follow_global = block(setter, 'if([key isEqualToString:@"App_FollowGlobal"])')
+enabled = block(follow_global, "if([value boolValue])")
+disabled = block(follow_global, "} else {")
+
+assert 'aggressiveGroupSpecifier = [self specifierForID:@"AppAggressiveGroup"];' in specifiers
+initial_ops = operations(initial)
+on_ops = operations(enabled)
+off_ops = operations(disabled)
+assert [op[1] for op in initial_ops] == [
+    "enabledSpecifier", "aggressiveSpecifier", "aggressiveGroupSpecifier"
+]
+assert [op[1] for op in on_ops] == [
+    "aggressiveSpecifier", "enabledSpecifier", "aggressiveGroupSpecifier"
+]
+assert [op[1:] for op in off_ops] == [
+    ("enabledSpecifier", "App_FollowGlobal"),
+    ("aggressiveGroupSpecifier", "enabledSpecifier"),
+    ("aggressiveSpecifier", "aggressiveGroupSpecifier"),
+]
+
+specifier_ids = {
+    "enabledSpecifier": "App_Enabled",
+    "aggressiveGroupSpecifier": "AppAggressiveGroup",
+    "aggressiveSpecifier": "Detector_Aggressive",
+}
+full = [
+    "AppSettingsGroup", "App_FollowGlobal", "App_Enabled",
+    "AppAggressiveGroup", "Detector_Aggressive",
+]
+assert plist_ids == full, "App.plist specifier order changed"
+
+
+def apply(specifiers, calls):
+    specifiers = list(specifiers)
+    for kind, name, anchor in calls:
+        identifier = specifier_ids[name]
+        if kind == "remove":
+            assert identifier in specifiers, (kind, identifier, specifiers)
+            specifiers.remove(identifier)
+        else:
+            assert identifier not in specifiers, (kind, identifier, specifiers)
+            index = specifiers.index(specifier_ids.get(anchor, anchor))
+            specifiers.insert(index + 1, identifier)
+    return specifiers
+
+
+following = ["AppSettingsGroup", "App_FollowGlobal"]
+assert apply(full, initial_ops) == following
+for _ in range(2):
+    assert apply(full, on_ops) == following
+    assert apply(following, off_ops) == full
+    following = apply(full, on_ops)
+print("PASS: app controller follow-global visibility transitions (static call sequence)")
+PY
+
 # Aggressive mode is a live scalar resolved with global fallback (like
 # activation), gated into disable-style adapter paths — never a per-hook knob.
 grep -q 'SHDWDetectorAggressiveID' "$profile" || {
