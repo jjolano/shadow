@@ -2662,6 +2662,15 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
         // rebind its imports instead of leaving the detector surface open.
         } else if(strcmp(d->symbol, "fopen") == 0) {
             [hooks hookRebindSymbol:@"fopen" withReplacement:d->replacement outOldPtr:d->original];
+        // getppid's shared-cache text cannot receive an inline patch on iOS 15.
+        // Keep its untouched export as the continuation before HookKit can
+        // publish a rebind or journal a late-image replay.
+        } else if(group == SHADW_HOOK_GROUP_ANTIDEBUG &&
+                  strcmp(d->symbol, "getppid") == 0) {
+            if(d->original) {
+                *d->original = target;
+            }
+            [hooks hookRebindSymbol:@"getppid" withReplacement:d->replacement outOldPtr:NULL];
         } else {
             BOOL installed = [hooks hookFunction:target withReplacement:d->replacement outOldPtr:d->original];
             // iOS 15's shared-cache directory entrypoints can be too short or

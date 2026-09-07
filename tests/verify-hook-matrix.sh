@@ -330,10 +330,10 @@ if [ -f "$HT/ShadowHarness/Detectors.m" ] && grep -q 'DEBUG-9be1\|shdw_write_run
     echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
     exit 1
 fi
-# NOTE: build-detector-harness.sh runs from the PUBLIC repo root ($ROOT =
-# public checkout), so its "$HT"/tools path keeps the public spelling.
+# The private harness build script runs from its own checkout, but builds the
+# public sources supplied through SHADOW_SRC.
 if [ -f "$HT/ShadowHarness/Makefile" ] && { ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' "$HT/ShadowHarness/Makefile" ||
-   ! grep -q 'm -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1' scripts/build-detector-harness.sh; }; then
+   ! grep -q 'm -C "$HT/tools/dyldprobe" stage FINALPACKAGE=1' "$HT/scripts/build-detector-harness.sh"; }; then
     echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
     exit 1
 fi
@@ -391,6 +391,18 @@ if ! grep -q 'hookRebindSymbol:@"fopen"' src/ShadowCore.dylib/hooks/Universal/li
     echo 'LIBC DRIFT: fopen lost its safe rebind path'
     exit 1
 fi
+getppid_rebind=$(sed -n '/} else if(group == SHADW_HOOK_GROUP_ANTIDEBUG &&/,/} else {/p' src/ShadowCore.dylib/hooks/Universal/libc.x)
+if ! printf '%s\n' "$getppid_rebind" | grep -q 'strcmp(d->symbol, "getppid") == 0' ||
+   ! printf '%s\n' "$getppid_rebind" | grep -q 'hookRebindSymbol:@"getppid"' ||
+   ! printf '%s\n' "$getppid_rebind" | grep -q 'outOldPtr:NULL' ||
+   printf '%s\n' "$getppid_rebind" | grep -q 'hookFunction:'; then
+    echo 'LIBC DRIFT: getppid must use the rebind-only shared-cache path'
+    exit 1
+fi
+case "$getppid_rebind" in
+    *"*d->original = target;"*"hookRebindSymbol:@\"getppid\""*) ;;
+    *) echo 'LIBC DRIFT: getppid publishes its rebind continuation too late'; exit 1 ;;
+esac
 if grep -q 'LIBC | METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x; then
     echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
     exit 1
