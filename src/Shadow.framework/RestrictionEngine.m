@@ -167,6 +167,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     ShadowRulesetStore* store;
     ShadowRestrictionContext _context;
     ShadowPseudoSandboxMode pseudoSandboxMode;
+    NSString* mountRoot;
 
     // One generation-aware decision cache split by responsibility:
     //   - sharedCache (tier 1, top-level verdicts): key = raw query path, or
@@ -188,6 +189,8 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 - (instancetype)initWithContext:(ShadowRestrictionContext)context {
     if((self = [super init])) {
         _context = context;
+        // Captured during construction, before mount hooks are installed.
+        mountRoot = [[Shadow getStandardizedPath:shdw_jbroot_prefix()] copy];
         pseudoSandboxMode = ShadowPseudoSandboxModeOff;
         store = [ShadowRulesetStore new];
         sharedCache = [NSCache new];
@@ -219,6 +222,49 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     @autoreleasepool {
         return [self _pathRestrictedQuery:query];
     }
+}
+
+// Use the current snapshot; do not refresh or resolve while the platform's
+// mount lock may be held. Rule predicates must be ordinary string matching.
+- (BOOL)isMountPathRestricted:(NSString *)path {
+    if(![path hasPrefix:@"/"] || [path isEqualToString:@"/"]) return NO;
+    if(shdw_is_restricted_root_with_prefix([path fileSystemRepresentation], NULL)) return YES;
+
+    NSMutableArray<NSString*>* components = [NSMutableArray new];
+    for(NSString* component in [path componentsSeparatedByString:@"/"]) {
+        if(!component.length || [component isEqualToString:@"."]) continue;
+        if([component isEqualToString:@".."]) {
+            if(components.count) [components removeLastObject];
+        } else {
+            [components addObject:component];
+        }
+    }
+    // The engine's lexical aliases, without NSURL or filesystem standardization.
+    if(components.count >= 2 && [components[0] isEqualToString:@"private"] &&
+       ([components[1] isEqualToString:@"var"] || [components[1] isEqualToString:@"etc"])) {
+        [components removeObjectAtIndex:0];
+    }
+    if(components.count >= 2 && [components[0] isEqualToString:@"var"] &&
+       [components[1] isEqualToString:@"tmp"]) {
+        [components removeObjectAtIndex:0];
+    }
+    path = [@"/" stringByAppendingString:[components componentsJoinedByString:@"/"]];
+    if([path isEqualToString:@"/"]) return NO;
+    if(shdw_is_restricted_root_with_prefix([path fileSystemRepresentation], NULL) ||
+       shdwPathIsWithin(path, mountRoot)) return YES;
+    if(_context.hasAppSandbox &&
+       ([path isEqualToString:@"/private/preboot"] ||
+        [path isEqualToString:@"/Library/LaunchDaemons"] ||
+        [path hasSuffix:@"/embedded.mobileprovision"])) return YES;
+    if(pseudoSandboxMode == ShadowPseudoSandboxModeStrict && shdwPseudoWouldDeny(_context, path)) return YES;
+    if(shdwIsSandboxExempt(_context, path)) return NO;
+
+    ShadowRulesetSnapshot* snapshot = [store currentSnapshot];
+    while(path.length > 1) {
+        if(shdwSnapshotDeniesPath(snapshot, path)) return YES;
+        path = [path stringByDeletingLastPathComponent];
+    }
+    return NO;
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {

@@ -28,6 +28,7 @@ __attribute__((visibility("hidden")))
 - (void)configurePseudoSandboxMode:(NSInteger)mode;
 
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
+- (BOOL)isMountPathRestricted:(NSString *)path;
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID;

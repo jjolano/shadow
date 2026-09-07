@@ -131,27 +131,10 @@ BOOL shdw_is_restricted_root(const char *path) {
     // descendants, but let the stock directory reach the ruleset.
     if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
 
-    if (strncmp(path, "/var/jb", 7) == 0
-        && (path[7] == '\0' || path[7] == '/')) return YES;
-    if (strncmp(path, "/private/var/jb", 15) == 0
-        && (path[15] == '\0' || path[15] == '/')) return YES;
-    if (strncmp(path, "/cores/", 7) == 0) return YES;
-    if (strncmp(path, "/private/preboot", 16) == 0
-        && (path[16] == '\0' || path[16] == '/')) return YES;
-    if (strncmp(path, "/preboot", 8) == 0
-        && (path[8] == '\0' || path[8] == '/')) return YES;
+    if (shdw_is_restricted_root_with_prefix(path, NULL)) return YES;
 
     NSString *root = shdw_jbroot_prefix();
-    if (root && [root length] > 0) {
-        const char *r = [root fileSystemRepresentation];
-        size_t rl = strlen(r);
-        if (rl > 0 && strncmp(path, r, rl) == 0) {
-            if (r[rl - 1] == '/') return YES;
-            if (path[rl] == '\0' || path[rl] == '/') return YES;
-        }
-    }
-
-    return NO;
+    return shdw_is_restricted_root_with_prefix(path, root.length ? [root fileSystemRepresentation] : NULL);
 }
 
 BOOL shdw_is_restricted_root_c(const char *path) {

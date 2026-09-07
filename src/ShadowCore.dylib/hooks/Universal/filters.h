@@ -9,7 +9,7 @@
 #endif
 
 // Returns 1 to keep the mount record, 0 to remove it. `restricted` is the
-// caller's isCPathRestricted verdict on f_mntonname/f_mntfromname. When
+// caller's snapshot-only verdict on f_mntonname/f_mntfromname. When
 // kept, statfsFlags && mntonname == "/" ORs MNT_RDONLY into *flags.
 static inline int shdw_mount_filter(const char* mntonname, const char* mntfromname, uint32_t* flags, int statfsFlags, int restricted) {
     (void) mntfromname;

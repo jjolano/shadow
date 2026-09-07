@@ -6,6 +6,7 @@
 #import "RestrictionQuery.h"
 
 #import <dlfcn.h>
+#import <errno.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <pwd.h>
@@ -217,6 +218,24 @@ BOOL shdwInstallHarnessSDKFallback(void) {
     @autoreleasepool {
         return [self isPathRestricted:[NSString stringWithUTF8String:path]];
     }
+}
+
+- (BOOL)isMountPathRestricted:(const char *)path {
+    if(!path || path[0] != '/') return NO;
+    int savedErrno = errno;
+    BOOL restricted = NO;
+    @autoreleasepool {
+        @try {
+            SHADOW_INTERNAL_SCOPE {
+                restricted = [engine isMountPathRestricted:[NSString stringWithUTF8String:path]];
+            }
+        } @catch(NSException* exception) {
+            // Keep malformed input fail-open without logging under the mount lock.
+            restricted = NO;
+        }
+    }
+    errno = savedErrno;
+    return restricted;
 }
 
 - (BOOL)isPathRestricted:(NSString *)path {
