@@ -507,7 +507,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfItemAtPath:(NSString *)path error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
         if(error) {
-            *error = [Shadow fileNoSuchFileErrorForPath:path];
+            *error = [Shadow fileErrorWithCode:NSFileReadNoSuchFileError path:path url:nil];
         }
 
         return nil;

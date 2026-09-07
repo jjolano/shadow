@@ -89,13 +89,14 @@ extern char*** _NSGetArgv();
         }
     }
 
-    if([path hasPrefix:@"/private/var"] || [path hasPrefix:@"/private/etc"]) {
+    if([path isEqualToString:@"/private/var"] || [path hasPrefix:@"/private/var/"] ||
+       [path isEqualToString:@"/private/etc"] || [path hasPrefix:@"/private/etc/"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
         path = [NSString pathWithComponents:pathComponents];
     }
 
-    if([path hasPrefix:@"/var/tmp"]) {
+    if([path isEqualToString:@"/var/tmp"] || [path hasPrefix:@"/var/tmp/"]) {
         NSMutableArray* pathComponents = [[path pathComponents] mutableCopy];
         [pathComponents removeObjectAtIndex:1];
         path = [NSString pathWithComponents:pathComponents];
