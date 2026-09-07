@@ -86,9 +86,17 @@ static int replaced_access(const char* pathname, int mode) {
         return -1;
     }
 
-    if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
-        errno = caller_errno;
-        return original_access(pathname, mode);   // natural ENOENT
+    // Reuse this call's preflight verdict; concurrent filesystem or policy
+    // changes are observed by later calls, not a second lookup here.
+    BOOL restricted = NO;
+
+    if(ext) {
+        restricted = [_shadow isCPathRestricted:pathname];
+
+        if(restricted && shdw_libc_try_rewrite(pathname)) {
+            errno = caller_errno;
+            return original_access(pathname, mode);   // natural ENOENT
+        }
     }
 
     // The policy lookup can use libc internally. access(2) leaves errno
@@ -101,7 +109,9 @@ static int replaced_access(const char* pathname, int mode) {
     // deny unconditionally. Other restricted paths respect the external-caller
     // gate so Shadow's own code can still access them when needed.
     if(result != -1) {
-        BOOL restricted = [_shadow isCPathRestricted:pathname];
+        if(!ext) {
+            restricted = [_shadow isCPathRestricted:pathname];
+        }
         if(restricted && (shdw_is_restricted_root(pathname) || ext)) {
             errno = ENOENT;
             return -1;
@@ -715,13 +725,16 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat", ext);
 
-    if(ext && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+    // Reuse this call's preflight verdict for both external-only checks.
+    BOOL restricted = ext && [_shadow isCPathRestricted:pathname];
+
+    if(restricted && shdw_libc_try_rewrite(pathname)) {
         return original_stat(pathname, buf);   // natural ENOENT
     }
 
     int result = original_stat(pathname, buf);
 
-    if(result != -1 && ext && [_shadow isCPathRestricted:pathname]) {
+    if(result != -1 && restricted) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
