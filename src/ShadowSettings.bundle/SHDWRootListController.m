@@ -68,11 +68,14 @@
 - (void)viewWillAppear:(BOOL)animated {
 	[super viewWillAppear:animated];
 
-	// The summary derives from switches changed on pushed app pages.
-	for(NSString* specID in @[ @"ApplicationsSummary" ]) {
-		PSSpecifier* summary = [self specifierForID:specID];
-		if(summary) {
-			[self reloadSpecifier:summary];
+	// Re-read on return: the summary derives from switches changed on pushed
+	// app pages, and the global switches can be wiped by Reset Settings in the
+	// About pane. Without this, popping back shows stale switch/summary state
+	// even though the stored values changed.
+	for(NSString* specID in @[ @"Global_Enabled", @"Detector_Aggressive", @"ApplicationsSummary" ]) {
+		PSSpecifier* specifier = [self specifierForID:specID];
+		if(specifier) {
+			[self reloadSpecifier:specifier];
 		}
 	}
 }

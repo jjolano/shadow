@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 
 #import "SHDWAboutListController.h"
+#import "SHDWPrefs.h"
 
 
 
@@ -187,6 +188,9 @@
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"RESET_CANCEL"] style:UIAlertActionStyleCancel handler:nil]];
 	[alert addAction:[UIAlertAction actionWithTitle:[self localized:@"RESET_SETTINGS"] style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
 		[[ShadowSettings sharedInstance] reset];
+		// Match the switch-flip feedback used across the panes so the wipe
+		// registers as a completed state change, not a silent no-op.
+		SHDWToggleHaptic();
 	}]];
 
 	[self presentViewController:alert animated:YES completion:nil];
