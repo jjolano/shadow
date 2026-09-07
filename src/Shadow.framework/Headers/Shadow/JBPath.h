@@ -51,15 +51,15 @@ static inline BOOL shdw_is_restricted_root_with_prefix(const char * _Nullable pa
 #import <roothide.h>
 #define JBPath(p) jbroot(p)
 #define JBIsRootless() YES
-static inline BOOL shdw_is_restricted_root(const char *path) {
+static inline BOOL shdw_is_restricted_root(const char * _Nullable path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0) return NO;
     if (shdw_is_restricted_root_with_prefix(path, NULL)) return YES;
     NSString *root = jbroot(@"/");
     return shdw_is_restricted_root_with_prefix(path, [root fileSystemRepresentation]);
 }
-static inline BOOL shdw_is_restricted_root_c(const char *path) { return shdw_is_restricted_root(path); }
-static inline BOOL shdw_path_contains_restricted_root_c(const char *path) {
+static inline BOOL shdw_is_restricted_root_c(const char * _Nullable path) { return shdw_is_restricted_root(path); }
+static inline BOOL shdw_path_contains_restricted_root_c(const char * _Nullable path) {
     if (!path || !path[0]) return NO;
     if (strstr(path, "/var/jb") != NULL) return YES;
     if (strstr(path, "/private/preboot") != NULL) return YES;
@@ -71,10 +71,10 @@ static inline BOOL shdw_path_contains_restricted_root_c(const char *path) {
     }
     return NO;
 }
-static inline BOOL shdw_is_path_in_restricted_root(NSString *path) {
+static inline BOOL shdw_is_path_in_restricted_root(NSString * _Nullable path) {
     return path ? shdw_is_restricted_root([path fileSystemRepresentation]) : NO;
 }
-static inline NSString* shdw_jbroot_prefix(void) {
+static inline NSString* _Nonnull shdw_jbroot_prefix(void) {
     return jbroot(@"/");
 }
 
@@ -87,7 +87,7 @@ static inline NSString* shdw_jbroot_prefix(void) {
 #import <unistd.h>
 #define JBPath(p) shdw_harness_jbpath(p)
 #define JBIsRootless() shdw_harness_rootless()
-static inline BOOL shdw_is_restricted_root(const char *path) {
+static inline BOOL shdw_is_restricted_root(const char * _Nullable path) {
     if (!path || !path[0]) return NO;
     if (strcmp(path, "/private/preboot") == 0 || strcmp(path, "/preboot") == 0) return NO;
     if (shdw_is_restricted_root_with_prefix(path, NULL)) return YES;
@@ -98,8 +98,8 @@ static inline BOOL shdw_is_restricted_root(const char *path) {
     }
     return NO;
 }
-static inline BOOL shdw_is_restricted_root_c(const char *path) { return shdw_is_restricted_root(path); }
-static inline BOOL shdw_path_contains_restricted_root_c(const char *path) {
+static inline BOOL shdw_is_restricted_root_c(const char * _Nullable path) { return shdw_is_restricted_root(path); }
+static inline BOOL shdw_path_contains_restricted_root_c(const char * _Nullable path) {
     if (!path || !path[0]) return NO;
     if (strstr(path, "/var/jb") != NULL) return YES;
     if (strstr(path, "/private/preboot") != NULL) return YES;
@@ -112,10 +112,10 @@ static inline BOOL shdw_path_contains_restricted_root_c(const char *path) {
     }
     return NO;
 }
-static inline BOOL shdw_is_path_in_restricted_root(NSString *path) {
+static inline BOOL shdw_is_path_in_restricted_root(NSString * _Nullable path) {
     return path ? shdw_is_restricted_root([path fileSystemRepresentation]) : NO;
 }
-static inline NSString* shdw_jbroot_prefix(void) {
+static inline NSString* _Nonnull shdw_jbroot_prefix(void) {
     char resolved[PATH_MAX];
     if (realpath("/var/jb", resolved)) return [NSString stringWithUTF8String:resolved];
     return shdw_harness_rootless() ? @"/var/jb" : @"";
