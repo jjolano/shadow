@@ -12,6 +12,12 @@
 "LOCALIZATION_HDR" = "Translation";
 "VISIT_CHANGELOG" = "View Latest Changes";
 
+"RESET_HDR" = "Reset";
+"RESET_SETTINGS" = "Reset Settings";
+"RESET_SETTINGS_DESC" = "Restore all Shadow settings to their defaults. Per-app settings will be cleared.";
+"RESET_CONFIRM" = "This will restore all Shadow settings to their defaults. This cannot be undone.";
+"RESET_CANCEL" = "Cancel";
+
 /* your name here! */
 "TRANSLATOR" = "jjolano";
 "UNKNOWN" = "Unknown";

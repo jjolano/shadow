@@ -84,6 +84,14 @@ static NSString* const kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverride
     return sharedInstance;
 }
 
+- (void)reset {
+    // Wipe the whole persistent domain in one atomic write: global toggle,
+    // aggressive mode, and every per-app override drop back to defaults. Same
+    // suite name as init so cfprefsd clears the store the runtime reads.
+    [userDefaults setPersistentDomain:@{} forName:@SHADOW_PREFS_PLIST];
+    [userDefaults synchronize];
+}
+
 - (NSDictionary<NSString *, id> *)getPreferencesForIdentifier:(NSString *)bundleIdentifier {
     if(!userDefaults) {
         return nil;
