@@ -68,9 +68,12 @@ settings-structure:
 jb-identifiers:
 	python3 verify-jb-identifiers.py
 
-test: verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers
+verify-environment-storage:
+	python3 verify-environment-storage.py
+
+test: verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage stage-hookkit-headers clean
