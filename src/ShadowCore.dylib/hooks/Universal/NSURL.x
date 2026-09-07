@@ -34,7 +34,7 @@ static BOOL _shdw_resultURLRestricted(NSURL* result) {
 - (BOOL)checkResourceIsReachableAndReturnError:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && _shdw_resultURLRestricted(self)) {
         if(error) {
-            *error = [Shadow fileNoSuchFileErrorForURL:self];
+            *error = [Shadow fileErrorWithCode:NSFileReadNoSuchFileError path:[self path] url:self];
         }
 
         return NO;
