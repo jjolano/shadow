@@ -25,35 +25,25 @@
 	NSString* key = [specifier identifier];
 
 	if([key isEqualToString:@"ApplicationsSummary"]) {
-		NSInteger excluded = 0;
+		// Count apps that deviate from the global settings: an app "follows
+		// global" until it writes an explicit activation override (App_Enabled)
+		// or a per-app aggressive override (Detector_Aggressive). Legacy
+		// App_Disabled counts too, since it also overrides the global toggle.
+		NSInteger customized = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
 			if([value isKindOfClass:[NSDictionary class]] &&
-			   ([[value objectForKey:SHDWAppDisabledID] boolValue] ||
-			    ([value objectForKey:SHDWAppEnabledID] && ![[value objectForKey:SHDWAppEnabledID] boolValue]))) {
-				excluded++;
+			   ([value objectForKey:SHDWAppEnabledID] != nil ||
+			    [value objectForKey:SHDWAppDisabledID] != nil ||
+			    [value objectForKey:SHDWDetectorAggressiveID] != nil)) {
+				customized++;
 			}
 		}
 
-		// Global_Enabled makes every eligible app active, so the summary is
-		// trivial — unless some apps are explicitly excluded, which "all apps
-		// enabled" would misreport.
-		if([prefs boolForKey:@"Global_Enabled"]) {
-			if(excluded == 0) {
-				return [self localized:@"APPS_ALL_ENABLED" fallback:@"All apps enabled"];
-			}
-
-			return [NSString stringWithFormat:[self localized:@"APPS_EXCLUDED_FMT" fallback:@"All apps enabled · %ld excluded"], (long)excluded];
+		if(customized == 0) {
+			return [self localized:@"APPS_ALL_FOLLOW_GLOBAL" fallback:@"All apps follow global"];
 		}
 
-		NSInteger count = 0;
-		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if([value isKindOfClass:[NSDictionary class]] && [[value objectForKey:SHDWAppEnabledID] boolValue]
-				&& ![[value objectForKey:SHDWAppDisabledID] boolValue]) {
-				count++;
-			}
-		}
-
-		return [NSString stringWithFormat:[self localized:@"APPS_ENABLED_FMT" fallback:@"%ld enabled"], (long)count];
+		return [NSString stringWithFormat:[self localized:@"APPS_CUSTOMIZED_FMT" fallback:@"%ld customized"], (long)customized];
 	}
 
 	return [prefs objectForKey:[specifier identifier]];

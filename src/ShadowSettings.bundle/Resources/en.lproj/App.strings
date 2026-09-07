@@ -9,7 +9,7 @@
 
 "AGGRESSIVE_SETTINGS" = "Detector Neutralization";
 "AGGRESSIVE" = "Aggressive Mode";
-"APP_AGGRESSIVE_DESC" = "Natural bypass presents a stock-looking environment; aggressive mode also forces known detectors' checks to report clean for this app. Follow Global to inherit the global setting.";
+"APP_AGGRESSIVE_DESC" = "Natural bypass presents a stock-looking environment; aggressive mode also forces known detectors' checks to report clean for this app.";
 "APP_DETECTOR_LOG" = "Detector Log";
 "APP_DETECTOR_LOG_DESC" = "Detector activity recorded in this app.";
 

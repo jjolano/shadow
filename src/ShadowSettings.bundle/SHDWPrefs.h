@@ -16,8 +16,6 @@ void SHDWClearAppEnabled(NSUserDefaults *prefs, NSString *appID);
 // Detector_Aggressive scalar when absent.
 BOOL SHDWAppAggressive(NSUserDefaults *prefs, NSString *appID);
 void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID, BOOL aggressive);
-// YES when the app has no explicit Detector_Aggressive override (follows global).
-BOOL SHDWAppAggressiveFollowsGlobal(NSUserDefaults *prefs, NSString *appID);
 // Drop the per-app Detector_Aggressive override so the app follows the global.
 void SHDWClearAppAggressive(NSUserDefaults *prefs, NSString *appID);
 

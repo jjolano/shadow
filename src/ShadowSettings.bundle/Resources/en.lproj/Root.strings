@@ -14,6 +14,5 @@
 
 "ROOT_ABOUT" = "About";
 
-"APPS_ENABLED_FMT" = "%ld enabled";
-"APPS_ALL_ENABLED" = "All apps enabled";
-"APPS_EXCLUDED_FMT" = "All apps enabled · %ld excluded";
+"APPS_ALL_FOLLOW_GLOBAL" = "All apps follow global";
+"APPS_CUSTOMIZED_FMT" = "%ld customized";

@@ -54,18 +54,6 @@
 			<key>get</key>
 			<string>readPreferenceValue:</string>
 			<key>id</key>
-			<string>App_AggressiveFollowGlobal</string>
-			<key>label</key>
-			<string>FOLLOW_GLOBAL</string>
-			<key>set</key>
-			<string>setPreferenceValue:forSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>get</key>
-			<string>readPreferenceValue:</string>
-			<key>id</key>
 			<string>Detector_Aggressive</string>
 			<key>label</key>
 			<string>AGGRESSIVE</string>

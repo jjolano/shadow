@@ -21,6 +21,7 @@
 "APPS_ENABLED_FMT" = "%ld 個已啟用";
 "APPS_ALL_ENABLED" = "所有應用程式已啟用";
 "APPS_CUSTOMIZED_FMT" = "%ld 個已自訂";
+"APPS_ALL_FOLLOW_GLOBAL" = "所有應用程式跟隨全域設定";
 "IMPORT_CONFIRM_TITLE" = "匯入設定？";
 "IMPORT_CONFIRM_MSG" = "這會用所選檔案取代所有目前設定。";
 "IMPORT_CONFIRM" = "匯入";

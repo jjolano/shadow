@@ -52,11 +52,6 @@ void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID, BOOL aggress
 	[prefs setObject:[appPrefs copy] forKey:appID];
 }
 
-BOOL SHDWAppAggressiveFollowsGlobal(NSUserDefaults *prefs, NSString *appID) {
-	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];
-	return appPrefs[SHDWDetectorAggressiveID] == nil;
-}
-
 void SHDWClearAppAggressive(NSUserDefaults *prefs, NSString *appID) {
 	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy];
 	if(!appPrefs) {
