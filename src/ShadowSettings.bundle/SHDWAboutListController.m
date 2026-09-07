@@ -19,27 +19,24 @@
 		_specifiers = [self loadSpecifiersFromPlistName:@"About" target:self];
 
 		// Mirror the root pane: the actionable rows get small rounded icons so
-		// the About options read like the rest of the bundle. SFSymbols are
-		// preferred (tint-aware, no asset churn); the pre-iOS 13 bundle floor
-		// falls back to plain rows.
-		if(@available(iOS 13, *)) {
-			for(NSDictionary* mapping in @[
-				@{ @"spec": @"AboutChangelog", @"symbol": @"newspaper" },
-				@{ @"spec": @"AboutGitHub", @"symbol": @"chevron.left.forwardslash.chevron.right" },
-				@{ @"spec": @"AboutKofi", @"symbol": @"cup.and.saucer" },
-				@{ @"spec": @"AboutReset", @"symbol": @"arrow.counterclockwise" },
-			]) {
-				PSSpecifier* row = [self specifierForID:mapping[@"spec"]];
-				if(row) {
-					UIImageConfiguration* config = [UIImageSymbolConfiguration
-						configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
-					NSString* symbol = mapping[@"symbol"];
-					UIImage* icon = [[UIImage systemImageNamed:symbol withConfiguration:config]
-						imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-					if(icon) {
-						[row setProperty:icon forKey:@"iconImage"];
-					}
+		// the About options read like the rest of the bundle. systemImageNamed
+		// is resolved at runtime: it exists on iOS 13+ and is a nil no-op on
+		// older runtimes, which fall back to plain rows. Tint-aware, no asset
+		// churn, and no @available link-time helper for the iOS 9 legacy floor.
+		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+		for(NSDictionary* mapping in @[
+			@{ @"spec": @"AboutChangelog", @"symbol": @"newspaper" },
+			@{ @"spec": @"AboutGitHub", @"symbol": @"chevron.left.forwardslash.chevron.right" },
+			@{ @"spec": @"AboutKofi", @"symbol": @"cup.and.saucer" },
+			@{ @"spec": @"AboutReset", @"symbol": @"arrow.counterclockwise" },
+		]) {
+			PSSpecifier* row = [self specifierForID:mapping[@"spec"]];
+			if(row) {
+				UIImage* icon = [UIImage systemImageNamed:mapping[@"symbol"]];
+				if(icon) {
+					[row setProperty:icon forKey:@"iconImage"];
 				}
+				(void)bundle;
 			}
 		}
 	}
