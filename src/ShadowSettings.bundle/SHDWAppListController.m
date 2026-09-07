@@ -7,9 +7,10 @@
 @implementation SHDWAppListController {
 	NSUserDefaults* prefs;
 
-	// Kept across reloads so the Follow Global toggles can animate their rows
-	// in/out (native insert/delete) instead of a full table reload; once
-	// removed, specifierForID: can no longer find them to put them back.
+	// Kept across reloads so the single Follow Global toggle can animate both
+	// per-app rows in/out (native insert/delete) instead of a full table
+	// reload; once removed, specifierForID: can no longer find them to put
+	// them back.
 	PSSpecifier* enabledSpecifier;
 	PSSpecifier* aggressiveSpecifier;
 }
@@ -26,22 +27,17 @@
 			self.title = proxy.atl_fastDisplayName;
 		}
 
-		// Following global = no per-app override; the explicit row is hidden
-		// until the user opts out of the corresponding global setting.
+		// One Follow Global toggle governs the whole app: following global =
+		// no per-app overrides, so both the activation and aggressive rows are
+		// hidden until the user opts out.
 		if([self followGlobal]) {
 			[self removeSpecifier:enabledSpecifier animated:NO];
-		}
-		if([self aggressiveFollowGlobal]) {
 			[self removeSpecifier:aggressiveSpecifier animated:NO];
 		}
 
 		[self updateSettingsGroupFooter];
 	}
 	return _specifiers;
-}
-
-- (BOOL)aggressiveFollowGlobal {
-	return SHDWAppAggressiveFollowsGlobal(prefs, [self applicationID]);
 }
 
 - (BOOL)followGlobal {
@@ -75,10 +71,6 @@
 		return @(SHDWAppEnabled(prefs, [self applicationID]));
 	}
 
-	if([key isEqualToString:@"App_AggressiveFollowGlobal"]) {
-		return @([self aggressiveFollowGlobal]);
-	}
-
 	if([key isEqualToString:@"Detector_Aggressive"]) {
 		return @(SHDWAppAggressive(prefs, [self applicationID]));
 	}
@@ -91,17 +83,25 @@
 	NSString* key = [specifier identifier];
 
 	if([key isEqualToString:@"App_FollowGlobal"]) {
-		// Following global = clear the per-app override and hide the explicit
-		// Enabled row; opting out writes an explicit value (seeded from the
-		// current effective state) and reveals it. Rows animate in/out like
-		// Settings' own conditional rows instead of a full table reload.
+		// A single Follow Global toggle governs the whole app. Following global
+		// clears both per-app overrides and hides both explicit rows; opting
+		// out seeds each from its current effective state and reveals both.
+		// Rows animate in/out like Settings' own conditional rows instead of a
+		// full table reload.
 		if([value boolValue]) {
 			SHDWClearAppEnabled(prefs, [self applicationID]);
+			SHDWClearAppAggressive(prefs, [self applicationID]);
+			[self removeSpecifier:aggressiveSpecifier animated:YES];
 			[self removeSpecifier:enabledSpecifier animated:YES];
 		} else {
 			SHDWWriteAppEnabled(prefs, [self applicationID], SHDWAppEnabled(prefs, [self applicationID]));
+			SHDWWriteAppAggressive(prefs, [self applicationID], SHDWAppAggressive(prefs, [self applicationID]));
+			// App_Enabled sits under the activation group (after the toggle);
+			// Detector_Aggressive sits under its own group header.
 			[self insertSpecifier:enabledSpecifier afterSpecifier:[self specifierForID:@"App_FollowGlobal"] animated:YES];
+			[self insertSpecifier:aggressiveSpecifier afterSpecifier:[self specifierForID:@"AppAggressiveGroup"] animated:YES];
 			[self reloadSpecifier:enabledSpecifier];
+			[self reloadSpecifier:aggressiveSpecifier];
 		}
 		[self updateSettingsGroupFooter];
 		return;
@@ -109,21 +109,6 @@
 
 	if([key isEqualToString:@"App_Enabled"]) {
 		SHDWWriteAppEnabled(prefs, [self applicationID], [value boolValue]);
-		return;
-	}
-
-	if([key isEqualToString:@"App_AggressiveFollowGlobal"]) {
-		// Same conditional-row pattern as activation: following global clears
-		// the per-app override and hides the explicit switch; opting out seeds
-		// an explicit value from the current effective state and reveals it.
-		if([value boolValue]) {
-			SHDWClearAppAggressive(prefs, [self applicationID]);
-			[self removeSpecifier:aggressiveSpecifier animated:YES];
-		} else {
-			SHDWWriteAppAggressive(prefs, [self applicationID], SHDWAppAggressive(prefs, [self applicationID]));
-			[self insertSpecifier:aggressiveSpecifier afterSpecifier:[self specifierForID:@"App_AggressiveFollowGlobal"] animated:YES];
-			[self reloadSpecifier:aggressiveSpecifier];
-		}
 		return;
 	}
 

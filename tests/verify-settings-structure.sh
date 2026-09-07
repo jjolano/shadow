@@ -37,18 +37,19 @@ if grep -Eq 'respring:|reset:|exportSettings:|importSettings:|DetectorLog' "$roo
     exit 1
 fi
 
-# The app pane is the activation pair (Follow Global + App_Enabled) plus the
-# aggressive-neutralization pair (Follow Global + Detector_Aggressive): four
-# switches, no revived per-hook or profile controls, and no App_Disabled (the
-# single-toggle backend never writes it). Universal_/Adapter_ per-hook keys must
-# never reappear as UI; Detector_Aggressive is the one allowed detector-mode key.
-if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 4 ] ||
+# The app pane is a single Follow Global toggle plus the two settings it
+# governs (App_Enabled and Detector_Aggressive): three switches, no revived
+# per-hook or profile controls, and no App_Disabled (the single-toggle backend
+# never writes it). Aggressive mode has no separate follow-global toggle — it
+# follows the one App_FollowGlobal. Universal_/Adapter_ per-hook keys must never
+# reappear as UI; Detector_Aggressive is the one allowed detector-mode key.
+if [ "$(grep -c '<string>PSSwitchCell</string>' "$app")" -ne 3 ] ||
    ! grep -q '<string>App_Enabled</string>' "$app" ||
    ! grep -q '<string>App_FollowGlobal</string>' "$app" ||
    ! grep -q '<string>Detector_Aggressive</string>' "$app" ||
-   ! grep -q '<string>App_AggressiveFollowGlobal</string>' "$app" ||
+   grep -q '<string>App_AggressiveFollowGlobal</string>' "$app" ||
    grep -Eq 'App_Disabled|BypassPreset|Universal_|Adapter_' "$app"; then
-    echo 'SETTINGS DRIFT: app pane is not the activation + aggressive switch pairs'
+    echo 'SETTINGS DRIFT: app pane is not the single follow-global toggle plus App_Enabled and Detector_Aggressive'
     exit 1
 fi
 
