@@ -73,14 +73,15 @@ for binary in "$@"; do
         }
 
         if [ "$arch" = arm64e ]; then
-            header=$($OTOOL -hv "$slice" | tail -n 1)
+            header=$($OTOOL -h "$slice" | tail -n 1)
             if [ "$PROFILE" = rootful-legacy ]; then
                 abi=0x00
             else
                 abi=0x80
             fi
-            if ! printf '%s\n' "$header" | grep -Eq "[[:space:]]E[[:space:]]+${abi}[[:space:]]"; then
-                echo "WARN: $binary [$arch] ABI mismatch expected $PROFILE (toolchain cannot emit versioned ptrauth ABI; ignoring)" >&2
+            if ! printf '%s\n' "$header" | grep -Eq "[[:space:]]16777228[[:space:]]+2[[:space:]]+${abi}[[:space:]]"; then
+                echo "$binary [$arch] ABI mismatch expected $PROFILE" >&2
+                exit 1
             fi
         fi
 
