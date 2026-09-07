@@ -69,8 +69,13 @@ static BOOL shdw_path_has_restricted_token(NSString* lower) {
 
 // --- kinfo_proc classification cache (pid + process start time) -----------
 
+// One TTL for both classification caches below: a stale verdict window the
+// detector can measure must be identical across the sysctl and libproc
+// channels, or the window difference itself is a cross-API contradiction.
+// Keyed pid+starttime (kinfo) vs pid-only (libproc) as before; only the
+// duration is shared.
 #define SHADW_PROC_CACHE_SIZE 32
-#define SHADW_PROC_CACHE_TTL 5  // seconds; keyed pid+starttime so reuse is safe
+#define SHADW_PROC_CACHE_TTL 2  // seconds
 
 typedef struct {
     pid_t pid;
@@ -166,7 +171,7 @@ BOOL shdw_pid_restricted_uncached(pid_t pid) {
 // is an ObjC call that could re-enter hooked code).
 
 #define SHADW_PID_CACHE_SIZE 32
-#define SHADW_PID_CACHE_TTL 2  // seconds; pid-only key (no start time), so shorter than PROC TTL
+// Same SHADW_PROC_CACHE_TTL as the kinfo cache above (shared duration).
 
 typedef struct {
     pid_t pid;
@@ -186,7 +191,7 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
     for(NSUInteger i = 0; i < SHADW_PID_CACHE_SIZE; i++) {
         const shdw_pid_cache_entry_t* e = &shdw_pid_cache[i];
 
-        if(e->pid == pid && now - e->stamp < SHADW_PID_CACHE_TTL) {
+        if(e->pid == pid && now - e->stamp < SHADW_PROC_CACHE_TTL) {
             BOOL verdict = e->restricted;
             pthread_mutex_unlock(&shdw_pid_cache_lock);
             return verdict;
@@ -437,14 +442,21 @@ shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
         return SHADW_PROC_MIB_NONE;
     }
 
-    // KERN_PROCARGS2 is a direct CTL_KERN child: {CTL_KERN, KERN_PROCARGS2, pid}.
-    if(name[1] == KERN_PROCARGS2 && namelen == 3) {
+    // KERN_PROCARGS (legacy) and KERN_PROCARGS2 are direct CTL_KERN
+    // children: {CTL_KERN, KERN_PROCARGS(2), pid}. The legacy channel
+    // carries the same launch argv/envp, so it classifies the same and the
+    // hook bodies share shdw_procargs2_filter. Numbers are literals: the
+    // theos SDK only defines KERN_PROCARGS2 under __APPLE_API_UNSTABLE,
+    // and KERN_PROCARGS is always 38 (sysctl.h name list position).
+    if((name[1] == 38 || name[1] == 49) && namelen == 3) {
+        BOOL isArgs2 = (name[1] == 49);
+
         if(name[2] == (int) getpid()) {
-            return SHADW_PROC_MIB_ARGS2_SELF;
+            return isArgs2 ? SHADW_PROC_MIB_ARGS2_SELF : SHADW_PROC_MIB_ARGS_SELF;
         }
 
         if(name[2] > 0) {
-            return SHADW_PROC_MIB_ARGS2_OTHER;
+            return isArgs2 ? SHADW_PROC_MIB_ARGS2_OTHER : SHADW_PROC_MIB_ARGS_OTHER;
         }
     }
 

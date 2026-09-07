@@ -72,7 +72,9 @@ void shdw_universal_url_scheme(SHDWHookSession* hooks) {
 // JB-indicator suite name trips the behavioral detector and the read is
 // answered with nil for external callers. Only VERIFIED jailbreak bundle IDs
 // match — the same conservative stance as shdw_bootstrap_service_restricted.
-static BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
+// ponytail: single source for the suite gate — CFPreferences in libc.x
+// consults this instead of duplicating the tables.
+BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
     if(!suitename || suitename.length == 0) {
         return NO;
     }

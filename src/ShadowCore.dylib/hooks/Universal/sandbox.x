@@ -1,6 +1,7 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #import "UniversalHooks.h"
+#import "../../policy/EnvironmentPolicy.h"
 
 #import <unistd.h>
 #import <wordexp.h>
@@ -445,7 +446,10 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 
 // --- exec family: typed wrappers (no more blanket ENOSYS anywhere) ---
 
-extern char** environ;
+// The `environ` symbol is rebound process-wide to Shadow's filtered copy
+// (EnvironmentPolicy.m), so a child launched with the raw symbol would lose
+// DYLD_INSERT_LIBRARIES and never load systemhook. execl/execv dispatch
+// through execve with the REAL environment via shdw_env_real().
 
 static int (*original_execve)(const char* path, char* const argv[], char* const envp[]);
 static int (*original_execvp)(const char* file, char* const argv[]);
@@ -458,6 +462,16 @@ static int (*original_execvp)(const char* file, char* const argv[]);
 // caller's.
 static BOOL shdw_exec_path_denied(BOOL callerExternal, const char* path) {
     return callerExternal && path && [_shadow isCPathRestricted:path];
+}
+
+// Single spawn-deny contract for every process-creation surface: a hidden
+// executable path answers ENOENT, any other external spawn answers EPERM
+// (the stock app-sandbox denial). One helper so execve/posix_spawn/fork/
+// system/popen/wordexp can never disagree on the errno a detector compares.
+// posix_spawn reports failure as a positive errno return (no errno set);
+// every other surface sets errno and returns -1/NULL.
+static int shdw_spawn_deny_errno(const char* path) {
+    return (path && [_shadow isCPathRestricted:path]) ? ENOENT : EPERM;
 }
 
 // Collects the NULL-terminated variadic argv of an execl* call into a
@@ -508,8 +522,8 @@ static int replaced_execl(const char* path, const char* arg0, ...) {
     }
 
     // execl does not search PATH: dispatch through execve with the current
-    // environment.
-    int result = original_execve(path, argv, environ);
+    // (REAL) environment — see the shdw_env_real() note above.
+    int result = original_execve(path, argv, shdw_env_real());
     free(argv);
     return result;
 }
@@ -565,7 +579,7 @@ static int replaced_execv(const char* path, char* const argv[]) {
         return -1;
     }
 
-    return original_execve(path, argv, environ);
+    return original_execve(path, argv, shdw_env_real());
 }
 
 static int replaced_execvp(const char* file, char* const argv[]) {
@@ -592,8 +606,8 @@ static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_
         if(pid) *pid = -1;
         // posix_spawn(2) reports failure as a POSITIVE errno-number return
         // value and does not set errno. Stock app sandboxes deny process
-        // creation before execution; preserve ENOENT for hidden paths.
-        return path && [_shadow isCPathRestricted:path] ? ENOENT : EPERM;
+        // creation before execution (see shdw_spawn_deny_errno).
+        return shdw_spawn_deny_errno(path);
     }
 
     return original_posix_spawn(pid, path, file_actions, attrp, argv, envp);
@@ -603,7 +617,7 @@ static int (*original_posix_spawnp)(pid_t* pid, const char* file, const posix_sp
 static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
     if(isCallerExternal()) {
         if(pid) *pid = -1;
-        return file && [_shadow isCPathRestricted:file] ? ENOENT : EPERM;
+        return shdw_spawn_deny_errno(file);
     }
 
     return original_posix_spawnp(pid, file, file_actions, attrp, argv, envp);
@@ -613,8 +627,8 @@ static pid_t (*original_fork)(void);
 static pid_t (*resolved_fork)(void);
 static pid_t replaced_fork(void) {
     if(isCallerExternal()) {
-        // Stock-like denial for app-origin callers: the app sandbox refuses
-        // fork with EPERM on stock iOS.
+        // Stock-like denial for app-origin callers (see
+        // shdw_spawn_deny_errno: no path involved, so always EPERM).
         errno = EPERM;
         return -1;
     }
@@ -678,6 +692,9 @@ static int replaced_system(const char* command) {
     }
 
     if(isCallerExternal() && shdw_command_hides_restricted_path(command)) {
+        // Hidden-path denial shares the spawn contract (ENOENT); a
+        // non-restricted external spawn still fails like the sibling
+        // surfaces — every spawn surface reports one agreed answer.
         errno = ENOENT;
         return -1;
     }

@@ -55,6 +55,25 @@ NSArray<NSString*>* shdw_env_sanitized_argv(NSArray<NSString*>* result);
 // unfiltered view.
 char*** shdw_env_filtered_snapshot(char** raw);
 
+// Raw `environ` data-symbol filtering. External importers' `environ` slot is
+// rebound to point at shdw_env_published_array, a Shadow-owned cell holding a
+// filtered copy of the real array (hidden DYLD_*/JAILBREAKD_*/safe-mode
+// entries dropped, PATH jailbreak components stripped). The real libSystem
+// `environ` is never mutated; Shadow's own reads and child spawns keep truth.
+//
+//   shdw_env_capture_real_environ  — capture &environ and publish generation 0
+//                                     (call once at install, before the rebind)
+//   shdw_env_publish_filtered      — rebuild+republish after a setenv/putenv
+//   shdw_env_published_array       — the filtered char** the slot points at
+extern char** shdw_env_published_array;
+void shdw_env_capture_real_environ(char*** realCell);
+void shdw_env_publish_filtered(void);
+// The real, unfiltered environ (Shadow's own reads / child spawns): the
+// `environ` symbol is rebound process-wide to the filtered copy, so internal
+// callers that need the true array (with DYLD_INSERT_LIBRARIES for systemhook)
+// must call this instead of referencing `environ`.
+char** shdw_env_real(void);
+
 // KERN_PROCARGS2 (self pid) payload filter: the kernel payload encodes
 // [int argc][char* argv[argc+1]][char* envp...][strings blob] with argv/envp
 // pointers referencing the strings blob. The kernel view carries the

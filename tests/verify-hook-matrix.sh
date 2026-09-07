@@ -415,7 +415,8 @@ if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' src/ShadowCore.dylib/
     exit 1
 fi
 if [ "$(grep -c 'if(pid) \*pid = -1;' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -ne 2 ] ||
-   [ "$(grep -c '? ENOENT : EPERM;' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -ne 2 ]; then
+   [ "$(grep -c 'shdw_spawn_deny_errno(' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -lt 2 ] ||
+   ! grep -q 'return (path && \[_shadow isCPathRestricted:path\]) ? ENOENT : EPERM;' src/ShadowCore.dylib/hooks/Universal/sandbox.x; then
     echo 'SANDBOX DRIFT: external posix_spawn lost its stock denial contract'
     exit 1
 fi

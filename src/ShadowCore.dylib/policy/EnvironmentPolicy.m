@@ -19,6 +19,7 @@
 
 #import <string.h>
 #import <stdlib.h>
+#import <pthread.h>
 
 BOOL shdw_env_name_hidden(const char* name) {
     if(!name) {
@@ -150,11 +151,132 @@ char* shdw_env_sanitized_path(const char* value) {
 }
 
 #ifndef SHADOW_TEST_HARNESS
-// setenv/unsetenv can change the value behind the getenv hook's PATH
-// sanitization. The input comparison above self-heals a changed value; these
-// hooks clear this thread's cache entry so a setenv with the SAME content
-// still forces a re-evaluation. (Only the calling thread's entry is cleared;
-// other threads' entries fail the input comparison on their next call.)
+// --- raw `environ` symbol filtering -----------------------------------------
+//
+// getenv/_NSGetEnviron/NSProcessInfo/PROCARGS2 all report a filtered view, but
+// a detector that reads the raw `environ` data symbol directly (its import is
+// a plain __DATA pointer, never routed through any of those functions) still
+// sees the launch-time DYLD_INSERT_LIBRARIES / JAILBREAKD_* / safe-mode
+// entries. Close that channel by REBINDING the `environ` import slot in
+// external images to a Shadow-owned cell that points at a filtered copy of
+// the array (see shdw_universal_envpolicy). The real libSystem `environ` is
+// never mutated — Shadow's own reads and child-process spawns keep the true
+// array (they resolve `environ` through ShadowCore's own import, which is not
+// rebound: HookKit's fishhook rewrites importer slots, and calls inside the
+// defining image / ShadowCore's own slot are covered separately below).
+//
+// Coherence with setenv/unsetenv/putenv: the real array can be reallocated by
+// libc when it grows, so the filtered copy is rebuilt (and republished) after
+// every mutation and lazily whenever the real array pointer changes.
+
+// The real libSystem environ cell, captured before the rebind so Shadow's own
+// code and the rebuild below always read the true array. Resolved via
+// _NSGetEnviron() (returns &environ) at install.
+static char*** shdw_real_environ_cell = NULL;
+
+// Shadow-owned published cell: the value external importers' `environ` slot is
+// rebound to point AT (the slot holds &shdw_env_published_array, so a reader
+// dereferences it to get the filtered char** — exactly environ's shape).
+char** shdw_env_published_array = NULL;
+
+// Two fixed-capacity generation buffers for the filtered array. Never freed
+// (an external importer may hold the published char** across a rebuild), so a
+// swap publishes the inactive generation and leaves the other valid for any
+// in-flight reader. Capacity is generous — a process's environ is tens of
+// entries. Overflow truncates (fail-soft: a detector sees a short but
+// clean env, never a jailbreak entry).
+#define SHDW_ENV_MIRROR_CAP 512
+static char* shdw_env_mirror_a[SHDW_ENV_MIRROR_CAP];
+static char* shdw_env_mirror_b[SHDW_ENV_MIRROR_CAP];
+static char** shdw_env_mirror_active = NULL;   // which generation is live-being-built
+static pthread_mutex_t shdw_env_mirror_lock = PTHREAD_MUTEX_INITIALIZER;
+
+// PATH entry storage for the mirror (a sanitized "PATH=..." lives here, not in
+// the real array). One slot: environ has a single PATH. Grown as needed.
+static char* shdw_env_mirror_path = NULL;
+static size_t shdw_env_mirror_path_cap = 0;
+
+// Rebuild the filtered array from the real one and publish it. Serialized by
+// the caller-held lock. The real array is the source of truth every time, so
+// a mutation (setenv/putenv) or a realloc is always reflected.
+static void shdw_env_rebuild_locked(void) {
+    char** real = shdw_real_environ_cell ? *shdw_real_environ_cell : NULL;
+    if(!real) {
+        return;
+    }
+
+    // Build into whichever generation is NOT currently published, so an
+    // in-flight reader of the published one never sees a torn buffer.
+    char** dst = (shdw_env_mirror_active == shdw_env_mirror_a)
+        ? shdw_env_mirror_b : shdw_env_mirror_a;
+
+    size_t out = 0;
+    for(size_t i = 0; real[i]; i++) {
+        if(out >= SHDW_ENV_MIRROR_CAP - 1) {
+            break;  // fail-soft truncate (see cap note above)
+        }
+
+        if(shdw_env_entry_hidden(real[i])) {
+            continue;
+        }
+
+        if(strncmp(real[i], "PATH=", 5) == 0) {
+            char* sanitized = shdw_env_sanitized_path_entry(real[i],
+                &shdw_env_mirror_path, &shdw_env_mirror_path_cap);
+            dst[out++] = sanitized ? sanitized : real[i];
+            continue;
+        }
+
+        // Unhidden entries share the real array's string storage — those
+        // strings outlive any single rebuild (libc owns them for the
+        // process), so pointing at them is safe.
+        dst[out++] = real[i];
+    }
+    dst[out] = NULL;
+
+    shdw_env_mirror_active = dst;
+    // Publish pointer-last with a release store: an external slot points at
+    // &shdw_env_published_array, so the reader's acquire load of it sees a
+    // fully-built dst.
+    __atomic_store_n(&shdw_env_published_array, dst, __ATOMIC_RELEASE);
+}
+
+// Public rebuild entry (also called after the mutator hooks). Idempotent.
+void shdw_env_publish_filtered(void) {
+    pthread_mutex_lock(&shdw_env_mirror_lock);
+    shdw_env_rebuild_locked();
+    pthread_mutex_unlock(&shdw_env_mirror_lock);
+}
+
+// The REAL, unfiltered environ array. Shadow's own code (child-process spawns
+// that must propagate DYLD_INSERT_LIBRARIES to systemhook, etc.) reads this
+// instead of the `environ` symbol — whose importer slot is rebound to the
+// filtered copy in every image, ShadowCore included. Falls back to a NULL
+// (empty) terminator array only if capture never ran (never in practice).
+char** shdw_env_real(void) {
+    static char* empty[1] = { NULL };
+    return shdw_real_environ_cell ? *shdw_real_environ_cell : empty;
+}
+
+// Capture the real environ cell and publish the first filtered generation.
+// Called once at install, before the rebind.
+void shdw_env_capture_real_environ(char*** realCell) {
+    if(!realCell) {
+        return;
+    }
+    pthread_mutex_lock(&shdw_env_mirror_lock);
+    shdw_real_environ_cell = realCell;
+    shdw_env_rebuild_locked();
+    pthread_mutex_unlock(&shdw_env_mirror_lock);
+}
+
+// setenv/unsetenv/putenv can change the value behind the getenv hook's PATH
+// sanitization AND the raw-environ filtered copy. The input comparison above
+// self-heals a changed value; these hooks clear this thread's cache entry so a
+// setenv with the SAME content still forces a re-evaluation, and rebuild the
+// published filtered array so a raw-environ reader stays coherent. (Only the
+// calling thread's PATH cache entry is cleared; other threads' entries fail
+// the input comparison on their next call.)
 static void shdw_env_path_cache_invalidate(void) {
     if(shdw_env_path_cache_input) {
         shdw_env_path_cache_input[0] = '\0';
@@ -164,20 +286,36 @@ static void shdw_env_path_cache_invalidate(void) {
 static int (*original_setenv)(const char* name, const char* value, int overwrite);
 static int replaced_setenv(const char* name, const char* value, int overwrite) {
     shdw_env_path_cache_invalidate();
-    return original_setenv(name, value, overwrite);
+    int result = original_setenv(name, value, overwrite);
+    shdw_env_publish_filtered();
+    return result;
 }
 
 static int (*original_unsetenv)(const char* name);
 static int replaced_unsetenv(const char* name) {
     shdw_env_path_cache_invalidate();
-    return original_unsetenv(name);
+    int result = original_unsetenv(name);
+    shdw_env_publish_filtered();
+    return result;
+}
+
+static int (*original_putenv)(char* string);
+static int replaced_putenv(char* string) {
+    shdw_env_path_cache_invalidate();
+    int result = original_putenv(string);
+    shdw_env_publish_filtered();
+    return result;
 }
 
 // Installed with the envvar group (dylib.x, next to shadowhook_libc_envvar):
-// keeps the PATH sanitization cache coherent with the live environment.
+// keeps the PATH sanitization cache coherent with the live environment and the
+// raw-`environ` filtered copy coherent with setenv/putenv mutations. The
+// `environ` data-symbol rebind itself is driven from the syscall installer
+// (next to _NSGetEnviron), where the rebind lane lives.
 void shdw_universal_envpolicy(SHDWHookSession* hooks) {
     [hooks hookFunction:setenv withReplacement:replaced_setenv outOldPtr:(void **) &original_setenv];
     [hooks hookFunction:unsetenv withReplacement:replaced_unsetenv outOldPtr:(void **) &original_unsetenv];
+    [hooks hookFunction:putenv withReplacement:replaced_putenv outOldPtr:(void **) &original_putenv];
 }
 #endif
 
