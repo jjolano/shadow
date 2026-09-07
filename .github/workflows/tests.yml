@@ -1,11 +1,9 @@
 name: harness
 
-# Decision-engine test harness (no device): unit assertions in rooted and
-# rootless modes, the detector-probe battery, the adversary evasion battery,
-# the benign-app differential battery, both fuzzers, and a gcov coverage
-# report mapped to the hooked-API groups. Linux runs in the GNUstep
-# container built by tests/Dockerfile; macOS builds natively against the
-# system Foundation (rooted-only: the rootless virtual FS is Linux-only).
+# Public contract checks (no device, no engine build): lane/package
+# contract, static source checks, pure-C checks, and the device-driver
+# selftest. The engine-harness jobs (GNUstep/macOS builds) moved to the
+# private repo with the full harness.
 
 on:
   push:
@@ -16,9 +14,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  HOOKKIT: 8f29e7168a7c9bbe9f1829afd3516a24b95ec79e
 
 jobs:
   lane-contract:
@@ -62,110 +57,10 @@ jobs:
       - name: svc path-rewrite check
         run: make -C tests verify-path-rewrite
 
-      # Device-driver logic selftest (host-only, no device needed).
-      - name: Device driver selftest
-        run: make -C tests verify-device-driver
+      # Pure-C check for the anti-fishhook journal/repair core.
+      - name: rebind-repair check
+        run: make -C tests verify-rebind-repair
 
-  linux-gnustep:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Provision HookKit headers
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/hookkit
-          git clone --quiet https://github.com/jjolano/HookKit /tmp/hookkit
-          git -C /tmp/hookkit checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
-            git -C /tmp/hookkit fetch --quiet origin "$HOOKKIT"
-            git -C /tmp/hookkit checkout --quiet --detach FETCH_HEAD
-          }
-          test -f /tmp/hookkit/Headers/HookKit.h || { echo "missing HookKit headers at /tmp/hookkit/Headers" >&2; exit 1; }
-          echo "HOOKKIT_HEADERS=/tmp/hookkit/Headers" >> "$GITHUB_ENV"
-          # stage-hookkit-headers also accepts THEOS layout; mirror there for
-          # jobs that still probe /opt/theos/lib/... (build.sh parity)
-          sudo mkdir -p /opt/theos/lib/HookKit.framework
-          sudo rm -rf /opt/theos/lib/HookKit.framework/Headers
-          sudo cp -R /tmp/hookkit/Headers /opt/theos/lib/HookKit.framework/Headers
-
-      - name: HookKit ABI drift check (headers)
-        env:
-          THEOS: /opt/theos
-        run: bash scripts/check-hookkit-abi.sh --headers-only rootful-modern
-
-      # The toolchain image (~10 min to build) is cached as a docker-archive
-      # tarball keyed on the Dockerfile; a restore makes the subsequent
-      # `docker build` reuse the loaded layers.
-      - name: Cache toolchain image
-        uses: actions/cache@v4
-        with:
-          path: /tmp/shadow-harness.tar
-          key: harness-image-${{ hashFiles('tests/Dockerfile') }}
-
-      - name: Load or build toolchain image
-        run: |
-          if [ -f /tmp/shadow-harness.tar ]; then
-            docker load -i /tmp/shadow-harness.tar
-          else
-            make -C tests image
-            docker save shadow-harness:latest -o /tmp/shadow-harness.tar
-          fi
-
-      - name: Unit assertions (rooted + rootless)
-        run: make -C tests test
-
-      - name: Detector battery (shipped rulesets, full leak report)
-        run: make -C tests detector
-
-      - name: Shipped rulesets battery (product rules)
-        run: make -C tests shipped
-
-      - name: Benign app unaffected by Shadow
-        run: make -C tests benign
-
-      - name: Adversary evasion battery
-        run: make -C tests adversary
-
-      - name: Fuzz (invariant properties, seeded)
-        run: make -C tests fuzz
-
-      - name: Adversarial fuzz (evasion oracle)
-        run: make -C tests afuzz
-
-      - name: Engine coverage (gcov) vs hooked API groups
-        run: make -C tests coverage
-
-      - name: Detector-probe battery (shipped rulesets, asserted)
-        run: make -C tests detect
-
-  macos-foundation:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Provision HookKit headers
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/hookkit
-          git clone --quiet https://github.com/jjolano/HookKit /tmp/hookkit
-          git -C /tmp/hookkit checkout --quiet --detach "$HOOKKIT" 2>/dev/null || {
-            git -C /tmp/hookkit fetch --quiet origin "$HOOKKIT"
-            git -C /tmp/hookkit checkout --quiet --detach FETCH_HEAD
-          }
-          test -f /tmp/hookkit/Headers/HookKit.h || { echo "missing HookKit headers at /tmp/hookkit/Headers" >&2; exit 1; }
-          echo "HOOKKIT_HEADERS=/tmp/hookkit/Headers" >> "$GITHUB_ENV"
-          sudo mkdir -p /opt/theos/lib/HookKit.framework
-          sudo rm -rf /opt/theos/lib/HookKit.framework/Headers
-          sudo cp -R /tmp/hookkit/Headers /opt/theos/lib/HookKit.framework/Headers
-
-      - name: Unit assertions (rooted)
-        run: make -C tests test-rooted
-
-      - name: Adversary evasion battery (rooted)
-        run: make -C tests adversary-rooted
-
-      - name: Detector-probe battery (rooted, asserted)
-        run: make -C tests detect-rooted
-
-      - name: Fuzz (invariant properties, seeded)
-        run: make -C tests fuzz
+      # Maintainer-script checks (packaging DEBIAN scripts, pure shell).
+      - name: Maintainer scripts check
+        run: sh tests/MaintainerScriptTests.sh

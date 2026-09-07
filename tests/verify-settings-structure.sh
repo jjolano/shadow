@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+
+# Device-tool path check resolves against the private harness checkout
+# (PRIVATE_HT, default tests/). Public runs skip it; private runs it.
+HT=${PRIVATE_HT:-tests}
+
 root=src/ShadowSettings.bundle/Resources/Root.plist
 app=src/ShadowSettings.bundle/Resources/App.plist
 runtime=src/ShadowCore.dylib/shadowcore.x
@@ -93,10 +100,9 @@ grep -q 'bundleIdentifier.length == 0' "$settings" || {
 }
 
 grep -q 'kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides"' "$settings" &&
-grep -q 'NSDictionary\* overrides = isDetectorRunner' "$settings" &&
+grep -q 'isEqualToString:@"me.jjolano.shadow.harness"' "$settings" &&
 grep -q 'SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID' "$settings" &&
-grep -q 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' "$settings" &&
-grep -q 'me.jjolano.shadow.test.iossecuritysuite' "$settings" || {
+grep -q 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' "$settings" || {
     echo 'SETTINGS DRIFT: detector overrides must remain private to test runners'
     exit 1
 }
@@ -132,8 +138,12 @@ for source in "$loader" "$settings"; do
     }
 done
 
-grep -q 'return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"' tests/stealth_device.py &&
-grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' tests/bench/run-b.sh || {
+# Canonical preference path is shared by the device tools in the private
+# harness; skip when no harness checkout is present.
+if [ -f "$HT/stealth_device.py" ]; then
+grep -q 'return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"' "$HT/stealth_device.py" &&
+grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' "$HT/bench/run-b.sh" || {
     echo 'SETTINGS DRIFT: device tools must edit the canonical preference file'
     exit 1
 }
+fi

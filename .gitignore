@@ -3,7 +3,6 @@ packages/
 build/
 .DS_Store
 .vscode
-.slim/deepwork/
 tests/harness
 tests/harness.d
 tests/*.gcno
@@ -14,17 +13,12 @@ artifacts/
 # via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
 vendor/HookKit.framework/
 .detector-deps/
-tests/ShadowHarness/concurrency/
 core
 core.*
 # Stray Swift module blobs a mis-cwd'd build can drop at the repo root.
 /Swift-*.swiftmodule
-# Theos mirrors a subproject's cross-tree _FILES (e.g. ../../DetectorRunners in
-# dyldprobe, ../../ShadowHarness in the DeviceSecurityKit runner) as an empty
-# stamp dir named after the escaped path segment; it is build output.
-tests/tools/dyldprobe/DetectorRunners/
-tests/DetectorRunners/*/ShadowHarness/
 __pycache__/
 *.py[cod]
-# Maintainer-local notes. Never committed; never force-add.
+# Private harness checkout mount (sibling shadow-private repo). Never
+# committed; never force-add. Maintainer-local notes live there too.
 private/

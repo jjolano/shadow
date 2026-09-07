@@ -1,4 +1,6 @@
-# Host test harness for Shadow's decision engine (no device required).
+# Public tests: pure-C checks + static contract scripts only. The full
+# engine-linked harness (detector/adversary/fuzz/device batteries) lives
+# in the private repo; see tests/README.md.
 
 # Pure-C check for the svc path-munging logic (path_rewrite.c — no
 # Foundation, so it compiles and runs on any host, macOS or Linux).
@@ -13,29 +15,11 @@ verify-rebind-repair:
 		verify-rebind-repair.c
 	/tmp/shadow-rebind-test
 
+# Device-driver logic selftests live in the private harness repo (pure-logic,
+# no device); public CI does not run them. Local run with a sibling checkout:
+#   python3 ../../shadow-private/harness-tests/stealth_device.py selftest
 verify-device-driver:
-	python3 stealth_device.py selftest
-	./stealth-device.sh selftest
-	python3 harness-regression.py --selftest
-
-# On-device harness regression (opt-in — needs a jailbroken device, mutates and
-# restores its prefs, ~4 min). NOT part of `make` or CI. Runs all 13 embedded
-# detectors under aggressive mode via a real SpringBoard launch and asserts the
-# outcome + notChecked set against harness-expected.json.
-#   make -C tests harness-regression DEVICE=mobile@10.0.1.160 [DEB=path/to.deb]
-harness-regression:
-	@test -n "$(DEVICE)" || { echo 'set DEVICE=mobile@host' >&2; exit 2; }
-	python3 harness-regression.py --device $(DEVICE) $(if $(DEB),--deb $(DEB),)
-
-# Builds the real Shadow.framework decision sources against a host Foundation
-# with a path shim.
-# Nothing here touches the theos/device toolchain.
-#
-# Platform split:
-#   macOS   — clang + the system Foundation; `make` builds `harness`.
-#   Linux   — the official GNUstep container (gnustep/base: clang +
-#             libobjc2 + GNUstep Foundation). `make` builds and runs through
-#             docker; the binary lands in tests/harness.
+	@echo "verify-device-driver: private harness only (see above); skipping"
 
 # HookKit headers for the harness come from the Theos install (HookKit repo:
 # make install-theos), staged into vendor/ (gitignored, arch-independent) since
@@ -50,123 +34,22 @@ stage-hookkit-headers:
 	mkdir -p ../vendor/HookKit.framework
 	cp -R "$(HOOKKIT_HEADERS)" ../vendor/HookKit.framework/Headers
 
-UNAME := $(shell uname)
+# Static contract checks (CWD-agnostic: every script cds to the repo root).
+lane-contract:
+	sh verify-lane-contract.sh
 
-ifeq ($(UNAME),Darwin)
+hook-matrix:
+	sh verify-hook-matrix.sh
 
-CC ?= clang
-FRAMEWORK = ../src/Shadow.framework
-VENDOR = ../vendor
+syscall-meta:
+	sh verify-syscall-meta.sh
 
-CFLAGS = -fobjc-arc -Wall -Wno-unused-parameter -DDEBUG -O0 -g -DSHADOW_TEST_HARNESS
-INCS = -I$(FRAMEWORK)/Headers -I$(FRAMEWORK) -I. -I../src/ShadowCore.dylib/hooks -I../src/ShadowCore.dylib/hooks/Universal \
-       -I$(VENDOR)/HookKit.framework/Headers
+settings-structure:
+	sh verify-settings-structure.sh
 
-SRCS = main.m ShdwPathShim.m fsinterpose.c ShadowFilter.m detectors/ShadowDetector.m Fuzz.m \
-       $(FRAMEWORK)/Core.m \
-       $(FRAMEWORK)/Ruleset.m \
-       $(FRAMEWORK)/Core+Utilities.m \
-       $(FRAMEWORK)/DpkgRulesGenerator.m \
-       $(FRAMEWORK)/RestrictionEngine.m \
-       $(FRAMEWORK)/JBPath.m \
-       $(FRAMEWORK)/RulesetCompiler.m \
-       $(FRAMEWORK)/RulesetStore.m \
-       RestrictionTests.m \
-        PolicyTests.m ../src/ShadowCore.dylib/policy/EnvironmentPolicy.m \
-       $(FRAMEWORK)/HookConfiguration.m \
-       $(FRAMEWORK)/SettingsMigration.m \
-       ../src/ShadowCore.dylib/HookAdapterBridge.m \
-       CoordinatorTests.m \
-       VersionCompareTests.m HookFallbackTests.c
-
-harness: $(SRCS) Makefile | stage-hookkit-headers
-	$(CC) $(CFLAGS) $(INCS) $(SRCS) -framework Foundation -o harness
-
-test: harness
-	./harness
-
-# Rooted-only runs for platforms without the virtual FS (macOS): the
-# rootless assertions depend on the Linux interposer.
-test-rooted: harness
-	./harness --rooted
-
-adversary-rooted: harness
-	./harness --rooted --adversary
-
-detect-rooted: harness
-	./harness --rooted --detect
-
-detector: harness
-	./harness --detector
-
-detect: harness
-	./harness --detect
-
-benign: harness
-	./harness --benign
-
-fuzz: harness
-	./harness --fuzz
-
-adversary: harness
-	./harness --adversary
+test: verify-path-rewrite verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure
 
 clean:
 	rm -f harness harness.d
 
-else
-
-DOCKER ?= docker
-IMAGE := shadow-harness:latest
-RUN := $(DOCKER) run --rm -v $(CURDIR)/..:/src -w /src $(IMAGE)
-
-image:
-	$(DOCKER) build -t $(IMAGE) $(CURDIR)
-
-harness: image stage-hookkit-headers
-	$(RUN) sh /src/tests/build-linux.sh
-
-test: harness
-	$(RUN) tests/harness
-
-# Rooted-only runs for platforms without the virtual FS (macOS): the
-# rootless assertions depend on the Linux interposer.
-test-rooted: harness
-	$(RUN) tests/harness --rooted
-
-adversary-rooted: harness
-	$(RUN) tests/harness --rooted --adversary
-
-detect-rooted: harness
-	$(RUN) tests/harness --rooted --detect
-
-detector: harness
-	$(RUN) tests/harness --detector
-
-detect: harness
-	$(RUN) tests/harness --detect
-
-benign: harness
-	$(RUN) tests/harness --benign
-
-fuzz: harness
-	$(RUN) tests/harness --fuzz
-
-shipped: harness
-	$(RUN) tests/harness --shipped
-
-afuzz: harness
-	$(RUN) tests/harness --afuzz
-
-adversary: harness
-	$(RUN) tests/harness --adversary
-
-coverage: image
-	$(RUN) sh /src/tests/coverage-report.sh
-
-clean:
-	rm -f harness harness.d
-
-endif
-
-.PHONY: stage-hookkit-headers test test-rooted detect detect-rooted adversary adversary-rooted detector benign shipped fuzz afuzz coverage clean verify-path-rewrite verify-rebind-repair verify-device-driver harness-regression
+.PHONY: test verify-path-rewrite verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure stage-hookkit-headers clean

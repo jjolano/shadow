@@ -1,14 +1,24 @@
 #!/bin/sh
-# Verifies the hook→engine coverage matrix embedded in coverage-report.sh
-# against the ACTUAL engine call sites in src/ShadowCore.dylib/hooks/*.x.
+# Verifies the hook→engine coverage matrix embedded below (moved here from
+# tests/coverage-report.sh when the engine-linked coverage harness went
+# private) against the ACTUAL engine call sites in
+# src/ShadowCore.dylib/hooks/*.x. Same two drift directions + the structural
+# checks below them.
 #
-# For every matrix entry whose group list consists of hook-file basenames
-# (the hook-facing entry points), two drift directions are checked:
-#   - a hook file calling the entry point without being listed → MATRIX DRIFT
-#     (a hook reached an untracked engine API, or the matrix is stale)
-#   - a listed hook file with no call site for the entry point → MATRIX STALE
-# Entries with non-hook group lists (backend/ruleset/internal) are skipped.
+# The full engine coverage report (per-method gcov %) lives in the private
+# harness repo; this file keeps only the drift matrix + structural checks.
+#
+# Run from the repo root (sh tests/verify-hook-matrix.sh) or via
+# make -C tests hook-matrix — ROOT pins every path below.
 set -e
+
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+
+# Harness-coupled checks resolve against the private harness checkout
+# (PRIVATE_HT, default: this repo's tests/ for the pre-split layout).
+# Absent in public — those sections skip; the private copy runs them.
+HT=${PRIVATE_HT:-tests}
 
 case ${1-} in
     '') selftest_drift=false ;;
@@ -16,20 +26,41 @@ case ${1-} in
     *) echo 'usage: tests/verify-hook-matrix.sh [--selftest-drift]' >&2; exit 2 ;;
 esac
 
-MATRIX=tests/coverage-report.sh
+MATRIX=tests/verify-hook-matrix.sh
 HOOKDIR=src/ShadowCore.dylib/hooks
 rc=0
 entries=$(mktemp)
 trap 'rm -f "$entries"' 0 HUP INT TERM
 
-awk -F'"' '
-    /^report / && $6 ~ /\[/ {
-        pattern = $4
-        groups = $6
-        gsub(/[\[\]]/, "", groups)
-        print pattern "|" groups
-    }
-' "$MATRIX" >"$entries"
+# Coverage matrix (hook-facing entry points only; was parsed out of
+# coverage-report.sh's report() lines — same `pattern|"groups"` shape).
+# ponytail: keep this list in sync with the hook call sites, nothing else.
+matrix_entries() {
+    cat <<'EOF'
+isCPathRestricted|libc libc_lowlevel dyld sandbox syscall AppEnvironment svc_patch
+isPathRestricted:options:|libc libc_lowlevel dyld sandbox syscall NSFileManager NSString NSData NSArray NSDictionary NSFileHandle NSBundle NSProcessInfo
+isURLRestricted:options:|NSFileManager NSURL NSString NSData NSArray NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
+isSchemeRestricted|LSApplicationWorkspace
+isBundleIDRestricted|LSApplicationWorkspace
+isProtectedImagePath|dyld objc NSBundle ThreadImage
+isAddrRestricted|dyld objc mem sandbox NSThread NSBundle
+evaluatePathRestriction|internal
+filterPathArray|NSFileManager
+fileNoSuchFileErrorForPath:|NSFileManager NSURL NSArray NSData NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
+getStandardizedPath|internal
+writeDpkgRuleset|internal
+isPathRestrictedQuery|internal
+isSchemeRestricted|internal
+isBundleIDRestricted|internal
+checkForChanges|internal
+isPathCompliant|internal
+isPathWhitelisted|internal
+isPathBlacklisted|internal
+rulesetWithURL|internal
+EOF
+}
+
+matrix_entries >"$entries"
 
 if [ "$selftest_drift" = true ]; then
     # Exercise the normal stale-entry path; this name cannot occur in a hook.
@@ -62,7 +93,10 @@ while IFS='|' read -r pattern groups; do
         [ -f "$f" ] || continue
         base=$(basename "$f" .x)
 
-        if grep -q "$pattern" "$f" && ! echo " $groups " | grep -q " $base "; then
+        # Comment-only mentions (rationale text, no call) don't count —
+        # strip // and /* */ comments before matching.
+        code=$(sed -e 's|//.*||' -e 's|/\*.*\*/||g' "$f")
+        if printf '%s\n' "$code" | grep -q "$pattern" && ! echo " $groups " | grep -q " $base "; then
             echo "MATRIX DRIFT: $base.x calls $pattern but is not in the matrix"
             rc=1
         fi
@@ -92,22 +126,27 @@ if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTI
     rc=1
 fi
 
-dyld_probe=tests/tools/dyldprobe/main.m
+if [ "$(grep -c 'shdw_path_is_in_main_bundle' src/ShadowCore.dylib/hooks/Universal/dyld.x)" -lt 5 ]; then
+    echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
+    rc=1
+fi
+
+# Harness-coupled checks below run only with a harness checkout present
+# ($HT = $PRIVATE_HT, default tests/). Public runs skip them; the private
+# copy runs them against harness-tests/.
+dyld_probe="$HT/tools/dyldprobe/main.m"
+if [ -f "$dyld_probe" ]; then
 if ! grep -q '@executable_path/Frameworks/shdwtestlib.dylib' "$dyld_probe"; then
     echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
     rc=1
 fi
-if ! grep -q 'SHDWDyldProbeWriteDashboardReport' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'shdwtestlib.dylib' tests/ShadowHarness/Makefile; then
+if ! grep -q 'SHDWDyldProbeWriteDashboardReport' "$HT/ShadowHarness/Detectors.m" ||
+   ! grep -q 'shdwtestlib.dylib' "$HT/ShadowHarness/Makefile"; then
     echo 'DYLD DRIFT: Harness no longer embeds the dyldprobe runner and stress library'
     rc=1
 fi
-if grep -q 'shadow-dyldprobe://run' tests/ShadowHarness/DetectorDashboard.m; then
+if grep -q 'shadow-dyldprobe://run' "$HT/ShadowHarness/DetectorDashboard.m"; then
     echo 'DYLD DRIFT: Harness still hands dyldprobe off to a separate app'
-    rc=1
-fi
-if [ "$(grep -c 'shdw_path_is_in_main_bundle' src/ShadowCore.dylib/hooks/Universal/dyld.x)" -lt 5 ]; then
-    echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
     rc=1
 fi
 if ! grep -q 'PROBE_DYLD_CALLBACK_COUNT = 9' "$dyld_probe"; then
@@ -148,6 +187,7 @@ done
 if ! grep -q 'Formal JSON evidence is written once at launch' "$dyld_probe"; then
     echo 'DYLD DRIFT: UI no longer identifies JSON as formal evidence'
     rc=1
+fi
 fi
 
 if grep -q SHADOW_LEGACY_COORDINATOR src/ShadowCore.dylib/shadowcore.x; then
@@ -221,11 +261,11 @@ if ! grep -q 'if(!buf && bufsize == 0)' src/ShadowCore.dylib/hooks/Universal/lib
     echo 'MOUNT DRIFT: getfsstat buffers must be populated from a full raw snapshot'
     exit 1
 fi
-if grep -q 'SHDWRunAllDetectors' tests/ShadowHarness/SceneDelegate.m; then
+if grep -q 'SHDWRunAllDetectors' "$HT/ShadowHarness/SceneDelegate.m" 2>/dev/null; then
     echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
     exit 1
 fi
-if ! grep -q -- '--shadow-headless-run-all' tests/ShadowHarness/main.m; then
+if [ ! -f "$HT/ShadowHarness/main.m" ]; then :; elif ! grep -q -- '--shadow-headless-run-all' "$HT/ShadowHarness/main.m"; then
     echo 'HARNESS HEADLESS DRIFT: Run All needs a direct executable test mode'
     exit 1
 fi
@@ -240,14 +280,16 @@ if ! grep -q 'SHDWUniversalHarnessBaselineID] = @YES' src/ShadowCore.dylib/shado
     echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
     exit 1
 fi
-if ! grep -q 'sdk_fallback_inventory' tests/ShadowHarness/Battery.m ||
-   ! grep -q 'sdk_fallback_observed' tests/ShadowHarness/Battery.m ||
-   ! grep -q 'Run All SDK fallback activation missing' tests/stealth_device.py; then
+if ! grep -q 'sdk_fallback_inventory' "$HT/ShadowHarness/Battery.m" 2>/dev/null ||
+   ! grep -q 'sdk_fallback_observed' "$HT/ShadowHarness/Battery.m" 2>/dev/null ||
+   ! grep -q 'Run All SDK fallback activation missing' "$HT/stealth_device.py" 2>/dev/null; then
+    if [ -f "$HT/ShadowHarness/Battery.m" ]; then
     echo 'HARNESS FALLBACK DRIFT: Run All must prove deferred SDK adapter activation'
     exit 1
+    fi
 fi
-if ! grep -q 'probe_launch_context(probe_documents_directory())' tests/tools/dyldprobe/main.m ||
-   ! grep -q 'return @"/var/mobile/Documents"' tests/tools/dyldprobe/main.m; then
+if [ ! -f "$HT/tools/dyldprobe/main.m" ]; then :; elif ! grep -q 'probe_launch_context(probe_documents_directory())' "$HT/tools/dyldprobe/main.m" ||
+   ! grep -q 'return @"/var/mobile/Documents"' "$HT/tools/dyldprobe/main.m"; then
     echo 'DYLD DRIFT: embedded probe must inherit the Harness launch mode'
     exit 1
 fi
@@ -270,76 +312,78 @@ if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/
     echo 'HARNESS FALLBACK DRIFT: late-loaded detector imports must be rebound in their exact image'
     exit 1
 fi
-if ! grep -q 'statfs("/var/jb"' tests/tools/dyldprobe/main.m ||
-   grep -q 'stat("/var/jb"' tests/tools/dyldprobe/main.m; then
+if [ -f "$HT/tools/dyldprobe/main.m" ] && { ! grep -q 'statfs("/var/jb"' "$HT/tools/dyldprobe/main.m" ||
+   grep -q 'stat("/var/jb"' "$HT/tools/dyldprobe/main.m"; }; then
     echo 'DYLD DRIFT: injection canary must use a universally installed filesystem hook'
     exit 1
 fi
-if ! grep -q 'DeviceSecurityKit' tests/ShadowHarness/Makefile ||
-   ! grep -q 'devicesecuritykit' tests/ShadowHarness/EmbeddedDrivers.swift; then
+if [ ! -f "$HT/ShadowHarness/Makefile" ]; then :; elif ! grep -q 'DeviceSecurityKit' "$HT/ShadowHarness/Makefile" ||
+   ! grep -q 'devicesecuritykit' "$HT/ShadowHarness/EmbeddedDrivers.swift"; then
     echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute embedded in the harness'
     exit 1
 fi
-if grep -q 'SecurityLoggerManager.shared' tests/ShadowHarness/Detectors.m tests/ShadowHarness/SHDWEmbedded.m tests/ShadowHarness/EmbeddedDrivers.swift; then
+if [ -f "$HT/ShadowHarness/Detectors.m" ] && grep -q 'SecurityLoggerManager.shared' "$HT/ShadowHarness/Detectors.m" "$HT/ShadowHarness/SHDWEmbedded.m" "$HT/ShadowHarness/EmbeddedDrivers.swift"; then
     echo 'HARNESS DSK DRIFT: isolated DeviceSecurityKit logger leaked into the Harness'
     exit 1
 fi
-if grep -q 'DEBUG-9be1\|shdw_write_run_all_debug_state' tests/ShadowHarness/Detectors.m; then
+if [ -f "$HT/ShadowHarness/Detectors.m" ] && grep -q 'DEBUG-9be1\|shdw_write_run_all_debug_state' "$HT/ShadowHarness/Detectors.m"; then
     echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
     exit 1
 fi
-if ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' tests/ShadowHarness/Makefile ||
-   ! grep -q 'm -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1' scripts/build-detector-harness.sh; then
+# NOTE: build-detector-harness.sh runs from the PUBLIC repo root ($ROOT =
+# public checkout), so its "$HT"/tools path keeps the public spelling.
+if [ -f "$HT/ShadowHarness/Makefile" ] && { ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' "$HT/ShadowHarness/Makefile" ||
+   ! grep -q 'm -C "$ROOT/tests/tools/dyldprobe" stage FINALPACKAGE=1' scripts/build-detector-harness.sh; }; then
     echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
     exit 1
 fi
-if ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfiguration.m ||
-   ! grep -q 'statuses\["rootPrivileges"\]' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'statuses\["hardwareCryptography"\]' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetectionChecksumCheckService()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetector.detect()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'IntegrityValidator.validateCodeSignature()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'ProxyDetector.checkVPNAsProxy()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'isReverseEngineered' tests/ShadowHarness/EmbeddedDrivers.swift ||
-    ! grep -q 'detect_launchd_deplatformized' tests/ShadowHarness/SHDWEmbedded.m ||
-    ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' tests/ShadowHarness/Makefile ||
-    ! grep -q 'SHDWEmbeddedCanSpawn' tests/ShadowHarness/SHDWEmbedded.m ||
-    ! grep -q 'iossecuritysuite.watchpoint' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q '_dyld_image_count()' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'notChecked: main-binary Mach-O parser segfaults' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q '\.findLoadedDylibs(' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'IOSSecuritySuite.amIRuntimeHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'FishHookChecker.denyFishHook\|MSHookFunctionChecker.denyMSHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'FishHookChecker\.denyFishHook\|MSHookFunctionChecker\.denyMSHook' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'amITampered(\[\|\.amITampered(' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-    ! grep -q 'runnerChecksWithBundleID:' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'runnerChecksWithBundleID:' tests/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'shdwInstallHarnessSDKFallback' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'isJb()' tests/ShadowHarness/SHDWEmbedded.m ||
-   ! grep -q 'isInjectedWithDynamicLibrary()' tests/ShadowHarness/SHDWEmbedded.m ||
-   ! grep -q 'isDebugged()' tests/ShadowHarness/SHDWEmbedded.m ||
-   ! grep -q 'ISJB_DIR)/JB.m' tests/ShadowHarness/Makefile ||
-   ! grep -q 'SwiftyJBD.isJailbroken()' tests/ShadowHarness/EmbeddedDrivers.swift ||
-   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' tests/ShadowHarness/Makefile ||
-   ! grep -q 'ShadowHarness_CODESIGN_FLAGS' tests/ShadowHarness/Makefile ||
-   ! grep -q 'application-identifier' tests/ShadowHarness/Resources/ShadowHarness.entitlements; then
+if [ ! -f "$HT/ShadowHarness/EmbeddedDrivers.swift" ]; then :; elif ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfiguration.m ||
+   ! grep -q 'statuses\["rootPrivileges"\]' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'statuses\["hardwareCryptography"\]' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetectionChecksumCheckService()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'JailbreakDetector.detect()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'IntegrityValidator.validateCodeSignature()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'ProxyDetector.checkVPNAsProxy()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'isReverseEngineered' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+    ! grep -q 'detect_launchd_deplatformized' "$HT"/ShadowHarness/SHDWEmbedded.m ||
+    ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' "$HT"/ShadowHarness/Makefile ||
+    ! grep -q 'SHDWEmbeddedCanSpawn' "$HT"/ShadowHarness/SHDWEmbedded.m ||
+    ! grep -q 'iossecuritysuite.watchpoint' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q '_dyld_image_count()' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q 'notChecked: main-binary Mach-O parser segfaults' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q '\.findLoadedDylibs(' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'IOSSecuritySuite.amIRuntimeHook' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'FishHookChecker.denyFishHook\|MSHookFunctionChecker.denyMSHook' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'FishHookChecker\.denyFishHook\|MSHookFunctionChecker\.denyMSHook' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   grep -q 'amITampered(\[\|\.amITampered(' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+    ! grep -q 'runnerChecksWithBundleID:' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q 'runnerChecksWithBundleID:' "$HT"/ShadowHarness/detector-frameworks/bridges/IOSSBridge.swift ||
+   ! grep -q 'shdwInstallHarnessSDKFallback' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'isJb()' "$HT"/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'isInjectedWithDynamicLibrary()' "$HT"/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'isDebugged()' "$HT"/ShadowHarness/SHDWEmbedded.m ||
+   ! grep -q 'ISJB_DIR)/JB.m' "$HT"/ShadowHarness/Makefile ||
+   ! grep -q 'SwiftyJBD.isJailbroken()' "$HT"/ShadowHarness/EmbeddedDrivers.swift ||
+   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' "$HT"/ShadowHarness/Makefile ||
+   ! grep -q 'ShadowHarness_CODESIGN_FLAGS' "$HT"/ShadowHarness/Makefile ||
+   ! grep -q 'application-identifier' "$HT"/ShadowHarness/Resources/ShadowHarness.entitlements; then
     echo 'HARNESS OPTION DRIFT: embedded detectors must execute every supported one-shot check'
     exit 1
 fi
-if ! grep -q 'ShdwReadEvidenceData' tests/ShadowHarness/DetectorDashboard.m ||
-   ! grep -q 'ShdwWriteEvidenceData' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'written = ShdwWriteEvidenceData(data, path);' tests/tools/dyldprobe/main.m; then
+if [ ! -f "$HT"/ShadowHarness/Detectors.m ]; then :; elif ! grep -q 'ShdwReadEvidenceData' "$HT"/ShadowHarness/DetectorDashboard.m ||
+   ! grep -q 'ShdwWriteEvidenceData' "$HT"/ShadowHarness/Detectors.m ||
+   ! grep -q 'written = ShdwWriteEvidenceData(data, path);' "$HT"/tools/dyldprobe/main.m; then
     echo 'HARNESS EVIDENCE I/O DRIFT: detector reports must bypass their own file hooks'
     exit 1
 fi
-if grep -q 'shdw_load_framework\|shdw_dlopen_framework' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'SHDWKnowsDetector' tests/ShadowHarness/Detectors.m ||
-   ! grep -q 'SHDWEmbeddedRunDetector' tests/ShadowHarness/Detectors.m; then
+if [ ! -f "$HT"/ShadowHarness/Detectors.m ]; then :; elif grep -q 'shdw_load_framework\|shdw_dlopen_framework' "$HT"/ShadowHarness/Detectors.m ||
+   ! grep -q 'SHDWKnowsDetector' "$HT"/ShadowHarness/Detectors.m ||
+   ! grep -q 'SHDWEmbeddedRunDetector' "$HT"/ShadowHarness/Detectors.m; then
     echo 'HARNESS DRIFT: SDKs must run embedded in-process (no app flips)'
     exit 1
 fi
-if ! grep -q 'scheduledTimer.*30' tests/ShadowHarness/EmbeddedDrivers.swift; then
+if [ ! -f "$HT"/ShadowHarness/EmbeddedDrivers.swift ]; then :; elif ! grep -q 'scheduledTimer.*30' "$HT"/ShadowHarness/EmbeddedDrivers.swift; then
     echo 'HARNESS DRIFT: FreeRASP must settle before returning its report'
     exit 1
 fi
@@ -393,10 +437,14 @@ if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|Devi
     echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
     exit 1
 fi
-if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/JBPath.m ||
-   ! grep -q 'private var jb alias restricted' tests/PolicyTests.m ||
-   ! grep -q 'private var jb prefix boundary allowed' tests/PolicyTests.m; then
+if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/JBPath.m; then
     echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
+    rc=1
+fi
+# PolicyTests.m cases live in the private harness; run there.
+if [ -f "$HT"/PolicyTests.m ] && { ! grep -q 'private var jb alias restricted' "$HT"/PolicyTests.m ||
+   ! grep -q 'private var jb prefix boundary allowed' "$HT"/PolicyTests.m; }; then
+    echo 'FREERASP DRIFT: private /var/jb alias cases missing from PolicyTests'
     rc=1
 fi
 if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
@@ -407,9 +455,9 @@ if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/
 fi
 
 # The device matrix must expose the complete landed ledger by canonical ID.
-# Keep this source-level check beside the hook matrix so a new/renamed row
-# cannot silently turn REL-02 back into an aggregate-only result.
-canonical_actual=$(sed -n '/static const CanonicalRegression kCanonicalRegressions\[\] = {/,/^};/p' tests/tools/hookprobe/main.m |
+# hookprobe lives in the private harness; public runs skip this section.
+if [ -f "$HT"/tools/hookprobe/main.m ]; then
+canonical_actual=$(sed -n '/static const CanonicalRegression kCanonicalRegressions\[\] = {/,/^};/p' "$HT"/tools/hookprobe/main.m |
     awk -F'"' '/^[[:space:]]*\{ "/ { print $2 }' | sort)
 canonical_expected=$(printf '%s\n' \
     C-01 C-02 C-03 C-04 C-05 C-06 C-07 C-08 C-09 C-10 C-11 C-12 C-13 C-14 C-15 C-16 C-17 \
@@ -421,6 +469,7 @@ canonical_expected=$(printf '%s\n' \
 if [ "$canonical_actual" != "$canonical_expected" ]; then
     echo 'HOOKPROBE REGRESSION DRIFT: canonical witness IDs differ'
     rc=1
+fi
 fi
 
 exit $rc
