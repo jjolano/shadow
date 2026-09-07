@@ -71,17 +71,22 @@ static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary
                     continue;
                 }
 
-                NSString* child = [path stringByAppendingPathComponent:@(entry->d_name)];
+                // Per-entry pool: a wide/deep tree would otherwise pile up the
+                // child strings and every isPathRestricted: temporary until the
+                // outer hooked op returns (host-app memory spike, not a leak).
+                @autoreleasepool {
+                    NSString* child = [path stringByAppendingPathComponent:@(entry->d_name)];
 
-                // Any restricted descendant — a file or a directory — denies.
-                if([_shadow isPathRestricted:child options:options]) {
-                    restricted = YES;
-                    break;
+                    // Any restricted descendant — a file or a directory — denies.
+                    if([_shadow isPathRestricted:child options:options]) {
+                        restricted = YES;
+                    } else if(lstat(child.UTF8String, &st) == 0 && S_ISDIR(st.st_mode)
+                        && shdw_has_restricted_descendant_internal(child, options, depth + 1)) {
+                        restricted = YES;
+                    }
                 }
 
-                if(lstat(child.UTF8String, &st) == 0 && S_ISDIR(st.st_mode)
-                    && shdw_has_restricted_descendant_internal(child, options, depth + 1)) {
-                    restricted = YES;
+                if(restricted) {
                     break;
                 }
             }
