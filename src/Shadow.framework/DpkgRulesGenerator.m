@@ -44,30 +44,36 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
                 continue;
             }
 
-            NSString* content = [NSString stringWithContentsOfURL:file encoding:NSUTF8StringEncoding error:nil];
+            // Per-file pool: the full file contents, the split line array and
+            // every per-line standardized string are transient. Without this
+            // they accumulate across the whole info dir alongside the growing
+            // installed/exceptions/schemes sets (large generation-time peak).
+            @autoreleasepool {
+                NSString* content = [NSString stringWithContentsOfURL:file encoding:NSUTF8StringEncoding error:nil];
 
-            for(NSString* line in [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
-                NSString* path = [Shadow getStandardizedPath:line];
+                for(NSString* line in [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+                    NSString* path = [Shadow getStandardizedPath:line];
 
-                if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
-                    continue;
-                }
+                    if(!path || [path length] == 0 || [path isEqualToString:@"/"]) {
+                        continue;
+                    }
 
-                if([[path pathExtension] isEqualToString:@"app"]) {
-                    NSDictionary* plist = [[NSBundle bundleWithPath:JBPath(path)] infoDictionary];
+                    if([[path pathExtension] isEqualToString:@"app"]) {
+                        NSDictionary* plist = [[NSBundle bundleWithPath:JBPath(path)] infoDictionary];
 
-                    if(!IsShadowVerificationBundle([plist objectForKey:@"CFBundleIdentifier"])) {
-                        for(NSDictionary* type in [plist objectForKey:@"CFBundleURLTypes"]) {
-                            NSArray* appSchemes = [type objectForKey:@"CFBundleURLSchemes"];
+                        if(!IsShadowVerificationBundle([plist objectForKey:@"CFBundleIdentifier"])) {
+                            for(NSDictionary* type in [plist objectForKey:@"CFBundleURLTypes"]) {
+                                NSArray* appSchemes = [type objectForKey:@"CFBundleURLSchemes"];
 
-                            if(appSchemes) {
-                                [schemes addObjectsFromArray:appSchemes];
+                                if(appSchemes) {
+                                    [schemes addObjectsFromArray:appSchemes];
+                                }
                             }
                         }
                     }
-                }
 
-                [([skippedLists containsObject:[file lastPathComponent]] ? exceptions : installed) addObject:path];
+                    [([skippedLists containsObject:[file lastPathComponent]] ? exceptions : installed) addObject:path];
+                }
             }
         }
 
@@ -84,10 +90,13 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
             @"SELF LIKE '/System/Library/PrivateFrameworks/CoreEmoji.framework/*.lproj'"];
         [installed filterUsingPredicate:[NSCompoundPredicate notPredicateWithSubpredicate:emoji]];
 
+        // Sort the set-derived arrays: NSSet enumeration order is
+        // nondeterministic, so unsorted output would differ run-to-run and
+        // defeat the unchanged-content write gate below.
         database = @{
             @"RulesetInfo" : @{ @"Name" : @"dpkg installed files", @"Author" : @"Shadow Service" },
-            @"BlacklistExactPaths" : [installed allObjects],
-            @"BlacklistURLSchemes" : [schemes allObjects]
+            @"BlacklistExactPaths" : [[installed allObjects] sortedArrayUsingSelector:@selector(compare:)],
+            @"BlacklistURLSchemes" : [[schemes allObjects] sortedArrayUsingSelector:@selector(compare:)]
         };
     }
 
@@ -105,9 +114,20 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
 
     SHADOW_INTERNAL_SCOPE {
         NSString* path = JBPath(@(SHADOW_DB_PLIST));
-        [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
-            withIntermediateDirectories:YES attributes:nil error:nil];
-        result = [ruleset writeToFile:path atomically:YES] ? 1 : -1;
+
+        // Skip the write when content is unchanged: the store reloads on any
+        // ruleset-file mtime change, so a no-op rewrite churns every process's
+        // decision caches for nothing. Sorted arrays above make the dict
+        // comparison stable. (Mirrors writeInstalledAppsRuleset's gate.)
+        NSDictionary* previous = [NSDictionary dictionaryWithContentsOfFile:path];
+
+        if(previous && [previous isEqual:ruleset]) {
+            result = 1;
+        } else {
+            [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+                withIntermediateDirectories:YES attributes:nil error:nil];
+            result = [ruleset writeToFile:path atomically:YES] ? 1 : -1;
+        }
     }
 
     return result;

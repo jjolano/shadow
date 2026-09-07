@@ -701,6 +701,11 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
         shdwCuratedRulesetEngines = [NSMutableDictionary new];
     }
 
+    // Paths seen this harvest; cache entries not in here are pruned below so a
+    // deleted ruleset's compiled engine does not stay retained for the daemon's
+    // lifetime (the watcher regenerates repeatedly).
+    NSMutableSet<NSString*>* seenPaths = [NSMutableSet new];
+
     for(NSURL* url in urls) {
         if([[url lastPathComponent] hasSuffix:kShadowRulesetCacheSuffix]) {
             continue;
@@ -719,10 +724,6 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
             ruleset = [previous objectAtIndex:1];
         } else {
             ruleset = [RulesetEngine rulesetWithURL:url];
-
-            if(ruleset) {
-                [shdwCuratedRulesetEngines setObject:@[@(mtime), ruleset] forKey:path];
-            }
         }
 
         if(!ruleset) {
@@ -732,10 +733,25 @@ static BOOL IsShadowVerificationBundle(NSString* bundleID) {
         NSDictionary* info = [[ruleset payloadDictionary] objectForKey:@"RulesetInfo"];
 
         if([[[info objectForKey:@"Author"] lowercaseString] isEqualToString:@"shadow service"]) {
+            // Generated ruleset (SystemRules/dpkgInstalled/this file): excluded
+            // from the harvest, so never retained in the cache — caching it
+            // would keep a broad, large engine resident for nothing.
+            [shdwCuratedRulesetEngines removeObjectForKey:path];
             continue;
         }
 
+        // Cache only curated engines that actually contribute to the harvest.
+        [shdwCuratedRulesetEngines setObject:@[@(mtime), ruleset] forKey:path];
+        [seenPaths addObject:path];
+
         [curated addObject:ruleset];
+    }
+
+    // Drop cache entries whose backing file is gone this harvest.
+    for(NSString* cachedPath in [shdwCuratedRulesetEngines allKeys]) {
+        if(![seenPaths containsObject:cachedPath]) {
+            [shdwCuratedRulesetEngines removeObjectForKey:cachedPath];
+        }
     }
 
     NSMutableSet* schemes = [NSMutableSet new];
