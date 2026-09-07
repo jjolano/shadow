@@ -226,6 +226,71 @@ static CFTypeRef replaced_IORegistryEntrySearchCFProperty(io_service_t service, 
     return result;
 }
 
+// --- Phase 4: iterator/notification surfaces. A detector blocked at the
+// matching-dict gate falls back to enumerating the registry and filtering
+// client-side, or subscribing for arrival notifications. Same
+// verified-token gate, same stock shapes:
+//   - IOIteratorNext: per-object skip — restricted services are skipped
+//     to the next object, never NULL-terminated early (early-NULL reads
+//     as end-of-iteration AND hides legitimate later entries; skipping
+//     preserves the full visible sequence).
+//   - IOObjectConformsTo: BOOL gate on the object's class name.
+//   - IOServiceAddMatchingNotification: subscribe-time gate — a
+//     restricted matching dict is answered with the empty-iterator shape
+//     up front (the notification itself still installs; a later wakeup
+//     re-enters IOIteratorNext, which skips per-object).
+// The iterators themselves (IORegistryCreateIterator /
+// IORegistryEntryCreateIterator) name no service and pass through: every
+// entry they yield is classified at the gates above.
+static io_object_t (*original_IOIteratorNext)(io_iterator_t iterator);
+static io_object_t replaced_IOIteratorNext(io_iterator_t iterator) {
+    if(!isCallerExternal()) {
+        return original_IOIteratorNext(iterator);
+    }
+
+    io_object_t obj;
+    while((obj = original_IOIteratorNext(iterator)) != 0) {
+        if(!shdw_iokit_service_restricted(obj)) {
+            break;
+        }
+        IOObjectRelease(obj);  // skipped handle belongs to us now
+        shdw_detector_detected("iokit");
+    }
+    return obj;
+}
+
+static boolean_t (*original_IOObjectConformsTo)(io_object_t object, const io_name_t className);
+static boolean_t replaced_IOObjectConformsTo(io_object_t object, const io_name_t className) {
+    if(isCallerExternal() && className && shdw_iokit_service_name_restricted(className)) {
+        shdw_detector_detected("iokit");
+        return false;
+    }
+    if(isCallerExternal() && shdw_iokit_service_restricted(object)) {
+        shdw_detector_detected("iokit");
+        return false;
+    }
+    return original_IOObjectConformsTo(object, className);
+}
+
+static kern_return_t (*original_IOServiceAddMatchingNotification)(IONotificationPortRef notifyPort, const io_name_t notificationType, CFDictionaryRef matching, IOServiceMatchingCallback callback, void* refCon, io_iterator_t* notification);
+static kern_return_t replaced_IOServiceAddMatchingNotification(IONotificationPortRef notifyPort, const io_name_t notificationType, CFDictionaryRef matching, IOServiceMatchingCallback callback, void* refCon, io_iterator_t* notification) {
+    if(isCallerExternal() && shdw_iokit_matching_restricted(matching)) {
+        shdw_detector_detected("iokit");
+        // Install the real notification (a later wakeup re-enters
+        // IOIteratorNext, which skips per-object), but hand back the
+        // empty-iterator shape for the current snapshot.
+        kern_return_t kr = original_IOServiceAddMatchingNotification(notifyPort, notificationType, matching, callback, refCon, notification);
+        if(kr == kIOReturnSuccess && notification) {
+            if(*notification) {
+                IOObjectRelease(*notification);
+            }
+            shdw_iokit_empty_iterator(notification);
+        }
+        return kr;
+    }
+    return original_IOServiceAddMatchingNotification(notifyPort, notificationType, matching, callback, refCon, notification);
+}
+
 void shdw_universal_iokit(SHDWHookSession* hooks) {
     [hooks hookFunction:IOServiceGetMatchingServices withReplacement:replaced_IOServiceGetMatchingServices outOldPtr:(void **) &original_IOServiceGetMatchingServices];
     [hooks hookFunction:IOServiceOpen withReplacement:replaced_IOServiceOpen outOldPtr:(void **) &original_IOServiceOpen];
@@ -253,6 +318,21 @@ void shdw_universal_iokit(SHDWHookSession* hooks) {
     sym = shdw_resolve_libsystem("_IORegistryEntrySearchCFProperty");
     if(sym) {
         [hooks hookFunction:sym withReplacement:replaced_IORegistryEntrySearchCFProperty outOldPtr:(void **) &original_IORegistryEntrySearchCFProperty];
+    }
+
+    // Phase 4 iterator/notification gates (same verified-token policy;
+    // iterators themselves pass through — entries classify at Next).
+    sym = shdw_resolve_libsystem("_IOIteratorNext");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IOIteratorNext outOldPtr:(void **) &original_IOIteratorNext];
+    }
+    sym = shdw_resolve_libsystem("_IOObjectConformsTo");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IOObjectConformsTo outOldPtr:(void **) &original_IOObjectConformsTo];
+    }
+    sym = shdw_resolve_libsystem("_IOServiceAddMatchingNotification");
+    if(sym) {
+        [hooks hookFunction:sym withReplacement:replaced_IOServiceAddMatchingNotification outOldPtr:(void **) &original_IOServiceAddMatchingNotification];
     }
 }
 
@@ -284,6 +364,9 @@ static const shdw_iokit_sym_policy_entry_t shdw_iokit_sym_policy_table[] = {
     { "IORegistryEntryCreateCFProperties", (void*)&replaced_IORegistryEntryCreateCFProperties, (void* const*)&original_IORegistryEntryCreateCFProperties },
     { "IORegistryEntryCreateCFProperty", (void*)&replaced_IORegistryEntryCreateCFProperty, (void* const*)&original_IORegistryEntryCreateCFProperty },
     { "IORegistryEntrySearchCFProperty", (void*)&replaced_IORegistryEntrySearchCFProperty, (void* const*)&original_IORegistryEntrySearchCFProperty },
+    { "IOIteratorNext", (void*)&replaced_IOIteratorNext, (void* const*)&original_IOIteratorNext },
+    { "IOObjectConformsTo", (void*)&replaced_IOObjectConformsTo, (void* const*)&original_IOObjectConformsTo },
+    { "IOServiceAddMatchingNotification", (void*)&replaced_IOServiceAddMatchingNotification, (void* const*)&original_IOServiceAddMatchingNotification },
 };
 
 void* shdw_sym_policy_lookup_iokit(const char* name) {
