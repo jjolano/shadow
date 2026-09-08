@@ -203,10 +203,74 @@ if ! printf '%s\n' "$ctor" | grep -q shdw_coordinator_ctor ||
     exit 1
 fi
 
+# Constructor replay must finish an observed UIKit event synchronously;
+# the actual image callback must remain asynchronous.
+coordinator_ctor=$(sed -n '/^static void shdw_coordinator_ctor(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
+image_callback=$(sed -n '/^static void shdw_early_image_add(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
+case "$coordinator_ctor" in
+    *'installEvent:SHDWEventCtor]'*'if(watcherEnabled)'*'shdw_early_image_add(_dyld_get_image_header(i)'*'if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {'*'[shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];'*'NSLog(@"completed hooks")'*) ;;
+    *) echo 'COORDINATOR DRIFT: observed UIKit replay must finish before ctor returns'; exit 1 ;;
+esac
+case "$image_callback" in
+    *'installEvent:'*) echo 'COORDINATOR DRIFT: image callback must not install synchronously'; exit 1 ;;
+    *'containsString:@"uikit.framework"'*'__atomic_exchange_n(&_shdw_uikit_installed, YES'*'enqueueEvent:SHDWEventUIKitLoaded]'*) ;;
+    *) echo 'COORDINATOR DRIFT: UIKit notification lost its image gate or async event'; exit 1 ;;
+esac
+
+case "$ctor" in
+    *'shdw_adapter_devicecheck_configure(prefs);'*'prefs = shdw_adapter_resolve_preferences(prefs);'*) ;;
+    *) echo 'ADAPTER DRIFT: authorization must be captured before presence resolution'; rc=1 ;;
+esac
+if [ "$(printf '%s\n' "$ctor" | grep -c 'shdw_adapter_devicecheck_configure(prefs);')" -ne 1 ]; then
+    echo 'ADAPTER DRIFT: authorization must not be overwritten after resolution'; rc=1
+fi
+devicecheck_install=$(sed -n '/^NSUInteger shdw_devicecheck_install_hooks(/,/^}/p' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m)
+case "$devicecheck_install" in
+    *'if(target != DCHTargetNone && !(enabledTargets & target))'*'continue;'*'performWhenTargetAvailable:'*'if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;'*'objc_getClass(desc->className)'*'hookMessageInClass:dispatchClass'*) ;;
+    *) echo 'ADAPTER DRIFT: authorized rows must use shared readiness before attempting'; rc=1 ;;
+esac
+autodetect=src/ShadowCore.dylib/hooks/Adapters/DetectorAutoDetect.x
+availability=$(sed -n '/^BOOL shdw_devicecheck_target_available(/,/^}/p' "$autodetect")
+case "$availability" in
+    *'case DCHTargetDTT: return shdw_detect_dtt();'*'case DCHTargetSafeDevice: return shdw_detect_safedevice();'*'case DCHTargetJailMonkey: return shdw_detect_jailmonkey();'*) ;;
+    *) echo 'ADAPTER DRIFT: readiness must reuse existing fingerprints'; rc=1 ;;
+esac
+if ! sed -n '/^static BOOL shdw_detect_safedevice(void) {/,/^}/p' "$autodetect" | grep -q 'return matches >= 2;'; then
+    echo 'ADAPTER DRIFT: partial readiness threshold changed'; rc=1
+fi
+
 if grep -q 'outOldPtr:&' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
     echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
     exit 1
 fi
+
+# A failed attempt must neutralize caller input without erasing a continuation
+# this session published (a live replacement may chain through it).
+apply_once=$(sed -n '/^static BOOL shdw_apply_hook_spec_once(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
+case "$apply_once" in
+    *'BOOL entryPublished = entryOriginal && shdw_cell_holds_published_original(oldPtr);'*'if(oldPtr && !entryPublished) {'*) ;;
+    *) echo 'SESSION DRIFT: setup-failure paths must snapshot then neutralize unpublished cells'; rc=1 ;;
+esac
+finish_helper=$(sed -n '/^static void shdw_finish_uninstalled_hook(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
+case "$finish_helper" in
+    *'result.mutation == HK_MUTATION_NONE && !entryPublished'*) ;;
+    *) echo 'SESSION DRIFT: clean failures must preserve earlier-attempt continuations'; rc=1 ;;
+esac
+if ! grep -q 'shdw_note_published_cell(oldPtr);' src/ShadowCore.dylib/SHDWHookSession.m; then
+    echo 'SESSION DRIFT: published continuations are not tracked'; rc=1
+fi
+# Every raw cell clear must sit under an entryPublished guard: only a
+# continuation from an earlier attempt may survive a failure.
+for line in $(grep -n '\*oldPtr = NULL;' src/ShadowCore.dylib/SHDWHookSession.m | cut -d: -f1); do
+    if [ "$line" -gt 3 ]; then
+        start=$((line - 3))
+    else
+        start=1
+    fi
+    if ! sed -n "${start},$((line - 1))p" src/ShadowCore.dylib/SHDWHookSession.m | grep -q 'entryPublished'; then
+        echo "SESSION DRIFT: unguarded cell clear at SHDWHookSession.m:$line"; rc=1
+    fi
+done
 
 for legacy_pointer_probe in UBReportMetadataDevice EnrollParameters; do
     if ! grep "$legacy_pointer_probe" src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m | grep -q "'\^'"; then
@@ -408,6 +472,22 @@ if grep -q 'LIBC | METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x; then
     echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
     exit 1
 fi
+# A rebind commit may call the replacement before it returns. Its continuation
+# must therefore be written directly to the caller's output cell, not staged
+# in a local that is copied out after the mutation.
+session_apply=$(sed -n '/^static BOOL shdw_apply_hook_spec(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
+case "$session_apply" in
+    *attemptOldPtr*|*'spec, &original,'*)
+        echo 'HOOK SESSION DRIFT: continuation output is staged across commit'
+        exit 1
+        ;;
+    *'spec, oldPtr, backendOverride,'*'spec, oldPtr, NULL,'*) ;;
+    *)
+        echo 'HOOK SESSION DRIFT: hook attempts must publish directly to caller storage'
+        exit 1
+        ;;
+esac
+
 if ! grep -q 'SHADW_HOOK_GROUP_FEATURE_METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x ||
    ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
    grep -q 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||

@@ -3,12 +3,22 @@
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <dispatch/dispatch.h>
 
 typedef NSString* SHDWImageRef;
 
 // Shadow's only HookKit boundary. Each request uses the native HK3 lifecycle;
 // keeping it here avoids leaking HK3 request structs through every hook file.
 @interface SHDWHookSession : NSObject
+
+// The coordinator supplies its serial queue; plain init creates a private one.
+- (instancetype)initWithLifecycleQueue:(dispatch_queue_t)queue;
+// Attempts synchronously. Return NO only for an absent class/selector or incomplete
+// target fingerprint BEFORE any backend call; YES and exceptions are terminal.
+// Retained blocks must not capture transient targets or original-output slots.
+// Returns the immediate block result, not hook success.
+- (BOOL)performWhenTargetAvailable:(BOOL (^)(SHDWHookSession* session))attempt;
+- (void)drainPendingTargets;
 
 - (BOOL)hookMessageInClass:(Class)objcClass
               withSelector:(SEL)selector

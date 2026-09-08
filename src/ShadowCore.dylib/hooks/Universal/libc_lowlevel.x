@@ -341,7 +341,3 @@ int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open
 void shdw_universal_low_level_c(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LOWLEVEL);
 }
-
-void shdw_universal_low_level_c_verify(void) {
-    shdw_libc_verify_group("libc_lowlevel", SHADW_HOOK_GROUP_LOWLEVEL);
-}

@@ -32,7 +32,7 @@ parser = updates[updates.index("NSString* version = nil;"):
                  updates.index("strongSelf->latestVersion = version;")]
 source = '#import <Foundation/Foundation.h>\n#import <objc/runtime.h>\n#include <assert.h>\n'
 source += "\n".join(re.findall(
-    r'^#define SHDW(?:AppEnabled|AppDisabled|DetectorAggressive)ID\s+@"[^"]+"',
+    r'^#define SHDW(?:AppEnabled|AppDisabled|DetectorAggressive|SingleToggleMigration)ID\s+@"[^"]+"',
     keys, re.M))
 source += '\nBOOL SHDWAppIsCustomized(id appPrefs);\n' + helpers
 source += '#define JBPath(path) (path)\n#define THEOS_PACKAGE_INSTALL_PREFIX "/test-bootstrap"\n'
@@ -61,7 +61,7 @@ static id testSymbol(id cls, SEL selector, NSString *name) {
 }
 '''
 source += prefs[prefs.index("UIImage *SHDWSettingsSymbol("):
-                prefs.index("void SHDWClearAppEnabled(")]
+                prefs.index("BOOL SHDWAppAggressive(")]
 source += r'''
 // Minimal UIKit/Preferences and session doubles execute the real controllers.
 typedef struct { double top, left, bottom, right; } UIEdgeInsets;
@@ -429,7 +429,23 @@ int main(void) { @autoreleasepool {
         for(NSNumber *value in @[@NO, @YES]) {
             NSDictionary *override = @{key: value, @"obsolete": @YES};
             [prefs setObject:override forKey:app];
-            NSDictionary *before = [prefs dictionaryRepresentation];
+            for(NSUInteger mask = 0; mask < 16; mask++) {
+        NSMutableDictionary *overrides = [NSMutableDictionary new];
+        NSArray *keys = @[SHDWAppEnabledID, SHDWAppDisabledID, SHDWDetectorAggressiveID, @"unrelated"];
+        for(NSUInteger i = 0; i < keys.count; i++) if(mask & (1 << i)) overrides[keys[i]] = @YES;
+        [prefs setObject:overrides forKey:app];
+        [prefs removeObjectForKey:SHDWSingleToggleMigrationID];
+        SHDWClearAppOverrides(prefs, app);
+        assert([[prefs objectForKey:SHDWSingleToggleMigrationID] boolValue]);
+        if(mask & 8) assert([[prefs dictionaryForKey:app] isEqual:@{@"unrelated": @YES}]);
+        else assert([prefs dictionaryForKey:app] == nil);
+        assert(SHDWAppFollowsGlobal(prefs, app));
+    }
+    [prefs removeObjectForKey:app];
+    [prefs removeObjectForKey:SHDWSingleToggleMigrationID];
+    SHDWClearAppOverrides(prefs, app);
+    assert([prefs objectForKey:SHDWSingleToggleMigrationID] == nil);
+    NSDictionary *before = [prefs dictionaryRepresentation];
             assert(!SHDWAppFollowsGlobal(prefs, app));
             assert(SHDWAppIsCustomized([prefs dictionaryForKey:app]));
             assert([[prefs dictionaryRepresentation] isEqual:before]);
@@ -448,6 +464,22 @@ int main(void) { @autoreleasepool {
             assert(SHDWAppFollowsGlobal(prefs, app));
         }
     }
+    for(NSUInteger mask = 0; mask < 16; mask++) {
+        NSMutableDictionary *overrides = [NSMutableDictionary new];
+        NSArray *keys = @[SHDWAppEnabledID, SHDWAppDisabledID, SHDWDetectorAggressiveID, @"unrelated"];
+        for(NSUInteger i = 0; i < keys.count; i++) if(mask & (1 << i)) overrides[keys[i]] = @YES;
+        [prefs setObject:overrides forKey:app];
+        [prefs removeObjectForKey:SHDWSingleToggleMigrationID];
+        SHDWClearAppOverrides(prefs, app);
+        assert([[prefs objectForKey:SHDWSingleToggleMigrationID] boolValue]);
+        if(mask & 8) assert([[prefs dictionaryForKey:app] isEqual:@{@"unrelated": @YES}]);
+        else assert([prefs dictionaryForKey:app] == nil);
+        assert(SHDWAppFollowsGlobal(prefs, app));
+    }
+    [prefs removeObjectForKey:app];
+    [prefs removeObjectForKey:SHDWSingleToggleMigrationID];
+    SHDWClearAppOverrides(prefs, app);
+    assert([prefs objectForKey:SHDWSingleToggleMigrationID] == nil);
     NSDictionary *before = [prefs dictionaryRepresentation];
     assert(!SHDWResetApp(prefs, nil));
     assert(!SHDWResetApp(prefs, @""));

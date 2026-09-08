@@ -540,15 +540,6 @@ void shdw_universal_mach_bootstrap(SHDWHookSession* hooks) {
     [hooks hookRebindSymbol:@"xpc_connection_resume" withReplacement:(void*)replaced_xpc_connection_resume outOldPtr:(void **) &original_xpc_connection_resume];
 }
 
-void shdw_universal_mach_bootstrap_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "bootstrap_check_in", original_bootstrap_check_in },
-        { "bootstrap_look_up", original_bootstrap_look_up },
-    };
-
-    shdw_verify_hooks("mach", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
 // Symbol policy for the mach C-function group (see dyld.x's
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound mach
 // export to its replacement for external callers, so the GOT-vs-dlsym

@@ -496,7 +496,3 @@ void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const voi
 void shdw_universal_antidebugging(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ANTIDEBUG);
 }
-
-void shdw_universal_antidebugging_verify(void) {
-    shdw_libc_verify_group("libc_antidebugging", SHADW_HOOK_GROUP_ANTIDEBUG);
-}

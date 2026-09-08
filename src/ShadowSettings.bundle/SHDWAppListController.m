@@ -97,8 +97,7 @@
 		// Rows animate in/out like Settings' own conditional rows instead of a
 		// full table reload.
 		if([value boolValue]) {
-			SHDWClearAppEnabled(prefs, [self applicationID]);
-			SHDWClearAppAggressive(prefs, [self applicationID]);
+			SHDWClearAppOverrides(prefs, [self applicationID]);
 			[self removeSpecifier:aggressiveSpecifier animated:YES];
 			[self removeSpecifier:enabledSpecifier animated:YES];
 			[self removeSpecifier:aggressiveGroupSpecifier animated:YES];

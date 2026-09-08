@@ -3,9 +3,6 @@
 #import "UniversalHooks.h"
 #import <Security/Security.h>
 #import <LocalAuthentication/LocalAuthentication.h>
-// Generated from build-support/jb-identifiers.plist (single source of truth);
-// see scripts/gen-jb-identifiers.py. Provides shdw_jb_nsuserdefaults_suites[]
-// and shdw_jb_preference_domain_ids[], NULL-terminated.
 #import "jb-identifiers.h"
 
 %group shadowhook_UIApplication
@@ -83,8 +80,6 @@ BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
         return NO;
     }
 
-    // Exact-match set built from the generated array (values authored in
-    // build-support/jb-identifiers.plist); same NSSet lookup as before.
     static NSSet* restrictedSuites = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -114,9 +109,6 @@ BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename) {
         return YES;
     }
 
-    // Known jailbreak-app preference domains a stock device never has. Built
-    // from the generated array (values authored in
-    // build-support/jb-identifiers.plist); same leaf exact-match as before.
     static NSArray<NSString*>* jbPrefIDs = nil;
     static dispatch_once_t prefOnce;
     dispatch_once(&prefOnce, ^{

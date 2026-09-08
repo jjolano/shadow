@@ -323,25 +323,6 @@ extern BOOL shdw_memory_hiding_enabled;
 // ctor skipped. Safe to call from hooked functions and the image watcher.
 extern void shdw_detector_detected(const char* reason);
 
-// Post-install verification: a hook that failed to install (backend error,
-// symbol unresolvable) leaves its original_* NULL and the restriction
-// silently unenforced. The universal hook files expose per-group verification
-// that check their group's required symbols; the ctor calls them after
-// executeHooks for the groups it installed. Runtime-resolved optional
-// symbols are excluded from the checks — NULL there is expected.
-typedef struct {
-    const char* name;
-    const void* ptr;
-} shdw_hook_check_t;
-
-static inline void shdw_verify_hooks(const char* group, const shdw_hook_check_t* checks, size_t count) {
-    for(size_t i = 0; i < count; i++) {
-        if(!checks[i].ptr) {
-            NSLog(@"[Shadow] %s hook not installed: %s", group, checks[i].name);
-        }
-    }
-}
-
 // Raw-syscall policy categories (hooks/Universal/syscall.x dispatch;
 // shared with the svc-patch trampoline in hooks/Universal/svc_patch.x).
 typedef enum {
@@ -394,7 +375,7 @@ void shdw_procargs2_filter(void* oldp, size_t* oldlenp);
 
 // --- libc split shared surface ---------------------------------------------
 // libc.x owns the single shdw_libc_hooks descriptor table and the
-// install/verify machinery; the envvar / lowlevel / antidebugging bodies live
+// installation machinery; the envvar / lowlevel / antidebugging bodies live
 // in their own files (libc_envvar.x, libc_lowlevel.x, libc_antidebugging.x)
 // and call back into the shared installer/verifier here.
 
@@ -417,7 +398,6 @@ typedef enum {
 } shdw_hook_group_t;
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
-void shdw_libc_verify_group(const char* group, uint32_t mask);
 
 // struct stat64 is not visible in this build configuration: the SDK guards it
 // behind feature macros and omits it entirely on LP64 platforms where struct

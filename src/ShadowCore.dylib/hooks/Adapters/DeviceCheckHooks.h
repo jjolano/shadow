@@ -27,6 +27,8 @@ typedef NS_OPTIONS(uint8_t, DCHTarget) {
     DCHTargetJailMonkey = 1 << 2,
 };
 
+BOOL shdw_devicecheck_target_available(DCHTarget target);
+
 typedef struct {
     const char* className;   // runtime class name (objc_getClass)
     const char* selector;    // selector name

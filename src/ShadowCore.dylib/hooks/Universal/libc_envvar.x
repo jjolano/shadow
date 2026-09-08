@@ -34,7 +34,3 @@ char* replaced_getenv(const char* name) {
 void shdw_universal_envvars_c(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_ENVVAR);
 }
-
-void shdw_universal_envvars_c_verify(void) {
-    shdw_libc_verify_group("libc_envvar", SHADW_HOOK_GROUP_ENVVAR);
-}

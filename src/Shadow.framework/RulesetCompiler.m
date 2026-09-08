@@ -38,20 +38,10 @@ static const NSInteger kShadowRulesetCacheVersion = 5;
         // Evict last-known-good entries whose file no longer exists; a
         // changed file's entry is keyed out by its stale mtime and replaced
         // below on the next successful compile.
-        NSMutableArray* deadKeys = nil;
-
         for(NSString* key in [lastKnownGood allKeys]) {
             if(![[NSFileManager defaultManager] fileExistsAtPath:key]) {
-                if(!deadKeys) {
-                    deadKeys = [NSMutableArray new];
-                }
-
-                [deadKeys addObject:key];
+                [lastKnownGood removeObjectForKey:key];
             }
-        }
-
-        for(NSString* key in deadKeys) {
-            [lastKnownGood removeObjectForKey:key];
         }
 
         NSDictionary* ruleset_dict = nil;

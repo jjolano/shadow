@@ -9,9 +9,6 @@ tests/*.gcno
 tests/*.gcda
 tests/*.gcov
 artifacts/
-# Generated JB-identifier header (rendered from build-support/jb-identifiers.plist
-# by scripts/gen-jb-identifiers.py at build time). Never committed.
-src/ShadowCore.dylib/.gen/
 # Built framework staged by build.sh stage_deps(); theos links against it
 # via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
 vendor/HookKit.framework/

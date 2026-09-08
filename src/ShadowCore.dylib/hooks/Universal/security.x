@@ -189,14 +189,3 @@ void shdw_universal_codesigning(SHDWHookSession* hooks) {
     // policy infrastructure, never filtered itself.
     shdw_orig_SecCodeCopyPath = (shdw_osstatus_t (*)(const void*, shdw_sec_csflags_t, CFURLRef*)) shdw_resolve_libsystem("SecCodeCopyPath");
 }
-
-void shdw_universal_codesigning_verify(void) {
-    // SecCodeCheckValidity is the only export guaranteed present wherever
-    // any of them are; the static twins are runtime-resolved siblings
-    // (NULL expected when absent — same discipline as shadowhook_syscall_verify).
-    shdw_hook_check_t checks[] = {
-        { "SecCodeCheckValidity", original_SecCodeCheckValidity },
-    };
-
-    shdw_verify_hooks("security", checks, sizeof(checks) / sizeof(checks[0]));
-}

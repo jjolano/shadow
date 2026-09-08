@@ -336,15 +336,6 @@ void shdw_universal_iokit(SHDWHookSession* hooks) {
     }
 }
 
-void shdw_universal_iokit_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "IOServiceGetMatchingServices", original_IOServiceGetMatchingServices },
-        { "IOServiceOpen", original_IOServiceOpen },
-    };
-
-    shdw_verify_hooks("iokit", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
 // Symbol policy for the iokit C-function group (see dyld.x's
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound iokit
 // export to its replacement for external callers, so the GOT-vs-dlsym

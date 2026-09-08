@@ -1,4 +1,5 @@
 #import "UniversalHooks.h"
+#import "../../HookCoordinator.h"
 #import "../../policy/EnvironmentPolicy.h"
 #import <pthread.h>
 #import <mach/vm_region.h>
@@ -947,16 +948,21 @@ static BOOL shdw_dlopen_resolution_denied(const char* path, const void* callerAd
     return NO;
 }
 
+static void* shdw_dlopen_completed(void* handle, const char* path, int mode) {
+    // Completion follows initializers, unlike the add-image notification.
+    if(handle && path && !(mode & RTLD_NOLOAD)) {
+        [SHDWHookCoordinator shdw_requestPendingTargetDrain];
+    }
+    return handle;
+}
+
 static void* (*original_dlopen)(const char* path, int mode);
 static void* replaced_dlopen(const char* path, int mode) {
     // Each loader operation clears the thread's error state up front.
     _shdw_dyld_error_tls = NULL;
 
-    if(!isCallerExternal() || !path) {
-        return original_dlopen(path, mode);
-    }
-
-    if(shdw_dlopen_resolution_denied(path, __builtin_extract_return_addr(__builtin_return_address(0)))) {
+    if(isCallerExternal() && path &&
+       shdw_dlopen_resolution_denied(path, __builtin_extract_return_addr(__builtin_return_address(0)))) {
         // A non-tweak caller trying to dlopen a jailbreak dylib is a probe.
         shdw_detector_detected("dlopen");
 
@@ -964,27 +970,23 @@ static void* replaced_dlopen(const char* path, int mode) {
         return NULL;
     }
 
-    return original_dlopen(path, mode);
+    return shdw_dlopen_completed(original_dlopen(path, mode), path, mode);
 }
 
 static void* (*original_dlopen_internal)(const char* path, int mode, void* caller);
 static void* replaced_dlopen_internal(const char* path, int mode, void* caller) {
     _shdw_dyld_error_tls = NULL;
 
-    if(!isCallerExternal() || !path) {
-        return original_dlopen_internal(path, mode, caller);
-    }
-
     // dlopen_from/dlopen_internal carry the true caller image explicitly;
     // @loader_path/@rpath resolve against it.
-    if(shdw_dlopen_resolution_denied(path, caller)) {
+    if(isCallerExternal() && path && shdw_dlopen_resolution_denied(path, caller)) {
         shdw_detector_detected("dlopen");
 
         _shdw_dyld_error_tls = "library not found";
         return NULL;
     }
 
-    return original_dlopen_internal(path, mode, caller);
+    return shdw_dlopen_completed(original_dlopen_internal(path, mode, caller), path, mode);
 }
 
 static bool (*original_dlopen_preflight)(const char* path);
@@ -2939,55 +2941,4 @@ void shdw_universal_symaddrlookup(SHDWHookSession* hooks) {
     [hooks hookRebindSymbol:@"dladdr"
             withReplacement:replaced_dladdr
                    outOldPtr:entrypointInstalled ? NULL : (void **) &original_dladdr];
-}
-
-void shdw_universal_dyld_verify(void) {
-    // The findSymbolInImage/dlsym-resolved SPIs (unwind sections, image
-    // uuid, process info, NS* lookups, register-for-image-loads) are
-    // excluded — NULL is expected when the OS lacks the export.
-    shdw_hook_check_t checks[] = {
-        { "_dyld_get_image_name", original_dyld_get_image_name },
-        { "_dyld_image_count", original_dyld_image_count },
-        { "_dyld_get_image_header", original_dyld_get_image_header },
-        { "_dyld_get_image_vmaddr_slide", original_dyld_get_image_vmaddr_slide },
-        { "_dyld_register_func_for_add_image", original_dyld_register_func_for_add_image },
-        { "_dyld_register_func_for_remove_image", original_dyld_register_func_for_remove_image },
-        { "dyld_image_path_containing_address", original_dyld_image_path_containing_address },
-        { "dyld_image_header_containing_address", original_dyld_image_header_containing_address },
-        { "_dyld_get_image_slide", original_dyld_get_image_slide },
-        { "dlopen_preflight", original_dlopen_preflight },
-        { "dlerror", original_dlerror },
-        { "task_info", original_task_info },
-    };
-
-    shdw_verify_hooks("dyld", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
-void shdw_universal_dynamic_libraries_extra_verify(void) {
-    // dlopen_internal/dlopen_from resolve conditionally by OS version;
-    // excluded here.
-    shdw_hook_check_t checks[] = {
-        { "dlopen", original_dlopen },
-    };
-
-    shdw_verify_hooks("dyld_extra", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
-void shdw_universal_symlookup_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "dlsym", original_dlsym },
-        { "CFBundleGetFunctionPointerForName", original_CFBundleGetFunctionPointerForName },
-        { "CFBundleGetFunctionPointersForNames", original_CFBundleGetFunctionPointersForNames },
-        { "CFBundleGetDataPointerForName", original_CFBundleGetDataPointerForName },
-    };
-
-    shdw_verify_hooks("dyld_symlookup", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
-void shdw_universal_symaddrlookup_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "dladdr", original_dladdr },
-    };
-
-    shdw_verify_hooks("dyld_symaddrlookup", checks, sizeof(checks) / sizeof(checks[0]));
 }

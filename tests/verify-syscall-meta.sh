@@ -13,8 +13,8 @@
 #       hand-synced again, and no hand-synced chain may linger);
 #
 #   libc hooks (the single shdw_libc_hooks descriptor array):
-#     - every required hook (verifyGroups != 0) is installed by a group
-#       that also verifies it (verifyGroups must be a subset of its
+#     - every required hook (verifyGroups != 0) belongs to an installing
+#       group (verifyGroups must be a subset of its
 #       installGroups, token-wise — a required hook with no installer is
 #       drift);
 #     - only defined SHADW_HOOK_GROUP_* tokens are used;
@@ -145,7 +145,7 @@ awk -v libc="$LIBC" '
             gsub(/^[ \t]+|[ \t]+$/, "", ver)
             if (inst == "") { printf "META FAIL: descriptor %s has no install group\n", sym; exit 2 }
             n++
-            # required (verified) hooks must be installed by a verifying group
+            # required-export groups must also install the hook
             if (ver != "" && ver != "0") {
                 split(ver, vt, "|"); ok = 0
                 for (i in vt) { gsub(/^[ \t]+|[ \t]+$/, "", vt[i]); if (index(inst, vt[i]) > 0) ok = 1 }

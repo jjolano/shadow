@@ -80,13 +80,14 @@ UIImage *SHDWSettingsSymbol(NSString *name) {
 	return [[UIImage systemImageNamed:name] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
-void SHDWClearAppEnabled(NSUserDefaults *prefs, NSString *appID) {
+void SHDWClearAppOverrides(NSUserDefaults *prefs, NSString *appID) {
 	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy];
 	if(!appPrefs) {
 		return;
 	}
 	[appPrefs removeObjectForKey:SHDWAppEnabledID];
 	[appPrefs removeObjectForKey:SHDWAppDisabledID];
+	[appPrefs removeObjectForKey:SHDWDetectorAggressiveID];
 	[prefs setBool:YES forKey:SHDWSingleToggleMigrationID];
 	// Drop the app's dictionary entirely once it holds no overrides, so a
 	// "follow global" app leaves no residue in the backing plist.
@@ -106,21 +107,6 @@ void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID, BOOL aggress
 	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy] ?: [NSMutableDictionary new];
 	appPrefs[SHDWDetectorAggressiveID] = @(aggressive);
 	[prefs setObject:[appPrefs copy] forKey:appID];
-}
-
-void SHDWClearAppAggressive(NSUserDefaults *prefs, NSString *appID) {
-	NSMutableDictionary* appPrefs = [[prefs dictionaryForKey:appID] mutableCopy];
-	if(!appPrefs) {
-		return;
-	}
-	[appPrefs removeObjectForKey:SHDWDetectorAggressiveID];
-	// Leave the dict if other overrides remain (e.g. App_Enabled); otherwise
-	// drop it so a fully-default app leaves no residue.
-	if(appPrefs.count == 0) {
-		[prefs removeObjectForKey:appID];
-	} else {
-		[prefs setObject:[appPrefs copy] forKey:appID];
-	}
 }
 
 void SHDWToggleHaptic(void) {
