@@ -1,4 +1,10 @@
 "ABOUT_TITLE" = "About";
+"NOTES_DONE" = "Done";
+"NOTES_RETRY" = "Retry";
+"NOTES_LOADING" = "Loading release notes...";
+"NOTES_ERROR" = "Could not load release notes. Check your connection and try again.";
+"NOTES_NO_RELEASE" = "No matching Shadow release was found.";
+"NOTES_EMPTY" = "No release notes were provided for this release.";
 "UPDATES_HDR" = "Updates";
 "INSTALLED_VERSION" = "Installed Version";
 "LATEST_VERSION" = "Latest Version";

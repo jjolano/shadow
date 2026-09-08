@@ -19,9 +19,26 @@ void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled) {
 }
 
 BOOL SHDWAppFollowsGlobal(NSUserDefaults *prefs, NSString *appID) {
-	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];
-	// No explicit activation override → the runtime uses the global toggle.
-	return appPrefs[SHDWAppEnabledID] == nil;
+	return !SHDWAppIsCustomized([prefs dictionaryForKey:appID]);
+}
+
+BOOL SHDWAppIsCustomized(id appPrefs) {
+	return [appPrefs isKindOfClass:[NSDictionary class]] &&
+		([appPrefs objectForKey:SHDWAppEnabledID] != nil ||
+		 [appPrefs objectForKey:SHDWAppDisabledID] != nil ||
+		 [appPrefs objectForKey:SHDWDetectorAggressiveID] != nil);
+}
+
+BOOL SHDWResetApp(NSUserDefaults *prefs, NSString *appID) {
+	if(appID.length == 0) return NO;
+	[prefs removeObjectForKey:appID];
+	// Do not roll back asynchronous defaults writes with a potentially stale snapshot.
+	return [prefs synchronize];
+}
+
+UIImage *SHDWSettingsSymbol(NSString *name) {
+	if(![UIImage respondsToSelector:@selector(systemImageNamed:)]) return nil;
+	return [[UIImage systemImageNamed:name] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
 void SHDWClearAppEnabled(NSUserDefaults *prefs, NSString *appID) {
@@ -70,6 +87,6 @@ void SHDWClearAppAggressive(NSUserDefaults *prefs, NSString *appID) {
 void SHDWToggleHaptic(void) {
 	// Fresh instance per event: toggle flips are rare, allocation cost is
 	// irrelevant next to the impact itself.
-	UIImpactFeedbackGenerator* generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+	UIImpactFeedbackGenerator* generator = [(UIImpactFeedbackGenerator*)[NSClassFromString(@"UIImpactFeedbackGenerator") alloc] initWithStyle:UIImpactFeedbackStyleLight];
 	[generator impactOccurred];
 }

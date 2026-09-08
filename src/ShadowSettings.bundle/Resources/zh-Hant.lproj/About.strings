@@ -1,4 +1,10 @@
     "ABOUT_TITLE" = "\U95dc\U65bc";
+"NOTES_DONE" = "完成";
+"NOTES_RETRY" = "重試";
+"NOTES_LOADING" = "正在載入版本說明...";
+"NOTES_ERROR" = "無法載入版本說明。請檢查網路連線後重試。";
+"NOTES_NO_RELEASE" = "找不到符合條件的 Shadow 版本。";
+"NOTES_EMPTY" = "此版本未提供版本說明。";
     "CREDITS_HDR" = "\U9cf4\U8b1d\U4eba\U54e1";
     "LATEST_VERSION" = "\U6700\U65b0\U5b89\U88dd\U5305\U7248\U672C";
 "UPDATE_STATUS" = "狀態";

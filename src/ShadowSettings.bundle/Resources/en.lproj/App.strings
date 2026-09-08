@@ -1,4 +1,11 @@
 "APP_SETTINGS" = "Application Settings";
+"CUSTOMIZED" = "Customized settings";
+"RESET_APP" = "Reset App Settings";
+"RESET_APP_CONFIRM" = "Remove all settings for this app and follow global settings again? Global settings and other apps will not change. This cannot be undone.";
+"RESET_CANCEL" = "Cancel";
+"RESET_APP_FAILED" = "Reset Not Saved";
+"RESET_APP_FAILED_DESC" = "Could not save the app reset. The displayed settings may not be saved. Try resetting again.";
+"RESET_OK" = "OK";
 "APP_SETTINGS_DESC" = "Enable Shadow for this application. Shadow uses its built-in bypass profile.";
 
 "ENABLED" = "Enabled";

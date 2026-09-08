@@ -26,6 +26,16 @@ sh tests/MaintainerScriptTests.sh
 ```
 
 The Makefile's `test` target does not include the maintainer-script checks.
+
+The optional `make -C tests settings-behavior` compiles and executes the actual
+settings customization/reset helpers, symbol guard, and release-parser source
+with Foundation and UI doubles.
+It requires macOS Foundation or a host GNUstep/libobjc2 toolchain. On Linux,
+`make -C tests settings-behavior GNUSTEP_IMAGE=<image>` uses an existing Docker
+image containing clang and GNUstep/libobjc2, with networking disabled. Tests use
+an in-memory defaults double, not Shadow's domain. This check is not in `test`
+or CI and does not exercise UIKit rendering, accessibility, or live networking.
+
 `verify-device-driver` is a private-only placeholder that prints a skip message;
 it does not execute a selftest.
 

@@ -1,4 +1,11 @@
 "APP_SETTINGS" = "应用设置";
+"CUSTOMIZED" = "自定义设置";
+"RESET_APP" = "重置应用设置";
+"RESET_APP_CONFIRM" = "移除此应用的所有设置并重新跟随全局设置？全局设置和其他应用不会改变。此操作无法撤销。";
+"RESET_CANCEL" = "取消";
+"RESET_APP_FAILED" = "重置未保存";
+"RESET_APP_FAILED_DESC" = "无法保存应用重置。显示的设置可能尚未保存。请再次尝试重置。";
+"RESET_OK" = "好";
 "APP_SETTINGS_DESC" = "为此应用启用 Shadow。Shadow 使用内置的绕过配置。";
 
 "ENABLED" = "已启用";

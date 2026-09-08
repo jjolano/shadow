@@ -60,6 +60,24 @@
 			<key>set</key>
 			<string>setPreferenceValue:forSpecifier:</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>id</key>
+			<string>AppResetGroup</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>AppReset</string>
+			<key>label</key>
+			<string>RESET_APP</string>
+			<key>action</key>
+			<string>resetAppSettings:</string>
+			<key>isDestructive</key>
+			<true/>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>APP_SETTINGS</string>
