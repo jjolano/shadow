@@ -1,8 +1,13 @@
 "ABOUT_TITLE" = "About";
-"NOTES_DONE" = "Done";
 "NOTES_RETRY" = "Retry";
-"NOTES_LOADING" = "Loading release notes...";
-"NOTES_ERROR" = "Could not load release notes. Check your connection and try again.";
+"NOTES_ERROR" = "Could not check for updates. Check your connection and try again.";
+"CHECK_UPDATES" = "Check for Updates";
+"CHECK_AGAIN" = "Check Again";
+"UPDATES_CHECKING" = "Checking for Updates...";
+"UPDATES_DISCLOSURE" = "Contacts GitHub to check for releases.";
+"LAST_CHECKED" = "Last Checked";
+"RELEASE_NOTES" = "Release Notes";
+"VIEW_RELEASE" = "View Release on GitHub";
 "NOTES_NO_RELEASE" = "No matching Shadow release was found.";
 "NOTES_EMPTY" = "No release notes were provided for this release.";
 "UPDATES_HDR" = "Updates";
@@ -16,7 +21,6 @@
 "VISIT_GITHUB" = "Visit Shadow on GitHub";
 "VISIT_KOFI" = "Send a Tip with Ko-fi";
 "LOCALIZATION_HDR" = "Translation";
-"VISIT_CHANGELOG" = "View Latest Changes";
 
 "RESET_HDR" = "Reset";
 "RESET_SETTINGS" = "Reset Settings";

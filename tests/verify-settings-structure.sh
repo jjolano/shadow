@@ -179,15 +179,30 @@ assert reset_row['action'] == 'resetAppSettings:' and reset_row['isDestructive']
 
 settings_dir = Path(sys.argv[1]).parent
 about = (settings_dir / 'SHDWAboutListController.m').read_text()
-notes = block(about, '- (void)openChangeLog:')
-assert 'openURL' not in notes and 'openExternalURL' not in notes
-assert '[self aboutLatestVersion:nil];' in notes
-assert about.count('dataTaskWithURL:') == 1
-assert 'if(!fetchingLatestVersion)' in about
-assert 'strongSelf->fetchingLatestVersion = NO;' in about
-assert 'strongSelf->latestVersionTask = nil;' in about
-assert '[strongSelf updateReleaseNotes];' in about
-assert 'text.editable = NO;' in notes and 'text.selectable = YES;' in notes
+updates = (settings_dir / 'SHDWUpdatesController.m').read_text()
+about_plist = plistlib.loads((settings_dir / 'Resources/About.plist').read_bytes())
+updates_row = next(row for row in about_plist['items'] if row.get('id') == 'AboutUpdates')
+assert updates_row['cell'] == 'PSLinkCell' and updates_row['detail'] == 'SHDWUpdatesController'
+assert {row['get'] for row in about_plist['items'] if 'get' in row} == {
+    'aboutInstalledVersion:', 'aboutDeveloper:', 'aboutTranslator:'}
+for removed in ['openChangeLog', 'aboutLatestVersion', 'aboutUpdateStatus',
+                'releaseNotesController', 'VISIT_CHANGELOG', 'NOTES_DONE', 'NOTES_LOADING']:
+    for path in list(settings_dir.glob('*.[mh]')) + list((settings_dir / 'Resources').rglob('*')):
+        if path.is_file() and path.suffix in ['.m', '.h', '.strings', '.plist']:
+            assert removed not in path.read_text(), (path, removed)
+assert 'NSURLSession' not in about
+assert 'SHDWInstalledVersion() ?: [self localized:@"UNKNOWN"]' in about
+check = block(updates, '- (void)checkForUpdates:')
+assert updates.count('dataTaskWithURL:') == check.count('dataTaskWithURL:') == 1
+assert 'if(fetchingLatestVersion) return;' in check
+assert updates.count('[self checkForUpdates:') == 1
+for lifecycle in ['viewDidLoad', 'viewWillAppear:', 'viewDidDisappear:']:
+    method = block(updates, '- (void)' + lifecycle)
+    assert 'checkForUpdates' not in method and 'resume]' not in method
+assert 'completionHandler(nil);' in updates
+assert 'text.editable = NO;' in updates and 'text.selectable = YES;' in updates
+assert 'text.scrollEnabled = YES;' in updates and 'UIDataDetectorTypeNone' in updates
+assert 'presentViewController:' not in updates
 prefs_source = (settings_dir / 'SHDWPrefs.m').read_text()
 symbol = block(prefs_source, 'UIImage *SHDWSettingsSymbol(')
 assert symbol.index('respondsToSelector:') < symbol.index('[UIImage systemImageNamed:')
@@ -205,13 +220,15 @@ for locale in ['en', 'ar', 'zh-Hans', 'zh-Hant']:
     for table, keys in {
         'App': ['RESET_APP', 'RESET_APP_CONFIRM', 'RESET_CANCEL', 'CUSTOMIZED',
                 'RESET_APP_FAILED', 'RESET_APP_FAILED_DESC', 'RESET_OK'],
-        'About': ['NOTES_DONE', 'NOTES_RETRY', 'NOTES_LOADING', 'NOTES_ERROR',
-                  'NOTES_NO_RELEASE', 'NOTES_EMPTY'],
+        'About': ['UPDATES_HDR', 'INSTALLED_VERSION', 'LATEST_VERSION', 'UPDATE_STATUS',
+                  'UP_TO_DATE', 'UPDATE_AVAILABLE', 'UNKNOWN', 'NOTES_RETRY', 'NOTES_ERROR',
+                  'NOTES_NO_RELEASE', 'NOTES_EMPTY', 'CHECK_UPDATES', 'CHECK_AGAIN',
+                  'UPDATES_CHECKING', 'UPDATES_DISCLOSURE', 'LAST_CHECKED', 'RELEASE_NOTES', 'VIEW_RELEASE'],
     }.items():
         strings = (settings_dir / 'Resources' / (locale + '.lproj') / (table + '.strings')).read_text()
         for key in keys:
             assert re.search(r'"' + key + r'"\s*=\s*"[^"\n]+";', strings), (locale, key)
-print("PASS: reset confirmation, shared fetch, legacy symbol guard, and four-locale wiring (static)")
+print("PASS: reset confirmation, explicit-only Updates wiring, inline notes, legacy guards, and four locales (static)")
 PY
 
 # Aggressive mode is a live scalar resolved with global fallback (like

@@ -28,8 +28,12 @@ sh tests/MaintainerScriptTests.sh
 The Makefile's `test` target does not include the maintainer-script checks.
 
 The optional `make -C tests settings-behavior` compiles and executes the actual
-settings customization/reset helpers, symbol guard, and release-parser source
-with Foundation and UI doubles.
+settings customization/reset helpers, local version reader, symbol guard, release
+parser, About getters, and Updates controller with Foundation and UI/network doubles.
+It checks zero requests during pane construction/lifecycle, explicit checks and
+retries, duplicate-click suppression, cancellation/stale callbacks, inline notes,
+and release URL validation. The companion structure check covers all four locales
+and removal of the old popup/action.
 It requires macOS Foundation or a host GNUstep/libobjc2 toolchain. On Linux,
 `make -C tests settings-behavior GNUSTEP_IMAGE=<image>` uses an existing Docker
 image containing clang and GNUstep/libobjc2, with networking disabled. Tests use
