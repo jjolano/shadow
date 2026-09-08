@@ -131,6 +131,7 @@ specifier_ids = {
 full = [
     "AppSettingsGroup", "App_FollowGlobal", "App_Enabled",
     "AppAggressiveGroup", "Detector_Aggressive",
+    "AppResetGroup", "AppReset",
 ]
 assert plist_ids == full, "App.plist specifier order changed"
 
@@ -149,13 +150,68 @@ def apply(specifiers, calls):
     return specifiers
 
 
-following = ["AppSettingsGroup", "App_FollowGlobal"]
+following = ["AppSettingsGroup", "App_FollowGlobal", "AppResetGroup", "AppReset"]
 assert apply(full, initial_ops) == following
 for _ in range(2):
     assert apply(full, on_ops) == following
     assert apply(following, off_ops) == full
     following = apply(full, on_ops)
 print("PASS: app controller follow-global visibility transitions (static call sequence)")
+
+reset = block(source, '- (void)resetAppSettings:')
+assert 'style:UIAlertActionStyleCancel handler:nil' in reset
+confirmation = block(reset, 'style:UIAlertActionStyleDestructive handler:')
+assert 'BOOL saved = SHDWResetApp(prefs, [self applicationID]);' in confirmation
+assert '[self reloadSpecifiers];' in confirmation
+assert confirmation.index('[self reloadSpecifiers];') < confirmation.index('if(saved)')
+success = block(confirmation, 'if(saved)')
+failure = block(confirmation, '} else {')
+assert 'SHDWToggleHaptic();' in success and confirmation.count('SHDWToggleHaptic();') == 1
+assert 'RESET_APP_FAILED' in failure and 'RESET_APP_FAILED_DESC' in failure
+assert 'RESET_OK' in failure and 'SHDWToggleHaptic' not in failure
+dismissal = block(failure, '[self dismissViewControllerAnimated:YES completion:')
+assert '[self presentViewController:failure animated:YES completion:nil];' in dismissal
+assert reset.count('SHDWResetApp(') == 1
+assert '[self presentViewController:alert animated:YES completion:nil];' in reset
+with open(sys.argv[2], 'rb') as stream:
+    reset_row = next(row for row in plistlib.load(stream)['items'] if row['id'] == 'AppReset')
+assert reset_row['action'] == 'resetAppSettings:' and reset_row['isDestructive']
+
+settings_dir = Path(sys.argv[1]).parent
+about = (settings_dir / 'SHDWAboutListController.m').read_text()
+notes = block(about, '- (void)openChangeLog:')
+assert 'openURL' not in notes and 'openExternalURL' not in notes
+assert '[self aboutLatestVersion:nil];' in notes
+assert about.count('dataTaskWithURL:') == 1
+assert 'if(!fetchingLatestVersion)' in about
+assert 'strongSelf->fetchingLatestVersion = NO;' in about
+assert 'strongSelf->latestVersionTask = nil;' in about
+assert '[strongSelf updateReleaseNotes];' in about
+assert 'text.editable = NO;' in notes and 'text.selectable = YES;' in notes
+prefs_source = (settings_dir / 'SHDWPrefs.m').read_text()
+symbol = block(prefs_source, 'UIImage *SHDWSettingsSymbol(')
+assert symbol.index('respondsToSelector:') < symbol.index('[UIImage systemImageNamed:')
+assert 'UIImageRenderingModeAlwaysTemplate' in symbol
+root_source = (settings_dir / 'SHDWRootListController.m').read_text()
+list_source = (settings_dir / 'SHDWATLController.m').read_text()
+assert 'SHDWAppIsCustomized(value)' in root_source
+assert 'SHDWAppFollowsGlobal(prefs, appID)' in list_source
+assert 'cell.accessoryView = nil;' in list_source
+assert 'cell.accessibilityValue = nil;' in list_source
+assert 'cell.imageView.image =' not in list_source
+for path in settings_dir.glob('*.m'):
+    assert '@available(' not in path.read_text(), path
+for locale in ['en', 'ar', 'zh-Hans', 'zh-Hant']:
+    for table, keys in {
+        'App': ['RESET_APP', 'RESET_APP_CONFIRM', 'RESET_CANCEL', 'CUSTOMIZED',
+                'RESET_APP_FAILED', 'RESET_APP_FAILED_DESC', 'RESET_OK'],
+        'About': ['NOTES_DONE', 'NOTES_RETRY', 'NOTES_LOADING', 'NOTES_ERROR',
+                  'NOTES_NO_RELEASE', 'NOTES_EMPTY'],
+    }.items():
+        strings = (settings_dir / 'Resources' / (locale + '.lproj') / (table + '.strings')).read_text()
+        for key in keys:
+            assert re.search(r'"' + key + r'"\s*=\s*"[^"\n]+";', strings), (locale, key)
+print("PASS: reset confirmation, shared fetch, legacy symbol guard, and four-locale wiring (static)")
 PY
 
 # Aggressive mode is a live scalar resolved with global fallback (like

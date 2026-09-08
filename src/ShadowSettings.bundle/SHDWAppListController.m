@@ -124,6 +124,29 @@
 	}
 }
 
+- (void)resetAppSettings:(id)sender {
+	NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+	NSString* title = [bundle localizedStringForKey:@"RESET_APP" value:nil table:@"App"];
+	UIAlertController* alert = [UIAlertController alertControllerWithTitle:title
+		message:[bundle localizedStringForKey:@"RESET_APP_CONFIRM" value:nil table:@"App"] preferredStyle:UIAlertControllerStyleAlert];
+	[alert addAction:[UIAlertAction actionWithTitle:[bundle localizedStringForKey:@"RESET_CANCEL" value:nil table:@"App"] style:UIAlertActionStyleCancel handler:nil]];
+	[alert addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
+		BOOL saved = SHDWResetApp(prefs, [self applicationID]);
+		[self reloadSpecifiers];
+		if(saved) {
+			SHDWToggleHaptic();
+		} else {
+			UIAlertController* failure = [UIAlertController alertControllerWithTitle:[bundle localizedStringForKey:@"RESET_APP_FAILED" value:nil table:@"App"]
+				message:[bundle localizedStringForKey:@"RESET_APP_FAILED_DESC" value:nil table:@"App"] preferredStyle:UIAlertControllerStyleAlert];
+			[failure addAction:[UIAlertAction actionWithTitle:[bundle localizedStringForKey:@"RESET_OK" value:nil table:@"App"] style:UIAlertActionStyleDefault handler:nil]];
+			[self dismissViewControllerAnimated:YES completion:^{
+				[self presentViewController:failure animated:YES completion:nil];
+			}];
+		}
+	}]];
+	[self presentViewController:alert animated:YES completion:nil];
+}
+
 - (instancetype)init {
 	if((self = [super init])) {
 		prefs = [[ShadowSettings sharedInstance] userDefaults];

@@ -3,10 +3,13 @@
 BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID);
 void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled);
 
-// YES when the app has no explicit per-app activation (App_Enabled absent):
-// the runtime falls back to the global toggle. Writing an explicit value
-// (SHDWWriteAppEnabled) takes the app off "follow global".
+// Shared by the summary, list badge, and whole-app Follow Global toggle.
+BOOL SHDWAppIsCustomized(id appPrefs);
 BOOL SHDWAppFollowsGlobal(NSUserDefaults *prefs, NSString *appID);
+BOOL SHDWResetApp(NSUserDefaults *prefs, NSString *appID);
+
+@class UIImage;
+UIImage *SHDWSettingsSymbol(NSString *name);
 
 // Clear the per-app activation override so the app follows the global toggle.
 void SHDWClearAppEnabled(NSUserDefaults *prefs, NSString *appID);

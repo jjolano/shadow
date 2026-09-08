@@ -66,6 +66,12 @@ syscall-meta:
 settings-structure:
 	sh verify-settings-structure.sh
 
+# Optional Foundation check; not a dependency of the portable host suite.
+settings-behavior:
+	python3 verify-settings-behavior.py $(if $(GNUSTEP_IMAGE),--docker $(GNUSTEP_IMAGE),)
+
+.PHONY: settings-behavior
+
 # JB-identifier codegen contract: renders its own header (no Theos), compiles
 # the generated arrays with the host cc, and checks generator validation +
 # AppEnvironment.x consumer wiring.

@@ -1,6 +1,7 @@
 #import "SHDWATLController.h"
 #import "SHDWPrefs.h"
 #import <Shadow/Settings.h>
+#import <Preferences/PSTableCell.h>
 
 @implementation SHDWATLController {
 	NSUserDefaults* prefs;
@@ -18,5 +19,44 @@
 	}
 
 	return self;
+}
+
+- (PSTableCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+	PSTableCell* cell = (PSTableCell*)[super tableView:tableView cellForRowAtIndexPath:indexPath];
+	NSString* appID = [[cell specifier] propertyForKey:@"applicationIdentifier"];
+	cell.accessoryView = nil;
+	cell.accessibilityValue = nil;
+	if(appID.length && !SHDWAppFollowsGlobal(prefs, appID)) {
+		UIStackView* accessory = [[UIStackView alloc] initWithFrame:CGRectMake(0, 0, 42, 24)];
+		accessory.axis = UILayoutConstraintAxisHorizontal;
+		accessory.alignment = UIStackViewAlignmentCenter;
+		accessory.distribution = UIStackViewDistributionEqualSpacing;
+		accessory.userInteractionEnabled = NO;
+		for(NSString* name in @[@"slider.horizontal.3", @"chevron.right"]) {
+			UIImage* image = SHDWSettingsSymbol(name);
+			if(image) {
+				if([name isEqualToString:@"chevron.right"]) image = [image imageFlippedForRightToLeftLayoutDirection];
+				UIImageView* icon = [[UIImageView alloc] initWithImage:image];
+				icon.tintColor = cell.tintColor;
+				[accessory addArrangedSubview:icon];
+			} else {
+				UILabel* label = [UILabel new];
+				BOOL rtl = [UIView userInterfaceLayoutDirectionForSemanticContentAttribute:cell.semanticContentAttribute] == UIUserInterfaceLayoutDirectionRightToLeft;
+				label.text = [name isEqualToString:@"slider.horizontal.3"] ? @"\u2699" : (rtl ? @"<" : @">");
+				label.textColor = cell.tintColor;
+				[accessory addArrangedSubview:label];
+			}
+		}
+		cell.accessoryView = accessory;
+		NSString* customized = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"CUSTOMIZED" value:nil table:@"App"];
+		NSString* preview = [self previewStringForApplicationWithIdentifier:appID];
+		cell.accessibilityValue = preview.length ? [NSString stringWithFormat:@"%@, %@", preview, customized] : customized;
+	}
+	return cell;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+	[super viewWillAppear:animated];
+	[self.table reloadData];
 }
 @end

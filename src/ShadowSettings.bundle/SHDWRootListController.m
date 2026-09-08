@@ -12,6 +12,10 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+		for(NSString* identifier in @[@"ApplicationsSummary", @"RootAbout"]) {
+			UIImage* icon = SHDWSettingsSymbol([identifier isEqualToString:@"RootAbout"] ? @"info.circle" : @"square.grid.2x2");
+			if(icon) [[self specifierForID:identifier] setProperty:icon forKey:@"iconImage"];
+		}
 	}
 
 	return _specifiers;
@@ -33,10 +37,7 @@
 		// display, so omit the label entirely.
 		NSInteger customized = 0;
 		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if([value isKindOfClass:[NSDictionary class]] &&
-			   ([value objectForKey:SHDWAppEnabledID] != nil ||
-			    [value objectForKey:SHDWAppDisabledID] != nil ||
-			    [value objectForKey:SHDWDetectorAggressiveID] != nil)) {
+			if(SHDWAppIsCustomized(value)) {
 				customized++;
 			}
 		}

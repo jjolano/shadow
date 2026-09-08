@@ -61,8 +61,6 @@
 			<string>SHDWATLController</string>
 			<key>get</key>
 			<string>readPreferenceValue:</string>
-			<key>icon</key>
-			<string>IcoApps.png</string>
 			<key>id</key>
 			<string>ApplicationsSummary</string>
 			<key>label</key>
@@ -92,8 +90,8 @@
 			<string>PSLinkCell</string>
 			<key>detail</key>
 			<string>SHDWAboutListController</string>
-			<key>icon</key>
-			<string>IcoAbout.png</string>
+			<key>id</key>
+			<string>RootAbout</string>
 			<key>isController</key>
 			<true/>
 			<key>label</key>

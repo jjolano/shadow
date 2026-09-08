@@ -9,6 +9,10 @@
 
 @implementation SHDWAboutListController {
 	NSString* latestVersion;
+	NSString* latestTitle;
+	NSString* latestBody;
+	BOOL releaseFetchFailed;
+	__weak UIViewController* releaseNotesController;
 	BOOL fetchingLatestVersion;
 	BOOL fetchedLatestVersion;
 	NSURLSessionDataTask* latestVersionTask;
@@ -18,12 +22,7 @@
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"About" target:self];
 
-		// Mirror the root pane: the actionable rows get small rounded icons so
-		// the About options read like the rest of the bundle. systemImageNamed
-		// is resolved at runtime: it exists on iOS 13+ and is a nil no-op on
-		// older runtimes, which fall back to plain rows. Tint-aware, no asset
-		// churn, and no @available link-time helper for the iOS 9 legacy floor.
-		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+		// Guarded symbols on modern iOS; plain, labeled rows on iOS 9.
 		for(NSDictionary* mapping in @[
 			@{ @"spec": @"AboutChangelog", @"symbol": @"newspaper" },
 			@{ @"spec": @"AboutGitHub", @"symbol": @"chevron.left.forwardslash.chevron.right" },
@@ -32,11 +31,10 @@
 		]) {
 			PSSpecifier* row = [self specifierForID:mapping[@"spec"]];
 			if(row) {
-				UIImage* icon = [UIImage systemImageNamed:mapping[@"symbol"]];
+				UIImage* icon = SHDWSettingsSymbol(mapping[@"symbol"]);
 				if(icon) {
 					[row setProperty:icon forKey:@"iconImage"];
 				}
-				(void)bundle;
 			}
 		}
 	}
@@ -113,14 +111,19 @@
 			typeof(self) strongSelf = weakSelf;
 
 			NSString* version = nil;
+			NSString* title = nil;
+			NSString* body = nil;
+			BOOL failed = YES;
 
-			if(!error && [response isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)response statusCode] == 200) {
+			if(!error && data && [response isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)response statusCode] == 200) {
 				id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
 				if([json isKindOfClass:[NSArray class]]) {
+					failed = NO;
 					// The API returns releases newest-first.
 					for(id release in (NSArray *)json) {
-						if(![release isKindOfClass:[NSDictionary class]] || [release[@"prerelease"] boolValue]) {
+						if(![release isKindOfClass:[NSDictionary class]] ||
+						   ![release[@"prerelease"] isKindOfClass:[NSNumber class]] || [release[@"prerelease"] boolValue]) {
 							continue;
 						}
 
@@ -134,6 +137,9 @@
 
 						if([candidate rangeOfString:@"^[0-9]+\\.[0-9]+" options:NSRegularExpressionSearch].location != NSNotFound) {
 							version = candidate;
+							title = [release[@"name"] isKindOfClass:[NSString class]] ? release[@"name"] : nil;
+							if(!title.length) title = tag_name;
+							body = [release[@"body"] isKindOfClass:[NSString class]] ? release[@"body"] : nil;
 							break;
 						}
 					}
@@ -145,7 +151,13 @@
 			// the sender, because either one can be the one that starts the fetch.
 			if(strongSelf) {
 				strongSelf->latestVersion = version;
+				strongSelf->latestTitle = title;
+				strongSelf->latestBody = body;
+				strongSelf->releaseFetchFailed = failed;
+				strongSelf->fetchingLatestVersion = NO;
+				strongSelf->latestVersionTask = nil;
 				strongSelf->fetchedLatestVersion = YES;
+				[strongSelf updateReleaseNotes];
 
 				for(NSString* specID in @[@"LatestVersion", @"UpdateStatus"]) {
 					PSSpecifier* specifier = [strongSelf specifierForID:specID];
@@ -190,15 +202,75 @@
 }
 
 - (void)openGitHub:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"] options:@{} completionHandler:nil];
+	[self openExternalURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow"]];
 }
 
 - (void)openKofi:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"] options:@{} completionHandler:nil];
+	[self openExternalURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"]];
+}
+
+- (void)openExternalURL:(NSURL *)url {
+	UIApplication* application = [UIApplication sharedApplication];
+	if([application respondsToSelector:@selector(openURL:options:completionHandler:)]) {
+		[application openURL:url options:@{} completionHandler:nil];
+	} else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+		[application openURL:url];
+#pragma clang diagnostic pop
+	}
 }
 
 - (void)openChangeLog:(id)sender {
-	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"https://github.com/jjolano/shadow/releases/latest"] options:@{} completionHandler:nil];
+	if(self.presentedViewController) return;
+	UIViewController* controller = [UIViewController new];
+	UITextView* text = [UITextView new];
+	text.editable = NO;
+	text.selectable = YES;
+	text.alwaysBounceVertical = YES;
+	text.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+	text.backgroundColor = [UIColor respondsToSelector:@selector(systemBackgroundColor)] ? [UIColor systemBackgroundColor] : [UIColor whiteColor];
+	text.textColor = [UIColor respondsToSelector:@selector(labelColor)] ? [UIColor labelColor] : [UIColor blackColor];
+	if([text respondsToSelector:@selector(setAdjustsFontForContentSizeCategory:)]) text.adjustsFontForContentSizeCategory = YES;
+	text.textContainerInset = UIEdgeInsetsMake(20, 16, 20, 16);
+	controller.view = text;
+	controller.title = [self localized:@"VISIT_CHANGELOG"];
+	controller.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:[self localized:@"NOTES_DONE"] style:UIBarButtonItemStyleDone target:self action:@selector(closeReleaseNotes:)];
+	releaseNotesController = controller;
+	[self aboutLatestVersion:nil];
+	[self updateReleaseNotes];
+	UINavigationController* navigation = [[UINavigationController alloc] initWithRootViewController:controller];
+	navigation.modalPresentationStyle = UIModalPresentationFormSheet;
+	[self presentViewController:navigation animated:YES completion:nil];
+}
+
+- (void)updateReleaseNotes {
+	UIViewController* controller = releaseNotesController;
+	if(!controller) return;
+	NSString* content;
+	if(!fetchedLatestVersion) content = [self localized:@"NOTES_LOADING"];
+	else if(releaseFetchFailed) content = [self localized:@"NOTES_ERROR"];
+	else if(!latestVersion) content = [self localized:@"NOTES_NO_RELEASE"];
+	else {
+		NSString* body = [latestBody stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+		content = [NSString stringWithFormat:@"%@\n\n%@", latestTitle, body.length ? latestBody : [self localized:@"NOTES_EMPTY"]];
+	}
+	((UITextView*)controller.view).text = content;
+	controller.navigationItem.leftBarButtonItem = fetchedLatestVersion && (releaseFetchFailed || !latestVersion)
+		? [[UIBarButtonItem alloc] initWithTitle:[self localized:@"NOTES_RETRY"] style:UIBarButtonItemStylePlain target:self action:@selector(retryReleaseNotes:)] : nil;
+	UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, controller.view);
+}
+
+- (void)retryReleaseNotes:(id)sender {
+	if(fetchingLatestVersion) return;
+	fetchedLatestVersion = NO;
+	[self aboutLatestVersion:nil];
+	[self updateReleaseNotes];
+}
+
+- (void)closeReleaseNotes:(id)sender {
+	[self dismissViewControllerAnimated:YES completion:nil];
+	releaseNotesController = nil;
 }
 
 - (void)resetSettings:(id)sender {
