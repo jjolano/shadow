@@ -177,17 +177,6 @@ void shdw_universal_memory(SHDWHookSession* hooks) {
                              (void **) &original_mach_vm_region_recurse, @"mach_vm_region_recurse");
 }
 
-void shdw_universal_memory_verify(void) {
-    shdw_hook_check_t checks[] = {
-        { "vm_region_64", original_vm_region_64 },
-        { "vm_region_recurse_64", original_vm_region_recurse_64 },
-        { "mach_vm_region", original_mach_vm_region },
-        { "mach_vm_region_recurse", original_mach_vm_region_recurse },
-    };
-
-    shdw_verify_hooks("mem", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
 // Symbol policy for the mem C-function group (see dyld.x's
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound mem
 // export to its replacement for external callers, so the GOT-vs-dlsym

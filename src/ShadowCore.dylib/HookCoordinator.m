@@ -116,6 +116,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 + (NSDictionary<NSString*, id>*)shdw_identitySnapshotForBundleID:(NSString*)bundleID scheme:(NSString*)scheme;
 + (NSDictionary<NSString*, id>*)shdw_identityImageForAddress:(NSValue*)address;
 - (NSDictionary<NSString*, id>*)shdw_activationSnapshot;
++ (SHDWHookCoordinator*)activationCoordinator;
 @end
 
 @implementation SHDWBackendSet
@@ -151,14 +152,16 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         ? [(NSString*)hookLibrary UTF8String] : NULL);
 
     SHDWBackendSet* set = [SHDWBackendSet new];
-    set.hooks = [SHDWHookSession new];
+    set.hooks = [[SHDWHookSession alloc] initWithLifecycleQueue:_lifecycleQueue];
     // HK3 reports each hook request individually. These bits therefore mean
     // "the native request exists", not that a legacy provider was discovered
     // before the request had a chance to route.
     set.capabilities = SHDWCapMessage | SHDWCapFunction |
                        SHDWCapInline | SHDWCapPrivateSym;
     self.backends = set;
-    gSHDWActivationCoordinator = self;
+    @synchronized([SHDWHookCoordinator class]) {
+        gSHDWActivationCoordinator = self;
+    }
 
     return self;
 }
@@ -225,7 +228,13 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 }
 
 + (NSDictionary<NSString*, id>*)shdw_activationSnapshot {
-    return gSHDWActivationCoordinator ? [gSHDWActivationCoordinator shdw_activationSnapshot] : nil;
+    return [[self activationCoordinator] shdw_activationSnapshot];
+}
+
++ (SHDWHookCoordinator*)activationCoordinator {
+    @synchronized([SHDWHookCoordinator class]) {
+        return gSHDWActivationCoordinator;
+    }
 }
 
 // This is deliberately private runtime instrumentation, like the activation
@@ -342,50 +351,88 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 #pragma mark - Event install
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event {
-    // Re-entrancy guard: the installers dlopen dylibs, which fires dyld
-    // add-image callbacks that call back into installEvent on this same
-    // lifecycle-queue thread. dispatch_sync to the queue we are already
-    // executing on would deadlock (observed: "_dispatch_sync_f_slow: called on
-    // queue already owned by current thread" — the ShadowHarness crash).
-    // _installing is set BEFORE dispatch_sync so the dyld callback's
-    // installEvent call is caught by this guard. A nested install is pended,
-    // not lost: its event bit joins _pendingEvents and is replayed when the
-    // current install drains below (a dropped UIKit event would otherwise
-    // lose its hooks for the rest of the process). _installedBits keeps the
-    // replay idempotent per unit.
-    if(_installing) {
-        _pendingEvents |= (1UL << (NSUInteger)event);
-        return 0;
-    }
-
-    _installing = YES;  // Set BEFORE dispatch_sync to catch dyld callbacks
-
+    if(event < SHDWEventCtor || event > SHDWEventSDKFallback) return 0;
     __block NSUInteger installed = 0;
-
-    dispatch_sync(self.lifecycleQueue, ^{
-        installed = [self installEventSync:event];
-    });
-
-    // Drain pended events (dyld callbacks / trips that fired mid-install).
-    // Terminates: escalation is one-shot (_escalated), UIKit fires once, and
-    // repeats are _installedBits no-ops. Stays under _installing so nested
-    // trips during the replay pend again instead of recursing.
-    while(_pendingEvents) {
-        NSUInteger pending = _pendingEvents;
-        _pendingEvents = 0;
-
-        for(NSUInteger e = SHDWEventCtor; e <= SHDWEventSDKFallback; e++) {
-            if((pending >> e) & 1UL) {
-                dispatch_sync(self.lifecycleQueue, ^{
-                    installed += [self installEventSync:(SHDWLifecycleEvent)e];
-                });
+    __block NSException* failure = nil;
+    void (^work)(void) = ^{
+        _pendingEvents |= (1UL << (NSUInteger)event);
+        if(_installing) return;
+        _installing = YES;
+        // Coalesce recursive events, including those raised by readiness blocks.
+        NSUInteger processed = 0;
+        @try {
+            while(_pendingEvents & ~processed) {
+                NSUInteger pending = _pendingEvents & ~processed;
+                _pendingEvents = 0;
+                processed |= pending;
+                for(NSUInteger e = SHDWEventCtor; e <= SHDWEventSDKFallback; e++) {
+                    if((pending >> e) & 1UL) {
+                        @try {
+                            installed += [self installEventSync:(SHDWLifecycleEvent)e];
+                        } @catch(NSException* exception) {
+                            if(!failure) failure = exception;
+                        }
+                        @try {
+                            [self.backends.hooks drainPendingTargets];
+                        } @catch(NSException* exception) {
+                            if(!failure) failure = exception;
+                        }
+                    }
+                }
             }
+        } @catch(NSException* exception) {
+            if(!failure) failure = exception;
+        } @finally {
+            _pendingEvents = 0;
+            _installing = NO;
         }
-    }
-
-    _installing = NO;
-
+    };
+    if(dispatch_get_specific(&kSHDWHookCoordinatorQueueKey) == (__bridge void*)self) work();
+    else dispatch_sync(self.lifecycleQueue, work);
+    if(failure) @throw failure;
     return installed;
+}
+
+- (void)enqueueEvent:(SHDWLifecycleEvent)event {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            [self installEvent:event];
+        } @catch(NSException* exception) {
+            NSLog(@"[Shadow] queued lifecycle event failed: %@", exception);
+        }
+    });
+}
+
++ (void)shdw_requestPendingTargetDrain {
+    static BOOL requested;
+    if(__atomic_exchange_n(&requested, YES, __ATOMIC_ACQ_REL)) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __atomic_store_n(&requested, NO, __ATOMIC_RELEASE);
+        SHDWHookCoordinator* coordinator = [self activationCoordinator];
+        if(!coordinator) return;
+        dispatch_sync(coordinator.lifecycleQueue, ^{
+            NSException* failure = nil;
+            coordinator->_installing = YES;
+            @try {
+                [coordinator.backends.hooks drainPendingTargets];
+            } @catch(NSException* exception) {
+                failure = exception;
+            } @finally {
+                coordinator->_installing = NO;
+            }
+            for(NSUInteger e = SHDWEventCtor; e <= SHDWEventSDKFallback; e++) {
+                if((coordinator->_pendingEvents >> e) & 1UL) {
+                    @try {
+                        [coordinator installEvent:(SHDWLifecycleEvent)e];
+                    } @catch(NSException* exception) {
+                        if(!failure) failure = exception;
+                    }
+                    break;
+                }
+            }
+            if(failure) NSLog(@"[Shadow] pending target drain failed: %@", failure);
+        });
+    });
 }
 
 - (NSUInteger)installEventSync:(SHDWLifecycleEvent)event {
@@ -411,6 +458,7 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
     }
 
     NSUInteger localInstalled = 0;
+    NSException* failure = nil;
 
     for(NSString* unitID in plan) {
         NSUInteger index = [self unitIndexForID:unitID];
@@ -446,15 +494,19 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
         SHDWHookSession* previous = SHDWHookSessionSetCurrent(self.backends.hooks);
         @try {
             installer->install(self.backends.hooks);
+        } @catch(NSException* exception) {
+            if(!failure) failure = exception;
         } @finally {
             SHDWHookSessionSetCurrent(previous);
+            // An installer may have mutated targets before throwing.
+            _installedBits |= (1ULL << index);
         }
-        _installedBits |= (1ULL << index);
         localInstalled++;
     }
 
     [self recordActivationInventoryForEvent:event];
 
+    if(failure) @throw failure;
     return localInstalled;
 }
 
@@ -510,11 +562,11 @@ static NSDictionary<NSString*, id>* shdw_identity_image_for_address(const void* 
 }
 
 + (BOOL)shdw_installHarnessSDKFallback {
-    return gSHDWActivationCoordinator ? [gSHDWActivationCoordinator installHarnessSDKFallback] : NO;
+    return [[self activationCoordinator] installHarnessSDKFallback];
 }
 
 + (SHDWHookSession*)shdw_sharedHookSession {
-    return gSHDWActivationCoordinator ? gSHDWActivationCoordinator.backends.hooks : nil;
+    return [self activationCoordinator].backends.hooks;
 }
 
 @end

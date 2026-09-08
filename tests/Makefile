@@ -34,24 +34,7 @@ verify-rebind-repair:
 		verify-rebind-repair.c
 	/tmp/shadow-rebind-test
 
-# Device-driver logic selftests live in the private harness repo (pure-logic,
-# no device); public CI does not run them. Local run with a sibling checkout:
-#   python3 ../../shadow-private/harness-tests/stealth_device.py selftest
-verify-device-driver:
-	@echo "verify-device-driver: private harness only (see above); skipping"
-
-# HookKit headers for the harness come from the Theos install (HookKit repo:
-# make install-theos), staged into vendor/ (gitignored, arch-independent) since
-# neither this harness nor the container carries Theos. build.sh no longer
-# stages them, so the harness provisions its own.
 THEOS ?= /opt/theos
-HOOKKIT_HEADERS ?= $(THEOS)/lib/HookKit.framework/Headers
-
-stage-hookkit-headers:
-	@test -d "$(HOOKKIT_HEADERS)" || { echo "no HookKit headers at $(HOOKKIT_HEADERS) — set HOOKKIT_HEADERS or run 'make install-theos' in the HookKit repo" >&2; exit 1; }
-	rm -rf ../vendor/HookKit.framework/Headers
-	mkdir -p ../vendor/HookKit.framework
-	cp -R "$(HOOKKIT_HEADERS)" ../vendor/HookKit.framework/Headers
 
 # Static contract checks (CWD-agnostic: every script cds to the repo root).
 lane-contract:
@@ -72,9 +55,7 @@ settings-behavior:
 
 .PHONY: settings-behavior
 
-# JB-identifier codegen contract: renders its own header (no Theos), compiles
-# the generated arrays with the host cc, and checks generator validation +
-# AppEnvironment.x consumer wiring.
+# Compile the identifier arrays and check their data and consumer wiring.
 jb-identifiers:
 	python3 verify-jb-identifiers.py
 
@@ -87,9 +68,9 @@ verify-rules-generation:
 verify-binary-compat:
 	bash BinaryCompatTests.sh
 
-test: verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
+test: verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair verify-device-driver lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat stage-hookkit-headers clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean

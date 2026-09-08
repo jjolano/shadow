@@ -23,6 +23,11 @@ Settings app → Shadow → global defaults or per-app config. `shdw -d` keeps t
 
 No guarantee every app/detection SDK works everywhere.
 
+These are declared package ranges, not a device-tested version matrix. CI builds
+all four lanes and checks package metadata and Mach-O compatibility; public host
+tests do not verify hook installation or behavior on each iOS version. An open-ended
+range does not establish compatibility with future releases.
+
 ## Troubleshooting
 
 * Disable other tweaks per-app (Choicy).

@@ -40,6 +40,11 @@ jobs:
           THEOS: /opt/theos
         run: sh tests/verify-lane-contract.sh
 
+      - name: Binary compatibility checker regression
+        env:
+          THEOS: /opt/theos
+        run: make -C tests verify-binary-compat
+
       # Static source checks: no device, no toolchain, no docker — pure
       # grep/awk over the tree. They run here (seconds) instead of after
       # the ~10-min image build so drift fails fast.

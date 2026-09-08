@@ -9,7 +9,6 @@
 typedef struct {
     const char* pluginID;
     void (*install)(SHDWHookSession* hooks);
-    void (*verify)(void);
 } SHDWPluginInstaller;
 typedef SHDWPluginInstaller SHDWHookInstaller;
 #ifndef pluginID
@@ -34,6 +33,9 @@ typedef SHDWPluginInstaller SHDWHookInstaller;
 @property (nonatomic, readonly, getter=isEscalated) BOOL escalated;
 
 - (NSUInteger)installEvent:(SHDWLifecycleEvent)event;
+- (void)enqueueEvent:(SHDWLifecycleEvent)event;
+// Coalesced asynchronous notification; never drains on the notifying stack.
++ (void)shdw_requestPendingTargetDrain;
 - (void)prearmDetector;
 - (void)escalateWithReason:(NSString*)reason;
 - (BOOL)installHarnessSDKFallback;

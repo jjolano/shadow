@@ -14,7 +14,6 @@ typedef NS_OPTIONS(NSUInteger, SHDWUniversalFeatures) {
 
 typedef BOOL (*SHDWAdapterPathPredicate)(NSString* path);
 typedef const void* (*SHDWDladdrRemapper)(const void* address, const void* caller);
-typedef void (*SHDWUniversalFeatureInstaller)(SHDWHookSession* hooks, const void* imageHeader);
 
 void SHDWSetAdapterPathPredicate(SHDWAdapterPathPredicate predicate);
 BOOL SHDWAdapterPathIsHidden(NSString* path);
@@ -26,8 +25,6 @@ void SHDWPublishCanOpenURLArtifacts(void* original, void* replacement);
 void* SHDWCanOpenURLOriginal(void);
 void* SHDWCanOpenURLReplacement(void);
 
-void SHDWRegisterUniversalFeatureInstaller(SHDWUniversalFeatures feature,
-                                           SHDWUniversalFeatureInstaller installer);
 void SHDWRequestUniversalFeatures(SHDWUniversalFeatures features,
                                   SHDWHookSession* hooks,
                                   const void* imageHeader);

@@ -13,13 +13,7 @@
 "APP_SETTINGS_DESC" = "为此应用启用 Shadow。Shadow 使用内置的绕过配置。";
 
 "ENABLED" = "已启用";
-"ENABLED_GLOBAL" = "已启用（全局）";
 
 "FOLLOW_GLOBAL" = "跟随全局设置";
 "APP_USES_GLOBAL" = "正在跟随全局设置。关闭以自定义此应用。";
-"APP_DETECTOR_LOG" = "检测器日志";
-"APP_DETECTOR_LOG_DESC" = "此应用中记录的检测器活动。";
 
-"APP_DISABLE" = "对此应用停用";
-"APP_IS_DISABLED" = "Shadow 不会加载到此应用中。";
-"DISABLED" = "已停用";

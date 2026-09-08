@@ -958,28 +958,6 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     }
 }
 
-void shdw_universal_sandbox_verify(void) {
-    // execle/execlp/execl/execv hook with outOldPtr:NULL (no original_* to
-    // check); the runtime-resolved signal/system/popen/wordexp/connect aliases
-    // are excluded (NULL is expected when the symbol is absent).
-    shdw_hook_check_t checks[] = {
-        { "sandbox_check", original_sandbox_check },
-        { "fcntl", original_fcntl },
-        { "host_get_special_port", original_host_get_special_port },
-        { "task_get_special_port", original_task_get_special_port },
-        { "task_for_pid", original_task_for_pid },
-        { "sigaction", original_sigaction },
-        { "execve", original_execve },
-        { "execvp", original_execvp },
-        { "posix_spawn", original_posix_spawn },
-        { "posix_spawnp", original_posix_spawnp },
-        { "fork", original_fork },
-        { "vfork", original_vfork },
-    };
-
-    shdw_verify_hooks("sandbox", checks, sizeof(checks) / sizeof(checks[0]));
-}
-
 // Symbol policy for the sandbox C-function group (see dyld.x's
 // shdw_sym_policy_table): dlsym must resolve every fishhook-rebound sandbox
 // export to its replacement for external callers, so the GOT-vs-dlsym

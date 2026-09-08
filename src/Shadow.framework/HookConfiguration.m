@@ -231,13 +231,3 @@ NSArray<NSString*>* SHDWHookPlan(NSDictionary<NSString*, id>* prefs,
                                  SHDWLifecycleEvent event) {
     return SHDWPluginPlan(prefs, caps, event);
 }
-
-// Legacy internal helpers kept for compat
-static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit, NSDictionary<NSString*, id>* prefs, SHDWLifecycleEvent event) __attribute__((unused));
-static BOOL SHDWUnitEnabled(const SHDWInstallUnit* unit, NSDictionary<NSString*, id>* prefs, SHDWLifecycleEvent event) {
-    return SHDWPluginEnabled((const SHDWPlugin*)unit, prefs, event);
-}
-static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) __attribute__((unused));
-static BOOL SHDWUnitCapable(const SHDWInstallUnit* unit, SHDWCapabilities caps) {
-    return SHDWPluginCapable((const SHDWPlugin*)unit, caps);
-}

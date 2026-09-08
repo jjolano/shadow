@@ -2424,26 +2424,13 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
-// One descriptor array is the SINGLE source of truth for every libc hook's
-// install (which group hooks it), post-install verification (which group
-// treats a NULL original as a failure) and the dlsym symbol policy (every
-// entry is exposed through shdw_sym_policy_lookup_libc, guarded by its
-// original pointer). Symbols are resolved with dlsym at install time:
-// required exports always resolve, and runtime-conditional symbols that are
-// absent on a given OS (stat64 family, protected-open variants, libproc,
-// getmntinfo_r_np, utimensat on < iOS 11) are skipped cleanly — NULL there
-// is expected and never a verify failure (verifyGroups = 0).
-//
-// Group semantics, byte-identical to the old per-group code: utimensat is
-// installed but excluded from verify (it was iOS-11-gated with an @available
-// check; dlsym is that check now); the optional runtime-resolved families are
-// installed, never verified.
+// Shared descriptor metadata for installation and symbol lookup.
 typedef struct {
     const char* symbol;     // dlsym name (C identifier, unmangled)
     void* replacement;      // the hook replacement
     void** original;        // original-slot out pointer (NULL = TU-local cell, see below)
     uint32_t installGroups; // bitmask: hooked when one of these groups installs
-    uint32_t verifyGroups;  // bitmask: NULL original is a verify failure here (required)
+    uint32_t verifyGroups;  // required-export group mask (zero for optional exports)
 } shdw_hook_desc_t;
 
 #define LIBC   SHADW_HOOK_GROUP_LIBC
@@ -2638,8 +2625,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             continue;
         }
 
-        // Runtime-resolve; absent optional symbols skip cleanly, absent
-        // required ones surface in the group's verify pass. NULL-original
+        // Runtime-resolve; absent symbols skip cleanly. NULL-original
         // rows (wait family) resolve the same way — the target doubles as
         // their continuation (see shdw_libc_resolve_null_original).
         void* target = dlsym(RTLD_DEFAULT, d->symbol);
@@ -2745,32 +2731,12 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     [Shadow shdwExitInternalRead];
 }
 
-void shdw_libc_verify_group(const char* group, uint32_t mask) {
-    for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
-        const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
-
-        if((d->verifyGroups & mask) && d->original && *d->original == NULL) {
-            NSLog(@"[Shadow] %s hook not installed: %s", group, d->symbol);
-        }
-    }
-}
-
 void shdw_universal_filesystem_c(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_LIBC);
 }
 
 void shdw_universal_feature_filesystem_metadata(SHDWHookSession* hooks) {
     shdw_libc_install_group(hooks, SHADW_HOOK_GROUP_FEATURE_METADATA);
-}
-
-// Post-install verification: a hook that failed to install (backend error,
-// symbol unresolvable) leaves its original_* NULL and the restriction
-// silently unenforced. The ctor calls these after executeHooks for the groups
-// it installed; each logs any NULL among the group's required symbols.
-// Runtime-resolved optional symbols (stat64 family, protected-open variants,
-// getmntinfo_r_np, libproc, utimensat) are excluded — NULL there is expected.
-void shdw_universal_filesystem_c_verify(void) {
-    shdw_libc_verify_group("libc", SHADW_HOOK_GROUP_LIBC);
 }
 
 // NULL-original continuations: rows installed with outOldPtr NULL (wait

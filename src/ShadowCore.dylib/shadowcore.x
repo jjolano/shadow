@@ -39,7 +39,10 @@ static SHDWHookCoordinator* shdw_coordinator_instance = nil;
 static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_slide) {
     (void) vmaddr_slide;
 
-    if(!_shdw_watcher_enabled || _shdw_uikit_installed) {
+    [SHDWHookCoordinator shdw_requestPendingTargetDrain];
+
+    if(!__atomic_load_n(&_shdw_watcher_enabled, __ATOMIC_ACQUIRE) ||
+       __atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {
         return;
     }
 
@@ -52,9 +55,9 @@ static void shdw_early_image_add(const struct mach_header* mh, intptr_t vmaddr_s
 
         NSString* image = [[NSString stringWithUTF8String:path] lowercaseString];
 
-        if([image containsString:@"uikit.framework"] && shdw_coordinator_instance) {
-            [shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];
-            _shdw_uikit_installed = YES;
+        if([image containsString:@"uikit.framework"] &&
+           !__atomic_exchange_n(&_shdw_uikit_installed, YES, __ATOMIC_ACQ_REL)) {
+            [shdw_coordinator_instance enqueueEvent:SHDWEventUIKitLoaded];
         }
     }
 }
@@ -80,11 +83,6 @@ static void shdw_coord_envvars_c(SHDWHookSession* hooks) {
 static void shdw_coord_symlookup(SHDWHookSession* hooks) {
     shdw_universal_symlookup(hooks);
     shdw_universal_symaddrlookup(hooks);
-}
-
-static void shdw_coord_verify_symlookup(void) {
-    shdw_universal_symlookup_verify();
-    shdw_universal_symaddrlookup_verify();
 }
 
 static void shdw_coord_detector_integrity(SHDWHookSession* hooks) {
@@ -121,40 +119,40 @@ static void shdw_plugin_policy_nop(SHDWHookSession* hooks) { (void)hooks; }
 // Must stay in SHDWPluginRegistry() order (Hybrid: verified vs SHDWPluginOrder.inc).
 #import <Shadow/SHDWPluginOrder.inc>
 static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
-    { "Universal_Dyld",                       shdw_universal_dyld,                     shdw_universal_dyld_verify },
-    { "Universal_Filesystem_C",               shdw_universal_filesystem_c,             shdw_universal_filesystem_c_verify },
-    { "Universal_EnvVars_C",                  shdw_coord_envvars_c,                    shdw_universal_envvars_c_verify },
-    { "Universal_EnvVars_ObjC",               shdw_universal_nsprocessinfo,            NULL },
-    { "Adapter_DeviceCheck",                   shdw_adapter_devicecheck,                NULL },
-    { "Adapter_FreeRASP",                      shdw_adapter_freerasp,                   NULL },
-    { "Universal_MachBootstrap",              shdw_universal_mach_bootstrap,           shdw_universal_mach_bootstrap_verify },
-    { "Universal_IOKit",                      shdw_universal_iokit,                    shdw_universal_iokit_verify },
-    { "Universal_LowLevelC",                  shdw_universal_low_level_c,              shdw_universal_low_level_c_verify },
-    { "Universal_AntiDebugging",              shdw_universal_antidebugging,            shdw_universal_antidebugging_verify },
-    { "Universal_CodeSigning",                shdw_universal_codesigning,              shdw_universal_codesigning_verify },
-    { "Universal_ObjC",                       shdw_universal_objc,                     NULL },
-    { "Universal_ObjC_MethodImplementation",  shdw_universal_objc_methodimpl,          NULL },
-    { "Universal_Syscall",                    shdw_universal_syscall,                  shdw_universal_syscall_verify },
-    { "Universal_Memory",                     shdw_universal_memory,                   shdw_universal_memory_verify },
-    { "Universal_Sandbox",                    shdw_universal_sandbox,                  shdw_universal_sandbox_verify },
-    { "Universal_HideClasses",                shdw_universal_hide_classes,             NULL },
-    { "Universal_SymbolLookup",               shdw_coord_symlookup,                    shdw_coord_verify_symlookup },
-    { "Universal_DynamicLibrariesExtra",      shdw_universal_dynamic_libraries_extra,  shdw_universal_dynamic_libraries_extra_verify },
-    { "Universal_DetectorIntegrity",          shdw_coord_detector_integrity,           NULL },
-    { "Universal_Filesystem_ObjC",            shdw_coord_filesystem_objc,              NULL },
-    { "Universal_Foundation_ObjC",            shdw_coord_foundation_objc,              NULL },
-    { "Universal_HideApps",                   shdw_universal_hide_apps,                NULL },
-    { "Universal_URLScheme",                  shdw_universal_url_scheme,               NULL },
-    { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit,         NULL },
-    { "Universal_PasscodeStatus",             shdw_universal_passcode_status,          NULL },
-    { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit,          NULL },
-    { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite,           NULL },
-    { "Adapter_BATJailbreakGuard",             shdw_adapter_batjailbreakguard,          NULL },
+    { "Universal_Dyld",                       shdw_universal_dyld },
+    { "Universal_Filesystem_C",               shdw_universal_filesystem_c },
+    { "Universal_EnvVars_C",                  shdw_coord_envvars_c },
+    { "Universal_EnvVars_ObjC",               shdw_universal_nsprocessinfo },
+    { "Adapter_DeviceCheck",                   shdw_adapter_devicecheck },
+    { "Adapter_FreeRASP",                      shdw_adapter_freerasp },
+    { "Universal_MachBootstrap",              shdw_universal_mach_bootstrap },
+    { "Universal_IOKit",                      shdw_universal_iokit },
+    { "Universal_LowLevelC",                  shdw_universal_low_level_c },
+    { "Universal_AntiDebugging",              shdw_universal_antidebugging },
+    { "Universal_CodeSigning",                shdw_universal_codesigning },
+    { "Universal_ObjC",                       shdw_universal_objc },
+    { "Universal_ObjC_MethodImplementation",  shdw_universal_objc_methodimpl },
+    { "Universal_Syscall",                    shdw_universal_syscall },
+    { "Universal_Memory",                     shdw_universal_memory },
+    { "Universal_Sandbox",                    shdw_universal_sandbox },
+    { "Universal_HideClasses",                shdw_universal_hide_classes },
+    { "Universal_SymbolLookup",               shdw_coord_symlookup },
+    { "Universal_DynamicLibrariesExtra",      shdw_universal_dynamic_libraries_extra },
+    { "Universal_DetectorIntegrity",          shdw_coord_detector_integrity },
+    { "Universal_Filesystem_ObjC",            shdw_coord_filesystem_objc },
+    { "Universal_Foundation_ObjC",            shdw_coord_foundation_objc },
+    { "Universal_HideApps",                   shdw_universal_hide_apps },
+    { "Universal_URLScheme",                  shdw_universal_url_scheme },
+    { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit },
+    { "Universal_PasscodeStatus",             shdw_universal_passcode_status },
+    { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit },
+    { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite },
+    { "Adapter_BATJailbreakGuard",             shdw_adapter_batjailbreakguard },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
-    { "Policy_Path",                  shdw_plugin_policy_nop,          NULL },
-    { "Policy_Environment",           shdw_plugin_policy_nop,          NULL },
-    { "Policy_Process",               shdw_plugin_policy_nop,          NULL },
-    { "Policy_PseudoSandbox",         shdw_plugin_policy_nop,          NULL },
+    { "Policy_Path",                  shdw_plugin_policy_nop },
+    { "Policy_Environment",           shdw_plugin_policy_nop },
+    { "Policy_Process",               shdw_plugin_policy_nop },
+    { "Policy_PseudoSandbox",         shdw_plugin_policy_nop },
 };
 static const char* const kSHDWPluginInstallerOrderCheck[] __attribute__((unused)) = { SHDW_PLUGIN_ORDER };
 _Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == sizeof(kSHDWPluginInstallerOrderCheck)/sizeof(kSHDWPluginInstallerOrderCheck[0]), "installer table drift vs SHDWPluginOrder.inc");
@@ -187,15 +185,19 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
 
     // Watcher replay runs after the install (it depends on the coordinator's
     // backends being resolved).
-    _shdw_watcher_enabled = shdw_coordinator_instance
+    BOOL watcherEnabled = shdw_coordinator_instance
         && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
         && ([prefs[SHDWUniversalURLSchemeID] boolValue] || [prefs[SHDWUniversalFoundationID] boolValue]);
+    __atomic_store_n(&_shdw_watcher_enabled, watcherEnabled, __ATOMIC_RELEASE);
 
-    if(_shdw_watcher_enabled) {
+    if(watcherEnabled) {
         uint32_t count = _dyld_image_count();
 
         for(uint32_t i = 0; i < count; i++) {
             shdw_early_image_add(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i));
+        }
+        if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {
+            [shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];
         }
     }
 
@@ -227,8 +229,8 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             return;
         }
 
-        // Adapter switches are enabled by default. Exact fingerprints only
-        // narrow the descriptor-backed detector rows before installation.
+        // Capture authorization independently of current target readiness.
+        shdw_adapter_devicecheck_configure(prefs);
         prefs = shdw_adapter_resolve_preferences(prefs);
         BOOL hasActiveDetectorAdapter = NO;
         for(NSString* key in @[ SHDWAdapterDTTJailbreakDetectionID, SHDWAdapterSafeDeviceID,
@@ -262,8 +264,6 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         Shadow* shadow = [Shadow sharedInstance];
         [shadow shdwConfigurePseudoSandboxMode:[prefs[SHDWUniversalPseudoSandboxModeID] integerValue]];
         shdw_own_ranges_refresh();
-        shdw_adapter_devicecheck_configure(prefs);
-        shdw_universal_register_features();
 
         NSLog(@"starting hooks");
         [Shadow shdwEnterInternalRead];

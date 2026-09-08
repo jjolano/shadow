@@ -1,4 +1,5 @@
 #import "AdapterHooks.h"
+#import "DeviceCheckHooks.h"
 
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
@@ -104,12 +105,21 @@ static BOOL shdw_detect_jailmonkey(void) {
     return shdw_has_bool_method(objc_getClass("JailMonkey"), "isJailBroken", NO);
 }
 
+BOOL shdw_devicecheck_target_available(DCHTarget target) {
+    switch(target) {
+        case DCHTargetDTT: return shdw_detect_dtt();
+        case DCHTargetSafeDevice: return shdw_detect_safedevice();
+        case DCHTargetJailMonkey: return shdw_detect_jailmonkey();
+        default: return NO;
+    }
+}
+
 NSDictionary* shdw_adapter_resolve_preferences(NSDictionary* prefs) {
     NSMutableDictionary* effective = [prefs mutableCopy];
     NSDictionary<NSString*, NSNumber*>* detected = @{
-        SHDWAdapterDTTJailbreakDetectionID : @(shdw_detect_dtt()),
-        SHDWAdapterSafeDeviceID : @(shdw_detect_safedevice()),
-        SHDWAdapterJailMonkeyID : @(shdw_detect_jailmonkey()),
+        SHDWAdapterDTTJailbreakDetectionID : @(shdw_devicecheck_target_available(DCHTargetDTT)),
+        SHDWAdapterSafeDeviceID : @(shdw_devicecheck_target_available(DCHTargetSafeDevice)),
+        SHDWAdapterJailMonkeyID : @(shdw_devicecheck_target_available(DCHTargetJailMonkey)),
     };
 
     for(NSString* key in detected) {

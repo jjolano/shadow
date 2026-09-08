@@ -1,5 +1,5 @@
 #import "SHDWHookSession.h"
-#import "SHDWHookFallback.h"
+#import <HookKit/HookKitResults.h>
 #import "hooks/Universal/rebind_slots.h"
 
 #import <HookKit/HookKit.h>
@@ -28,10 +28,71 @@ void SHDWSetProcessBackendOverride(const char* backendID) {
 typedef hk_status_t (*SHDWHKRuntimeCreateWithBackendOverride)(
     const hk_runtime_config_t*, const char*, hk_runtime_t**);
 
-static BOOL shdw_hook_refused_cleanly(hk_hook_t* hook) {
+// Cells this session has published a continuation into. A failed attempt
+// must never erase one: a live replacement may still chain through it. Any
+// other cell holds caller input, which a failed attempt neutralizes to NULL.
+#define SHDW_PUBLISHED_CELLS_MAX 512
+static void* gSHDWPublishedCells[SHDW_PUBLISHED_CELLS_MAX];
+// ponytail: fixed table like the IMP registries below; beyond the cap new
+// cells are treated as unpublished (cleared on failure) until raised.
+static uint32_t gSHDWPublishedCellCount;
+
+static BOOL shdw_cell_holds_published_original(void** cell) {
+    if(!cell) return NO;
+    uint32_t count = __atomic_load_n(&gSHDWPublishedCellCount, __ATOMIC_ACQUIRE);
+    for(uint32_t i = 0; i < count; i++) {
+        if(gSHDWPublishedCells[i] == (void*)cell) return YES;
+    }
+    return NO;
+}
+
+static void shdw_note_published_cell(void** cell) {
+    if(!cell || shdw_cell_holds_published_original(cell)) return;
+    uint32_t count = __atomic_load_n(&gSHDWPublishedCellCount, __ATOMIC_ACQUIRE);
+    if(count == SHDW_PUBLISHED_CELLS_MAX) return;
+    gSHDWPublishedCells[count] = (void*)cell;
+    __atomic_store_n(&gSHDWPublishedCellCount, count + 1, __ATOMIC_RELEASE);
+}
+
+static void shdw_clear_unpublished_cell(void** cell) {
+    if(cell && !shdw_cell_holds_published_original(cell)) {
+        *cell = NULL;
+    }
+}
+
+static void shdw_finish_uninstalled_hook(hk_hook_t* hook, void** oldPtr,
+                                         BOOL entryPublished,
+                                         BOOL* outCleanRefusal) {
     hk_hook_result_t result;
-    return hook && hk_hook_copy_result(hook, &result) == HK_STATUS_OK &&
-        shdw_hook_result_refused_cleanly(&result);
+    if(!hook || hk_hook_copy_result(hook, &result) != HK_STATUS_OK) {
+        return;
+    }
+    // A proven no-mutation failure clears the cell unless it already held a
+    // continuation from an earlier attempt: that one may still be live, but a
+    // continuation published by this very attempt died with it.
+    if(oldPtr && result.mutation == HK_MUTATION_NONE && !entryPublished) {
+        *oldPtr = NULL;
+    }
+    if(outCleanRefusal) {
+        *outCleanRefusal = hk_hook_result_refused_cleanly(&result);
+    }
+}
+
+static void* shdw_prepared_original(hk_hook_t* hook,
+                                    const hk_hook_spec_t* spec,
+                                    const hk_hook_result_t* prepared) {
+    void* original = hk_original_slot_load(hk_hook_original_slot(hook));
+    if(!original && prepared) {
+        original = (void*)prepared->continuation.address;
+    }
+    if(!original && spec && spec->target_kind == HK_TARGET_FUNCTION_SYMBOL &&
+       spec->original_requirement == HK_ORIGINAL_DIRECT_PREDECESSOR) {
+        original = dlsym(RTLD_DEFAULT, spec->target.symbol.name);
+        if(original == spec->replacement) {
+            original = NULL;
+        }
+    }
+    return original;
 }
 
 static __thread void* gSHDWCurrentHookSession = NULL;
@@ -216,11 +277,18 @@ static BOOL shdw_apply_hook_spec_once(
     const hk_hook_spec_t* spec, void** oldPtr, const char* backendOverride,
     SHDWHKRuntimeCreateWithBackendOverride createWithOverride,
     BOOL* outCleanRefusal) {
-    if(oldPtr) {
-        *oldPtr = NULL;
-    }
     if(outCleanRefusal) {
         *outCleanRefusal = NO;
+    }
+
+    // Snapshot whether the cell already holds a continuation this session
+    // published: a live replacement may chain through it, so failures must
+    // preserve it. Any other input is neutralized up front so every early
+    // exit below (including creation failures) is safe.
+    void* entryOriginal = oldPtr ? *oldPtr : NULL;
+    BOOL entryPublished = entryOriginal && shdw_cell_holds_published_original(oldPtr);
+    if(oldPtr && !entryPublished) {
+        *oldPtr = NULL;
     }
 
     hk_runtime_config_t config;
@@ -247,62 +315,49 @@ static BOOL shdw_apply_hook_spec_once(
     }
 
     if(hk_plan_analyze(plan, NULL) != HK_STATUS_OK) {
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
-        }
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         goto done;
     }
 
     hk_hook_result_t prepared;
     if(hk_hook_copy_result(hook, &prepared) != HK_STATUS_OK ||
        prepared.outcome != HK_OUTCOME_ANALYZED) {
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
-        }
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         goto done;
     }
 
     if(hk_plan_prepare(plan, NULL) != HK_STATUS_OK) {
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
-        }
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         goto done;
     }
 
     if(hk_hook_copy_result(hook, &prepared) != HK_STATUS_OK ||
        prepared.outcome != HK_OUTCOME_PREPARED) {
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
-        }
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         goto done;
     }
 
     if(oldPtr) {
-        // ObjC and relocating engines may publish before mutation; provider
-        // engines publish through their HK3 original slot at commit.
-        if(prepared.continuation.address) {
-            *oldPtr = (void*)prepared.continuation.address;
+        void* preparedOriginal = shdw_prepared_original(hook, spec, &prepared);
+        if(!preparedOriginal && spec->original_requirement != HK_ORIGINAL_NONE) {
+            goto done;
+        }
+        if(preparedOriginal) {
+            *oldPtr = preparedOriginal;
+            shdw_note_published_cell(oldPtr);
         }
     }
 
     if(hk_plan_commit(plan, &commitReport) != HK_STATUS_OK) {
-        if(oldPtr) {
-            *oldPtr = NULL;
-        }
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
-        }
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         goto done;
     }
 
     hk_hook_result_t result;
-    if(hk_hook_copy_result(hook, &result) != HK_STATUS_OK ||
-       result.outcome != HK_OUTCOME_ACTIVE) {
-        if(oldPtr) {
-            *oldPtr = NULL;
-        }
-        if(outCleanRefusal) {
-            *outCleanRefusal = shdw_hook_refused_cleanly(hook);
+    hk_status_t resultStatus = hk_hook_copy_result(hook, &result);
+    if(resultStatus != HK_STATUS_OK || result.outcome != HK_OUTCOME_ACTIVE) {
+        if(resultStatus == HK_STATUS_OK) {
+            shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
         }
         goto done;
     }
@@ -313,10 +368,10 @@ static BOOL shdw_apply_hook_spec_once(
     if(oldPtr) {
         void* original = hk_original_slot_load(hk_hook_original_slot(hook));
         if(!result.original_available || !original) {
-            *oldPtr = NULL;
             goto done;
         }
         *oldPtr = original;
+        shdw_note_published_cell(oldPtr);
     }
     installed = YES;
 
@@ -328,10 +383,6 @@ done:
 }
 
 static BOOL shdw_apply_hook_spec(const hk_hook_spec_t* spec, void** oldPtr) {
-    if(oldPtr) {
-        *oldPtr = NULL;
-    }
-
     // An override is strict for its first attempt. A clean refusal proves that
     // no target changed, so Shadow may retry normal automatic routing once.
     SHDWHKRuntimeCreateWithBackendOverride createWithOverride =
@@ -340,18 +391,15 @@ static BOOL shdw_apply_hook_spec(const hk_hook_spec_t* spec, void** oldPtr) {
     const char* backendOverride = gSHDWBackendOverride[0] && createWithOverride
         ? gSHDWBackendOverride : NULL;
     BOOL cleanRefusal = NO;
-    void* original = NULL;
-    void** attemptOldPtr = oldPtr ? &original : NULL;
+    // Commit can enter a newly rebound replacement; publish its continuation
+    // into caller storage before the first mutation.
     BOOL installed = shdw_apply_hook_spec_once(
-        spec, attemptOldPtr, backendOverride, createWithOverride, &cleanRefusal);
+        spec, oldPtr, backendOverride, createWithOverride, &cleanRefusal);
 
     if(!installed && backendOverride && cleanRefusal &&
        spec->target_kind != HK_TARGET_OBJC_METHOD) {
         installed = shdw_apply_hook_spec_once(
-            spec, attemptOldPtr, NULL, createWithOverride, NULL);
-    }
-    if(oldPtr) {
-        *oldPtr = original;
+            spec, oldPtr, NULL, createWithOverride, NULL);
     }
     return installed;
 }
@@ -374,16 +422,82 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
     spec->role = HK_OPERATION_MANDATORY;
 }
 
-@implementation SHDWHookSession
+@implementation SHDWHookSession {
+    dispatch_queue_t _lifecycleQueue;
+    NSMutableArray* _pendingTargets;
+    BOOL _drainingTargets;
+}
+
+- (instancetype)init {
+    return [self initWithLifecycleQueue:dispatch_queue_create("com.shadow.hooksession.lifecycle", DISPATCH_QUEUE_SERIAL)];
+}
+
+- (instancetype)initWithLifecycleQueue:(dispatch_queue_t)queue {
+    NSParameterAssert(queue);
+    self = [super init];
+    if(self) {
+        _lifecycleQueue = queue;
+        dispatch_queue_set_specific(queue, (__bridge const void*)self, (__bridge void*)self, NULL);
+        _pendingTargets = [NSMutableArray new];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    if(_lifecycleQueue) dispatch_queue_set_specific(_lifecycleQueue, (__bridge const void*)self, NULL, NULL);
+}
+
+- (BOOL)performWhenTargetAvailable:(BOOL (^)(SHDWHookSession*))attempt {
+    if(!attempt) return YES;
+    __block BOOL completed = NO;
+    __block NSException* failure = nil;
+    void (^work)(void) = ^{
+        @try {
+            completed = attempt(self);
+            if(!completed) [_pendingTargets addObject:[attempt copy]];
+        } @catch(NSException* exception) {
+            failure = exception;
+        }
+    };
+    if(dispatch_get_specific((__bridge const void*)self)) work();
+    else dispatch_sync(_lifecycleQueue, work);
+    if(failure) @throw failure;
+    return completed;
+}
+
+- (void)drainPendingTargets {
+    __block NSException* failure = nil;
+    void (^work)(void) = ^{
+        if(_drainingTargets) return;
+        _drainingTargets = YES;
+        @try {
+            for(BOOL (^attempt)(SHDWHookSession*) in [_pendingTargets copy]) {
+                // Remove before invoking: exceptions are terminal and new
+                // registrations cannot mutate the snapshot being enumerated.
+                [_pendingTargets removeObjectIdenticalTo:attempt];
+                @try {
+                    if(!attempt(self)) [_pendingTargets addObject:attempt];
+                } @catch(NSException* exception) {
+                    if(!failure) failure = exception;
+                }
+            }
+        } @catch(NSException* exception) {
+            if(!failure) failure = exception;
+        } @finally {
+            _drainingTargets = NO;
+        }
+    };
+    if(dispatch_get_specific((__bridge const void*)self)) work();
+    else dispatch_sync(_lifecycleQueue, work);
+    if(failure) @throw failure;
+}
 
 - (BOOL)hookMessageInClass:(Class)objcClass
               withSelector:(SEL)selector
            withReplacement:(void*)replacement
                   outOldPtr:(void**)oldPtr {
     if(!objcClass || !selector || !replacement) {
-        if(oldPtr) {
-            *oldPtr = NULL;
-        }
+        shdw_clear_unpublished_cell(oldPtr);
         return NO;
     }
 
@@ -430,9 +544,7 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
       withReplacement:(void*)replacement
              outOldPtr:(void**)oldPtr {
     if(!function || !replacement) {
-        if(oldPtr) {
-            *oldPtr = NULL;
-        }
+        shdw_clear_unpublished_cell(oldPtr);
         return NO;
     }
 
@@ -483,9 +595,7 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
               inCallerImage:(const void*)imageHeader
                     journal:(BOOL)journal {
     if(!symbolName.length || !replacement) {
-        if(oldPtr) {
-            *oldPtr = NULL;
-        }
+        shdw_clear_unpublished_cell(oldPtr);
         return NO;
     }
 

@@ -208,63 +208,76 @@ NSUInteger shdw_devicecheck_install_hooks(SHDWHookSession* hooks, DCHTarget enab
             continue;
         }
 
-        Class cls = objc_getClass(desc->className);
+        __block BOOL succeeded = NO;
+        BOOL completed = [hooks performWhenTargetAvailable:^BOOL(SHDWHookSession* session) {
+            if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;
+            Class cls = objc_getClass(desc->className);
 
-        if(!cls) {
-            continue;   // Late-loaded classes are skipped until a later install.
-        }
+            if(!cls) {
+                return NO;
+            }
 
-        SEL sel = sel_registerName(desc->selector);
-        Method method = desc->kind == DCHMethodClass
-            ? class_getClassMethod(cls, sel)
-            : class_getInstanceMethod(cls, sel);
+            SEL sel = sel_registerName(desc->selector);
+            Class dispatchClass = desc->kind == DCHMethodClass ? object_getClass(cls) : cls;
+            Method method = class_getInstanceMethod(dispatchClass, sel);
 
-        if(!method) {
-            continue;
-        }
+            if(!method) {
+                return NO;
+            }
 
-        const char* encoding = method_getTypeEncoding(method);
+            const char* encoding = method_getTypeEncoding(method);
 
-        if(!encoding) {
-            NSLog(@"[Shadow] DeviceCheck: skipping %s%s%s",
-                desc->kind == DCHMethodClass ? "+" : "-",
-                desc->className, desc->selector);
-            continue;
-        }
-
-        char e0 = encoding[0];
-        BOOL rowMatches = (e0 == 'B' || e0 == 'c')
-            ? (desc->encoding == 'B' || desc->encoding == 'c')
-            : (e0 == '@' && desc->encoding == '@') ||
-              (e0 == '^' && desc->encoding == '^') ||
-              // Forge rows: void-returning methods whose LAST arg is the
-              // (result, NSError*) completion block (1 or 3 args). Stock
-              // signatures verified against the SDK headers:
-              // generateToken/Key take (block); attest/assert take
-              // (keyId, clientDataHash, block).
-              (e0 == 'v' && desc->encoding == 'v' &&
-               desc->policy == DCHPolicyForgeUnsupported &&
-               (desc->argCount == 1 || desc->argCount == 3));
-
-        if(!rowMatches) {
-            if(shdw_dch_encoding_is_unknown(e0)) {
-                char key[256];
-                snprintf(key, sizeof(key), "%s%s%s",
+            if(!encoding) {
+                NSLog(@"[Shadow] DeviceCheck: skipping %s%s%s",
                     desc->kind == DCHMethodClass ? "+" : "-",
                     desc->className, desc->selector);
+                return YES;
+            }
 
-                if(strcmp(s_loggedUnknown, key) != 0) {
-                    NSLog(@"[Shadow] DeviceCheck: skipping %s",
-                        key);
-                    snprintf(s_loggedUnknown, sizeof(s_loggedUnknown), "%s", key);
+            char e0 = encoding[0];
+            BOOL rowMatches = (e0 == 'B' || e0 == 'c')
+                ? (desc->encoding == 'B' || desc->encoding == 'c')
+                : (e0 == '@' && desc->encoding == '@') ||
+                  (e0 == '^' && desc->encoding == '^') ||
+                  // Forge rows: void-returning methods whose LAST arg is the
+                  // (result, NSError*) completion block (1 or 3 args). Stock
+                  // signatures verified against the SDK headers:
+                  // generateToken/Key take (block); attest/assert take
+                  // (keyId, clientDataHash, block).
+                  (e0 == 'v' && desc->encoding == 'v' &&
+                   desc->policy == DCHPolicyForgeUnsupported &&
+                   (desc->argCount == 1 || desc->argCount == 3));
+
+            if(!rowMatches || method_getNumberOfArguments(method) != desc->argCount + 2) {
+                if(shdw_dch_encoding_is_unknown(e0)) {
+                    char key[256];
+                    snprintf(key, sizeof(key), "%s%s%s",
+                        desc->kind == DCHMethodClass ? "+" : "-",
+                        desc->className, desc->selector);
+
+                    if(strcmp(s_loggedUnknown, key) != 0) {
+                        NSLog(@"[Shadow] DeviceCheck: skipping %s",
+                            key);
+                        snprintf(s_loggedUnknown, sizeof(s_loggedUnknown), "%s", key);
+                    }
+                }
+
+                return YES;
+            }
+
+            if(desc->encoding == 'v') {
+                for(unsigned int arg = 2; arg < desc->argCount + 2; arg++) {
+                    char type[8] = {0};
+                    method_getArgumentType(method, arg, type, sizeof(type));
+                    if(type[0] != '@' || (arg == desc->argCount + 1 && type[1] != '?')) return YES;
                 }
             }
 
-            continue;
-        }
-
-        [hooks hookMessageInClass:cls withSelector:sel withReplacement:shdw_dch_replacement_imp(desc) outOldPtr:NULL];
-        installed++;
+            succeeded = [session hookMessageInClass:dispatchClass withSelector:sel
+                                   withReplacement:(void*)shdw_dch_replacement_imp(desc) outOldPtr:NULL];
+            return YES;
+        }];
+        if(completed && succeeded) installed++;
     }
 
     return installed;

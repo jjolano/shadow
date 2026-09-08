@@ -12,10 +12,11 @@ directory containing `bin/lane.sh`; a full Theos installation is not required.
 | mount filtering (pure C + static query contract) | `make -C tests verify-mount-filter` |
 | rebind journal/repair (pure C) | `make -C tests verify-rebind-repair` |
 | lane/package contract | `sh tests/verify-lane-contract.sh` |
+| binary compatibility checker (synthetic tool output) | `make -C tests verify-binary-compat` |
 | hook→engine matrix drift | `sh tests/verify-hook-matrix.sh` |
 | raw syscall metadata | `sh tests/verify-syscall-meta.sh` |
 | settings structure | `sh tests/verify-settings-structure.sh` |
-| JB-identifier generation contract | `make -C tests jb-identifiers` |
+| JB-identifier data contract | `make -C tests jb-identifiers` |
 | package maintainer scripts | `sh tests/MaintainerScriptTests.sh` |
 
 Run the public checks from the repository root:
@@ -40,17 +41,21 @@ image containing clang and GNUstep/libobjc2, with networking disabled. Tests use
 an in-memory defaults double, not Shadow's domain. This check is not in `test`
 or CI and does not exercise UIKit rendering, accessibility, or live networking.
 
-`verify-device-driver` is a private-only placeholder that prints a skip message;
-it does not execute a selftest.
-
 CI's `.github/workflows/tests.yml` runs individual checks, including maintainer
-scripts, rather than the aggregate target. It currently omits mount filtering
-and JB-identifier generation. Consult that workflow for the actual CI selection.
+scripts, rather than the aggregate target. It omits several aggregate checks,
+including mount filtering and JB-identifier data validation. Consult that workflow
+for the actual CI selection.
 
 Mount checks cover record verdict handling and static wiring to the existing
 snapshot matcher, including rule precedence and absence of refresh/resolution
 in the query. They do not execute Foundation predicates or test device locking;
 custom predicates that perform I/O are outside the mount-query contract.
+
+Binary compatibility checks exercise all four lanes with synthetic Mach-O tool
+output, including both deployment-load-command formats. They accept matching
+architecture/deployment/ABI fixtures and reject mismatches, legacy lock imports,
+and invalid RootHide linking. These test the checker, not actual iOS execution.
+Packaged lane builds separately run the checker against their real binaries.
 
 The full engine/detector/adversary/fuzz/device harness is private and
 not part of this repo (no URL). The engine-linked batteries were removed

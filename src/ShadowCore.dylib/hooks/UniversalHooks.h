@@ -48,22 +48,7 @@ void shdw_universal_nsthread(SHDWHookSession* hooks);
 void shdw_universal_nstask(SHDWHookSession* hooks);
 void shdw_universal_user_defaults(SHDWHookSession* hooks);
 
-void shdw_universal_dyld_verify(void);
-void shdw_universal_filesystem_c_verify(void);
-void shdw_universal_envvars_c_verify(void);
-void shdw_universal_mach_bootstrap_verify(void);
-void shdw_universal_iokit_verify(void);
-void shdw_universal_low_level_c_verify(void);
-void shdw_universal_antidebugging_verify(void);
-void shdw_universal_codesigning_verify(void);
-void shdw_universal_syscall_verify(void);
-void shdw_universal_memory_verify(void);
-void shdw_universal_sandbox_verify(void);
-void shdw_universal_dynamic_libraries_extra_verify(void);
-void shdw_universal_symlookup_verify(void);
-void shdw_universal_symaddrlookup_verify(void);
 
-void shdw_universal_register_features(void);
 void shdw_universal_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
 void shdw_universal_antidebugging_rebind_image(SHDWHookSession* hooks, const void* imageHeader);
 // Image-scoped ObjC-introspection rebinds for late-loaded detector frameworks.

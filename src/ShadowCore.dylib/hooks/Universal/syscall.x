@@ -1125,14 +1125,3 @@ void shdw_universal_syscall(SHDWHookSession* hooks) {
     // serialized and stop-the-world before app code can execute them.
     shdw_svc_patch_install();
 }
-
-void shdw_universal_syscall_verify(void) {
-    // ___syscall/_sysctlbyname/___sysctlbyname/_csops_audittoken/_NSGetEnviron
-    // are runtime-resolved: excluded (NULL is expected when absent).
-    shdw_hook_check_t checks[] = {
-        { "syscall", original_syscall },
-        { "csops", original_csops },
-    };
-
-    shdw_verify_hooks("syscall", checks, sizeof(checks) / sizeof(checks[0]));
-}
