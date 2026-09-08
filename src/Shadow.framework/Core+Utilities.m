@@ -1,4 +1,5 @@
 #import <Shadow/Core+Utilities.h>
+#import <string.h>
 
 #import "../../vendor/apple/dyld_priv.h"
 
@@ -11,17 +12,9 @@ extern char*** _NSGetArgv();
         return path;
     }
 
-    // Fast path: an absolute path containing none of the sequences the
-    // standardization below transforms passes through the NSURL machinery
-    // byte-for-byte, so return it directly. Every transform the slow path
-    // can apply has a trigger here: "/." (dot components, incl. "/./" and
-    // "/../", which standardizedURL resolves), "//" (empty segments), a
-    // trailing slash, the query/fragment/parameter markers "?", "#" and ";"
-    // (URLWithString strips them from -path), percent-encoding ("%": %2e dot
-    // components, and %2f etc. that -path decodes), and the /private/var,
-    // /private/etc and /var/tmp prefixes the rewrites below target. Anything
-    // else — relative paths, tildes, scheme-like strings — also takes the
-    // slow path, which is the only code that may transform them.
+    // Plain absolute paths need no URL parsing. Keep dot/empty components,
+    // trailing slashes, percent escapes and URL punctuation on the slow
+    // path. Only URL-safe ASCII root aliases are rewritten directly.
     if([path hasPrefix:@"/"]
         && ![path hasSuffix:@"/"]
         && ![path containsString:@"/."]
@@ -29,11 +22,28 @@ extern char*** _NSGetArgv();
         && ![path containsString:@"%"]
         && ![path containsString:@"?"]
         && ![path containsString:@"#"]
-        && ![path containsString:@";"]
-        && ![path hasPrefix:@"/private/var"]
-        && ![path hasPrefix:@"/private/etc"]
-        && ![path hasPrefix:@"/var/tmp"]) {
-        return path;
+        && ![path containsString:@";"]) {
+        BOOL aliasPrefix = [path hasPrefix:@"/private/var"]
+            || [path hasPrefix:@"/private/etc"]
+            || [path hasPrefix:@"/var/tmp"];
+        if(!aliasPrefix) return path;
+
+        // Only bypass NSURL for URL-safe ASCII. Keep spaces, controls,
+        // Unicode and embedded NULs on the existing alias slow path.
+        const char* ascii = [path cStringUsingEncoding:NSASCIIStringEncoding];
+        if(ascii && strspn(ascii,
+            "/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,=:@") == path.length) {
+            if([path isEqualToString:@"/private/var"] || [path hasPrefix:@"/private/var/"] ||
+               [path isEqualToString:@"/private/etc"] || [path hasPrefix:@"/private/etc/"]) {
+                path = [path substringFromIndex:8];
+            }
+            // Independent check: /private/var/tmp also maps to /tmp.
+            if([path isEqualToString:@"/var/tmp"] || [path hasPrefix:@"/var/tmp/"]) {
+                path = [path substringFromIndex:4];
+            }
+            // Preserve Foundation's path representation for later path operations.
+            return [NSString pathWithComponents:[path pathComponents]];
+        }
     }
 
     // Darwin NSURL pitfalls for adversarial absolute input: "//x" parses
