@@ -3,6 +3,20 @@
 #import <UIKit/UIKit.h>
 #import <Shadow/HookConfiguration.h>
 #import <Shadow/JBPath.h>
+#import <Preferences/PSSpecifier.h>
+
+void SHDWLocalizeSpecifiers(NSArray *specifiers, NSBundle *bundle, NSString *table) {
+	// Use the pane's table explicitly; never translate identifiers or actions.
+	for(PSSpecifier* specifier in specifiers) {
+		if(specifier.name.length) {
+			specifier.name = [bundle localizedStringForKey:specifier.name value:specifier.name table:table];
+		}
+		NSString* footer = [specifier propertyForKey:@"footerText"];
+		if(footer.length) {
+			[specifier setProperty:[bundle localizedStringForKey:footer value:footer table:table] forKey:@"footerText"];
+		}
+	}
+}
 
 NSString *SHDWInstalledVersion(void) {
 	// The status file is large; share the local result across both panes.

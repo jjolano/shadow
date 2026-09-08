@@ -50,7 +50,8 @@
 		cell.accessoryView = accessory;
 		NSString* customized = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"CUSTOMIZED" value:nil table:@"App"];
 		NSString* preview = [self previewStringForApplicationWithIdentifier:appID];
-		cell.accessibilityValue = preview.length ? [NSString stringWithFormat:@"%@, %@", preview, customized] : customized;
+		NSString* format = [[NSBundle bundleForClass:[self class]] localizedStringForKey:@"APP_STATE_ACCESSIBILITY_FMT" value:nil table:@"App"];
+		cell.accessibilityValue = preview.length ? [NSString stringWithFormat:format, preview, customized] : customized;
 	}
 	return cell;
 }

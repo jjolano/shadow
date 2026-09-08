@@ -1,5 +1,9 @@
 "APP_SETTINGS" = "应用设置";
 "CUSTOMIZED" = "自定义设置";
+"APP_STATE_ACCESSIBILITY_FMT" = "%1$@，%2$@";
+"AGGRESSIVE_SETTINGS" = "检测器中和";
+"AGGRESSIVE" = "激进模式";
+"APP_AGGRESSIVE_DESC" = "自然绕过会呈现看似原生的系统环境；激进模式还会强制已知检测器对此应用报告未检测到异常。";
 "RESET_APP" = "重置应用设置";
 "RESET_APP_CONFIRM" = "移除此应用的所有设置并重新跟随全局设置？全局设置和其他应用不会改变。此操作无法撤销。";
 "RESET_CANCEL" = "取消";

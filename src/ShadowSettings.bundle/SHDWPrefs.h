@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 NSString *SHDWInstalledVersion(void);
+void SHDWLocalizeSpecifiers(NSArray *specifiers, NSBundle *bundle, NSString *table);
 
 BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID);
 void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled);

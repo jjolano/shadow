@@ -1,5 +1,6 @@
 "APP_SETTINGS" = "Application Settings";
 "CUSTOMIZED" = "Customized settings";
+"APP_STATE_ACCESSIBILITY_FMT" = "%1$@, %2$@";
 "RESET_APP" = "Reset App Settings";
 "RESET_APP_CONFIRM" = "Remove all settings for this app and follow global settings again? Global settings and other apps will not change. This cannot be undone.";
 "RESET_CANCEL" = "Cancel";
