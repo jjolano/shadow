@@ -1,8 +1,13 @@
 "ABOUT_TITLE" = "关于";
-"NOTES_DONE" = "完成";
 "NOTES_RETRY" = "重试";
-"NOTES_LOADING" = "正在加载发行说明...";
-"NOTES_ERROR" = "无法加载发行说明。请检查网络连接后重试。";
+"NOTES_ERROR" = "无法检查更新。请检查网络连接后重试。";
+"CHECK_UPDATES" = "检查更新";
+"CHECK_AGAIN" = "再次检查";
+"UPDATES_CHECKING" = "正在检查更新...";
+"UPDATES_DISCLOSURE" = "连接 GitHub 以检查发行版本。";
+"LAST_CHECKED" = "上次检查时间";
+"RELEASE_NOTES" = "发行说明";
+"VIEW_RELEASE" = "在 GitHub 上查看此版本";
 "NOTES_NO_RELEASE" = "未找到匹配的 Shadow 版本。";
 "NOTES_EMPTY" = "此版本未提供发行说明。";
 "UPDATES_HDR" = "更新";
@@ -16,7 +21,6 @@
 "VISIT_GITHUB" = "在GitHub上查看Shadow";
 "VISIT_KOFI" = "在Ko-fi上赞助作者";
 "LOCALIZATION_HDR" = "简体中文翻译";
-"VISIT_CHANGELOG" = "查看最新的更新日志";
 
 "RESET_HDR" = "重置";
 "RESET_SETTINGS" = "重置设置";

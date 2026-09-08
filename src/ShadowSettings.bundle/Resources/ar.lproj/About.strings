@@ -1,8 +1,13 @@
 "ABOUT_TITLE" = "حول";
-"NOTES_DONE" = "تم";
 "NOTES_RETRY" = "إعادة المحاولة";
-"NOTES_LOADING" = "جارٍ تحميل ملاحظات الإصدار...";
-"NOTES_ERROR" = "تعذر تحميل ملاحظات الإصدار. تحقق من اتصالك وحاول مجددًا.";
+"NOTES_ERROR" = "تعذر التحقق من التحديثات. تحقق من اتصالك وحاول مجددًا.";
+"CHECK_UPDATES" = "التحقق من التحديثات";
+"CHECK_AGAIN" = "التحقق مجددًا";
+"UPDATES_CHECKING" = "جارٍ التحقق من التحديثات...";
+"UPDATES_DISCLOSURE" = "يتصل بـ GitHub للتحقق من الإصدارات.";
+"LAST_CHECKED" = "آخر تحقق";
+"RELEASE_NOTES" = "ملاحظات الإصدار";
+"VIEW_RELEASE" = "عرض الإصدار على GitHub";
 "NOTES_NO_RELEASE" = "لم يتم العثور على إصدار Shadow مطابق.";
 "NOTES_EMPTY" = "لم تُقدَّم ملاحظات لهذا الإصدار.";
 "UPDATES_HDR" = "التحديثات";
@@ -16,7 +21,6 @@
 "VISIT_GITHUB" = "زيارة Shadow على GitHub";
 "VISIT_KOFI" = "أرسل بقشيشًا عبر Ko-fi";
 "LOCALIZATION_HDR" = "المترجم";
-"VISIT_CHANGELOG" = "عرض أحدث التغييرات";
 "TRANSLATOR" = "iA7myd";
 "UNKNOWN" = "غير معروف";
 

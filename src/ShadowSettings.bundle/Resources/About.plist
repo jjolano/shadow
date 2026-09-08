@@ -20,33 +20,13 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSTitleValueCell</string>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>SHDWUpdatesController</string>
 			<key>id</key>
-			<string>LatestVersion</string>
+			<string>AboutUpdates</string>
 			<key>label</key>
-			<string>LATEST_VERSION</string>
-			<key>get</key>
-			<string>aboutLatestVersion:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSTitleValueCell</string>
-			<key>id</key>
-			<string>UpdateStatus</string>
-			<key>label</key>
-			<string>UPDATE_STATUS</string>
-			<key>get</key>
-			<string>aboutUpdateStatus:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>action</key>
-			<string>openChangeLog:</string>
-			<key>id</key>
-			<string>AboutChangelog</string>
-			<key>label</key>
-			<string>VISIT_CHANGELOG</string>
+			<string>UPDATES_HDR</string>
 		</dict>
 
 		<dict>

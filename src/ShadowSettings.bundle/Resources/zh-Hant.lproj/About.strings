@@ -1,8 +1,13 @@
     "ABOUT_TITLE" = "\U95dc\U65bc";
-"NOTES_DONE" = "完成";
 "NOTES_RETRY" = "重試";
-"NOTES_LOADING" = "正在載入版本說明...";
-"NOTES_ERROR" = "無法載入版本說明。請檢查網路連線後重試。";
+"NOTES_ERROR" = "無法檢查更新。請檢查網路連線後重試。";
+"CHECK_UPDATES" = "檢查更新";
+"CHECK_AGAIN" = "再次檢查";
+"UPDATES_CHECKING" = "正在檢查更新...";
+"UPDATES_DISCLOSURE" = "連線至 GitHub 以檢查發行版本。";
+"LAST_CHECKED" = "上次檢查時間";
+"RELEASE_NOTES" = "版本說明";
+"VIEW_RELEASE" = "在 GitHub 上檢視此版本";
 "NOTES_NO_RELEASE" = "找不到符合條件的 Shadow 版本。";
 "NOTES_EMPTY" = "此版本未提供版本說明。";
     "CREDITS_HDR" = "\U9cf4\U8b1d\U4eba\U54e1";
@@ -14,10 +19,9 @@
     "INSTALLED_VERSION" = "\U5DF2\U5B89\U88DD\U7248\U672C";
     TRANSLATOR = CySxL;
     "UNKNOWN" = "\U672A\U77E5";
-    "UPDATES_HDR" = "\U7248\U672c\U6aa2\U67e5";
+    "UPDATES_HDR" = "更新";
     "VISIT_GITHUB" = "\U5728GitHub\U700f\U89bd\U539f\U59cb\U78bc";
     "VISIT_KOFI" = "\U5728Ko-fi\U6253\U8cde\U652f\U6301\U6211";
-    "VISIT_CHANGELOG" = "查看更新日誌";
 "DEVELOPER" = "開發者";
 
 "RESET_HDR" = "重置";

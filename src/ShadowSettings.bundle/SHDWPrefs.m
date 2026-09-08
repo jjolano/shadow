@@ -2,6 +2,31 @@
 
 #import <UIKit/UIKit.h>
 #import <Shadow/HookConfiguration.h>
+#import <Shadow/JBPath.h>
+
+NSString *SHDWInstalledVersion(void) {
+	// The status file is large; share the local result across both panes.
+	static NSString* packageVersion;
+	if(!packageVersion) {
+		for(NSString* statusPath in @[
+			JBPath(@"/var/lib/dpkg/status"),
+			[@THEOS_PACKAGE_INSTALL_PREFIX stringByAppendingString:@"/var/lib/dpkg/status"]
+		]) {
+			if(![[NSFileManager defaultManager] fileExistsAtPath:statusPath]) continue;
+			NSString* status = [NSString stringWithContentsOfFile:statusPath encoding:NSUTF8StringEncoding error:nil];
+			if(status) {
+				NSRegularExpression* regex = [NSRegularExpression regularExpressionWithPattern:@"(?:^|\\n)Package: me\\.jjolano\\.shadow\\n(?:[^\\n]+\\n)*?Version: ([^\\n]+)" options:0 error:nil];
+				NSTextCheckingResult* match = [regex firstMatchInString:status options:0 range:NSMakeRange(0, status.length)];
+				if(match) {
+					packageVersion = [[status substringWithRange:[match rangeAtIndex:1]] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+					if(packageVersion.length) break;
+					packageVersion = nil;
+				}
+			}
+		}
+	}
+	return packageVersion;
+}
 
 BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID) {
 	NSDictionary* appPrefs = [prefs dictionaryForKey:appID];

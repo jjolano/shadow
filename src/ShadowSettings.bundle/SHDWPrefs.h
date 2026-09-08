@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 
+NSString *SHDWInstalledVersion(void);
+
 BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID);
 void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled);
 
