@@ -82,7 +82,7 @@ FOUNDATION_EXPORT BOOL SHDWRangeOverlapsProtectedImportSlots(uintptr_t address,
 
 // Rebind journal + repair (anti-fishhook). Journal storage lives in
 // RebindRepair.x; the slot table it pairs with lives in SHDWHookSession.m.
-FOUNDATION_EXPORT void SHDWRebindJournalNote(const char* symbolName, void* replacement);
+FOUNDATION_EXPORT void SHDWRebindJournalNote(const char* symbolName, void* replacement, void** originalCell);
 // Check-then-store repair over all journaled slots; returns repaired count.
 FOUNDATION_EXPORT uint32_t SHDWRebindRepairSlots(void);
 // HookKit replay of the spec journal scoped to one image header (late-loaded

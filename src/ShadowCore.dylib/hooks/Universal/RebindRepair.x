@@ -30,13 +30,16 @@
 typedef struct {
     char* name;
     void* replacement;
+    // Caller-owned original cell, or NULL. Must be process-lifetime: replay
+    // dereferences it on later image loads, after the installer returned.
+    void** originalCell;
 } shdw_rebind_spec_t;
 
 static shdw_rebind_spec_t gSHDWRebindSpecs[SHDW_REBIND_SPECS_MAX];
 static uint32_t gSHDWRebindSpecCount;
 static uint32_t gSHDWRebindSpecOverflowed;
 
-void SHDWRebindJournalNote(const char* symbolName, void* replacement) {
+void SHDWRebindJournalNote(const char* symbolName, void* replacement, void** originalCell) {
     if(!symbolName || !symbolName[0] || !replacement) {
         return;
     }
@@ -58,13 +61,15 @@ void SHDWRebindJournalNote(const char* symbolName, void* replacement) {
     if(!copy) {
         return;
     }
-    gSHDWRebindSpecs[count] = (shdw_rebind_spec_t){ copy, replacement };
+    gSHDWRebindSpecs[count] = (shdw_rebind_spec_t){ copy, replacement, originalCell };
     __atomic_store_n(&gSHDWRebindSpecCount, count + 1, __ATOMIC_RELEASE);
 }
 
 // Scoped replay of one journal entry. Failures are routine (the image does
 // not import the symbol) and stay silent; the global verify pass already
-// covers install-time failures.
+// covers install-time failures. When no install has established an original,
+// the caller's cell is passed so this first import captures its predecessor;
+// a cell that already holds a live original is left alone.
 static void shdw_rebind_replay_one(SHDWHookSession* session,
                                    const shdw_rebind_spec_t* spec,
                                    const void* imageHeader) {
@@ -72,13 +77,17 @@ static void shdw_rebind_replay_one(SHDWHookSession* session,
     if(!name) {
         return;
     }
+    void** cell = spec->originalCell;
     [session hookRebindSymbol:name
-             withReplacement:spec->replacement
-                    outOldPtr:NULL
-                inCallerImage:imageHeader
-                      journal:NO];
+              withReplacement:spec->replacement
+                     outOldPtr:(cell && *cell == NULL) ? cell : NULL
+                 inCallerImage:imageHeader
+                       journal:NO];
 }
 
+// Exported (like the header declares): late-image validation and the
+// detector-gated loader path both resolve it from outside this image.
+__attribute__((visibility("default")))
 void SHDWRebindRepairImage(SHDWHookSession* session, const void* imageHeader) {
     if(!session || !imageHeader) {
         return;
