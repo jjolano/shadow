@@ -244,16 +244,22 @@ if grep -q 'outOldPtr:&' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m;
     exit 1
 fi
 
+# Journaled rebind cells must be process-lifetime: replay dereferences them
+# on later image loads. Bare address-of locals are stack storage.
+if grep -rn -- 'hookRebindSymbol.*outOldPtr:&[A-Za-z_]' src/ShadowCore.dylib/ | grep -qv -- 'outOldPtr:(void'; then
+    echo 'BATCHING RISK: journaled rebind cell is not a global'; rc=1
+fi
+
 # A failed attempt must neutralize caller input without erasing a continuation
 # this session published (a live replacement may chain through it).
 apply_once=$(sed -n '/^static BOOL shdw_apply_hook_spec_once(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
 case "$apply_once" in
-    *'BOOL entryPublished = entryOriginal && shdw_cell_holds_published_original(oldPtr);'*'if(oldPtr && !entryPublished) {'*) ;;
+    *'BOOL entryLive = shdw_cell_holds_live_original(oldPtr);'*'if(oldPtr && !entryLive) {'*) ;;
     *) echo 'SESSION DRIFT: setup-failure paths must snapshot then neutralize unpublished cells'; rc=1 ;;
 esac
 finish_helper=$(sed -n '/^static void shdw_finish_uninstalled_hook(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
 case "$finish_helper" in
-    *'result.mutation == HK_MUTATION_NONE && !entryPublished'*) ;;
+    *'result.mutation == HK_MUTATION_NONE && !entryLive'*) ;;
     *) echo 'SESSION DRIFT: clean failures must preserve earlier-attempt continuations'; rc=1 ;;
 esac
 if ! grep -q 'shdw_note_published_cell(oldPtr);' src/ShadowCore.dylib/SHDWHookSession.m; then
@@ -267,7 +273,7 @@ for line in $(grep -n '\*oldPtr = NULL;' src/ShadowCore.dylib/SHDWHookSession.m 
     else
         start=1
     fi
-    if ! sed -n "${start},$((line - 1))p" src/ShadowCore.dylib/SHDWHookSession.m | grep -q 'entryPublished'; then
+    if ! sed -n "${start},$((line - 1))p" src/ShadowCore.dylib/SHDWHookSession.m | grep -q 'entryLive'; then
         echo "SESSION DRIFT: unguarded cell clear at SHDWHookSession.m:$line"; rc=1
     fi
 done

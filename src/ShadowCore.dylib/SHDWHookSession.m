@@ -28,40 +28,51 @@ void SHDWSetProcessBackendOverride(const char* backendID) {
 typedef hk_status_t (*SHDWHKRuntimeCreateWithBackendOverride)(
     const hk_runtime_config_t*, const char*, hk_runtime_t**);
 
-// Cells this session has published a continuation into. A failed attempt
-// must never erase one: a live replacement may still chain through it. Any
-// other cell holds caller input, which a failed attempt neutralizes to NULL.
+// Cells this session has published a continuation into, with the last value
+// published. A failed attempt must never erase a live one: a replacement may
+// still chain through it. Anything else in a cell is caller input, which a
+// failed attempt neutralizes to NULL. Values matter because stack slots get
+// reused: an address alone cannot prove the current contents are ours.
 #define SHDW_PUBLISHED_CELLS_MAX 512
-static void* gSHDWPublishedCells[SHDW_PUBLISHED_CELLS_MAX];
+typedef struct { void* cell; void* value; } shdw_published_cell_t;
+static shdw_published_cell_t gSHDWPublishedCells[SHDW_PUBLISHED_CELLS_MAX];
 // ponytail: fixed table like the IMP registries below; beyond the cap new
 // cells are treated as unpublished (cleared on failure) until raised.
 static uint32_t gSHDWPublishedCellCount;
 
-static BOOL shdw_cell_holds_published_original(void** cell) {
-    if(!cell) return NO;
+static BOOL shdw_cell_holds_live_original(void** cell) {
+    if(!cell || !*cell) return NO;
     uint32_t count = __atomic_load_n(&gSHDWPublishedCellCount, __ATOMIC_ACQUIRE);
     for(uint32_t i = 0; i < count; i++) {
-        if(gSHDWPublishedCells[i] == (void*)cell) return YES;
+        if(gSHDWPublishedCells[i].cell == (void*)cell) {
+            return gSHDWPublishedCells[i].value == *cell;
+        }
     }
     return NO;
 }
 
 static void shdw_note_published_cell(void** cell) {
-    if(!cell || shdw_cell_holds_published_original(cell)) return;
+    if(!cell || !*cell) return;
     uint32_t count = __atomic_load_n(&gSHDWPublishedCellCount, __ATOMIC_ACQUIRE);
+    for(uint32_t i = 0; i < count; i++) {
+        if(gSHDWPublishedCells[i].cell == (void*)cell) {
+            gSHDWPublishedCells[i].value = *cell;
+            return;
+        }
+    }
     if(count == SHDW_PUBLISHED_CELLS_MAX) return;
-    gSHDWPublishedCells[count] = (void*)cell;
+    gSHDWPublishedCells[count] = (shdw_published_cell_t){ (void*)cell, *cell };
     __atomic_store_n(&gSHDWPublishedCellCount, count + 1, __ATOMIC_RELEASE);
 }
 
 static void shdw_clear_unpublished_cell(void** cell) {
-    if(cell && !shdw_cell_holds_published_original(cell)) {
+    if(cell && !shdw_cell_holds_live_original(cell)) {
         *cell = NULL;
     }
 }
 
 static void shdw_finish_uninstalled_hook(hk_hook_t* hook, void** oldPtr,
-                                         BOOL entryPublished,
+                                         BOOL entryLive,
                                          BOOL* outCleanRefusal) {
     hk_hook_result_t result;
     if(!hook || hk_hook_copy_result(hook, &result) != HK_STATUS_OK) {
@@ -70,7 +81,7 @@ static void shdw_finish_uninstalled_hook(hk_hook_t* hook, void** oldPtr,
     // A proven no-mutation failure clears the cell unless it already held a
     // continuation from an earlier attempt: that one may still be live, but a
     // continuation published by this very attempt died with it.
-    if(oldPtr && result.mutation == HK_MUTATION_NONE && !entryPublished) {
+    if(oldPtr && result.mutation == HK_MUTATION_NONE && !entryLive) {
         *oldPtr = NULL;
     }
     if(outCleanRefusal) {
@@ -281,13 +292,12 @@ static BOOL shdw_apply_hook_spec_once(
         *outCleanRefusal = NO;
     }
 
-    // Snapshot whether the cell already holds a continuation this session
-    // published: a live replacement may chain through it, so failures must
+    // Snapshot whether the cell holds a live continuation this session
+    // published: a replacement may chain through it, so failures must
     // preserve it. Any other input is neutralized up front so every early
     // exit below (including creation failures) is safe.
-    void* entryOriginal = oldPtr ? *oldPtr : NULL;
-    BOOL entryPublished = entryOriginal && shdw_cell_holds_published_original(oldPtr);
-    if(oldPtr && !entryPublished) {
+    BOOL entryLive = shdw_cell_holds_live_original(oldPtr);
+    if(oldPtr && !entryLive) {
         *oldPtr = NULL;
     }
 
@@ -315,25 +325,25 @@ static BOOL shdw_apply_hook_spec_once(
     }
 
     if(hk_plan_analyze(plan, NULL) != HK_STATUS_OK) {
-        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         goto done;
     }
 
     hk_hook_result_t prepared;
     if(hk_hook_copy_result(hook, &prepared) != HK_STATUS_OK ||
        prepared.outcome != HK_OUTCOME_ANALYZED) {
-        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         goto done;
     }
 
     if(hk_plan_prepare(plan, NULL) != HK_STATUS_OK) {
-        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         goto done;
     }
 
     if(hk_hook_copy_result(hook, &prepared) != HK_STATUS_OK ||
        prepared.outcome != HK_OUTCOME_PREPARED) {
-        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         goto done;
     }
 
@@ -349,7 +359,7 @@ static BOOL shdw_apply_hook_spec_once(
     }
 
     if(hk_plan_commit(plan, &commitReport) != HK_STATUS_OK) {
-        shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+        shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         goto done;
     }
 
@@ -357,7 +367,7 @@ static BOOL shdw_apply_hook_spec_once(
     hk_status_t resultStatus = hk_hook_copy_result(hook, &result);
     if(resultStatus != HK_STATUS_OK || result.outcome != HK_OUTCOME_ACTIVE) {
         if(resultStatus == HK_STATUS_OK) {
-            shdw_finish_uninstalled_hook(hook, oldPtr, entryPublished, outCleanRefusal);
+            shdw_finish_uninstalled_hook(hook, oldPtr, entryLive, outCleanRefusal);
         }
         goto done;
     }
@@ -600,7 +610,7 @@ static void shdw_init_spec(hk_hook_spec_t* spec, const char* stableID,
     }
 
     if(journal) {
-        SHDWRebindJournalNote(symbolName.UTF8String, replacement);
+        SHDWRebindJournalNote(symbolName.UTF8String, replacement, oldPtr);
     }
 
     hk_hook_spec_t spec;
