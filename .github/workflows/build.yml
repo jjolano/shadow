@@ -22,7 +22,7 @@ jobs:
     name: rootful-legacy
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Theos and old-ABI toolchain
         run: |
@@ -75,7 +75,7 @@ jobs:
           .github/scripts/build-deps.sh rootful-legacy
           ./build.sh rootful-legacy
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: shadow-rootful-legacy
           path: build/*.deb
@@ -88,7 +88,7 @@ jobs:
       matrix:
         flavor: [rootful-modern, rootless, roothide]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Theos
         run: |
@@ -127,7 +127,7 @@ jobs:
           .github/scripts/build-deps.sh "${{ matrix.flavor }}"
           ./build.sh "${{ matrix.flavor }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: shadow-${{ matrix.flavor }}
           path: build/*.deb
