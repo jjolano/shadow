@@ -12,6 +12,7 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+		SHDWLocalizeSpecifiers(_specifiers, [NSBundle bundleForClass:[self class]], @"Root");
 		for(NSString* identifier in @[@"ApplicationsSummary", @"RootAbout"]) {
 			UIImage* icon = SHDWSettingsSymbol([identifier isEqualToString:@"RootAbout"] ? @"info.circle" : @"square.grid.2x2");
 			if(icon) [[self specifierForID:identifier] setProperty:icon forKey:@"iconImage"];
@@ -46,7 +47,7 @@
 			return nil;
 		}
 
-		return [NSString stringWithFormat:@"%ld", (long)customized];
+		return [NSNumberFormatter localizedStringFromNumber:@(customized) numberStyle:NSNumberFormatterDecimalStyle];
 	}
 
 	return [prefs objectForKey:[specifier identifier]];

@@ -10,6 +10,8 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"About" target:self];
+		SHDWLocalizeSpecifiers(_specifiers, [NSBundle bundleForClass:[self class]], @"About");
+		self.title = [self localized:@"ABOUT_TITLE"];
 
 		// Guarded symbols on modern iOS; plain, labeled rows on iOS 9.
 		for(NSDictionary* mapping in @[

@@ -216,20 +216,9 @@ assert 'cell.accessibilityValue = nil;' in list_source
 assert 'cell.imageView.image =' not in list_source
 for path in settings_dir.glob('*.m'):
     assert '@available(' not in path.read_text(), path
-for locale in ['en', 'ar', 'zh-Hans', 'zh-Hant']:
-    for table, keys in {
-        'App': ['RESET_APP', 'RESET_APP_CONFIRM', 'RESET_CANCEL', 'CUSTOMIZED',
-                'RESET_APP_FAILED', 'RESET_APP_FAILED_DESC', 'RESET_OK'],
-        'About': ['UPDATES_HDR', 'INSTALLED_VERSION', 'LATEST_VERSION', 'UPDATE_STATUS',
-                  'UP_TO_DATE', 'UPDATE_AVAILABLE', 'UNKNOWN', 'NOTES_RETRY', 'NOTES_ERROR',
-                  'NOTES_NO_RELEASE', 'NOTES_EMPTY', 'CHECK_UPDATES', 'CHECK_AGAIN',
-                  'UPDATES_CHECKING', 'UPDATES_DISCLOSURE', 'LAST_CHECKED', 'RELEASE_NOTES', 'VIEW_RELEASE'],
-    }.items():
-        strings = (settings_dir / 'Resources' / (locale + '.lproj') / (table + '.strings')).read_text()
-        for key in keys:
-            assert re.search(r'"' + key + r'"\s*=\s*"[^"\n]+";', strings), (locale, key)
-print("PASS: reset confirmation, explicit-only Updates wiring, inline notes, legacy guards, and four locales (static)")
+print("PASS: reset confirmation, explicit-only Updates wiring, inline notes and legacy guards (static)")
 PY
+python3 tests/verify-settings-localization.py
 
 # Aggressive mode is a live scalar resolved with global fallback (like
 # activation), gated into disable-style adapter paths — never a per-hook knob.

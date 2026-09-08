@@ -7,8 +7,11 @@ The Docker image must already contain clang, libobjc2 and gnustep-config.
 import argparse
 import platform
 from pathlib import Path
+import plistlib
 import re
+import runpy
 import shlex
+import shutil
 import subprocess
 import tempfile
 
@@ -17,7 +20,10 @@ settings = root / "src/ShadowSettings.bundle"
 prefs = (settings / "SHDWPrefs.m").read_text()
 about = (settings / "SHDWAboutListController.m").read_text()
 updates = (settings / "SHDWUpdatesController.m").read_text()
+root_controller = (settings / "SHDWRootListController.m").read_text()
 keys = (root / "src/Shadow.framework/Headers/Shadow/SHDWPlugin.h").read_text()
+localization = runpy.run_path(str(root / "tests/verify-settings-localization.py"))
+localization_tables = localization["verify"]()
 
 # Compile the original bodies, not Python translations of their behavior.
 helpers = prefs[prefs.index("BOOL SHDWAppFollowsGlobal("):
@@ -152,11 +158,32 @@ static NSIndexPath *row(NSInteger section, NSInteger item) {
     NSUInteger indexes[] = {section, item}; return [NSIndexPath indexPathWithIndexes:indexes length:2];
 }
 @interface PSSpecifier : NSObject
+@property(nonatomic, copy) NSString *name, *identifier;
+@property(nonatomic, strong) NSMutableDictionary *properties;
+- (id)propertyForKey:(NSString *)key;
 - (void)setProperty:(id)value forKey:(NSString *)key;
 @end
 @implementation PSSpecifier
-- (void)setProperty:(id)value forKey:(NSString *)key {}
+- (instancetype)init { if((self = [super init])) _properties = [NSMutableDictionary new]; return self; }
+- (id)propertyForKey:(NSString *)key { return self.properties[key]; }
+- (void)setProperty:(id)value forKey:(NSString *)key { self.properties[key] = value; }
 @end
+'''
+source += prefs[prefs.index('void SHDWLocalizeSpecifiers('):prefs.index('NSString *SHDWInstalledVersion(')]
+source += r'''
+static NSDictionary *localizedTables;
+static NSString *testLanguage = @"en";
+static BOOL translate;
+static IMP lookupIMP;
+static NSString *testLocalizedString(id bundle, SEL selector, NSString *key, NSString *fallback, NSString *table) {
+    if(bundle != [NSBundle bundleForClass:[PSSpecifier class]]) {
+        return ((id (*)(id, SEL, id, id, id))lookupIMP)(bundle, selector, key, fallback, table);
+    }
+    assert(table != nil);
+    NSString *value = localizedTables[testLanguage][table][key];
+    assert(value != nil);
+    return translate ? value : key;
+}
 @interface PSViewController : NSObject {
 @protected NSArray *_specifiers;
 }
@@ -275,6 +302,15 @@ source += '''
 - (void)removeObjectForKey:(NSString *)key { [_storage removeObjectForKey:key]; }
 - (BOOL)synchronize { return !self.failSynchronize; }
 @end
+@interface SHDWRootListController : PSViewController {
+@public NSUserDefaults *prefs;
+}
+@end
+@implementation SHDWRootListController
+'''
+source += root_controller[root_controller.index('- (id)readPreferenceValue:'):
+                          root_controller.index('- (void)setPreferenceValue:')] + '\n@end\n'
+source += '''
 static NSDictionary *parse(NSData *data, NSInteger status, NSError *error) {
     NSURLResponse *response = [[NSHTTPURLResponse alloc]
         initWithURL:[NSURL URLWithString:@"https://example.invalid/releases"]
@@ -289,6 +325,64 @@ static NSDictionary *parseJSON(id json) {
     return parse([NSJSONSerialization dataWithJSONObject:json options:0 error:NULL], 200, nil);
 }
 int main(void) { @autoreleasepool {
+    NSString *directory = [[NSFileManager defaultManager] currentDirectoryPath];
+    localizedTables = [NSDictionary dictionaryWithContentsOfFile:@"localizations.plist"];
+    assert(localizedTables.count == 4);
+    for(NSString *language in localizedTables) {
+        for(NSString *table in localizedTables[language]) {
+            NSString *path = [NSString stringWithFormat:@"Resources/%@.lproj/%@.strings", language, table];
+            NSString *text = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:NULL];
+            assert(text != nil);
+            // Foundation's OpenStep reader independently checks the portable parser.
+            assert([[text propertyListFromStringsFileFormat] isEqual:localizedTables[language][table]]);
+            NSBundle *bundle = [NSBundle bundleWithPath:[directory stringByAppendingPathComponent:[path stringByDeletingLastPathComponent]]];
+            assert(bundle != nil);
+            for(NSString *key in localizedTables[language][table]) {
+                assert([[bundle localizedStringForKey:key value:@"missing" table:table] isEqual:localizedTables[language][table][key]]);
+            }
+            assert([[bundle localizedStringForKey:@"ABSENT_TEST_KEY" value:@"fallback" table:table] isEqual:@"fallback"]);
+            assert([[bundle localizedStringForKey:@"ABSENT_TEST_KEY" value:nil table:table] isEqual:@"ABSENT_TEST_KEY"]);
+        }
+    }
+    NSBundle *baseBundle = [NSBundle bundleWithPath:[directory stringByAppendingPathComponent:@"Resources/Base.lproj"]];
+    for(NSString *table in @[@"Root", @"App", @"About"]) {
+        for(NSString *key in localizedTables[@"en"][table]) {
+            assert([[baseBundle localizedStringForKey:key value:nil table:table] isEqual:localizedTables[@"en"][table][key]]);
+        }
+    }
+    Method lookup = class_getInstanceMethod([NSBundle class], @selector(localizedStringForKey:value:table:));
+    lookupIMP = method_setImplementation(lookup, (IMP)testLocalizedString);
+    translate = YES;
+    for(NSString *language in localizedTables) {
+        testLanguage = language;
+        for(NSString *table in @[@"Root", @"App", @"About"]) {
+            NSDictionary *plist = [NSDictionary dictionaryWithContentsOfFile:[NSString stringWithFormat:@"Resources/%@.plist", table]];
+            NSMutableArray *specifiers = [NSMutableArray new];
+            for(NSDictionary *item in plist[@"items"]) {
+                PSSpecifier *specifier = [PSSpecifier new];
+                specifier.name = item[@"label"];
+                specifier.identifier = item[@"id"];
+                specifier.properties = [item mutableCopy];
+                [specifiers addObject:specifier];
+            }
+            SHDWLocalizeSpecifiers(specifiers, [NSBundle mainBundle], table);
+            for(NSUInteger index = 0; index < specifiers.count; ++index) {
+                PSSpecifier *specifier = specifiers[index];
+                NSDictionary *item = plist[@"items"][index];
+                assert(!item[@"label"] || [specifier.name isEqual:localizedTables[language][table][item[@"label"]]]);
+                assert(!item[@"id"] || [specifier.identifier isEqual:item[@"id"]]);
+                NSMutableDictionary *expected = [item mutableCopy];
+                if(item[@"footerText"]) expected[@"footerText"] = localizedTables[language][table][item[@"footerText"]];
+                assert([specifier.properties isEqual:expected]); // IDs, actions, getters and setters are untouched.
+            }
+        }
+        NSString *format = localizedTables[language][@"App"][@"APP_STATE_ACCESSIBILITY_FMT"];
+        NSString *state = [NSString stringWithFormat:format, @"enabled-marker", @"customized-marker"];
+        assert([state containsString:@"enabled-marker"] && [state containsString:@"customized-marker"]);
+        assert([state rangeOfString:@"%"].location == NSNotFound);
+    }
+    translate = NO;
+    testLanguage = @"en";
     Method existsMethod = class_getInstanceMethod([NSFileManager class], @selector(fileExistsAtPath:));
     Method contentsMethod = class_getClassMethod([NSString class], @selector(stringWithContentsOfFile:encoding:error:));
     IMP existsIMP = method_setImplementation(existsMethod, (IMP)testFileExists);
@@ -314,6 +408,16 @@ int main(void) { @autoreleasepool {
     assert(SHDWSettingsSymbol(@"info.circle").renderingMode == UIImageRenderingModeAlwaysTemplate);
     assert(SHDWSettingsSymbol(@"missing") == nil);
     TestDefaults *prefs = [TestDefaults new];
+    SHDWRootListController *rootPane = [SHDWRootListController new];
+    rootPane->prefs = prefs;
+    PSSpecifier *summary = [PSSpecifier new];
+    summary.identifier = @"ApplicationsSummary";
+    assert([rootPane readPreferenceValue:summary] == nil);
+    for(NSUInteger count = 1; count <= 1234; ++count) {
+        [prefs setObject:@{SHDWAppEnabledID: @YES} forKey:[NSString stringWithFormat:@"test.%lu", (unsigned long)count]];
+    }
+    assert([[rootPane readPreferenceValue:summary] isEqual:[NSNumberFormatter localizedStringFromNumber:@1234 numberStyle:NSNumberFormatterDecimalStyle]]);
+    [prefs.storage removeAllObjects];
     NSString *app = @"example.selected", *other = @"example.other";
     [prefs setBool:YES forKey:@"Global_Enabled"];
     [prefs setBool:NO forKey:SHDWDetectorAggressiveID];
@@ -479,6 +583,55 @@ int main(void) { @autoreleasepool {
     __weak id weakPane = pane;
     pane = nil; lastSession = nil;
     assert(weakPane == nil);
+    translate = YES;
+    for(NSString *language in localizedTables) {
+        testLanguage = language;
+        NSDictionary *strings = localizedTables[language][@"About"];
+        installedVersion = nil;
+        SHDWAboutListController *localizedAbout = [SHDWAboutListController new];
+        [localizedAbout specifiers];
+        assert([localizedAbout.title isEqual:strings[@"ABOUT_TITLE"]]);
+        assert([[localizedAbout aboutInstalledVersion:nil] isEqual:strings[@"UNKNOWN"]]);
+        assert([[localizedAbout aboutTranslator:nil] isEqual:strings[@"TRANSLATOR"]]);
+        SHDWUpdatesController *localizedPane = [SHDWUpdatesController new];
+        NSUInteger beforeRequests = requests;
+        [localizedPane viewDidLoad]; exercisePane(localizedPane);
+        assert(requests == beforeRequests);
+        assert([localizedPane.title isEqual:strings[@"UPDATES_HDR"]]);
+        assert([[localizedPane tableView:nil titleForFooterInSection:0] isEqual:strings[@"UPDATES_DISCLOSURE"]]);
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(0, 0)].detailTextLabel.text isEqual:strings[@"UNKNOWN"]]);
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(0, 1)].textLabel.text isEqual:strings[@"CHECK_UPDATES"]]);
+        [localizedPane checkForUpdates:nil];
+        UITableViewCell *checking = [localizedPane tableView:nil cellForRowAtIndexPath:row(0, 1)];
+        assert([checking.textLabel.text isEqual:strings[@"UPDATES_CHECKING"]]);
+        assert(checking.accessibilityTraits == (UIAccessibilityTraitButton | UIAccessibilityTraitNotEnabled));
+        complete(nil, 503, nil); exercisePane(localizedPane);
+        assert([[localizedPane updateStatus] isEqual:strings[@"NOTES_ERROR"]]);
+        UITableViewCell *retry = [localizedPane tableView:nil cellForRowAtIndexPath:row(0, 1)];
+        assert([retry.textLabel.text isEqual:strings[@"NOTES_RETRY"]] && retry.accessibilityTraits == UIAccessibilityTraitButton);
+        [localizedPane checkForUpdates:nil]; completeJSON(@[]);
+        assert([[localizedPane updateStatus] isEqual:strings[@"NOTES_NO_RELEASE"]]);
+        [localizedPane checkForUpdates:nil]; completeJSON(@[linked]); exercisePane(localizedPane);
+        assert([[localizedPane updateStatus] isEqual:strings[@"UNKNOWN"]]);
+        installedVersion = @"4.1.0";
+        assert([[localizedPane updateStatus] isEqual:strings[@"UPDATE_AVAILABLE"]]);
+        installedVersion = @"4.2.0-1";
+        assert([[localizedPane updateStatus] isEqual:strings[@"UP_TO_DATE"]]);
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(0, 0)].detailTextLabel.text isEqual:installedVersion]);
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(0, 1)].textLabel.text isEqual:strings[@"CHECK_AGAIN"]]);
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(2, 1)].textLabel.text isEqual:strings[@"VIEW_RELEASE"]]);
+        assert([[localizedPane tableView:nil titleForHeaderInSection:2] isEqual:strings[@"RELEASE_NOTES"]]);
+        NSString *date = [NSDateFormatter localizedStringFromDate:[localizedPane valueForKey:@"lastChecked"] dateStyle:NSDateFormatterMediumStyle timeStyle:NSDateFormatterShortStyle];
+        assert([[localizedPane tableView:nil cellForRowAtIndexPath:row(1, 2)].detailTextLabel.text isEqual:date]);
+        UITextView *localizedNotes = [[localizedPane tableView:nil cellForRowAtIndexPath:row(2, 0)].contentView.subviews firstObject];
+        assert(([localizedNotes.text isEqual:[NSString stringWithFormat:@"%@\\n\\n%@", release[@"name"], longBody]]));
+        [localizedPane checkForUpdates:nil]; completeJSON(@[@{@"tag_name": @"v4.0", @"prerelease": @NO}]);
+        localizedNotes = [[localizedPane tableView:nil cellForRowAtIndexPath:row(2, 0)].contentView.subviews firstObject];
+        assert([localizedNotes.text containsString:strings[@"NOTES_EMPTY"]]);
+        [localizedPane viewDidDisappear:NO];
+    }
+    method_setImplementation(lookup, lookupIMP);
+    puts("PASS: Foundation parses and looks up all locale/Base tables; specifier localization preserves identities/actions; localized summary, Updates states, formats and accessibility traits");
     puts("PASS: actual settings helpers, parser, About getters, Updates lifecycle/actions, cancellation, inline notes and URL validation (host doubles, no device)");
 } return 0; }
 '''
@@ -489,6 +642,10 @@ options = args.parse_args()
 with tempfile.TemporaryDirectory(prefix="shadow-settings-") as directory:
     temporary = Path(directory)
     (temporary / "test.m").write_text(source)
+    shutil.copytree(settings / "Resources", temporary / "Resources", symlinks=True)
+    (temporary / "localizations.plist").write_bytes(plistlib.dumps({
+        language: {table: values for (locale, table), values in localization_tables.items() if locale == language}
+        for language in localization["LANGUAGES"]}))
     if options.docker:
         subprocess.run([
             "docker", "run", "--rm", "--network=none", "-v", f"{temporary}:/test",
@@ -503,4 +660,4 @@ with tempfile.TemporaryDirectory(prefix="shadow-settings-") as directory:
                 subprocess.check_output(["gnustep-config", "--base-libs"], text=True)))
         subprocess.run(["clang", "-fblocks", "-fobjc-arc", *flags, "-UNDEBUG", "test.m", "-o", "test"],
                        cwd=temporary, check=True)
-        subprocess.run([str(temporary / "test")], check=True)
+        subprocess.run([str(temporary / "test")], cwd=temporary, check=True)

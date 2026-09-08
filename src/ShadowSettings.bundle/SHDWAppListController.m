@@ -20,6 +20,9 @@
 - (NSArray *)specifiers {
 	if(!_specifiers) {
 		_specifiers = [self loadSpecifiersFromPlistName:@"App" target:self];
+		NSBundle* bundle = [NSBundle bundleForClass:[self class]];
+		SHDWLocalizeSpecifiers(_specifiers, bundle, @"App");
+		self.title = [bundle localizedStringForKey:@"APP_SETTINGS" value:nil table:@"App"];
 
 		enabledSpecifier = [self specifierForID:@"App_Enabled"];
 		aggressiveSpecifier = [self specifierForID:@"Detector_Aggressive"];
