@@ -66,12 +66,21 @@ static Class replaced_objc_getMetaClass(const char* name) {
 
 static int (*original_objc_getClassList)(Class* buffer, int bufferCount);
 static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
+    if(!original_objc_getClassList) {
+        return 0;
+    }
     if(!isCallerExternal()) {
         return original_objc_getClassList(buffer, bufferCount);
     }
-
-    // Two-phase: pull the full list through a scratch buffer, drop protected
-    // classes, fill at most bufferCount and return the FILTERED total.
+    // Predecessor capture can be skipped by an alternate installer (same
+    // hazard documented for method_getImplementation below): calling through
+    // NULL jumps to PC=0 (observed on-device from class-enumeration
+    // callers). Fail visible instead. TOCTOU-hardened: classes can register
+    // between the size probe and the fill, so retry once on growth.
+    if(!original_objc_getClassList) {
+        NSLog(@"[Shadow] objc_getClassList predecessor missing; failing visible");
+        return 0;
+    }
     int total = original_objc_getClassList(NULL, 0);
 
     if(total <= 0) {
@@ -86,6 +95,19 @@ static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
     }
 
     int filled = original_objc_getClassList(all, total);
+    if(filled > total) {
+        free(all);
+        total = filled;
+        all = (Class *)malloc((size_t)total * sizeof(Class));
+        if(!all) {
+            return 0;
+        }
+        filled = original_objc_getClassList(all, total);
+        if(filled > total) {
+            free(all);
+            return 0;
+        }
+    }
     int n = 0;
 
     for(int i = 0; i < filled; i++) {
@@ -106,6 +128,15 @@ static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
 
 static Class* (*original_objc_copyClassList)(unsigned int* outCount);
 static Class* replaced_objc_copyClassList(unsigned int* outCount) {
+    // Same NULL-predecessor guard as above: calling through NULL jumps to
+    // PC=0. Fail visible (empty list) instead.
+    if(!original_objc_copyClassList || !original_objc_getClassList) {
+        NSLog(@"[Shadow] objc_copyClassList predecessor missing; failing visible");
+        if(outCount) {
+            *outCount = 0;
+        }
+        return NULL;
+    }
     if(!isCallerExternal()) {
         return original_objc_copyClassList(outCount);
     }
@@ -127,7 +158,28 @@ static Class* replaced_objc_copyClassList(unsigned int* outCount) {
     }
 
     int filled = original_objc_getClassList(all, total);
-    Class* filtered = (Class *)malloc(((size_t)total + 1) * sizeof(Class));
+    if(filled > total) {
+        // Classes registered between the probe and the fill: retry once
+        // with the fresh size instead of overflowing both buffers.
+        free(all);
+        total = filled;
+        all = (Class *)malloc((size_t)total * sizeof(Class));
+        if(!all) {
+            if(outCount) {
+                *outCount = 0;
+            }
+            return NULL;
+        }
+        filled = original_objc_getClassList(all, total);
+        if(filled > total) {
+            free(all);
+            if(outCount) {
+                *outCount = 0;
+            }
+            return NULL;
+        }
+    }
+    Class* filtered = (Class *)malloc(((size_t)filled + 1) * sizeof(Class));
 
     if(!filtered) {
         free(all);
@@ -230,7 +282,9 @@ static Method* replaced_class_copyMethodList(Class cls, unsigned int* outCount) 
         result[n++] = result[i];
     }
 
-    result[n] = NULL;
+    // No NULL terminator: the array is filtered in place in the caller's
+    // buffer, which is sized localCount — writing result[n] overflows when
+    // nothing was filtered. The API is count-based (*outCount is exact).
 
     if(outCount) {
         *outCount = n;
