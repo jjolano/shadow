@@ -35,7 +35,8 @@ BOOL shdw_env_name_hidden(const char* name) {
 
     if(strcmp(name, "_MSSafeMode") == 0
     || strcmp(name, "_SafeMode") == 0
-    || strcmp(name, "_SubstituteSafeMode") == 0) {
+    || strcmp(name, "_SubstituteSafeMode") == 0
+    || strcmp(name, "BOOTSTRAP_PREFIX") == 0) {
         return YES;
     }
 
@@ -57,7 +58,8 @@ BOOL shdw_env_entry_hidden(const char* var) {
 
     if(strncmp(var, "_MSSafeMode=", 12) == 0
     || strncmp(var, "_SafeMode=", 10) == 0
-    || strncmp(var, "_SubstituteSafeMode=", 20) == 0) {
+    || strncmp(var, "_SubstituteSafeMode=", 20) == 0
+    || strncmp(var, "BOOTSTRAP_PREFIX=", 17) == 0) {
         return YES;
     }
 

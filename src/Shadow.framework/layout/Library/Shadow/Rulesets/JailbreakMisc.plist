@@ -41,6 +41,16 @@
 		<string>/dev/vn0</string>
 		<string>/dev/vn1</string>
 		<string>/jb</string>
+		<string>/.procursus_strapped</string>
+		<string>/.mount_rw</string>
+		<string>/.last_bsod</string>
+		<string>/.verbose_bsod</string>
+		<string>/var/tmp/slide.txt</string>
+		<string>/var/tmp/.substrated_disable_loader</string>
+		<string>/var/mobile/.sbinjectSafeMode</string>
+		<string>/usr/share/jailbreak/injectme.plist</string>
+		<string>/jb/offsets.plist</string>
+		<string>/usr/libexec/reload</string>
 	</array>
 	<key>BlacklistPaths</key>
 	<array>
@@ -70,6 +80,16 @@
 		<string>/var/MobileSoftwareUpdate/mnt1</string>
 		<string>/Library/Shadow</string>
 		<string>/Library/ShadowSettings.bundle</string>
+		<string>/bootstrap</string>
+		<string>/chimera</string>
+		<string>/odyssey</string>
+		<string>/taurine</string>
+		<string>/meridian</string>
+		<string>/binpack</string>
+		<string>/Library/Substitute</string>
+		<string>/etc/apt</string>
+		<string>/var/lib/undecimus</string>
+		<string>/var/mobile/Library/Caches/com.saurik.Cydia</string>
 	</array>
 	<key>BlacklistPredicates</key>
 	<array>
