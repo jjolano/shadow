@@ -2,6 +2,8 @@
 
 A modern jailbreak detection bypass.
 
+If Shadow is useful to you, consider [sponsoring](https://github.com/sponsors/jjolano) or [buying me a coffee](https://ko-fi.com/jjolano).
+
 ## Install
 
 Add `https://ios.jjolano.me` to your package manager and install `me.jjolano.shadow`. Or grab the [latest release](https://github.com/jjolano/shadow/releases/latest).

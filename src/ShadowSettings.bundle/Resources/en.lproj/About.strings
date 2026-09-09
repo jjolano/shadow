@@ -20,6 +20,7 @@
 "DEVELOPER" = "Developer";
 "VISIT_GITHUB" = "Visit Shadow on GitHub";
 "VISIT_KOFI" = "Send a Tip with Ko-fi";
+"VISIT_SPONSORS" = "Sponsor on GitHub";
 "LOCALIZATION_HDR" = "Translation";
 
 "RESET_HDR" = "Reset";

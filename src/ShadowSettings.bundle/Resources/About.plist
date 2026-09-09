@@ -65,6 +65,16 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>action</key>
+			<string>openSponsors:</string>
+			<key>id</key>
+			<string>AboutSponsors</string>
+			<key>label</key>
+			<string>VISIT_SPONSORS</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>action</key>
 			<string>openKofi:</string>
 			<key>id</key>
 			<string>AboutKofi</string>
