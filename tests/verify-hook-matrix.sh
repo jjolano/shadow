@@ -291,7 +291,7 @@ fi
 if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' src/ShadowCore.dylib/hooks ||
    grep -q '0x57898' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
    ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q 'mov x0, #2' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+   ! grep -q 'bl _shdw_svc_should_deny' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
    ! grep -q 'target - (int64_t)site' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
    ! grep -q '\[NSBundle mainBundle\]\.bundlePath' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
    ! grep -q '/procursus/Applications/' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||

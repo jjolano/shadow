@@ -1,6 +1,7 @@
 #import "UniversalHooks.h"
 #import "../../HookCoordinator.h"
 #import "../../policy/EnvironmentPolicy.h"
+#import "../../policy/PathPolicy.h"
 #import <pthread.h>
 #import <mach/vm_region.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -940,7 +941,14 @@ static BOOL shdw_dlopen_resolution_denied(const char* path, const void* callerAd
             continue;
         }
 
-        if([_shadow isPathRestricted:candidate options:@{kShadowRestrictionEnableResolve : @(NO)}] || [_shadow isProtectedImagePath:candidate]) {
+        // Same external-hidden set the stat/access hooks apply: an object kept
+        // out of the ruleset (so the loader's own DYLD_INSERT load still
+        // resolves it) must still answer absent to an external dlopen probe,
+        // which would otherwise get a live handle via an already-loaded image.
+        // Reached only for external callers (every call site gates first).
+        if(shdw_path_is_external_hidden(candidate.fileSystemRepresentation)
+           || [_shadow isPathRestricted:candidate options:@{kShadowRestrictionEnableResolve : @(NO)}]
+           || [_shadow isProtectedImagePath:candidate]) {
             return YES;
         }
     }

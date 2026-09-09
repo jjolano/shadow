@@ -17,12 +17,15 @@
 
 #import "UniversalHooks.h"
 #import "../../policy/PathPolicy.h"
+#import "../../policy/ProcessPolicy.h"
 #import "path_rewrite.h"
 
 #import <libkern/OSCacheControl.h>
 #import <pthread.h>
+#import <sys/event.h>
 #import <sys/syscall.h>
 #import <fcntl.h>
+#import <unistd.h>
 
 #if defined(__arm64__)
 
@@ -59,9 +62,11 @@ static BOOL shdw_svc_rewriteable(int sysno, uint64_t flags) {
 // --- Trampoline helper ------------------------------------------------------
 // Runs with the app's registers saved on the stack (see the trampoline
 // asm). A normal C function: may clobber x0-x18/lr freely, must preserve
-// x19-x28 (the compiler does). Returns 1 = deny (synthesize ENOENT), 0 =
-// allow (execute the original svc). Plain C linkage (Logos emits ObjC .m,
-// no mangling), so the inline-asm `bl _shdw_svc_should_deny` resolves.
+// x19-x28 (the compiler does). Returns 0 = allow (execute the original
+// svc), otherwise the errno the trampoline synthesizes with carry set
+// (ENOENT for the path shapes, ESRCH for the kevent liveness shapes).
+// Plain C linkage (Logos emits ObjC .m, no mangling), so the inline-asm
+// `bl _shdw_svc_should_deny` resolves.
 __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_t a0, uint64_t a1, uint64_t a2, uintptr_t caller_lr) {
     // The patched site is in app/detector code by construction (system and
     // Shadow images are never scanned), but keep the same caller gate the
@@ -87,8 +92,20 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
             shdw_detector_detected("svc");
         }
 
-        if(![_shadow isCPathRestricted:path]) {
+        // Same predicate PAIR as the libc/syscall(2) path hooks: the ruleset
+        // AND the external-hidden set. A raw svc lookup must not expose an
+        // object the wrappers report absent.
+        BOOL hidden = shdw_path_is_external_hidden(path);
+
+        if(!hidden && ![_shadow isCPathRestricted:path]) {
             return 0;
+        }
+
+        // External-hidden objects always answer synthetic ENOENT (the
+        // path-rewrite munge would let the real svc resolve the still-present
+        // file). Only the ruleset case takes the natural-ENOENT rewrite.
+        if(hidden) {
+            return ENOENT;
         }
 
         // Natural-ENOENT rewrite: munge the buffer and let the real svc run.
@@ -102,7 +119,7 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
             return 0;
         }
 
-        return 1;
+        return ENOENT;
     }
 
     if(cat == SHADW_RAW_CAT_AT) {
@@ -136,7 +153,7 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
             return 0;
         }
 
-        return 1;
+        return ENOENT;
     }
 
 #ifdef SYS_freadlink
@@ -145,11 +162,54 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
         // fresh F_GETPATH, fail open when the fd has no nameable path. The
         // trampoline ignores errno and synthesizes the raw return.
         if(shdw_fd_path_restricted((int)a0)) {
-            return 1;
+            return ENOENT;
         }
         return 0;
     }
 #endif
+
+    if(cat == SHADW_RAW_CAT_KEVENT || cat == SHADW_RAW_CAT_KEVENT64) {
+        // Inline-svc kevent(363)/kevent64(369): same EVFILT_PROC-only ESRCH
+        // as the libc + syscall(2) hooks. The trampoline carries only
+        // (sysno, a0=kq, a1=changelist, a2=nchanges) — sufficient, the policy
+        // keys on the changelist head. The 64-bit changelist is scanned with
+        // its own type (struct kevent64_s layout verified against the SDK
+        // sys/event.h: ident u64 @0, filter s16 @8 — 48-byte elements), never
+        // as struct kevent. Self-pid and non-PROC filters pass through;
+        // unclassifiable pids fail open. The trampoline synthesizes the
+        // returned ESRCH with carry set (stock-dead shape).
+        const void* changelist = (const void*)a1;
+        long nchanges = (long)a2;
+
+        if(changelist && nchanges > 0) {
+            pid_t self = getpid();
+
+            for(long i = 0; i < nchanges; i++) {
+                int16_t filter;
+                uint64_t ident;
+
+                if(cat == SHADW_RAW_CAT_KEVENT64) {
+                    const struct kevent64_s* chl = (const struct kevent64_s*)changelist;
+                    filter = chl[i].filter;
+                    ident = chl[i].ident;
+                } else {
+                    const struct kevent* chl = (const struct kevent*)changelist;
+                    filter = chl[i].filter;
+                    ident = (uint64_t)chl[i].ident;
+                }
+
+                if(filter == EVFILT_PROC) {
+                    pid_t pid = (pid_t)ident;
+
+                    if(pid > 0 && pid != self && shdw_pid_is_restricted(pid)) {
+                        return ESRCH;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
 
     return 0;
 }
@@ -157,9 +217,9 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
 // --- Naked trampolines ------------------------------------------------------
 // XNU ignores svc's immediate, so one canonical trampoline handles every
 // encoding. Save all caller-saved registers + x16 (syscall
-// number) + lr, ask the helper, then either synthesize the ENOENT return
-// (x0 = ENOENT, carry set — Darwin's kernel error convention) or restore and
-// execute the original svc.
+// number) + lr, ask the helper, then either synthesize the errno return
+// (x0 = helper's errno, carry set — Darwin's kernel error convention) or
+// restore and execute the original svc.
 #define SHADW_SVC_TRAMPOLINE(NAME, IMM) \
 __attribute__((naked, used, noinline)) static void NAME(void) { \
     __asm__ volatile( \
@@ -177,12 +237,16 @@ __attribute__((naked, used, noinline)) static void NAME(void) { \
         "mov x2, x1\n" \
         "mov x1, x0\n" \
         "mov x0, x16\n" \
-        "ldr x3, [sp, #136]\n" \
+        /* Ten 16-byte pushes above (x0/x1 .. x18/lr): the saved x2 slot is */ \
+        /* at sp+128 (saved x3 is at sp+136). a2 must be the third syscall */ \
+        /* argument (openat flags, kevent nchanges), not x3. */ \
+        "ldr x3, [sp, #128]\n" \
         "ldr x4, [sp, #8]\n" \
         "bl _shdw_svc_should_deny\n" \
         "cbz x0, 1f\n" \
-        /* deny: x0 = ENOENT, carry set (msr nzcv bit 29), keep x0 */ \
-        "mov x0, #2\n" \
+        /* deny: x0 already holds the errno to synthesize (ENOENT for the */ \
+        /* path shapes, ESRCH for kevent) — set carry (Darwin's kernel */ \
+        /* error convention) and return, keeping x0 */ \
         "mov x1, #0x20000000\n" \
         "msr nzcv, x1\n" \
         "ldp x18, lr, [sp], #16\n" \
@@ -223,6 +287,39 @@ SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_80, "0x80")
 
 static inline BOOL shdw_svc_is_instruction(uint32_t insn) {
     return (insn & SHDW_SVC_OPCODE_MASK) == SHDW_SVC_OPCODE;
+}
+
+// Constant-x16 recovery for one svc site: scans back at most 6 instructions
+// for the movz w16/x16,#imm that establishes the syscall number (the
+// compiler idiom for a constant-sysno wrapper: mov plastered just above the
+// svc, verified across the harness + detector images). Returns the number,
+// or -1 when x16 is dynamic (mov x16,xN, ldr, movk-first, ...) or not found
+// within the window. Reads only inside [words, words+nwords).
+static long shdw_svc_site_const_sysno(const uint32_t* words, size_t nwords, size_t w) {
+    for(int back = 1; back <= 6; back++) {
+        if((size_t)back > w) {
+            return -1;
+        }
+
+        uint32_t insn = words[w - back];
+
+        // movz w16,#imm16 / movz x16,#imm16 (any hw shift): the value is the
+        // full shifted immediate — a shifted 26 stays 26 only when the
+        // upper chunks are zero, which the shift math below captures.
+        if((insn & 0xFFE0001F) == 0x52800010 || (insn & 0xFFE0001F) == 0xD2800010) {
+            uint32_t hw = (insn >> 21) & 0x3;
+            uint64_t val = (uint64_t)((insn >> 5) & 0xFFFF) << (hw * 16);
+            return (long)val;
+        }
+
+        // movk w16/x16 first: the low chunk came from elsewhere (or a movz
+        // outside the window) — value unknown at patch time.
+        if((insn & 0xFFE0001F) == 0x72800010 || (insn & 0xFFE0001F) == 0xF2800010) {
+            return -1;
+        }
+    }
+
+    return -1;
 }
 
 // Images that must never be patched (see the file header: recursion safety
@@ -457,8 +554,26 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
         restore_prot = current_info.protection;
     }
 
+    // Code-signed __TEXT's max_protection is r-x, so a plain vm_protect
+    // READ|WRITE is denied (KERN_PROTECTION_FAILURE) — the same wall dyld.x's
+    // load-command rewrite hits. Request VM_PROT_COPY, which forces a private
+    // copy-on-write mapping and raises max_protection to include WRITE; only
+    // the written site pages materialize, the rest stay shared. Falls back
+    // to plain RW on kernels that reject COPY here; fail-soft either way.
+    // Code-signed __TEXT's max_protection is r-x, so a plain vm_protect
+    // READ|WRITE is denied (KERN_PROTECTION_FAILURE) — the same wall dyld.x's
+    // load-command rewrite hits. Request VM_PROT_COPY, which forces a private
+    // copy-on-write mapping and raises max_protection to include WRITE; only
+    // the written site pages materialize, the rest stay shared. Falls back
+    // to plain RW on kernels that reject COPY here; fail-soft either way.
     BOOL protected_for_write = vm_protect(mach_task_self(), addr, protect_size,
-                                          FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS;
+                                          FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS;
+
+    if(!protected_for_write) {
+        protected_for_write = vm_protect(mach_task_self(), addr, protect_size,
+                                         FALSE, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS;
+    }
+
     BOOL restore_failed = NO;
 
     if(protected_for_write) {
@@ -469,6 +584,22 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
             uint32_t insn = words[w];
 
             if(shdw_svc_is_instruction(insn)) {
+                // Never redirect a constant-x16 ptrace site. The svc helper
+                // can only allow a ptrace call or synthesize an errno — it
+                // cannot neutralize PT_DENY_ATTACH the way the syscall(2)
+                // dispatch does — and redirecting an early anti-debug
+                // initializer's deny_attach through the trampoline hangs
+                // process init (measured iPhone7/iOS 15.8.3: init stalls
+                // with the main binary's deny_attach site redirected,
+                // completes with it left alone). Leaving the site also
+                // matches every prior build's behavior (the helper never
+                // policed PTRACE). Register-x16 sites always patch: their
+                // number is unknowable statically and the kevent probe path
+                // is one of them.
+                if(shdw_svc_site_const_sysno(words, nwords, w) == SYS_ptrace) {
+                    continue;
+                }
+
                 shdw_svc_try_patch_site(addr + w * 4, insn, where);
             }
         }

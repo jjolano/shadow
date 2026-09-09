@@ -330,7 +330,9 @@ static void shdw_cache_main_bundle(void) {
 
 // Path getters check the ORIGINAL result (no receiver-path circularity): a
 // protected path is replaced with the main-bundle equivalent for the
-// nonnull contracts (bundlePath/bundleURL) and nilled for the rest.
+// nonnull contracts (bundlePath/bundleURL) and nilled for the rest. The main
+// bundle itself is exempt: its own install prefix can classify as protected,
+// and stock never nils the main bundle's own executable/resource identity.
 - (NSString *)bundlePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
@@ -354,7 +356,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSString *)resourcePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
-    if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
+    if(isCallerExternal() && self != [NSBundle mainBundle] && [_shadow isProtectedImagePath:result]) {
         return nil;
     }
 
@@ -364,7 +366,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSURL *)resourceURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
-    if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
+    if(isCallerExternal() && self != [NSBundle mainBundle] && [_shadow isProtectedImagePath:[result path]]) {
         return nil;
     }
 
@@ -374,7 +376,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSString *)executablePath __attribute__((annotate("hookkit:allow_inherited"))) {
     NSString* result = %orig;
 
-    if(isCallerExternal() && [_shadow isProtectedImagePath:result]) {
+    if(isCallerExternal() && self != [NSBundle mainBundle] && [_shadow isProtectedImagePath:result]) {
         return nil;
     }
 
@@ -384,7 +386,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSURL *)executableURL __attribute__((annotate("hookkit:allow_inherited"))) {
     NSURL* result = %orig;
 
-    if(isCallerExternal() && [_shadow isProtectedImagePath:[result path]]) {
+    if(isCallerExternal() && self != [NSBundle mainBundle] && [_shadow isProtectedImagePath:[result path]]) {
         return nil;
     }
 

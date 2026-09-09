@@ -1,4 +1,19 @@
 #import "UniversalHooks.h"
+#import "../../policy/PathPolicy.h"
+
+static BOOL _shdw_urlPathHidden(NSString* path) {
+    if(!path) return NO;
+    if(SHDWAdapterPathIsHidden(path)) return YES;
+    const char* c = [path UTF8String];
+    if(c && shdw_path_is_external_hidden(c)) return YES;
+    return NO;
+}
+
+static BOOL _shdw_urlHidden(NSURL* url) {
+    if(!url || ![url isFileURL]) return NO;
+    if(_shdw_urlPathHidden([url path])) return YES;
+    return NO;
+}
 
 // Classify a RESULT URL after %orig. Plain file URLs classify directly;
 // file-reference URLs do not — Core.m resolves them through -filePathURL,
@@ -10,6 +25,10 @@ static BOOL _shdw_resultURLRestrictedWithOptions(NSURL* result, NSDictionary* op
         return NO;
     }
 
+    if(_shdw_urlHidden(result)) {
+        return YES;
+    }
+
     if([_shadow isURLRestricted:result options:options]) {
         return YES;
     }
@@ -17,7 +36,7 @@ static BOOL _shdw_resultURLRestrictedWithOptions(NSURL* result, NSDictionary* op
     if([result isFileReferenceURL]) {
         NSURL* resolved = [result filePathURL];
 
-        if(!resolved || [_shadow isURLRestricted:resolved options:options]) {
+        if(!resolved || _shdw_urlHidden(resolved) || [_shadow isURLRestricted:resolved options:options]) {
             return YES;
         }
     }

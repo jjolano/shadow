@@ -18,6 +18,7 @@
 #import <dlfcn.h>
 #import <dirent.h>
 #import <sys/sysctl.h>
+#import <sys/event.h>
 #import <mach/mach.h>
 #import <mach/task_info.h>
 #import <mach/mach_traps.h>
@@ -343,13 +344,25 @@ typedef enum {
     SHADW_RAW_CAT_PATHPATH,      // (path, path, ...) copy: copyfile (both ends)
     SHADW_RAW_CAT_CLONEAT,       // (dirfd, path, dirfd, path, ...) clone: clonefileat
     SHADW_RAW_CAT_FDPATH,        // (fd, dirfd, path, ...) clone: fclonefileat
+    SHADW_RAW_CAT_SYMLINKAT,     // (path, dirfd, path) link: symlinkat (location via dirfd)
     SHADW_RAW_CAT_KILL,          // kill(pid, sig) liveness probe (ESRCH)
+    SHADW_RAW_CAT_KEVENT,        // kevent EVFILT_PROC liveness probe (ESRCH)
+    SHADW_RAW_CAT_KEVENT64,      // kevent64 EVFILT_PROC liveness probe (ESRCH)
+    SHADW_RAW_CAT_GETFSSTAT,     // raw getfsstat(64) after-success mount filter
+    SHADW_RAW_CAT_PROCINFO,      // raw proc_info(2) region-path after-success sanitize
+    SHADW_RAW_CAT_STATFS,        // raw statfs64 single-mount filter
 #ifdef SYS_freadlink
     SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
 #endif
 } shdw_raw_syscall_category_t;
 
 shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
+
+// Shared mount-array sanitizer (defined in hooks/Universal/libc.x): removes
+// hidden mounts, compacts survivors in place, returns the filtered count. The
+// libc getfsstat/getmntinfo hooks AND the raw getfsstat(64) syscall dispatch
+// call the SAME function so both surfaces agree on which mounts are hidden.
+int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags);
 
 // Raw svc #0x80 interception (hooks/Universal/svc_patch.x): scans loaded
 // images' __TEXT for inline svc sites and redirects them through a naked
@@ -441,6 +454,10 @@ extern int (*original_open)(const char *pathname, int oflag, ...);
 extern int replaced_open(const char *pathname, int oflag, ...);
 extern int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 extern int replaced_openat(int dirfd, const char *pathname, int oflag, ...);
+extern int (*original_open_nocancel)(const char *pathname, int oflag, ...);
+extern int replaced_open_nocancel(const char *pathname, int oflag, ...);
+extern int (*original_openat_nocancel)(int dirfd, const char *pathname, int oflag, ...);
+extern int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag, ...);
 extern DIR* (*original___opendir2)(const char* pathname, int flags);
 extern DIR* replaced___opendir2(const char* pathname, int flags);
 extern DIR* (*original_opendir)(const char* pathname);
@@ -491,6 +508,8 @@ extern int (*original_proc_listallpids)(void* buffer, int buffersize);
 extern int replaced_proc_listallpids(void* buffer, int buffersize);
 extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+extern int (*original_proc_regionfilename)(int pid, uint64_t address, void* buffer, uint32_t buffersize);
+extern int replaced_proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
 extern int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
 extern int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 extern int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
@@ -498,6 +517,14 @@ extern int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, 
 // Phase 4: kill liveness probe (libc_antidebugging.x, ANTIDBG group)
 extern int (*original_kill)(pid_t pid, int sig);
 extern int replaced_kill(pid_t pid, int sig);
+// Phase 4: kevent EVFILT_PROC liveness probe (libc_antidebugging.x, ANTIDBG
+// group) — same ESRCH dead-shape discipline as kill.
+extern int (*original_kevent)(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout);
+extern int replaced_kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout);
+// kevent64 twin (libc_antidebugging.x, ANTIDBG group) — 64-bit changelist
+// element (struct kevent64_s, SDK sys/event.h), same EVFILT_PROC-only ESRCH.
+extern int (*original_kevent64)(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout);
+extern int replaced_kevent64(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout);
 // Phase 4 pass-throughs (bodies forward untouched; dlsym-policy agreement)
 extern int (*original_uname)(struct utsname* buf);
 extern int replaced_uname(struct utsname* buf);
