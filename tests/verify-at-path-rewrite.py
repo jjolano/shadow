@@ -70,6 +70,20 @@ static bool shdw_is_fast_allowed_cpath(const char *path) {
     return false;
 }
 
+static bool shdw_path_is_external_hidden(const char *path) {
+    (void)path;
+    return false;
+}
+
+static bool shdw_path_under_system_bind_root(const char *path) {
+    (void)path;
+    return false;
+}
+
+static dev_t shdw_rootfs_dev(void) {
+    return 0;
+}
+
 static int real_access(const char *path, int mode) {
     (void)mode;
     if(path[0] == '\1') { errno = ENOENT; return -1; }

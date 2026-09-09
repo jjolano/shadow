@@ -188,6 +188,23 @@ static bool is_at_restricted(const char* parent, const char* path) {
     return is_restricted(parent) || is_restricted(path);
 }
 
+static bool shdw_path_is_external_hidden(const char* path) {
+    (void)path;
+    return false;
+}
+
+static bool shdw_dir_leaf_external_hidden(const char* parent, const char* name) {
+    (void)parent;
+    (void)name;
+    return false;
+}
+
+static bool shdw_dir_entry_external_hidden(const char* options, const char* name) {
+    (void)options;
+    (void)name;
+    return false;
+}
+
 #define fcntl test_fcntl
 #define fstat test_fstat
 #define getcwd test_getcwd
