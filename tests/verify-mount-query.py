@@ -72,7 +72,10 @@ no_metadata(body((framework / "Headers/Shadow/JBPath.h").read_text(),
                  "static inline BOOL shdw_is_restricted_root_with_prefix("))
 
 # Every mount hook and its path/fd helpers must avoid the ordinary engine.
-mounts = libc[libc.index("static int shdw_filter_mounts("):libc.index("static int (*original_stat)(")]
+# shdw_filter_mounts is exported (non-static) so hooks.h can share it;
+# accept either linkage.
+_mount_sig = next(s for s in ("static int shdw_filter_mounts(", "int shdw_filter_mounts(") if s in libc)
+mounts = libc[libc.index(_mount_sig):libc.index("static int (*original_stat)(")]
 assert "isCPathRestricted:" not in mounts
 assert "isPathRestricted:" not in mounts
 assert "shdw_fd_path_restricted(" not in mounts
