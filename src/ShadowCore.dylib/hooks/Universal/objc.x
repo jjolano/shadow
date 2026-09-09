@@ -82,6 +82,42 @@ static BOOL shdw_addr_in_main_image(const void* addr) {
     return a >= mainBase && a < mainEnd;
 }
 
+// Own-bundle exemption for image-path-keyed lookups: the host app's bundled
+// frameworks (*.app/Frameworks, *.appex siblings) are the app's own code,
+// never a hiding target — the C-prime guarantee above extended past the
+// executable. Without it an injected cooperating app blinds its own
+// NSClassFromString lookups: the ruleset restricts the rootless bootstrap
+// bundle path (/private/preboot/…), so every class in the app's own
+// frameworks resolves nil (observed on-device: the harness's
+// DSKBridge/JBDBridge/STKBridge/IOSSBridge all missing while direct-linked
+// calls worked). Pure dyld + string ops: no ObjC, no pool, safe on
+// raw-pthread callers. Non-bundle executables (daemons) get no exemption.
+static BOOL shdw_path_in_own_bundle(const char* image) {
+    if(!image || !image[0]) {
+        return NO;
+    }
+    const char* exe = shdw_main_executable_name();
+    if(!exe || !exe[0]) {
+        return NO;
+    }
+    const char* slash = strrchr(exe, '/');
+    if(!slash) {
+        return NO;
+    }
+    size_t dirlen = (size_t)(slash - exe);
+    BOOL isBundle = NO;
+    if(dirlen > 4 && strncmp(exe + dirlen - 4, ".app", 4) == 0) {
+        isBundle = YES;
+    }
+    if(dirlen > 6 && strncmp(exe + dirlen - 6, ".appex", 6) == 0) {
+        isBundle = YES;
+    }
+    if(!isBundle) {
+        return NO;
+    }
+    return strncmp(image, exe, dirlen) == 0 && (image[dirlen] == '/' || image[dirlen] == '\0');
+}
+
 // Hiding predicate for address-keyed ObjC lookups: the host app's own
 // classes/methods/IMPs always resolve; Shadow's own artifacts are always
 // hidden; everything else keeps the existing restricted-image verdict.
@@ -189,6 +225,10 @@ BOOL shdw_objc_class_is_hidden(Class cls) {
 
     if(!image || !image[0]) {
         return NO;   // runtime-native class (no loadable image) → visible
+    }
+
+    if(shdw_path_in_own_bundle(image)) {
+        return NO;   // the host app's own bundled frameworks → visible
     }
 
     return shdw_objc_image_path_is_hidden(image);
