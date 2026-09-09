@@ -952,9 +952,15 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     }
 
     // connect: runtime-resolved like _signal/_system; absent on exotic OS → skip.
+    // iOS 15 can refuse the shared-cache inline patch (same constraint as
+    // fork above and the LOWLEVEL open/stat fallbacks): fall back to rebind
+    // so loopback port-scan denials actually install — without it BAT/
+    // SafetyNet connect() to 127.0.0.1:22 succeeds and both fire.
     void* sym_connect = shdw_resolve_libsystem("_connect");
     if(sym_connect) {
-        [hooks hookFunction:sym_connect withReplacement:replaced_connect outOldPtr:(void **) &original_connect];
+        if(![hooks hookFunction:sym_connect withReplacement:replaced_connect outOldPtr:(void **) &original_connect]) {
+            [hooks hookRebindSymbol:@"connect" withReplacement:replaced_connect outOldPtr:(void **) &original_connect];
+        }
     }
 }
 
