@@ -1,6 +1,7 @@
 #import "UniversalHooks.h"
 #import "../../policy/ProcessPolicy.h"
 #import "../../policy/EnvironmentPolicy.h"
+#import "../../policy/PathPolicy.h"
 
 #import <string.h>
 #import <stdlib.h>
@@ -26,6 +27,7 @@ extern int proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t 
 extern int proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
 extern int proc_listallpids(void* buffer, int buffersize);
 extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+extern int proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
 
 // libproc.h isn't shipped in the theos SDK either, so declare the two pieces
 // of the PROC_PIDTBSDINFO query we mask. proc_bsdinfo is a stable public ABI;
@@ -60,17 +62,20 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
         return shdw_bootargs_filtered(oldp, oldlenp);
     }
 
-    // Per-pid queries of a jailbreak daemon must answer ENOENT, the same
-    // hiding the KERN_PROC_ALL filter applies to the list (a pid-scanning
-    // detector steps the MIB pid by pid).
+    // Per-pid query of a filtered daemon answers the stock dead shape
+    // (rc=0, *oldlenp=0): stock never errors here.
     if(kind == SHADW_PROC_MIB_PID_OTHER) {
         if(shdw_pid_is_restricted(name[3])) {
-            errno = ENOENT;
-            return -1;
+            if(!oldlenp) {
+                errno = EFAULT;
+                return -1;
+            }
+            *oldlenp = 0;
+            return 0;
         }
     } else if(kind == SHADW_PROC_MIB_ARGS2_OTHER || kind == SHADW_PROC_MIB_ARGS_OTHER) {
         if(shdw_pid_is_restricted(name[2])) {
-            errno = ENOENT;
+            errno = (kind == SHADW_PROC_MIB_ARGS2_OTHER) ? EINVAL : ENOENT;
             return -1;
         }
     }
@@ -294,80 +299,151 @@ int replaced_getrlimit(int resource, struct rlimit* rlp) {
 // policy/ProcessPolicy.m (shdw_pid_is_restricted / shdw_proc_pids_filtered).
 
 int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
-int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
-    // NULL-buffer probe: the caller asks for the COUNT (or just validates
-    // the args) without handing us a buffer. Filtered size semantics match
-    // KERN_PROC_ALL (ProcessPolicy.m): compute the filtered count from a
-    // real enumeration so the two channels agree on the same daemon-free
-    // number. Fail open to the raw count on any error.
-    if(!buffer || buffersize <= 0) {
-        int raw = original_proc_listpids(type, typeinfo, buffer, buffersize);
+int (*original_proc_listallpids)(void* buffer, int buffersize);
 
-        if(raw <= 0 || !isCallerExternal()) {
-            return raw;
-        }
-
-        int cap = raw;
-        pid_t* tmp = malloc((size_t)cap * sizeof(pid_t));
-
-        if(!tmp) {
-            return raw;
-        }
-
-        int got = original_proc_listpids(type, typeinfo, tmp, cap * (int)sizeof(pid_t));
-        int filtered = got > 0 ? shdw_proc_pids_filtered(tmp, got) : raw;
-        free(tmp);
-        return got > 0 ? filtered : raw;
+// Full fetch through an original call, filtered via the shared classifier.
+// The caller sizes its buffer from the NULL-probe count, so a truncated raw
+// window must never be filtered in place: a restricted pid inside the window
+// would survive as a hit while one outside would skew the count. The fetch
+// serves the filtered universe; the NULL probe additionally preserves the
+// kernel's structural probe/fetch offset (measured live as raw minus fetch),
+// so the probe still overcounts the fetch the way an unfiltered kernel does.
+// Returns the filtered count with *out set (caller frees), or -1 to fail
+// open to the raw call.
+static int shdw_proc_fetch_filtered(pid_t** out, int raw, pid_t* tmp, int got, int* gapOut) {
+    if(raw <= 0 || raw > 65536 || !tmp || got <= 0) {
+        return -1;
     }
 
-    int count = original_proc_listpids(type, typeinfo, buffer, buffersize);
-
-    if(count <= 0 || !isCallerExternal()) {
-        return count;
+    if(got > raw) {
+        got = raw;  // never read past what the buffer holds
     }
 
-    return shdw_proc_pids_filtered((pid_t*) buffer, count);
+    if(gapOut) {
+        *gapOut = raw - got;
+    }
+
+    *out = tmp;
+    return shdw_proc_pids_filtered(tmp, got);
 }
 
-int (*original_proc_listallpids)(void* buffer, int buffersize);
-int replaced_proc_listallpids(void* buffer, int buffersize) {
-    if(!buffer || buffersize <= 0) {
-        int raw = original_proc_listallpids(buffer, buffersize);
+static int shdw_proc_listallpids_filtered(pid_t** out, int* gapOut) {
+    int raw = original_proc_listallpids(NULL, 0);
 
-        if(raw <= 0 || !isCallerExternal()) {
-            return raw;
-        }
+    if(raw <= 0 || raw > 65536) {
+        return -1;
+    }
 
-        int cap = raw;
-        pid_t* tmp = malloc((size_t)cap * sizeof(pid_t));
+    pid_t* tmp = malloc((size_t)raw * sizeof(pid_t));
 
-        if(!tmp) {
-            return raw;
-        }
+    if(!tmp) {
+        return -1;
+    }
 
-        int got = original_proc_listallpids(tmp, cap * (int)sizeof(pid_t));
-        int filtered = got > 0 ? shdw_proc_pids_filtered(tmp, got) : raw;
+    int got = original_proc_listallpids(tmp, raw * (int)sizeof(pid_t));
+    int filtered = shdw_proc_fetch_filtered(out, raw, tmp, got, gapOut);
+
+    if(filtered < 0) {
         free(tmp);
-        return got > 0 ? filtered : raw;
     }
 
-    int count = original_proc_listallpids(buffer, buffersize);
+    return filtered;
+}
 
-    if(count <= 0 || !isCallerExternal()) {
-        return count;
+static int shdw_proc_listpids_filtered(pid_t** out, uint32_t type, uint32_t typeinfo, int* gapOut) {
+    int raw = original_proc_listpids(type, typeinfo, NULL, 0);
+
+    if(raw <= 0 || raw > 65536) {
+        return -1;
     }
 
-    return shdw_proc_pids_filtered((pid_t*) buffer, count);
+    pid_t* tmp = malloc((size_t)raw * sizeof(pid_t));
+
+    if(!tmp) {
+        return -1;
+    }
+
+    int got = original_proc_listpids(type, typeinfo, tmp, raw * (int)sizeof(pid_t));
+    int filtered = shdw_proc_fetch_filtered(out, raw, tmp, got, gapOut);
+
+    if(filtered < 0) {
+        free(tmp);
+    }
+
+    return filtered;
+}
+
+int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize) {
+    if(!isCallerExternal()) {
+        return original_proc_listpids(type, typeinfo, buffer, buffersize);
+    }
+
+    pid_t* tmp = NULL;
+    int naturalGap = 0;
+    int filtered = shdw_proc_listpids_filtered(&tmp, type, typeinfo, &naturalGap);
+
+    if(filtered < 0) {
+        return original_proc_listpids(type, typeinfo, buffer, buffersize);
+    }
+
+    // NULL-buffer probe: the filtered count plus the live structural offset,
+    // so the probe overcounts the fetch exactly as the unfiltered kernel
+    // does; the sysctl channel agrees with the fetch, as on stock.
+    if(!buffer || buffersize <= 0) {
+        free(tmp);
+        return filtered + naturalGap;
+    }
+
+    // Fit semantics: report only what was placed in the caller's buffer, so a
+    // caller trusting the return as a filled count never reads past it. A
+    // probe-sized caller (the standard loop) gets the whole filtered universe;
+    // the NULL probe overcounts it by the structural offset, as on stock.
+    int capacity = buffersize / (int)sizeof(pid_t);
+    int n = filtered < capacity ? filtered : capacity;
+
+    if(n > 0) {
+        memcpy(buffer, tmp, (size_t)n * sizeof(pid_t));
+    }
+
+    free(tmp);
+    return n;
+}
+
+int replaced_proc_listallpids(void* buffer, int buffersize) {
+    if(!isCallerExternal()) {
+        return original_proc_listallpids(buffer, buffersize);
+    }
+
+    pid_t* tmp = NULL;
+    int naturalGap = 0;
+    int filtered = shdw_proc_listallpids_filtered(&tmp, &naturalGap);
+
+    if(filtered < 0) {
+        return original_proc_listallpids(buffer, buffersize);
+    }
+
+    if(!buffer || buffersize <= 0) {
+        free(tmp);
+        return filtered + naturalGap;
+    }
+
+    int capacity = buffersize / (int)sizeof(pid_t);
+    int n = filtered < capacity ? filtered : capacity;
+
+    if(n > 0) {
+        memcpy(buffer, tmp, (size_t)n * sizeof(pid_t));
+    }
+
+    free(tmp);
+    return n;
 }
 
 int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
 int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize) {
     if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
         // Jailbreak daemon: deny the per-pid path query the same way
-        // proc_pidinfo denies per-pid inspection. EPERM matches what an
-        // unprivileged caller sees for processes it may not inspect
-        // (same errno as replaced_proc_pidinfo above).
-        errno = EPERM;
+        // a dead pid answers (rc=0, ESRCH).
+        errno = ESRCH;
         return 0;
     }
 
@@ -381,7 +457,7 @@ int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize) {
 int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
 int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize) {
     if(isCallerExternal() && token && shdw_pid_is_restricted((pid_t)token->val[4])) {
-        errno = EPERM;
+        errno = ESRCH;
         return 0;
     }
 
@@ -390,11 +466,12 @@ int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_
 
 int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
-    if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
-        // Jailbreak daemon: deny the per-pid query the same way the pid
-        // list filters deny enumeration. EPERM matches what an unprivileged
-        // caller sees for processes it may not inspect.
-        errno = EPERM;
+    if(isCallerExternal() && pid != getpid() && shdw_pid_is_restricted(pid)) {
+        // Jailbreak daemon (never self): deny the per-pid query the same way
+        // a dead pid answers (rc=0, ESRCH). Self is
+        // excluded — an app inspecting its own process is legitimate, and the
+        // own-record/own-region sanitizers below present the filtered view.
+        errno = ESRCH;
         return 0;
     }
 
@@ -410,6 +487,48 @@ int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int b
         struct shdw_proc_bsdinfo_prefix* bsd = (struct shdw_proc_bsdinfo_prefix*) buffer;
         bsd->pbi_flags &= ~(0x00000040u | 0x00000800u);
         bsd->pbi_ppid = 1;
+    }
+
+    // Own-map region-path walk: the path-bearing region flavors embed the
+    // backing vnode path of each mapped image, exposing an injected/hidden
+    // image the filesystem, dyld-enumeration and vm_region surfaces all
+    // conceal. Reshape a hidden image's region into an anonymous (un-named)
+    // region so the kernel region->vnode view agrees with those surfaces.
+    // Only the own pid (a restricted OTHER pid already returned ESRCH above).
+    if(ret > 0 && isCallerExternal() && pid == getpid()) {
+        shdw_region_path_result_sanitize(flavor, buffer, buffersize);
+
+        // Own cwd/root vnode paths (PROC_PIDVNODEPATHINFO): the same reshape
+        // into the stock container shape, via the shared predicate.
+        if(flavor == SHADOW_PROC_PIDVNODEPATHINFO) {
+            shdw_vnodepath_result_sanitize(buffer, buffersize);
+        }
+    }
+
+    return ret;
+}
+
+// proc_regionfilename walks the caller's own VM map and returns each region's
+// backing vnode path. libproc implements it via proc_pidinfo(PROC_PIDREGIONPATH)
+// then strlcpy's the struct's path field out — so hooking proc_pidinfo above
+// already reshapes hidden images into anonymous regions for callers that reach
+// this through the libc wrapper. This explicit hook covers callers that import
+// proc_regionfilename directly: an external caller asking for a hidden image's
+// region gets the stock "no name for this region" answer (0-length), the exact
+// shape proc_regionfilename returns for an anonymous/un-named region.
+int (*original_proc_regionfilename)(int pid, uint64_t address, void* buffer, uint32_t buffersize);
+int replaced_proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize) {
+    int ret = original_proc_regionfilename(pid, address, buffer, buffersize);
+
+    if(ret > 0 && isCallerExternal() && pid == getpid()
+    && buffer && buffersize > 0) {
+        char* path = (char*) buffer;
+        // Guard against a non-terminated kernel buffer before classifying.
+        path[buffersize - 1] = '\0';
+        if(shdw_region_backing_path_hidden(path)) {
+            path[0] = '\0';
+            return 0;  // stock shape for an anonymous/un-named region
+        }
     }
 
     return ret;
@@ -429,6 +548,59 @@ int replaced_kill(pid_t pid, int sig) {
     }
 
     return original_kill(pid, sig);
+}
+
+// kevent: kqueue EVFILT_PROC registration is a pid liveness probe
+// (kevent(kq, EVFILT_PROC pid) on a dead pid fails ESRCH). A restricted pid
+// answers the same stock-dead ESRCH so the kqueue sweep agrees with the
+// sysctl/libproc lists. ONLY EVFILT_PROC entries are inspected — dispatch
+// event loops drive EVFILT_READ/WRITE/TIMER/SIGNAL/USER/VNODE through here
+// and must never be touched (filtering those would break libdispatch).
+// Self-pid and non-PROC filters pass through; unclassifiable pids fail open.
+// Rejected BEFORE the original runs (never register-then-fail).
+int (*original_kevent)(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout);
+int replaced_kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout) {
+    if(changelist && nchanges > 0 && isCallerExternal()) {
+        pid_t self = getpid();
+
+        for(int i = 0; i < nchanges; i++) {
+            if(changelist[i].filter == EVFILT_PROC) {
+                pid_t pid = (pid_t) changelist[i].ident;
+
+                if(pid > 0 && pid != self && shdw_pid_is_restricted(pid)) {
+                    errno = ESRCH;
+                    return -1;
+                }
+            }
+        }
+    }
+
+    return original_kevent(kq, changelist, nchanges, eventlist, nevents, timeout);
+}
+
+// kevent64: the 64-bit twin (SDK sys/event.h prototype) — same EVFILT_PROC
+// liveness-oracle policy as kevent, with the 64-bit changelist type (struct
+// kevent64_s, 48-byte elements: ident u64 @0, filter s16 @8). libdispatch
+// drives its own kqueues through here with non-PROC filters and from
+// non-external images — both pass through untouched, same as kevent.
+int (*original_kevent64)(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout);
+int replaced_kevent64(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout) {
+    if(changelist && nchanges > 0 && isCallerExternal()) {
+        pid_t self = getpid();
+
+        for(int i = 0; i < nchanges; i++) {
+            if(changelist[i].filter == EVFILT_PROC) {
+                pid_t pid = (pid_t) changelist[i].ident;
+
+                if(pid > 0 && pid != self && shdw_pid_is_restricted(pid)) {
+                    errno = ESRCH;
+                    return -1;
+                }
+            }
+        }
+    }
+
+    return original_kevent64(kq, changelist, nchanges, eventlist, nevents, flags, timeout);
 }
 
 // uname: stock answer, no fabrication. The kernel version carries no

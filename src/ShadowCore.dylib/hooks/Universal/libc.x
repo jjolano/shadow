@@ -24,67 +24,20 @@ void shdw_path_rewrite_configure(BOOL enabled) {
 }
 
 static int (*original_access)(const char* pathname, int mode);
-// Jailbreak artifacts that are bind-mounted OVER real system locations
-// (Dopamine's .fakelib) or written into system dirs, which a stock device
-// never has. They can't go through the ruleset/RestrictionEngine path gate:
-// systemhook.dylib in particular is the injection dylib every app (including
-// the ones Shadow spawns) loads, so hiding it from Shadow's own internal
-// dlopen/spawn breaks injection. Instead deny them ONLY here, only for external
-// callers — a detector's access() sees ENOENT while Shadow's internal loader
-// (isCallerExternal()==NO) still resolves them normally.
-// Data-container leaf directories a jailbreak app leaves scattered under
-// /var/mobile/Library (WebKit, HTTPStorages, Caches, Preferences, …) and
-// /var/root. A probe enumerates <known-jb-bundle-id> under each of those dirs;
-// a stock device never has these apps, so the residue is jailbreak evidence.
-// The full container path is not a fixed string (many parent dirs), so match
-// structurally: a /var/{mobile,root}/Library/ path whose final component begins
-// with a known jailbreak app's bundle id.
-static BOOL shdw_path_is_jb_app_container(const char* pathname) {
-    if(!pathname) return NO;
-    const char* rest = NULL;
-    if(strncmp(pathname, "/var/mobile/Library/", 20) == 0) rest = pathname + 20;
-    else if(strncmp(pathname, "/var/root/Library/", 18) == 0) rest = pathname + 18;
-    if(!rest) return NO;
-
-    const char* leaf = strrchr(rest, '/');
-    leaf = leaf ? leaf + 1 : rest;  // final path component
-
-    static const char* const jbAppIDs[] = {
-        "com.xina.jailbreak", "com.opa334.Dopamine", "com.tigisoftware.Filza",
-        "org.coolstar.SileoStore", "ws.hbang.Terminal", "xyz.willy.Zebra",
-        NULL,
-    };
-    for(int i = 0; jbAppIDs[i]; i++) {
-        size_t n = strlen(jbAppIDs[i]);
-        if(strncmp(leaf, jbAppIDs[i], n) == 0) return YES;  // leaf is <id> or <id>.<suffix>
-    }
-    return NO;
-}
-
-static BOOL shdw_access_is_external_only_hidden(const char* pathname) {
-    if(!pathname) return NO;
-    static const char* const paths[] = {
-        "/usr/lib/systemhook.dylib",
-        "/usr/lib/sandbox.plist",
-        "/var/log/launchdhook.log",
-        NULL,
-    };
-    for(int i = 0; paths[i]; i++) {
-        if(strcmp(pathname, paths[i]) == 0) return YES;
-    }
-    return shdw_path_is_jb_app_container(pathname);
-}
-
+// Objects hidden identically from every external API surface
+// (shdw_path_is_external_hidden, policy/PathPolicy.m) yet left resolvable to
+// Shadow's own loader (external-caller gate): the ruleset path gate can't carry
+// them because the loader's own dlopen/spawn must still see them.
 static int replaced_access(const char* pathname, int mode) {
     if (shdw_is_fast_allowed_cpath(pathname)) return original_access(pathname, mode);
     int caller_errno = errno;
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
 
-    if(ext && shdw_access_is_external_only_hidden(pathname)) {
-        errno = ENOENT;
-        return -1;
-    }
+    // The hidden verdict is recorded up front and denied AFTER the real
+    // lookup below: the denial then costs the same trapped lookup as a
+    // genuinely-absent path.
+    BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
 
     // Reuse this call's preflight verdict; concurrent filesystem or policy
     // changes are observed by later calls, not a second lookup here.
@@ -93,7 +46,7 @@ static int replaced_access(const char* pathname, int mode) {
     if(ext) {
         restricted = [_shadow isCPathRestricted:pathname];
 
-        if(restricted && shdw_libc_try_rewrite(pathname)) {
+        if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
             errno = caller_errno;
             return original_access(pathname, mode);   // natural ENOENT
         }
@@ -104,6 +57,13 @@ static int replaced_access(const char* pathname, int mode) {
     errno = caller_errno;
     int result = original_access(pathname, mode);
     int result_errno = errno;
+
+    // A hidden denial traps first and denies after, so it costs the same
+    // trapped lookup as a genuinely-absent path.
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
 
     // Restricted-root paths (e.g. /var/jb) are always jailbreak indicators —
     // deny unconditionally. Other restricted paths respect the external-caller
@@ -158,7 +118,7 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
         content[result] = '\0';
 
         if([_shadow isCPathRestricted:content]) {
-            errno = EACCES;
+            errno = ENOENT;
             return -1;
         }
 
@@ -212,7 +172,7 @@ static ssize_t replaced_freadlink(int fd, char* buf, size_t bufsize) {
         content[result] = '\0';
 
         if([_shadow isCPathRestricted:content]) {
-            errno = EACCES;
+            errno = ENOENT;
             return -1;
         }
 
@@ -355,7 +315,7 @@ static int replaced_creat(const char* pathname, mode_t mode) {
 // MNT_ROOTFS are preserved exactly as the kernel reported them — never OR'd
 // in synthetically (that combination is the jailbreak synthetic-snapshot
 // fingerprint).
-static int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
+int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
     if(!buf || count <= 0) {
         return count;
     }
@@ -506,31 +466,24 @@ static int (*original_statfs)(const char* pathname, struct statfs* buf);
 
 // A jailbreak bindfs (Dopamine's .fakelib) mounted OVER a stock system path
 // leaves statfs(<stock path>) reporting a jailbreak f_mntfromname while
-// f_mntonname stays the stock path itself. A probe that expects a stock system
-// path to live on the root filesystem (f_mntonname == "/") flags the divergent
-// mount point. For an external caller querying such a path, rewrite ONLY the
-// two name fields the probe reads to the rootfs record; leave fsid/type/flags/
-// geometry as the kernel reported them so nothing else the caller relies on
-// changes. Returns YES if it reshaped. `pathname` is the query path (a stock
-// location like /usr/lib), used to confirm the mount shadows a system dir.
+// f_mntonname stays the stock path itself, and its own f_fstypename ("bindfs")
+// and f_fssubtype. A probe that expects a stock system path to live on the
+// root filesystem (f_mntonname == "/") flags the divergent mount point OR the
+// impossible rootfs-that-isn't-apfs pairing. For an external caller querying
+// such a path, adopt the covering rootfs record's name/type fields so the
+// reshaped record is internally consistent with a genuine rootfs; leave
+// geometry as the kernel reported it so nothing else the caller relies on
+// changes. Returns YES if it reshaped.
 static BOOL shdw_statfs_reshape_over_system(const char* pathname, struct statfs* buf) {
     if(!buf || !pathname) return NO;
-    // Only stock system prefixes a jailbreak would bind over.
-    static const char* const roots[] = { "/usr/lib", "/usr/libexec", "/System", NULL };
-    BOOL underSystem = NO;
-    for(int i = 0; roots[i]; i++) {
-        size_t n = strlen(roots[i]);
-        if(strncmp(pathname, roots[i], n) == 0 && (pathname[n] == '\0' || pathname[n] == '/')) {
-            underSystem = YES;
-            break;
-        }
-    }
-    if(!underSystem) return NO;
+    if(!shdw_path_under_system_bind_root(pathname)) return NO;
 
     struct statfs root;
     if(original_statfs("/", &root) != 0) return NO;
     strlcpy(buf->f_mntonname, root.f_mntonname, sizeof(buf->f_mntonname));
     strlcpy(buf->f_mntfromname, root.f_mntfromname, sizeof(buf->f_mntfromname));
+    strlcpy(buf->f_fstypename, root.f_fstypename, sizeof(buf->f_fstypename));
+    buf->f_fssubtype = root.f_fssubtype;
     return YES;
 }
 
@@ -654,7 +607,17 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
     }
 
     if(shdw_filter_mounts(&st, 1, NO) == 0) {
-        // The mount record itself is restricted: deny the query.
+        // The mount record itself is restricted. When it shadows a stock
+        // system path the caller legitimately queries, reshape to the
+        // covering rootfs record (same apfs/rootfs success shape statfs
+        // returns) instead of ENOENT; otherwise deny.
+        if(shdw_path_under_system_bind_root(pathname)) {
+            int r = original_statvfs("/", buf);
+            if(r == 0 && buf) {
+                buf->f_flag |= ST_RDONLY;
+            }
+            return r;
+        }
         errno = ENOENT;
         return -1;
     }
@@ -693,6 +656,16 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
     }
 
     if(shdw_filter_mounts(&st, 1, NO) == 0) {
+        // Same reshape as statvfs: a bind over a stock system path answers
+        // the covering rootfs record instead of ENOENT.
+        char fdpath[PATH_MAX];
+        if(fcntl(fd, F_GETPATH, fdpath) != -1 && shdw_path_under_system_bind_root(fdpath)) {
+            int r = original_statvfs("/", buf);
+            if(r == 0 && buf) {
+                buf->f_flag |= ST_RDONLY;
+            }
+            return r;
+        }
         errno = ENOENT;
         return -1;
     }
@@ -714,14 +687,25 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat", ext);
 
+    BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
+
     // Reuse this call's preflight verdict for both external-only checks.
     BOOL restricted = ext && [_shadow isCPathRestricted:pathname];
 
-    if(restricted && shdw_libc_try_rewrite(pathname)) {
+    if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
         return original_stat(pathname, buf);   // natural ENOENT
     }
 
-    int result = original_stat(pathname, buf);
+    // A hidden denial traps into a scratch buffer and denies after, so it
+    // costs the same trapped lookup as a genuinely-absent path while the
+    // caller's buffer keeps its untouched shape.
+    struct stat trapbuf;
+    int result = original_stat(pathname, hidden ? &trapbuf : buf);
+
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
 
     if(result != -1 && restricted) {
         if(buf) {
@@ -730,6 +714,17 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
         
         errno = ENOENT;
         return -1;
+    }
+
+    // Gap 2: a stock system directory bind-shadowed by a jailbreak fakelib
+    // gets its own filesystem id; equalise it with the covering rootfs so a
+    // parent/child st_dev split can't reveal the bind. Only for the covered
+    // system prefixes, only when the id actually diverges from rootfs.
+    if(result != -1 && ext && buf && shdw_path_under_system_bind_root(pathname)) {
+        dev_t rootdev = shdw_rootfs_dev();
+        if(rootdev != 0 && buf->st_dev != rootdev) {
+            buf->st_dev = rootdev;
+        }
     }
 
     return result;
@@ -744,14 +739,17 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         return original_lstat(pathname, buf);
     }
 
+    BOOL hidden = shdw_path_is_external_hidden(pathname);
+
     // A NULL caller buffer keeps stock semantics: lstat(path, NULL) fails
     // with EFAULT. Replay it before classification so a restricted path is
     // answered with the stock EFAULT for the malformed call, not ENOENT.
-    if(buf == NULL) {
+    // A hidden path still answers ENOENT: it traps into scratch below.
+    if(!hidden && buf == NULL) {
         return original_lstat(pathname, NULL);
     }
 
-    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
+    if(!hidden && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
         return original_lstat(pathname, buf);   // natural ENOENT
     }
 
@@ -772,8 +770,29 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
             return -1;
         }
 
+        // Gap 2: equalise a system bind mount's device id with rootfs (see
+        // replaced_stat) before copying to the caller.
+        if(shdw_path_under_system_bind_root(pathname)) {
+            dev_t rootdev = shdw_rootfs_dev();
+            if(rootdev != 0 && _buf.st_dev != rootdev) {
+                _buf.st_dev = rootdev;
+            }
+        }
+
+        // A hidden denial traps first and denies after, so it costs the
+        // same trapped lookup as a genuinely-absent path.
+        if(hidden) {
+            errno = ENOENT;
+            return -1;
+        }
+
         // Only copy on success: on failure _buf is uninitialized stack.
         memcpy(buf, &_buf, sizeof(struct stat));
+    }
+
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
     }
 
     return result;
@@ -802,17 +821,40 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
-    if(shdw_path_is_absolute(pathname)
+    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
+
+    if(!hidden && shdw_path_is_absolute(pathname)
        && [_shadow isCPathRestricted:pathname]
        && shdw_libc_try_rewrite(pathname)) {
         return original_fstatat(dirfd, pathname, buf, flags);   // natural ENOENT
     }
 
-    if(shdw_at_path_denied(dirfd, pathname)) {
+    if(!hidden && shdw_at_path_denied(dirfd, pathname)) {
         return -1;
     }
 
-    return original_fstatat(dirfd, pathname, buf, flags);
+    // A hidden denial traps into scratch and denies after, so it costs the
+    // same trapped lookup as a genuinely-absent path.
+    struct stat trapbuf;
+    int result = original_fstatat(dirfd, pathname, hidden ? &trapbuf : buf, flags);
+
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    // Gap 2: equalise a system bind mount's device id with rootfs (absolute
+    // path only; relative operands resolve through the dirfd where the split
+    // is not the probe surface).
+    if(result != -1 && buf && shdw_path_is_absolute(pathname)
+       && shdw_path_under_system_bind_root(pathname)) {
+        dev_t rootdev = shdw_rootfs_dev();
+        if(rootdev != 0 && buf->st_dev != rootdev) {
+            buf->st_dev = rootdev;
+        }
+    }
+
+    return result;
 }
 
 static int (*original_faccessat)(int dirfd, const char* pathname, int mode, int flags);
@@ -825,22 +867,31 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
+    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
+
     // Relative operands must be classified against dirfd by shdw_at_path_denied.
     // The direct classification is only safe for absolute paths.
     BOOL restricted = shdw_path_is_absolute(pathname) && [_shadow isCPathRestricted:pathname];
 
-    if(restricted && shdw_libc_try_rewrite(pathname)) {
+    if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
         errno = caller_errno;
         return original_faccessat(dirfd, pathname, mode, flags);   // natural ENOENT
     }
 
-    if(shdw_at_path_denied(dirfd, pathname)) {
+    if(!hidden && shdw_at_path_denied(dirfd, pathname)) {
         return -1;
     }
 
     errno = caller_errno;
     int result = original_faccessat(dirfd, pathname, mode, flags);
     int result_errno = errno;
+
+    // A hidden denial traps first and denies after, so it costs the same
+    // trapped lookup as a genuinely-absent path.
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
 
     // Restricted-root paths: deny unconditionally for external callers
     if(result != -1) {
@@ -857,6 +908,27 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
 // readdir/readdir_r filtering: fresh DIR* parent resolution (including the
 // denied-vnode fail-closed fallback) lives in policy/PathPolicy.m; the per-entry
 // child check runs here, external-caller-gated.
+
+// A parent listing must not expose an object the point-lookup hooks hide:
+// join the entry onto the resolved parent (the readdir options' working dir)
+// and consult the same external-hidden set access()/stat() use.
+static BOOL shdw_dir_entry_external_hidden(NSDictionary* options, const char* d_name) {
+    if(!d_name) return NO;
+    // The parent's F_GETPATH can name a bind mount's backing store rather than
+    // its mount point, so a full-path join may not match the external-hidden
+    // set. Consult the leaf-name predicate too: the entry is hidden if its
+    // basename is a hidden leaf under a system bind directory (mount point or
+    // backing), keeping readdir consistent with the point-lookup hooks.
+    NSString* wd = options[kShadowRestrictionWorkingDir];
+    if(wd.length) {
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", wd.fileSystemRepresentation, d_name);
+        if(n > 0 && n < (int)sizeof(joined) && shdw_path_is_external_hidden(joined)) {
+            return YES;
+        }
+    }
+    return shdw_dir_leaf_external_hidden(wd.length ? wd.fileSystemRepresentation : NULL, d_name);
+}
 
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
 static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** oresult) {
@@ -885,7 +957,8 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
                 // autorelease per entry; without it raw-pthread callers
                 // (no pool) leak every skipped name.
                 @autoreleasepool {
-                    if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]) {
+                    if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]
+                       || shdw_dir_entry_external_hidden(options, (*oresult)->d_name)) {
                         // call readdir again to skip ahead
                         result = original_readdir_r(dirp, entry, oresult);
                     } else {
@@ -919,14 +992,15 @@ static struct dirent* replaced_readdir(DIR* dirp) {
     }
 
     struct dirent* result = original_readdir(dirp);
-    
+
     if(result && options) {
         do {
             // Per-entry pool: @(d_name) and the restriction check autorelease
             // per entry; without it raw-pthread callers (no pool) leak every
             // skipped name.
             @autoreleasepool {
-                if([_shadow isPathRestricted:@(result->d_name) options:options]) {
+                if([_shadow isPathRestricted:@(result->d_name) options:options]
+                   || shdw_dir_entry_external_hidden(options, result->d_name)) {
                     // call readdir again to skip ahead
                     result = original_readdir(dirp);
                 } else {
@@ -954,9 +1028,11 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 // NOTE: freed with free(), NOT a per-entry free — compact in place, never
 // free individual entries (the caller frees namelist[i] + namelist).
 static BOOL shdw_scandir_entry_restricted(const char* dirpath, const char* name) {
+    if(shdw_dir_leaf_external_hidden(dirpath, name)) return YES;
     char joined[PATH_MAX * 2];
     int n = snprintf(joined, sizeof(joined), "%s/%s", dirpath, name);
-    return n > 0 && n < (int)sizeof(joined) && [_shadow isCPathRestricted:joined];
+    return n > 0 && n < (int)sizeof(joined)
+        && ([_shadow isCPathRestricted:joined] || shdw_path_is_external_hidden(joined));
 }
 
 static int shdw_scandir_filter(const char* dirpath, struct dirent*** namelist, int count) {
@@ -1310,6 +1386,13 @@ static FILE* replaced_fopen(const char* pathname, const char* mode) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "fopen", ext);
 
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_fopen(pathname, mode);
+    }
+    if(ext && shdw_path_is_external_hidden(pathname)) {
+        errno = ENOENT;
+        return NULL;
+    }
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
         return original_fopen(pathname, mode);
     }
@@ -1320,7 +1403,15 @@ static FILE* replaced_fopen(const char* pathname, const char* mode) {
 
 static FILE* (*original_freopen)(const char* pathname, const char* mode, FILE* stream);
 static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stream) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    BOOL ext = isCallerExternal();
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_freopen(pathname, mode, stream);
+    }
+    if(ext && shdw_path_is_external_hidden(pathname)) {
+        errno = ENOENT;
+        return NULL;
+    }
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
         return original_freopen(pathname, mode, stream);
     }
 
@@ -1333,7 +1424,10 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
     char* result = original_realpath(pathname, resolved_path);
 
     if(result && isCallerExternal()) {
-        if([_shadow isCPathRestricted:pathname]) {
+        if(shdw_path_is_main_bundle_exempt(pathname) || shdw_path_is_main_bundle_exempt(result)) {
+            return result;
+        }
+        if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
             errno = ENOENT;
 
             if(resolved_path == NULL) {
@@ -1348,7 +1442,7 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
         // The returned path is the fully resolved TARGET: a symlink chain
         // can land in a restricted location even when the input path is
         // not restricted, so check the resolved string as well.
-        if([_shadow isCPathRestricted:result]) {
+        if(shdw_path_is_external_hidden(result) || [_shadow isCPathRestricted:result]) {
             errno = EACCES;
 
             if(resolved_path == NULL) {
@@ -1369,7 +1463,9 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
 
     int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 
-    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
+    // Same predicate PAIR as replaced_stat: the ruleset AND the external-hidden
+    // set, so ATTR_CMN_NAME can't surface an object stat/access report absent.
+    if(result != -1 && ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         errno = ENOENT;
         return -1;
     }
@@ -1523,14 +1619,12 @@ static ssize_t replaced_getxattr(const char* path, const char* name, void* value
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(path, "getxattr", ext);
 
-    ssize_t result = original_getxattr(path, name, value, size, position, options);
-
-    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
+    if(ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         errno = ENOENT;
         return -1;
     }
 
-    return result;
+    return original_getxattr(path, name, value, size, position, options);
 }
 
 static ssize_t (*original_listxattr)(const char* path, char* namebuf, size_t size, int options);
@@ -1538,14 +1632,66 @@ static ssize_t replaced_listxattr(const char* path, char* namebuf, size_t size, 
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(path, "listxattr", ext);
 
-    ssize_t result = original_listxattr(path, namebuf, size, options);
-
-    if(result != -1 && ext && [_shadow isCPathRestricted:path]) {
+    if(ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         errno = ENOENT;
         return -1;
     }
 
-    return result;
+    return original_listxattr(path, namebuf, size, options);
+}
+
+static int (*original_setxattr)(const char* path, const char* name, const void* value, size_t size, u_int32_t position, int options);
+static int replaced_setxattr(const char* path, const char* name, const void* value, size_t size, u_int32_t position, int options) {
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "setxattr", ext);
+
+    if(ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_setxattr(path, name, value, size, position, options);
+}
+
+static int (*original_removexattr)(const char* path, const char* name, int options);
+static int replaced_removexattr(const char* path, const char* name, int options) {
+    BOOL ext = isCallerExternal();
+    SHADOW_TRIP(path, "removexattr", ext);
+
+    if(ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_removexattr(path, name, options);
+}
+
+static int (*original_fsetxattr)(int fd, const char* name, const void* value, size_t size, u_int32_t position, int options);
+static int replaced_fsetxattr(int fd, const char* name, const void* value, size_t size, u_int32_t position, int options) {
+    if(!isCallerExternal()) {
+        return original_fsetxattr(fd, name, value, size, position, options);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_fsetxattr(fd, name, value, size, position, options);
+}
+
+static int (*original_fremovexattr)(int fd, const char* name, int options);
+static int replaced_fremovexattr(int fd, const char* name, int options) {
+    if(!isCallerExternal()) {
+        return original_fremovexattr(fd, name, options);
+    }
+
+    if(shdw_fd_path_restricted(fd)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_fremovexattr(fd, name, options);
 }
 
 // fd-based xattr/getattrlist variants: resolve the descriptor's path via
@@ -1619,7 +1765,9 @@ static int replaced_getattrlistat(int dirfd, const char* path, void* attrList, v
     }
 
     if(status == SHADW_DIRFD_ABSOLUTE) {
-        if([_shadow isCPathRestricted:path]) {
+        // Same predicate PAIR as the absolute stat/getattrlist hooks: the
+        // external-hidden set AND the ruleset.
+        if(shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path]) {
             errno = ENOENT;
             return -1;
         }
@@ -1628,13 +1776,39 @@ static int replaced_getattrlistat(int dirfd, const char* path, void* attrList, v
         int n = snprintf(joined, sizeof(joined), "%s/%s", parent, path);
 
         // Join overflow: can't classify — pass through (kernel answers).
-        if(n > 0 && n < (int) sizeof(joined) && [_shadow isPathRestricted:@(joined) options:nil]) {
+        if(n > 0 && n < (int) sizeof(joined)
+           && (shdw_path_is_external_hidden(joined)
+               || shdw_dir_leaf_external_hidden(parent, path)
+               || [_shadow isPathRestricted:@(joined) options:nil])) {
             errno = ENOENT;
             return -1;
         }
     }
 
     return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+}
+
+static int (*original_setattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
+static int replaced_setattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
+        return original_setattrlist(path, attrList, attrBuf, attrBufSize, options);
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+static int (*original_setattrlistat)(int dirfd, const char* path, void* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
+static int replaced_setattrlistat(int dirfd, const char* path, void* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
+    if(!isCallerExternal()) {
+        return original_setattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_setattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
 }
 
 // getattrlistbulk: directory-entry enumeration (fs_snapshot_list's sibling
@@ -1806,7 +1980,9 @@ static int replaced_getattrlistbulk(int dirfd, void* attrList, void* attrBuf, si
             // autorelease per record; without it raw-pthread callers (no
             // pool) leak every skipped name (readdir's pattern).
             @autoreleasepool {
-                if([_shadow isPathRestricted:@(joined) options:nil]) {
+                if([_shadow isPathRestricted:@(joined) options:nil]
+                   || shdw_path_is_external_hidden(joined)
+                   || shdw_dir_leaf_external_hidden(dirPath, nameStr)) {
                     memmove((char*) attrBuf + offset, (char*) attrBuf + offset + recLen, totalBytes - (offset + recLen));
                     totalBytes -= recLen;
                     result--;
@@ -1861,13 +2037,18 @@ static int replaced_symlink(const char* path1, const char* path2) {
 
 static int (*original_link)(const char* path1, const char* path2);
 static int replaced_link(const char* path1, const char* path2) {
-    if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(path2) ||
-       [_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2])) {
+    if(!isCallerExternal()) {
         return original_link(path1, path2);
     }
 
-    errno = ENOENT;
-    return -1;
+    if(shdw_detector_c_write_path_denied(path2) ||
+       shdw_path_is_external_hidden(path1) || shdw_path_is_external_hidden(path2) ||
+       [_shadow isCPathRestricted:path1] || [_shadow isCPathRestricted:path2]) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_link(path1, path2);
 }
 
 static int (*original_rename)(const char* old, const char* new);
@@ -2068,6 +2249,19 @@ static int replaced_fchmodat(int dirfd, const char* path, mode_t mode, int flags
     return original_fchmodat(dirfd, path, mode, flags);
 }
 
+static int (*original_fchownat)(int dirfd, const char* path, uid_t owner, gid_t group, int flags);
+static int replaced_fchownat(int dirfd, const char* path, uid_t owner, gid_t group, int flags) {
+    if(!isCallerExternal()) {
+        return original_fchownat(dirfd, path, owner, group, flags);
+    }
+
+    if(shdw_at_path_denied(dirfd, path)) {
+        return -1;
+    }
+
+    return original_fchownat(dirfd, path, owner, group, flags);
+}
+
 // --- Plain-path metadata mutators (Phase 1 gaps). One (path) or
 // (path, id/id) or (path, value...) shape, single-path policy, ENOENT on
 // denial — same contract as replaced_rmdir/pathconf above. fd variants use
@@ -2084,7 +2278,7 @@ static int replaced_mkdir(const char* pathname, mode_t mode) {
 
 static int (*original_chmod)(const char* pathname, mode_t mode);
 static int replaced_chmod(const char* pathname, mode_t mode) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_chmod(pathname, mode);
     }
 
@@ -2094,7 +2288,7 @@ static int replaced_chmod(const char* pathname, mode_t mode) {
 
 static int (*original_lchmod)(const char* pathname, mode_t mode);
 static int replaced_lchmod(const char* pathname, mode_t mode) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_lchmod(pathname, mode);
     }
 
@@ -2118,7 +2312,7 @@ static int replaced_fchmod(int fd, mode_t mode) {
 
 static int (*original_chown)(const char* pathname, uid_t owner, gid_t group);
 static int replaced_chown(const char* pathname, uid_t owner, gid_t group) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_chown(pathname, owner, group);
     }
 
@@ -2128,7 +2322,7 @@ static int replaced_chown(const char* pathname, uid_t owner, gid_t group) {
 
 static int (*original_lchown)(const char* pathname, uid_t owner, gid_t group);
 static int replaced_lchown(const char* pathname, uid_t owner, gid_t group) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_lchown(pathname, owner, group);
     }
 
@@ -2172,7 +2366,7 @@ static int replaced_mkfifo(const char* pathname, mode_t mode) {
 
 static int (*original_truncate)(const char* pathname, off_t length);
 static int replaced_truncate(const char* pathname, off_t length) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_truncate(pathname, length);
     }
 
@@ -2244,7 +2438,7 @@ static int replaced_futimens(int fd, const struct timespec times[2]) {
 
 static int (*original_lutimes)(const char* pathname, const struct timeval times[2]);
 static int replaced_lutimes(const char* pathname, const struct timeval times[2]) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_lutimes(pathname, times);
     }
 
@@ -2402,7 +2596,7 @@ static long replaced_fpathconf(int fd, int name) {
 
 static int (*original_utimes)(const char* pathname, const struct timeval times[2]);
 static int replaced_utimes(const char* pathname, const struct timeval times[2]) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_utimes(pathname, times);
     }
 
@@ -2468,10 +2662,16 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fs_snapshot_list",       (void*)&replaced_fs_snapshot_list,         (void**)&original_fs_snapshot_list,         LIBC,   LIBC },
     { "getxattr",               (void*)&replaced_getxattr,                 (void**)&original_getxattr,                 LIBC,   LIBC },
     { "listxattr",              (void*)&replaced_listxattr,                (void**)&original_listxattr,                LIBC,   LIBC },
+    { "setxattr",               (void*)&replaced_setxattr,                 (void**)&original_setxattr,                 LIBC,   LIBC },
+    { "removexattr",            (void*)&replaced_removexattr,              (void**)&original_removexattr,              LIBC,   LIBC },
     { "fgetxattr",              (void*)&replaced_fgetxattr,                (void**)&original_fgetxattr,                LIBC,   LIBC },
     { "flistxattr",             (void*)&replaced_flistxattr,               (void**)&original_flistxattr,               LIBC,   LIBC },
+    { "fsetxattr",              (void*)&replaced_fsetxattr,                (void**)&original_fsetxattr,                LIBC,   LIBC },
+    { "fremovexattr",           (void*)&replaced_fremovexattr,             (void**)&original_fremovexattr,             LIBC,   LIBC },
     { "fgetattrlist",           (void*)&replaced_fgetattrlist,             (void**)&original_fgetattrlist,             LIBC,   LIBC },
     { "getattrlistat",          (void*)&replaced_getattrlistat,            (void**)&original_getattrlistat,            LIBC,   LIBC },
+    { "setattrlist",            (void*)&replaced_setattrlist,              (void**)&original_setattrlist,              LIBC,   0 },
+    { "setattrlistat",          (void*)&replaced_setattrlistat,            (void**)&original_setattrlistat,            LIBC,   0 },
     { "getattrlistbulk",        (void*)&replaced_getattrlistbulk,          (void**)&original_getattrlistbulk,          LIBC,   LIBC },
     { "symlink",                (void*)&replaced_symlink,                  (void**)&original_symlink,                  LIBC,   LIBC },
     { "rename",                 (void*)&replaced_rename,                   (void**)&original_rename,                   LIBC,   LIBC },
@@ -2483,6 +2683,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "renameat",               (void*)&replaced_renameat,                 (void**)&original_renameat,                 LIBC,   LIBC },
     { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC },
     { "fchmodat",               (void*)&replaced_fchmodat,                 (void**)&original_fchmodat,                 LIBC,   LIBC },
+    { "fchownat",               (void*)&replaced_fchownat,                 (void**)&original_fchownat,                 LIBC,   0 },
     { "rmdir",                  (void*)&replaced_rmdir,                    (void**)&original_rmdir,                    LIBC,   LIBC },
     { "pathconf",               (void*)&replaced_pathconf,                 (void**)&original_pathconf,                 LIBC,   LIBC },
     { "fpathconf",              (void*)&replaced_fpathconf,                (void**)&original_fpathconf,                LIBC,   LIBC },
@@ -2553,6 +2754,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // lowlevel group
     { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW },
     { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW },
+    { "open_nocancel",          (void*)&replaced_open_nocancel,            (void**)&original_open_nocancel,            LOW,    0 },
+    { "openat_nocancel",        (void*)&replaced_openat_nocancel,          (void**)&original_openat_nocancel,          LOW,    0 },
     { "opendir",                (void*)&replaced_opendir,                  (void**)&original_opendir,                  LOW,    LOW },
     { "__opendir2",             (void*)&replaced___opendir2,               (void**)&original___opendir2,               LOW,    LOW },
     { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0 },
@@ -2587,10 +2790,16 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
     { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
     { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
+    { "proc_regionfilename",    (void*)&replaced_proc_regionfilename,      (void**)&original_proc_regionfilename,      ANTIDBG,  0 },
     { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0 },
     { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0 },
     // Phase 4: kill(pid, 0) liveness probe — ESRCH agrees with filtered lists.
     { "kill",                   (void*)&replaced_kill,                     (void**)&original_kill,                     ANTIDBG,  ANTIDBG },
+    // Phase 4: kevent EVFILT_PROC registration liveness probe — same ESRCH
+    // dead-shape discipline as kill (see libc_antidebugging.x).
+    { "kevent",                 (void*)&replaced_kevent,                   (void**)&original_kevent,                   ANTIDBG,  ANTIDBG },
+    // kevent64 twin — same EVFILT_PROC ESRCH policy (see libc_antidebugging.x).
+    { "kevent64",               (void*)&replaced_kevent64,                 (void**)&original_kevent64,                 ANTIDBG,  ANTIDBG },
     // Phase 4 pass-throughs (dlsym-policy agreement only — bodies forward
     // untouched; see libc_antidebugging.x rationale per symbol).
     { "uname",                  (void*)&replaced_uname,                   (void**)&original_uname,                   ANTIDBG,  0 },
@@ -2607,6 +2816,40 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 // Fills a NULL-original row's continuation cell from the pre-hook dlsym at
 // install (wait family). Defined below, next to the dlsym policy.
 static void shdw_libc_resolve_null_original(const char* symbol, void* target);
+
+// Import-slot fallback for the process-list surface (ANTIDEBUG group): an
+// iOS 15 shared-cache entrypoint can fail the dladdr identity check or refuse
+// the inline patch while its import slots still rebind fine — every caller
+// reaches these symbols through an import or dlsym, so the rebind lane alone
+// covers them. Keeps the verified export as the continuation so the
+// replacement can always forward. No-op for any other symbol or group.
+static void shdw_libc_rebind_proclist(SHDWHookSession* hooks, const shdw_hook_desc_t* d, uint32_t group, void* target) {
+    if(group != SHADW_HOOK_GROUP_ANTIDEBUG || !d->original) {
+        return;
+    }
+
+    static const char* const names[] = {
+        "proc_listpids", "proc_listallpids",
+        "proc_pidinfo", "proc_regionfilename",
+        "proc_pidpath", "proc_pidpath_audittoken",
+        "kevent", "kevent64",
+        NULL,
+    };
+
+    for(int i = 0; names[i]; i++) {
+        if(strcmp(d->symbol, names[i]) == 0) {
+            [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                    withReplacement:d->replacement
+                           outOldPtr:d->original];
+
+            if(*d->original == NULL) {
+                *d->original = target;
+            }
+
+            return;
+        }
+    }
+}
 
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
@@ -2652,11 +2895,13 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
         if(d->verifyGroups == 0) {
             Dl_info info;
             if(!dladdr(target, &info) || !info.dli_sname || info.dli_saddr != target) {
+                shdw_libc_rebind_proclist(hooks, d, group, target);
                 continue;
             }
 
             const char* resolved = info.dli_sname[0] == '_' ? info.dli_sname + 1 : info.dli_sname;
             if(strcmp(resolved, d->symbol) != 0) {
+                shdw_libc_rebind_proclist(hooks, d, group, target);
                 continue;
             }
         }
@@ -2704,6 +2949,74 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                 }
             }
 
+            // Same iOS-15 shared-cache constraint for the open/stat64 point-lookup
+            // entrypoints: when the inline patch is refused the symbol is left
+            // unhooked, so an absolute open()/openat() or *at stat resolves what
+            // every rebind-lane probe hides. Rebind the existing imports (the
+            // lane the metadata hooks prove works here) and keep the verified
+            // export as the continuation so both direct-branch and dlsym callers
+            // route through the filter.
+            if(!installed && d->original && group == SHADW_HOOK_GROUP_LOWLEVEL) {
+                static const char* const rebindFallback[] = {
+                    "open", "openat",
+                    "open_dprotected_np", "openat_dprotected_np",
+                    "openat_authenticated_np",
+                    "stat64", "lstat64", "fstat64", "fstatat64",
+                    NULL,
+                };
+                for(int r = 0; rebindFallback[r]; r++) {
+                    if(strcmp(d->symbol, rebindFallback[r]) == 0) {
+                        [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                                withReplacement:d->replacement
+                                       outOldPtr:d->original];
+                        if(*d->original == NULL) {
+                            *d->original = target;
+                        }
+                        installed = YES;
+                        break;
+                    }
+                }
+            }
+
+            // Same iOS-15 shared-cache constraint for the directory-enumeration
+            // and mount-table entrypoints: when the inline patch is refused the
+            // symbol is left unhooked, so a listing exposes what the point-lookup
+            // rebind lane hides and a mount query leaks the bindfs record. Rebind
+            // the existing imports (fishhook lane, which the metadata hooks prove
+            // works here) and keep the verified export as the continuation so
+            // both direct-branch and dlsym callers route through the filter.
+            if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC) {
+                static const char* const rebindFallback[] = {
+                    "readdir", "readdir_r", "scandir", "scandir_b",
+                    "statfs", "fstatfs", "statvfs", "fstatvfs",
+                    "getmntinfo", "getmntinfo_r_np", "getfsstat",
+                    "getattrlist", "getattrlistat", "getattrlistbulk",
+                    "fts_open", "fts_read", "fts_children",
+                    "fstat", "fstatat",
+                    "chmod", "lchmod", "chown", "lchown",
+                    "truncate", "utimes", "lutimes", "link",
+                    "linkat", "unlinkat", "renameat", "symlinkat", "mkdirat",
+                    "getxattr", "listxattr", "setxattr", "removexattr",
+                    "fgetxattr", "flistxattr", "fsetxattr", "fremovexattr",
+                    NULL,
+                };
+                for(int r = 0; rebindFallback[r]; r++) {
+                    if(strcmp(d->symbol, rebindFallback[r]) == 0) {
+                        [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                                withReplacement:d->replacement
+                                       outOldPtr:d->original];
+                        // Keep the verified export as the continuation when the
+                        // rebind found no slot to journal an original into, so
+                        // the replacement can always forward.
+                        if(*d->original == NULL) {
+                            *d->original = target;
+                        }
+                        installed = YES;
+                        break;
+                    }
+                }
+            }
+
             // sysctl's shared-cache export (iOS 15) can refuse a safe inline
             // prologue patch, OR a Swift/ObjC detector may reach sysctl through
             // an import slot the inline patch does not cover. Either way a
@@ -2722,6 +3035,17 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                 if(d->original && *d->original == NULL) {
                     *d->original = target;
                 }
+                installed = YES;
+            }
+
+            // Same iOS-15 shared-cache constraint for the libproc process-list
+            // surface: when the inline patch is refused the caller keeps the
+            // unfiltered enumeration, so rebind the existing imports (the lane
+            // the sysctl additive rebind above proves works here) and keep the
+            // verified export as the continuation so both direct-branch and
+            // dlsym callers route through the filter.
+            if(!installed && d->original) {
+                shdw_libc_rebind_proclist(hooks, d, group, target);
                 installed = YES;
             }
             (void)installed;

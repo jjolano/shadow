@@ -84,6 +84,71 @@ SHADW_RAWSYSCALL(SYS_mkfifoat,         3, AT,         ATMODE)
 SHADW_RAWSYSCALL(SYS_mknodat,          4, AT,         ATMODEDEV)
 #endif
 SHADW_RAWSYSCALL(SYS_kill,             2, KILL,       KILL)
+SHADW_RAWSYSCALL(SYS_kevent,           6, KEVENT,     KEVENT)
+// kevent64 is kevent's 64-bit twin (SYS_kevent64=369, all lane SDKs incl.
+// 13.7): same (kq, changelist, nchanges, ...) head, then eventlist, nevents,
+// flags, timeout — 7 slots. The changelist element is struct kevent64_s
+// (48 bytes, SDK sys/event.h: ident u64 @0, filter s16 @8), NOT struct
+// kevent — the KEVENT64 policy scans it with its own type. EVFILT_PROC-only
+// ESRCH, external-gated, same as KEVENT.
+SHADW_RAWSYSCALL(SYS_kevent64,         7, KEVENT64,   KEVENT64)
 SHADW_RAWSYSCALL(SYS_csops,            4, CSOPS,      CSOPS)
 SHADW_RAWSYSCALL(SYS_sysctl,           6, SYSCTL,     SYSCTL)
 SHADW_RAWSYSCALL(SYS_getdirentries64,  4, DIRENT,     GETDIRENTRIES)
+// getfsstat(buf, bufsize, flags): the raw mount-array syscalls the libc
+// getfsstat/getmntinfo wrappers filter. Without these entries the raw call is
+// passthrough and leaks the mounts the wrappers remove. After-success
+// category compacts the returned struct statfs array via the SAME shared
+// mount filter the wrappers use (shdw_filter_mounts).
+SHADW_RAWSYSCALL(SYS_getfsstat,        3, GETFSSTAT,  GETFSSTAT)
+SHADW_RAWSYSCALL(SYS_getfsstat64,      3, GETFSSTAT,  GETFSSTAT)
+// proc_info(callnum, pid, flavor, arg, buffer, buffersize): the __proc_info(2)
+// multiplexer libproc's proc_pidinfo/proc_regionfilename route through. Without
+// this entry a raw syscall(SYS_proc_info, ...) reopens the region-path leak the
+// libc proc_pidinfo hook closes. The region-path flavors (PROC_PIDREGIONPATH*)
+// embed the backing vnode path; the after-success category reshapes a hidden
+// image's region into an anonymous one via the SAME predicate the libc hook uses.
+SHADW_RAWSYSCALL(SYS_proc_info,        6, PROCINFO,   PROCINFO)
+// Mutator/xattr errno parity (Effulgence mutxattr): a raw syscall(2) must not
+// see an object the libc wrappers report absent. Single-path mutators share
+// CAT PATH (ruleset + external-hidden); fd variants share CAT FDXATTR;
+// link shares CAT PATHPATH (both ends). setxattr reuses the GETXATTR shape,
+// fsetxattr reuses FGETXATTR; removexattr/utimes/link need their own shapes.
+SHADW_RAWSYSCALL(SYS_utimes,           2, PATH,       UTIMES)
+SHADW_RAWSYSCALL(SYS_futimes,          2, FDXATTR,    FUTIMES)
+SHADW_RAWSYSCALL(SYS_link,             2, PATHPATH,   LINK)
+SHADW_RAWSYSCALL(SYS_setxattr,         6, PATH,       GETXATTR)
+SHADW_RAWSYSCALL(SYS_fsetxattr,        6, FDXATTR,    FGETXATTR)
+SHADW_RAWSYSCALL(SYS_removexattr,      3, PATH,       REMOVEXATTR)
+SHADW_RAWSYSCALL(SYS_fremovexattr,     3, FDXATTR,    FREMOVEXATTR)
+// linkat family (Round 11): same hidden+ruleset pair as the libc *at hooks,
+// external-gated, ENOENT on denial. linkat reuses CLONEAT (fd,path,fd,path,+flag
+// — the clonefileat two-pair shape); renameat reuses the CLONEAT policy with a
+// 4-arg forwarder; unlinkat/mkdirat are single-path AT via the unconditional
+// ATMODE shape; symlinkat checks the link LOCATION only (a symlink target need
+// not exist, so hidden-vs-absent targets have no natural split). All numbers
+// exist since iOS 8 — unconditional on every lane SDK.
+SHADW_RAWSYSCALL(SYS_linkat,           5, CLONEAT,    CLONEAT)
+SHADW_RAWSYSCALL(SYS_unlinkat,         3, AT,         ATMODE)
+SHADW_RAWSYSCALL(SYS_mkdirat,          3, AT,         ATMODE)
+SHADW_RAWSYSCALL(SYS_renameat,         4, CLONEAT,    RENAMEAT)
+SHADW_RAWSYSCALL(SYS_symlinkat,        3, SYMLINKAT,  SYMLINKAT)
+// Round 13 audit: hidden-vs-absent pairs via syscall(2) that were passthrough.
+// All external-gated, hidden+ruleset, ENOENT on denial. Unconditional: numbers
+// exist in the 14.5 SDK.
+SHADW_RAWSYSCALL(SYS_revoke,           1, PATH,       P1)
+SHADW_RAWSYSCALL(SYS_faccessat,        4, AT,         FSTATAT)
+SHADW_RAWSYSCALL(SYS_fchmodat,         4, AT,         FSTATAT)
+SHADW_RAWSYSCALL(SYS_fchownat,         5, AT,         CLONEAT)
+SHADW_RAWSYSCALL(SYS_readlinkat,       4, AT,         FSTATAT)
+SHADW_RAWSYSCALL(SYS_getattrlistat,    6, AT,         GETATTRLISTAT)
+SHADW_RAWSYSCALL(SYS_setattrlist,      5, PATH,       GETATTRLIST)
+SHADW_RAWSYSCALL(SYS_setattrlistat,    6, AT,         GETATTRLISTAT)
+SHADW_RAWSYSCALL(SYS_open_nocancel,    3, PATH,       OPEN)
+SHADW_RAWSYSCALL(SYS_openat_nocancel,  4, AT,         OPENAT)
+SHADW_RAWSYSCALL(SYS_open_dprotected_np, 5, PATH,     OPENDP)
+SHADW_RAWSYSCALL(SYS___pthread_chdir,  1, PATH,       P1)
+SHADW_RAWSYSCALL(SYS_statfs,           2, PATH,       P2I)
+SHADW_RAWSYSCALL(SYS_statfs64,         2, STATFS,     P2I)
+SHADW_RAWSYSCALL(SYS_mount,            4, PATHPATH,   RENAMEAT)
+SHADW_RAWSYSCALL(SYS_unmount,          2, PATH,       P2I)

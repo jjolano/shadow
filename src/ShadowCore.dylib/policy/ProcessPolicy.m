@@ -184,6 +184,13 @@ static NSUInteger shdw_pid_cache_next = 0;
 static pthread_mutex_t shdw_pid_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 BOOL shdw_pid_is_restricted(pid_t pid) {
+    // Own pid is never restricted: the process's own list entry, pidpath and
+    // pidinfo stay visible, matching the sysctl filter (which sanitizes the
+    // self record instead of dropping it).
+    if(pid == getpid()) {
+        return NO;
+    }
+
     time_t now = time(NULL);
 
     pthread_mutex_lock(&shdw_pid_cache_lock);
@@ -211,6 +218,20 @@ BOOL shdw_pid_is_restricted(pid_t pid) {
             restricted = [_shadow isCPathRestricted:path];
         }
 
+    } else if(original_sysctl) {
+        // Sandbox EPERM on a root daemon leaves no path to judge: fetch the
+        // kinfo record through the ORIGINAL sysctl (bypasses the hook, so no
+        // re-entry) and classify with the SAME kinfo predicate the sysctl
+        // filter uses, so both channels drop identical sets and their counts
+        // agree. Fail open when the record is unavailable.
+        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+        struct kinfo_proc kp;
+        size_t len = sizeof(kp);
+        memset(&kp, 0, sizeof(kp));
+        if(original_sysctl(mib, 4, &kp, &len, NULL, 0) == 0
+           && len >= sizeof(kp) && kp.kp_proc.p_pid == pid) {
+            restricted = shdw_proc_is_restricted(&kp);
+        }
     }
 
     pthread_mutex_lock(&shdw_pid_cache_lock);

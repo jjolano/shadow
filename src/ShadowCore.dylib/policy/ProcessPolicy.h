@@ -28,10 +28,10 @@ struct kinfo_proc;
 // hooked code.
 BOOL shdw_proc_is_restricted(const struct kinfo_proc* p);
 
-// Uncached pid classification for the per-pid sysctl/sysctlbyname deny
+// Uncached pid classification for the per-pid sysctl/sysctlbyname
 // paths (KERN_PROC_PID / KERN_PROCARGS2 of a jailbreak daemon): the list
 // filters already remove restricted processes, so a per-pid query of one
-// must answer ENOENT the same way. Un-cached by design — these queries are
+// answers the stock absent shape. Un-cached by design — these queries are
 // rare, and pid reuse must never inherit a stale verdict. Non-positive pids
 // are never classified: pid 0 would resolve via proc_pidpath to our own
 // process, which must not be judged here.
