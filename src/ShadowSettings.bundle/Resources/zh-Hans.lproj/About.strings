@@ -20,6 +20,7 @@
 "DEVELOPER" = "开发者";
 "VISIT_GITHUB" = "在GitHub上查看Shadow";
 "VISIT_KOFI" = "在Ko-fi上赞助作者";
+"VISIT_SPONSORS" = "在GitHub上赞助作者";
 "LOCALIZATION_HDR" = "简体中文翻译";
 
 "RESET_HDR" = "重置";

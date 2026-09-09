@@ -17,6 +17,7 @@
 		for(NSDictionary* mapping in @[
 			@{ @"spec": @"AboutUpdates", @"symbol": @"arrow.down.circle" },
 			@{ @"spec": @"AboutGitHub", @"symbol": @"chevron.left.forwardslash.chevron.right" },
+			@{ @"spec": @"AboutSponsors", @"symbol": @"heart" },
 			@{ @"spec": @"AboutKofi", @"symbol": @"cup.and.saucer" },
 			@{ @"spec": @"AboutReset", @"symbol": @"arrow.counterclockwise" },
 		]) {
@@ -55,6 +56,10 @@
 
 - (void)openKofi:(id)sender {
 	[self openExternalURL:[NSURL URLWithString:@"https://ko-fi.com/jjolano"]];
+}
+
+- (void)openSponsors:(id)sender {
+	[self openExternalURL:[NSURL URLWithString:@"https://github.com/sponsors/jjolano"]];
 }
 
 - (void)openExternalURL:(NSURL *)url {
