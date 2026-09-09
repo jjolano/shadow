@@ -550,6 +550,9 @@ void* shdw_sym_policy_lookup_mem(const char* name);
 // Reverse map: hooked-libc replacement address -> original function address,
 // so dladdr on a dlsym-returned replacement resolves to the system image.
 void* shdw_sym_original_for_replacement_libc(const void* addr);
+// Same reverse map for the sandbox group (defined in sandbox.x): hooked
+// sandbox replacement address -> original function address.
+void* shdw_sym_original_for_replacement_sandbox(const void* addr);
 // Invalidates the sandbox hook's cached process cwd (defined in sandbox.x;
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).

@@ -1566,6 +1566,10 @@ static int replaced_dladdr(const void* addr, Dl_info* info) {
         originalIMP = shdw_sym_original_for_replacement_libc(addr);
     }
     if(!originalIMP) {
+        // Hooked sandbox C functions (connect, fork, posix_spawn, …).
+        originalIMP = shdw_sym_original_for_replacement_sandbox(addr);
+    }
+    if(!originalIMP) {
         // Hooked dyld-introspection functions (_dyld_image_count etc.).
         originalIMP = shdw_dyld_original_for_replacement(addr);
     }

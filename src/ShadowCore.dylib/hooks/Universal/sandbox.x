@@ -1029,3 +1029,25 @@ void* shdw_sym_policy_lookup_sandbox(const char* name) {
 
     return NULL;
 }
+
+// Reverse of the policy lookup: given a replacement address (what dlsym hands
+// an external caller for a hooked sandbox symbol), return the original
+// function address so a dladdr() on it resolves to the genuine system image
+// (a function-origin hook check). Mirrors
+// shdw_sym_original_for_replacement_libc; rows without a captured original
+// (exec family) cannot remap. NULL when the address is not a hooked sandbox
+// replacement.
+void* shdw_sym_original_for_replacement_sandbox(const void* addr) {
+    if(!addr) {
+        return NULL;
+    }
+    for(size_t i = 0; i < sizeof(shdw_sandbox_sym_policy_table) / sizeof(shdw_sandbox_sym_policy_table[0]); i++) {
+        if(shdw_sandbox_sym_policy_table[i].replacement == addr) {
+            if(!shdw_sandbox_sym_policy_table[i].original || !*shdw_sandbox_sym_policy_table[i].original) {
+                return NULL;
+            }
+            return *shdw_sandbox_sym_policy_table[i].original;
+        }
+    }
+    return NULL;
+}
