@@ -1421,11 +1421,12 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
                 void* caller = __builtin_extract_return_addr(__builtin_return_address(0));
                 int callerIdx = shdw_image_index_of(caller);
                 const char* callerImage = callerIdx >= 0 ? _dyld_get_image_name((uint32_t)callerIdx) : NULL;
-                // Embedded (no-flip harness): BAT links into [private-harness],
-                // so the caller image is the harness executable, not a
-                // BATJailbreakGuard image. Cover both.
+                // Embedded (no-flip harness): BAT links into the harness
+                // executable, not a BATJailbreakGuard image. Cover both;
+                // match the app bundle dir (not the bare binary name) so a
+                // neutral product rename keeps working.
                 if(callerImage && (strstr(callerImage, "BATJailbreakGuard") != NULL ||
-                                   strstr(callerImage, "[private-harness]") != NULL)) {
+                                   strstr(callerImage, "/Harness.app/") != NULL)) {
                     shdw_dyld_set_error("symbol not found: %s", symbol);
                     return NULL;
                 }
