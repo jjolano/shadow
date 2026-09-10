@@ -34,6 +34,17 @@ static int replaced_access(const char* pathname, int mode) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "access", ext);
 
+    // Own-bundle reads are exempt on every lookup shape, exactly as the
+    // open family already does: an app whose bundle lives under a restricted
+    // root (rootless jailbreak installs sit in /private/preboot) must be able
+    // to stat/access its own resources. Without this, open() succeeded while
+    // stat()/access() reported ENOENT for the same file — a divergence that
+    // breaks legitimate resource loading and reads as jailbreak evidence.
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        errno = caller_errno;
+        return original_access(pathname, mode);
+    }
+
     // The hidden verdict is recorded up front and denied AFTER the real
     // lookup below: the denial then costs the same trapped lookup as a
     // genuinely-absent path.
@@ -687,6 +698,11 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat", ext);
 
+    // Same own-bundle exemption as access()/open family (see replaced_access).
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_stat(pathname, buf);
+    }
+
     BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
 
     // Reuse this call's preflight verdict for both external-only checks.
@@ -736,6 +752,11 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     SHADOW_TRIP(pathname, "lstat", ext);
 
     if(!ext) {
+        return original_lstat(pathname, buf);
+    }
+
+    // Same own-bundle exemption as access()/open family (see replaced_access).
+    if(shdw_path_is_main_bundle_exempt(pathname)) {
         return original_lstat(pathname, buf);
     }
 
@@ -821,6 +842,12 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
+    // Same own-bundle exemption as access()/open family (see replaced_access);
+    // absolute operands only — relative ones resolve through the dirfd.
+    if(shdw_path_is_absolute(pathname) && shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_fstatat(dirfd, pathname, buf, flags);
+    }
+
     BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
 
     if(!hidden && shdw_path_is_absolute(pathname)
@@ -864,6 +891,13 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     SHADOW_TRIP(pathname, "faccessat", ext);
 
     if(!ext) {
+        return original_faccessat(dirfd, pathname, mode, flags);
+    }
+
+    // Same own-bundle exemption as access()/open family (see replaced_access);
+    // absolute operands only — relative ones resolve through the dirfd.
+    if(shdw_path_is_absolute(pathname) && shdw_path_is_main_bundle_exempt(pathname)) {
+        errno = caller_errno;
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
@@ -1460,6 +1494,13 @@ static int (*original_getattrlist)(const char* path, struct attrlist* attrList, 
 static int replaced_getattrlist(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(path, "getattrlist", ext);
+
+    // Same own-bundle exemption as the open family (see replaced_access):
+    // Foundation's fileExists/attributesOfItem land here, so without it an
+    // app could open its own bundle resources but not see them.
+    if(ext && path && shdw_path_is_main_bundle_exempt(path)) {
+        return original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
+    }
 
     int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 

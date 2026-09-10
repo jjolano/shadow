@@ -222,6 +222,14 @@ int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
     BOOL ext = isCallerExternal();
     SHADOW_TRIP(pathname, "stat64", ext);
 
+    // Same own-bundle exemption as the open family (see replaced_access in
+    // libc.x): Foundation's fileExists/contents go through these *64 forms,
+    // so without it an app could open its own bundle resources but not see
+    // them, a shape divergence that reads as jailbreak evidence.
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_stat64(pathname, buf);
+    }
+
     BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
 
     // A hidden denial traps into scratch and denies after, so it costs the
@@ -259,6 +267,11 @@ int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
     SHADOW_TRIP(pathname, "lstat64", ext);
 
     if(!ext) {
+        return original_lstat64(pathname, buf);
+    }
+
+    // Same own-bundle exemption as the open family (see replaced_stat64).
+    if(shdw_path_is_main_bundle_exempt(pathname)) {
         return original_lstat64(pathname, buf);
     }
 
@@ -333,6 +346,12 @@ int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int 
     SHADOW_TRIP(pathname, "fstatat64", ext);
 
     if(!ext) {
+        return original_fstatat64(dirfd, pathname, buf, flags);
+    }
+
+    // Same own-bundle exemption as the open family (see replaced_stat64);
+    // absolute operands only — relative ones resolve through the dirfd.
+    if(shdw_path_is_absolute(pathname) && shdw_path_is_main_bundle_exempt(pathname)) {
         return original_fstatat64(dirfd, pathname, buf, flags);
     }
 
