@@ -4,6 +4,10 @@ static BOOL shdw_freeRASP_active = NO;
 static mach_msg_return_t (*shdw_freeRASP_originalMachMsg)(mach_msg_header_t*, mach_msg_option_t,
     mach_msg_size_t, mach_msg_size_t, mach_port_name_t, mach_msg_timeout_t, mach_port_name_t) = NULL;
 static BOOL (*shdw_freeRASP_originalEncryptedBinary)(void) = NULL;
+// Forward declarations: the mach_msg replacement below lazily (re)attempts
+// the deliver install, which is defined later in this file.
+static void (*shdw_freeRASP_origDeliver)(void* threat, void* a1, void* a2);
+static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks);
 
 static BOOL shdw_freeRASP_isEncryptedBinary(void) {
     return YES;
@@ -125,9 +129,21 @@ static void shdw_freeRASP_installEncryptedBinary(SHDWHookSession* hooks) {
     }
 }
 
+static SHDWHookSession* shdw_freeRASP_session = nil;
+static BOOL shdw_freeRASP_installing = NO;
 static mach_msg_return_t shdw_freeRASP_machMsg(mach_msg_header_t* msg, mach_msg_option_t option,
     mach_msg_size_t sendSize, mach_msg_size_t receiveLimit, mach_port_name_t receiveName,
     mach_msg_timeout_t timeout, mach_port_name_t notify) {
+    // Lazy arming: Talsec.start() performs mach IPC before its checks
+    // deliver, often before the ctor-time patch succeeds. Attempt install
+    // here (once, guarded against re-entry) so suppression arms on Talsec's
+    // first IPC rather than on a fixed delay.
+    if(shdw_detector_aggressive && !shdw_freeRASP_origDeliver && shdw_freeRASP_session &&
+       !shdw_freeRASP_installing) {
+        shdw_freeRASP_installing = YES;
+        shdw_freeRASP_installDeliver(shdw_freeRASP_session);
+        shdw_freeRASP_installing = NO;
+    }
     uint64_t marker = 0;
     if(shdw_freeRASP_enabled && msg && (option & MACH_SEND_MSG) && sendSize == 40 &&
        msg->msgh_bits == 0x1513 && msg->msgh_id == 0x400000ce) {
@@ -150,13 +166,20 @@ static BOOL shdw_adapter_freerasp_hides_path(NSString* path) {
 // attempt to pin its exact input (the checks queue asynchronously), so under
 // aggressive mode suppress its delivery outright: skip the handler call for
 // that one ordinal, matching what Shadow would achieve if it could
-// neutralise the underlying probe. All other threats pass through untouched.
+// neutralise the underlying probe.
 #define SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS 1
+// unofficialStore (ordinal 11, mapped on-device): asserts App Store
+// cryptography is unforgeable from userspace. Same aggressive-only
+// delivery suppression as privilegedAccess.
+#define SHDW_FREERASP_THREAT_UNOFFICIAL_STORE 11
 static void (*shdw_freeRASP_origDeliver)(void* threat, void* a1, void* a2) = NULL;
 static void shdw_freeRASP_deliver(void* threat, void* a1, void* a2) {
-    if(threat && *((unsigned char*)threat + 0x38) == SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS &&
-       shdw_freeRASP_enabled && shdw_detector_aggressive) {
-        return;  // drop privilegedAccess: do not deliver to the handler
+    if(threat && shdw_freeRASP_enabled && shdw_detector_aggressive) {
+        unsigned ordinal = (unsigned)*((unsigned char*)threat + 0x38);
+        if(ordinal == SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS ||
+           ordinal == SHDW_FREERASP_THREAT_UNOFFICIAL_STORE) {
+            return;  // drop: do not deliver to the handler
+        }
     }
     if(shdw_freeRASP_origDeliver) shdw_freeRASP_origDeliver(threat, a1, a2);
 }
@@ -178,6 +201,7 @@ static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
 
 void shdw_adapter_freerasp(SHDWHookSession* hooks) {
     shdw_freeRASP_active = YES;
+    shdw_freeRASP_session = hooks;
     SHDWSetAdapterPathPredicate(shdw_adapter_freerasp_hides_path);
     if(!shdw_freeRASP_originalMachMsg) {
         if(![hooks hookFunction:mach_msg withReplacement:shdw_freeRASP_machMsg
@@ -193,6 +217,26 @@ void shdw_adapter_freerasp(SHDWHookSession* hooks) {
     if(shdw_detector_aggressive) {
         shdw_freeRASP_installEncryptedBinary(hooks);
         shdw_freeRASP_installDeliver(hooks);
+    }
+    // Install-timing worldwide: the HookKit backend can refuse the interior
+    // patch while launch images are still settling (observed on-device:
+    // ctor-time install fails, a +15s retry succeeds). Retry with backoff so
+    // the suppression is armed long before any detector runs; each attempt
+    // is a no-op once installed.
+    if(shdw_detector_aggressive && !shdw_freeRASP_origDeliver) {
+        SHDWHookSession* lateHooks = hooks;
+        // Ctor-time install can be refused while launch images settle
+        // (observed: fails at +1s/+3s, succeeds at +7s); unofficialStore is
+        // evaluated early, so arm as soon as the backend allows.
+        const int64_t delays[] = { 1, 2, 3, 4, 5, 6, 8, 12 };
+        for(unsigned i = 0; i < sizeof(delays) / sizeof(delays[0]); i++) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delays[i] * NSEC_PER_SEC),
+                           dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                if(!shdw_freeRASP_origDeliver) {
+                    shdw_freeRASP_installDeliver(lateHooks);
+                }
+            });
+        }
     }
 }
 
