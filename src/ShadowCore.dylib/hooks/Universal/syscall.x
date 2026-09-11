@@ -738,6 +738,23 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                     return -1;
                 }
             } break;
+            // Raw copyfile pair: same both-endpoint verdict as PATHPATH, but
+            // the lane is EINVAL-native (measured: an absent source answers
+            // EINVAL through the raw number, while libc copyfile answers
+            // ENOENT), so a hidden denial mimics EINVAL — otherwise hidden
+            // (ENOENT) vs absent (EINVAL) is itself the oracle. Trailing
+            // state/flags words are forwarded untouched, never inspected.
+            case SHADW_RAW_CAT_COPYFILE: {
+                const char* from = va_arg(inspect, const char *);
+                const char* to = va_arg(inspect, const char *);
+
+                if((from && (shdw_path_is_external_hidden(from) || [_shadow isCPathRestricted:from])) ||
+                   (to && (shdw_path_is_external_hidden(to) || [_shadow isCPathRestricted:to]))) {
+                    errno = EINVAL;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
 
             case SHADW_RAW_CAT_CLONEAT: {
                 int srcfd = (int) va_arg(inspect, intptr_t);
@@ -1275,6 +1292,7 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
             case SHADW_RAW_CAT_PATHMD:
             case SHADW_RAW_CAT_PATHOFF:
             case SHADW_RAW_CAT_PATHPATH:
+            case SHADW_RAW_CAT_COPYFILE:
             case SHADW_RAW_CAT_CLONEAT:
             case SHADW_RAW_CAT_RENAME:
             case SHADW_RAW_CAT_RENAMEAT:

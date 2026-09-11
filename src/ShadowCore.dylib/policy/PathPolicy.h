@@ -11,6 +11,7 @@
 #import <Foundation/Foundation.h>
 #import <dirent.h>
 #import <stddef.h>
+#import <stdint.h>
 #import <sys/types.h>
 
 typedef enum {
@@ -112,6 +113,20 @@ typedef enum {
     SHDW_POST_DENY_CONTRADICTION,
 } shdw_post_verdict_t;
 shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname);
+
+// Identity-matched twin of shdw_at_post_verify for the buf-returning stat
+// lanes (stat/stat64/fstatat/fstatat64): same single re-open sample
+// (open, F_GETPATH, fstat), but a benign classification admits ONLY when
+// the re-opened object IS the answered one — same (st_dev, st_ino) as the
+// caller already filled in. A live swap between the answer and this sample
+// re-names the entry, so the identities diverge and the lookup denies as
+// contradictory instead of handing back the previous occupant's identity.
+// Same verdict/errno contract as the twin (ENOENT set by the caller, not
+// here). Callers gate on ext; answered_* come from the filled answer
+// buffer, so buf must be non-NULL at these sites.
+shdw_post_verdict_t shdw_at_post_verify_match(int dirfd, const char* pathname,
+    uint64_t answered_dev, uint64_t answered_ino);
+
 // Whether a spelling can resolve through attacker-controlled links (pure
 // string logic, no filesystem): gates verify-after-use substitution, which
 // only pays off where the kernel could resolve elsewhere than the lexical

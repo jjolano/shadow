@@ -749,7 +749,7 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
                 return sub;
             }
             int r = original_stat(pathname, buf);
-            if(r != -1 && shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+            if(r != -1 && shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
                 memset(buf, 0, sizeof(struct stat));
                 errno = ENOENT;
                 return -1;
@@ -802,13 +802,16 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
         errno = ENOENT;
         return -1;
     }
-    // Bounded re-verification: only when substitution did not already
-    // answer from a pinned object (its verdict is final — re-sampling
-    // could only re-open a window the substitution closed). On immutable
-    // spellings, where substitution never runs, this same sample keeps
-    // the success legs at the same resolving-work shape instead.
+    // Fallback re-verification with the identity the caller already holds:
+    // only when substitution did not already answer (its verdict is final —
+    // re-sampling could only re-open a window the substitution closed). The
+    // match denial covers the atomic-swap case the admissibility shape
+    // misses (see PathPolicy): an always-live entry whose occupant moved
+    // between the answer and this sample denies as contradictory instead of
+    // handing back the previous occupant's identity. Settled namespaces
+    // still admit (both samples name the same object).
     if(sub == -2 && result != -1 && !hidden && ext && buf &&
-        shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+        shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
         memset(buf, 0, sizeof(struct stat));
         errno = ENOENT;
         return -1;
@@ -1037,11 +1040,12 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         errno = ENOENT;
         return -1;
     }
-    // Bounded fallback: only when substitution did not already answer.
-    // Re-verified with the same resolving shape as substitution (see
-    // shdw_at_post_verify).
-    if(sub == -2 && result != -1 && !hidden &&
-        shdw_at_post_verify(dirfd, pathname) != SHDW_POST_ADMIT) {
+    // Bounded fallback with the answered identity (see replaced_stat):
+    // re-verified with the same resolving shape as substitution, so an
+    // atomic-swap move between the answer and this sample denies as
+    // contradictory instead of disclosing the previous occupant.
+    if(sub == -2 && result != -1 && !hidden && buf &&
+        shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
@@ -3003,9 +3007,11 @@ static int replaced_copyfile(const char* from, const char* to, copyfile_state_t 
 
     // String args first (cheap, no state deref); then the state endpoints,
     // which may name DIFFERENT paths than the strings (COPYFILE_STATE fds
-    // override when set).
-    if((from && [_shadow isCPathRestricted:from]) ||
-       (to && [_shadow isCPathRestricted:to]) ||
+    // override when set). Both halves of the pair: the external-hidden set
+    // (following — a copy reads the source target and materialises the
+    // dest, so an alias names its target here) and the ruleset.
+    if((from && (shdw_path_is_external_hidden(from) || [_shadow isCPathRestricted:from])) ||
+       (to && (shdw_path_is_external_hidden(to) || [_shadow isCPathRestricted:to])) ||
        shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_SRC_FILENAME, COPYFILE_STATE_SRC_FD) ||
        shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_DST_FILENAME, COPYFILE_STATE_DST_FD)) {
         errno = ENOENT;
@@ -3037,8 +3043,11 @@ static int replaced_clonefile(const char* src, const char* dst, uint32_t flags) 
         return original_clonefile(src, dst, flags);
     }
 
-    if((src && [_shadow isCPathRestricted:src]) ||
-       (dst && [_shadow isCPathRestricted:dst])) {
+    // Both halves (following — a clone materialises the source target, so an
+    // alias names its target here): closes the EXDEV/ENOENT oracle the kernel
+    // reports when a hidden clone reaches it (hidden EXDEV vs absent ENOENT).
+    if((src && (shdw_path_is_external_hidden(src) || [_shadow isCPathRestricted:src])) ||
+       (dst && (shdw_path_is_external_hidden(dst) || [_shadow isCPathRestricted:dst]))) {
         errno = ENOENT;
         return -1;
     }

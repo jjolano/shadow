@@ -342,6 +342,7 @@ typedef enum {
     SHADW_RAW_CAT_FDMODE,        // (fd, mode) mutators: fchmod (EBADF)
     SHADW_RAW_CAT_FDUIDGID,      // (fd, uid, gid) mutators: fchown (EBADF)
     SHADW_RAW_CAT_PATHPATH,      // (path, path, ...) copy: copyfile (both ends)
+    SHADW_RAW_CAT_COPYFILE,      // raw copyfile pair: same endpoints, EINVAL-native lane
     SHADW_RAW_CAT_CLONEAT,       // (dirfd, path, dirfd, path, ...) clone: clonefileat
     SHADW_RAW_CAT_FDPATH,        // (fd, dirfd, path, ...) clone: fclonefileat
     SHADW_RAW_CAT_SYMLINKAT,     // (path, dirfd, path) link: symlinkat (location via dirfd)

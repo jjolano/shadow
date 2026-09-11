@@ -362,13 +362,12 @@ int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
         errno = ENOENT;
         return -1;
     }
-    // Bounded re-verification: only when substitution did not already
-    // answer from a pinned object (its verdict is final — re-sampling
-    // could only re-open a window the substitution closed). On immutable
-    // spellings, where substitution never runs, this same sample keeps
-    // the success legs at the same resolving-work shape instead.
+    // Bounded re-verification with the answered identity (see replaced_stat
+    // in libc.x): only when substitution did not already answer, so an
+    // atomic-swap move between the answer and this sample denies as
+    // contradictory instead of disclosing the previous occupant.
     if(sub == -2 && result != -1 && ext && !hidden && buf &&
-        shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+        shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
         memset(buf, 0, sizeof(shdw_stat64_t));
         errno = ENOENT;
         return -1;
@@ -533,10 +532,11 @@ int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int 
         errno = ENOENT;
         return -1;
     }
-    // Bounded re-verification (fallback plus shape-holder — see
-    // replaced_stat64 above).
-    if(sub == -2 && result != -1 && !hidden &&
-        shdw_at_post_verify(dirfd, pathname) != SHDW_POST_ADMIT) {
+    // Bounded re-verification with the answered identity (see replaced_stat
+    // in libc.x): fallback plus shape-holder — an atomic-swap move between
+    // the answer and this sample denies as contradictory.
+    if(sub == -2 && result != -1 && !hidden && buf &&
+        shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
         if(buf) {
             memset(buf, 0, sizeof(shdw_stat64_t));
         }

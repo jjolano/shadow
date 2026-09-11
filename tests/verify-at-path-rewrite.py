@@ -24,6 +24,7 @@ prefix = r'''
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -99,6 +100,21 @@ static unsigned post_verify_calls;
 static shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char *path) {
     (void)dirfd; (void)path;
     post_verify_calls++;
+    return (shdw_post_verdict_t)post_verify_result;
+}
+// Host double for the identity-matched twin (PathPolicy.m): in-host
+// resolution is stubbed out, so both twins agree here by construction —
+// the double returns the driven verdict without consulting identity.
+// Device runs (swap flipper N=25000) prove the divergence: a live swap
+// between the answer and the sample denies as contradictory there.
+static unsigned post_verify_match_calls;
+static uint64_t post_verify_match_dev;
+static uint64_t post_verify_match_ino;
+static shdw_post_verdict_t shdw_at_post_verify_match(int dirfd, const char *path, uint64_t answered_dev, uint64_t answered_ino) {
+    (void)dirfd; (void)path;
+    post_verify_match_calls++;
+    post_verify_match_dev = answered_dev;
+    post_verify_match_ino = answered_ino;
     return (shdw_post_verdict_t)post_verify_result;
 }
 
@@ -308,15 +324,23 @@ int main(void) {
     post_verify_result = SHDW_POST_DENY_HIDDEN;
     assert(replaced_stat("/allowed", &st) == -1 && errno == ENOENT && sub_calls == 3);
     post_verify_result = SHDW_POST_DENY_CONTRADICTION;
-    assert(replaced_stat("/allowed", &st) == -1 && errno == ENOENT && sub_calls == 4);
+    {
+        // The fallback consults the identity-matched twin with the answered
+        // object's identity: pin the pre-call buffer (the real_stat double
+        // leaves it untouched, so this is what the fallback sampled) and
+        // check the twin saw exactly it. Wiring pin for the
+        // single-resolution contract.
+        struct stat before;
+        memset(&before, 1, sizeof(before));
+        memcpy(&st, &before, sizeof(st));
+        unsigned calls_before = post_verify_match_calls;
+        assert(replaced_stat("/allowed", &st) == -1 && errno == ENOENT && sub_calls == 4);
+        assert(post_verify_match_calls == calls_before + 1);
+        assert(post_verify_match_dev == (uint64_t)before.st_dev && post_verify_match_ino == (uint64_t)before.st_ino);
+    }
     post_verify_result = SHDW_POST_ADMIT;
     memset(&st, 1, sizeof(st));
     assert(replaced_stat("/allowed", &st) == 0 && sub_calls == 5);
-    {
-        struct stat untouched;
-        memset(&untouched, 1, sizeof(untouched));
-        assert(!memcmp(&st, &untouched, sizeof(st)));
-    }
     need_verify = false;
     post_hidden = true;
     assert(replaced_access("/allowed", F_OK) == -1 && errno == ENOENT);
@@ -332,7 +356,18 @@ int main(void) {
     assert(replaced_fstatat(42, fstatat_post, &st, 0) == -1 && errno == ENOENT && sub_calls == 2);
     sub_result = -2;
     post_verify_result = SHDW_POST_DENY_HIDDEN;
-    assert(replaced_fstatat(42, fstatat_post, &st, 0) == -1 && errno == ENOENT && sub_calls == 3);
+    {
+        // Same wiring pin on the *at lane: the twin saw this lookup's
+        // answered identity (the real_fstatat double leaves the buffer
+        // untouched, so the pre-call pattern is what it sampled).
+        struct stat before;
+        memset(&before, 1, sizeof(before));
+        memcpy(&st, &before, sizeof(st));
+        unsigned calls_before = post_verify_match_calls;
+        assert(replaced_fstatat(42, fstatat_post, &st, 0) == -1 && errno == ENOENT && sub_calls == 3);
+        assert(post_verify_match_calls == calls_before + 1);
+        assert(post_verify_match_dev == (uint64_t)before.st_dev && post_verify_match_ino == (uint64_t)before.st_ino);
+    }
     post_verify_result = SHDW_POST_ADMIT;
     assert(replaced_fstatat(42, fstatat_post, &st, 0) == 71 && sub_calls == 4);
     need_verify = false;
@@ -378,8 +413,17 @@ int main(void) {
     memset(&st, 1, sizeof(st));
     assert(replaced_stat("/tmp/probe", &st) == -1 && errno == ENOENT);
     post_verify_result = SHDW_POST_DENY_CONTRADICTION;
-    memset(&st, 1, sizeof(st));
-    assert(replaced_stat("/tmp/probe", &st) == -1 && errno == ENOENT);
+    {
+        // Fast-lane fallback takes the same matched twin (identity from the
+        // answered buffer), not the admissibility-only shape.
+        struct stat before;
+        memset(&before, 1, sizeof(before));
+        memcpy(&st, &before, sizeof(st));
+        unsigned calls_before = post_verify_match_calls;
+        assert(replaced_stat("/tmp/probe", &st) == -1 && errno == ENOENT);
+        assert(post_verify_match_calls == calls_before + 1);
+        assert(post_verify_match_dev == (uint64_t)before.st_dev && post_verify_match_ino == (uint64_t)before.st_ino);
+    }
     post_verify_result = SHDW_POST_ADMIT;
     memset(&st, 1, sizeof(st));
     assert(replaced_stat("/tmp/probe", &st) == 0);

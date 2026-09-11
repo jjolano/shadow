@@ -689,6 +689,45 @@ shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname) {
     errno = saved_errno;
     return verdict;
 }
+
+// Identity-matched twin (see the header contract): same single re-open
+// sample as shdw_at_post_verify, with the mismatch denial the atomic-swap
+// pattern forces. When the admissibility sample and the re-open sample name
+// different objects, the answer is stale by construction — denying as
+// contradictory keeps the answered identity unspeakable, and a settled
+// namespace answers identically (the samples agree), so only the live swap
+// pays the false-negative. Same single-sample cost; benign-but-moved
+// answers deny exactly like hidden ones (the error name carries no occupant
+// information). Never re-resolves the path beyond the one re-open; errno
+// preserved throughout.
+shdw_post_verdict_t shdw_at_post_verify_match(int dirfd, const char* pathname,
+    uint64_t answered_dev, uint64_t answered_ino) {
+    if(!pathname || !pathname[0]) return SHDW_POST_ADMIT;
+    int saved_errno = errno;
+    shdw_post_verdict_t verdict = SHDW_POST_ADMIT;
+    int fd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(fd < 0) {
+        verdict = (errno == ENOENT) ? SHDW_POST_DENY_CONTRADICTION : SHDW_POST_ADMIT;
+    } else {
+        char canon[PATH_MAX];
+        struct stat sb;
+        if(fcntl(fd, F_GETPATH, canon) != -1 && fstat(fd, &sb) == 0) {
+            if(shdw_resolved_spelling_hidden(canon)) {
+                verdict = SHDW_POST_DENY_HIDDEN;
+            } else if((uint64_t)sb.st_dev != answered_dev ||
+                      (uint64_t)sb.st_ino != answered_ino) {
+                // The re-opened object is not the answered one: the entry
+                // moved between the samples (atomic-swap flipper). Admitting
+                // would hand back the previous occupant's identity; denying
+                // as contradictory hands back nothing.
+                verdict = SHDW_POST_DENY_CONTRADICTION;
+            }
+        }
+        close(fd);
+    }
+    errno = saved_errno;
+    return verdict;
+}
 BOOL shdw_at_post_hidden(int dirfd, const char* pathname) {
     if(!pathname || !pathname[0]) return NO;
     if(pathname[0] == '/') return shdw_path_post_hidden(pathname);
