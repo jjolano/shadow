@@ -339,6 +339,14 @@ static long shdw_fwd_GETATTRLIST(int number, va_list args) {
 
     return original_syscall(number, (const char *) a1, (void *) a2, (void *) a3, (size_t) a4, (unsigned long) a5);
 }
+static long shdw_fwd_GETATTRLISTBULK(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+    intptr_t a5 = va_arg(args, intptr_t);
+    return original_syscall(number, (int) a1, (void *) a2, (void *) a3, (size_t) a4, (uint64_t) a5);
+}
 
 static long shdw_fwd_GETXATTR(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
@@ -415,6 +423,16 @@ static long shdw_fwd_LINK(int number, va_list args) {
     intptr_t a2 = va_arg(args, intptr_t);
 
     return original_syscall(number, (const char *) a1, (const char *) a2);
+}
+
+// exchangedata(path1, path2, options): the pair shape with a trailing
+// options word (no existing 3-slot path/path forwarder covers it).
+static long shdw_fwd_EXCHANGEDATA(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (const char *) a2, (unsigned int) a3);
 }
 
 static long shdw_fwd_OPENEXT(int number, va_list args) {
@@ -622,6 +640,10 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
     // Raw statfs64 single-mount policy args.
     const char* sfs_path = NULL;
     struct statfs* sfs_buf = NULL;
+    // Raw getattrlistbulk policy args (hoisted; used after the forward).
+    int gb_fd = -1;
+    void* gb_buf = NULL;
+    size_t gb_size = 0;
 
     // Caller classification is read at the HOOK SITE (replaced_syscall /
     // replaced___syscall) and threaded in: this dispatch is a real, non-inlined
@@ -824,6 +846,12 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
             case SHADW_RAW_CAT_FDUIDGID: {
                 int fd = (int) va_arg(inspect, intptr_t);
 
+                // An fd naming the caller's own bundle answers with the
+                // kernel's shape, mirroring the libc fd accessors: denying
+                // it here would split the raw view from the libc one.
+                if(shdw_fd_path_bundle_exempt(fd)) {
+                    break;
+                }
                 if(shdw_fd_path_restricted(fd)) {
                     errno = EBADF;
                     va_end(inspect);
@@ -890,6 +918,40 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 gd_fd = (int) va_arg(inspect, intptr_t);
                 gd_buf = (char *) va_arg(inspect, intptr_t);
                 break;
+            case SHADW_RAW_CAT_GETATTRLISTBULK: {
+                // Raw getattrlistbulk bypasses the libc bulk-record filter;
+                // the buffer is filtered after success instead. Hoist
+                // fd/buf/size; the dir path is resolved (F_GETPATH) only if
+                // the call succeeds. A restricted dirfd answers the same
+                // empty-listing shape the libc hook serves.
+                int bulkfd = (int) va_arg(inspect, intptr_t);
+                (void) va_arg(inspect, intptr_t);  // attrList (request bitmap)
+                void* bulkbuf = (void *) va_arg(inspect, intptr_t);
+                size_t bulksize = (size_t) va_arg(inspect, intptr_t);
+                uint64_t bulkflags = (uint64_t) va_arg(inspect, intptr_t);
+                if(bulkflags & SHADW_FSOPT_LIST_SNAPSHOTS) {
+                    break;  // snapshot listing: owned by its own hook
+                }
+                if(shdw_fd_path_restricted(bulkfd)) {
+                    // An exempt parent (own bundle) enumerates, mirroring the
+                    // libc hook; the shared post-success filter keeps its
+                    // records for the same reason.
+                    char exPath[PATH_MAX];
+                    BOOL exempt = NO;
+                    if(bulkfd == AT_FDCWD) {
+                        exempt = getcwd(exPath, sizeof(exPath)) && shdw_path_is_main_bundle_exempt(exPath);
+                    } else if(fcntl(bulkfd, F_GETPATH, exPath) != -1) {
+                        exempt = shdw_path_is_main_bundle_exempt(exPath);
+                    }
+                    if(!exempt) {
+                        va_end(inspect);
+                        return 0;
+                    }
+                }
+                gb_fd = bulkfd;
+                gb_buf = bulkbuf;
+                gb_size = bulksize;
+            } break;
 
             case SHADW_RAW_CAT_GETFSSTAT:
                 // Raw getfsstat(64) bypasses the libc getfsstat/getmntinfo
@@ -940,6 +1002,12 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
             case SHADW_RAW_CAT_FDXATTR: {
                 int fd = (int) va_arg(inspect, intptr_t);
 
+                // An fd naming the caller's own bundle answers with the
+                // kernel's shape, mirroring the FDMODE/FDUIDGID lane: denying
+                // it here would split the raw view from the libc one.
+                if(shdw_fd_path_bundle_exempt(fd)) {
+                    break;
+                }
                 // Same fd policy as the libc.x fgetxattr/flistxattr hooks:
                 // resolve fresh, fail open when the path can't be named (the
                 // descriptor is legitimate — tty/pipe/socket).
@@ -1015,6 +1083,18 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
     // After-success policies — same as the typed hooks, only on valid
     // success and only for app-origin callers.
     if(ext) {
+        // Verify-after-use for raw fd-returning lookups (alias TOCTOU):
+        // the handed-out fd, not the request spelling, decides.
+        // Deterministic: the fd pins the object. (Raw stat/access keep
+        // pre-check-only windows — noted as a residual.)
+        if((number == SYS_open || number == SYS_open_nocancel ||
+            number == SYS_open_extended || number == SYS_open_dprotected_np ||
+            number == SYS_openat || number == SYS_openat_nocancel) &&
+           result >= 0 && shdw_fd_names_hidden((int)result)) {
+            close((int)result);
+            errno = ENOENT;
+            return -1;
+        }
         switch(cat) {
             case SHADW_RAW_CAT_CSOPS:
                 if(result == 0 && csops_pid == getpid() && shdw_csops_apply_after_success(csops_ops, csops_useraddr, csops_usersize, NULL)) {
@@ -1058,6 +1138,22 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
 
                     if(fcntl(gd_fd, F_GETPATH, dir) != -1) {
                         result = shdw_dirents_filtered(gd_buf, result, dir);
+                    }
+                }
+            } break;
+            case SHADW_RAW_CAT_GETATTRLISTBULK: {
+                // Raw getattrlistbulk: compact restricted children out of the
+                // returned records with the SAME shared filter the libc hook
+                // uses, so raw and libc agree. An unresolvable dirfd passes
+                // through unfiltered — fail open, the fd may be a tty/pipe.
+                if(result > 0 && gb_buf) {
+                    char dir[PATH_MAX];
+                    if(gb_fd == AT_FDCWD) {
+                        if(getcwd(dir, sizeof(dir))) {
+                            result = shdw_getattrlistbulk_filter(gb_buf, gb_size, (int) result, dir);
+                        }
+                    } else if(fcntl(gb_fd, F_GETPATH, dir) != -1) {
+                        result = shdw_getattrlistbulk_filter(gb_buf, gb_size, (int) result, dir);
                     }
                 }
             } break;

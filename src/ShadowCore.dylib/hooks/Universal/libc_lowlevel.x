@@ -4,19 +4,30 @@
 
 #import <string.h>
 #import <stdlib.h>
-
-// Detector-gated stock sandbox write policy shared by the open family.
+#import <unistd.h>
 
 int (*original_open)(const char *pathname, int oflag, ...);
 int replaced_open(const char *pathname, int oflag, ...) {
-    if (shdw_is_fast_allowed_cpath(pathname)) {
-        if (oflag & O_CREAT) {
-            va_list ap; va_start(ap, oflag); mode_t m = (mode_t)va_arg(ap, int); va_end(ap);
-            return original_open(pathname, oflag, m);
-        }
-        return original_open(pathname, oflag);
-    }
     BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane: verify the handed-out fd (it already
+    // exists — no extra lookup), so a planted link under a writable
+    // prefix hides like its target. (Write policy and ruleset verdicts
+    // are not consulted on this lane, exactly as before.)
+    if(shdw_is_fast_allowed_cpath(pathname)) {
+        int fd;
+        if(oflag & O_CREAT) {
+            va_list ap; va_start(ap, oflag); mode_t m = (mode_t)va_arg(ap, int); va_end(ap);
+            fd = original_open(pathname, oflag, m);
+        } else {
+            fd = original_open(pathname, oflag);
+        }
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
+    }
     SHADOW_TRIP(pathname, "open", ext);
 
     mode_t mode = 0;
@@ -43,7 +54,7 @@ int replaced_open(const char *pathname, int oflag, ...) {
     // from every absolute probe must not be openable by an external caller.
     // The denial traps first (a side-effect-free read-only open, never CREAT)
     // and denies after, so it costs the same trapped lookup as an absent path.
-    if(ext && shdw_path_is_external_hidden(pathname)) {
+    if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
         [_shadow isCPathRestricted:pathname];
         int tfd = original_open(pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if(tfd >= 0) {
@@ -54,11 +65,20 @@ int replaced_open(const char *pathname, int oflag, ...) {
     }
 
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
+        int fd;
         if(oflag & O_CREAT) {
-            return original_open(pathname, oflag, mode);
+            fd = original_open(pathname, oflag, mode);
+        } else {
+            fd = original_open(pathname, oflag);
         }
-
-        return original_open(pathname, oflag);
+        // Verify-after-use (alias TOCTOU): the handed-out fd, not the
+        // request spelling, decides. Deterministic: the fd pins the object.
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
     }
 
     // Natural-ENOENT rewrite: only without O_CREAT (the munged path would
@@ -123,17 +143,23 @@ int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
         return -1;
     }
 
+    int fd;
     if(oflag & O_CREAT) {
-        return original_openat(dirfd, pathname, oflag, mode);
+        fd = original_openat(dirfd, pathname, oflag, mode);
+    } else if([_shadow isCPathRestricted:pathname] && (shdw_is_restricted_root(pathname) || ext)) {
+        // Restricted-root paths: deny unconditionally for external callers
+        errno = ENOENT;
+        return -1;
+    } else {
+        fd = original_openat(dirfd, pathname, oflag);
     }
-
-    // Restricted-root paths: deny unconditionally for external callers
-    if([_shadow isCPathRestricted:pathname] && (shdw_is_restricted_root(pathname) || ext)) {
+    // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+    if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+        close(fd);
         errno = ENOENT;
         return -1;
     }
-
-    return original_openat(dirfd, pathname, oflag);
+    return fd;
 }
 
 int (*original_open_nocancel)(const char *pathname, int oflag, ...);
@@ -150,13 +176,21 @@ int replaced_open_nocancel(const char *pathname, int oflag, ...) {
         if(oflag & O_CREAT) return original_open_nocancel(pathname, oflag, mode);
         return original_open_nocancel(pathname, oflag);
     }
-    if(ext && shdw_path_is_external_hidden(pathname)) {
+    if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
         errno = ENOENT;
         return -1;
     }
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
-        if(oflag & O_CREAT) return original_open_nocancel(pathname, oflag, mode);
-        return original_open_nocancel(pathname, oflag);
+        int fd;
+        if(oflag & O_CREAT) fd = original_open_nocancel(pathname, oflag, mode);
+        else fd = original_open_nocancel(pathname, oflag);
+        // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
     }
     errno = ENOENT;
     return -1;
@@ -177,14 +211,35 @@ int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag, ...) {
         return original_openat_nocancel(dirfd, pathname, oflag);
     }
     if(shdw_at_path_denied(dirfd, pathname)) return -1;
-    if(oflag & O_CREAT) return original_openat_nocancel(dirfd, pathname, oflag, mode);
-    return original_openat_nocancel(dirfd, pathname, oflag);
+    int fd;
+    if(oflag & O_CREAT) fd = original_openat_nocancel(dirfd, pathname, oflag, mode);
+    else fd = original_openat_nocancel(dirfd, pathname, oflag);
+    // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+    if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+        close(fd);
+        errno = ENOENT;
+        return -1;
+    }
+    return fd;
 }
 
 DIR* (*original___opendir2)(const char* pathname, int flags);
 DIR* replaced___opendir2(const char* pathname, int flags) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    BOOL ext = isCallerExternal();
+    // Same own-bundle exemption as the open/stat family: an app whose bundle
+    // lives under a restricted root must be able to list its own resources.
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
         return original___opendir2(pathname, flags);
+    }
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
+        DIR* dp = original___opendir2(pathname, flags);
+        // Verify-after-use (alias TOCTOU): the handed-out DIR decides.
+        if(dp && ext && shdw_fd_names_hidden(dirfd(dp))) {
+            closedir(dp);
+            errno = ENOENT;
+            return NULL;
+        }
+        return dp;
     }
 
     errno = ENOENT;
@@ -201,8 +256,21 @@ DIR* replaced___opendir2(const char* pathname, int flags) {
 // the same replacement, and the guard keeps the redirect idempotent.
 DIR* (*original_opendir)(const char* pathname);
 DIR* replaced_opendir(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    BOOL ext = isCallerExternal();
+    // Same own-bundle exemption as the open/stat family: an app whose bundle
+    // lives under a restricted root must be able to list its own resources.
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
         return original_opendir(pathname);
+    }
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
+        DIR* dp = original_opendir(pathname);
+        // Verify-after-use (alias TOCTOU): the handed-out DIR decides.
+        if(dp && ext && shdw_fd_names_hidden(dirfd(dp))) {
+            closedir(dp);
+            errno = ENOENT;
+            return NULL;
+        }
+        return dp;
     }
 
     errno = ENOENT;
@@ -217,6 +285,41 @@ DIR* replaced_opendir(const char* pathname) {
 // mirror their stat/lstat/fd/*at/open/openat counterparts with the 64-bit
 // struct layouts, and the protection args pass through untouched.
 
+// Forward declaration: the fstat64 hook slot below, used by the verifier.
+int (*original_fstat64)(int fd, shdw_stat64_t* buf);
+
+// 64-bit twin of shdw_stat_substitute (see libc.x): same pin-the-object
+// contract over the legacy 64-bit layout.
+static int shdw_stat64_substitute(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags) {
+    if((flags & AT_SYMLINK_NOFOLLOW) != 0) return -2;
+    int vfd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(vfd < 0 && errno != ENOENT) {
+        // One retry (see libc.x twin): transient race artifacts convert.
+        vfd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    }
+    if(vfd < 0) {
+        // Verifier-ENOENT answers directly (anti-flip; see libc.x twin).
+        if(errno == ENOENT) {
+            memset(buf, 0, sizeof(shdw_stat64_t));
+            return -1;
+        }
+        return -2;
+    }
+    char canon[PATH_MAX];
+    int r = -2;
+    if(fcntl(vfd, F_GETPATH, canon) != -1) {
+        if(shdw_resolved_spelling_hidden(canon)) {
+            memset(buf, 0, sizeof(shdw_stat64_t));
+            errno = ENOENT;
+            r = -1;
+        } else if(original_fstat64(vfd, buf) == 0) {
+            r = 0;
+        }
+        // else: fstat/unresolvable — fall back below.
+    }
+    close(vfd);
+    return r;
+}
 int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
 int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
     BOOL ext = isCallerExternal();
@@ -230,13 +333,22 @@ int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
         return original_stat64(pathname, buf);
     }
 
-    BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = ext && shdw_path_is_external_hidden_lexical(pathname);
 
-    // A hidden denial traps into scratch and denies after, so it costs the
-    // same trapped lookup as a genuinely-absent path.
     shdw_stat64_t trapbuf;
-    int result = original_stat64(pathname, hidden ? &trapbuf : buf);
-
+    int result;
+    int sub = -2;
+    // Fully allowed, buffered lookup of a resolution-unstable spelling:
+    // answer from the pinned object (deterministic); anything else takes
+    // the original path below (see replaced_stat in libc.x for the shape).
+    if(!hidden && ext && buf && shdw_path_needs_verify(pathname)) {
+        sub = shdw_stat64_substitute(AT_FDCWD, pathname, buf, 0);
+    }
+    if(sub != -2) {
+        result = sub;
+    } else {
+        result = original_stat64(pathname, hidden ? &trapbuf : buf);
+    }
     if(hidden) {
         errno = ENOENT;
         return -1;
@@ -250,7 +362,22 @@ int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
         errno = ENOENT;
         return -1;
     }
+    // Bounded re-verification: only when substitution did not already
+    // answer from a pinned object (its verdict is final — re-sampling
+    // could only re-open a window the substitution closed). On immutable
+    // spellings, where substitution never runs, this same sample keeps
+    // the success legs at the same resolving-work shape instead.
+    if(sub == -2 && result != -1 && ext && !hidden && buf &&
+        shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+        memset(buf, 0, sizeof(shdw_stat64_t));
+        errno = ENOENT;
+        return -1;
+    }
 
+    // Gap 2: a stock system directory bind-shadowed by a jailbreak fakelib
+    // gets its own filesystem id; equalise it with the covering rootfs so a
+    // parent/child st_dev split can't reveal the bind. Only for the covered
+    // system prefixes, only when the id actually diverges from rootfs.
     if(result != -1 && ext && buf && shdw_path_under_system_bind_root(pathname)) {
         dev_t rootdev = shdw_rootfs_dev();
         if(rootdev != 0 && (dev_t)buf->st_dev != rootdev) {
@@ -275,7 +402,7 @@ int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
         return original_lstat64(pathname, buf);
     }
 
-    BOOL hidden = shdw_path_is_external_hidden(pathname);
+    BOOL hidden = shdw_path_is_external_hidden_lexical(pathname);
 
     // NULL caller buffer keeps stock semantics (EFAULT from the kernel);
     // replay before classification. A hidden path still answers ENOENT: it
@@ -313,6 +440,11 @@ int replaced_lstat64(const char* pathname, shdw_stat64_t* buf) {
             errno = ENOENT;
             return -1;
         }
+        // Verify-after-use (alias TOCTOU): bounded post re-check.
+        if(!hidden && shdw_path_post_hidden(pathname)) {
+            errno = ENOENT;
+            return -1;
+        }
 
         // Only copy on success: on failure _buf is uninitialized stack.
         memcpy(buf, &_buf, sizeof(shdw_stat64_t));
@@ -332,6 +464,11 @@ int replaced_fstat64(int fd, shdw_stat64_t* buf) {
         return original_fstat64(fd, buf);
     }
 
+    // Same own-bundle exemption as the path sibling (see replaced_stat64).
+    if(shdw_fd_path_bundle_exempt(fd)) {
+        return original_fstat64(fd, buf);
+    }
+
     if(shdw_fd_path_restricted(fd)) {
         errno = EBADF;
         return -1;
@@ -339,6 +476,7 @@ int replaced_fstat64(int fd, shdw_stat64_t* buf) {
 
     return original_fstat64(fd, buf);
 }
+
 
 int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
 int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags) {
@@ -355,7 +493,20 @@ int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int 
         return original_fstatat64(dirfd, pathname, buf, flags);
     }
 
-    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden_lexical(pathname);
+
+    // Relative operands joining onto the caller's own bundle pass through,
+    // mirroring the absolute exemption above (same shape as replaced_openat).
+    if(!hidden && !shdw_path_is_absolute(pathname) && pathname && pathname[0] != '\0') {
+        char parent[PATH_MAX];
+        if(shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+            char joined[PATH_MAX * 2];
+            int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+            if(n > 0 && n < (int)sizeof(joined) && shdw_path_is_main_bundle_exempt(joined)) {
+                return original_fstatat64(dirfd, pathname, buf, flags);
+            }
+        }
+    }
 
     if(!hidden && shdw_at_path_denied(dirfd, pathname)) {
         return -1;
@@ -364,8 +515,34 @@ int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int 
     // A hidden denial traps into scratch and denies after, so it costs the
     // same trapped lookup as a genuinely-absent path.
     shdw_stat64_t trapbuf;
-    int result = original_fstatat64(dirfd, pathname, hidden ? &trapbuf : buf, flags);
+    int result;
+    int sub = -2;
+    // Fully allowed, follow-mode, buffered lookup of a resolution-unstable
+    // spelling: answer from the pinned object (deterministic — dirfd-pinned
+    // parent and fd-pinned object); anything else takes the original path.
+    if(!hidden && buf && (flags & AT_SYMLINK_NOFOLLOW) == 0 && shdw_path_needs_verify(pathname)) {
+        sub = shdw_stat64_substitute(dirfd, pathname, buf, flags);
+    }
+    if(sub != -2) {
+        result = sub;
+    } else {
+        result = original_fstatat64(dirfd, pathname, hidden ? &trapbuf : buf, flags);
+    }
 
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Bounded re-verification (fallback plus shape-holder — see
+    // replaced_stat64 above).
+    if(sub == -2 && result != -1 && !hidden &&
+        shdw_at_post_verify(dirfd, pathname) != SHDW_POST_ADMIT) {
+        if(buf) {
+            memset(buf, 0, sizeof(shdw_stat64_t));
+        }
+        errno = ENOENT;
+        return -1;
+    }
     if(hidden) {
         errno = ENOENT;
         return -1;
@@ -410,17 +587,25 @@ int replaced_open_dprotected_np(const char* path, int flags, int class, int dpfl
         return original_open_dprotected_np(path, flags, class, dpflags);
     }
 
-    if(ext && shdw_path_is_external_hidden(path)) {
+    if(ext && shdw_path_is_external_hidden_lexical(path)) {
         errno = ENOENT;
         return -1;
     }
 
     if(!ext || ![_shadow isCPathRestricted:path]) {
+        int fd;
         if(flags & O_CREAT) {
-            return original_open_dprotected_np(path, flags, class, dpflags, mode);
+            fd = original_open_dprotected_np(path, flags, class, dpflags, mode);
+        } else {
+            fd = original_open_dprotected_np(path, flags, class, dpflags);
         }
-
-        return original_open_dprotected_np(path, flags, class, dpflags);
+        // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
     }
 
     errno = ENOENT;
@@ -480,8 +665,15 @@ int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int cl
         return -1;
     }
 
+    int dpdfd = -1;
     if(flags & O_CREAT) {
-        return original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
+        dpdfd = original_openat_dprotected_np(dirfd, path, flags, class, dpflags, mode);
+        if(dpdfd >= 0 && ext && shdw_fd_names_hidden(dpdfd)) {
+            close(dpdfd);
+            errno = ENOENT;
+            return -1;
+        }
+        return dpdfd;
     }
 
     // Restricted-root paths: deny unconditionally for external callers
@@ -490,7 +682,14 @@ int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int cl
         return -1;
     }
 
-    return original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
+    int dpdfd2 = original_openat_dprotected_np(dirfd, path, flags, class, dpflags);
+    // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+    if(dpdfd2 >= 0 && ext && shdw_fd_names_hidden(dpdfd2)) {
+        close(dpdfd2);
+        errno = ENOENT;
+        return -1;
+    }
+    return dpdfd2;
 }
 
 int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
@@ -546,8 +745,15 @@ int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open
         return -1;
     }
 
+    int aufd = -1;
     if(flags & O_CREAT) {
-        return original_openat_authenticated_np(dirfd, path, auth, flags, mode);
+        aufd = original_openat_authenticated_np(dirfd, path, auth, flags, mode);
+        if(aufd >= 0 && ext && shdw_fd_names_hidden(aufd)) {
+            close(aufd);
+            errno = ENOENT;
+            return -1;
+        }
+        return aufd;
     }
 
     // Restricted-root paths: deny unconditionally for external callers
@@ -556,7 +762,14 @@ int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open
         return -1;
     }
 
-    return original_openat_authenticated_np(dirfd, path, auth, flags);
+    int aufd2 = original_openat_authenticated_np(dirfd, path, auth, flags);
+    // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+    if(aufd2 >= 0 && ext && shdw_fd_names_hidden(aufd2)) {
+        close(aufd2);
+        errno = ENOENT;
+        return -1;
+    }
+    return aufd2;
 }
 
 void shdw_universal_low_level_c(SHDWHookSession* hooks) {

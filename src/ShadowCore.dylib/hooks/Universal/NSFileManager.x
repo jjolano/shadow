@@ -1,4 +1,6 @@
 #import "UniversalHooks.h"
+#import "../../policy/PathPolicy.h"
+#import <fcntl.h>
 
 static char* _NSDirectoryEnumerator_shdw_key = "shdw";
 static char* _NSDirectoryEnumerator_shdw_state_key = "shdw_state";
@@ -41,6 +43,48 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
 
     return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite,
              kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
+}
+
+// Enumeration results consult the same hidden set the point lookups hide:
+// a listed entry the access()/stat() hooks report absent must not survive
+// a listing. The ruleset filters below cannot see these objects by design,
+// so the union lives here, next to each enumeration filter.
+static BOOL shdw_enumerated_entry_hidden(NSString* base, NSString* name) {
+    if(!name || name.length == 0) {
+        return NO;
+    }
+    if(SHDWAdapterPathIsHidden(name)) {
+        return YES;
+    }
+    NSString* full = name;
+    if(![name isAbsolutePath] && base.length) {
+        full = [base stringByAppendingPathComponent:name];
+    }
+    const char* c = [full UTF8String];
+    if(c && shdw_path_is_external_hidden(c)) {
+        return YES;
+    }
+    // Leaf check against the containing directory: a bind mount's backing
+    // store can rename the parent out from under the join.
+    const char* pc = [[full stringByDeletingLastPathComponent] UTF8String];
+    const char* lc = [[full lastPathComponent] UTF8String];
+    if(pc && lc && shdw_dir_leaf_external_hidden(pc, lc)) {
+        return YES;
+    }
+    return NO;
+}
+static BOOL shdw_enumerated_url_hidden(NSURL* url) {
+    if(!url || ![url isFileURL]) {
+        return NO;
+    }
+    if([url isFileReferenceURL]) {
+        NSURL* resolved = [url filePathURL];
+        if(!resolved) {
+            return YES;
+        }
+        return shdw_enumerated_entry_hidden(nil, [resolved path]);
+    }
+    return shdw_enumerated_entry_hidden(nil, [url path]);
 }
 
 // Subtree preflight: a directory that contains a restricted descendant is
@@ -126,6 +170,16 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:@{kShadowRestrictionWorkingDir : base}];
+        // The ruleset filter cannot see loader-visible objects by design.
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            if([obj isKindOfClass:[NSURL class]]) {
+                return !shdw_enumerated_url_hidden(obj);
+            }
+            if([obj isKindOfClass:[NSString class]]) {
+                return !shdw_enumerated_entry_hidden(base, obj);
+            }
+            return YES;
+        }]];
     }
 
     return result;
@@ -167,6 +221,9 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
         }
 
         if([_shadow isPathRestricted:path options:childOptions]) {
+            result = %orig;
+        } else if(([result isKindOfClass:[NSURL class]] && shdw_enumerated_url_hidden(result))
+                  || ([result isKindOfClass:[NSString class]] && shdw_enumerated_entry_hidden(base, path))) {
             result = %orig;
         } else {
             break;
@@ -236,6 +293,10 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
             if(path && [_shadow isPathRestricted:path options:childOptions]) {
                 continue;
             }
+            if(([obj isKindOfClass:[NSURL class]] && shdw_enumerated_url_hidden(obj))
+               || ([obj isKindOfClass:[NSString class]] && path && shdw_enumerated_entry_hidden(base, path))) {
+                continue;
+            }
 
             stackbuf[kept++] = obj;
         }
@@ -251,18 +312,52 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
 
 %hook NSFileManager
 - (BOOL)fileExistsAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
-    if (shdw_is_fast_allowed_nspath(path)) return %orig;
-    if(isCallerExternal() && (SHDWAdapterPathIsHidden(path) ||
+    BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane (see replaced_access in libc.x): pin the
+    // object so a planted link hides like its target, plus the bounded
+    // post on TRUE results. Ruleset verdicts are not consulted on this
+    // lane, exactly as before.
+    if(shdw_is_fast_allowed_nspath(path) && ext) {
+        const char* cpath = [path fileSystemRepresentation];
+        if(cpath && shdw_path_needs_verify(cpath) && shdw_verify_open_hidden(AT_FDCWD, cpath) == -1) {
+            return NO;
+        }
+        BOOL r = %orig;
+        // Fallback verdict for the TRUE shape (see shdw_at_post_verify
+        // in policy/PathPolicy.m).
+        if(r && cpath && shdw_at_post_verify(AT_FDCWD, cpath) != SHDW_POST_ADMIT) {
+            return NO;
+        }
+        return r;
+    }
+    if(ext && (SHDWAdapterPathIsHidden(path) ||
        [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         return NO;
     }
 
     return %orig;
 }
-
 - (BOOL)fileExistsAtPath:(NSString *)path isDirectory:(BOOL *)isDirectory __attribute__((annotate("hookkit:allow_inherited"))) {
-    if (shdw_is_fast_allowed_nspath(path)) return %orig;
-    if(isCallerExternal() && (SHDWAdapterPathIsHidden(path) ||
+    BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane (see the sibling above).
+    if(shdw_is_fast_allowed_nspath(path) && ext) {
+        const char* cpath = [path fileSystemRepresentation];
+        if(cpath && shdw_path_needs_verify(cpath) && shdw_verify_open_hidden(AT_FDCWD, cpath) == -1) {
+            if(isDirectory) {
+                *isDirectory = NO;
+            }
+            return NO;
+        }
+        BOOL r = %orig;
+        if(r && cpath && shdw_at_post_verify(AT_FDCWD, cpath) != SHDW_POST_ADMIT) {
+            if(isDirectory) {
+                *isDirectory = NO;
+            }
+            return NO;
+        }
+        return r;
+    }
+    if(ext && (SHDWAdapterPathIsHidden(path) ||
        [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
         // Out-param leak: the directory bit must not survive the hiding.
         if(isDirectory) {
@@ -345,6 +440,10 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
     
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:nil];
+        // The ruleset filter cannot see loader-visible objects by design.
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            return ![obj isKindOfClass:[NSURL class]] || !shdw_enumerated_url_hidden(obj);
+        }]];
     }
 
     return result;
@@ -367,6 +466,11 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
     
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:@{kShadowRestrictionWorkingDir : path}];
+        // The ruleset filter cannot see loader-visible objects by design.
+        NSString* base = path;
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            return ![obj isKindOfClass:[NSString class]] || !shdw_enumerated_entry_hidden(base, obj);
+        }]];
     }
 
     return result;
@@ -381,7 +485,7 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
     BOOL (^filteredHandler)(NSURL *, NSError *) = ^BOOL(NSURL *childURL, NSError *childError) {
         // Suppress errors for restricted entries: the app handler must not
         // learn about (or be able to react to) hidden subtrees.
-        if([_shadow isURLRestricted:childURL options:nil]) {
+        if(shdw_enumerated_url_hidden(childURL) || [_shadow isURLRestricted:childURL options:nil]) {
             return NO;  // continue enumeration, do not call the app handler
         }
 
@@ -439,6 +543,11 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
     
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:@{kShadowRestrictionWorkingDir : path}];
+        // The ruleset filter cannot see loader-visible objects by design.
+        NSString* base = path;
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            return ![obj isKindOfClass:[NSString class]] || !shdw_enumerated_entry_hidden(base, obj);
+        }]];
     }
 
     return result;
@@ -454,9 +563,13 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
     }
     
     NSArray* result = %orig;
-    
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:@{kShadowRestrictionWorkingDir : path}];
+        // The ruleset filter cannot see loader-visible objects by design.
+        NSString* base = path;
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            return ![obj isKindOfClass:[NSString class]] || !shdw_enumerated_entry_hidden(base, obj);
+        }]];
     }
 
     return result;

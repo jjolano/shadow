@@ -2,6 +2,7 @@
 
 #import "UniversalHooks.h"
 #import "../../policy/EnvironmentPolicy.h"
+#import "../../policy/PathPolicy.h"
 
 #import <unistd.h>
 #import <wordexp.h>
@@ -392,8 +393,9 @@ static int replaced_fcntl(int fd, int cmd, ...) {
 
             // Do not disclose a hidden descriptor through either path
             // spelling. Internal F_GETPATH calls in PathPolicy bypass this
-            // branch through isCallerExternal().
-            if(result == 0 && [_shadow isCPathRestricted:(const char *) arg]) {
+            // branch through isCallerExternal(). Own-bundle paths are
+            // exempt, mirroring the open/stat siblings.
+            if(result == 0 && !shdw_path_is_main_bundle_exempt((const char *) arg) && [_shadow isCPathRestricted:(const char *) arg]) {
                 errno = ENOENT;
                 return -1;
             }
@@ -606,7 +608,13 @@ static int replaced_posix_spawn(pid_t* pid, const char* path, const posix_spawn_
         if(pid) *pid = -1;
         // posix_spawn(2) reports failure as a POSITIVE errno-number return
         // value and does not set errno. Stock app sandboxes deny process
-        // creation before execution (see shdw_spawn_deny_errno).
+        // creation before execution (see shdw_spawn_deny_errno). A
+        // bundle-exempt path names an existing binary the lookups report
+        // present, so it answers the stock creation-denied EPERM — never
+        // the absent-lane ENOENT.
+        if(shdw_path_is_main_bundle_exempt(path)) {
+            return EPERM;
+        }
         return shdw_spawn_deny_errno(path);
     }
 
@@ -617,6 +625,9 @@ static int (*original_posix_spawnp)(pid_t* pid, const char* file, const posix_sp
 static int replaced_posix_spawnp(pid_t* pid, const char* file, const posix_spawn_file_actions_t* file_actions, const posix_spawnattr_t* attrp, char* const argv[], char* const envp[]) {
     if(isCallerExternal()) {
         if(pid) *pid = -1;
+        if(shdw_path_is_main_bundle_exempt(file)) {
+            return EPERM;
+        }
         return shdw_spawn_deny_errno(file);
     }
 
@@ -889,8 +900,12 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     [hooks hookFunction:execve withReplacement:replaced_execve outOldPtr:(void **) &original_execve];
     [hooks hookFunction:execvp withReplacement:replaced_execvp outOldPtr:(void **) &original_execvp];
     [hooks hookFunction:execv withReplacement:replaced_execv outOldPtr:NULL];
-    [hooks hookFunction:posix_spawn withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn];
-    [hooks hookFunction:posix_spawnp withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp];
+    if(![hooks hookFunction:posix_spawn withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn]) {
+        [hooks hookRebindSymbol:@"posix_spawn" withReplacement:replaced_posix_spawn outOldPtr:(void **) &original_posix_spawn];
+    }
+    if(![hooks hookFunction:posix_spawnp withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp]) {
+        [hooks hookRebindSymbol:@"posix_spawnp" withReplacement:replaced_posix_spawnp outOldPtr:(void **) &original_posix_spawnp];
+    }
     resolved_fork = fork;
     if(![hooks hookFunction:fork withReplacement:replaced_fork outOldPtr:(void **) &original_fork]) {
         [hooks hookRebindSymbol:@"fork" withReplacement:replaced_fork outOldPtr:(void **) &original_fork];

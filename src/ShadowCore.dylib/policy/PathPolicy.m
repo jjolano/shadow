@@ -8,10 +8,12 @@
 #import "../hooks/hooks.h"
 #import <Shadow/JBPath.h>
 
+#import <fcntl.h>
 #import <string.h>
 #import <sys/stat.h>
 #import <limits.h>
 #import <stdatomic.h>
+#import <unistd.h>
 
 static _Atomic BOOL shdw_detector_write_policy_active = NO;
 
@@ -135,8 +137,94 @@ static BOOL shdw_path_is_jb_app_container(const char* pathname) {
     return NO;
 }
 
-BOOL shdw_path_is_external_hidden(const char* pathname) {
-    if(!pathname) return NO;
+// Cheap lexical standardization for the hot C predicates below (single
+// linear-scan fast path; bounded component walk otherwise — no allocation,
+// no filesystem, no symlink resolution). Collapses duplicate slashes,
+// drops "/./" (and a trailing "/."), and pops "/../" lexically clamped at
+// root. A single trailing slash is preserved so a directory spelling never
+// compares equal to a file. Returns the input unchanged when already
+// canonical, the input unchanged when absurdly long, and thread-local
+// scratch otherwise — compare immediately, never retain. "/../" across a
+// symlinked component can diverge from the kernel; the predicates below
+// close that with a kernel-resolved second opinion (shdw_path_physical_
+// spelling) on the residual ".." spellings.
+static _Thread_local char shdw_lex_scratch[PATH_MAX];
+
+const char* shdw_standardize_lexical(const char* path) {
+    if(!path || path[0] != '/') return path;
+    BOOL clean = YES;
+    for(const char* p = path; *p; p++) {
+        // "//" anywhere, or "/." only when it opens "/./", "/../" or a
+        // trailing "/." — dotfile names ("/.hidden") need no work.
+        if(p[0] == '/' && (p[1] == '/' || (p[1] == '.' && (p[2] == '/' || p[2] == '.' || p[2] == '\0')))) { clean = NO; break; }
+    }
+    if(clean) return path;
+    size_t len = strlen(path);
+    if(len >= sizeof(shdw_lex_scratch)) return path;
+    size_t starts[PATH_MAX / 2 + 1];
+    size_t depth = 0;
+    size_t w = 0;
+    shdw_lex_scratch[w++] = '/';
+    size_t i = 1;
+    BOOL trailing_slash = NO;
+    while(i <= len) {
+        size_t j = i;
+        while(j < len && path[j] != '/') j++;
+        size_t clen = j - i;
+        BOOL last = (j >= len);
+        if(clen == 0) {
+            if(last) trailing_slash = YES;
+        } else if(clen == 1 && path[i] == '.') {
+            // Interior "/./" skipped; trailing "/." dropped (the kernel
+            // answers ENOENT for "absent/.", matching the absent lane).
+        } else if(clen == 2 && path[i] == '.' && path[i + 1] == '.') {
+            if(depth > 0) w = starts[--depth];
+            // else clamp at root: drop
+        } else {
+            if(depth >= sizeof(starts) / sizeof(starts[0])) return path;
+            starts[depth++] = w;
+            if(w + clen + 2 > sizeof(shdw_lex_scratch)) return path;
+            memcpy(shdw_lex_scratch + w, path + i, clen);
+            w += clen;
+            shdw_lex_scratch[w++] = '/';
+        }
+        i = j + 1;
+    }
+    if(!trailing_slash && w > 1) w--;
+    shdw_lex_scratch[w] = '\0';
+    return shdw_lex_scratch;
+}
+// Kernel-resolved second opinion for ".." spellings, defined after the
+// predicates that consult it so the pinned standardizer extraction above
+// stays self-contained.
+static const char* shdw_path_physical_spelling(const char* path);
+// Immutable system prefixes for alias resolution below: no sandboxed caller
+// can plant a symlink under them, so a spelling rooted here cannot alias
+// anywhere else through an attacker-controlled link. Deliberately tight —
+// anything not listed resolves (fail closed, costs an open, stays correct).
+static BOOL shdw_path_under_immutable_prefix(const char* path);
+// Full kernel-spelling resolution (parent AND final-component links) for
+// alias coverage, defined after the predicates that consult it so the
+// pinned standardizer extraction above stays self-contained.
+static const char* shdw_path_kernel_spelling(const char* path);
+// Union check for a kernel-resolved spelling (mount-point OR backing-store
+// naming), defined after the leaf check it consults so the pinned
+// standardizer extraction above stays self-contained.
+BOOL shdw_resolved_spelling_hidden(const char* canon);
+// Lexical-only half of the hidden predicate (no filesystem): the exact
+// list plus the container predicate over the standardized spelling.
+// Relative spellings never match (callers join first). Exported for
+// pre-call verdicts whose resolving post already covers aliases.
+BOOL shdw_path_is_external_hidden_lexical(const char* path) {
+    if(!path || path[0] != '/') return NO;
+    // Compare the standardized spelling: detectors routinely probe
+    // "//", "/./" and "/../" variants of the same object.
+    const char* std = shdw_standardize_lexical(path);
+    // Classification names the object, and a trailing slash never changes
+    // which object that is: match the exact list with one trailing slash
+    // ignored so a directory spelling of a hidden file hides like the file.
+    size_t n = strlen(std);
+    if(n > 1 && std[n - 1] == '/') n--;
     static const char* const paths[] = {
         "/usr/lib/systemhook.dylib",
         "/usr/lib/sandbox.plist",
@@ -144,9 +232,59 @@ BOOL shdw_path_is_external_hidden(const char* pathname) {
         NULL,
     };
     for(int i = 0; paths[i]; i++) {
-        if(strcmp(pathname, paths[i]) == 0) return YES;
+        if(strlen(paths[i]) == n && strncmp(std, paths[i], n) == 0) return YES;
     }
-    return shdw_path_is_jb_app_container(pathname);
+    return shdw_path_is_jb_app_container(std);
+}
+BOOL shdw_path_is_external_hidden(const char* pathname) {
+    if(!pathname) return NO;
+    // Bare relative lookup: the kernel resolves against the physical cwd
+    // vnode, so classify the joined spelling, not the bare leaf (which no
+    // exact list can carry). open(".")+F_GETPATH names the vnode without
+    // getcwd's fallback scan; an unresolvable cwd falls through to the
+    // lexical verdict below (always miss for relative spellings — the
+    // kernel fails those lookups the same way). Absolute spellings skip
+    // this entirely, so dirfd-joined callers pay nothing extra.
+    if(pathname[0] != '/') {
+        int saved_errno = errno;
+        int fd = open(".", O_RDONLY | O_CLOEXEC);
+        if(fd >= 0) {
+            char cwd[PATH_MAX];
+            BOOL ok = fcntl(fd, F_GETPATH, cwd) != -1;
+            close(fd);
+            errno = saved_errno;
+            if(ok) {
+                char joined[PATH_MAX * 2];
+                int n = snprintf(joined, sizeof(joined), "%s/%s", cwd, pathname);
+                if(n > 0 && n < (int)sizeof(joined)) {
+                    return shdw_path_is_external_hidden(joined);
+                }
+            }
+        } else {
+            errno = saved_errno;
+        }
+    }
+    // The lexical half below (no filesystem) is also consulted directly by
+    // pre-call verdicts whose resolving post (substitution/fd-verify)
+    // already covers the alias window — paying a second resolving open in
+    // pre would double the gate's timing cost for zero added coverage.
+    const char* raw = pathname;
+    if(shdw_path_is_external_hidden_lexical(pathname)) return YES;
+    // A ".." the lexical pass popped on the spelling may pop on a symlink
+    // target in the kernel: re-check the spelling the kernel answers for.
+    // The physical form is canonical, so this recurses at most once.
+    const char* physical = shdw_path_physical_spelling(raw);
+    BOOL physicalHit = physical && shdw_path_is_external_hidden(physical);
+    if(physicalHit) return YES;
+    // A bare alias (no ".." anywhere): the link target is only visible to
+    // the kernel, so resolve the full spelling and re-check that. Covers
+    // parent-directory aliases and final-component links in one traversal;
+    // confined to attacker-reachable prefixes (see the gate), so system
+    // hot paths pay one prefix scan. Canonical output recurses at most once.
+    const char* kernel = shdw_path_kernel_spelling(raw);
+    BOOL kernelHit = kernel && shdw_resolved_spelling_hidden(kernel);
+    if(kernelHit) return YES;
+    return NO;
 }
 
 BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name) {
@@ -162,6 +300,9 @@ BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name) {
     }
     if(!leafHidden) return NO;
     if(!parent || !parent[0]) return NO;
+    // Standardize the parent: user-controlled directory spellings ("//",
+    // "/./") must classify like the kernel-resolved form.
+    parent = shdw_standardize_lexical(parent);
     // The listed directory is a system location a jailbreak binds over, named
     // either by its mount point (/usr/lib, …) or by the backing store the mount
     // comes from (…/.fakelib or …/procursus/basebin). Either way the leaf is
@@ -171,9 +312,30 @@ BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name) {
     if(strstr(parent, "/procursus/basebin") != NULL) return YES;
     return NO;
 }
+// Union check for a kernel-resolved spelling: F_GETPATH can name a bind
+// mount's BACKING store (.../procursus/basebin/...) instead of its mount
+// point (/usr/lib/...) for the same object, depending on how the lookup
+// traversed into the mount (measured on device). The enumeration hooks
+// already classify that union through the leaf check — apply it to the
+// resolved spelling too, so either naming hides.
+BOOL shdw_resolved_spelling_hidden(const char* canon) {
+    if(!canon || canon[0] == '\0') return NO;
+    if(shdw_path_is_external_hidden(canon)) return YES;
+    const char* slash = strrchr(canon, '/');
+    if(!slash || slash == canon || slash[1] == '\0') return NO;
+    char parent[PATH_MAX];
+    size_t pn = (size_t)(slash - canon);
+    if(pn >= sizeof(parent)) return NO;
+    memcpy(parent, canon, pn);
+    parent[pn] = '\0';
+    return shdw_dir_leaf_external_hidden(parent, slash + 1);
+}
 
 BOOL shdw_path_under_system_bind_root(const char* pathname) {
     if(!pathname) return NO;
+    // Standardize first: every caller benefits, and kernel-equivalent
+    // spellings must classify identically.
+    pathname = shdw_standardize_lexical(pathname);
     static const char* const roots[] = { "/usr/lib", "/usr/libexec", "/System", NULL };
     for(int i = 0; roots[i]; i++) {
         size_t n = strlen(roots[i]);
@@ -183,9 +345,39 @@ BOOL shdw_path_under_system_bind_root(const char* pathname) {
     }
     return NO;
 }
+// Verifier pin for non-stat lanes (access, fileExists): pin the object
+// with O_RDONLY|O_NONBLOCK and classify it, without filling data. Returns
+// -1 (pinned-hidden or verifier-ENOENT, ENOENT set), 0 (pinned-and-benign
+// — caller still runs the original for the authoritative answer plus the
+// bounded post), or -2 (verifier unavailable — caller falls back). No
+// CREAT/TRUNC flag exists on this path, so the lookup cannot mutate.
+// Callers gate on fully-allowed lookups; errno is preserved on the -2 path.
+int shdw_verify_open_hidden(int dirfd, const char* pathname) {
+    int vfd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(vfd < 0) {
+        if(errno == ENOENT) {
+            return -1;
+        }
+        return -2;
+    }
+    char canon[PATH_MAX];
+    int r = -2;
+    if(fcntl(vfd, F_GETPATH, canon) != -1) {
+        r = shdw_resolved_spelling_hidden(canon) ? -1 : 0;
+        if(r == -1) errno = ENOENT;
+    }
+    close(vfd);
+    return r;
+}
 
 BOOL shdw_path_is_main_bundle_exempt(const char* pathname) {
     if(!pathname || pathname[0] != '/') return NO;
+    // The ".." gate below must see the raw spelling (standardization pops
+    // ".." lexically, which is exactly what can diverge across a symlink).
+    const char* raw = pathname;
+    // Compare the standardized spelling so "//" and "/./" variants of an
+    // exempt location resolve exactly like the canonical form.
+    pathname = shdw_standardize_lexical(pathname);
     static NSString* cachedBundle = nil;
     static NSString* cachedExe = nil;
     static dispatch_once_t once = 0;
@@ -210,8 +402,238 @@ BOOL shdw_path_is_main_bundle_exempt(const char* pathname) {
         if(cachedExe && [p isEqualToString:cachedExe]) return YES;
         if(cachedBundle && ([p isEqualToString:cachedBundle] ||
            [p hasPrefix:[cachedBundle stringByAppendingString:@"/"]])) return YES;
+        // A ".." the lexical pass popped on the spelling may pop on a
+        // symlink target in the kernel: an exempt location spelled through
+        // one still exempts. The physical form is canonical, so this
+        // recurses at most once.
+        const char* physical = shdw_path_physical_spelling(raw);
+        if(physical && shdw_path_is_main_bundle_exempt(physical)) return YES;
         return NO;
     }
+}
+// Physical second opinion for ".." spellings: the lexical pass above pops
+// ".." on the spelling, but the kernel pops it on the target when the left
+// sibling names a symlink, so the two can resolve to different objects.
+// When the spelling contains ".." and the lexical verdict missed, the
+// parent directory is resolved through the kernel (open + F_GETPATH) and
+// the leaf re-attached, yielding the spelling the kernel actually answers
+// for. Parent-only, never the leaf: resolving the leaf itself would follow
+// a trailing symlink and change what the caller asked about. Returns NULL
+// when there is no "..", when the parent cannot be opened, or when the
+// physical spelling equals the input (the lexical verdict then stands).
+// Thread-local scratch, compare immediately, never retain. Only reached on
+// a lexical miss, so the steady state pays one substring scan, not one open.
+// O_PATH does not exist on Darwin, so the parent directory fd carries the
+// resolution instead. Caller errno is preserved throughout.
+static _Thread_local char shdw_physical_scratch[PATH_MAX];
+
+static const char* shdw_path_physical_spelling(const char* path) {
+    if(!path || path[0] != '/' || strstr(path, "..") == NULL) {
+        return NULL;
+    }
+    size_t len = strlen(path);
+    if(len >= sizeof(shdw_physical_scratch)) {
+        return NULL;
+    }
+    // Split off the leaf without resolving it; a trailing slash belongs to
+    // the parent (a directory spelling).
+    size_t end = len;
+    while(end > 1 && path[end - 1] == '/') end--;
+    size_t slash = end;
+    while(slash > 0 && path[slash - 1] != '/') slash--;
+    if(slash == 0 || end - slash < 1) {
+        return NULL;
+    }
+    // A dot or dot-dot leaf is already decided lexically; re-resolving it
+    // can only echo the input back.
+    if((end - slash == 1 && path[slash] == '.') ||
+       (end - slash == 2 && path[slash] == '.' && path[slash + 1] == '.')) {
+        return NULL;
+    }
+    int saved_errno = errno;
+    const char* physical = NULL;
+    // The parent may itself end in a slash after the split; open(2)
+    // tolerates that on directories.
+    char parent[PATH_MAX];
+    if(slash < sizeof(parent)) {
+        memcpy(parent, path, slash);
+        parent[slash] = '\0';
+        int fd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if(fd >= 0) {
+            char resolved[PATH_MAX];
+            if(fcntl(fd, F_GETPATH, resolved) != -1) {
+                size_t rn = strlen(resolved);
+                size_t leafn = end - slash;
+                if(rn + 1 + leafn < sizeof(shdw_physical_scratch)) {
+                    memcpy(shdw_physical_scratch, resolved, rn);
+                    shdw_physical_scratch[rn] = '/';
+                    memcpy(shdw_physical_scratch + rn + 1, path + slash, leafn);
+                    shdw_physical_scratch[rn + 1 + leafn] = '\0';
+                    if(strcmp(shdw_physical_scratch, path) != 0) {
+                        physical = shdw_physical_scratch;
+                    }
+                }
+            }
+            close(fd);
+        }
+    }
+    errno = saved_errno;
+    return physical;
+}
+// Whether a spelling can resolve through attacker-controlled links (see the
+// definition after the immutable gate): gates verify-after-use
+// substitution, which only pays off where the kernel could resolve
+// elsewhere than the lexical verdict names.
+BOOL shdw_path_needs_verify(const char* path);
+// Immutable system prefixes: no sandboxed caller can plant a symlink under
+// them, so a spelling rooted here cannot alias anywhere else through an
+// attacker-controlled link. Deliberately tight — anything not listed
+// resolves (fail closed, costs an open, stays correct).
+static BOOL shdw_path_under_immutable_prefix(const char* path) {
+    if(!path || path[0] != '/') return NO;
+    static const char* const roots[] = {
+        "/usr/", "/System/", "/bin/", "/sbin/", "/etc/", "/private/etc/",
+        "/Library/", "/Applications/", "/Developer/", "/cores/", "/dev/",
+        "/private/preboot/", "/preboot/", "/var/jb/", "/private/var/jb/",
+        NULL,
+    };
+    for(int i = 0; roots[i]; i++) {
+        size_t n = strlen(roots[i]);
+        if(strncmp(path, roots[i], n) == 0) return YES;
+    }
+    return NO;
+}
+
+// Whether a spelling can resolve through attacker-controlled links: anything
+// but an absolute, dotdot-free path under an immutable prefix. Relative
+// spellings follow the (flippable) cwd, ".." can climb out of immutable
+// roots, and anything elsewhere may traverse a planted symlink. Pure string
+// logic, no filesystem, no errno effect — safe to consult on hot paths.
+BOOL shdw_path_needs_verify(const char* path) {
+    if(!path || path[0] == '\0') return NO;
+    if(path[0] != '/') return YES;
+    if(strstr(path, "..") != NULL) return YES;
+    return !shdw_path_under_immutable_prefix(path);
+}
+// Full kernel-spelling resolution for alias coverage: opens the path itself
+// (following parent AND final-component links in one kernel traversal) and
+// returns F_GETPATH's canonical spelling when it differs. Identity
+// comparison cannot do this job (measured: the hidden file reports
+// different (st_dev, st_ino) through the bindfs mount than canonically).
+// Gated to attacker-reachable areas (above) so system hot paths pay one
+// prefix scan, not one open. O_NONBLOCK so a fifo alias cannot hang the
+// lookup; dangling or unsearchable paths fail NULL and the lexical verdict
+// stands (the kernel fails those lookups the same way). Thread-local
+// scratch, compare immediately, never retain. Caller errno is preserved.
+static _Thread_local char shdw_kernel_scratch[PATH_MAX];
+
+static const char* shdw_path_kernel_spelling(const char* path) {
+    if(!path || path[0] != '/' || shdw_path_under_immutable_prefix(path)) {
+        return NULL;
+    }
+    size_t len = strlen(path);
+    if(len <= 1 || len >= sizeof(shdw_kernel_scratch)) {
+        return NULL;
+    }
+    int saved_errno = errno;
+    const char* spelling = NULL;
+    int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(fd >= 0) {
+        char canon[PATH_MAX];
+        if(fcntl(fd, F_GETPATH, canon) != -1 && strcmp(canon, path) != 0) {
+            size_t cn = strlen(canon);
+            if(cn < sizeof(shdw_kernel_scratch)) {
+                memcpy(shdw_kernel_scratch, canon, cn + 1);
+                spelling = shdw_kernel_scratch;
+            }
+        }
+        close(fd);
+    }
+    errno = saved_errno;
+    return spelling;
+}
+
+// Verify-after-use for the alias TOCTOU window (see the header contract):
+// re-sample through the kernel after the original call succeeded and deny
+// only on a positive hidden identification. Lexical re-classification is
+// deliberately skipped — the request string cannot change between the
+// pre-call verdict and here, only its resolution can.
+BOOL shdw_fd_names_hidden(int fd) {
+    int saved_errno = errno;
+    char canon[PATH_MAX];
+    BOOL hidden = fd >= 0 && fcntl(fd, F_GETPATH, canon) != -1 &&
+        shdw_resolved_spelling_hidden(canon);
+    errno = saved_errno;
+    return hidden;
+}
+
+BOOL shdw_path_post_hidden(const char* path) {
+    if(!path || !path[0]) return NO;
+    int saved_errno = errno;
+    BOOL hidden = NO;
+    if(path[0] != '/') {
+        int fd = open(".", O_RDONLY | O_CLOEXEC);
+        if(fd >= 0) {
+            char cwd[PATH_MAX];
+            if(fcntl(fd, F_GETPATH, cwd) != -1) {
+                char joined[PATH_MAX * 2];
+                int n = snprintf(joined, sizeof(joined), "%s/%s", cwd, path);
+                if(n > 0 && n < (int)sizeof(joined)) {
+                    const char* k = shdw_path_kernel_spelling(joined);
+                    hidden = k && shdw_resolved_spelling_hidden(k);
+                }
+            }
+            close(fd);
+        }
+    } else {
+        const char* k = shdw_path_kernel_spelling(path);
+        hidden = k && shdw_resolved_spelling_hidden(k);
+    }
+    errno = saved_errno;
+    return hidden;
+}
+
+// Tri-state re-verification of a successful lookup (see the header
+// contract): re-open the request spelling and classify the re-opened
+// object with the same resolving shape as the substitution verifier.
+shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname) {
+    if(!pathname || !pathname[0]) return SHDW_POST_ADMIT;
+    int saved_errno = errno;
+    shdw_post_verdict_t verdict = SHDW_POST_ADMIT;
+    int fd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(fd < 0) {
+        // Vanished within microseconds of a success: the flip signature
+        // (unlink gap or flip to a dangling spelling). Any other open
+        // failure admits, preserving the original answer's shape.
+        verdict = (errno == ENOENT) ? SHDW_POST_DENY_CONTRADICTION : SHDW_POST_ADMIT;
+    } else {
+        char canon[PATH_MAX];
+        struct stat sb;
+        // The fstat confirms the re-opened witness is statable before it
+        // is classified, exactly as the substitution verifier does.
+        if(fcntl(fd, F_GETPATH, canon) != -1 && fstat(fd, &sb) == 0) {
+            verdict = shdw_resolved_spelling_hidden(canon) ? SHDW_POST_DENY_HIDDEN : SHDW_POST_ADMIT;
+        }
+        close(fd);
+    }
+    errno = saved_errno;
+    return verdict;
+}
+BOOL shdw_at_post_hidden(int dirfd, const char* pathname) {
+    if(!pathname || !pathname[0]) return NO;
+    if(pathname[0] == '/') return shdw_path_post_hidden(pathname);
+    int saved_errno = errno;
+    BOOL hidden = NO;
+    char parent[PATH_MAX];
+    if(shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+        if(n > 0 && n < (int)sizeof(joined)) {
+            hidden = shdw_path_post_hidden(joined);
+        }
+    }
+    errno = saved_errno;
+    return hidden;
 }
 
 BOOL shdw_region_backing_path_hidden(const char* path) {
@@ -478,6 +900,15 @@ BOOL shdw_fd_path_restricted(int fd) {
         [_shadow isCPathRestricted:pathname];
     errno = saved_errno;
     return restricted;
+}
+
+BOOL shdw_fd_path_bundle_exempt(int fd) {
+    int saved_errno = errno;
+    char pathname[PATH_MAX];
+    BOOL exempt = fcntl(fd, F_GETPATH, pathname) != -1 &&
+        shdw_path_is_main_bundle_exempt(pathname);
+    errno = saved_errno;
+    return exempt;
 }
 
 // Returns a retained options dict for the DIR*'s parent path (caller must

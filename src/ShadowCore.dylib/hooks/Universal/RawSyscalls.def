@@ -102,6 +102,14 @@ SHADW_RAWSYSCALL(SYS_getdirentries64,  4, DIRENT,     GETDIRENTRIES)
 // mount filter the wrappers use (shdw_filter_mounts).
 SHADW_RAWSYSCALL(SYS_getfsstat,        3, GETFSSTAT,  GETFSSTAT)
 SHADW_RAWSYSCALL(SYS_getfsstat64,      3, GETFSSTAT,  GETFSSTAT)
+// getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags): the raw
+// directory-enumeration syscall the libc getattrlistbulk wrapper filters.
+// Without this entry a direct syscall(SYS_getattrlistbulk, ...) bypasses the
+// record filter entirely. After-success category compacts the returned
+// records via the SAME shared filter the wrapper uses
+// (shdw_getattrlistbulk_filter). Unconditional: the number exists on every
+// lane SDK.
+SHADW_RAWSYSCALL(SYS_getattrlistbulk,   5, GETATTRLISTBULK, GETATTRLISTBULK)
 // proc_info(callnum, pid, flavor, arg, buffer, buffersize): the __proc_info(2)
 // multiplexer libproc's proc_pidinfo/proc_regionfilename route through. Without
 // this entry a raw syscall(SYS_proc_info, ...) reopens the region-path leak the
@@ -117,6 +125,11 @@ SHADW_RAWSYSCALL(SYS_proc_info,        6, PROCINFO,   PROCINFO)
 SHADW_RAWSYSCALL(SYS_utimes,           2, PATH,       UTIMES)
 SHADW_RAWSYSCALL(SYS_futimes,          2, FDXATTR,    FUTIMES)
 SHADW_RAWSYSCALL(SYS_link,             2, PATHPATH,   LINK)
+// exchangedata(path1, path2, options): unhooked pair-shaped existence
+// oracle — the kernel reaches EXDEV only when both operands exist. Same
+// both-endpoint PATHPATH policy as link (hidden+ruleset either end, ENOENT),
+// with its own 3-slot forwarder. Unconditional: ancient number, all lanes.
+SHADW_RAWSYSCALL(SYS_exchangedata,      3, PATHPATH,   EXCHANGEDATA)
 SHADW_RAWSYSCALL(SYS_setxattr,         6, PATH,       GETXATTR)
 SHADW_RAWSYSCALL(SYS_fsetxattr,        6, FDXATTR,    FGETXATTR)
 SHADW_RAWSYSCALL(SYS_removexattr,      3, PATH,       REMOVEXATTR)
@@ -133,6 +146,10 @@ SHADW_RAWSYSCALL(SYS_unlinkat,         3, AT,         ATMODE)
 SHADW_RAWSYSCALL(SYS_mkdirat,          3, AT,         ATMODE)
 SHADW_RAWSYSCALL(SYS_renameat,         4, CLONEAT,    RENAMEAT)
 SHADW_RAWSYSCALL(SYS_symlinkat,        3, SYMLINKAT,  SYMLINKAT)
+// renameatx_np (Round 23): the *at sibling of renamex_np — same two-pair
+// dirfd policy as renameat (CLONEAT), 5-arg shape like clonefileat.
+// Unconditional: the number exists on every lane SDK.
+SHADW_RAWSYSCALL(SYS_renameatx_np,      5, CLONEAT,    CLONEAT)
 // Round 13 audit: hidden-vs-absent pairs via syscall(2) that were passthrough.
 // All external-gated, hidden+ruleset, ENOENT on denial. Unconditional: numbers
 // exist in the 14.5 SDK.

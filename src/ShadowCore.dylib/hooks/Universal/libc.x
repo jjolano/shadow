@@ -6,16 +6,19 @@
 
 #import <string.h>
 #import <stdlib.h>
+#import <unistd.h>
 #import <limits.h>
 #import <sys/xattr.h>
 #import <sys/resource.h>
 #import <sys/attr.h>
+#import <sys/stdio.h>
 #import <sys/snapshot.h>
 #import <copyfile.h>
 #import <sys/clonefile.h>
 #import <glob.h>
 #import <fts.h>
 #import <ftw.h>
+#import <pthread.h>
 
 _Atomic BOOL shdw_path_rewrite_active = NO;
 
@@ -29,9 +32,30 @@ static int (*original_access)(const char* pathname, int mode);
 // Shadow's own loader (external-caller gate): the ruleset path gate can't carry
 // them because the loader's own dlopen/spawn must still see them.
 static int replaced_access(const char* pathname, int mode) {
-    if (shdw_is_fast_allowed_cpath(pathname)) return original_access(pathname, mode);
-    int caller_errno = errno;
     BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane: the verifier pins the object, so a planted
+    // link under a writable prefix hides like its target. (Ruleset verdicts
+    // are not consulted on this lane, exactly as before.) Verifier-ENOENT
+    // (dangling link) reports ENOENT directly; an unclassifiable lookup
+    // falls back to the bounded kernel re-resolution.
+    if(shdw_is_fast_allowed_cpath(pathname)) {
+        if(ext && pathname && shdw_path_needs_verify(pathname)) {
+            int v = shdw_verify_open_hidden(AT_FDCWD, pathname);
+            if(v == -1) {
+                errno = ENOENT;
+                return -1;
+            } else if(v == -2) {
+                int r = original_access(pathname, mode);
+                if(r == 0 && shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+                    errno = ENOENT;
+                    return -1;
+                }
+                return r;
+            }
+        }
+        return original_access(pathname, mode);
+    }
+    int caller_errno = errno;
     SHADOW_TRIP(pathname, "access", ext);
 
     // Own-bundle reads are exempt on every lookup shape, exactly as the
@@ -48,7 +72,7 @@ static int replaced_access(const char* pathname, int mode) {
     // The hidden verdict is recorded up front and denied AFTER the real
     // lookup below: the denial then costs the same trapped lookup as a
     // genuinely-absent path.
-    BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = ext && shdw_path_is_external_hidden_lexical(pathname);
 
     // Reuse this call's preflight verdict; concurrent filesystem or policy
     // changes are observed by later calls, not a second lookup here.
@@ -72,6 +96,11 @@ static int replaced_access(const char* pathname, int mode) {
     // A hidden denial traps first and denies after, so it costs the same
     // trapped lookup as a genuinely-absent path.
     if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Verify-after-use (alias TOCTOU): bounded post re-check on success.
+    if(!hidden && result != -1 && ext && shdw_path_post_hidden(pathname)) {
         errno = ENOENT;
         return -1;
     }
@@ -309,8 +338,17 @@ static int replaced_chroot(const char* pathname) {
 
 static int (*original_creat)(const char* pathname, mode_t mode);
 static int replaced_creat(const char* pathname, mode_t mode) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
-        return original_creat(pathname, mode);
+    BOOL ext = isCallerExternal();
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
+        int fd = original_creat(pathname, mode);
+        // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+        // (This also covers the static alias this lane previously admitted.)
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
     }
 
     errno = ENOENT;
@@ -691,11 +729,35 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
 
     return result;
 }
+// Forward declarations: the substitution verifier and the fstat hook slot
+// below (the real slots are declared with their hooks). Spaced to not
+// collide with the host tests' exact-match extraction markers.
+static int shdw_stat_substitute(int dirfd, const char* pathname, struct stat* buf, int flags);
+static int(*original_fstat)(int fd, struct stat *buf);
 
 static int (*original_stat)(const char* pathname, struct stat* buf);
 static int replaced_stat(const char* pathname, struct stat* buf) {
-    if (shdw_is_fast_allowed_cpath(pathname)) return original_stat(pathname, buf);
     BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane (see replaced_access): answer from the
+    // pinned object. Ruleset verdicts are not consulted on this lane,
+    // exactly as before; bind-root st_dev reshaping does not apply (a
+    // writable-prefix spelling never names a bind root).
+    if(shdw_is_fast_allowed_cpath(pathname)) {
+        if(ext && buf && pathname && shdw_path_needs_verify(pathname)) {
+            int sub = shdw_stat_substitute(AT_FDCWD, pathname, buf, 0);
+            if(sub != -2) {
+                return sub;
+            }
+            int r = original_stat(pathname, buf);
+            if(r != -1 && shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+                memset(buf, 0, sizeof(struct stat));
+                errno = ENOENT;
+                return -1;
+            }
+            return r;
+        }
+        return original_stat(pathname, buf);
+    }
     SHADOW_TRIP(pathname, "stat", ext);
 
     // Same own-bundle exemption as access()/open family (see replaced_access).
@@ -703,7 +765,7 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
         return original_stat(pathname, buf);
     }
 
-    BOOL hidden = ext && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = ext && shdw_path_is_external_hidden_lexical(pathname);
 
     // Reuse this call's preflight verdict for both external-only checks.
     BOOL restricted = ext && [_shadow isCPathRestricted:pathname];
@@ -714,10 +776,19 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
 
     // A hidden denial traps into a scratch buffer and denies after, so it
     // costs the same trapped lookup as a genuinely-absent path while the
-    // caller's buffer keeps its untouched shape.
     struct stat trapbuf;
-    int result = original_stat(pathname, hidden ? &trapbuf : buf);
-
+    int result;
+    int sub = -2;
+    // Fully allowed, resolution-unstable spelling: answer from the pinned
+    // object (deterministic); anything else takes the original path below.
+    if(!hidden && !restricted && ext && buf && shdw_path_needs_verify(pathname)) {
+        sub = shdw_stat_substitute(AT_FDCWD, pathname, buf, 0);
+    }
+    if(sub != -2) {
+        result = sub;
+    } else {
+        result = original_stat(pathname, hidden ? &trapbuf : buf);
+    }
     if(hidden) {
         errno = ENOENT;
         return -1;
@@ -727,11 +798,21 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
-        
+
         errno = ENOENT;
         return -1;
     }
-
+    // Bounded re-verification: only when substitution did not already
+    // answer from a pinned object (its verdict is final — re-sampling
+    // could only re-open a window the substitution closed). On immutable
+    // spellings, where substitution never runs, this same sample keeps
+    // the success legs at the same resolving-work shape instead.
+    if(sub == -2 && result != -1 && !hidden && ext && buf &&
+        shdw_at_post_verify(AT_FDCWD, pathname) != SHDW_POST_ADMIT) {
+        memset(buf, 0, sizeof(struct stat));
+        errno = ENOENT;
+        return -1;
+    }
     // Gap 2: a stock system directory bind-shadowed by a jailbreak fakelib
     // gets its own filesystem id; equalise it with the covering rootfs so a
     // parent/child st_dev split can't reveal the bind. Only for the covered
@@ -760,7 +841,7 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         return original_lstat(pathname, buf);
     }
 
-    BOOL hidden = shdw_path_is_external_hidden(pathname);
+    BOOL hidden = shdw_path_is_external_hidden_lexical(pathname);
 
     // A NULL caller buffer keeps stock semantics: lstat(path, NULL) fails
     // with EFAULT. Replay it before classification so a restricted path is
@@ -806,6 +887,11 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
             errno = ENOENT;
             return -1;
         }
+        // Verify-after-use (alias TOCTOU): bounded post re-check.
+        if(!hidden && shdw_path_post_hidden(pathname)) {
+            errno = ENOENT;
+            return -1;
+        }
 
         // Only copy on success: on failure _buf is uninitialized stack.
         memcpy(buf, &_buf, sizeof(struct stat));
@@ -819,9 +905,65 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
     return result;
 }
 
+
+// Deterministic answer for a resolution-unstable spelling (see
+// shdw_path_needs_verify): pin the object with O_RDONLY|O_NONBLOCK (never
+// CREAT/TRUNC — the lookup cannot mutate), classify the pinned fd, and
+// fill buf from fstat — the same object the kernel would have statted, so
+// flips before or after cannot move the answer. openat() routes through
+// the replaced_openat hook below but resolves as internal (ShadowCore
+// frame) and terminates; original_fstat skips re-policy on the verified
+// fd. Callers gate on resolution-unstable, buffered, follow-mode lookups
+// and fall back to the original path (plus the shared re-verifier) on -2.
+// Returns 0 (buf filled), -1 (denied hidden, ENOENT set, buf zeroed), or
+// -2 (verifier unavailable — perm/device/fd pressure — caller falls back).
+static int shdw_stat_substitute(int dirfd, const char* pathname, struct stat* buf, int flags) {
+    if((flags & AT_SYMLINK_NOFOLLOW) != 0) return -2;
+    int vfd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if(vfd < 0 && errno != ENOENT) {
+        // One retry: a racing flipper can fail the first sample with a
+        // transient non-ENOENT error (measured: EINVAL bursts under an
+        // unlink+symlink hammer); a settled namespace answers identically,
+        // so the retry only ever converts transients into verdicts.
+        vfd = openat(dirfd, pathname, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    }
+    if(vfd < 0) {
+        // Verifier-ENOENT answers directly (anti-flip): the object was
+        // absent at the verifier sample, so no later flip can be admitted
+        // through this lookup. A concurrent creation may false-negative
+        // once (transient, self-healing on retry); every other verifier
+        // failure replays the original lookup below to preserve its shape.
+        if(errno == ENOENT) {
+            memset(buf, 0, sizeof(struct stat));
+            return -1;
+        }
+        return -2;
+    }
+    char canon[PATH_MAX];
+    int r = -2;
+    if(fcntl(vfd, F_GETPATH, canon) != -1) {
+        if(shdw_resolved_spelling_hidden(canon)) {
+            memset(buf, 0, sizeof(struct stat));
+            errno = ENOENT;
+            r = -1;
+        } else if(original_fstat(vfd, buf) == 0) {
+            r = 0;
+        }
+    }
+    close(vfd);
+    return r;
+}
+
 static int (*original_fstat)(int fd, struct stat* buf);
 static int replaced_fstat(int fd, struct stat* buf) {
     if(!isCallerExternal()) {
+        return original_fstat(fd, buf);
+    }
+
+    // Same own-bundle exemption as the path sibling (see replaced_stat):
+    // an fd naming the caller's own bundle answers truthfully. Keys off
+    // the resolved fd path; the external gate above is the hook frame.
+    if(shdw_fd_path_bundle_exempt(fd)) {
         return original_fstat(fd, buf);
     }
 
@@ -832,6 +974,7 @@ static int replaced_fstat(int fd, struct stat* buf) {
 
     return original_fstat(fd, buf);
 }
+
 
 static int (*original_fstatat)(int dirfd, const char* pathname, struct stat* buf, int flags);
 static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
@@ -848,12 +991,25 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
         return original_fstatat(dirfd, pathname, buf, flags);
     }
 
-    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden_lexical(pathname);
 
     if(!hidden && shdw_path_is_absolute(pathname)
        && [_shadow isCPathRestricted:pathname]
        && shdw_libc_try_rewrite(pathname)) {
         return original_fstatat(dirfd, pathname, buf, flags);   // natural ENOENT
+    }
+
+    // Relative operands joining onto the caller's own bundle pass through,
+    // mirroring the absolute exemption above (same shape as replaced_openat).
+    if(!hidden && !shdw_path_is_absolute(pathname) && pathname && pathname[0] != '\0') {
+        char parent[PATH_MAX];
+        if(shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+            char joined[PATH_MAX * 2];
+            int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+            if(n > 0 && n < (int)sizeof(joined) && shdw_path_is_main_bundle_exempt(joined)) {
+                return original_fstatat(dirfd, pathname, buf, flags);
+            }
+        }
     }
 
     if(!hidden && shdw_at_path_denied(dirfd, pathname)) {
@@ -863,8 +1019,35 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
     // A hidden denial traps into scratch and denies after, so it costs the
     // same trapped lookup as a genuinely-absent path.
     struct stat trapbuf;
-    int result = original_fstatat(dirfd, pathname, hidden ? &trapbuf : buf, flags);
+    int result;
+    int sub = -2;
+    // Fully allowed, follow-mode, buffered lookup of a resolution-unstable
+    // spelling: answer from the pinned object (deterministic — dirfd-pinned
+    // parent and fd-pinned object); anything else takes the original path.
+    if(!hidden && buf && (flags & AT_SYMLINK_NOFOLLOW) == 0 && shdw_path_needs_verify(pathname)) {
+        sub = shdw_stat_substitute(dirfd, pathname, buf, flags);
+    }
+    if(sub != -2) {
+        result = sub;
+    } else {
+        result = original_fstatat(dirfd, pathname, hidden ? &trapbuf : buf, flags);
+    }
 
+    if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Bounded fallback: only when substitution did not already answer.
+    // Re-verified with the same resolving shape as substitution (see
+    // shdw_at_post_verify).
+    if(sub == -2 && result != -1 && !hidden &&
+        shdw_at_post_verify(dirfd, pathname) != SHDW_POST_ADMIT) {
+        if(buf) {
+            memset(buf, 0, sizeof(struct stat));
+        }
+        errno = ENOENT;
+        return -1;
+    }
     if(hidden) {
         errno = ENOENT;
         return -1;
@@ -901,7 +1084,21 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
         return original_faccessat(dirfd, pathname, mode, flags);
     }
 
-    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden(pathname);
+    BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden_lexical(pathname);
+
+    // Relative operands joining onto the caller's own bundle pass through,
+    // mirroring the absolute exemption above (same shape as replaced_openat).
+    if(!hidden && !shdw_path_is_absolute(pathname) && pathname && pathname[0] != '\0') {
+        char parent[PATH_MAX];
+        if(shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+            char joined[PATH_MAX * 2];
+            int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+            if(n > 0 && n < (int)sizeof(joined) && shdw_path_is_main_bundle_exempt(joined)) {
+                errno = caller_errno;
+                return original_faccessat(dirfd, pathname, mode, flags);
+            }
+        }
+    }
 
     // Relative operands must be classified against dirfd by shdw_at_path_denied.
     // The direct classification is only safe for absolute paths.
@@ -923,6 +1120,11 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     // A hidden denial traps first and denies after, so it costs the same
     // trapped lookup as a genuinely-absent path.
     if(hidden) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Verify-after-use (alias TOCTOU): bounded post re-check on success.
+    if(!hidden && result != -1 && shdw_at_post_hidden(dirfd, pathname)) {
         errno = ENOENT;
         return -1;
     }
@@ -964,6 +1166,13 @@ static BOOL shdw_dir_entry_external_hidden(NSDictionary* options, const char* d_
     return shdw_dir_leaf_external_hidden(wd.length ? wd.fileSystemRepresentation : NULL, d_name);
 }
 
+// An exempt parent (own bundle) enumerates unfiltered: sibling lookups
+// exempt these paths, so filtering their entries would split the view.
+static BOOL shdw_readdir_parent_exempt(NSDictionary* options) {
+    NSString* wd = options[kShadowRestrictionWorkingDir];
+    return wd.length && shdw_path_is_main_bundle_exempt(wd.fileSystemRepresentation);
+}
+
 static int (*original_readdir_r)(DIR* dirp, struct dirent* entry, struct dirent** oresult);
 static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** oresult) {
     if(!isCallerExternal()) {
@@ -983,9 +1192,9 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
     }
 
     int result = original_readdir_r(dirp, entry, oresult);
-    
     if(result == 0 && *oresult) {
-        if(options) {
+        // An exempt parent enumerates unfiltered (see above).
+        if(options && !shdw_readdir_parent_exempt(options)) {
             do {
                 // Per-entry pool: @(d_name) and the restriction check
                 // autorelease per entry; without it raw-pthread callers
@@ -1027,7 +1236,8 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 
     struct dirent* result = original_readdir(dirp);
 
-    if(result && options) {
+    // An exempt parent enumerates unfiltered (see above).
+    if(result && options && !shdw_readdir_parent_exempt(options)) {
         do {
             // Per-entry pool: @(d_name) and the restriction check autorelease
             // per entry; without it raw-pthread callers (no pool) leak every
@@ -1062,6 +1272,8 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 // NOTE: freed with free(), NOT a per-entry free — compact in place, never
 // free individual entries (the caller frees namelist[i] + namelist).
 static BOOL shdw_scandir_entry_restricted(const char* dirpath, const char* name) {
+    // An exempt parent enumerates unfiltered (see shdw_readdir_parent_exempt).
+    if(shdw_path_is_main_bundle_exempt(dirpath)) return NO;
     if(shdw_dir_leaf_external_hidden(dirpath, name)) return YES;
     char joined[PATH_MAX * 2];
     int n = snprintf(joined, sizeof(joined), "%s/%s", dirpath, name);
@@ -1095,7 +1307,7 @@ static int replaced_scandir(const char* dirname, struct dirent*** namelist,
         return original_scandir(dirname, namelist, selector, compar);
     }
 
-    if(dirname && [_shadow isCPathRestricted:dirname]) {
+    if(dirname && [_shadow isCPathRestricted:dirname] && !shdw_path_is_main_bundle_exempt(dirname)) {
         if(namelist) {
             *namelist = NULL;
         }
@@ -1120,7 +1332,7 @@ static int replaced_scandir_b(const char* dirname, struct dirent*** namelist,
         return original_scandir_b(dirname, namelist, selector, compar);
     }
 
-    if(dirname && [_shadow isCPathRestricted:dirname]) {
+    if(dirname && [_shadow isCPathRestricted:dirname] && !shdw_path_is_main_bundle_exempt(dirname)) {
         if(namelist) {
             *namelist = NULL;
         }
@@ -1143,7 +1355,9 @@ static int replaced_scandir_b(const char* dirname, struct dirent*** namelist,
 // nothing matches and GLOB_NOCHECK is unset); with GLOB_NOCHECK the
 // pattern itself is the single result — filter it too.
 static BOOL shdw_glob_entry_restricted(const char* path) {
-    return path && [_shadow isCPathRestricted:path];
+    // An exempt match (own bundle) enumerates unfiltered.
+    if(!path || shdw_path_is_main_bundle_exempt(path)) return NO;
+    return [_shadow isCPathRestricted:path] || shdw_path_is_external_hidden(path);
 }
 
 static int shdw_glob_filter(glob_t* pglob) {
@@ -1209,16 +1423,123 @@ static int replaced_glob_b(const char* pattern, int flags, int (^errblk)(const c
 }
 #endif
 
+// FTS exempt-root table: replaced_fts_open resolves each root once via
+// realpath; roots resolving into the own bundle are recorded keyed by the
+// returned handle, so per-entry classification (which only sees the logical
+// accpath) can exempt the whole subtree. Bounded and mutex-guarded;
+// evicted on fts_close; overflow or unknown handles fail safe (filtered as
+// today). Resolving once per open (not per entry) keeps walks cheap.
+// Eviction is best-effort: a missed eviction can only over-retain within
+// the bounded table, and the close hook installs on both lanes below.
+#define SHDW_FTS_EXEMPT_HANDLES 8
+#define SHDW_FTS_EXEMPT_ROOTS 4
+typedef struct {
+    FTS* handle;
+    char roots[SHDW_FTS_EXEMPT_ROOTS][PATH_MAX];
+    unsigned nroots;
+} shdw_fts_exempt_entry_t;
+static shdw_fts_exempt_entry_t shdw_fts_exempt_table[SHDW_FTS_EXEMPT_HANDLES];
+static pthread_mutex_t shdw_fts_exempt_lock = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic int shdw_fts_exempt_live = 0;
+
+static void shdw_fts_note_exempt_roots(FTS* handle, char* const* path_argv) {
+    if(!handle || !path_argv) return;
+    char collected[SHDW_FTS_EXEMPT_ROOTS][PATH_MAX];
+    unsigned n = 0;
+    for(char* const* p = path_argv; *p && n < SHDW_FTS_EXEMPT_ROOTS; p++) {
+        if(!*p || !(*p)[0]) continue;
+        char physical[PATH_MAX];
+        // Resolve through an O_DIRECTORY fd, not realpath: realpath
+        // measurably fails (ENOENT) on existing roots in a sandboxed
+        // caller while an open + F_GETPATH on the same path succeeds.
+        // Internal reads pass our own open/fcntl hooks through.
+        int fd = open(*p, O_RDONLY | O_DIRECTORY);
+        if(fd < 0) continue;
+        BOOL resolved = fcntl(fd, F_GETPATH, physical) != -1;
+        close(fd);
+        if(!resolved) continue;
+        if(!shdw_path_is_main_bundle_exempt(physical)) continue;
+        if(strcmp(physical, *p) == 0) continue;  // canonical roots classify already
+        snprintf(collected[n++], PATH_MAX, "%s", *p);
+    }
+    if(n == 0) return;
+    pthread_mutex_lock(&shdw_fts_exempt_lock);
+    shdw_fts_exempt_entry_t* slot = NULL;
+    for(unsigned i = 0; i < SHDW_FTS_EXEMPT_HANDLES; i++) {
+        if(shdw_fts_exempt_table[i].handle == handle) { slot = &shdw_fts_exempt_table[i]; break; }
+    }
+    if(!slot) {
+        for(unsigned i = 0; i < SHDW_FTS_EXEMPT_HANDLES; i++) {
+            if(shdw_fts_exempt_table[i].handle == NULL) { slot = &shdw_fts_exempt_table[i]; break; }
+        }
+    }
+    if(!slot) slot = &shdw_fts_exempt_table[0];  // full: overwrite, fail-safe
+    slot->handle = handle;
+    slot->nroots = n;
+    for(unsigned i = 0; i < n; i++) snprintf(slot->roots[i], PATH_MAX, "%s", collected[i]);
+    atomic_store_explicit(&shdw_fts_exempt_live, 1, memory_order_release);
+    pthread_mutex_unlock(&shdw_fts_exempt_lock);
+}
+
+static BOOL shdw_fts_accpath_exempt_rooted(FTS* handle, const char* accpath) {
+    if(!handle || !accpath) return NO;
+    if(!atomic_load_explicit(&shdw_fts_exempt_live, memory_order_acquire)) return NO;
+    BOOL found = NO;
+    pthread_mutex_lock(&shdw_fts_exempt_lock);
+    for(unsigned i = 0; i < SHDW_FTS_EXEMPT_HANDLES && !found; i++) {
+        if(shdw_fts_exempt_table[i].handle != handle) continue;
+        for(unsigned r = 0; r < shdw_fts_exempt_table[i].nroots; r++) {
+            const char* root = shdw_fts_exempt_table[i].roots[r];
+            size_t n = strlen(root);
+            if(strncmp(accpath, root, n) == 0 && (accpath[n] == '/' || accpath[n] == '\0')) {
+                found = YES;
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&shdw_fts_exempt_lock);
+    return found;
+}
+
+static void shdw_fts_forget_handle(FTS* handle) {
+    if(!handle) return;
+    pthread_mutex_lock(&shdw_fts_exempt_lock);
+    for(unsigned i = 0; i < SHDW_FTS_EXEMPT_HANDLES; i++) {
+        if(shdw_fts_exempt_table[i].handle == handle) {
+            shdw_fts_exempt_table[i].handle = NULL;
+            shdw_fts_exempt_table[i].nroots = 0;
+        }
+    }
+    pthread_mutex_unlock(&shdw_fts_exempt_lock);
+}
+
 // fts: wrap the traversal at fts_read/fts_children — skip restricted
 // NODES by advancing to the next sibling (fts_link), never by failing
 // the walk. fts_open paths are pre-screened (restricted ROOT fails with
 // ENOENT like opendir); children of a restricted dir never surface
 // because the parent node itself is skipped first.
-static BOOL shdw_fts_entry_restricted(FTSENT* ent) {
+static BOOL shdw_fts_entry_restricted(FTS* ftsp, FTSENT* ent) {
     if(!ent || !ent->fts_accpath) {
         return NO;
     }
-    return [_shadow isCPathRestricted:ent->fts_accpath];
+    // Children reached through an exempt-resolved root enumerate with it.
+    if(shdw_fts_accpath_exempt_rooted(ftsp, ent->fts_accpath)) {
+        return NO;
+    }
+    // An exempt subtree (own bundle) enumerates unfiltered.
+    if(shdw_path_is_main_bundle_exempt(ent->fts_accpath)) {
+        return NO;
+    }
+    if(shdw_path_is_external_hidden(ent->fts_accpath)
+       || (ent->fts_path && shdw_path_is_external_hidden(ent->fts_path))) {
+        return YES;
+    }
+    if(ent->fts_level > 0 && ent->fts_parent && ent->fts_parent->fts_accpath
+       && shdw_dir_leaf_external_hidden(ent->fts_parent->fts_accpath, ent->fts_name)) {
+        return YES;
+    }
+    return [_shadow isCPathRestricted:ent->fts_accpath]
+        || (ent->fts_path && [_shadow isCPathRestricted:ent->fts_path]);
 }
 
 static FTS* (*original_fts_open)(char* const* path_argv, int options, int (*compar)(const FTSENT**, const FTSENT**));
@@ -1235,7 +1556,7 @@ static FTS* replaced_fts_open(char* const* path_argv, int options, int (*compar)
         BOOL anyPath = NO;
         for(char* const* p = path_argv; *p; p++) {
             anyPath = YES;
-            if(![_shadow isCPathRestricted:*p]) {
+            if(!shdw_path_is_external_hidden(*p) && (![_shadow isCPathRestricted:*p] || shdw_path_is_main_bundle_exempt(*p))) {
                 allRestricted = NO;
                 break;
             }
@@ -1246,7 +1567,11 @@ static FTS* replaced_fts_open(char* const* path_argv, int options, int (*compar)
         }
     }
 
-    return original_fts_open(path_argv, options, compar);
+    FTS* result = original_fts_open(path_argv, options, compar);
+    if(result) {
+        shdw_fts_note_exempt_roots(result, path_argv);
+    }
+    return result;
 }
 
 static FTSENT* (*original_fts_read)(FTS* ftsp);
@@ -1258,7 +1583,7 @@ static FTSENT* replaced_fts_read(FTS* ftsp) {
     FTSENT* ent;
     while((ent = original_fts_read(ftsp)) != NULL) {
         @autoreleasepool {
-            if(!shdw_fts_entry_restricted(ent)) {
+            if(!shdw_fts_entry_restricted(ftsp, ent)) {
                 break;
             }
         }
@@ -1283,7 +1608,7 @@ static FTSENT* replaced_fts_children(FTS* ftsp, int instr) {
     FTSENT** link = &head;
     while(*link) {
         @autoreleasepool {
-            if(!shdw_fts_entry_restricted(*link)) {
+            if(!shdw_fts_entry_restricted(ftsp, *link)) {
                 link = &(*link)->fts_link;
             } else {
                 *link = (*link)->fts_link;
@@ -1291,6 +1616,14 @@ static FTSENT* replaced_fts_children(FTS* ftsp, int instr) {
         }
     }
     return head;
+}
+static int (*original_fts_close)(FTS* ftsp);
+static int replaced_fts_close(FTS* ftsp) {
+    // No caller gate: forgetting publishes nothing and hides nothing. Only
+    // external opens record, so an unconditional forget can only drop stale
+    // entries, never live ones.
+    shdw_fts_forget_handle(ftsp);
+    return original_fts_close(ftsp);
 }
 
 // ftw/nftw: wrap the user callback — restricted paths are silently
@@ -1302,14 +1635,14 @@ static _Thread_local int (*shdw_ftw_userfn)(const char*, const struct stat*, int
 static _Thread_local int (*shdw_nftw_userfn)(const char*, const struct stat*, int, struct FTW*) = NULL;
 
 static int shdw_ftw_trampoline(const char* path, const struct stat* sb, int typeflag) {
-    if(shdw_ftw_filtering && path && [_shadow isCPathRestricted:path]) {
+    if(shdw_ftw_filtering && path && !shdw_path_is_main_bundle_exempt(path) && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         return 0;  // skip: continue walk without calling user fn
     }
     return shdw_ftw_userfn ? shdw_ftw_userfn(path, sb, typeflag) : 0;
 }
 
 static int shdw_nftw_trampoline(const char* path, const struct stat* sb, int typeflag, struct FTW* ftwbuf) {
-    if(shdw_ftw_filtering && path && [_shadow isCPathRestricted:path]) {
+    if(shdw_ftw_filtering && path && !shdw_path_is_main_bundle_exempt(path) && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         // Skip restricted nodes without aborting the walk. nftw has no
         // FTW_ACTIONRETVAL/FTW_SKIP_SUBTREE on this SDK (plain BSD ftw.h:
         // FTW_F/D/DNR/DP/NS/SL/SLN only), so returning 0 continues the
@@ -1328,7 +1661,7 @@ static int replaced_ftw(const char* path, int (*fn)(const char*, const struct st
         return original_ftw(path, fn, nopenfd);
     }
 
-    if(path && [_shadow isCPathRestricted:path]) {
+    if(path && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path]) && !shdw_path_is_main_bundle_exempt(path)) {
         errno = ENOENT;
         return -1;
     }
@@ -1347,7 +1680,7 @@ static int replaced_nftw(const char* path, int (*fn)(const char*, const struct s
         return original_nftw(path, fn, nopenfd, flags);
     }
 
-    if(path && [_shadow isCPathRestricted:path]) {
+    if(path && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path]) && !shdw_path_is_main_bundle_exempt(path)) {
         errno = ENOENT;
         return -1;
     }
@@ -1358,6 +1691,47 @@ static int replaced_nftw(const char* path, int (*fn)(const char*, const struct s
     shdw_ftw_filtering = NO;
     shdw_nftw_userfn = NULL;
     return ret;
+}
+
+// __readdir_unlocked: libsystem's lock-free directory-entry reader. Callers
+// that enumerate single-threaded (including Foundation's URL feed) reach it
+// directly, bypassing the readdir import — so it carries the identical
+// per-entry filter. Same fail-closed parent resolution, same shared
+// predicate, same stock shapes as replaced_readdir below.
+static struct dirent* (*original___readdir_unlocked)(DIR* dirp);
+static struct dirent* replaced___readdir_unlocked(DIR* dirp) {
+    if(!isCallerExternal()) {
+        return original___readdir_unlocked(dirp);
+    }
+    BOOL denied = NO;
+    NSDictionary* options = shdw_readdir_options(dirp, &denied);
+    if(denied) {
+        // Fail closed: an unresolvable directory exposes nothing.
+        return NULL;
+    }
+    struct dirent* result = original___readdir_unlocked(dirp);
+    // An exempt parent enumerates unfiltered (see shdw_readdir_parent_exempt).
+    if(result && options && !shdw_readdir_parent_exempt(options)) {
+        do {
+            // Per-entry pool: @(d_name) and the restriction check autorelease
+            // per entry; without it raw-pthread callers (no pool) leak every
+            // skipped name.
+            @autoreleasepool {
+                if([_shadow isPathRestricted:@(result->d_name) options:options]
+                   || shdw_dir_entry_external_hidden(options, result->d_name)) {
+                    // call the unlocked reader again to skip ahead
+                    result = original___readdir_unlocked(dirp);
+                } else {
+                    break;
+                }
+            }
+        } while(result);
+    }
+    // Options are retained only when parent resolution succeeds.
+    if(options) {
+        CFRelease((__bridge CFDictionaryRef)options);
+    }
+    return result;
 }
 
 // --- Phase 4: CFPreferences (same suite gate as NSUserDefaults).
@@ -1416,19 +1790,38 @@ static Boolean replaced_CFPreferencesAppSynchronize(CFStringRef applicationID) {
 
 static FILE* (*original_fopen)(const char* pathname, const char* mode);
 static FILE* replaced_fopen(const char* pathname, const char* mode) {
-    if (shdw_is_fast_allowed_cpath(pathname)) return original_fopen(pathname, mode);
     BOOL ext = isCallerExternal();
+    // Resolve-stable fast lane: the layered hooks below AND their post-use
+    // re-resolution both key on the pinned object, so verify the handed-out
+    // FILE the same way (the fd already exists — no extra lookup). Ruleset
+    // verdicts are not consulted on this lane, exactly as before.
+    if(shdw_is_fast_allowed_cpath(pathname)) {
+        FILE* fp = original_fopen(pathname, mode);
+        if(fp && ext && shdw_fd_names_hidden(fileno(fp))) {
+            fclose(fp);
+            errno = ENOENT;
+            return NULL;
+        }
+        return fp;
+    }
     SHADOW_TRIP(pathname, "fopen", ext);
 
     if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
         return original_fopen(pathname, mode);
     }
-    if(ext && shdw_path_is_external_hidden(pathname)) {
+    if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
         errno = ENOENT;
         return NULL;
     }
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
-        return original_fopen(pathname, mode);
+        FILE* fp = original_fopen(pathname, mode);
+        // Verify-after-use (alias TOCTOU): the handed-out FILE decides.
+        if(fp && ext && shdw_fd_names_hidden(fileno(fp))) {
+            fclose(fp);
+            errno = ENOENT;
+            return NULL;
+        }
+        return fp;
     }
 
     errno = ENOENT;
@@ -1441,12 +1834,21 @@ static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stre
     if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
         return original_freopen(pathname, mode, stream);
     }
-    if(ext && shdw_path_is_external_hidden(pathname)) {
+    if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
         errno = ENOENT;
         return NULL;
     }
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
-        return original_freopen(pathname, mode, stream);
+        FILE* fp = original_freopen(pathname, mode, stream);
+        // Verify-after-use (alias TOCTOU): the handed-out FILE decides.
+        // fclose (not bare NULL): the stream already names the hidden
+        // object — returning it detached would leak readable access.
+        if(fp && ext && shdw_fd_names_hidden(fileno(fp))) {
+            fclose(fp);
+            errno = ENOENT;
+            return NULL;
+        }
+        return fp;
     }
 
     errno = ENOENT;
@@ -1773,6 +2175,11 @@ static int replaced_fgetattrlist(int fd, struct attrlist* attrList, void* attrBu
         return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
     }
 
+    // Same own-bundle exemption as the path sibling (see replaced_getattrlist).
+    if(shdw_fd_path_bundle_exempt(fd)) {
+        return original_fgetattrlist(fd, attrList, attrBuf, attrBufSize, options);
+    }
+
     if(shdw_fd_path_restricted(fd)) {
         errno = ENOENT;
         return -1;
@@ -1805,6 +2212,12 @@ static int replaced_getattrlistat(int dirfd, const char* path, void* attrList, v
         return -1;
     }
 
+    // Same own-bundle exemption as plain getattrlist (see
+    // replaced_getattrlist); absolute operands only.
+    if(status == SHADW_DIRFD_ABSOLUTE && path && shdw_path_is_main_bundle_exempt(path)) {
+        return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+    }
+
     if(status == SHADW_DIRFD_ABSOLUTE) {
         // Same predicate PAIR as the absolute stat/getattrlist hooks: the
         // external-hidden set AND the ruleset.
@@ -1815,6 +2228,11 @@ static int replaced_getattrlistat(int dirfd, const char* path, void* attrList, v
     } else {
         char joined[PATH_MAX * 2];
         int n = snprintf(joined, sizeof(joined), "%s/%s", parent, path);
+
+        // Exempt join (own bundle) passes through, mirroring plain getattrlist.
+        if(n > 0 && n < (int) sizeof(joined) && shdw_path_is_main_bundle_exempt(joined)) {
+            return original_getattrlistat(dirfd, path, attrList, attrBuf, attrBufSize, options);
+        }
 
         // Join overflow: can't classify — pass through (kernel answers).
         if(n > 0 && n < (int) sizeof(joined)
@@ -1862,18 +2280,131 @@ static int replaced_setattrlistat(int dirfd, const char* path, void* attrList, v
 // post-processed with fs_snapshot_list's shared record ABI: each record's
 // name is resolved, joined onto the dirfd's path, and restricted children
 // are compacted out of the buffer (memmove tail down, count decremented,
-// trailing bytes left untouched — the same compaction fs_snapshot_list
-// performs). Records that don't parse — bad length, no name attribute, or
-// other returned attributes (a multi-attribute record carries its data in
-// request order, so the name reference isn't at the fixed offset) — are
-// kept in place (fail open). Snapshot listings pass through untouched:
-// fs_snapshot_list is getattrlistbulk with FSOPT_LIST_SNAPSHOTS and is
-// hooked separately, owning that case.
+// vacated tail cleared). The name reference sits at its fixed offset
+// whenever the name attribute is returned, however many other attributes
+// share the record; records that don't parse — bad length, no name
+// attribute, malformed reference — are kept in place (fail open). Snapshot
+// listings pass through untouched: fs_snapshot_list is getattrlistbulk with
+// FSOPT_LIST_SNAPSHOTS and is hooked separately, owning that case.
 //
-// FSOPT_LIST_SNAPSHOTS is a private flag, absent from the SDK headers
-// (sys/attr.h jumps from FSOPT_PACK_INVAL_ATTRS 0x8 to FSOPT_ATTR_CMN_EXTENDED
-// 0x20); value from XNU bsd/sys/attr.h.
-#define SHADW_FSOPT_LIST_SNAPSHOTS 0x00000010
+// FSOPT_LIST_SNAPSHOTS lives in hooks.h, shared with the raw syscall lane.
+// Bulk-record filter shared by the libc getattrlistbulk hook and the raw
+// syscall lane: compacts restricted children out of the returned records
+// and clears the vacated tail. Record layout mirrors
+// replaced_fs_snapshot_list: uint32 length, attribute_set_t returned attrs,
+// then the name attrreference_t at 4 + sizeof(attribute_set_t) = 24. The
+// returned bitmap is the ATTR_CMN_RETURNED_ATTRS data ("always the first
+// attribute in the return buffer", sys/attr.h), and the name bit is the
+// lowest common bit, so the name reference sits at that fixed offset
+// whenever the name attribute is returned, however many other attributes
+// share the record. dirPath is the already-resolved directory path the
+// names are joined onto. Returns the filtered record count.
+int shdw_getattrlistbulk_filter(void* attrBuf, size_t attrBufSize, int count, const char* dirPath) {
+    if(count <= 0 || !attrBuf || !dirPath) {
+        return count;
+    }
+    // An exempt parent (own bundle) enumerates unfiltered: sibling lookups
+    // exempt these paths, so filtering their entries would split the view.
+    if(shdw_path_is_main_bundle_exempt(dirPath)) {
+        return count;
+    }
+    const uint32_t kNameRefOffset = (uint32_t)(sizeof(uint32_t) + sizeof(attribute_set_t));
+    // Pass 1 (bounds): walk `count` records to find the extent of the
+    // trusted prefix, stopping at the first record whose length can't be
+    // trusted (header out of range, shorter than the header, or extending
+    // past the buffer). Everything from there on is kept as-is — fail
+    // open, a partially compacted buffer would corrupt the caller's walk.
+    uint32_t offset = 0;
+    size_t totalBytes = 0;
+    for(int record = 0; record < count; record++) {
+        if((uint64_t) offset + sizeof(uint32_t) > attrBufSize) {
+            break;
+        }
+        uint32_t recLen;
+        memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
+        if(recLen < sizeof(uint32_t) + sizeof(attribute_set_t) || (uint64_t) offset + recLen > attrBufSize) {
+            break;
+        }
+        offset += recLen;
+        totalBytes = offset;
+    }
+    // Pass 2 (compact): walk the trusted prefix again. Every record the
+    // walk reaches is trustworthy (pass 1 verified the lengths), so no
+    // re-validation is needed; a drop shrinks totalBytes by exactly the
+    // bytes the tail shifts, so the loop stops where pass 1 stopped.
+    // The record that slides into a dropped slot must be checked too, so
+    // the offset only advances over kept records.
+    size_t originalTotal = totalBytes;
+    offset = 0;
+    while(offset < totalBytes) {
+        uint32_t recLen;
+        memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
+        attribute_set_t returned;
+        memcpy(&returned, (char*) attrBuf + offset + sizeof(uint32_t), sizeof(returned));
+        if(!(returned.commonattr & ATTR_CMN_NAME)) {
+            offset += recLen;  // no name in this record: keep
+            continue;
+        }
+        // The record must be long enough to hold the reference.
+        if(recLen < kNameRefOffset + (uint32_t) sizeof(attrreference_t)) {
+            offset += recLen;  // reference outside the record: keep
+            continue;
+        }
+        attrreference_t nameRef;
+        memcpy(&nameRef, (char*) attrBuf + offset + kNameRefOffset, sizeof(nameRef));
+        if(nameRef.attr_dataoffset < (int32_t) sizeof(nameRef)) {
+            offset += recLen;  // malformed reference: keep
+            continue;
+        }
+        // The NUL-terminated name string must fit inside the record.
+        uint32_t nameOffset = (uint32_t) nameRef.attr_dataoffset;
+        if((uint64_t) nameOffset + 1 > (uint64_t) recLen - kNameRefOffset) {
+            offset += recLen;  // name outside the record: keep
+            continue;
+        }
+        const char* nameStr = (char*) attrBuf + offset + kNameRefOffset + nameOffset;
+        // Bound the scan by the record tail AND the kernel-reported
+        // attribute length; the NUL must be found within the bound
+        // (fs_snapshot_list's check).
+        size_t avail = recLen - kNameRefOffset - nameOffset;
+        if(nameRef.attr_length < avail) {
+            avail = nameRef.attr_length;
+        }
+        if(strnlen(nameStr, avail) == avail) {
+            offset += recLen;  // no NUL within the bounded name: keep
+            continue;
+        }
+        // Join the entry onto the directory path; a restricted child is
+        // compacted out: shift the tail down over the record, the next
+        // record now starts at the same offset.
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", dirPath, nameStr);
+        if(n <= 0 || n >= (int) sizeof(joined)) {
+            offset += recLen;  // join overflow: can't classify — keep
+            continue;
+        }
+        // Per-record pool: @(joined) and the restriction check
+        // autorelease per record; without it raw-pthread callers (no
+        // pool) leak every skipped name (readdir's pattern).
+        @autoreleasepool {
+            if([_shadow isPathRestricted:@(joined) options:nil]
+               || shdw_path_is_external_hidden(joined)
+               || shdw_dir_leaf_external_hidden(dirPath, nameStr)) {
+                memmove((char*) attrBuf + offset, (char*) attrBuf + offset + recLen, totalBytes - (offset + recLen));
+                totalBytes -= recLen;
+                count--;
+                continue;
+            }
+        }
+        offset += recLen;
+    }
+    // Clear the vacated tail: compaction leaves the dropped records'
+    // bytes behind, and a whole-buffer scan would still read them.
+    if(totalBytes < originalTotal) {
+        memset((char*) attrBuf + totalBytes, 0, originalTotal - totalBytes);
+    }
+    return count;
+}
 static int (*original_getattrlistbulk)(int dirfd, void* attrList, void* attrBuf, size_t attrBufSize, uint64_t flags);
 static int replaced_getattrlistbulk(int dirfd, void* attrList, void* attrBuf, size_t attrBufSize, uint64_t flags) {
     if(!isCallerExternal()) {
@@ -1884,15 +2415,12 @@ static int replaced_getattrlistbulk(int dirfd, void* attrList, void* attrBuf, si
         return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
     }
 
-    if(shdw_fd_path_restricted(dirfd)) {
-        return 0;
-    }
-
-    // Resolve the dirfd's own path once for the per-record join — the shared
-    // *at resolver (shdw_resolve_dirfd_path) classifies dirfd+path pairs, so
-    // a bare dirfd is resolved the way that resolver resolves its dirfds:
-    // getcwd for AT_FDCWD, F_GETPATH otherwise. An unresolvable dirfd passes
-    // through unfiltered (fail open — the fd may be a tty/pipe with no path).
+    // Resolve the dirfd's own path once for the restriction check and the
+    // per-record join — the shared *at resolver (shdw_resolve_dirfd_path)
+    // classifies dirfd+path pairs, so a bare dirfd is resolved the way that
+    // resolver resolves its dirfds: getcwd for AT_FDCWD, F_GETPATH otherwise.
+    // An unresolvable dirfd passes through unfiltered (fail open — the fd
+    // may be a tty/pipe with no path).
     char dirPath[PATH_MAX];
 
     if(dirfd == AT_FDCWD) {
@@ -1903,136 +2431,17 @@ static int replaced_getattrlistbulk(int dirfd, void* attrList, void* attrBuf, si
         return original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
     }
 
+    // An exempt parent (own bundle) enumerates: sibling lookups exempt these
+    // paths, so denying their listing would split the view. The shared
+    // filter below keeps exempt-parent records for the same reason.
+    if(shdw_fd_path_restricted(dirfd) && !shdw_path_is_main_bundle_exempt(dirPath)) {
+        return 0;
+    }
+
     int result = original_getattrlistbulk(dirfd, attrList, attrBuf, attrBufSize, flags);
 
     if(result > 0 && attrBuf) {
-        // Record layout (mirrors replaced_fs_snapshot_list): uint32 length,
-        // attribute_set_t returned attrs, then the name attrreference_t at
-        // 4 + sizeof(attribute_set_t) = 24. The returned bitmap is the
-        // ATTR_CMN_RETURNED_ATTRS data ("always the first attribute in the
-        // return buffer", sys/attr.h), so when the name is the ONLY other
-        // attribute returned its reference sits at that fixed offset.
-        const uint32_t kNameRefOffset = (uint32_t)(sizeof(uint32_t) + sizeof(attribute_set_t));
-
-        // Pass 1 (bounds): walk `result` records to find the extent of the
-        // trusted prefix, stopping at the first record whose length can't be
-        // trusted (header out of range, shorter than the header, or extending
-        // past the buffer). Everything from there on is kept as-is — fail
-        // open, a partially compacted buffer would corrupt the caller's walk.
-        uint32_t offset = 0;
-        size_t totalBytes = 0;
-
-        for(int record = 0; record < result; record++) {
-            if((uint64_t) offset + sizeof(uint32_t) > attrBufSize) {
-                break;
-            }
-
-            uint32_t recLen;
-            memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
-
-            if(recLen < sizeof(uint32_t) + sizeof(attribute_set_t) || (uint64_t) offset + recLen > attrBufSize) {
-                break;
-            }
-
-            offset += recLen;
-            totalBytes = offset;
-        }
-
-        // Pass 2 (compact): walk the trusted prefix again. Every record the
-        // walk reaches is trustworthy (pass 1 verified the lengths), so no
-        // re-validation is needed; a drop shrinks totalBytes by exactly the
-        // bytes the tail shifts, so the loop stops where pass 1 stopped.
-        // Unlike fs_snapshot_list's for-loop this does NOT advance the
-        // record counter on a drop — the record that slides into the dropped
-        // slot must be checked too.
-        offset = 0;
-
-        while(offset < totalBytes) {
-            uint32_t recLen;
-            memcpy(&recLen, (char*) attrBuf + offset, sizeof(recLen));
-
-            // Resolve the name only when the returned bitmap says the name
-            // attribute was returned AND no other attribute shares the
-            // record; otherwise the name reference isn't at offset 24 — keep.
-            attribute_set_t returned;
-            memcpy(&returned, (char*) attrBuf + offset + sizeof(uint32_t), sizeof(returned));
-
-            if(!(returned.commonattr & ATTR_CMN_NAME)) {
-                offset += recLen;  // no name in this record: keep
-                continue;
-            }
-
-            if((returned.commonattr & ~(ATTR_CMN_NAME | ATTR_CMN_RETURNED_ATTRS)) || returned.fileattr || returned.volattr || returned.dirattr) {
-                offset += recLen;  // name not at the fixed offset: keep
-                continue;
-            }
-
-            // The record must be long enough to hold the reference.
-            if(recLen < kNameRefOffset + (uint32_t) sizeof(attrreference_t)) {
-                offset += recLen;  // reference outside the record: keep
-                continue;
-            }
-
-            attrreference_t nameRef;
-            memcpy(&nameRef, (char*) attrBuf + offset + kNameRefOffset, sizeof(nameRef));
-
-            if(nameRef.attr_dataoffset < (int32_t) sizeof(nameRef)) {
-                offset += recLen;  // malformed reference: keep
-                continue;
-            }
-
-            // The NUL-terminated name string must fit inside the record.
-            uint32_t nameOffset = (uint32_t) nameRef.attr_dataoffset;
-
-            if((uint64_t) nameOffset + 1 > (uint64_t) recLen - kNameRefOffset) {
-                offset += recLen;  // name outside the record: keep
-                continue;
-            }
-
-            const char* nameStr = (char*) attrBuf + offset + kNameRefOffset + nameOffset;
-
-            // Bound the scan by the record tail AND the kernel-reported
-            // attribute length; the NUL must be found within the bound
-            // (fs_snapshot_list's check).
-            size_t avail = recLen - kNameRefOffset - nameOffset;
-
-            if(nameRef.attr_length < avail) {
-                avail = nameRef.attr_length;
-            }
-
-            if(strnlen(nameStr, avail) == avail) {
-                offset += recLen;  // no NUL within the bounded name: keep
-                continue;
-            }
-
-            // Join the entry onto the dirfd's path; a restricted child is
-            // compacted out: shift the tail down over the record, the next
-            // record now starts at the same offset (fs_snapshot_list's
-            // compaction; trailing bytes stay untouched).
-            char joined[PATH_MAX * 2];
-            int n = snprintf(joined, sizeof(joined), "%s/%s", dirPath, nameStr);
-
-            if(n <= 0 || n >= (int) sizeof(joined)) {
-                offset += recLen;  // join overflow: can't classify — keep
-                continue;
-            }
-
-            // Per-record pool: @(joined) and the restriction check
-            // autorelease per record; without it raw-pthread callers (no
-            // pool) leak every skipped name (readdir's pattern).
-            @autoreleasepool {
-                if([_shadow isPathRestricted:@(joined) options:nil]
-                   || shdw_path_is_external_hidden(joined)
-                   || shdw_dir_leaf_external_hidden(dirPath, nameStr)) {
-                    memmove((char*) attrBuf + offset, (char*) attrBuf + offset + recLen, totalBytes - (offset + recLen));
-                    totalBytes -= recLen;
-                    result--;
-                    continue;
-                }
-            }
-
-            offset += recLen;
-        }
+        result = shdw_getattrlistbulk_filter(attrBuf, attrBufSize, result, dirPath);
     }
 
     return result;
@@ -2092,9 +2501,27 @@ static int replaced_link(const char* path1, const char* path2) {
     return original_link(path1, path2);
 }
 
+static int (*original_exchangedata)(const char* path1, const char* path2, unsigned int options);
+static int replaced_exchangedata(const char* path1, const char* path2, unsigned int options) {
+    if(!isCallerExternal()) {
+        return original_exchangedata(path1, path2, options);
+    }
+
+    // Same endpoint pair as replaced_rename and the raw PATHPATH lane (see
+    // RawSyscalls.def): a hidden object looks absent from either operand.
+    if((path1 && (shdw_path_is_external_hidden(path1) || [_shadow isCPathRestricted:path1])) ||
+       (path2 && (shdw_path_is_external_hidden(path2) || [_shadow isCPathRestricted:path2]))) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return original_exchangedata(path1, path2, options);
+}
+
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
     if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(new) ||
+       shdw_path_is_external_hidden(old) || shdw_path_is_external_hidden(new) ||
        [_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
         return original_rename(old, new);
     }
@@ -2222,6 +2649,38 @@ static int replaced_renameat(int fromfd, const char* from, int tofd, const char*
 
     return original_renameat(fromfd, from, tofd, to);
 }
+static int (*original_renamex_np)(const char* from, const char* to, unsigned int flags);
+static int replaced_renamex_np(const char* from, const char* to, unsigned int flags) {
+    if(!isCallerExternal()) {
+        return original_renamex_np(from, to, flags);
+    }
+    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Same endpoint pair as replaced_rename: a hidden object looks absent.
+    if((from && (shdw_path_is_external_hidden(from) || [_shadow isCPathRestricted:from])) ||
+       (to && (shdw_path_is_external_hidden(to) || [_shadow isCPathRestricted:to]))) {
+        errno = ENOENT;
+        return -1;
+    }
+    return original_renamex_np(from, to, flags);
+}
+static int (*original_renameatx_np)(int fromfd, const char* from, int tofd, const char* to, unsigned int flags);
+static int replaced_renameatx_np(int fromfd, const char* from, int tofd, const char* to, unsigned int flags) {
+    if(!isCallerExternal()) {
+        return original_renameatx_np(fromfd, from, tofd, to, flags);
+    }
+    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+        errno = ENOENT;
+        return -1;
+    }
+    // Both path arguments are resolved against their own dirfd.
+    if(shdw_at_path_denied(fromfd, from) || shdw_at_path_denied(tofd, to)) {
+        return -1;
+    }
+    return original_renameatx_np(fromfd, from, tofd, to, flags);
+}
 
 static int (*original_mkdirat)(int dirfd, const char* path, mode_t mode);
 static int replaced_mkdirat(int dirfd, const char* path, mode_t mode) {
@@ -2307,6 +2766,12 @@ static int replaced_fchownat(int dirfd, const char* path, uid_t owner, gid_t gro
 // (path, id/id) or (path, value...) shape, single-path policy, ENOENT on
 // denial — same contract as replaced_rmdir/pathconf above. fd variants use
 // shdw_fd_path_restricted + EBADF like replaced_futimes above.
+// No external-hidden branch on the plain-path create/remove entrypoints
+// below (mkdir/mknod/mkfifo/rmdir/symlink-location/unlink/remove): the
+// kernel's write gate precedes its existence check, so a hidden path
+// already answers the absent lane's errno via passthrough. A hidden object
+// under a writable parent could still differ; no such location is
+// reachable, so that shape is recorded here, not handled.
 static int (*original_mkdir)(const char* pathname, mode_t mode);
 static int replaced_mkdir(const char* pathname, mode_t mode) {
     if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
@@ -2681,6 +3146,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   METADATA, METADATA },
     { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC },
     { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
+    { "exchangedata",             (void*)&replaced_exchangedata,             (void**)&original_exchangedata,             LIBC,   LIBC },
     { "creat",                  (void*)&replaced_creat,                    (void**)&original_creat,                    LIBC,   LIBC },
     { "statfs",                 (void*)&replaced_statfs,                   (void**)&original_statfs,                   LIBC,   LIBC },
     { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC },
@@ -2722,6 +3188,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "linkat",                 (void*)&replaced_linkat,                   (void**)&original_linkat,                   LIBC,   LIBC },
     { "symlinkat",              (void*)&replaced_symlinkat,                (void**)&original_symlinkat,                LIBC,   LIBC },
     { "renameat",               (void*)&replaced_renameat,                 (void**)&original_renameat,                 LIBC,   LIBC },
+    { "renamex_np",             (void*)&replaced_renamex_np,               (void**)&original_renamex_np,               LIBC,   LIBC },
+    { "renameatx_np",           (void*)&replaced_renameatx_np,             (void**)&original_renameatx_np,             LIBC,   LIBC },
     { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC },
     { "fchmodat",               (void*)&replaced_fchmodat,                 (void**)&original_fchmodat,                 LIBC,   LIBC },
     { "fchownat",               (void*)&replaced_fchownat,                 (void**)&original_fchownat,                 LIBC,   0 },
@@ -2771,8 +3239,10 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fts_open",               (void*)&replaced_fts_open,                (void**)&original_fts_open,               LIBC,   LIBC },
     { "fts_read",               (void*)&replaced_fts_read,                (void**)&original_fts_read,               LIBC,   LIBC },
     { "fts_children",           (void*)&replaced_fts_children,            (void**)&original_fts_children,           LIBC,   0 },
+    { "fts_close",              (void*)&replaced_fts_close,               (void**)&original_fts_close,              LIBC,   0 },
     { "ftw",                    (void*)&replaced_ftw,                     (void**)&original_ftw,                    LIBC,   LIBC },
     { "nftw",                   (void*)&replaced_nftw,                    (void**)&original_nftw,                   LIBC,   LIBC },
+    { "__readdir_unlocked",     (void*)&replaced___readdir_unlocked,     (void**)&original___readdir_unlocked,     LIBC,   LIBC },
     // Phase 4 CFPreferences: same suite gate as NSUserDefaults (predicate
     // lives in AppEnvironment.x). Reads denied, sync fails closed, writes
     // pass through (unobservable).
@@ -3019,7 +3489,6 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                 }
             }
 
-            // Same iOS-15 shared-cache constraint for the directory-enumeration
             // and mount-table entrypoints: when the inline patch is refused the
             // symbol is left unhooked, so a listing exposes what the point-lookup
             // rebind lane hides and a mount query leaks the bindfs record. Rebind
@@ -3032,11 +3501,14 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                     "statfs", "fstatfs", "statvfs", "fstatvfs",
                     "getmntinfo", "getmntinfo_r_np", "getfsstat",
                     "getattrlist", "getattrlistat", "getattrlistbulk",
-                    "fts_open", "fts_read", "fts_children",
-                    "fstat", "fstatat",
+                    "fts_open", "fts_read", "fts_children", "fts_close", "ftw", "nftw",
+                    "__readdir_unlocked",
+                    "glob", "glob_b",
+                    "fstat", "fstatat", "fgetattrlist",
                     "chmod", "lchmod", "chown", "lchown",
-                    "truncate", "utimes", "lutimes", "link",
+                    "truncate", "utimes", "lutimes", "link", "exchangedata",
                     "linkat", "unlinkat", "renameat", "symlinkat", "mkdirat",
+                    "rename", "remove", "unlink", "renamex_np", "renameatx_np",
                     "getxattr", "listxattr", "setxattr", "removexattr",
                     "fgetxattr", "flistxattr", "fsetxattr", "fremovexattr",
                     NULL,

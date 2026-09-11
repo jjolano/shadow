@@ -35,11 +35,16 @@ def body(first, last):
 
 resolver = body("shdw_dirfd_status_t shdw_resolve_dirfd_path", "// Applies the shared dirfd resolution")
 at_path = body("BOOL shdw_at_path_denied", "// fd→path classification")
-fd_path = body("BOOL shdw_fd_path_restricted", "// Returns a retained options dict")
+fd_path = body("BOOL shdw_fd_path_restricted", "BOOL shdw_fd_path_bundle_exempt")
+fd_bundle_exempt = body("BOOL shdw_fd_path_bundle_exempt", "// Returns a retained options dict")
 readdir = body("NSDictionary* shdw_readdir_options", "// Classifies a readlink result")
-libc_fstat = libc[libc.index("static int (*original_fstat)"):libc.index("static int (*original_fstatat)")]
+libc_fstat = libc[libc.index("static int (*original_fstat)"):libc.index("static int (*original_fstatat)(int dirfd")]
 libc_readdir_r = libc[libc.index("static int (*original_readdir_r)"):libc.index("static struct dirent* (*original_readdir)")]
 libc_readdir = libc[libc.index("static struct dirent* (*original_readdir)"):libc.index("// --- Phase 3:")]
+post_span = body("static BOOL shdw_path_under_immutable_prefix(const char* path) {",
+                 "BOOL shdw_region_backing_path_hidden")
+union_span = body("BOOL shdw_resolved_spelling_hidden(const char* canon) {",
+                  "BOOL shdw_path_under_system_bind_root")
 
 old_at = '''        NSString* path = [NSString stringWithUTF8String:pathname];
         BOOL restricted = [_shadow isPathRestricted:path options:@{
@@ -98,6 +103,7 @@ prefix = r'''
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 1024
@@ -116,6 +122,12 @@ typedef enum {
     SHADW_DIRFD_ORIGINAL,
     SHADW_DIRFD_DENY,
 } shdw_dirfd_status_t;
+
+typedef enum {
+    SHDW_POST_ADMIT = 0,
+    SHDW_POST_DENY_HIDDEN,
+    SHDW_POST_DENY_CONTRADICTION,
+} shdw_post_verdict_t;
 
 typedef struct { int fd; } DIR;
 struct dirent { char d_name[256]; };
@@ -193,12 +205,41 @@ static bool shdw_path_is_external_hidden(const char* path) {
     return false;
 }
 
+// Own-bundle sentinel for the exemption stubs: no other test path carries
+// this prefix.
+static bool shdw_path_is_main_bundle_exempt(const char* path) {
+    return path && !strncmp(path, "/bundle", strlen("/bundle"));
+}
+
+// Host double for the kernel-resolved ".." second opinion (PathPolicy.m):
+// F_GETPATH is Darwin-only, so the host build cannot exercise resolution
+// and pins the lexical-miss passthrough (NULL). Device runs cover the
+// resolving path.
+static const char *shdw_path_physical_spelling(const char *path) {
+    (void)path;
+    return NULL;
+}
+
+static unsigned parent_exempt_checks;
+
+static bool shdw_readdir_parent_exempt(const char* options) {
+    parent_exempt_checks++;
+    return options && !strncmp(options, "/bundle", strlen("/bundle"));
+}
+
 static bool shdw_dir_leaf_external_hidden(const char* parent, const char* name) {
     (void)parent;
     (void)name;
     return false;
 }
 
+// (Tier-helper doubles removed with the stat pin: nothing extracted here
+// references them anymore.)
+
+// The extracted fstat span now also carries the stat verify-after-use
+// helper (defined beside the hook): its union dependency comes from the
+// extracted real body below (host-false via the hidden/leaf stubs;
+// device runs prove hits).
 static bool shdw_dir_entry_external_hidden(const char* options, const char* name) {
     (void)options;
     (void)name;
@@ -264,6 +305,11 @@ int main(void) {
     assert(!shdw_fd_path_restricted(7) && errno == EAGAIN);
     paths[0] = "/restricted/reused-stdin";
     assert(shdw_fd_path_restricted(0));
+
+    // An fd naming the exempt bundle answers truthfully (own-bundle lane).
+    paths[15] = "/bundle/exe";
+    errno = EBUSY;
+    assert(replaced_fstat(15, &st) == 71 && errno == EBUSY);
 
     // Rename keeps the vnode/inode but F_GETPATH must be sampled again.
     paths[8] = "/allowed/open-file";
@@ -331,6 +377,47 @@ int main(void) {
     assert(replaced_readdir_r(&stream, &entry, &out) == 0 && out == NULL && readdir_r_calls == 2 && releases == 2);
     assert(replaced_readdir(&stream) == NULL && readdir_calls == 2 && releases == 2);
 
+    // An exempt parent enumerates without filtering but still releases
+    // its options exactly once per call; the gate itself was consulted.
+    stream.fd = 10;
+    paths[10] = "/bundle/reader";
+    out = NULL;
+    assert(replaced_readdir_r(&stream, &entry, &out) == 0 && out == &entry && readdir_r_calls == 3 && releases == 3);
+    assert(replaced_readdir(&stream) == &readdir_entry && readdir_calls == 3 && releases == 4);
+    assert(parent_exempt_checks == 4);
+
+    // Verify-after-use helpers sample fresh on every call and fail open
+    // (device runs prove the hidden-hit path).
+    paths[20] = "/allowed/post";
+    errno = EBUSY;
+    unsigned post_calls = getpath_calls;
+    assert(!shdw_fd_names_hidden(20) && errno == EBUSY);
+    assert(getpath_calls == post_calls + 1);
+    assert(!shdw_fd_names_hidden(-1) && errno == EBUSY);
+    assert(getpath_calls == post_calls + 1);
+    paths[20] = "/allowed/renamed-post";
+    assert(!shdw_fd_names_hidden(20) && errno == EBUSY);
+    assert(getpath_calls == post_calls + 2);
+    errno = EBUSY;
+    assert(!shdw_path_post_hidden("/allowed/post") && errno == EBUSY);
+    assert(!shdw_path_post_hidden("relative-post") && errno == EBUSY);
+    paths[9] = "/allowed/postdir";
+    assert(!shdw_at_post_hidden(9, "relative-post") && errno == EBUSY);
+    assert(!shdw_at_post_hidden(42, "relative-post") && errno == EBUSY);
+    // Shared re-verifier: an absent spelling reports the flip signature,
+    // an unresolvable-but-present one admits, errno preserved throughout.
+    errno = EBUSY;
+    assert(shdw_at_post_verify(AT_FDCWD, "/allowed/post") == SHDW_POST_DENY_CONTRADICTION && errno == EBUSY);
+    assert(shdw_at_post_verify(AT_FDCWD, "/") == SHDW_POST_ADMIT && errno == EBUSY);
+    // Resolution-stability gate: immutable dotdot-free spellings skip the
+    // verifier; everything else pays for determinism.
+    assert(!shdw_path_needs_verify("/usr/lib/systemhook.dylib"));
+    assert(!shdw_path_needs_verify("/System/x"));
+    assert(shdw_path_needs_verify("/var/mobile/x"));
+    assert(shdw_path_needs_verify("relative/x"));
+    assert(shdw_path_needs_verify("/usr/../x"));
+    assert(!shdw_path_needs_verify(""));
+
     // Non-nameable fd classifiers are predicates and do not leak F_GETPATH's errno.
     errno = EBUSY;
     assert(!shdw_fd_path_restricted(14) && errno == EBUSY);
@@ -343,7 +430,7 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix="shadow-fd-freshness-") as tmp:
     test = Path(tmp) / "test.c"
     executable = Path(tmp) / "test"
-    test.write_text(prefix + resolver + at_path + fd_path + readdir + libc_fstat + libc_readdir_r + libc_readdir + suffix)
+    test.write_text(prefix + resolver + at_path + fd_path + fd_bundle_exempt + readdir + union_span + post_span + libc_fstat + libc_readdir_r + libc_readdir + suffix)
     subprocess.run([
         os.environ.get("CC", "cc"), "-D_GNU_SOURCE", "-std=c11", "-Wall", "-Wextra",
         str(test), "-o", str(executable),

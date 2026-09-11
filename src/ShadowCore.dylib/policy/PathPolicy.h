@@ -20,6 +20,13 @@ typedef enum {
     SHADW_DIRFD_DENY,          // valid dir vnode, path unresolvable: fail closed
 } shdw_dirfd_status_t;
 
+// Cheap lexical standardization for hot C string comparison (no
+// allocation, no filesystem, no symlink resolution). Collapses duplicate
+// slashes, drops "/./" (and trailing "/."), pops "/../" clamped at root,
+// preserves a single trailing slash. Returns the input unchanged when
+// already canonical or absurdly long, else thread-local scratch valid
+// until the next call on this thread — compare immediately, never retain.
+const char* shdw_standardize_lexical(const char* path);
 // Classifies a dirfd+path pair without trusting the fd NUMBER: descriptors
 // 0-2 can be closed and reused, so a hook that exempts them filters by
 // identity, not number. Absolute paths ignore dirfd entirely; relative
@@ -37,6 +44,65 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname);
 // path is restricted; an fd with no nameable path (tty/pipe/socket) is never
 // restricted. Leaves errno unchanged when it returns.
 BOOL shdw_fd_path_restricted(int fd);
+
+// Own-bundle companion to shdw_fd_path_restricted: resolves the fd via
+// F_GETPATH and reports whether it names the caller's own bundle, whose
+// path lookups the absolute hooks exempt. Reads no caller state (the
+// external gate lives at the hook site); leaves errno unchanged. An fd
+// with no nameable path is never exempt.
+BOOL shdw_fd_path_bundle_exempt(int fd);
+
+// Lexical-only half of shdw_path_is_external_hidden (no filesystem — safe
+// on hot paths): the exact list plus the container predicate. Relative
+// spellings never match. Pre-call verdicts whose resolving post
+// (substitution/fd-verify) already covers the alias window consult this
+// instead of the full predicate.
+// Lightweight verifier pin for non-stat lanes (access, fileExists) on the
+// resolve-stable fast lane: O_RDONLY pin + resolved-union classification,
+// no data fill. -1: pinned-hidden or verifier-ENOENT (ENOENT set); 0:
+// pinned-and-benign (caller still runs the original plus the bounded
+// post); -2: verifier unavailable (errno preserved).
+int shdw_verify_open_hidden(int dirfd, const char* pathname);
+BOOL shdw_path_is_external_hidden_lexical(const char* path);
+
+// Union check for a kernel-resolved spelling (mount-point OR backing-store
+// naming): F_GETPATH can name either for the same object, so both spellings
+// must hide. Used by the verify-after-use helpers.
+BOOL shdw_resolved_spelling_hidden(const char* canon);
+
+// Verify-after-use for the alias TOCTOU window: the pre-call verdict names
+// the request spelling, but a detector-owned symlink can flip before the
+// kernel resolves. These re-sample THROUGH THE KERNEL after success and
+// report YES only on a positive hidden identification — fail open
+// (unresolvable, equal, benign) so any resolver failure keeps the original
+// result. No caller classification here (sites gate on ext); errno is
+// preserved throughout. Identity (dev,ino) comparison is NOT used: the
+// hidden file reports different identities through the bindfs mount than
+// canonically (measured on device).
+BOOL shdw_fd_names_hidden(int fd);
+BOOL shdw_path_post_hidden(const char* path);
+BOOL shdw_at_post_hidden(int dirfd, const char* pathname);
+// Tri-state re-verification of a successful lookup: re-opens the request
+// spelling and classifies the re-opened object with the same resolving
+// shape as the substitution verifier (open, F_GETPATH, fstat), so every
+// success leg carries the same work. ADMIT keeps the original answer;
+// DENY_HIDDEN names a hidden object; DENY_CONTRADICTION fires when the
+// spelling re-opens ENOENT right after succeeding (the flip signature —
+// an unlink gap or a flip to a dangling spelling). Any other unresolvable
+// shape admits (sockets: ENXIO, transient fd pressure), preserving the
+// original answer. Errno-preserving; no caller classification (sites gate
+// on ext).
+typedef enum {
+    SHDW_POST_ADMIT = 0,
+    SHDW_POST_DENY_HIDDEN,
+    SHDW_POST_DENY_CONTRADICTION,
+} shdw_post_verdict_t;
+shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname);
+// Whether a spelling can resolve through attacker-controlled links (pure
+// string logic, no filesystem): gates verify-after-use substitution, which
+// only pays off where the kernel could resolve elsewhere than the lexical
+// verdict names.
+BOOL shdw_path_needs_verify(const char* path);
 
 // readdir/readdir_r support: resolves the DIR*'s parent path (dirfd +
 // F_GETPATH) for every call and builds a RETAINED options dictionary (caller

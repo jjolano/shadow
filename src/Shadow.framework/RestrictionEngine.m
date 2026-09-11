@@ -497,8 +497,16 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
                 }
 
                 if(!shouldCheckPath) {
-                    BOOL resolvedRestricted = shdwIsPathInRestrictedRoot(resolved)
-                        || [self _evaluatePathRestriction:resolved query:query];
+                    // A sandbox-exempt query resolving into a sandbox-exempt
+                    // target stays exempt: the app's own bundle lives under
+                    // a restricted root on rootless installs, so a link the
+                    // app plants to its own bundle or container would
+                    // otherwise read as an escape into a restricted root.
+                    // Genuine escapes (a non-exempt target) still deny below.
+                    BOOL resolvedExempt = shdwIsSandboxExempt(_context, resolved);
+                    BOOL resolvedRestricted = !resolvedExempt &&
+                        (shdwIsPathInRestrictedRoot(resolved) ||
+                         [self _evaluatePathRestriction:resolved query:query]);
 
                     if(resolvedRestricted) {
                         restricted = YES;

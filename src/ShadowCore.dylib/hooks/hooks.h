@@ -351,6 +351,7 @@ typedef enum {
     SHADW_RAW_CAT_GETFSSTAT,     // raw getfsstat(64) after-success mount filter
     SHADW_RAW_CAT_PROCINFO,      // raw proc_info(2) region-path after-success sanitize
     SHADW_RAW_CAT_STATFS,        // raw statfs64 single-mount filter
+    SHADW_RAW_CAT_GETATTRLISTBULK, // raw getattrlistbulk(2) after-success record filter
 #ifdef SYS_freadlink
     SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
 #endif
@@ -363,6 +364,17 @@ shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
 // libc getfsstat/getmntinfo hooks AND the raw getfsstat(64) syscall dispatch
 // call the SAME function so both surfaces agree on which mounts are hidden.
 int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags);
+// Shared bulk-record filter (defined in hooks/Universal/libc.x): compacts
+// restricted children out of a getattrlistbulk result buffer, clears the
+// vacated tail, and returns the filtered record count. The libc
+// getattrlistbulk hook AND the raw SYS_getattrlistbulk syscall dispatch call
+// the SAME function so both surfaces agree on which names are hidden.
+int shdw_getattrlistbulk_filter(void* attrBuf, size_t attrBufSize, int count, const char* dirPath);
+// FSOPT_LIST_SNAPSHOTS is a private flag, absent from the SDK headers
+// (sys/attr.h jumps from FSOPT_PACK_INVAL_ATTRS 0x8 to FSOPT_ATTR_CMN_EXTENDED
+// 0x20); value from XNU bsd/sys/attr.h. Snapshot listings are owned by the
+// fs_snapshot_list hook, never the bulk-record filter.
+#define SHADW_FSOPT_LIST_SNAPSHOTS 0x00000010
 
 // Raw svc #0x80 interception (hooks/Universal/svc_patch.x): scans loaded
 // images' __TEXT for inline svc sites and redirects them through a naked
