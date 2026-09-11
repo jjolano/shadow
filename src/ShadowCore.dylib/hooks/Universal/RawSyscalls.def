@@ -130,13 +130,20 @@ SHADW_RAWSYSCALL(SYS_link,             2, PATHPATH,   LINK)
 // both-endpoint PATHPATH policy as link (hidden+ruleset either end, ENOENT),
 // with its own 3-slot forwarder. Unconditional: ancient number, all lanes.
 SHADW_RAWSYSCALL(SYS_exchangedata,      3, PATHPATH,   EXCHANGEDATA)
+// rename(from, to): the pair-shaped mutator behind rename(2). Same
+// both-endpoint verdict as the libc rename hooks (entry identity plus
+// ruleset either end, ENOENT), with its own 2-slot forwarder, so a raw
+// SYS_rename agrees with rename(2) on every operand. Unconditional:
+// ancient number, all lanes.
+SHADW_RAWSYSCALL(SYS_rename,            2, RENAME,     RENAME)
 SHADW_RAWSYSCALL(SYS_setxattr,         6, PATH,       GETXATTR)
 SHADW_RAWSYSCALL(SYS_fsetxattr,        6, FDXATTR,    FGETXATTR)
 SHADW_RAWSYSCALL(SYS_removexattr,      3, PATH,       REMOVEXATTR)
 SHADW_RAWSYSCALL(SYS_fremovexattr,     3, FDXATTR,    FREMOVEXATTR)
 // linkat family (Round 11): same hidden+ruleset pair as the libc *at hooks,
 // external-gated, ENOENT on denial. linkat reuses CLONEAT (fd,path,fd,path,+flag
-// — the clonefileat two-pair shape); renameat reuses the CLONEAT policy with a
+// — the clonefileat two-pair shape); renameat carries the RENAMEAT pair
+// policy (same entry-identity verdict as the libc renameat hooks) with a
 // 4-arg forwarder; unlinkat/mkdirat are single-path AT via the unconditional
 // ATMODE shape; symlinkat checks the link LOCATION only (a symlink target need
 // not exist, so hidden-vs-absent targets have no natural split). All numbers
@@ -144,12 +151,12 @@ SHADW_RAWSYSCALL(SYS_fremovexattr,     3, FDXATTR,    FREMOVEXATTR)
 SHADW_RAWSYSCALL(SYS_linkat,           5, CLONEAT,    CLONEAT)
 SHADW_RAWSYSCALL(SYS_unlinkat,         3, AT,         ATMODE)
 SHADW_RAWSYSCALL(SYS_mkdirat,          3, AT,         ATMODE)
-SHADW_RAWSYSCALL(SYS_renameat,         4, CLONEAT,    RENAMEAT)
+SHADW_RAWSYSCALL(SYS_renameat,         4, RENAMEAT,   RENAMEAT)
 SHADW_RAWSYSCALL(SYS_symlinkat,        3, SYMLINKAT,  SYMLINKAT)
-// renameatx_np (Round 23): the *at sibling of renamex_np — same two-pair
-// dirfd policy as renameat (CLONEAT), 5-arg shape like clonefileat.
+// renameatx_np (Round 23): the *at sibling of renamex_np — same RENAMEAT
+// two-pair dirfd verdict as renameat, 5-arg shape like clonefileat.
 // Unconditional: the number exists on every lane SDK.
-SHADW_RAWSYSCALL(SYS_renameatx_np,      5, CLONEAT,    CLONEAT)
+SHADW_RAWSYSCALL(SYS_renameatx_np,      5, RENAMEAT,   CLONEAT)
 // Round 13 audit: hidden-vs-absent pairs via syscall(2) that were passthrough.
 // All external-gated, hidden+ruleset, ENOENT on denial. Unconditional: numbers
 // exist in the 14.5 SDK.

@@ -352,6 +352,8 @@ typedef enum {
     SHADW_RAW_CAT_PROCINFO,      // raw proc_info(2) region-path after-success sanitize
     SHADW_RAW_CAT_STATFS,        // raw statfs64 single-mount filter
     SHADW_RAW_CAT_GETATTRLISTBULK, // raw getattrlistbulk(2) after-success record filter
+    SHADW_RAW_CAT_RENAME,        // (path, path) rename pair: both ends, entry identity
+    SHADW_RAW_CAT_RENAMEAT,      // (dirfd, path, dirfd, path, ...) renameat pair: both ends, entry identity
 #ifdef SYS_freadlink
     SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
 #endif

@@ -2521,7 +2521,7 @@ static int replaced_exchangedata(const char* path1, const char* path2, unsigned 
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
     if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(new) ||
-       shdw_path_is_external_hidden(old) || shdw_path_is_external_hidden(new) ||
+       shdw_path_is_external_hidden_nofollow(old) || shdw_path_is_external_hidden_nofollow(new) ||
        [_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
         return original_rename(old, new);
     }
@@ -2642,8 +2642,9 @@ static int replaced_renameat(int fromfd, const char* from, int tofd, const char*
         return -1;
     }
 
-    // Both path arguments are resolved against their own dirfd.
-    if(shdw_at_path_denied(fromfd, from) || shdw_at_path_denied(tofd, to)) {
+    // Both path arguments are resolved against their own dirfd; entries
+    // classify as named (see PathPolicy), so link operands move like stock.
+    if(shdw_at_path_denied_nofollow(fromfd, from) || shdw_at_path_denied_nofollow(tofd, to)) {
         return -1;
     }
 
@@ -2659,8 +2660,9 @@ static int replaced_renamex_np(const char* from, const char* to, unsigned int fl
         return -1;
     }
     // Same endpoint pair as replaced_rename: a hidden object looks absent.
-    if((from && (shdw_path_is_external_hidden(from) || [_shadow isCPathRestricted:from])) ||
-       (to && (shdw_path_is_external_hidden(to) || [_shadow isCPathRestricted:to]))) {
+    // Entries classify as named (see PathPolicy), so link operands move.
+    if((from && (shdw_path_is_external_hidden_nofollow(from) || [_shadow isCPathRestricted:from])) ||
+       (to && (shdw_path_is_external_hidden_nofollow(to) || [_shadow isCPathRestricted:to]))) {
         errno = ENOENT;
         return -1;
     }
@@ -2675,8 +2677,9 @@ static int replaced_renameatx_np(int fromfd, const char* from, int tofd, const c
         errno = ENOENT;
         return -1;
     }
-    // Both path arguments are resolved against their own dirfd.
-    if(shdw_at_path_denied(fromfd, from) || shdw_at_path_denied(tofd, to)) {
+    // Both path arguments are resolved against their own dirfd; entries
+    // classify as named (see PathPolicy), so link operands move like stock.
+    if(shdw_at_path_denied_nofollow(fromfd, from) || shdw_at_path_denied_nofollow(tofd, to)) {
         return -1;
     }
     return original_renameatx_np(fromfd, from, tofd, to, flags);

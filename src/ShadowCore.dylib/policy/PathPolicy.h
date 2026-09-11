@@ -38,6 +38,12 @@ shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* o
 // when the query must be denied (errno = ENOENT already set).
 BOOL shdw_at_path_denied(int dirfd, const char* pathname);
 
+// Entry-identity twin of shdw_at_path_denied for the *at mutators
+// (renameat/renameatx_np): identical dirfd resolution, ruleset shape and
+// errno contract, but the external-hidden verdict is the nofollow half, so a
+// link operand classifies as the entry the kernel will move, not its target.
+BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname);
+
 // fd→path classification for the fd-based hooks (fstat/fstatfs/fpathconf/
 // fgetxattr/...): resolves F_GETPATH for every decision, so dup/rename/raw
 // syscall mutations cannot retain a stale name. Returns YES when the fd's
@@ -124,6 +130,15 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char
 // surface, so no single API can expose what another hides. Exact leaf paths
 // plus the structural jb-app-container match.
 BOOL shdw_path_is_external_hidden(const char* pathname);
+
+// Entry-identity half of shdw_path_is_external_hidden for the mutator family
+// (rename/renameat/renamex_np/renameatx_np): the kernel operates on the
+// directory entry itself and never follows a final-component symlink, so the
+// leaf is classified as named — lexical exact list plus the ".."-parent
+// second opinion — never kernel-resolved. A spelling that names the hidden
+// object still hides; a link that merely points at one renames like any
+// other benign entry, exactly as the kernel treats it.
+BOOL shdw_path_is_external_hidden_nofollow(const char* pathname);
 
 // Directory-listing companion to shdw_path_is_external_hidden: an enumeration
 // hook resolves a parent path via F_GETPATH, which can name a bind mount's

@@ -286,6 +286,38 @@ BOOL shdw_path_is_external_hidden(const char* pathname) {
     if(kernelHit) return YES;
     return NO;
 }
+// Entry-identity half of the hidden predicate (see the header contract):
+// same cwd-join for relative spellings, same lexical exact list, same ".."
+// parent second opinion — but the leaf itself is never opened, so a trailing
+// symlink classifies as the link, not its target. The physical spelling is
+// already canonical past the leaf, so one lexical pass decides it; the call
+// still recurses at most once through the relative join above.
+BOOL shdw_path_is_external_hidden_nofollow(const char* pathname) {
+    if(!pathname) return NO;
+    if(pathname[0] != '/') {
+        int saved_errno = errno;
+        int fd = open(".", O_RDONLY | O_CLOEXEC);
+        if(fd >= 0) {
+            char cwd[PATH_MAX];
+            BOOL ok = fcntl(fd, F_GETPATH, cwd) != -1;
+            close(fd);
+            errno = saved_errno;
+            if(ok) {
+                char joined[PATH_MAX * 2];
+                int n = snprintf(joined, sizeof(joined), "%s/%s", cwd, pathname);
+                if(n > 0 && n < (int)sizeof(joined)) {
+                    return shdw_path_is_external_hidden_nofollow(joined);
+                }
+            }
+        } else {
+            errno = saved_errno;
+        }
+    }
+    if(shdw_path_is_external_hidden_lexical(pathname)) return YES;
+    const char* physical = shdw_path_physical_spelling(pathname);
+    if(physical && shdw_path_is_external_hidden_lexical(physical)) return YES;
+    return NO;
+}
 
 BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name) {
     if(!d_name) return NO;
@@ -886,6 +918,51 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname) {
     }
 
     // SHADW_DIRFD_ORIGINAL: let the kernel answer.
+    errno = saved_errno;
+    return NO;
+}
+
+// Entry-identity twin of shdw_at_path_denied (see the header contract):
+// identical resolution, leaf verdict, ruleset shape and errno contract —
+// only the hidden half is the nofollow variant, so link operands classify
+// as the entries the *at mutators move rather than their targets.
+BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname) {
+    if(pathname == NULL || pathname[0] == '\0') {
+        return NO;
+    }
+
+    int saved_errno = errno;
+    char parent[PATH_MAX];
+    shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
+
+    if(status == SHADW_DIRFD_ABSOLUTE) {
+        if(shdw_path_is_external_hidden_nofollow(pathname) || [_shadow isCPathRestricted:pathname]) {
+            errno = ENOENT;
+            return YES;
+        }
+    } else if(status == SHADW_DIRFD_DENY) {
+        errno = ENOENT;
+        return YES;
+    } else if(status == SHADW_DIRFD_OK) {
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+        if((n > 0 && n < (int)sizeof(joined) && shdw_path_is_external_hidden_nofollow(joined))
+           || shdw_dir_leaf_external_hidden(parent, pathname)) {
+            errno = ENOENT;
+            return YES;
+        }
+
+        NSString* path = [NSString stringWithUTF8String:pathname];
+        BOOL restricted = [_shadow isPathRestricted:path options:@{
+            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
+        }];
+
+        if(restricted) {
+            errno = ENOENT;
+            return YES;
+        }
+    }
+
     errno = saved_errno;
     return NO;
 }

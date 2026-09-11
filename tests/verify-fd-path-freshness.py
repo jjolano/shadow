@@ -205,6 +205,15 @@ static bool shdw_path_is_external_hidden(const char* path) {
     return false;
 }
 
+// Host double for the rename-family entry-identity half (PathPolicy.m): the
+// extracted *at span now carries its nofollow twin, whose only dependency
+// beyond the lexical stubs is this predicate. In-host resolution is stubbed
+// out, so it delegates to the same host-false verdict the full predicate
+// carries here; device runs prove the divergence (link operands move).
+static bool shdw_path_is_external_hidden_nofollow(const char* path) {
+    return shdw_path_is_external_hidden(path);
+}
+
 // Own-bundle sentinel for the exemption stubs: no other test path carries
 // this prefix.
 static bool shdw_path_is_main_bundle_exempt(const char* path) {

@@ -425,6 +425,16 @@ static long shdw_fwd_LINK(int number, va_list args) {
     return original_syscall(number, (const char *) a1, (const char *) a2);
 }
 
+// rename(from, to): the 2-slot pair shape (link's twin without the link
+// policy). The dispatch reads the same two endpoints for the entry-identity
+// verdict the libc rename hooks apply.
+static long shdw_fwd_RENAME(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (const char *) a2);
+}
+
 // exchangedata(path1, path2, options): the pair shape with a trailing
 // options word (no existing 3-slot path/path forwarder covers it).
 static long shdw_fwd_EXCHANGEDATA(int number, va_list args) {
@@ -736,6 +746,36 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 const char* dst = va_arg(inspect, const char *);
 
                 if(shdw_at_path_denied(srcfd, src) || shdw_at_path_denied(dstfd, dst)) {
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+            // Rename pair (path, path): same both-endpoint verdict the libc
+            // rename hooks apply — entry identity, never the link target —
+            // so a raw SYS_rename agrees with rename(2) on every operand.
+            case SHADW_RAW_CAT_RENAME: {
+                const char* from = va_arg(inspect, const char *);
+                const char* to = va_arg(inspect, const char *);
+
+                if((from && (shdw_path_is_external_hidden_nofollow(from) || [_shadow isCPathRestricted:from])) ||
+                   (to && (shdw_path_is_external_hidden_nofollow(to) || [_shadow isCPathRestricted:to]))) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+            } break;
+
+            // Renameat pair (dirfd, path, dirfd, path, ...): each endpoint
+            // against its own dirfd with the entry-identity twin, matching
+            // the libc renameat/renameatx_np hooks (trailing words such as
+            // renameatx_np flags are forwarded untouched, never inspected).
+            case SHADW_RAW_CAT_RENAMEAT: {
+                int srcfd = (int) va_arg(inspect, intptr_t);
+                const char* src = va_arg(inspect, const char *);
+                int dstfd = (int) va_arg(inspect, intptr_t);
+                const char* dst = va_arg(inspect, const char *);
+
+                if(shdw_at_path_denied_nofollow(srcfd, src) || shdw_at_path_denied_nofollow(dstfd, dst)) {
                     va_end(inspect);
                     return -1;
                 }
@@ -1224,6 +1264,8 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
             case SHADW_RAW_CAT_PATHOFF:
             case SHADW_RAW_CAT_PATHPATH:
             case SHADW_RAW_CAT_CLONEAT:
+            case SHADW_RAW_CAT_RENAME:
+            case SHADW_RAW_CAT_RENAMEAT:
             case SHADW_RAW_CAT_FDPATH:
             case SHADW_RAW_CAT_SYMLINKAT:
             case SHADW_RAW_CAT_KILL:
