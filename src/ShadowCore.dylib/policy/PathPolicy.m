@@ -70,6 +70,26 @@ BOOL shdw_detector_c_write_path_denied(const char* path) {
         [NSString stringWithUTF8String:path]);
 }
 
+// Dirfd-aware twin (see the header contract): the gate itself only names
+// absolute spellings, so dirfd-relative operands resolve first — against
+// the dirfd, never the process cwd, which names a different directory.
+BOOL shdw_detector_c_write_path_at_denied(int dirfd, const char* path) {
+    if(!path || !path[0]) return NO;
+    if(path[0] == '/') return shdw_detector_c_write_path_denied(path);
+    int saved_errno = errno;
+    char parent[PATH_MAX];
+    BOOL denied = NO;
+    if(shdw_resolve_dirfd_path(dirfd, path, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+        char joined[PATH_MAX * 2];
+        int n = snprintf(joined, sizeof(joined), "%s/%s", parent, path);
+        if(n > 0 && n < (int)sizeof(joined)) {
+            denied = shdw_detector_c_write_path_denied(joined);
+        }
+    }
+    errno = saved_errno;
+    return denied;
+}
+
 // Behavioral tripwire: any non-tweak caller touching a jailbreak-indicator
 // path is a detector, whatever it calls itself — renamed, obfuscated, or
 // statically linked into the app binary (which has no image name at all for
@@ -317,6 +337,24 @@ BOOL shdw_path_is_external_hidden_nofollow(const char* pathname) {
     const char* physical = shdw_path_physical_spelling(pathname);
     if(physical && shdw_path_is_external_hidden_lexical(physical)) return YES;
     return NO;
+}
+
+// Entry-identity ruleset verdict (see the header contract): the same
+// link-LOCATION shape the readlink/lstat hooks already use — the spelling
+// as named, never kernel-resolved, so a mutator operand reached through an
+// alias is judged as the entry the kernel will move. The default
+// read-operation query applies, so the detector write boundary (a write
+// operation) never fires here; that verdict stays with the hooks' explicit
+// write-gate calls, exactly one place per lane.
+BOOL shdw_path_ruleset_denied_nofollow(const char* path) {
+    if(!path || !path[0]) return NO;
+    int saved_errno = errno;
+    NSString* p = [NSString stringWithUTF8String:path];
+    BOOL denied = (p != nil) && [_shadow isPathRestricted:p options:@{
+        kShadowRestrictionNoFollow : @YES
+    }];
+    errno = saved_errno;
+    return denied;
 }
 
 BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name) {
@@ -936,7 +974,9 @@ BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname) {
     shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent));
 
     if(status == SHADW_DIRFD_ABSOLUTE) {
-        if(shdw_path_is_external_hidden_nofollow(pathname) || [_shadow isCPathRestricted:pathname]) {
+        // Absolute operand: dirfd ignored. Entry identity on both halves —
+        // the spelling as named, never kernel-resolved (see the header).
+        if(shdw_path_is_external_hidden_nofollow(pathname) || shdw_path_ruleset_denied_nofollow(pathname)) {
             errno = ENOENT;
             return YES;
         }
@@ -952,9 +992,13 @@ BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname) {
             return YES;
         }
 
+        // Dirfd-joined spelling judged as named (NoFollow): the parent is
+        // already kernel-resolved, so resolving again could only re-name
+        // the entry the kernel will move.
         NSString* path = [NSString stringWithUTF8String:pathname];
         BOOL restricted = [_shadow isPathRestricted:path options:@{
-            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
+            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent],
+            kShadowRestrictionNoFollow : @YES
         }];
 
         if(restricted) {

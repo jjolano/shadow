@@ -2520,9 +2520,10 @@ static int replaced_exchangedata(const char* path1, const char* path2, unsigned 
 
 static int (*original_rename)(const char* old, const char* new);
 static int replaced_rename(const char* old, const char* new) {
+    // Entry identity on both halves (see PathPolicy): the spelling as named.
     if(!isCallerExternal() || !(shdw_detector_c_write_path_denied(new) ||
        shdw_path_is_external_hidden_nofollow(old) || shdw_path_is_external_hidden_nofollow(new) ||
-       [_shadow isCPathRestricted:old] || [_shadow isCPathRestricted:new])) {
+       shdw_path_ruleset_denied_nofollow(old) || shdw_path_ruleset_denied_nofollow(new))) {
         return original_rename(old, new);
     }
 
@@ -2636,8 +2637,10 @@ static int replaced_renameat(int fromfd, const char* from, int tofd, const char*
     if(!isCallerExternal()) {
         return original_renameat(fromfd, from, tofd, to);
     }
-
-    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+    // Dest-home write boundary against the dirfd-resolved spelling, matching
+    // the plain rename lane (relative operands resolve against tofd here,
+    // not the process cwd).
+    if(shdw_detector_c_write_path_at_denied(tofd, to)) {
         errno = ENOENT;
         return -1;
     }
@@ -2650,19 +2653,22 @@ static int replaced_renameat(int fromfd, const char* from, int tofd, const char*
 
     return original_renameat(fromfd, from, tofd, to);
 }
+
 static int (*original_renamex_np)(const char* from, const char* to, unsigned int flags);
 static int replaced_renamex_np(const char* from, const char* to, unsigned int flags) {
     if(!isCallerExternal()) {
         return original_renamex_np(from, to, flags);
     }
-    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+    // Same write boundary as replaced_rename (the helper names absolute and
+    // cwd-relative spellings alike).
+    if(shdw_detector_c_write_path_denied(to)) {
         errno = ENOENT;
         return -1;
     }
     // Same endpoint pair as replaced_rename: a hidden object looks absent.
     // Entries classify as named (see PathPolicy), so link operands move.
-    if((from && (shdw_path_is_external_hidden_nofollow(from) || [_shadow isCPathRestricted:from])) ||
-       (to && (shdw_path_is_external_hidden_nofollow(to) || [_shadow isCPathRestricted:to]))) {
+    if((from && (shdw_path_is_external_hidden_nofollow(from) || shdw_path_ruleset_denied_nofollow(from))) ||
+       (to && (shdw_path_is_external_hidden_nofollow(to) || shdw_path_ruleset_denied_nofollow(to)))) {
         errno = ENOENT;
         return -1;
     }
@@ -2673,7 +2679,10 @@ static int replaced_renameatx_np(int fromfd, const char* from, int tofd, const c
     if(!isCallerExternal()) {
         return original_renameatx_np(fromfd, from, tofd, to, flags);
     }
-    if(to && to[0] == '/' && shdw_detector_c_write_path_denied(to)) {
+    // Dest-home write boundary against the dirfd-resolved spelling, matching
+    // the plain rename lane (relative operands resolve against tofd here,
+    // not the process cwd).
+    if(shdw_detector_c_write_path_at_denied(tofd, to)) {
         errno = ENOENT;
         return -1;
     }

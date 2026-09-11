@@ -750,24 +750,31 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                     return -1;
                 }
             } break;
-            // Rename pair (path, path): same both-endpoint verdict the libc
-            // rename hooks apply — entry identity, never the link target —
-            // so a raw SYS_rename agrees with rename(2) on every operand.
+            // Rename pair (path, path): the full libc rename verdict — dest-home
+            // write boundary plus entry identity on both ends — so a raw
+            // SYS_rename agrees with rename(2) on every operand.
             case SHADW_RAW_CAT_RENAME: {
                 const char* from = va_arg(inspect, const char *);
                 const char* to = va_arg(inspect, const char *);
 
-                if((from && (shdw_path_is_external_hidden_nofollow(from) || [_shadow isCPathRestricted:from])) ||
-                   (to && (shdw_path_is_external_hidden_nofollow(to) || [_shadow isCPathRestricted:to]))) {
+                if(shdw_detector_c_write_path_denied(to)) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+
+                if((from && (shdw_path_is_external_hidden_nofollow(from) || shdw_path_ruleset_denied_nofollow(from))) ||
+                   (to && (shdw_path_is_external_hidden_nofollow(to) || shdw_path_ruleset_denied_nofollow(to)))) {
                     errno = ENOENT;
                     va_end(inspect);
                     return -1;
                 }
             } break;
 
-            // Renameat pair (dirfd, path, dirfd, path, ...): each endpoint
-            // against its own dirfd with the entry-identity twin, matching
-            // the libc renameat/renameatx_np hooks (trailing words such as
+            // Renameat pair (dirfd, path, dirfd, path, ...): the full libc
+            // renameat verdict — dest-home write boundary against the
+            // dirfd-resolved spelling, then each endpoint against its own
+            // dirfd with the entry-identity twin (trailing words such as
             // renameatx_np flags are forwarded untouched, never inspected).
             case SHADW_RAW_CAT_RENAMEAT: {
                 int srcfd = (int) va_arg(inspect, intptr_t);
@@ -775,12 +782,17 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 int dstfd = (int) va_arg(inspect, intptr_t);
                 const char* dst = va_arg(inspect, const char *);
 
+                if(shdw_detector_c_write_path_at_denied(dstfd, dst)) {
+                    errno = ENOENT;
+                    va_end(inspect);
+                    return -1;
+                }
+
                 if(shdw_at_path_denied_nofollow(srcfd, src) || shdw_at_path_denied_nofollow(dstfd, dst)) {
                     va_end(inspect);
                     return -1;
                 }
             } break;
-
             case SHADW_RAW_CAT_FDPATH: {
                 int srcfd = (int) va_arg(inspect, intptr_t);
                 int dstfd = (int) va_arg(inspect, intptr_t);

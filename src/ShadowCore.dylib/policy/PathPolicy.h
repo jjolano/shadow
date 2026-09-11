@@ -44,6 +44,14 @@ BOOL shdw_at_path_denied(int dirfd, const char* pathname);
 // link operand classifies as the entry the kernel will move, not its target.
 BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname);
 
+// Entry-identity ruleset verdict for the rename family (see the nofollow
+// predicate contract above): the NoFollow query — the spelling as named,
+// standardized but never kernel-resolved — so an operand reached through an
+// alias classifies as the entry the mutator moves, not its target. A
+// spelling that names a restricted object still denies; a link that merely
+// points at one does not. Total (NULL-safe); leaves errno unchanged.
+BOOL shdw_path_ruleset_denied_nofollow(const char* path);
+
 // fd→path classification for the fd-based hooks (fstat/fstatfs/fpathconf/
 // fgetxattr/...): resolves F_GETPATH for every decision, so dup/rename/raw
 // syscall mutations cannot retain a stale name. Returns YES when the fd's
@@ -217,3 +225,11 @@ void shdw_detector_write_policy_set_enabled(BOOL enabled);
 BOOL shdw_detector_write_policy_is_enabled(void);
 BOOL shdw_detector_write_path_denied(NSString* path);
 BOOL shdw_detector_c_write_path_denied(const char* path);
+
+// Dirfd-aware twin of shdw_detector_c_write_path_denied for the *at mutators:
+// absolute spellings consult the gate directly; relative ones are resolved
+// against dirfd first so the verdict names the directory the kernel will
+// write, not the process cwd. Unresolvable dirfds admit (the kernel answers
+// EBADF, and no staging is possible through a fd the kernel rejects).
+// Total (NULL-safe); leaves errno unchanged.
+BOOL shdw_detector_c_write_path_at_denied(int dirfd, const char* path);

@@ -53,6 +53,19 @@ old_at = '''        NSString* path = [NSString stringWithUTF8String:pathname];
 assert old_at in at_path
 at_path = at_path.replace(old_at, "        BOOL restricted = is_at_restricted(parent, pathname);")
 at_path = at_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
+# The extracted span now also carries the rename-family entry-identity twin
+# (shdw_at_path_denied_nofollow): its NoFollow dirfd query pins the same
+# host stub as the following twin (in-host resolution is stubbed out, so
+# both agree here; device runs prove the divergence), and its absolute
+# branch consults the shared NoFollow helper, mapped to the same stub.
+old_at_nofollow = '''        NSString* path = [NSString stringWithUTF8String:pathname];
+        BOOL restricted = [_shadow isPathRestricted:path options:@{
+            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent],
+            kShadowRestrictionNoFollow : @YES
+        }];'''
+assert old_at_nofollow in at_path
+at_path = at_path.replace(old_at_nofollow, "        BOOL restricted = is_at_restricted(parent, pathname);")
+at_path = at_path.replace("shdw_path_ruleset_denied_nofollow(pathname)", "is_restricted(pathname)")
 
 assert "fcntl(fd, F_GETPATH, pathname) != -1" in fd_path
 fd_path = fd_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
