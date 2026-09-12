@@ -3099,7 +3099,7 @@ static int replaced_rmdir(const char* pathname) {
 
 static long (*original_pathconf)(const char* pathname, int name);
 static long replaced_pathconf(const char* pathname, int name) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
         return original_pathconf(pathname, name);
     }
 
@@ -3527,7 +3527,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                     "glob", "glob_b",
                     "fstat", "fstatat", "fgetattrlist",
                     "chmod", "lchmod", "chown", "lchown",
-                    "truncate", "utimes", "lutimes", "link", "exchangedata",
+                    "truncate", "pathconf", "utimes", "lutimes", "link", "exchangedata",
                     "linkat", "unlinkat", "renameat", "symlinkat", "mkdirat",
                     "rename", "remove", "unlink", "renamex_np", "renameatx_np",
                     "getxattr", "listxattr", "setxattr", "removexattr",
