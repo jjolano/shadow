@@ -548,13 +548,14 @@ int replaced_proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* pat
     return filteredBytes;
 }
 
-// proc_pidpath_audittoken: same policy as proc_pidpath (EPERM for a
-// restricted process). The audit_token_t (mach/message.h, via hooks.h's
-// <mach/mach.h>) carries the pid at val[4] (AU_TOKEN_PID) — same as the
-// sandbox_check_by_audit_token hook in sandbox.x.
+// Preserve libproc's buffer-size validation before applying the restricted
+// process policy. audit_token_t carries the pid at val[5].
 int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
 int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize) {
-    if(isCallerExternal() && token && shdw_pid_is_restricted((pid_t)token->val[4])) {
+    if(buffersize < PATH_MAX || buffersize > 4 * PATH_MAX)
+        return original_proc_pidpath_audittoken(token, buffer, buffersize);
+
+    if(isCallerExternal() && token && shdw_pid_is_restricted((pid_t)token->val[5])) {
         errno = ESRCH;
         return 0;
     }
