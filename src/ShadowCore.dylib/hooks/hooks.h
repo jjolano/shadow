@@ -524,6 +524,8 @@ extern int (*original_proc_listallpids)(void* buffer, int buffersize);
 extern int replaced_proc_listallpids(void* buffer, int buffersize);
 extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
+extern int (*original_proc_name)(int pid, void* buffer, uint32_t buffersize);
+extern int replaced_proc_name(int pid, void* buffer, uint32_t buffersize);
 extern int (*original_proc_regionfilename)(int pid, uint64_t address, void* buffer, uint32_t buffersize);
 extern int replaced_proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
 extern int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);

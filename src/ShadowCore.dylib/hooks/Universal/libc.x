@@ -3313,6 +3313,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
     { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
     { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
+    { "proc_name",              (void*)&replaced_proc_name,                (void**)&original_proc_name,                ANTIDBG,  0 },
     { "proc_regionfilename",    (void*)&replaced_proc_regionfilename,      (void**)&original_proc_regionfilename,      ANTIDBG,  0 },
     { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0 },
     { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0 },
@@ -3353,7 +3354,7 @@ static void shdw_libc_rebind_proclist(SHDWHookSession* hooks, const shdw_hook_de
 
     static const char* const names[] = {
         "proc_listpids", "proc_listallpids",
-        "proc_pidinfo", "proc_regionfilename",
+        "proc_pidinfo", "proc_name", "proc_regionfilename",
         "proc_pidpath", "proc_pidpath_audittoken",
         "kevent", "kevent64",
         NULL,

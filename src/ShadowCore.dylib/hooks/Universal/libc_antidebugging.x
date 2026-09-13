@@ -28,6 +28,7 @@ extern int proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buf
 extern int proc_listallpids(void* buffer, int buffersize);
 extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 extern int proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
+extern int proc_name(int pid, void* buffer, uint32_t buffersize);
 
 // libproc.h isn't shipped in the theos SDK either, so declare the two pieces
 // of the PROC_PIDTBSDINFO query we mask. proc_bsdinfo is a stable public ABI;
@@ -450,6 +451,21 @@ int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize) {
     }
 
     return original_proc_pidpath(pid, buffer, buffersize);
+}
+
+int (*original_proc_name)(int pid, void* buffer, uint32_t buffersize);
+int replaced_proc_name(int pid, void* buffer, uint32_t buffersize) {
+    // libproc validates the fixed 32-byte name field before looking up the PID.
+    if(buffersize < 32) {
+        return original_proc_name(pid, buffer, buffersize);
+    }
+
+    if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
+        errno = ESRCH;
+        return 0;
+    }
+
+    return original_proc_name(pid, buffer, buffersize);
 }
 
 // proc_pidpath_audittoken: same policy as proc_pidpath (EPERM for a
