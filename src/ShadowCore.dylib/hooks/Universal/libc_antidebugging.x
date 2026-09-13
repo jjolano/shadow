@@ -356,20 +356,28 @@ static int shdw_proc_listallpids_filtered(pid_t** out, int* gapOut) {
 }
 
 static int shdw_proc_listpids_filtered(pid_t** out, uint32_t type, uint32_t typeinfo, int* gapOut) {
-    int raw = original_proc_listpids(type, typeinfo, NULL, 0);
+    int rawBytes = original_proc_listpids(type, typeinfo, NULL, 0);
 
-    if(raw <= 0 || raw > 65536) {
+    if(rawBytes <= 0 || rawBytes > 65536 * (int)sizeof(pid_t)
+       || rawBytes % (int)sizeof(pid_t) != 0) {
         return -1;
     }
 
-    pid_t* tmp = malloc((size_t)raw * sizeof(pid_t));
+    pid_t* tmp = malloc((size_t)rawBytes);
 
     if(!tmp) {
         return -1;
     }
 
-    int got = original_proc_listpids(type, typeinfo, tmp, raw * (int)sizeof(pid_t));
-    int filtered = shdw_proc_fetch_filtered(out, raw, tmp, got, gapOut);
+    int gotBytes = original_proc_listpids(type, typeinfo, tmp, rawBytes);
+    if(gotBytes <= 0 || gotBytes > rawBytes || gotBytes % (int)sizeof(pid_t) != 0) {
+        free(tmp);
+        return -1;
+    }
+
+    int filtered = shdw_proc_fetch_filtered(out,
+        rawBytes / (int)sizeof(pid_t), tmp,
+        gotBytes / (int)sizeof(pid_t), gapOut);
 
     if(filtered < 0) {
         free(tmp);
@@ -383,6 +391,10 @@ int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int b
         return original_proc_listpids(type, typeinfo, buffer, buffersize);
     }
 
+    if(buffer && buffersize < (int)sizeof(pid_t)) {
+        return original_proc_listpids(type, typeinfo, buffer, buffersize);
+    }
+
     pid_t* tmp = NULL;
     int naturalGap = 0;
     int filtered = shdw_proc_listpids_filtered(&tmp, type, typeinfo, &naturalGap);
@@ -391,18 +403,17 @@ int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int b
         return original_proc_listpids(type, typeinfo, buffer, buffersize);
     }
 
-    // NULL-buffer probe: the filtered count plus the live structural offset,
-    // so the probe overcounts the fetch exactly as the unfiltered kernel
-    // does; the sysctl channel agrees with the fetch, as on stock.
+    // proc_listpids reports bytes (unlike proc_listallpids below, which reports
+    // a PID count). Preserve the live structural probe/fetch offset in PIDs,
+    // then convert the public result back to bytes.
     if(!buffer || buffersize <= 0) {
         free(tmp);
-        return filtered + naturalGap;
+        return (filtered + naturalGap) * (int)sizeof(pid_t);
     }
 
-    // Fit semantics: report only what was placed in the caller's buffer, so a
-    // caller trusting the return as a filled count never reads past it. A
-    // probe-sized caller (the standard loop) gets the whole filtered universe;
-    // the NULL probe overcounts it by the structural offset, as on stock.
+    // Fit semantics: report only the bytes placed in the caller's buffer. A
+    // probe-sized caller gets the whole filtered universe; the NULL probe
+    // overcounts it by the structural offset, as on stock.
     int capacity = buffersize / (int)sizeof(pid_t);
     int n = filtered < capacity ? filtered : capacity;
 
@@ -411,7 +422,7 @@ int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int b
     }
 
     free(tmp);
-    return n;
+    return n * (int)sizeof(pid_t);
 }
 
 int replaced_proc_listallpids(void* buffer, int buffersize) {
@@ -478,9 +489,21 @@ int replaced_proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* pat
         return original_proc_listpidspath(type, typeinfo, path, pathflags, buffer, buffersize);
     }
 
-    // Stock answers a NULL sizing request without consulting path, and rejects
-    // a sub-pid buffer with ENOMEM before stat(path). Preserve that precedence.
-    if(!buffer || buffersize < (int)sizeof(pid_t)) {
+    // Stock answers a NULL sizing request without consulting path. Return the
+    // filtered proc_listpids byte probe so the two public views still agree.
+    if(!buffer) {
+        pid_t* tmp = NULL;
+        int naturalGap = 0;
+        int filtered = shdw_proc_listpids_filtered(&tmp, type, typeinfo, &naturalGap);
+        if(filtered < 0) {
+            return original_proc_listpidspath(type, typeinfo, path, pathflags, buffer, buffersize);
+        }
+        free(tmp);
+        return (filtered + naturalGap) * (int)sizeof(pid_t);
+    }
+
+    // A sub-pid buffer fails with ENOMEM before stat(path).
+    if(buffersize < (int)sizeof(pid_t)) {
         return original_proc_listpidspath(type, typeinfo, path, pathflags, buffer, buffersize);
     }
 
