@@ -287,7 +287,8 @@ static ssize_t replaced_readlinkat(int dirfd, const char* pathname, char* buf, s
 
 static int (*original_chdir)(const char* pathname);
 static int replaced_chdir(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname)
+                               || [_shadow isCPathRestricted:pathname])) {
         int result = original_chdir(pathname);
 
         // A successful chdir changes the process cwd: drop the sandbox
@@ -3518,7 +3519,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // both direct-branch and dlsym callers route through the filter.
             if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC) {
                 static const char* const rebindFallback[] = {
-                    "readdir", "readdir_r", "scandir", "scandir_b",
+                    "readdir", "readdir_r", "chdir", "scandir", "scandir_b",
                     "statfs", "fstatfs", "statvfs", "fstatvfs",
                     "getmntinfo", "getmntinfo_r_np", "getfsstat",
                     "getattrlist", "getattrlistat", "getattrlistbulk",
