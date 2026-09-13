@@ -8,7 +8,7 @@ If Shadow is useful to you, consider [sponsoring](https://github.com/sponsors/jj
 
 Add `https://ios.jjolano.me` to your package manager and install `me.jjolano.shadow`. Or grab the [latest release](https://github.com/jjolano/shadow/releases/latest).
 
-Needs `AltList` + `libSandy` (opa334) and `HookKit >= 3.0.0` (jjolano). `Injection Foundation` (PoomSmart) recommended.
+Needs `AltList` + `libSandy` (opa334) and `HookKit >= 3.0.4` (jjolano; `>= 2.5.0` on rootful legacy). `Injection Foundation` (PoomSmart) recommended.
 
 ## Use
 

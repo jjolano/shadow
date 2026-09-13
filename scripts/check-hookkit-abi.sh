@@ -213,8 +213,8 @@ except Exception:
 PY
 )
 fi
-control="$ROOT/packaging/controls/control.$LANE"
-[ -f "$control" ] || control="$ROOT/packaging/controls/control.rootless"
+control="$ROOT/packaging/controls/control.$LANE.in"
+[ -f "$control" ] || control="$ROOT/packaging/controls/control.rootless.in"
 floor=$(grep -hoE 'hookkit[^,]*\(>= *[0-9][0-9.]*\)' "$control" 2>/dev/null \
     | grep -oE '>= *[0-9][0-9.]*' | grep -oE '[0-9][0-9.]*' | head -1 || true)
 echo "  installed HookKit version: ${inst_ver:-unknown}; packaged floor ($LANE): ${floor:-unknown}"
