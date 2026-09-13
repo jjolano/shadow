@@ -3518,7 +3518,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                     "glob", "glob_b",
                     "fstat", "fstatat", "fgetattrlist",
                     "chmod", "lchmod", "chown", "lchown",
-                    "truncate", "pathconf", "utimes", "lutimes", "link", "exchangedata",
+                    "truncate", "pathconf", "utimes", "lutimes", "utimensat", "link", "exchangedata",
                     "linkat", "unlinkat", "renameat", "symlinkat", "mkdirat",
                     "rename", "remove", "unlink", "renamex_np", "renameatx_np",
                     "getxattr", "listxattr", "setxattr", "removexattr",
