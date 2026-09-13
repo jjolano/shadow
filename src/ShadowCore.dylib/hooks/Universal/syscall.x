@@ -502,13 +502,13 @@ static long shdw_syscall_forward(int number, va_list args) {
 // Path/process classification shared with libc.x lives in
 // policy/PathPolicy.m and policy/ProcessPolicy.m (dirfd-aware *at
 // classification, uncached per-pid classification, the kinfo cache and the
-// filtered KERN_PROC_ALL enumeration). The raw surface's original calls
+// filtered KERN_PROC list enumeration). The raw surface's original calls
 // re-enter the (possibly __syscall-delegating) dispatch, so the enumeration
 // adapter below runs with the reentrancy guard (reentrant = YES).
 
-// Adapter: the shared KERN_PROC_ALL filter calls the original through a
+// Adapter: the shared KERN_PROC list filter calls the original through a
 // sysctl-shaped function pointer; here that is the raw syscall with the
-// sysctl MIB arguments.
+// sysctl MIB arguments (the filter's snapshot of the supplied MIB).
 static int shdw_raw_sysctl_original(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
     return (int) original_syscall(SYS_sysctl, name, namelen, oldp, oldlenp, newp, newlen);
 }
@@ -946,13 +946,16 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                     return ba_ret;
                 }
 
-                // KERN_PROC_ALL process enumeration: same filtered-list policy
-                // as the libc.x sysctl hook, via the shared filter
-                // (policy/ProcessPolicy.m). The own reentrancy guard keeps a
-                // nested (__syscall-delegating) dispatch from re-applying it.
-                if(kind == SHADW_PROC_MIB_ALL) {
-                    if(!shdw_proc_all_in_progress()) {
-                        int proc_ret = shdw_proc_all_filtered(shdw_raw_sysctl_original, sysctl_oldp, sysctl_oldlenp, YES);
+                // KERN_PROC list enumeration (ALL/PGRP/TTY/UID/RUID): same
+                // filtered-list policy as the libc.x sysctl hook, via the
+                // shared filter (policy/ProcessPolicy.m), which snapshots the
+                // supplied MIB so the selector arguments are honoured. Only
+                // read queries divert (newp == NULL, oldlenp != NULL). The
+                // own reentrancy guard keeps a nested (__syscall-delegating)
+                // dispatch from re-applying it.
+                if(kind == SHADW_PROC_MIB_LIST && sysctl_newp == NULL && sysctl_oldlenp != NULL) {
+                    if(!shdw_proc_list_in_progress()) {
+                        int proc_ret = shdw_proc_list_filtered(shdw_raw_sysctl_original, sysctl_mib, sysctl_miblen, sysctl_oldp, sysctl_oldlenp, YES);
                         va_end(inspect);
                         return proc_ret;
                     }
@@ -1178,7 +1181,7 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                     if(kind == SHADW_PROC_MIB_PID_SELF && sysctl_oldp && sysctl_oldlenp && *sysctl_oldlenp >= sizeof(struct kinfo_proc)) {
                         // Full self-record sanitize: trace flags AND e_ppid=1,
                         // matching the libc per-pid hook (libc_antidebugging.x)
-                        // and the KERN_PROC_ALL list filter. A detector reading
+                        // and the KERN_PROC list filter. A detector reading
                         // its own parent via the RAW syscall must see the same 1
                         // that getppid()/proc_pidinfo/libc sysctl report — else
                         // the raw path is a cross-API contradiction (real parent
@@ -1531,10 +1534,12 @@ static int shdw_sysctlbyname_policy(const char* name, void* oldp, size_t* oldlen
             return shdw_bootargs_filtered(oldp, oldlenp);
         }
 
-        if(strcmp(name, "kern.proc.all") == 0) {
-            // The original calls below re-enter the (possibly
-            // __syscall-delegating) dispatch, hence reentrant = YES.
-            return shdw_proc_all_filtered(shdw_raw_sysctl_original, oldp, oldlenp, YES);
+        if(strcmp(name, "kern.proc.all") == 0 && newp == NULL && oldlenp != NULL) {
+            // The shared list filter takes a MIB; "kern.proc.all" is the
+            // KERN_PROC_ALL selector. The original calls below re-enter the
+            // (possibly __syscall-delegating) dispatch, hence reentrant=YES.
+            int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
+            return shdw_proc_list_filtered(shdw_raw_sysctl_original, procMIB, 3, oldp, oldlenp, YES);
         }
 
         static const char procPidPrefix[] = "kern.proc.pid.";

@@ -45,27 +45,30 @@ BOOL shdw_pid_restricted_uncached(pid_t pid);
 // sysctl path.
 BOOL shdw_pid_is_restricted(pid_t pid);
 
-// Original-call shape used by the KERN_PROC_ALL filter below
+// Original-call shape used by the KERN_PROC list filter below
 // (sysctl(2)-compatible argument order).
 typedef int (*shdw_sysctl_proc_fn)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
 
-// Filtered KERN_PROC_ALL enumeration: two-phase size/full query with one
-// churn retry, restricted processes removed, self trace flags cleared.
-// Stock sysctl size semantics are preserved (size-only query → filtered
-// byte count in *oldlenp; short buffer → ENOMEM with the required size in
-// *oldlenp).
+// Filtered KERN_PROC list enumeration (ALL/PGRP/TTY/UID/RUID): two-phase
+// size/full query with one churn retry, restricted processes removed, self
+// trace flags cleared. The supplied MIB (selector value and argument) is
+// snapshotted once and every original call uses that snapshot, so all phases
+// of one filter run answer for the identical list. Stock sysctl size
+// semantics are preserved: a size-only query (oldp == NULL) returns the
+// kernel's own whole-table estimate unchanged, and a short buffer returns
+// ENOMEM with the required filtered size in *oldlenp.
 //
 // `orig` is the adapter's own original call (original_sysctl for the libc
 // hook, an original_syscall(SYS_sysctl, ...) forward for the raw surface).
 // `reentrant` YES for the raw surface, whose original calls can re-enter
 // the (possibly __syscall-delegating) dispatch — the filter then sets the
-// in-progress flag that the dispatch checks (shdw_proc_all_in_progress)
+// in-progress flag that the dispatch checks (shdw_proc_list_in_progress)
 // before applying this policy again.
-int shdw_proc_all_filtered(shdw_sysctl_proc_fn orig, void* oldp, size_t* oldlenp, BOOL reentrant);
+int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, void* oldp, size_t* oldlenp, BOOL reentrant);
 
-// YES while a reentrant KERN_PROC_ALL filter is inside its original calls
-// (see shdw_proc_all_filtered).
-BOOL shdw_proc_all_in_progress(void);
+// YES while a reentrant KERN_PROC list filter is inside its original calls
+// (see shdw_proc_list_filtered).
+BOOL shdw_proc_list_in_progress(void);
 
 // Compacts restricted pids out of a proc_listpids/proc_listallpids result
 // buffer in place. The buffer holds pid_t entries; returns the filtered
@@ -82,13 +85,14 @@ void shdw_proc_sanitize_self_trace_flags(struct kinfo_proc* p);
 // kp_eproc.e_ppid would otherwise see the real parent (debugger, host app)).
 void shdw_proc_sanitize_self_record(struct kinfo_proc* p);
 
-// Classifies a sysctl MIB as one of the process surfaces. NONE for
-// anything else (including malformed shapes like KERN_PROC_PID with a
-// non-positive pid, which must pass through untouched). Safe for NULL name
-// and short namelen.
+// Classifies a sysctl MIB as one of the process surfaces. The supported
+// KERN_PROC list selectors (ALL, PGRP, TTY, UID, RUID) classify as LIST;
+// the unsupported ones (SESSION, LCID — ENOTSUP from the kernel) and
+// malformed shapes (including KERN_PROC_PID with a non-positive pid) are
+// NONE and pass through untouched. Safe for NULL name and short namelen.
 typedef enum {
     SHADW_PROC_MIB_NONE = 0,
-    SHADW_PROC_MIB_ALL,         // {CTL_KERN, KERN_PROC, KERN_PROC_ALL[, 0]}
+    SHADW_PROC_MIB_LIST,        // {CTL_KERN, KERN_PROC, ALL|PGRP|TTY|UID|RUID[, arg]}
     SHADW_PROC_MIB_PID_SELF,    // {CTL_KERN, KERN_PROC, KERN_PROC_PID, self}
     SHADW_PROC_MIB_PID_OTHER,   // {CTL_KERN, KERN_PROC, KERN_PROC_PID, >0, != self}
     SHADW_PROC_MIB_ARGS_SELF,   // {CTL_KERN, KERN_PROCARGS, self} (legacy argv/env channel)

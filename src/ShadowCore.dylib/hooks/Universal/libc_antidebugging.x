@@ -44,9 +44,9 @@ struct shdw_proc_bsdinfo_prefix {
 };
 
 // Process classification/filtering shared with syscall.x lives in
-// policy/ProcessPolicy.m: the kinfo cache, the filtered KERN_PROC_ALL
-// enumeration, the libproc pid filter and the MIB classification
-// (shdw_proc_mib_kind) that drives this hook's branches.
+// policy/ProcessPolicy.m: the kinfo cache, the filtered KERN_PROC list
+// enumeration (ALL/PGRP/TTY/UID/RUID), the libproc pid filter and the MIB
+// classification (shdw_proc_mib_kind) that drives this hook's branches.
 int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
 
 int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen) {
@@ -82,12 +82,14 @@ int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void*
 
     int ret;
 
-    if(kind == SHADW_PROC_MIB_ALL && newp == NULL && oldlenp != NULL) {
-        // Filtered KERN_PROC_ALL enumeration: restricted processes removed,
-        // self trace flags cleared, stock size semantics preserved. The
-        // libc surface's original calls cannot re-enter the raw-syscall
-        // dispatch, so no in-progress guard (reentrant = NO).
-        ret = shdw_proc_all_filtered(original_sysctl, oldp, oldlenp, NO);
+    if(kind == SHADW_PROC_MIB_LIST && newp == NULL && oldlenp != NULL) {
+        // Filtered KERN_PROC list enumeration: restricted processes removed,
+        // self trace flags cleared, stock size semantics preserved, and the
+        // caller's selector arguments honoured (the filter snapshots and uses
+        // the supplied MIB for every original call). The libc surface's
+        // original calls cannot re-enter the raw-syscall dispatch, so no
+        // in-progress guard (reentrant = NO).
+        ret = shdw_proc_list_filtered(original_sysctl, name, namelen, oldp, oldlenp, NO);
     } else {
         ret = original_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
     }

@@ -1,4 +1,4 @@
-// Process policy. The kinfo cache, the filtered KERN_PROC_ALL enumeration
+// Process policy. The kinfo cache, the filtered KERN_PROC list enumeration
 // and the libproc pid cache came from the near-identical copies in
 // hooks/libc.x and hooks/syscall.x; the raw surface additionally
 // re-entrancy-guards its original calls (kept behind the `reentrant`
@@ -265,27 +265,47 @@ int shdw_proc_pids_filtered(pid_t* pids, int count) {
     return out;
 }
 
-// --- filtered KERN_PROC_ALL enumeration ------------------------------------
+// --- filtered KERN_PROC list enumeration -----------------------------------
 
-static _Thread_local BOOL shdw_proc_all_in_progress_flag = NO;
+static _Thread_local BOOL shdw_proc_list_in_progress_flag = NO;
 
-BOOL shdw_proc_all_in_progress(void) {
-    return shdw_proc_all_in_progress_flag;
+BOOL shdw_proc_list_in_progress(void) {
+    return shdw_proc_list_in_progress_flag;
 }
 
-int shdw_proc_all_filtered(shdw_sysctl_proc_fn orig, void* oldp, size_t* oldlenp, BOOL reentrant) {
-    int procMIB[3] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
+int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, void* oldp, size_t* oldlenp, BOOL reentrant) {
+    // Caller-owned MIB: snapshot it once so every original call (size probe,
+    // fetch, churn retry) sees the identical selector, even if the caller
+    // mutates the array from another thread mid-filter. Callers and the
+    // classifier only route 3- or 4-element lists; the copy is bounded
+    // regardless, for memory safety.
+    int snapshot[4];
+    u_int n = miblen < 4 ? miblen : 4;
+
+    memcpy(snapshot, mib, (size_t) n * sizeof(int));
 
     if(reentrant) {
-        shdw_proc_all_in_progress_flag = YES;
+        shdw_proc_list_in_progress_flag = YES;
+    }
+
+    // Size-only query: hand the kernel's own estimate back UNCHANGED. Stock
+    // KERN_PROC size-only answers the whole-table size plus KERN_PROCSLOP
+    // regardless of selector, so rewriting it to the exact filtered size is
+    // itself a filtered-list fingerprint. One direct call, no full fetch.
+    if(oldp == NULL) {
+        int ret = orig(snapshot, n, NULL, oldlenp, NULL, 0);
+        if(reentrant) {
+            shdw_proc_list_in_progress_flag = NO;
+        }
+        return ret;
     }
 
     size_t capacity = 0;
-    int ret = orig(procMIB, 3, NULL, &capacity, NULL, 0);
+    int ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
 
     if(ret != 0) {
         if(reentrant) {
-            shdw_proc_all_in_progress_flag = NO;
+            shdw_proc_list_in_progress_flag = NO;
         }
         return ret;  // kernel owns the error and *oldlenp
     }
@@ -298,36 +318,49 @@ int shdw_proc_all_filtered(shdw_sysctl_proc_fn orig, void* oldp, size_t* oldlenp
     if(!procs) {
         errno = ENOMEM;
         if(reentrant) {
-            shdw_proc_all_in_progress_flag = NO;
+            shdw_proc_list_in_progress_flag = NO;
         }
         return -1;
     }
 
     size_t actual = capacity;
-    ret = orig(procMIB, 3, procs, &actual, NULL, 0);
+    ret = orig(snapshot, n, procs, &actual, NULL, 0);
 
     if(ret != 0 && errno == ENOMEM) {
-        // Churn outgrew the first buffer: retry once with the kernel's size.
+        // Churn outgrew the first buffer. A full KERN_PROC fetch reports the
+        // bytes copied in *oldlenp on ENOMEM, not the required capacity, so
+        // re-probe the size through the same MIB instead of reusing it.
         free(procs);
-        capacity = actual;
+
+        capacity = 0;
+        ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
+
+        if(ret != 0) {
+            if(reentrant) {
+                shdw_proc_list_in_progress_flag = NO;
+            }
+            return ret;  // kernel owns the error and *oldlenp
+        }
+
+        capacity += sizeof(struct kinfo_proc) * 8;
         procs = malloc(capacity);
 
         if(!procs) {
             errno = ENOMEM;
             if(reentrant) {
-                shdw_proc_all_in_progress_flag = NO;
+                shdw_proc_list_in_progress_flag = NO;
             }
             return -1;
         }
 
         actual = capacity;
-        ret = orig(procMIB, 3, procs, &actual, NULL, 0);
+        ret = orig(snapshot, n, procs, &actual, NULL, 0);
     }
 
     if(ret != 0) {
         free(procs);
         if(reentrant) {
-            shdw_proc_all_in_progress_flag = NO;
+            shdw_proc_list_in_progress_flag = NO;
         }
         return ret;
     }
@@ -356,23 +389,13 @@ int shdw_proc_all_filtered(shdw_sysctl_proc_fn orig, void* oldp, size_t* oldlenp
 
     size_t needed = (size_t) out * sizeof(struct kinfo_proc);
 
-    if(oldp == NULL) {
-        // Size-only query: report the filtered byte count.
-        *oldlenp = needed;
-        free(procs);
-        if(reentrant) {
-            shdw_proc_all_in_progress_flag = NO;
-        }
-        return 0;
-    }
-
     if(*oldlenp < needed) {
         // Short buffer: stock sysctl semantics (ENOMEM + required size).
         *oldlenp = needed;
         free(procs);
         errno = ENOMEM;
         if(reentrant) {
-            shdw_proc_all_in_progress_flag = NO;
+            shdw_proc_list_in_progress_flag = NO;
         }
         return -1;
     }
@@ -381,7 +404,7 @@ int shdw_proc_all_filtered(shdw_sysctl_proc_fn orig, void* oldp, size_t* oldlenp
     *oldlenp = needed;
     free(procs);
     if(reentrant) {
-        shdw_proc_all_in_progress_flag = NO;
+        shdw_proc_list_in_progress_flag = NO;
     }
     return 0;
 }
@@ -436,14 +459,22 @@ shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
     }
 
     if(name[1] == KERN_PROC) {
+        // Supported list selectors: ALL (3-element MIB; some callers append
+        // a legacy 4th zero element) and PGRP/TTY/UID/RUID (selector value
+        // + exactly one argument). SESSION and LCID are absent: the kernel
+        // answers ENOTSUP for them, so they pass through untouched.
         if(name[2] == KERN_PROC_ALL) {
-            // KERN_PROC_ALL is a 3-element MIB (some callers append a
-            // legacy 4th zero element).
             if(namelen == 3 || (namelen == 4 && name[3] == 0)) {
-                return SHADW_PROC_MIB_ALL;
+                return SHADW_PROC_MIB_LIST;
             }
 
             return SHADW_PROC_MIB_NONE;
+        }
+
+        if((name[2] == KERN_PROC_PGRP || name[2] == KERN_PROC_TTY
+            || name[2] == KERN_PROC_UID || name[2] == KERN_PROC_RUID)
+           && namelen == 4) {
+            return SHADW_PROC_MIB_LIST;
         }
 
         if(name[2] == KERN_PROC_PID && namelen == 4) {
