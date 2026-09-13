@@ -29,6 +29,8 @@ extern int proc_listallpids(void* buffer, int buffersize);
 extern int proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 extern int proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
 extern int proc_name(int pid, void* buffer, uint32_t buffersize);
+extern int proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* path,
+                            uint32_t pathflags, void* buffer, int buffersize);
 
 // libproc.h isn't shipped in the theos SDK either, so declare the two pieces
 // of the PROC_PIDTBSDINFO query we mask. proc_bsdinfo is a stable public ABI;
@@ -466,6 +468,53 @@ int replaced_proc_name(int pid, void* buffer, uint32_t buffersize) {
     }
 
     return original_proc_name(pid, buffer, buffersize);
+}
+
+int (*original_proc_listpidspath)(uint32_t type, uint32_t typeinfo, const char* path,
+                                     uint32_t pathflags, void* buffer, int buffersize);
+int replaced_proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* path,
+                              uint32_t pathflags, void* buffer, int buffersize) {
+    if(!isCallerExternal()) {
+        return original_proc_listpidspath(type, typeinfo, path, pathflags, buffer, buffersize);
+    }
+
+    // Stock answers a NULL sizing request without consulting path, and rejects
+    // a sub-pid buffer with ENOMEM before stat(path). Preserve that precedence.
+    if(!buffer || buffersize < (int)sizeof(pid_t)) {
+        return original_proc_listpidspath(type, typeinfo, path, pathflags, buffer, buffersize);
+    }
+
+    if(path && !shdw_path_is_main_bundle_exempt(path)
+       && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    void* tmp = malloc((size_t)buffersize);
+    if(!tmp) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    int result = original_proc_listpidspath(type, typeinfo, path, pathflags, tmp, buffersize);
+    int resultErrno = errno;
+    if(result <= 0) {
+        free(tmp);
+        errno = resultErrno;
+        return result;
+    }
+    if(result > buffersize || result % (int)sizeof(pid_t) != 0) {
+        free(tmp);
+        errno = EOVERFLOW;
+        return -1;
+    }
+
+    int filtered = shdw_proc_pids_filtered((pid_t*)tmp, result / (int)sizeof(pid_t));
+    int filteredBytes = filtered * (int)sizeof(pid_t);
+    memcpy(buffer, tmp, (size_t)filteredBytes);
+    free(tmp);
+    errno = resultErrno;
+    return filteredBytes;
 }
 
 // proc_pidpath_audittoken: same policy as proc_pidpath (EPERM for a

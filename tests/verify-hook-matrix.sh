@@ -37,7 +37,7 @@ trap 'rm -f "$entries"' 0 HUP INT TERM
 # ponytail: keep this list in sync with the hook call sites, nothing else.
 matrix_entries() {
     cat <<'EOF'
-isCPathRestricted|libc libc_lowlevel dyld sandbox syscall AppEnvironment svc_patch
+isCPathRestricted|libc libc_lowlevel libc_antidebugging dyld sandbox syscall AppEnvironment svc_patch
 isMountPathRestricted|libc
 isPathRestricted:options:|libc libc_lowlevel dyld sandbox syscall NSFileManager NSString NSData NSArray NSDictionary NSFileHandle NSBundle NSProcessInfo
 isURLRestricted:options:|NSFileManager NSURL NSString NSData NSArray NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
