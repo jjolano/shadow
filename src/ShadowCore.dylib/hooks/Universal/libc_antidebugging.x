@@ -460,6 +460,10 @@ int replaced_proc_listallpids(void* buffer, int buffersize) {
 
 int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
 int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize) {
+    if(buffersize < PATH_MAX || buffersize > 4 * PATH_MAX) {
+        return original_proc_pidpath(pid, buffer, buffersize);
+    }
+
     if(isCallerExternal() && shdw_pid_is_restricted(pid)) {
         // Jailbreak daemon: deny the per-pid path query the same way
         // a dead pid answers (rc=0, ESRCH).
