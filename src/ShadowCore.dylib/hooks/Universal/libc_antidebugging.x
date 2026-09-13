@@ -430,6 +430,10 @@ int replaced_proc_listallpids(void* buffer, int buffersize) {
         return original_proc_listallpids(buffer, buffersize);
     }
 
+    if(buffer && buffersize < (int)sizeof(pid_t)) {
+        return original_proc_listallpids(buffer, buffersize);
+    }
+
     pid_t* tmp = NULL;
     int naturalGap = 0;
     int filtered = shdw_proc_listallpids_filtered(&tmp, &naturalGap);
