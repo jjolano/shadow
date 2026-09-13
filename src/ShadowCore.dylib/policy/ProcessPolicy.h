@@ -54,9 +54,15 @@ typedef int (*shdw_sysctl_proc_fn)(int* name, u_int namelen, void* oldp, size_t*
 // trace flags cleared. The supplied MIB (selector value and argument) is
 // snapshotted once and every original call uses that snapshot, so all phases
 // of one filter run answer for the identical list. Stock sysctl size
-// semantics are preserved: a size-only query (oldp == NULL) returns the
-// kernel's own whole-table estimate unchanged, and a short buffer returns
-// ENOMEM with the required filtered size in *oldlenp.
+// semantics are preserved for a size-only query (oldp == NULL): the kernel's
+// own whole-table estimate comes back unchanged.
+//
+// Buffer capacity is counted as whole struct kinfo_proc records, and a short
+// buffer answers the measured target ABI: the largest whole-record filtered
+// prefix that fits is copied (never a partial record, never past capacity),
+// then -1/ENOMEM is returned with *oldlenp = 0. Partial writes are therefore
+// visible to a failing caller; the kernel handler accounts output internally,
+// but the error return callers observe exposes zero.
 //
 // `orig` is the adapter's own original call (original_sysctl for the libc
 // hook, an original_syscall(SYS_sysctl, ...) forward for the raw surface).

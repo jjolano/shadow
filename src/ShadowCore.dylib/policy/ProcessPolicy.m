@@ -389,10 +389,24 @@ int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, vo
 
     size_t needed = (size_t) out * sizeof(struct kinfo_proc);
 
-    if(*oldlenp < needed) {
-        // Short buffer: stock sysctl semantics (ENOMEM + required size).
-        *oldlenp = needed;
-        free(procs);
+    // Capacity in whole records: copy the largest whole-record filtered
+    // prefix that fits and never a partial record (see the header contract).
+    size_t fit = (*oldlenp / sizeof(struct kinfo_proc)) * sizeof(struct kinfo_proc);
+
+    if(fit > needed) {
+        fit = needed;
+    }
+
+    if(fit != 0) {
+        memcpy(oldp, procs, fit);
+    }
+
+    free(procs);
+
+    if(fit < needed) {
+        // Short buffer: measured target ABI — the fitting prefix above is
+        // copied, then ENOMEM with *oldlenp = 0.
+        *oldlenp = 0;
         errno = ENOMEM;
         if(reentrant) {
             shdw_proc_list_in_progress_flag = NO;
@@ -400,9 +414,7 @@ int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, vo
         return -1;
     }
 
-    memcpy(oldp, procs, needed);
     *oldlenp = needed;
-    free(procs);
     if(reentrant) {
         shdw_proc_list_in_progress_flag = NO;
     }
