@@ -565,12 +565,9 @@ int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_
 int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
 int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize) {
     if(isCallerExternal() && pid != getpid() && shdw_pid_is_restricted(pid)) {
-        // Jailbreak daemon (never self): deny the per-pid query the same way
-        // a dead pid answers (rc=0, ESRCH). Self is
-        // excluded — an app inspecting its own process is legitimate, and the
-        // own-record/own-region sanitizers below present the filtered view.
-        errno = ESRCH;
-        return 0;
+        // Let the kernel validate flavor/size before it reaches an impossible
+        // PID. Valid queries retain the dead-process ESRCH shape.
+        return original_proc_pidinfo(-1, flavor, arg, buffer, buffersize);
     }
 
     int ret = original_proc_pidinfo(pid, flavor, arg, buffer, buffersize);

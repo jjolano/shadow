@@ -654,6 +654,7 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
     // Raw proc_info(2) region-path policy args (hoisted; used after the forward).
     int pi_pid = 0;
     int pi_flavor = 0;
+    uint64_t pi_arg = 0;
     void* pi_buffer = NULL;
     int pi_buffersize = 0;
     BOOL pi_region_path = NO;
@@ -1055,18 +1056,20 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 int callnum = (int) va_arg(inspect, intptr_t);
                 pi_pid = (int) va_arg(inspect, intptr_t);
                 pi_flavor = (int) va_arg(inspect, intptr_t);
-                (void) va_arg(inspect, intptr_t);  // arg (region address)
+                pi_arg = (uint64_t) va_arg(inspect, intptr_t);
                 pi_buffer = (void *) va_arg(inspect, intptr_t);
                 pi_buffersize = (int) va_arg(inspect, intptr_t);
 
-                // A restricted OTHER pid's per-pid inspection is denied the same
-                // way a dead pid answers (raw shape -1, ESRCH).
+                // Let the kernel validate flavor/size before it reaches an
+                // impossible PID. Valid queries retain the dead-process ESRCH
+                // shape while malformed requests preserve their stock error.
                 if(callnum == SHADOW_PROC_INFO_CALL_PIDINFO
                    && pi_pid > 0 && pi_pid != getpid()
                    && shdw_pid_is_restricted(pi_pid)) {
-                    errno = ESRCH;
+                    long result = original_syscall(number, callnum, -1,
+                        pi_flavor, pi_arg, pi_buffer, pi_buffersize);
                     va_end(inspect);
-                    return -1;
+                    return result;
                 }
 
                 pi_region_path = (callnum == SHADOW_PROC_INFO_CALL_PIDINFO
