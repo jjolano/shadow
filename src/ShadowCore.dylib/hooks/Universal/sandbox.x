@@ -749,13 +749,13 @@ static int replaced_wordexp(const char* words, wordexp_t* pwordexp, int flags) {
 // sandbox_check_by_audit_token: applies the sandbox_check policy only when
 // the token belongs to THIS process (a jailbreak library judging a foreign
 // process is not our surface — pass through). The audit token's pid
-// component is val[4] (AU_TOKEN_PID).
+// component is val[5].
 static int (*original_sandbox_check_by_audit_token)(audit_token_t token, const char *operation, enum sandbox_filter_type type, ...);
 static int replaced_sandbox_check_by_audit_token(audit_token_t token, const char *operation, enum sandbox_filter_type type, ...) {
     va_list args;
     va_start(args, type);
 
-    if(isCallerExternal() && (pid_t) token.val[4] == getpid() && operation) {
+    if(isCallerExternal() && (pid_t) token.val[5] == getpid() && operation) {
         // Read from a COPY so the forward below still sees the full list.
         va_list inspect;
         va_copy(inspect, args);
@@ -887,7 +887,15 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     // crashed deterministically), but the hazard shape is identical and the
     // cost of being wrong is a process kill — hook them rebind-only, same
     // "skip cleanly when unhookable" tradeoff as the syscall.x fix.
-    [hooks hookFunction:sandbox_check withReplacement:replaced_sandbox_check outOldPtr:(void **) &original_sandbox_check];
+    void* sym_sandbox_check = (void*)sandbox_check;
+    if(![hooks hookFunction:sandbox_check withReplacement:replaced_sandbox_check outOldPtr:(void **) &original_sandbox_check]) {
+        [hooks hookRebindSymbol:@"sandbox_check"
+                withReplacement:replaced_sandbox_check
+                       outOldPtr:(void **) &original_sandbox_check];
+    }
+    if(!original_sandbox_check) {
+        original_sandbox_check = sym_sandbox_check;
+    }
     [hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
     [hooks hookRebindSymbol:@"host_get_special_port" withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
     [hooks hookRebindSymbol:@"task_get_special_port" withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
@@ -951,7 +959,14 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
 
     sym_misc = shdw_resolve_libsystem("_sandbox_check_by_audit_token");
     if(sym_misc) {
-        [hooks hookFunction:sym_misc withReplacement:replaced_sandbox_check_by_audit_token outOldPtr:(void **) &original_sandbox_check_by_audit_token];
+        if(![hooks hookFunction:sym_misc withReplacement:replaced_sandbox_check_by_audit_token outOldPtr:(void **) &original_sandbox_check_by_audit_token]) {
+            [hooks hookRebindSymbol:@"sandbox_check_by_audit_token"
+                    withReplacement:replaced_sandbox_check_by_audit_token
+                           outOldPtr:(void **) &original_sandbox_check_by_audit_token];
+        }
+        if(!original_sandbox_check_by_audit_token) {
+            original_sandbox_check_by_audit_token = sym_misc;
+        }
     }
 
     sym_misc = shdw_resolve_libsystem("_task_get_exception_ports");
@@ -984,9 +999,9 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
 // export to its replacement for external callers, so the GOT-vs-dlsym
 // comparison agrees. Guarded by the original pointer: runtime-resolved
 // aliases (signal family, system/popen/wordexp, sandbox_check_by_audit_token,
-// task_get_exception_ports) only resolve to their replacement when actually
-// installed. The exec family hooks with outOldPtr:NULL (no original_* to
-// check) are unconditional — always resolve to their replacement.
+// task_get_exception_ports) only resolve to their replacement when a callable
+// continuation is available. The exec family hooks with outOldPtr:NULL
+// (no original_* to check) are unconditional — always resolve to their replacement.
 typedef struct {
     const char* name;
     void* replacement;
