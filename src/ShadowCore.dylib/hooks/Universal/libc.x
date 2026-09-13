@@ -3519,7 +3519,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // both direct-branch and dlsym callers route through the filter.
             if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC) {
                 static const char* const rebindFallback[] = {
-                    "readdir", "readdir_r", "chdir", "scandir", "scandir_b",
+                    "readdir", "readdir_r", "chdir", "freopen", "scandir", "scandir_b",
                     "statfs", "fstatfs", "statvfs", "fstatvfs",
                     "getmntinfo", "getmntinfo_r_np", "getfsstat",
                     "getattrlist", "getattrlistat", "getattrlistbulk",
