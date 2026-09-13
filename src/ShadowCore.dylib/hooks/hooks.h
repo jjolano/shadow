@@ -352,6 +352,7 @@ typedef enum {
     SHADW_RAW_CAT_GETFSSTAT,     // raw getfsstat(64) after-success mount filter
     SHADW_RAW_CAT_PROCINFO,      // raw proc_info(2) region-path after-success sanitize
     SHADW_RAW_CAT_STATFS,        // raw statfs64 single-mount filter
+    SHADW_RAW_CAT_FSTATFS,       // raw fstatfs64(fd, buf) single-mount filter
     SHADW_RAW_CAT_GETATTRLISTBULK, // raw getattrlistbulk(2) after-success record filter
     SHADW_RAW_CAT_RENAME,        // (path, path) rename pair: both ends, entry identity
     SHADW_RAW_CAT_RENAMEAT,      // (dirfd, path, dirfd, path, ...) renameat pair: both ends, entry identity

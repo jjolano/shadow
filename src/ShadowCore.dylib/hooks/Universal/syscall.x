@@ -473,6 +473,18 @@ static long shdw_fwd_GETFSSTAT(int number, va_list args) {
     return original_syscall(number, (struct statfs *) a1, (int) a2, (int) a3);
 }
 
+// fstatfs64(fd, buf): two slots, fd first then the caller's record pointer.
+// Guarded with its RawSyscalls.def row (same #ifdef): an SDK without the
+// number has no dispatch case to reference this body from.
+#ifdef SYS_fstatfs64
+static long shdw_fwd_FSTATFS(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (int) a1, (struct statfs *) a2);
+}
+#endif
+
 // proc_info(callnum, pid, flavor, arg, buffer, buffersize).
 static long shdw_fwd_PROCINFO(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
@@ -1132,6 +1144,14 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 sfs_buf = buf;
             } break;
 
+            case SHADW_RAW_CAT_FSTATFS: {
+                // fstatfs64(fd, buf): the policy is carried by the returned
+                // mount record. Consume the fd argument and inspect the record
+                // only after the kernel call succeeds.
+                (void) va_arg(inspect, intptr_t);
+                sfs_buf = va_arg(inspect, struct statfs *);
+            } break;
+
             case SHADW_RAW_CAT_NONE:
             case SHADW_RAW_CAT_PTRACE:
                 break;
@@ -1266,25 +1286,35 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
                 }
                 break;
 
-            case SHADW_RAW_CAT_STATFS: {
-                if(result == 0 && sfs_buf && sfs_path) {
-                    if(shdw_filter_mounts(sfs_buf, 1, YES) == 0) {
-                        if(shdw_path_under_system_bind_root(sfs_path)) {
-                            struct statfs root;
-                            memset(&root, 0, sizeof(root));
-                            if(original_syscall(SYS_statfs64, "/", &root) == 0) {
-                                strlcpy(sfs_buf->f_mntonname, root.f_mntonname, sizeof(sfs_buf->f_mntonname));
-                                strlcpy(sfs_buf->f_mntfromname, root.f_mntfromname, sizeof(sfs_buf->f_mntfromname));
-                                strlcpy(sfs_buf->f_fstypename, root.f_fstypename, sizeof(sfs_buf->f_fstypename));
-                                sfs_buf->f_fssubtype = root.f_fssubtype;
-                            } else {
-                                errno = ENOENT;
-                                return -1;
-                            }
+            case SHADW_RAW_CAT_STATFS:
+            case SHADW_RAW_CAT_FSTATFS: {
+                // Both calls return one mount record. A rejected record is
+                // cleared before ENOENT; a bind over a stock system mount is
+                // reshaped to the covering rootfs instead. fstatfs64 uses the
+                // record's mount point, so F_GETPATH spelling cannot diverge.
+                if(result == 0 && sfs_buf
+                   && shdw_filter_mounts(sfs_buf, 1, YES) == 0) {
+                    BOOL systemBind = (sfs_path && shdw_path_under_system_bind_root(sfs_path))
+                        || shdw_path_under_system_bind_root(sfs_buf->f_mntonname);
+                    if(systemBind) {
+                        int savedErrno = errno;
+                        struct statfs root;
+                        memset(&root, 0, sizeof(root));
+                        if(original_syscall(SYS_statfs64, "/", &root) == 0) {
+                            strlcpy(sfs_buf->f_mntonname, root.f_mntonname, sizeof(sfs_buf->f_mntonname));
+                            strlcpy(sfs_buf->f_mntfromname, root.f_mntfromname, sizeof(sfs_buf->f_mntfromname));
+                            strlcpy(sfs_buf->f_fstypename, root.f_fstypename, sizeof(sfs_buf->f_fstypename));
+                            sfs_buf->f_fssubtype = root.f_fssubtype;
+                            errno = savedErrno;
                         } else {
+                            memset(sfs_buf, 0, sizeof(*sfs_buf));
                             errno = ENOENT;
                             return -1;
                         }
+                    } else {
+                        memset(sfs_buf, 0, sizeof(*sfs_buf));
+                        errno = ENOENT;
+                        return -1;
                     }
                 }
             } break;

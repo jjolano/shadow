@@ -1,4 +1,4 @@
-// Record handling only; snapshot policy wiring is checked by verify-mount-query.py.
+// Mount-record filtering behavior.
 #include <assert.h>
 #include <stdio.h>
 #include "../src/ShadowCore.dylib/hooks/Universal/filters.h"

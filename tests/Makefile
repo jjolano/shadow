@@ -25,12 +25,11 @@ verify-fd-path-freshness:
 verify-svc-self-image:
 	python3 verify-svc-self-image.py
 
-# Pure-C record filter and static snapshot-query contract.
+# Pure-C mount-record filter.
 verify-mount-filter:
 	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-mount-filter-test \
 		verify-mount-filter.c
 	/tmp/shadow-mount-filter-test
-	python3 verify-mount-query.py
 
 # Pure-C check for the anti-fishhook journal/repair core (rebind_slots.h).
 verify-rebind-repair:

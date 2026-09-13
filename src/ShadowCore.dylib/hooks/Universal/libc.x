@@ -525,15 +525,18 @@ static int (*original_statfs)(const char* pathname, struct statfs* buf);
 // geometry as the kernel reported it so nothing else the caller relies on
 // changes. Returns YES if it reshaped.
 static BOOL shdw_statfs_reshape_over_system(const char* pathname, struct statfs* buf) {
-    if(!buf || !pathname) return NO;
-    if(!shdw_path_under_system_bind_root(pathname)) return NO;
+    if(!buf) return NO;
+    if((!pathname || !shdw_path_under_system_bind_root(pathname))
+       && !shdw_path_under_system_bind_root(buf->f_mntonname)) return NO;
 
+    int savedErrno = errno;
     struct statfs root;
     if(original_statfs("/", &root) != 0) return NO;
     strlcpy(buf->f_mntonname, root.f_mntonname, sizeof(buf->f_mntonname));
     strlcpy(buf->f_mntfromname, root.f_mntfromname, sizeof(buf->f_mntfromname));
     strlcpy(buf->f_fstypename, root.f_fstypename, sizeof(buf->f_fstypename));
     buf->f_fssubtype = root.f_fssubtype;
+    errno = savedErrno;
     return YES;
 }
 
@@ -555,19 +558,6 @@ static BOOL shdw_mount_argument_restricted(const char* pathname) {
                 }
             }
             close(fd);
-        }
-    }
-    errno = savedErrno;
-    return restricted;
-}
-
-static BOOL shdw_mount_fd_restricted(int fd) {
-    int savedErrno = errno;
-    BOOL restricted = NO;
-    SHADOW_INTERNAL_SCOPE {
-        char pathname[PATH_MAX];
-        if(fcntl(fd, F_GETPATH, pathname) != -1) {
-            restricted = [_shadow isMountPathRestricted:pathname];
         }
     }
     errno = savedErrno;
@@ -605,8 +595,11 @@ static int replaced_statfs(const char* pathname, struct statfs* buf) {
     if(result == 0 && buf && shdw_filter_mounts(buf, 1, YES) == 0) {
         // The mount record itself is restricted (a jailbreak bindfs). If it
         // shadows a stock system path the caller legitimately queries, reshape
-        // its name fields to the rootfs it covers; otherwise deny.
+        // its name fields to the rootfs it covers; otherwise deny — clearing
+        // the rejected record so a caller that ignores the return value still
+        // cannot read out the record it was denied.
         if(!shdw_statfs_reshape_over_system(pathname, buf)) {
+            memset(buf, 0, sizeof(*buf));
             errno = ENOENT;
             return -1;
         }
@@ -621,16 +614,17 @@ static int replaced_fstatfs(int fd, struct statfs* buf) {
         return original_fstatfs(fd, buf);
     }
 
-    if(shdw_mount_fd_restricted(fd)) {
-        errno = EBADF;
-        return -1;
-    }
-
     int result = original_fstatfs(fd, buf);
 
     if(result == 0 && buf && shdw_filter_mounts(buf, 1, YES) == 0) {
-        errno = ENOENT;
-        return -1;
+        // The fd's mount record is restricted. If the record names a stock
+        // system mount point, reshape to the covering rootfs; otherwise deny
+        // and clear the rejected record before returning.
+        if(!shdw_statfs_reshape_over_system(NULL, buf)) {
+            memset(buf, 0, sizeof(*buf));
+            errno = ENOENT;
+            return -1;
+        }
     }
 
     return result;
@@ -661,7 +655,8 @@ static int replaced_statvfs(const char* pathname, struct statvfs* buf) {
         // system path the caller legitimately queries, reshape to the
         // covering rootfs record (same apfs/rootfs success shape statfs
         // returns) instead of ENOENT; otherwise deny.
-        if(shdw_path_under_system_bind_root(pathname)) {
+        if(shdw_path_under_system_bind_root(pathname)
+           || shdw_path_under_system_bind_root(st.f_mntonname)) {
             int r = original_statvfs("/", buf);
             if(r == 0 && buf) {
                 buf->f_flag |= ST_RDONLY;
@@ -690,14 +685,9 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
         return original_fstatvfs(fd, buf);
     }
 
-    // use fstatfs to get f_mntonname; original version so the fd/mount
-    // restriction checks run once here instead of via the hooked fstatfs
+    // Use the original fstatfs to inspect the mount record without invoking
+    // the hooked fstatfs reshape first.
     struct statfs st;
-
-    if(shdw_mount_fd_restricted(fd)) {
-        errno = EBADF;
-        return -1;
-    }
 
     if(original_fstatfs(fd, &st) == -1) {
         // Failure path: return -1 without touching the output buffer or
@@ -706,10 +696,10 @@ static int replaced_fstatvfs(int fd, struct statvfs* buf) {
     }
 
     if(shdw_filter_mounts(&st, 1, NO) == 0) {
-        // Same reshape as statvfs: a bind over a stock system path answers
-        // the covering rootfs record instead of ENOENT.
-        char fdpath[PATH_MAX];
-        if(fcntl(fd, F_GETPATH, fdpath) != -1 && shdw_path_under_system_bind_root(fdpath)) {
+        // A bind over a stock system mount point answers with the covering
+        // rootfs record. The record itself supplies the mount point, so this
+        // works even when F_GETPATH would name the bind's backing store.
+        if(shdw_path_under_system_bind_root(st.f_mntonname)) {
             int r = original_statvfs("/", buf);
             if(r == 0 && buf) {
                 buf->f_flag |= ST_RDONLY;
