@@ -1423,12 +1423,26 @@ static long replaced___syscall(int number, ...) {
 #endif
 
 // Sanitizes the status word a successful CS_OPS_STATUS call wrote into the
-// caller's buffer: clears jailbreak/debug/platform flags ONLY. Unknown bits
-// are preserved and no flag is ever SET — the old code faked CS_JIT_ALLOW |
-// CS_REQUIRE_LV, capabilities a stock binary lacks (a fingerprint), and
-// contradicting the real signing state. App-set anti-tamper flags
-// (CS_HARD/CS_KILL/CS_RESTRICT/CS_ENFORCEMENT/CS_REQUIRE_LV) are left alone:
-// clearing them would weaken the app's own protection and deviate from stock.
+// caller's buffer, moving it to the shape a store-signed App Store binary
+// reports. Unknown bits are preserved.
+//
+// Cleared: the bits this process carries only because it is not store-signed
+// (platform marker/path, get-task-allow, installer, entitlements-validated,
+// debugged). The old code instead FAKED CS_JIT_ALLOW | CS_REQUIRE_LV —
+// capabilities a stock binary lacks, which was itself a fingerprint and
+// contradicted the real signing state — so those stay out.
+//
+// Set: the kernel-set anti-tamper pair a store signature enables,
+// CS_HARD|CS_KILL ("kill if invalid"). An ad-hoc or development-signed binary
+// — i.e. any injected process — lacks the pair, and a probe reading its
+// ABSENCE as evidence flags it (roothider's mislabelled "jit-allow" =
+// !(CS_HARD|CS_KILL)). Completing the pair is the same store-shape
+// normalization as the clears above rather than a forced detector verdict, so
+// it runs on the natural lane.
+//
+// CS_RESTRICT/CS_ENFORCEMENT/CS_REQUIRE_LV stay untouched: they are not part
+// of the store shape, and setting them would claim capabilities the binary
+// does not have.
 static void shdw_csops_sanitize_status(uint32_t* flags) {
     *flags &= ~CS_PLATFORM_BINARY;
     *flags &= ~CS_PLATFORM_PATH;
@@ -1436,18 +1450,7 @@ static void shdw_csops_sanitize_status(uint32_t* flags) {
     *flags &= ~CS_INSTALLER;
     *flags &= ~CS_ENTITLEMENTS_VALIDATED;
     *flags &= ~CS_DEBUGGED;
-
-    // Aggressive only: a store-distributed app carries the kernel-set
-    // anti-tamper pair CS_HARD|CS_KILL (the App Store signature enables "kill
-    // if invalid"); a development/ad-hoc-signed binary — like an injected test
-    // process — lacks them. A probe that treats the ABSENCE of CS_HARD/CS_KILL
-    // as evidence (roothider's mislabelled "jit-allow" = !(CS_HARD|CS_KILL))
-    // then flags the process. Set them to complete the store-app appearance.
-    // Natural mode leaves the real signing shape untouched (no fabricated
-    // capabilities), so this only runs when the user opts in.
-    if(shdw_detector_aggressive) {
-        *flags |= (CS_HARD | CS_KILL);
-    }
+    *flags |= (CS_HARD | CS_KILL);
 }
 
 // Shared post-success csops policy, applied only after the original call
