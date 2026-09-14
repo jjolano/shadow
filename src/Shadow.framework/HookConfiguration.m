@@ -53,10 +53,6 @@ static const SHDWPlugin kSHDWPlugins[] = {
     { "Universal_PasscodeStatus",     NULL,                                  SHDWPhaseUIKit,       SHDWCapabilityMessage,     0, 0 },
     { "Adapter_DeviceSecurityKit",    SHDWAdapterDeviceSecurityKitID,        SHDWPhaseSDKFallback, SHDWCapabilityMessage,     1, 0 },
     { "Adapter_IOSSecuritySuite",     SHDWAdapterIOSSecuritySuiteID,         SHDWPhaseSDKFallback, SHDWCapabilityFunction,    1, 0 },
-    // Function-lane adapter; self-gates on aggressive mode internally (like
-    // Adapter_FreeRASP), so it rides SHDWPhaseAlways and installs a no-op when
-    // aggressive is off.
-    { "Adapter_BATJailbreakGuard",    SHDWAdapterBATJailbreakGuardID,        SHDWPhaseAlways,      SHDWCapabilityFunction,    1, 0 },
     // Policy plugins — evaluated via RestrictionEngine / policy/*.m, not via
     // HookCoordinator install. Registered here so SHDWPluginRegistry is the
     // single source for hook+policy metadata. Never installed via HookPlan
@@ -114,7 +110,6 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
         SHDWAdapterDTTJailbreakDetectionID : @(YES),
         SHDWAdapterSafeDeviceID : @(YES),
         SHDWAdapterJailMonkeyID : @(YES),
-        SHDWAdapterBATJailbreakGuardID : @(YES),
         // Off by default: the natural, stock-shaped bypasses run for every
         // enabled app; disable-style neutralizers only activate when the user
         // opts into aggressive mode (globally or per app).
@@ -153,7 +148,6 @@ NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
             SHDWAdapterDTTJailbreakDetectionID : @"message",
             SHDWAdapterSafeDeviceID : @"message",
             SHDWAdapterJailMonkeyID : @"message",
-            SHDWAdapterBATJailbreakGuardID : @"function",
         };
     });
     return kinds[groupID];

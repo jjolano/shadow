@@ -147,7 +147,6 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Universal_PasscodeStatus",             shdw_universal_passcode_status },
     { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit },
     { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite },
-    { "Adapter_BATJailbreakGuard",             shdw_adapter_batjailbreakguard },
     // Policy plugins — no hook install, evaluated via RestrictionEngine
     { "Policy_Path",                  shdw_plugin_policy_nop },
     { "Policy_Environment",           shdw_plugin_policy_nop },

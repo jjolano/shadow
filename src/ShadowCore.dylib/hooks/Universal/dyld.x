@@ -1410,8 +1410,9 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         // single-module runner executable; BAT's sole dlsym user is this
         // check — verified against its sources). Every other caller resolves
         // normally, so no legitimate lookup changes: the stock-shaped answer
-        // holds for everyone except the flawed detector. Runs on the natural
-        // lane; the aggressive adapter's force-clean stays as backup.
+        // holds for everyone except the flawed detector. This IS the BAT cover
+        // — the adapter that used to force isJailbreakDetected() to NO on the
+        // aggressive lane is gone, since it changed no observed result.
         // NOTE: this must precede the policy lookup below — dlopen/dlsym are
         // policy-table members and would otherwise resolve non-NULL.
         static const char* const shdw_bat_hidden[] = { "dlopen", "dlsym", "posix_spawn", "system" };
