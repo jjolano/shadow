@@ -14,7 +14,15 @@ typedef struct {
 
 typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
   ShadowPseudoSandboxModeOff = 0,
+  // Records what Strict would deny and changes no verdict. This is the only
+  // mode Settings offers (a switch stores 1).
   ShadowPseudoSandboxModeAudit = 1,
+  // Denies the pseudo set on top of the belt. Measured on device (iOS 15.6,
+  // rootless): with this armed the harness launches but never produces a
+  // report, so an instrumented app cannot complete a run — the pseudo deny set
+  // is wider than a real app sandbox's. Deliberately not offered in Settings;
+  // arm it from the pref to reproduce or to re-measure before widening the
+  // allowlist.
   ShadowPseudoSandboxModeStrict = 2,
 };
 

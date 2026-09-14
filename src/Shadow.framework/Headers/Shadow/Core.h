@@ -63,8 +63,12 @@ __attribute__((visibility("default")))
 
 // Pseudo sandbox mode is fixed for the injected process: 0 = off, 1 = audit
 // (record would-be denials in memory, never deny), 2 = strict. ShadowCore
-// applies the resolved per-app setting at startup.
+// applies the stored setting at startup; see ShadowRestrictionEngine.h for why
+// strict is not offered in Settings.
 - (void)shdwConfigurePseudoSandboxMode:(NSInteger)mode;
+// The paths Strict would have denied, newest first. Empty unless the mode is
+// audit; in-process only, because the sink lives in the injected process.
+- (NSArray<NSString *> *)shdwAuditWouldDenyPaths;
 
 - (BOOL)isAddrRestricted:(const void *)addr;
 

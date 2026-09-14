@@ -148,6 +148,14 @@ static NSString *const kSHDWDetectorRunnerOverridesKey =
   result[SHDWDetectorAggressiveID] = @(SHDWDetectorAggressiveEnabled(
       app_settings, [userDefaults boolForKey:SHDWDetectorAggressiveID]));
 
+  // Pseudo-sandbox mode: a global scalar resolved from userDefaults rather
+  // than the fixed profile's constant. The profile exists to force full
+  // capability, so taking the mode from it would leave the engine permanently
+  // off. Absent (the normal case) reads 0 = off, which keeps every belt
+  // verdict byte-identical to a build without the mode.
+  result[SHDWUniversalPseudoSandboxModeID] =
+      @([userDefaults integerForKey:SHDWUniversalPseudoSandboxModeID]);
+
   if (enabled) {
     // Not user configuration: the device evidence driver can disable one
     // adapter for the harness's embedded detectors without weakening

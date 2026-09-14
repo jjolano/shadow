@@ -199,6 +199,10 @@ shdwInstallHarnessSDKFallback(void) {
   [engine configurePseudoSandboxMode:mode];
 }
 
+- (NSArray<NSString *> *)shdwAuditWouldDenyPaths {
+  return [engine auditWouldDenyPaths];
+}
+
 - (BOOL)isAddrRestricted:(const void *)addr {
   if (addr) {
     // See if this address belongs to a restricted file.

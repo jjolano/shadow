@@ -286,6 +286,21 @@ grep -q 'shdw_detector_aggressive' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.
     exit 1
 }
 
+# Pseudo-sandbox mode is a mode, not a hook toggle: it must be resolved from
+# userDefaults (the fixed profile's constant would otherwise pin it off) AND
+# survive the migration prune. Both were once missing, which left the whole
+# mode unreachable at runtime even though its engine was complete.
+pinned "$settings" \
+    'result[SHDWUniversalPseudoSandboxModeID] =' \
+    'integerForKey:SHDWUniversalPseudoSandboxModeID]);' || {
+    echo 'SETTINGS DRIFT: pseudo-sandbox mode is not resolved from userDefaults'
+    exit 1
+}
+grep -q 'SHDWUniversalPseudoSandboxModeID' src/Shadow.framework/SettingsMigration.m || {
+    echo 'SETTINGS DRIFT: pseudo-sandbox mode not in the live-key allowlist'
+    exit 1
+}
+
 for obsolete in Hooks Individual Dangerous Adapters Troubleshooting DetectorLog; do
     if [ -e "src/ShadowSettings.bundle/Resources/$obsolete.plist" ]; then
         echo "SETTINGS DRIFT: obsolete $obsolete pane returned"

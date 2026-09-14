@@ -1,6 +1,10 @@
     "ALWAYS_ON" = "\U5728\U6240\U6709\U61C9\U7528\U7A0B\U5F0F\U4E2D\U555F\U7528";
     "ALWAYS_ON_DESC" = "\U9810\U8a2d\U5728\U6240\U6709\U61C9\U7528\U7A0B\U5F0F\U4E2D\U555F\U7528Shadow\U3002\U500B\U5225\U61C9\U7528\U7A0B\U5F0F\U7684\U8A2D\U5B9A\U6703\U8986\U5BEB\U6B64\U8A2D\U5B9A\U3002";
     "GLOBAL_SETTINGS" = "\U5168\U57df\U8a2d\U5b9a";
+"PSEUDO_SANDBOX_SETTINGS" = "沙盒診斷";
+"PSEUDO_SANDBOX" = "沙盒稽核";
+"PSEUDO_SANDBOX_DESC" = "記錄沙盒化應用程式無法存取的路徑，且不改變任何結果。僅供診斷：沒有任何可見效果，記錄的路徑只保留在記憶體中。不會提供真正拒絕這些路徑的模式，因為它會拒絕應用程式所依賴的路徑，而且每增加一條規則都會讓 Shadow 的行為更不像原廠裝置，這本身就是一條偵測線索。";
+
 "AGGRESSIVE_SETTINGS" = "偵測器中和";
 "AGGRESSIVE" = "積極模式";
 "AGGRESSIVE_DESC" = "預設情況下，Shadow 會呈現看似原廠的系統環境（自然繞過）。積極模式還會強制已知偵測器回報未偵測到異常。這種方式較不隱蔽，本身也可能成為偵測線索，因此除非特定偵測器需要，否則請保持關閉。個別應用程式設定會覆寫此設定。";
