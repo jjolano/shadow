@@ -6,37 +6,9 @@
 "ALWAYS_ON" = "在所有应用中启用";
 "ALWAYS_ON_DESC" = "默认在所有应用中启用Shadow。个别应用的设置会覆盖此设置。";
 
-"BYPASS_SETTINGS" = "屏蔽设置";
-"BYPASS_SETTINGS_DESC" = "调整越狱检测屏蔽的强度。可能影响应用性能。";
-
 "ROOT_APP_SETTINGS" = "应用设置";
 "ROOT_APP_SETTINGS_DESC" = "选择要运行 Shadow 的应用。";
 
 "APPLICATIONS" = "应用";
 
-"RESPRING" = "重启SpringBoard";
-"RESPRING_PROMPT" = "这将重新启动SpringBoard。";
-"RESET" = "重置设置";
-"RESET_PROMPT" = "这将重置Shadow的所有设置并重新启动SpringBoard。";
-"RESET_CANCEL" = "取消";
-
 "ROOT_ABOUT" = "关于";
-
-"ROOT_DETECTOR_LOG" = "检测器日志";
-
-"TOOLS_HDR" = "工具";
-
-"EXPORT_SETTINGS" = "导出设置";
-"IMPORT_SETTINGS" = "导入设置";
-
-"APPS_ENABLED_FMT" = "%ld 个已启用";
-"APPS_ALL_ENABLED" = "所有应用已启用";
-
-"IMPORT_CONFIRM_TITLE" = "导入设置？";
-"IMPORT_CONFIRM_MSG" = "这将用所选文件替换所有当前设置。";
-"IMPORT_CONFIRM" = "导入";
-"IMPORT_CANCEL" = "取消";
-"IMPORT_BAD_FILE" = "所选文件不是有效的 Shadow 设置备份。";
-"IMPORT_APPLIED" = "设置已导入，重启以生效。";
-"IMPORT_OK" = "好";
-"APPS_EXCLUDED_FMT" = "所有应用已启用 · %ld 个已排除";

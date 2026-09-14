@@ -7,7 +7,7 @@ BUNDLE_NAME = ShadowSettings
 
 ShadowSettings_FILES = $(wildcard *.m)
 ShadowSettings_FRAMEWORKS = Foundation
-ShadowSettings_EXTRA_FRAMEWORKS = Shadow AltList MobileCoreServices
+ShadowSettings_EXTRA_FRAMEWORKS = Shadow AltList
 ShadowSettings_PRIVATE_FRAMEWORKS = Preferences
 ShadowSettings_INSTALL_PATH = /Library/PreferenceBundles
 ShadowSettings_CFLAGS = -fobjc-arc -I../Shadow.framework/Headers

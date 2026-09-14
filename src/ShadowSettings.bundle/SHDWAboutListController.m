@@ -3,7 +3,6 @@
 
 #import "SHDWAboutListController.h"
 #import "SHDWPrefs.h"
-#import "SHDWUpdatesController.h"
 
 @implementation SHDWAboutListController
 

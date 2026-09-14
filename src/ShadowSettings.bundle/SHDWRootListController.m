@@ -1,9 +1,7 @@
 #import "SHDWRootListController.h"
 #import "SHDWPrefs.h"
 
-#import <Shadow/Core+Utilities.h>
 #import <Shadow/Settings.h>
-#import <Shadow/HookConfiguration.h>
 
 @implementation SHDWRootListController {
 	NSUserDefaults* prefs;
@@ -20,10 +18,6 @@
 	}
 
 	return _specifiers;
-}
-
-- (NSString *)localized:(NSString *)key fallback:(NSString *)fallback {
-	return [[NSBundle bundleForClass:[self class]] localizedStringForKey:key value:fallback table:@"Root"];
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
