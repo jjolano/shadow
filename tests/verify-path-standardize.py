@@ -7,6 +7,7 @@ input falls back to the raw string, and non-absolute input passes through.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -15,16 +16,46 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "src/ShadowCore.dylib/policy/PathPolicy.m"
 
 
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates extract real bodies out of the hook sources and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
+    """Replace a pinned source snippet, tolerant of reformat spacing.
+
+    Raises when the pin is gone, so a real rewrite still fails loudly."""
+    match = re.search(anchor_pattern(old), text)
+    if match is None:
+        raise ValueError(f"pinned snippet not found: {old!r}")
+    return text[:match.start()] + new + text[match.end():]
+
+
 source = POLICY.read_text()
-start = source.index("const char* shdw_standardize_lexical(const char* path) {")
-end = source.index("BOOL shdw_path_is_external_hidden", start)
+start = anchor(source, "const char* shdw_standardize_lexical(const char* path) {")
+end = anchor(source, "BOOL shdw_path_is_external_hidden", start)
 routine = source[start:end]
 # Immutable-prefix gate for alias resolution (pure C like the
 # standardizer): system hot paths skip the resolving open, anything
 # else resolves. A missing prefix only costs an open (fail closed);
 # a wrongly listed one would leak, so the boundary cases are pinned.
-gate_start = source.index("static BOOL shdw_path_under_immutable_prefix(const char* path) {")
-gate_end = source.index("static _Thread_local char shdw_kernel_scratch", gate_start)
+gate_start = anchor(source, "static BOOL shdw_path_under_immutable_prefix(const char* path) {")
+gate_end = anchor(source, "static _Thread_local char shdw_kernel_scratch", gate_start)
 gate = source[gate_start:gate_end]
 
 prefix = r'''

@@ -29,8 +29,40 @@ assert '{ "closedir",' not in libc
 assert "CFRelease(nil) is a no-op" not in libc
 
 
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates extract real bodies out of the hook sources and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
+def pin(text, old, new):
+    """Replace a pinned source snippet, tolerant of reformat spacing.
+
+    Raises when the pin is gone, so a real rewrite still fails loudly."""
+    match = re.search(anchor_pattern(old), text)
+    if match is None:
+        raise ValueError(f"pinned snippet not found: {old!r}")
+    return text[:match.start()] + new + text[match.end():]
+
+
 def body(first, last):
-    return source[source.index(first):source.index(last, source.index(first))]
+    start = anchor(source, first)
+    return source[start:anchor(source, last, start)]
 
 
 resolver = body("shdw_dirfd_status_t shdw_resolve_dirfd_path", "// Applies the shared dirfd resolution")
@@ -50,8 +82,7 @@ old_at = '''        NSString* path = [NSString stringWithUTF8String:pathname];
         BOOL restricted = [_shadow isPathRestricted:path options:@{
             kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
         }];'''
-assert old_at in at_path
-at_path = at_path.replace(old_at, "        BOOL restricted = is_at_restricted(parent, pathname);")
+at_path = pin(at_path, old_at, "        BOOL restricted = is_at_restricted(parent, pathname);")
 at_path = at_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 # The extracted span now also carries the rename-family entry-identity twin
 # (shdw_at_path_denied_nofollow): its NoFollow dirfd query pins the same
@@ -63,8 +94,7 @@ old_at_nofollow = '''        NSString* path = [NSString stringWithUTF8String:pat
             kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent],
             kShadowRestrictionNoFollow : @YES
         }];'''
-assert old_at_nofollow in at_path
-at_path = at_path.replace(old_at_nofollow, "        BOOL restricted = is_at_restricted(parent, pathname);")
+at_path = pin(at_path, old_at_nofollow, "        BOOL restricted = is_at_restricted(parent, pathname);")
 at_path = at_path.replace("shdw_path_ruleset_denied_nofollow(pathname)", "is_restricted(pathname)")
 
 assert "fcntl(fd, F_GETPATH, pathname) != -1" in fd_path
@@ -73,9 +103,8 @@ fd_path = fd_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted
 old_readdir = '''        NSDictionary* options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
         errno = saved_errno;
         return (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);'''
-assert old_readdir in readdir
-readdir = readdir.replace("NSDictionary* shdw_readdir_options", "const char* shdw_readdir_options")
-readdir = readdir.replace(old_readdir, '''        strlcpy(g_readdir_options, pathname, sizeof(g_readdir_options));
+readdir = pin(readdir, "NSDictionary* shdw_readdir_options", "const char* shdw_readdir_options")
+readdir = pin(readdir, old_readdir, '''        strlcpy(g_readdir_options, pathname, sizeof(g_readdir_options));
         errno = saved_errno;
         return g_readdir_options;''')
 readdir = readdir.replace("strlcpy(g_readdir_options", "test_strlcpy(g_readdir_options")
@@ -85,8 +114,8 @@ for reader, boxed_name in (
     (libc_readdir_r, "@((*oresult)->d_name)"),
     (libc_readdir, "@(result->d_name)"),
 ):
-    assert re.search(r"if\(options\)\s*\{\s*CFRelease\(", reader, re.S)
-    reader = reader.replace("NSDictionary* options = shdw_readdir_options", "const char* options = shdw_readdir_options")
+    assert re.search(r"if\s*\(options\)\s*\{\s*CFRelease\(", reader, re.S)
+    reader = pin(reader, "NSDictionary* options = shdw_readdir_options", "const char* options = shdw_readdir_options")
     reader = reader.replace("@autoreleasepool {", "{")
     reader = reader.replace(f"[_shadow isPathRestricted:{boxed_name} options:options]", "false")
     reader = reader.replace("CFRelease((__bridge CFDictionaryRef)options);", "CFRelease(options);")
