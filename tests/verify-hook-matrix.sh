@@ -21,9 +21,12 @@ cd "$ROOT"
 HT=${PRIVATE_HT:-tests}
 
 case ${1-} in
-    '') selftest_drift=false ;;
-    --selftest-drift) selftest_drift=true ;;
-    *) echo 'usage: tests/verify-hook-matrix.sh [--selftest-drift]' >&2; exit 2 ;;
+'') selftest_drift=false ;;
+--selftest-drift) selftest_drift=true ;;
+*)
+ echo 'usage: tests/verify-hook-matrix.sh [--selftest-drift]' >&2
+ exit 2
+ ;;
 esac
 
 MATRIX=tests/verify-hook-matrix.sh
@@ -36,7 +39,7 @@ trap 'rm -f "$entries"' 0 HUP INT TERM
 # coverage-report.sh's report() lines — same `pattern|"groups"` shape).
 # ponytail: keep this list in sync with the hook call sites, nothing else.
 matrix_entries() {
-    cat <<'EOF'
+ cat <<'EOF'
 isCPathRestricted|libc libc_lowlevel libc_antidebugging dyld sandbox syscall AppEnvironment svc_patch
 isMountPathRestricted|libc
 isPathRestricted:options:|libc libc_lowlevel dyld sandbox syscall NSFileManager NSString NSData NSArray NSDictionary NSFileHandle NSBundle NSProcessInfo
@@ -64,55 +67,55 @@ EOF
 matrix_entries >"$entries"
 
 if [ "$selftest_drift" = true ]; then
-    # Exercise the normal stale-entry path; this name cannot occur in a hook.
-    printf '%s\n' '__shadow_matrix_selftest_drift__|libc' >>"$entries"
+ # Exercise the normal stale-entry path; this name cannot occur in a hook.
+ printf '%s\n' '__shadow_matrix_selftest_drift__|libc' >>"$entries"
 fi
 
 while IFS='|' read -r pattern groups; do
-    ok=1
+ ok=1
 
-    # Skip entries whose groups are not hook-file basenames.
-    for g in $groups; do
-        if [ ! -f "$HOOKDIR/$g.x" ] && ! find "$HOOKDIR" -maxdepth 2 -name "$g.x" | grep -q .; then
-            ok=0
-            break
-        fi
-    done
+ # Skip entries whose groups are not hook-file basenames.
+ for g in $groups; do
+  if [ ! -f "$HOOKDIR/$g.x" ] && ! find "$HOOKDIR" -maxdepth 2 -name "$g.x" | grep -q .; then
+   ok=0
+   break
+  fi
+ done
 
-    [ "$ok" = 0 ] && continue
+ [ "$ok" = 0 ] && continue
 
-    for g in $groups; do
-        f=$(find "$HOOKDIR" -maxdepth 2 -name "$g.x" | head -1)
+ for g in $groups; do
+  f=$(find "$HOOKDIR" -maxdepth 2 -name "$g.x" | head -1)
 
-        if [ -z "$f" ] || ! grep -q "$pattern" "$f"; then
-            echo "MATRIX STALE: $g.x listed for $pattern but has no call site"
-            rc=1
-        fi
-    done
+  if [ -z "$f" ] || ! grep -q "$pattern" "$f"; then
+   echo "MATRIX STALE: $g.x listed for $pattern but has no call site"
+   rc=1
+  fi
+ done
 
-    for f in "$HOOKDIR"/*.x "$HOOKDIR"/*/*.x; do
-        [ -f "$f" ] || continue
-        base=$(basename "$f" .x)
+ for f in "$HOOKDIR"/*.x "$HOOKDIR"/*/*.x; do
+  [ -f "$f" ] || continue
+  base=$(basename "$f" .x)
 
-        # Comment-only mentions (rationale text, no call) don't count —
-        # strip // and /* */ comments before matching.
-        code=$(sed -e 's|//.*||' -e 's|/\*.*\*/||g' "$f")
-        if printf '%s\n' "$code" | grep -q "$pattern" && ! echo " $groups " | grep -q " $base "; then
-            echo "MATRIX DRIFT: $base.x calls $pattern but is not in the matrix"
-            rc=1
-        fi
-    done
+  # Comment-only mentions (rationale text, no call) don't count —
+  # strip // and /* */ comments before matching.
+  code=$(sed -e 's|//.*||' -e 's|/\*.*\*/||g' "$f")
+  if printf '%s\n' "$code" | grep -q "$pattern" && ! echo " $groups " | grep -q " $base "; then
+   echo "MATRIX DRIFT: $base.x calls $pattern but is not in the matrix"
+   rc=1
+  fi
+ done
 done <"$entries"
 
 detector=$(sed -n '/^void shdw_detector_detected/,/^}$/p' src/ShadowCore.dylib/shadowcore.x)
 if printf '%s\n' "$detector" | grep -Eq 'NSUserDefaults|NSLog|time\(|NSDate|writeToFile|fopen|open\('; then
-    echo 'DETECTOR DRIFT: detector escalation performs logging or persistence I/O'
-    rc=1
+ echo 'DETECTOR DRIFT: detector escalation performs logging or persistence I/O'
+ rc=1
 fi
 
 if grep -Eq 'shdw_record_detector_event|DetectorLog' src/ShadowCore.dylib/shadowcore.x; then
-    echo 'DETECTOR DRIFT: persistent detector telemetry returned'
-    rc=1
+ echo 'DETECTOR DRIFT: persistent detector telemetry returned'
+ rc=1
 fi
 
 # dyld's public add/remove callback API has no fixed registration limit.  The
@@ -123,13 +126,13 @@ dyld_source=src/ShadowCore.dylib/hooks/Universal/dyld.x
 dyld_add=$(sed -n '/^static void replaced_dyld_register_func_for_add_image/,/^}/p' "$dyld_source")
 dyld_remove=$(sed -n '/^static void replaced_dyld_register_func_for_remove_image/,/^}/p' "$dyld_source")
 if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTIFY_CBS|slots full|registrations dropped'; then
-    echo 'DYLD DRIFT: public image callback registrations are capped or dropped'
-    rc=1
+ echo 'DYLD DRIFT: public image callback registrations are capped or dropped'
+ rc=1
 fi
 
 if [ "$(grep -c 'shdw_path_is_in_main_bundle' src/ShadowCore.dylib/hooks/Universal/dyld.x)" -lt 5 ]; then
-    echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
-    rc=1
+ echo 'DYLD DRIFT: dyld surfaces no longer share the caller app bundle exemption'
+ rc=1
 fi
 
 # Harness-coupled checks below run only with a harness checkout present
@@ -137,70 +140,70 @@ fi
 # copy runs them against harness-tests/.
 dyld_probe="[private-harness-path]"
 if [ -f "$dyld_probe" ]; then
-if ! grep -q '@executable_path/Frameworks/shdwtestlib.dylib' "$dyld_probe"; then
-    echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
-    rc=1
-fi
-if ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m" ||
-   ! grep -q 'shdwtestlib.dylib' "[private-harness-path][private-harness]/Makefile"; then
-    echo 'DYLD DRIFT: Harness no longer embeds the dyldprobe runner and stress library'
-    rc=1
-fi
-if grep -q 'shadow-dyldprobe://run' "[private-harness-path][private-harness]/DetectorDashboard.m"; then
-    echo 'DYLD DRIFT: Harness still hands dyldprobe off to a separate app'
-    rc=1
-fi
-if ! grep -q 'PROBE_DYLD_CALLBACK_COUNT = 9' "$dyld_probe"; then
-    echo 'DYLD DRIFT: dyldprobe no longer registers nine distinct callbacks'
-    rc=1
-fi
-for field in expected_existing_images existing_image_replay later_add later_remove concurrency address_uuid; do
-    if ! grep -q "$field" "$dyld_probe"; then
-        echo "DYLD DRIFT: dyldprobe report omits $field"
-        rc=1
-    fi
-done
+ if ! grep -q '@executable_path/Frameworks/shdwtestlib.dylib' "$dyld_probe"; then
+  echo 'DYLD DRIFT: bundled stress library is not loaded from dyldprobe'
+  rc=1
+ fi
+ if ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m" ||
+  ! grep -q 'shdwtestlib.dylib' "[private-harness-path][private-harness]/Makefile"; then
+  echo 'DYLD DRIFT: Harness no longer embeds the dyldprobe runner and stress library'
+  rc=1
+ fi
+ if grep -q 'shadow-dyldprobe://run' "[private-harness-path][private-harness]/DetectorDashboard.m"; then
+  echo 'DYLD DRIFT: Harness still hands dyldprobe off to a separate app'
+  rc=1
+ fi
+ if ! grep -q 'PROBE_DYLD_CALLBACK_COUNT = 9' "$dyld_probe"; then
+  echo 'DYLD DRIFT: dyldprobe no longer registers nine distinct callbacks'
+  rc=1
+ fi
+ for field in expected_existing_images existing_image_replay later_add later_remove concurrency address_uuid; do
+  if ! grep -q "$field" "$dyld_probe"; then
+   echo "DYLD DRIFT: dyldprobe report omits $field"
+   rc=1
+  fi
+ done
 
-# JSON is the dyldprobe evidence contract.  Keep the UI to supplemental
-# diagnostics and ensure it cannot rewrite the machine report on refresh.
-machine_writes=$(grep -c 'probe_write_machine_report(' "$dyld_probe")
-if [ "$machine_writes" -ne 2 ]; then
-    echo 'DYLD DRIFT: machine evidence is not single-write'
-    rc=1
-fi
-delegate=$(sed -n '/@implementation AppDelegate/,/@end/p' "$dyld_probe")
-if printf '%s\n' "$delegate" | grep -q 'probe_write_machine_report('; then
-    echo 'DYLD DRIFT: UI refresh rewrites formal machine evidence'
-    rc=1
-fi
-for section in 1 2 6; do
-    if grep -q "probe_section_$section" "$dyld_probe"; then
-        echo "DYLD DRIFT: duplicated UI section $section returned"
-        rc=1
-    fi
-done
-for section in 3 4 5 7 8 9; do
-    if ! grep -q "probe_section_$section" "$dyld_probe"; then
-        echo "DYLD DRIFT: retained supplemental UI section $section missing"
-        rc=1
-    fi
-done
-if ! grep -q 'Formal JSON evidence is written once at launch' "$dyld_probe"; then
-    echo 'DYLD DRIFT: UI no longer identifies JSON as formal evidence'
-    rc=1
-fi
+ # JSON is the dyldprobe evidence contract.  Keep the UI to supplemental
+ # diagnostics and ensure it cannot rewrite the machine report on refresh.
+ machine_writes=$(grep -c 'probe_write_machine_report(' "$dyld_probe")
+ if [ "$machine_writes" -ne 2 ]; then
+  echo 'DYLD DRIFT: machine evidence is not single-write'
+  rc=1
+ fi
+ delegate=$(sed -n '/@implementation AppDelegate/,/@end/p' "$dyld_probe")
+ if printf '%s\n' "$delegate" | grep -q 'probe_write_machine_report('; then
+  echo 'DYLD DRIFT: UI refresh rewrites formal machine evidence'
+  rc=1
+ fi
+ for section in 1 2 6; do
+  if grep -q "probe_section_$section" "$dyld_probe"; then
+   echo "DYLD DRIFT: duplicated UI section $section returned"
+   rc=1
+  fi
+ done
+ for section in 3 4 5 7 8 9; do
+  if ! grep -q "probe_section_$section" "$dyld_probe"; then
+   echo "DYLD DRIFT: retained supplemental UI section $section missing"
+   rc=1
+  fi
+ done
+ if ! grep -q 'Formal JSON evidence is written once at launch' "$dyld_probe"; then
+  echo 'DYLD DRIFT: UI no longer identifies JSON as formal evidence'
+  rc=1
+ fi
 fi
 
 if grep -q SHADOW_LEGACY_COORDINATOR src/ShadowCore.dylib/shadowcore.x; then
-    echo 'COORDINATOR DRIFT: rollback install path returned'
-    exit 1
+ echo 'COORDINATOR DRIFT: rollback install path returned'
+ exit 1
 fi
 
 ctor=$(sed -n '/^%ctor {/,/^%dtor {/p' src/ShadowCore.dylib/shadowcore.x)
 if ! printf '%s\n' "$ctor" | grep -q shdw_coordinator_ctor ||
-   printf '%s\n' "$ctor" | grep -Eq 'shadowhook_(dyld|libc|objc)\('; then
-    echo 'COORDINATOR DRIFT: ctor no longer installs exclusively through the coordinator'
-    exit 1
+ printf '%s\n' "$ctor" | grep -Eq 'shadowhook_(dyld|libc|objc)\('; then
+ echo 'COORDINATOR DRIFT: ctor no longer installs exclusively through the coordinator'
+ exit 1
 fi
 
 # Constructor replay must finish an observed UIKit event synchronously;
@@ -208,35 +211,55 @@ fi
 coordinator_ctor=$(sed -n '/^static void shdw_coordinator_ctor(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
 image_callback=$(sed -n '/^static void shdw_early_image_add(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
 case "$coordinator_ctor" in
-    *'installEvent:SHDWEventCtor]'*'if(watcherEnabled)'*'shdw_early_image_add(_dyld_get_image_header(i)'*'if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {'*'[shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];'*'NSLog(@"completed hooks")'*) ;;
-    *) echo 'COORDINATOR DRIFT: observed UIKit replay must finish before ctor returns'; exit 1 ;;
+*'installEvent:SHDWEventCtor]'*'if(watcherEnabled)'*'shdw_early_image_add(_dyld_get_image_header(i)'*'if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {'*'[shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];'*'NSLog(@"completed hooks")'*) ;;
+*)
+ echo 'COORDINATOR DRIFT: observed UIKit replay must finish before ctor returns'
+ exit 1
+ ;;
 esac
 case "$image_callback" in
-    *'installEvent:'*) echo 'COORDINATOR DRIFT: image callback must not install synchronously'; exit 1 ;;
-    *'containsString:@"uikit.framework"'*'__atomic_exchange_n(&_shdw_uikit_installed, YES'*'enqueueEvent:SHDWEventUIKitLoaded]'*) ;;
-    *) echo 'COORDINATOR DRIFT: UIKit notification lost its image gate or async event'; exit 1 ;;
+*'installEvent:'*)
+ echo 'COORDINATOR DRIFT: image callback must not install synchronously'
+ exit 1
+ ;;
+*'containsString:@"uikit.framework"'*'__atomic_exchange_n(&_shdw_uikit_installed, YES'*'enqueueEvent:SHDWEventUIKitLoaded]'*) ;;
+*)
+ echo 'COORDINATOR DRIFT: UIKit notification lost its image gate or async event'
+ exit 1
+ ;;
 esac
 
 case "$ctor" in
-    *'shdw_adapter_devicecheck_configure(prefs);'*'prefs = shdw_adapter_resolve_preferences(prefs);'*) ;;
-    *) echo 'ADAPTER DRIFT: authorization must be captured before presence resolution'; rc=1 ;;
+*'shdw_adapter_devicecheck_configure(prefs);'*'prefs = shdw_adapter_resolve_preferences(prefs);'*) ;;
+*)
+ echo 'ADAPTER DRIFT: authorization must be captured before presence resolution'
+ rc=1
+ ;;
 esac
 if [ "$(printf '%s\n' "$ctor" | grep -c 'shdw_adapter_devicecheck_configure(prefs);')" -ne 1 ]; then
-    echo 'ADAPTER DRIFT: authorization must not be overwritten after resolution'; rc=1
+ echo 'ADAPTER DRIFT: authorization must not be overwritten after resolution'
+ rc=1
 fi
 devicecheck_install=$(sed -n '/^NSUInteger shdw_devicecheck_install_hooks(/,/^}/p' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m)
 case "$devicecheck_install" in
-    *'if(target != DCHTargetNone && !(enabledTargets & target))'*'continue;'*'performWhenTargetAvailable:'*'if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;'*'objc_getClass(desc->className)'*'hookMessageInClass:dispatchClass'*) ;;
-    *) echo 'ADAPTER DRIFT: authorized rows must use shared readiness before attempting'; rc=1 ;;
+*'if(target != DCHTargetNone && !(enabledTargets & target))'*'continue;'*'performWhenTargetAvailable:'*'if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;'*'objc_getClass(desc->className)'*'hookMessageInClass:dispatchClass'*) ;;
+*)
+ echo 'ADAPTER DRIFT: authorized rows must use shared readiness before attempting'
+ rc=1
+ ;;
 esac
 autodetect=src/ShadowCore.dylib/hooks/Adapters/DetectorAutoDetect.x
 availability=$(sed -n '/^BOOL shdw_devicecheck_target_available(/,/^}/p' "$autodetect")
 case "$availability" in
-    *'case DCHTargetDTT: return shdw_detect_dtt();'*'case DCHTargetSafeDevice: return shdw_detect_safedevice();'*'case DCHTargetJailMonkey: return shdw_detect_jailmonkey();'*) ;;
-    *) echo 'ADAPTER DRIFT: readiness must reuse existing fingerprints'; rc=1 ;;
+*'case DCHTargetDTT: return shdw_detect_dtt();'*'case DCHTargetSafeDevice: return shdw_detect_safedevice();'*'case DCHTargetJailMonkey: return shdw_detect_jailmonkey();'*) ;;
+*)
+ echo 'ADAPTER DRIFT: readiness must reuse existing fingerprints'
+ rc=1
+ ;;
 esac
 if ! sed -n '/^static BOOL shdw_detect_safedevice(void) {/,/^}/p' "$autodetect" | grep -q 'return matches >= 2;'; then
-    echo 'ADAPTER DRIFT: partial readiness threshold changed'; rc=1
+ echo 'ADAPTER DRIFT: partial readiness threshold changed'
+ rc=1
 fi
 
 # LocalAuthentication is not linked by ShadowCore and can load after the UIKit
@@ -244,342 +267,357 @@ fi
 # process; the install must be queued for the session's pending-target retry.
 passcode=$(sed -n '/^void shdw_universal_passcode_status(/,/^}/p' src/ShadowCore.dylib/hooks/Universal/AppEnvironment.x)
 case "$passcode" in
-    *performWhenTargetAvailable:*'objc_getClass("LAContext")'*'return NO;'*'%init(shadowhook_LAContext)'*) ;;
-    *) echo 'PASSCODE DRIFT: LAContext install must defer until the class loads'; rc=1 ;;
+*performWhenTargetAvailable:*'objc_getClass("LAContext")'*'return NO;'*'%init(shadowhook_LAContext)'*) ;;
+*)
+ echo 'PASSCODE DRIFT: LAContext install must defer until the class loads'
+ rc=1
+ ;;
 esac
 
 if grep -q 'outOldPtr:&' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
-    echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
-    exit 1
+ echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
+ exit 1
 fi
 
 # Journaled rebind cells must be process-lifetime: replay dereferences them
 # on later image loads. Bare address-of locals are stack storage.
 if grep -rn -- 'hookRebindSymbol.*outOldPtr:&[A-Za-z_]' src/ShadowCore.dylib/ | grep -qv -- 'outOldPtr:(void'; then
-    echo 'BATCHING RISK: journaled rebind cell is not a global'; rc=1
+ echo 'BATCHING RISK: journaled rebind cell is not a global'
+ rc=1
 fi
 
 # A failed attempt must neutralize caller input without erasing a continuation
 # this session published (a live replacement may chain through it).
 apply_once=$(sed -n '/^static BOOL shdw_apply_hook_spec_once(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
 case "$apply_once" in
-    *'BOOL entryLive = shdw_cell_holds_live_original(oldPtr);'*'if(oldPtr && !entryLive) {'*) ;;
-    *) echo 'SESSION DRIFT: setup-failure paths must snapshot then neutralize unpublished cells'; rc=1 ;;
+*'BOOL entryLive = shdw_cell_holds_live_original(oldPtr);'*'if(oldPtr && !entryLive) {'*) ;;
+*)
+ echo 'SESSION DRIFT: setup-failure paths must snapshot then neutralize unpublished cells'
+ rc=1
+ ;;
 esac
 finish_helper=$(sed -n '/^static void shdw_finish_uninstalled_hook(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
 case "$finish_helper" in
-    *'result.mutation == HK_MUTATION_NONE && !entryLive'*) ;;
-    *) echo 'SESSION DRIFT: clean failures must preserve earlier-attempt continuations'; rc=1 ;;
+*'result.mutation == HK_MUTATION_NONE && !entryLive'*) ;;
+*)
+ echo 'SESSION DRIFT: clean failures must preserve earlier-attempt continuations'
+ rc=1
+ ;;
 esac
 if ! grep -q 'shdw_note_published_cell(oldPtr);' src/ShadowCore.dylib/SHDWHookSession.m; then
-    echo 'SESSION DRIFT: published continuations are not tracked'; rc=1
+ echo 'SESSION DRIFT: published continuations are not tracked'
+ rc=1
 fi
 # Every raw cell clear must sit under an entryPublished guard: only a
 # continuation from an earlier attempt may survive a failure.
 for line in $(grep -n '\*oldPtr = NULL;' src/ShadowCore.dylib/SHDWHookSession.m | cut -d: -f1); do
-    if [ "$line" -gt 3 ]; then
-        start=$((line - 3))
-    else
-        start=1
-    fi
-    if ! sed -n "${start},$((line - 1))p" src/ShadowCore.dylib/SHDWHookSession.m | grep -q 'entryLive'; then
-        echo "SESSION DRIFT: unguarded cell clear at SHDWHookSession.m:$line"; rc=1
-    fi
+ if [ "$line" -gt 3 ]; then
+  start=$((line - 3))
+ else
+  start=1
+ fi
+ if ! sed -n "${start},$((line - 1))p" src/ShadowCore.dylib/SHDWHookSession.m | grep -q 'entryLive'; then
+  echo "SESSION DRIFT: unguarded cell clear at SHDWHookSession.m:$line"
+  rc=1
+ fi
 done
 
 for legacy_pointer_probe in UBReportMetadataDevice EnrollParameters; do
-    if ! grep "$legacy_pointer_probe" src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m | grep -q "'\^'"; then
-        echo "DEVICECHECK DRIFT: 3.7.6 pointer hook missing for $legacy_pointer_probe"
-        exit 1
-    fi
+ if ! grep "$legacy_pointer_probe" src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m | grep -q "'\^'"; then
+  echo "DEVICECHECK DRIFT: 3.7.6 pointer hook missing for $legacy_pointer_probe"
+  exit 1
+ fi
 done
 if ! grep -q 'shdw_dch_imp0_ptr_null' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
-    echo 'DEVICECHECK DRIFT: pointer-return hooks lack a typed NULL replacement'
-    exit 1
+ echo 'DEVICECHECK DRIFT: pointer-return hooks lack a typed NULL replacement'
+ exit 1
 fi
 if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' src/ShadowCore.dylib/hooks ||
-   grep -q '0x57898' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q 'bl _shdw_svc_should_deny' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q 'target - (int64_t)site' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q '\[NSBundle mainBundle\]\.bundlePath' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q '/procursus/Applications/' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
-   ! grep -q 'prefs\[SHDWUniversalSyscallID\] = @YES' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'shdw_detector_c_write_path_denied(pathname)' src/ShadowCore.dylib/hooks/Universal/libc_lowlevel.x ||
-   ! grep -q 'shdw_detector_c_write_path_denied(new)' src/ShadowCore.dylib/hooks/Universal/libc.x ||
-   ! grep -q 'shdw_detector_write_path_denied(path)' src/ShadowCore.dylib/hooks/Universal/NSString.x ||
-   ! grep -q 'shdw_detector_write_policy_set_enabled(YES)' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'SHDWAdapterPathIsHidden(path)' src/ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
-   ! grep -q '@"/.file"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q '@"/usr/sbin/cfprefsd"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'msg->msgh_bits == 0x1513' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q '0x444f50414d494e45ULL' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'shdw_freeRASP_versionForHeader' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q '0x4c90' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'Prologue' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
-   ! grep -q 'port == 2222' src/ShadowCore.dylib/hooks/Universal/sandbox.x ||
-   ! grep -q 'shdw_adapter_freerasp_prepare_preferences' src/ShadowCore.dylib/shadowcore.x; then
-    echo 'DEVICECHECK DRIFT: freeRASP must execute its real start entrypoint'
-    exit 1
+ grep -q '0x57898' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'SHDW_SVC_OPCODE_MASK 0xFFE0001FU' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+ ! grep -q 'bl _shdw_svc_should_deny' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+ ! grep -q 'target - (int64_t)site' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+ ! grep -q '\[NSBundle mainBundle\]\.bundlePath' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+ ! grep -q '/procursus/Applications/' src/ShadowCore.dylib/hooks/Universal/svc_patch.x ||
+ ! grep -q 'prefs\[SHDWUniversalSyscallID\] = @YES' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'shdw_detector_c_write_path_denied(pathname)' src/ShadowCore.dylib/hooks/Universal/libc_lowlevel.x ||
+ ! grep -q 'shdw_detector_c_write_path_denied(new)' src/ShadowCore.dylib/hooks/Universal/libc.x ||
+ ! grep -q 'shdw_detector_write_path_denied(path)' src/ShadowCore.dylib/hooks/Universal/NSString.x ||
+ ! grep -q 'shdw_detector_write_policy_set_enabled(YES)' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'SHDWAdapterPathIsHidden(path)' src/ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
+ ! grep -q '@"/.file"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q '@"/usr/sbin/cfprefsd"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'msg->msgh_bits == 0x1513' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q '0x444f50414d494e45ULL' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'shdw_freeRASP_versionForHeader' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q '0x4c90' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'Prologue' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ ! grep -q 'port == 2222' src/ShadowCore.dylib/hooks/Universal/sandbox.x ||
+ ! grep -q 'shdw_adapter_freerasp_prepare_preferences' src/ShadowCore.dylib/shadowcore.x; then
+ echo 'DEVICECHECK DRIFT: freeRASP must execute its real start entrypoint'
+ exit 1
 fi
 if grep -Eq 'test_sbiw|\.jbroot' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x; then
-    echo 'DETECTOR DRIFT: freeRASP write signatures escaped the universal sandbox policy'
-    exit 1
+ echo 'DETECTOR DRIFT: freeRASP write signatures escaped the universal sandbox policy'
+ exit 1
 fi
 if ! grep -q '\[shdw_coordinator_instance prearmDetector\]' src/ShadowCore.dylib/shadowcore.x; then
-    echo 'DETECTOR DRIFT: configured detector coverage is not active before SDK startup'
-    exit 1
+ echo 'DETECTOR DRIFT: configured detector coverage is not active before SDK startup'
+ exit 1
 fi
 
 if ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/Shadow.dylib/dylib.x; then
-    echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
-    exit 1
+ echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
+ exit 1
 fi
 if ! grep -q 'if(!buf && bufsize == 0)' src/ShadowCore.dylib/hooks/Universal/libc.x ||
-   [ "$(grep -c 'int rawCount = original_getfsstat(NULL, 0, flags);' src/ShadowCore.dylib/hooks/Universal/libc.x)" -lt 2 ] ||
-   ! grep -q 'shdw_getfsstat_filtered_snapshot(flags, rawCount, buf, capacity)' src/ShadowCore.dylib/hooks/Universal/libc.x; then
-    echo 'MOUNT DRIFT: getfsstat buffers must be populated from a full raw snapshot'
-    exit 1
+ [ "$(grep -c 'int rawCount = original_getfsstat(NULL, 0, flags);' src/ShadowCore.dylib/hooks/Universal/libc.x)" -lt 2 ] ||
+ ! grep -q 'shdw_getfsstat_filtered_snapshot(flags, rawCount, buf, capacity)' src/ShadowCore.dylib/hooks/Universal/libc.x; then
+ echo 'MOUNT DRIFT: getfsstat buffers must be populated from a full raw snapshot'
+ exit 1
 fi
 if grep -q '[harness-symbol]' "[private-harness-path][private-harness]/SceneDelegate.m" 2>/dev/null; then
-    echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
-    exit 1
+ echo 'HARNESS LIFECYCLE DRIFT: full detector suite must not run during scene creation'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/main.m" ]; then :; elif ! grep -q -- '--shadow-headless-run-all' "[private-harness-path][private-harness]/main.m"; then
-    echo 'HARNESS HEADLESS DRIFT: Run All needs a direct executable test mode'
-    exit 1
+ echo 'HARNESS HEADLESS DRIFT: Run All needs a direct executable test mode'
+ exit 1
 fi
 if ! grep -q 'SHDWUniversalHarnessBaselineID] = @YES' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'prefs\[SHDWUniversalHarnessBaselineID\] != nil' src/Shadow.framework/HookConfiguration.m ||
-   ! grep -q '_harnessProfile' src/ShadowCore.dylib/HookCoordinator.m ||
-   ! grep -q 'app_settings = fileAppSettings' src/Shadow.framework/Settings.m ||
-   ! grep -q 'filePreferences)' src/Shadow.framework/Settings.m ||
-   ! grep -q 'result\[SHDWUniversalHarnessBaselineID\] = baseline' src/Shadow.framework/Settings.m; then
-    echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
-    exit 1
+ ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'prefs\[SHDWUniversalHarnessBaselineID\] != nil' src/Shadow.framework/HookConfiguration.m ||
+ ! grep -q '_harnessProfile' src/ShadowCore.dylib/HookCoordinator.m ||
+ ! grep -q 'app_settings = fileAppSettings' src/Shadow.framework/Settings.m ||
+ ! grep -q 'filePreferences)' src/Shadow.framework/Settings.m ||
+ ! grep -q 'result\[SHDWUniversalHarnessBaselineID\] = baseline' src/Shadow.framework/Settings.m; then
+ echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
+ exit 1
 fi
 if ! grep -q 'sdk_fallback_inventory' "[private-harness-path][private-harness]/Battery.m" 2>/dev/null ||
-   ! grep -q 'sdk_fallback_observed' "[private-harness-path][private-harness]/Battery.m" 2>/dev/null ||
-   ! grep -q 'Run All SDK fallback activation missing' "[private-harness-path][harness-tool].py" 2>/dev/null; then
-    if [ -f "[private-harness-path][private-harness]/Battery.m" ]; then
-    echo 'HARNESS FALLBACK DRIFT: Run All must prove deferred SDK adapter activation'
-    exit 1
-    fi
+ ! grep -q 'sdk_fallback_observed' "[private-harness-path][private-harness]/Battery.m" 2>/dev/null ||
+ ! grep -q 'Run All SDK fallback activation missing' "[private-harness-path][harness-tool].py" 2>/dev/null; then
+ if [ -f "[private-harness-path][private-harness]/Battery.m" ]; then
+  echo 'HARNESS FALLBACK DRIFT: Run All must prove deferred SDK adapter activation'
+  exit 1
+ fi
 fi
 if [ ! -f "[private-harness-path]" ]; then :; elif ! grep -q 'probe_launch_context(probe_documents_directory())' "[private-harness-path]" ||
-   ! grep -q 'return @"/var/mobile/Documents"' "[private-harness-path]"; then
-    echo 'DYLD DRIFT: embedded probe must inherit the Harness launch mode'
-    exit 1
+ ! grep -q 'return @"/var/mobile/Documents"' "[private-harness-path]"; then
+ echo 'DYLD DRIFT: embedded probe must inherit the Harness launch mode'
+ exit 1
 fi
 if grep -q 'hasPrefix:@"/var/mobile"' src/ShadowCore.dylib/hooks/hooks.h ||
-   grep -q 'strncmp(path, "/var/mobile"' src/ShadowCore.dylib/hooks/hooks.h; then
-    echo 'PATH DRIFT: /var/mobile cannot bypass jailbreak path policy'
-    exit 1
+ grep -q 'strncmp(path, "/var/mobile"' src/ShadowCore.dylib/hooks/hooks.h; then
+ echo 'PATH DRIFT: /var/mobile cannot bypass jailbreak path policy'
+ exit 1
 fi
 if grep -q 'stringByStandardizingPath __attribute__' src/ShadowCore.dylib/hooks/Universal/NSString.x ||
-   grep -q 'URLByStandardizingPath __attribute__' src/ShadowCore.dylib/hooks/Universal/NSURL.x; then
-    echo 'PATH DRIFT: lexical path normalization must not be pass-through swizzled'
-    exit 1
+ grep -q 'URLByStandardizingPath __attribute__' src/ShadowCore.dylib/hooks/Universal/NSURL.x; then
+ echo 'PATH DRIFT: lexical path normalization must not be pass-through swizzled'
+ exit 1
 fi
 if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
-   grep -q 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
-   ! grep -q 'hookRebindSymbol:@"dlsym"' src/ShadowCore.dylib/hooks/Universal/dyld.x ||
-   ! grep -q 'resolved_getppid = dlsym' src/ShadowCore.dylib/hooks/Universal/libc_antidebugging.x ||
-   ! grep -q 'HK_IMAGE_EXACT_HEADER' src/ShadowCore.dylib/SHDWHookSession.m ||
-   grep -q 'HK_REACH_EXACT_IMAGE_SCOPE' src/ShadowCore.dylib/SHDWHookSession.m; then
-    echo 'HARNESS FALLBACK DRIFT: late-loaded detector imports must be rebound in their exact image'
-    exit 1
+ grep -q 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+ ! grep -q 'hookRebindSymbol:@"dlsym"' src/ShadowCore.dylib/hooks/Universal/dyld.x ||
+ ! grep -q 'resolved_getppid = dlsym' src/ShadowCore.dylib/hooks/Universal/libc_antidebugging.x ||
+ ! grep -q 'HK_IMAGE_EXACT_HEADER' src/ShadowCore.dylib/SHDWHookSession.m ||
+ grep -q 'HK_REACH_EXACT_IMAGE_SCOPE' src/ShadowCore.dylib/SHDWHookSession.m; then
+ echo 'HARNESS FALLBACK DRIFT: late-loaded detector imports must be rebound in their exact image'
+ exit 1
 fi
 if [ -f "[private-harness-path]" ] && { ! grep -q 'statfs("/var/jb"' "[private-harness-path]" ||
-   grep -q 'stat("/var/jb"' "[private-harness-path]"; }; then
-    echo 'DYLD DRIFT: injection canary must use a universally installed filesystem hook'
-    exit 1
+ grep -q 'stat("/var/jb"' "[private-harness-path]"; }; then
+ echo 'DYLD DRIFT: injection canary must use a universally installed filesystem hook'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/Makefile" ]; then :; elif ! grep -q 'DeviceSecurityKit' "[private-harness-path][private-harness]/Makefile" ||
-   ! grep -q 'devicesecuritykit' "[private-harness-path][private-harness]/EmbeddedDrivers.swift"; then
-    echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute embedded in the harness'
-    exit 1
+ ! grep -q 'devicesecuritykit' "[private-harness-path][private-harness]/EmbeddedDrivers.swift"; then
+ echo 'HARNESS DSK DRIFT: DeviceSecurityKit must execute embedded in the harness'
+ exit 1
 fi
 if [ -f "[private-harness-path][private-harness]/Detectors.m" ] && grep -q 'SecurityLoggerManager.shared' "[private-harness-path][private-harness]/Detectors.m" "[private-harness-path][private-harness]/SHDWEmbedded.m" "[private-harness-path][private-harness]/EmbeddedDrivers.swift"; then
-    echo 'HARNESS DSK DRIFT: isolated DeviceSecurityKit logger leaked into the Harness'
-    exit 1
+ echo 'HARNESS DSK DRIFT: isolated DeviceSecurityKit logger leaked into the Harness'
+ exit 1
 fi
 if [ -f "[private-harness-path][private-harness]/Detectors.m" ] && grep -q 'DEBUG-9be1\|[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m"; then
-    echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
-    exit 1
+ echo 'HARNESS DEBUG DRIFT: temporary Run All diagnostics must not ship'
+ exit 1
 fi
 # The private harness build script runs from its own checkout, but builds the
 # public sources supplied through SHADOW_SRC.
 if [ -f "[private-harness-path][private-harness]/Makefile" ] && { ! grep -q 'SHDW_DYLDPROBE_OBJ_DIR := ../tools/dyldprobe/.theos/obj$' "[private-harness-path][private-harness]/Makefile" ||
-   ! grep -q 'm -C "[private-harness-path]" stage FINALPACKAGE=1' "[private-harness-path]"; }; then
-    echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
-    exit 1
+ ! grep -q 'm -C "[private-harness-path]" stage FINALPACKAGE=1' "[private-harness-path]"; }; then
+ echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/EmbeddedDrivers.swift" ]; then :; elif ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfiguration.m ||
-   ! grep -q 'statuses\["rootPrivileges"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'statuses\["hardwareCryptography"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetectionChecksumCheckService()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'JailbreakDetector.detect()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'IntegrityValidator.validateCodeSignature()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'ProxyDetector.checkVPNAsProxy()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'isReverseEngineered' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-    ! grep -q 'detect_launchd_deplatformized' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
-    ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' "[private-harness-path][private-harness]/Makefile ||
-    ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
-    ! grep -q 'iossecuritysuite.watchpoint' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q '_dyld_image_count()' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'notChecked: main-binary Mach-O parser segfaults' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q '\.findLoadedDylibs(' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'IOSSecuritySuite.amIRuntimeHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'FishHookChecker.denyFishHook\|MSHookFunctionChecker.denyMSHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'FishHookChecker\.denyFishHook\|MSHookFunctionChecker\.denyMSHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   grep -q 'amITampered(\[\|\.amITampered(' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-    ! grep -q 'runnerChecksWithBundleID:' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'runnerChecksWithBundleID:' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
-   ! grep -q 'shdwInstallHarnessSDKFallback' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'isJb()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
-   ! grep -q 'isInjectedWithDynamicLibrary()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
-   ! grep -q 'isDebugged()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
-   ! grep -q 'ISJB_DIR)/JB.m' "[private-harness-path][private-harness]/Makefile ||
-   ! grep -q 'SwiftyJBD.isJailbroken()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
-   ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' "[private-harness-path][private-harness]/Makefile ||
-   ! grep -q '[private-harness]_CODESIGN_FLAGS' "[private-harness-path][private-harness]/Makefile ||
-   ! grep -q 'application-identifier' "[private-harness-path][private-harness]/Resources/[private-harness].entitlements; then
-    echo 'HARNESS OPTION DRIFT: embedded detectors must execute every supported one-shot check'
-    exit 1
+ ! grep -q 'statuses\["rootPrivileges"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'statuses\["hardwareCryptography"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'JailbreakDetectionChecksumCheckService()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'JailbreakDetector.detect()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'IntegrityValidator.validateCodeSignature()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'ProxyDetector.checkVPNAsProxy()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'isReverseEngineered' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'detect_launchd_deplatformized' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
+ ! grep -q 'JAILMONKEY_DIR)/JailMonkey.m' "[private-harness-path][private-harness]/Makefile ||
+ ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
+ ! grep -q 'iossecuritysuite.watchpoint' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ ! grep -q '_dyld_image_count()' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ ! grep -q 'notChecked: main-binary Mach-O parser segfaults' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ grep -q '\.findLoadedDylibs(' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ grep -q 'IOSSecuritySuite.amIRuntimeHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ grep -q 'FishHookChecker.denyFishHook\|MSHookFunctionChecker.denyMSHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ grep -q 'FishHookChecker\.denyFishHook\|MSHookFunctionChecker\.denyMSHook' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ grep -q 'amITampered(\[\|\.amITampered(' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ ! grep -q 'runnerChecksWithBundleID:' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ ! grep -q 'runnerChecksWithBundleID:' "[private-harness-path][private-harness]/detector-frameworks/bridges/IOSSBridge.swift ||
+ ! grep -q 'shdwInstallHarnessSDKFallback' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'isJb()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
+ ! grep -q 'isInjectedWithDynamicLibrary()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
+ ! grep -q 'isDebugged()' "[private-harness-path][private-harness]/SHDWEmbedded.m ||
+ ! grep -q 'ISJB_DIR)/JB.m' "[private-harness-path][private-harness]/Makefile ||
+ ! grep -q 'SwiftyJBD.isJailbroken()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
+ ! grep -q 'SWIFTYJBD_DIR)/JailBreak.swift' "[private-harness-path][private-harness]/Makefile ||
+ ! grep -q '[private-harness]_CODESIGN_FLAGS' "[private-harness-path][private-harness]/Makefile ||
+ ! grep -q 'application-identifier' "[private-harness-path][private-harness]/Resources/[private-harness].entitlements; then
+ echo 'HARNESS OPTION DRIFT: embedded detectors must execute every supported one-shot check'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/Detectors.m ]; then :; elif ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/DetectorDashboard.m ||
-   ! grep -q 'ShdwWriteEvidenceData' "[private-harness-path][private-harness]/Detectors.m ||
-   ! grep -q 'written = ShdwWriteEvidenceData(data, path);' "[private-harness-path]; then
-    echo 'HARNESS EVIDENCE I/O DRIFT: detector reports must bypass their own file hooks'
-    exit 1
+ ! grep -q 'ShdwWriteEvidenceData' "[private-harness-path][private-harness]/Detectors.m ||
+ ! grep -q 'written = ShdwWriteEvidenceData(data, path);' "[private-harness-path]; then
+ echo 'HARNESS EVIDENCE I/O DRIFT: detector reports must bypass their own file hooks'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/Detectors.m ]; then :; elif grep -q 'shdw_load_framework\|shdw_dlopen_framework' "[private-harness-path][private-harness]/Detectors.m ||
-   ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m ||
-   ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m; then
-    echo 'HARNESS DRIFT: SDKs must run embedded in-process (no app flips)'
-    exit 1
+ ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m ||
+ ! grep -q '[harness-symbol]' "[private-harness-path][private-harness]/Detectors.m; then
+ echo 'HARNESS DRIFT: SDKs must run embedded in-process (no app flips)'
+ exit 1
 fi
 if [ ! -f "[private-harness-path][private-harness]/EmbeddedDrivers.swift ]; then :; elif ! grep -q 'scheduledTimer.*30' "[private-harness-path][private-harness]/EmbeddedDrivers.swift; then
-    echo 'HARNESS DRIFT: FreeRASP must settle before returning its report'
-    exit 1
+ echo 'HARNESS DRIFT: FreeRASP must settle before returning its report'
+ exit 1
 fi
 if ! grep -q 'hookRebindSymbol:@"fopen"' src/ShadowCore.dylib/hooks/Universal/libc.x; then
-    echo 'LIBC DRIFT: fopen lost its safe rebind path'
-    exit 1
+ echo 'LIBC DRIFT: fopen lost its safe rebind path'
+ exit 1
 fi
 getppid_rebind=$(sed -n '/} else if(group == SHADW_HOOK_GROUP_ANTIDEBUG &&/,/} else {/p' src/ShadowCore.dylib/hooks/Universal/libc.x)
 if ! printf '%s\n' "$getppid_rebind" | grep -q 'strcmp(d->symbol, "getppid") == 0' ||
-   ! printf '%s\n' "$getppid_rebind" | grep -q 'hookRebindSymbol:@"getppid"' ||
-   ! printf '%s\n' "$getppid_rebind" | grep -q 'outOldPtr:NULL' ||
-   printf '%s\n' "$getppid_rebind" | grep -q 'hookFunction:'; then
-    echo 'LIBC DRIFT: getppid must use the rebind-only shared-cache path'
-    exit 1
+ ! printf '%s\n' "$getppid_rebind" | grep -q 'hookRebindSymbol:@"getppid"' ||
+ ! printf '%s\n' "$getppid_rebind" | grep -q 'outOldPtr:NULL' ||
+ printf '%s\n' "$getppid_rebind" | grep -q 'hookFunction:'; then
+ echo 'LIBC DRIFT: getppid must use the rebind-only shared-cache path'
+ exit 1
 fi
 case "$getppid_rebind" in
-    *"*d->original = target;"*"hookRebindSymbol:@\"getppid\""*) ;;
-    *) echo 'LIBC DRIFT: getppid publishes its rebind continuation too late'; exit 1 ;;
+*"*d->original = target;"*"hookRebindSymbol:@\"getppid\""*) ;;
+*)
+ echo 'LIBC DRIFT: getppid publishes its rebind continuation too late'
+ exit 1
+ ;;
 esac
 if grep -q 'LIBC | METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x; then
-    echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
-    exit 1
+ echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
+ exit 1
 fi
 # A rebind commit may call the replacement before it returns. Its continuation
 # must therefore be written directly to the caller's output cell, not staged
 # in a local that is copied out after the mutation.
 session_apply=$(sed -n '/^static BOOL shdw_apply_hook_spec(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
 case "$session_apply" in
-    *attemptOldPtr*|*'spec, &original,'*)
-        echo 'HOOK SESSION DRIFT: continuation output is staged across commit'
-        exit 1
-        ;;
-    *'spec, oldPtr, backendOverride,'*'spec, oldPtr, NULL,'*) ;;
-    *)
-        echo 'HOOK SESSION DRIFT: hook attempts must publish directly to caller storage'
-        exit 1
-        ;;
+*attemptOldPtr* | *'spec, &original,'*)
+ echo 'HOOK SESSION DRIFT: continuation output is staged across commit'
+ exit 1
+ ;;
+*'spec, oldPtr, backendOverride,'*'spec, oldPtr, NULL,'*) ;;
+*)
+ echo 'HOOK SESSION DRIFT: hook attempts must publish directly to caller storage'
+ exit 1
+ ;;
 esac
 
 if ! grep -q 'SHADW_HOOK_GROUP_FEATURE_METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x ||
-   ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
-   grep -q 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
-   ! grep -q 'shdw_universal_import_slot_protection' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'shdw_universal_objc_methodimpl_detector' src/ShadowCore.dylib/shadowcore.x ||
-    ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' src/ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x ||
-    ! grep -q 'hk_artifact_is_import_slot' src/ShadowCore.dylib/SHDWHookSession.m ||
-   grep -q 'strcmp(d->symbol, "readlink")' src/ShadowCore.dylib/hooks/Universal/libc.x ||
-    grep -q 'effectivePrefs\[SHDWUniversalFilesystemID\] = @NO' src/ShadowCore.dylib/shadowcore.x ||
-    grep -q 'effectivePrefs\[SHDWUniversalURLSchemeID\] = @NO' src/ShadowCore.dylib/shadowcore.x ||
-   ! grep -q 'isApplicationAvailableToOpenURL:(NSURL \*)url error:' src/ShadowCore.dylib/hooks/Universal/AppEnvironment.x ||
-   ! grep -q 'VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY' src/ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x; then
-    echo 'LIBC DRIFT: IOSSecuritySuite lost its targeted safe filesystem subset'
-    exit 1
+ ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+ grep -q 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
+ ! grep -q 'shdw_universal_import_slot_protection' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'shdw_universal_objc_methodimpl_detector' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'SHDWRangeOverlapsProtectedImportSlots' src/ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x ||
+ ! grep -q 'hk_artifact_is_import_slot' src/ShadowCore.dylib/SHDWHookSession.m ||
+ grep -q 'strcmp(d->symbol, "readlink")' src/ShadowCore.dylib/hooks/Universal/libc.x ||
+ grep -q 'effectivePrefs\[SHDWUniversalFilesystemID\] = @NO' src/ShadowCore.dylib/shadowcore.x ||
+ grep -q 'effectivePrefs\[SHDWUniversalURLSchemeID\] = @NO' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'isApplicationAvailableToOpenURL:(NSURL \*)url error:' src/ShadowCore.dylib/hooks/Universal/AppEnvironment.x ||
+ ! grep -q 'VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY' src/ShadowCore.dylib/hooks/Universal/ImportSlotProtection.x; then
+ echo 'LIBC DRIFT: IOSSecuritySuite lost its targeted safe filesystem subset'
+ exit 1
 fi
 if ! grep -q 'strcmp(name, "fork") != 0 || !resolved_fork' src/ShadowCore.dylib/hooks/Universal/sandbox.x; then
-    echo 'SANDBOX DRIFT: dynamically resolved fork lost its safe fallback'
-    exit 1
+ echo 'SANDBOX DRIFT: dynamically resolved fork lost its safe fallback'
+ exit 1
 fi
 if [ "$(grep -c 'if(pid) \*pid = -1;' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -ne 2 ] ||
-   [ "$(grep -c 'shdw_spawn_deny_errno(' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -lt 2 ] ||
-   ! grep -q 'return (path && \[_shadow isCPathRestricted:path\]) ? ENOENT : EPERM;' src/ShadowCore.dylib/hooks/Universal/sandbox.x; then
-    echo 'SANDBOX DRIFT: external posix_spawn lost its stock denial contract'
-    exit 1
+ [ "$(grep -c 'shdw_spawn_deny_errno(' src/ShadowCore.dylib/hooks/Universal/sandbox.x)" -lt 2 ] ||
+ ! grep -q 'return (path && \[_shadow isCPathRestricted:path\]) ? ENOENT : EPERM;' src/ShadowCore.dylib/hooks/Universal/sandbox.x; then
+ echo 'SANDBOX DRIFT: external posix_spawn lost its stock denial contract'
+ exit 1
 fi
 if ! grep -q 'hookRebindSymbol:@"dlsym"' src/ShadowCore.dylib/hooks/Universal/dyld.x; then
-    echo 'DYLD DRIFT: dlsym lost its safe rebind fallback'
-    exit 1
+ echo 'DYLD DRIFT: dlsym lost its safe rebind fallback'
+ exit 1
 fi
 if grep -q 'snapshot->entry\[i\]\.name = \[dylib\[@"name"\] fileSystemRepresentation\]' src/ShadowCore.dylib/hooks/Universal/dyld.x; then
-    echo 'DYLD DRIFT: persistent image snapshot stores an autorelease-scoped path pointer'
-    exit 1
+ echo 'DYLD DRIFT: persistent image snapshot stores an autorelease-scoped path pointer'
+ exit 1
 fi
 
 if grep -Rqs 'shdw_universal_' src/ShadowCore.dylib/hooks/Adapters ||
-   grep -Rqs 'shadowhook_\(dyld\|libc\|NSFileManager\|LSApplicationWorkspace\)' src/ShadowCore.dylib/hooks/Adapters; then
-    echo 'BOUNDARY DRIFT: adapter sources directly reference universal installers'
-    exit 1
+ grep -Rqs 'shadowhook_\(dyld\|libc\|NSFileManager\|LSApplicationWorkspace\)' src/ShadowCore.dylib/hooks/Adapters; then
+ echo 'BOUNDARY DRIFT: adapter sources directly reference universal installers'
+ exit 1
 fi
 if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|DeviceCheck' src/ShadowCore.dylib/hooks/Universal; then
-    echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
-    exit 1
+ echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
+ exit 1
 fi
 if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/Headers/Shadow/JBPath.h ||
-   ! grep -q 'shdw_is_restricted_root_with_prefix(path, NULL)' src/Shadow.framework/JBPath.m; then
-    echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
-    rc=1
+ ! grep -q 'shdw_is_restricted_root_with_prefix(path, NULL)' src/Shadow.framework/JBPath.m; then
+ echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
+ rc=1
 fi
 # PolicyTests.m cases live in the private harness; run there.
 if [ -f "[private-harness-path] ] && { ! grep -q 'private var jb alias restricted' "[private-harness-path] ||
-   ! grep -q 'private var jb prefix boundary allowed' "[private-harness-path]; }; then
-    echo 'FREERASP DRIFT: private /var/jb alias cases missing from PolicyTests'
-    rc=1
+ ! grep -q 'private var jb prefix boundary allowed' "[private-harness-path]; }; then
+ echo 'FREERASP DRIFT: private /var/jb alias cases missing from PolicyTests'
+ rc=1
 fi
 if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
-   ! grep -q 'SHDWAdapterPathIsHidden' src/ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
-   ! grep -q 'SHDWRemapDladdrAddress' src/ShadowCore.dylib/hooks/Universal/dyld.x; then
-    echo 'BOUNDARY DRIFT: the neutral adapter bridge is incomplete'
-    exit 1
+ ! grep -q 'SHDWAdapterPathIsHidden' src/ShadowCore.dylib/hooks/Universal/NSFileManager.x ||
+ ! grep -q 'SHDWRemapDladdrAddress' src/ShadowCore.dylib/hooks/Universal/dyld.x; then
+ echo 'BOUNDARY DRIFT: the neutral adapter bridge is incomplete'
+ exit 1
 fi
 
 # The device matrix must expose the complete landed ledger by canonical ID.
 # hookprobe lives in the private harness; public runs skip this section.
 if [ -f "[private-harness-path] ]; then
-canonical_actual=$(sed -n '/static const CanonicalRegression kCanonicalRegressions\[\] = {/,/^};/p' "[private-harness-path] |
-    awk -F'"' '/^[[:space:]]*\{ "/ { print $2 }' | sort)
-canonical_expected=$(printf '%s\n' \
-    C-01 C-02 C-03 C-04 C-05 C-06 C-07 C-08 C-09 C-10 C-11 C-12 C-13 C-14 C-15 C-16 C-17 \
-    CORE-01 CORE-02 CORE-03 CORE-04 CORE-05 CORE-06 CORE-07 CORE-08 CORE-09 \
-    DY-01 DY-02 DY-03 DY-04 DY-05 DY-06 DY-07 DY-08 DY-09 DY-10 DY-11 DY-12 \
-    FILE-01 FILE-02 FILE-03 FILE-04 FILE-05 FILE-06 FILE-07 FILE-08 FILE-09 FILE-10 \
-    N-01 N-02 N-03 N-04 N-05 N-06 N-07 N-08 N-09 N-10 | sort)
+ canonical_actual=$(sed -n '/static const CanonicalRegression kCanonicalRegressions\[\] = {/,/^};/p' "[private-harness-path] |
+  awk -F'"' '/^[[:space:]]*\{ "/ { print $2 }' | sort)
+ canonical_expected=$(printf '%s\n' \
+  C-01 C-02 C-03 C-04 C-05 C-06 C-07 C-08 C-09 C-10 C-11 C-12 C-13 C-14 C-15 C-16 C-17 \
+  CORE-01 CORE-02 CORE-03 CORE-04 CORE-05 CORE-06 CORE-07 CORE-08 CORE-09 \
+  DY-01 DY-02 DY-03 DY-04 DY-05 DY-06 DY-07 DY-08 DY-09 DY-10 DY-11 DY-12 \
+  FILE-01 FILE-02 FILE-03 FILE-04 FILE-05 FILE-06 FILE-07 FILE-08 FILE-09 FILE-10 \
+  N-01 N-02 N-03 N-04 N-05 N-06 N-07 N-08 N-09 N-10 | sort)
 
-if [ "$canonical_actual" != "$canonical_expected" ]; then
-    echo 'HOOKPROBE REGRESSION DRIFT: canonical witness IDs differ'
-    rc=1
-fi
+ if [ "$canonical_actual" != "$canonical_expected" ]; then
+  echo 'HOOKPROBE REGRESSION DRIFT: canonical witness IDs differ'
+  rc=1
+ fi
 fi
 
 exit $rc

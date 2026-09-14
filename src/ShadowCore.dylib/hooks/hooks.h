@@ -1,46 +1,45 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import <stdio.h>
-#import <stdatomic.h>
-#import <sys/stat.h>
-#import <sys/statvfs.h>
-#import <sys/mount.h>
-#import <sys/syscall.h>
-#import <sys/utsname.h>
-#import <sys/syslimits.h>
-#import <sys/time.h>
+#import <bootstrap.h>
+#import <copyfile.h>
+#import <dirent.h>
+#import <dlfcn.h>
 #import <errno.h>
 #import <fcntl.h>
+#import <fts.h>
+#import <ftw.h>
+#import <glob.h>
+#import <ifaddrs.h>
 #import <mach-o/dyld.h>
 #import <mach-o/dyld_images.h>
 #import <mach-o/nlist.h>
-#import <dlfcn.h>
-#import <dirent.h>
-#import <sys/sysctl.h>
-#import <sys/event.h>
-#import <mach/mach.h>
-#import <mach/task_info.h>
-#import <mach/mach_traps.h>
 #import <mach/host_special_ports.h>
+#import <mach/mach.h>
+#import <mach/mach_traps.h>
+#import <mach/task_info.h>
 #import <mach/task_special_ports.h>
-#import <sandbox.h>
-#import <bootstrap.h>
-#import <spawn.h>
 #import <objc/runtime.h>
-#import <copyfile.h>
+#import <sandbox.h>
+#import <spawn.h>
+#import <stdatomic.h>
+#import <stdio.h>
 #import <sys/clonefile.h>
-#import <glob.h>
-#import <fts.h>
-#import <ftw.h>
+#import <sys/event.h>
+#import <sys/mount.h>
+#import <sys/stat.h>
+#import <sys/statvfs.h>
+#import <sys/syscall.h>
+#import <sys/sysctl.h>
+#import <sys/syslimits.h>
+#import <sys/time.h>
 #import <sys/utsname.h>
-#import <ifaddrs.h>
 
 #import "../../common.h"
+#import "../HookRuntime.h"
 #import <Shadow.h>
 #import <Shadow/HookConfiguration.h>
 #import <Shadow/JBPath.h>
-#import "../HookRuntime.h"
 
 #import "../SHDWHookSession.h"
 
@@ -121,25 +120,26 @@
 // libsystem namespace), and misses fail instantly instead of walking. Shadow's
 // own dlsym hook short-circuits internal callers to original_dlsym (see
 // replaced_dlsym), so this stays a real, unfiltered lookup during the ctor.
-// findSymbolInImage takes the Mach-O name (leading '_'); dlsym wants the C name.
-static inline void* shdw_resolve_libsystem(const char* mach_symbol) {
-    if(!mach_symbol || !mach_symbol[0]) {
-        return NULL;
-    }
+// findSymbolInImage takes the Mach-O name (leading '_'); dlsym wants the C
+// name.
+static inline void *shdw_resolve_libsystem(const char *mach_symbol) {
+  if (!mach_symbol || !mach_symbol[0]) {
+    return NULL;
+  }
 
-    const char* c_name = (mach_symbol[0] == '_') ? mach_symbol + 1 : mach_symbol;
+  const char *c_name = (mach_symbol[0] == '_') ? mach_symbol + 1 : mach_symbol;
 
-    return dlsym(RTLD_DEFAULT, c_name);
+  return dlsym(RTLD_DEFAULT, c_name);
 }
 
-// Universal_PathRewrite is configured from the constructor's resolved prefs before any
-// hooks install. Reading NSUserDefaults lazily from a live Foundation hook
-// re-enters the hook stack and can deadlock.
+// Universal_PathRewrite is configured from the constructor's resolved prefs
+// before any hooks install. Reading NSUserDefaults lazily from a live
+// Foundation hook re-enters the hook stack and can deadlock.
 extern _Atomic BOOL shdw_path_rewrite_active;
 void shdw_path_rewrite_configure(BOOL enabled);
 
 static inline BOOL shdw_path_rewrite_enabled(void) {
-    return atomic_load_explicit(&shdw_path_rewrite_active, memory_order_acquire);
+  return atomic_load_explicit(&shdw_path_rewrite_active, memory_order_acquire);
 }
 
 // Natural-ENOENT rewrite for libc path hooks: munge the caller's buffer and
@@ -147,18 +147,18 @@ static inline BOOL shdw_path_rewrite_enabled(void) {
 // the rewrite happened (the caller returns the original's result directly).
 // Falls back to the synthetic deny when the pref is off or the buffer is not
 // writable (e.g. a __TEXT string constant).
-static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
-    if(!shdw_path_rewrite_enabled()) {
-        return NO;
-    }
+static inline BOOL shdw_libc_try_rewrite(const char *pathname) {
+  if (!shdw_path_rewrite_enabled()) {
+    return NO;
+  }
 
-    size_t moff = shdw_path_munge_offset(pathname);
+  size_t moff = shdw_path_munge_offset(pathname);
 
-    if(moff == (size_t)-1 || !shdw_path_buf_writable(pathname + moff)) {
-        return NO;
-    }
+  if (moff == (size_t)-1 || !shdw_path_buf_writable(pathname + moff)) {
+    return NO;
+  }
 
-    return shdw_path_munge_path((char*)pathname);
+  return shdw_path_munge_path((char *)pathname);
 }
 
 // Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks. Route
@@ -166,8 +166,8 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 #define MSHookMessageEx SHDWHookMessage
 
 // private symbols
-#import "../../../vendor/apple/dyld_priv.h"
 #import "../../../vendor/apple/codesign.h"
+#import "../../../vendor/apple/dyld_priv.h"
 #import "../../../vendor/apple/ptrace.h"
 
 // C0-2 caller classification for isCallerExternal(): YES = this caller must
@@ -203,7 +203,7 @@ static inline BOOL shdw_libc_try_rewrite(const char* pathname) {
 
 extern shdw_own_ranges_t _shdw_own_ranges_a;
 extern shdw_own_ranges_t _shdw_own_ranges_b;
-extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
+extern shdw_own_ranges_t *_shdw_own_ranges_published; // atomic
 
 // Restricted image spans for shdw_addr_is_restricted() — the address-keyed
 // half of the same idea as the own-ranges snapshot above, built in the same
@@ -225,37 +225,41 @@ extern shdw_own_ranges_t* _shdw_own_ranges_published;   // atomic
 // from a range table — the same trade shdw_own_ranges already makes.
 extern shdw_restricted_ranges_t _shdw_restricted_ranges_a;
 extern shdw_restricted_ranges_t _shdw_restricted_ranges_b;
-extern shdw_restricted_ranges_t* _shdw_restricted_ranges_published;   // atomic
+extern shdw_restricted_ranges_t *_shdw_restricted_ranges_published; // atomic
 
 // C0-2 internal-scope primitives for dylib code that needs truth (jailbreakd
 // probes, own reads). SHADOW_INTERNAL_SCOPE itself is defined in Core.h and
 // works from either binary; these helpers are the dylib-side equivalents of
 // the macro's enter/exit halves for finer-grained control.
-static inline void shdw_enter_internal(void) {
-    [Shadow shdwEnterInternalRead];
-}
+static inline void shdw_enter_internal(void) { [Shadow shdwEnterInternalRead]; }
 
-static inline void shdw_exit_internal(void) {
-    [Shadow shdwExitInternalRead];
-}
+static inline void shdw_exit_internal(void) { [Shadow shdwExitInternalRead]; }
 
-static inline BOOL shdw_caller_is_external(const void* ra) {
-    // ponytail: per-thread last-RA cache — most file/mach probes hit the same 2-3 call sites
-    if (shdwInternalBusy() != 0) return NO;
-    uintptr_t a = (uintptr_t) ra;
-    static __thread uintptr_t cached_ra = 0;
-    static __thread BOOL cached_res = YES;
-    static __thread BOOL cached_valid = NO;
-    if (cached_valid && cached_ra == a) return cached_res;
-    shdw_own_ranges_t* ranges = __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
-    for(uint32_t i = 0; i < ranges->count; i++) {
-        if(a >= ranges->range[i].base && a < ranges->range[i].end) {
-            cached_ra = a; cached_res = NO; cached_valid = YES;
-            return NO;
-        }
+static inline BOOL shdw_caller_is_external(const void *ra) {
+  // ponytail: per-thread last-RA cache — most file/mach probes hit the same 2-3
+  // call sites
+  if (shdwInternalBusy() != 0)
+    return NO;
+  uintptr_t a = (uintptr_t)ra;
+  static __thread uintptr_t cached_ra = 0;
+  static __thread BOOL cached_res = YES;
+  static __thread BOOL cached_valid = NO;
+  if (cached_valid && cached_ra == a)
+    return cached_res;
+  shdw_own_ranges_t *ranges =
+      __atomic_load_n(&_shdw_own_ranges_published, __ATOMIC_ACQUIRE);
+  for (uint32_t i = 0; i < ranges->count; i++) {
+    if (a >= ranges->range[i].base && a < ranges->range[i].end) {
+      cached_ra = a;
+      cached_res = NO;
+      cached_valid = YES;
+      return NO;
     }
-    cached_ra = a; cached_res = YES; cached_valid = YES;
-    return YES;
+  }
+  cached_ra = a;
+  cached_res = YES;
+  cached_valid = YES;
+  return YES;
 }
 
 // Is the image containing `addr` restricted? Same verdict as
@@ -266,17 +270,17 @@ static inline BOOL shdw_caller_is_external(const void* ra) {
 // answer completely — it overflowed, or a ruleset reload has landed since it
 // was classified. Both fall-backs are correctness-preserving and rare; the
 // next refresh republishes a table that answers directly again.
-static inline BOOL shdw_addr_is_restricted(const void* addr) {
-    shdw_range_verdict_t verdict = shdw_ranges_lookup(
-        __atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE),
-        atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire),
-        (uintptr_t) addr);
+static inline BOOL shdw_addr_is_restricted(const void *addr) {
+  shdw_range_verdict_t verdict = shdw_ranges_lookup(
+      __atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE),
+      atomic_load_explicit(&shdw_ruleset_generation, memory_order_acquire),
+      (uintptr_t)addr);
 
-    if(verdict == SHDW_RANGE_UNKNOWN) {
-        return [_shadow isAddrRestricted:addr];
-    }
+  if (verdict == SHDW_RANGE_UNKNOWN) {
+    return [_shadow isAddrRestricted:addr];
+  }
 
-    return verdict == SHDW_RANGE_YES;
+  return verdict == SHDW_RANGE_YES;
 }
 
 // Rebuilds the Shadow-owned image spans and the restricted image spans from the
@@ -287,48 +291,60 @@ void shdw_own_ranges_refresh(void);
 // Exact canonical package-path matcher for Shadow's runtime images. Defined
 // in dyld.x and shared with objc.x; it is intentionally not the broader
 // protected-image hiding predicate.
-BOOL shdw_is_shadow_runtime_image(const char* path);
+BOOL shdw_is_shadow_runtime_image(const char *path);
 
 // Real main-executable resolution (see dyld.x). Do NOT use image index 0: a
 // rootless jailbreak's launch dylib (systemhook) sits there instead of the app.
-const struct mach_header* shdw_main_executable_image_index(uint32_t* outIndex);
-const char* shdw_main_executable_name(void);
+const struct mach_header *shdw_main_executable_image_index(uint32_t *outIndex);
+const char *shdw_main_executable_name(void);
 
-#define isCallerExternal()         shdw_caller_is_external(__builtin_extract_return_addr(__builtin_return_address(0)))
+#define isCallerExternal()                                                     \
+  shdw_caller_is_external(                                                     \
+      __builtin_extract_return_addr(__builtin_return_address(0)))
 
 // ponytail: fast allowed-path check for tight loops (perfprobe). User-library
 // paths still need policy because jailbreak tools leave evidence there.
 static inline BOOL shdw_is_fast_allowed_cpath(const char *path) {
-    if (!path || !path[0]) return NO;
-    if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' && path[4] == '/') {
-        if (strncmp(path, "/var/tmp", 8) == 0 && (path[8] == '/' || path[8] == 0 || path[8] == '.')) return YES;
-    }
-    if (strncmp(path, "/tmp", 4) == 0 && (path[4] == '/' || path[4] == 0)) return YES;
-    if (strncmp(path, "/private/var/tmp", 15) == 0 && (path[15] == '/' || path[15] == 0)) return YES;
+  if (!path || !path[0])
     return NO;
+  if (path[0] == '/' && path[1] == 'v' && path[2] == 'a' && path[3] == 'r' &&
+      path[4] == '/') {
+    if (strncmp(path, "/var/tmp", 8) == 0 &&
+        (path[8] == '/' || path[8] == 0 || path[8] == '.'))
+      return YES;
+  }
+  if (strncmp(path, "/tmp", 4) == 0 && (path[4] == '/' || path[4] == 0))
+    return YES;
+  if (strncmp(path, "/private/var/tmp", 15) == 0 &&
+      (path[15] == '/' || path[15] == 0))
+    return YES;
+  return NO;
 }
 static inline BOOL shdw_is_fast_allowed_nspath(NSString *path) {
-    if (!path) return NO;
-    if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/tmp"] || [path hasPrefix:@"/private/var/tmp"]) return YES;
+  if (!path)
     return NO;
+  if ([path hasPrefix:@"/var/tmp"] || [path hasPrefix:@"/tmp"] ||
+      [path hasPrefix:@"/private/var/tmp"])
+    return YES;
+  return NO;
 }
 
-#define SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path) \
-    do { \
-        if(isCallerExternal() && [_shadow isPathRestricted:(path)]) { \
-            return nil; \
-        } \
-    } while(0)
+#define SHADOW_RETURN_NIL_IF_PATH_RESTRICTED(path)                             \
+  do {                                                                         \
+    if (isCallerExternal() && [_shadow isPathRestricted:(path)]) {             \
+      return nil;                                                              \
+    }                                                                          \
+  } while (0)
 
-#define SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url) \
-    do { \
-        if(isCallerExternal() && [_shadow isURLRestricted:(url)]) { \
-            return nil; \
-        } \
-    } while(0)
+#define SHADOW_RETURN_NIL_IF_URL_RESTRICTED(url)                               \
+  do {                                                                         \
+    if (isCallerExternal() && [_shadow isURLRestricted:(url)]) {               \
+      return nil;                                                              \
+    }                                                                          \
+  } while (0)
 
-static inline NSDictionary* shdw_restriction_write_options(void) {
-    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
+static inline NSDictionary *shdw_restriction_write_options(void) {
+  return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite};
 }
 
 // Set by exact detector-adapter matches or behavioral tripwires; read by the
@@ -337,58 +353,64 @@ extern BOOL shdw_detector_present;
 
 // User opt-in for aggressive detector neutralization (global or per-app). When
 // YES, adapters may run disable-style paths that force a detector's verdict;
-// when NO, only natural stock-shaped bypasses run. See SHDWDetectorAggressiveID.
+// when NO, only natural stock-shaped bypasses run. See
+// SHDWDetectorAggressiveID.
 extern BOOL shdw_detector_aggressive;
 
 // Emergency kill-switch for the dyld_all_image_infos memory-hiding patch
 // (AR2). The patch is unconditional by default (untrusted callers read the
 // raw struct via task_info / _dyld_get_all_image_infos), but a misbehaving
 // patch on a new iOS must be disableable without a reinstall: set by dylib.x
-// from the Universal_MemoryLevelHiding pref (default YES). When NO, dyld.x restores
-// dyld's original struct fields and never re-patches — the direct-memory-read
-// surface is re-exposed (detection exposure returns) but the crash stops.
+// from the Universal_MemoryLevelHiding pref (default YES). When NO, dyld.x
+// restores dyld's original struct fields and never re-patches — the
+// direct-memory-read surface is re-exposed (detection exposure returns) but the
+// crash stops.
 extern BOOL shdw_memory_hiding_enabled;
 
 // Behavioral tripwire escalation (dylib.x): called when a non-tweak caller
 // probes the jailbreak (JB-indicator path/symbol/dylib) or a known detector
 // loads post-spawn. Idempotent; installs the detector-gated hook groups the
 // ctor skipped. Safe to call from hooked functions and the image watcher.
-extern void shdw_detector_detected(const char* reason);
+extern void shdw_detector_detected(const char *reason);
 
 // Raw-syscall policy categories (hooks/Universal/syscall.x dispatch;
 // shared with the svc-patch trampoline in hooks/Universal/svc_patch.x).
 typedef enum {
-    SHADW_RAW_CAT_NONE = 0,      // forwarded, never inspected (access_extended)
-    SHADW_RAW_CAT_PTRACE,        // PT_DENY_ATTACH short-circuit
-    SHADW_RAW_CAT_PATH,          // single pathname inspection
-    SHADW_RAW_CAT_AT,            // dirfd-aware *at inspection
-    SHADW_RAW_CAT_SYSCTL,        // KERN_PROC/KERN_PROCARGS2 policy
-    SHADW_RAW_CAT_CSOPS,         // MARKKILL pre-reject + after-success
-    SHADW_RAW_CAT_DIRENT,        // raw getdirentries64 after-success filter
-    SHADW_RAW_CAT_FDXATTR,       // fd-based xattr inspection
-    SHADW_RAW_CAT_PATH3I,        // (path, uid/gid/int, ...) mutators: chown/lchown
-    SHADW_RAW_CAT_PATHMD,        // (path, mode, dev) mutators: mknod
-    SHADW_RAW_CAT_PATHOFF,       // (path, off_t) mutators: truncate
-    SHADW_RAW_CAT_FDOFF,         // (fd, off_t) mutators: ftruncate (EBADF)
-    SHADW_RAW_CAT_FDMODE,        // (fd, mode) mutators: fchmod (EBADF)
-    SHADW_RAW_CAT_FDUIDGID,      // (fd, uid, gid) mutators: fchown (EBADF)
-    SHADW_RAW_CAT_PATHPATH,      // (path, path, ...) copy: copyfile (both ends)
-    SHADW_RAW_CAT_COPYFILE,      // raw copyfile pair: same endpoints, EINVAL-native lane
-    SHADW_RAW_CAT_CLONEAT,       // (dirfd, path, dirfd, path, ...) clone: clonefileat
-    SHADW_RAW_CAT_FDPATH,        // (fd, dirfd, path, ...) clone: fclonefileat
-    SHADW_RAW_CAT_SYMLINKAT,     // (path, dirfd, path) link: symlinkat (location via dirfd)
-    SHADW_RAW_CAT_KILL,          // kill(pid, sig) liveness probe (ESRCH)
-    SHADW_RAW_CAT_KEVENT,        // kevent EVFILT_PROC liveness probe (ESRCH)
-    SHADW_RAW_CAT_KEVENT64,      // kevent64 EVFILT_PROC liveness probe (ESRCH)
-    SHADW_RAW_CAT_GETFSSTAT,     // raw getfsstat(64) after-success mount filter
-    SHADW_RAW_CAT_PROCINFO,      // raw proc_info(2) region-path after-success sanitize
-    SHADW_RAW_CAT_STATFS,        // raw statfs64 single-mount filter
-    SHADW_RAW_CAT_FSTATFS,       // raw fstatfs64(fd, buf) single-mount filter
-    SHADW_RAW_CAT_GETATTRLISTBULK, // raw getattrlistbulk(2) after-success record filter
-    SHADW_RAW_CAT_RENAME,        // (path, path) rename pair: both ends, entry identity
-    SHADW_RAW_CAT_RENAMEAT,      // (dirfd, path, dirfd, path, ...) renameat pair: both ends, entry identity
+  SHADW_RAW_CAT_NONE = 0,  // forwarded, never inspected (access_extended)
+  SHADW_RAW_CAT_PTRACE,    // PT_DENY_ATTACH short-circuit
+  SHADW_RAW_CAT_PATH,      // single pathname inspection
+  SHADW_RAW_CAT_AT,        // dirfd-aware *at inspection
+  SHADW_RAW_CAT_SYSCTL,    // KERN_PROC/KERN_PROCARGS2 policy
+  SHADW_RAW_CAT_CSOPS,     // MARKKILL pre-reject + after-success
+  SHADW_RAW_CAT_DIRENT,    // raw getdirentries64 after-success filter
+  SHADW_RAW_CAT_FDXATTR,   // fd-based xattr inspection
+  SHADW_RAW_CAT_PATH3I,    // (path, uid/gid/int, ...) mutators: chown/lchown
+  SHADW_RAW_CAT_PATHMD,    // (path, mode, dev) mutators: mknod
+  SHADW_RAW_CAT_PATHOFF,   // (path, off_t) mutators: truncate
+  SHADW_RAW_CAT_FDOFF,     // (fd, off_t) mutators: ftruncate (EBADF)
+  SHADW_RAW_CAT_FDMODE,    // (fd, mode) mutators: fchmod (EBADF)
+  SHADW_RAW_CAT_FDUIDGID,  // (fd, uid, gid) mutators: fchown (EBADF)
+  SHADW_RAW_CAT_PATHPATH,  // (path, path, ...) copy: copyfile (both ends)
+  SHADW_RAW_CAT_COPYFILE,  // raw copyfile pair: same endpoints, EINVAL-native
+                           // lane
+  SHADW_RAW_CAT_CLONEAT,   // (dirfd, path, dirfd, path, ...) clone: clonefileat
+  SHADW_RAW_CAT_FDPATH,    // (fd, dirfd, path, ...) clone: fclonefileat
+  SHADW_RAW_CAT_SYMLINKAT, // (path, dirfd, path) link: symlinkat (location via
+                           // dirfd)
+  SHADW_RAW_CAT_KILL,      // kill(pid, sig) liveness probe (ESRCH)
+  SHADW_RAW_CAT_KEVENT,    // kevent EVFILT_PROC liveness probe (ESRCH)
+  SHADW_RAW_CAT_KEVENT64,  // kevent64 EVFILT_PROC liveness probe (ESRCH)
+  SHADW_RAW_CAT_GETFSSTAT, // raw getfsstat(64) after-success mount filter
+  SHADW_RAW_CAT_PROCINFO, // raw proc_info(2) region-path after-success sanitize
+  SHADW_RAW_CAT_STATFS,   // raw statfs64 single-mount filter
+  SHADW_RAW_CAT_FSTATFS,  // raw fstatfs64(fd, buf) single-mount filter
+  SHADW_RAW_CAT_GETATTRLISTBULK, // raw getattrlistbulk(2) after-success record
+                                 // filter
+  SHADW_RAW_CAT_RENAME,   // (path, path) rename pair: both ends, entry identity
+  SHADW_RAW_CAT_RENAMEAT, // (dirfd, path, dirfd, path, ...) renameat pair: both
+                          // ends, entry identity
 #ifdef SYS_freadlink
-    SHADW_RAW_CAT_FREADLINK,     // raw freadlink(fd) inspection (15.6-floor number)
+  SHADW_RAW_CAT_FREADLINK, // raw freadlink(fd) inspection (15.6-floor number)
 #endif
 } shdw_raw_syscall_category_t;
 
@@ -398,13 +420,14 @@ shdw_raw_syscall_category_t shdw_raw_syscall_category(int number);
 // hidden mounts, compacts survivors in place, returns the filtered count. The
 // libc getfsstat/getmntinfo hooks AND the raw getfsstat(64) syscall dispatch
 // call the SAME function so both surfaces agree on which mounts are hidden.
-int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags);
+int shdw_filter_mounts(struct statfs *buf, int count, BOOL statfsFlags);
 // Shared bulk-record filter (defined in hooks/Universal/libc.x): compacts
 // restricted children out of a getattrlistbulk result buffer, clears the
 // vacated tail, and returns the filtered record count. The libc
 // getattrlistbulk hook AND the raw SYS_getattrlistbulk syscall dispatch call
 // the SAME function so both surfaces agree on which names are hidden.
-int shdw_getattrlistbulk_filter(void* attrBuf, size_t attrBufSize, int count, const char* dirPath);
+int shdw_getattrlistbulk_filter(void *attrBuf, size_t attrBufSize, int count,
+                                const char *dirPath);
 // FSOPT_LIST_SNAPSHOTS is a private flag, absent from the SDK headers
 // (sys/attr.h jumps from FSOPT_PACK_INVAL_ATTRS 0x8 to FSOPT_ATTR_CMN_EXTENDED
 // 0x20); value from XNU bsd/sys/attr.h. Snapshot listings are owned by the
@@ -424,14 +447,14 @@ void shdw_svc_patch_install(void);
 // queries degrades Security's answer to "unsigned" (-67065), which is a
 // worse leak than the hash itself. Direct detector csops probes stay
 // blinded. Implemented in hooks/Universal/security.x.
-BOOL shdw_addr_in_security_framework(const void* return_address);
+BOOL shdw_addr_in_security_framework(const void *return_address);
 
 // KERN_PROCARGS2 self-query payload filter (libc.x): rebuilds the kernel's
 // [argc][argv][envp][strings] payload so its argv/envp agree with the
 // filtered NSProcessInfo/getenv views. Called by the libc sysctl hook, the
 // raw syscall dispatch and the sysctlbyname hooks after a successful self
 // query. Defined in libc.x (static elsewhere), extern here for syscall.x.
-void shdw_procargs2_filter(void* oldp, size_t* oldlenp);
+void shdw_procargs2_filter(void *oldp, size_t *oldlenp);
 
 // --- libc split shared surface ---------------------------------------------
 // libc.x owns the single shdw_libc_hooks descriptor table and the
@@ -444,20 +467,20 @@ void shdw_procargs2_filter(void* oldp, size_t* oldlenp);
 // isCallerExternal() reads the return address, so it must expand inline at the
 // hook site — never route it through a helper function. The probe predicate
 // itself lives in policy/PathPolicy.m.
-#define SHADOW_TRIP(pathname, kind, ext) \
-    if(ext && shdw_is_jb_probe(pathname)) { \
-        shdw_detector_detected(kind); \
-    }
+#define SHADOW_TRIP(pathname, kind, ext)                                       \
+  if (ext && shdw_is_jb_probe(pathname)) {                                     \
+    shdw_detector_detected(kind);                                              \
+  }
 
 typedef enum {
-    SHADW_HOOK_GROUP_LIBC       = 1 << 0,
-    SHADW_HOOK_GROUP_ENVVAR     = 1 << 1,
-    SHADW_HOOK_GROUP_LOWLEVEL   = 1 << 2,
-    SHADW_HOOK_GROUP_ANTIDEBUG  = 1 << 3,
-    SHADW_HOOK_GROUP_FEATURE_METADATA = 1 << 4,
+  SHADW_HOOK_GROUP_LIBC = 1 << 0,
+  SHADW_HOOK_GROUP_ENVVAR = 1 << 1,
+  SHADW_HOOK_GROUP_LOWLEVEL = 1 << 2,
+  SHADW_HOOK_GROUP_ANTIDEBUG = 1 << 3,
+  SHADW_HOOK_GROUP_FEATURE_METADATA = 1 << 4,
 } shdw_hook_group_t;
 
-void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
+void shdw_libc_install_group(SHDWHookSession *hooks, uint32_t group);
 
 // struct stat64 is not visible in this build configuration: the SDK guards it
 // behind feature macros and omits it entirely on LP64 platforms where struct
@@ -467,35 +490,35 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group);
 #define shdw_stat64_t struct stat
 #else
 struct shdw_stat64 {
-    __int32_t    st_dev;
-    __uint16_t   st_mode;
-    __uint16_t   st_nlink;
-    __uint64_t   st_ino;
-    __uint32_t   st_uid;
-    __uint32_t   st_gid;
-    __int32_t    st_rdev;
-    struct timespec st_atimespec;
-    struct timespec st_mtimespec;
-    struct timespec st_ctimespec;
-    struct timespec st_birthtimespec;
-    __int64_t    st_size;
-    __int64_t    st_blocks;
-    __int32_t    st_blksize;
-    __uint32_t   st_flags;
-    __uint32_t   st_gen;
-    __int32_t    st_lspare;
-    __int64_t    st_qspare[2];
+  __int32_t st_dev;
+  __uint16_t st_mode;
+  __uint16_t st_nlink;
+  __uint64_t st_ino;
+  __uint32_t st_uid;
+  __uint32_t st_gid;
+  __int32_t st_rdev;
+  struct timespec st_atimespec;
+  struct timespec st_mtimespec;
+  struct timespec st_ctimespec;
+  struct timespec st_birthtimespec;
+  __int64_t st_size;
+  __int64_t st_blocks;
+  __int32_t st_blksize;
+  __uint32_t st_flags;
+  __uint32_t st_gen;
+  __int32_t st_lspare;
+  __int64_t st_qspare[2];
 };
 #define shdw_stat64_t struct shdw_stat64
 #endif
 
-struct ad_open_auth;  // <sys/open.h> is not in the theos SDK
+struct ad_open_auth; // <sys/open.h> is not in the theos SDK
 
 // The descriptor table in libc.x addresses the group bodies by symbol; the
 // bodies themselves live in the group files, so the pairs are extern here.
 // envvar group (libc_envvar.x)
-extern char* (*original_getenv)(const char* name);
-extern char* replaced_getenv(const char* name);
+extern char *(*original_getenv)(const char *name);
+extern char *replaced_getenv(const char *name);
 // lowlevel group (libc_lowlevel.x)
 extern int (*original_open)(const char *pathname, int oflag, ...);
 extern int replaced_open(const char *pathname, int oflag, ...);
@@ -503,31 +526,47 @@ extern int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 extern int replaced_openat(int dirfd, const char *pathname, int oflag, ...);
 extern int (*original_open_nocancel)(const char *pathname, int oflag, ...);
 extern int replaced_open_nocancel(const char *pathname, int oflag, ...);
-extern int (*original_openat_nocancel)(int dirfd, const char *pathname, int oflag, ...);
-extern int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag, ...);
-extern DIR* (*original___opendir2)(const char* pathname, int flags);
-extern DIR* replaced___opendir2(const char* pathname, int flags);
-extern DIR* (*original_opendir)(const char* pathname);
-extern DIR* replaced_opendir(const char* pathname);
-extern int (*original_open_dprotected_np)(const char* path, int flags, int class, int dpflags, ...);
-extern int replaced_open_dprotected_np(const char* path, int flags, int class, int dpflags, ...);
-extern int (*original_openat_dprotected_np)(int dirfd, const char* path, int flags, int class, int dpflags, ...);
-extern int replaced_openat_dprotected_np(int dirfd, const char* path, int flags, int class, int dpflags, ...);
-extern int (*original_openat_authenticated_np)(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
-extern int replaced_openat_authenticated_np(int dirfd, const char* path, struct ad_open_auth* auth, int flags, ...);
-extern int (*original_stat64)(const char* pathname, shdw_stat64_t* buf);
-extern int replaced_stat64(const char* pathname, shdw_stat64_t* buf);
-extern int (*original_lstat64)(const char* pathname, shdw_stat64_t* buf);
-extern int replaced_lstat64(const char* pathname, shdw_stat64_t* buf);
-extern int (*original_fstat64)(int fd, shdw_stat64_t* buf);
-extern int replaced_fstat64(int fd, shdw_stat64_t* buf);
-extern int (*original_fstatat64)(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
-extern int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int flags);
+extern int (*original_openat_nocancel)(int dirfd, const char *pathname,
+                                       int oflag, ...);
+extern int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag,
+                                    ...);
+extern DIR *(*original___opendir2)(const char *pathname, int flags);
+extern DIR *replaced___opendir2(const char *pathname, int flags);
+extern DIR *(*original_opendir)(const char *pathname);
+extern DIR *replaced_opendir(const char *pathname);
+extern int (*original_open_dprotected_np)(const char *path, int flags,
+                                          int class, int dpflags, ...);
+extern int replaced_open_dprotected_np(const char *path, int flags, int class,
+                                       int dpflags, ...);
+extern int (*original_openat_dprotected_np)(int dirfd, const char *path,
+                                            int flags, int class, int dpflags,
+                                            ...);
+extern int replaced_openat_dprotected_np(int dirfd, const char *path, int flags,
+                                         int class, int dpflags, ...);
+extern int (*original_openat_authenticated_np)(int dirfd, const char *path,
+                                               struct ad_open_auth *auth,
+                                               int flags, ...);
+extern int replaced_openat_authenticated_np(int dirfd, const char *path,
+                                            struct ad_open_auth *auth,
+                                            int flags, ...);
+extern int (*original_stat64)(const char *pathname, shdw_stat64_t *buf);
+extern int replaced_stat64(const char *pathname, shdw_stat64_t *buf);
+extern int (*original_lstat64)(const char *pathname, shdw_stat64_t *buf);
+extern int replaced_lstat64(const char *pathname, shdw_stat64_t *buf);
+extern int (*original_fstat64)(int fd, shdw_stat64_t *buf);
+extern int replaced_fstat64(int fd, shdw_stat64_t *buf);
+extern int (*original_fstatat64)(int dirfd, const char *pathname,
+                                 shdw_stat64_t *buf, int flags);
+extern int replaced_fstatat64(int dirfd, const char *pathname,
+                              shdw_stat64_t *buf, int flags);
 // antidebugging group (libc_antidebugging.x)
-extern int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr, int _data);
+extern int (*original_ptrace)(int _request, pid_t _pid, caddr_t _addr,
+                              int _data);
 extern int replaced_ptrace(int _request, pid_t _pid, caddr_t _addr, int _data);
-extern int (*original_sysctl)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
-extern int replaced_sysctl(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+extern int (*original_sysctl)(int *name, u_int namelen, void *oldp,
+                              size_t *oldlenp, void *newp, size_t newlen);
+extern int replaced_sysctl(int *name, u_int namelen, void *oldp,
+                           size_t *oldlenp, void *newp, size_t newlen);
 extern pid_t (*original_getppid)(void);
 extern pid_t replaced_getppid(void);
 extern uid_t (*original_getuid)(void);
@@ -540,47 +579,72 @@ extern gid_t (*original_getegid)(void);
 extern gid_t replaced_getegid(void);
 extern int (*original_issetugid)(void);
 extern int replaced_issetugid(void);
-extern int (*original_getrusage)(int who, struct rusage* usage);
-extern int replaced_getrusage(int who, struct rusage* usage);
+extern int (*original_getrusage)(int who, struct rusage *usage);
+extern int replaced_getrusage(int who, struct rusage *usage);
 // wait family (libc_antidebugging.x): rusage/siginfo out-param zeroing only
-extern pid_t replaced_wait4(pid_t pid, int* status, int options, struct rusage* rusage);
-extern pid_t replaced_waitpid(pid_t pid, int* status, int options);
-extern pid_t replaced_wait3(int* status, int options, struct rusage* rusage);
-extern int replaced_waitid(idtype_t idtype, id_t id, siginfo_t* infop, int options);
-extern int (*original_getrlimit)(int resource, struct rlimit* rlp);
-extern int replaced_getrlimit(int resource, struct rlimit* rlp);
-extern int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
-extern int replaced_proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int buffersize);
-extern int (*original_proc_listallpids)(void* buffer, int buffersize);
-extern int replaced_proc_listallpids(void* buffer, int buffersize);
-extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
-extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int buffersize);
-extern int (*original_proc_name)(int pid, void* buffer, uint32_t buffersize);
-extern int replaced_proc_name(int pid, void* buffer, uint32_t buffersize);
-extern int (*original_proc_listpidspath)(uint32_t type, uint32_t typeinfo, const char* path, uint32_t pathflags, void* buffer, int buffersize);
-extern int replaced_proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* path, uint32_t pathflags, void* buffer, int buffersize);
-extern int (*original_proc_regionfilename)(int pid, uint64_t address, void* buffer, uint32_t buffersize);
-extern int replaced_proc_regionfilename(int pid, uint64_t address, void* buffer, uint32_t buffersize);
-extern int (*original_proc_pidpath)(int pid, void* buffer, uint32_t buffersize);
-extern int replaced_proc_pidpath(int pid, void* buffer, uint32_t buffersize);
-extern int (*original_proc_pidpath_audittoken)(audit_token_t* token, void* buffer, uint32_t buffersize);
-extern int replaced_proc_pidpath_audittoken(audit_token_t* token, void* buffer, uint32_t buffersize);
+extern pid_t replaced_wait4(pid_t pid, int *status, int options,
+                            struct rusage *rusage);
+extern pid_t replaced_waitpid(pid_t pid, int *status, int options);
+extern pid_t replaced_wait3(int *status, int options, struct rusage *rusage);
+extern int replaced_waitid(idtype_t idtype, id_t id, siginfo_t *infop,
+                           int options);
+extern int (*original_getrlimit)(int resource, struct rlimit *rlp);
+extern int replaced_getrlimit(int resource, struct rlimit *rlp);
+extern int (*original_proc_listpids)(uint32_t type, uint32_t typeinfo,
+                                     void *buffer, int buffersize);
+extern int replaced_proc_listpids(uint32_t type, uint32_t typeinfo,
+                                  void *buffer, int buffersize);
+extern int (*original_proc_listallpids)(void *buffer, int buffersize);
+extern int replaced_proc_listallpids(void *buffer, int buffersize);
+extern int (*original_proc_pidinfo)(int pid, int flavor, uint64_t arg,
+                                    void *buffer, int buffersize);
+extern int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg,
+                                 void *buffer, int buffersize);
+extern int (*original_proc_name)(int pid, void *buffer, uint32_t buffersize);
+extern int replaced_proc_name(int pid, void *buffer, uint32_t buffersize);
+extern int (*original_proc_listpidspath)(uint32_t type, uint32_t typeinfo,
+                                         const char *path, uint32_t pathflags,
+                                         void *buffer, int buffersize);
+extern int replaced_proc_listpidspath(uint32_t type, uint32_t typeinfo,
+                                      const char *path, uint32_t pathflags,
+                                      void *buffer, int buffersize);
+extern int (*original_proc_regionfilename)(int pid, uint64_t address,
+                                           void *buffer, uint32_t buffersize);
+extern int replaced_proc_regionfilename(int pid, uint64_t address, void *buffer,
+                                        uint32_t buffersize);
+extern int (*original_proc_pidpath)(int pid, void *buffer, uint32_t buffersize);
+extern int replaced_proc_pidpath(int pid, void *buffer, uint32_t buffersize);
+extern int (*original_proc_pidpath_audittoken)(audit_token_t *token,
+                                               void *buffer,
+                                               uint32_t buffersize);
+extern int replaced_proc_pidpath_audittoken(audit_token_t *token, void *buffer,
+                                            uint32_t buffersize);
 // Phase 4: kill liveness probe (libc_antidebugging.x, ANTIDBG group)
 extern int (*original_kill)(pid_t pid, int sig);
 extern int replaced_kill(pid_t pid, int sig);
 // Phase 4: kevent EVFILT_PROC liveness probe (libc_antidebugging.x, ANTIDBG
 // group) — same ESRCH dead-shape discipline as kill.
-extern int (*original_kevent)(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout);
-extern int replaced_kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout);
+extern int (*original_kevent)(int kq, const struct kevent *changelist,
+                              int nchanges, struct kevent *eventlist,
+                              int nevents, const struct timespec *timeout);
+extern int replaced_kevent(int kq, const struct kevent *changelist,
+                           int nchanges, struct kevent *eventlist, int nevents,
+                           const struct timespec *timeout);
 // kevent64 twin (libc_antidebugging.x, ANTIDBG group) — 64-bit changelist
 // element (struct kevent64_s, SDK sys/event.h), same EVFILT_PROC-only ESRCH.
-extern int (*original_kevent64)(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout);
-extern int replaced_kevent64(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout);
+extern int (*original_kevent64)(int kq, const struct kevent64_s *changelist,
+                                int nchanges, struct kevent64_s *eventlist,
+                                int nevents, unsigned int flags,
+                                const struct timespec *timeout);
+extern int replaced_kevent64(int kq, const struct kevent64_s *changelist,
+                             int nchanges, struct kevent64_s *eventlist,
+                             int nevents, unsigned int flags,
+                             const struct timespec *timeout);
 // Phase 4 pass-throughs (bodies forward untouched; dlsym-policy agreement)
-extern int (*original_uname)(struct utsname* buf);
-extern int replaced_uname(struct utsname* buf);
-extern int (*original_getifaddrs)(struct ifaddrs** ifap);
-extern int replaced_getifaddrs(struct ifaddrs** ifap);
+extern int (*original_uname)(struct utsname *buf);
+extern int replaced_uname(struct utsname *buf);
+extern int (*original_getifaddrs)(struct ifaddrs **ifap);
+extern int replaced_getifaddrs(struct ifaddrs **ifap);
 extern int (*original_ioctl)(int fd, unsigned long request, ...);
 extern int replaced_ioctl(int fd, unsigned long request, ...);
 // Phase 1 mutators + Phase 2 copy/clone + Phase 4 CFPreferences are
@@ -594,16 +658,16 @@ extern int replaced_ioctl(int fd, unsigned long request, ...);
 // callers — the GOT-vs-dlsym comparison then agrees. Each returns the
 // replacement only when that hook actually installed (original != NULL), so
 // runtime-conditional symbols that are absent on a given OS stay absent.
-void* shdw_sym_policy_lookup_libc(const char* name);
-void* shdw_sym_policy_lookup_mach(const char* name);
-void* shdw_sym_policy_lookup_sandbox(const char* name);
-void* shdw_sym_policy_lookup_mem(const char* name);
+void *shdw_sym_policy_lookup_libc(const char *name);
+void *shdw_sym_policy_lookup_mach(const char *name);
+void *shdw_sym_policy_lookup_sandbox(const char *name);
+void *shdw_sym_policy_lookup_mem(const char *name);
 // Reverse map: hooked-libc replacement address -> original function address,
 // so dladdr on a dlsym-returned replacement resolves to the system image.
-void* shdw_sym_original_for_replacement_libc(const void* addr);
+void *shdw_sym_original_for_replacement_libc(const void *addr);
 // Same reverse map for the sandbox group (defined in sandbox.x): hooked
 // sandbox replacement address -> original function address.
-void* shdw_sym_original_for_replacement_sandbox(const void* addr);
+void *shdw_sym_original_for_replacement_sandbox(const void *addr);
 // Invalidates the sandbox hook's cached process cwd (defined in sandbox.x;
 // called by the libc chdir/fchdir hooks after a successful directory change,
 // so a relative-path sandbox query never resolves against a stale cwd).
@@ -611,13 +675,14 @@ extern void shdw_sandbox_invalidate_cwd(void);
 // Shared NSUserDefaults/CFPreferences suite gate (AppEnvironment.x defines;
 // libc.x CFPreferences hooks consume). Same TU-linkage discipline as the
 // objc predicates below: one definition, extern declaration here.
-extern BOOL shdw_nsuserdefaults_suite_restricted(NSString* suitename);
+extern BOOL shdw_nsuserdefaults_suite_restricted(NSString *suitename);
 // Shared across the objc satellites (Universal/objc.x defines;
 // Universal/objc_hidetweakclasses.x and Universal/objc_methodimpl.x consume):
 // class/address/image hiding predicates and the
-// method_getImplementation original cell (rebind lane, defined in objc_methodimpl.x).
-extern BOOL shdw_objc_addr_is_hidden(const void* addr);
-extern BOOL shdw_objc_image_path_is_hidden(const char* path);
+// method_getImplementation original cell (rebind lane, defined in
+// objc_methodimpl.x).
+extern BOOL shdw_objc_addr_is_hidden(const void *addr);
+extern BOOL shdw_objc_image_path_is_hidden(const char *path);
 extern BOOL shdw_objc_class_is_hidden(Class cls);
 extern IMP (*original_method_getImplementation)(Method m);
-extern void* shdw_sym_policy_lookup_iokit(const char* name);
+extern void *shdw_sym_policy_lookup_iokit(const char *name);
