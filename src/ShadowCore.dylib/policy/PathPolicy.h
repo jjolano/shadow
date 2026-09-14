@@ -15,10 +15,11 @@
 #import <sys/types.h>
 
 typedef enum {
-    SHADW_DIRFD_OK = 0,        // `out` holds the resolved parent directory
-    SHADW_DIRFD_ABSOLUTE,      // path is absolute; dirfd is irrelevant
-    SHADW_DIRFD_ORIGINAL,      // replay the original call (kernel reports the genuine error)
-    SHADW_DIRFD_DENY,          // valid dir vnode, path unresolvable: fail closed
+  SHADW_DIRFD_OK = 0,   // `out` holds the resolved parent directory
+  SHADW_DIRFD_ABSOLUTE, // path is absolute; dirfd is irrelevant
+  SHADW_DIRFD_ORIGINAL, // replay the original call (kernel reports the genuine
+                        // error)
+  SHADW_DIRFD_DENY,     // valid dir vnode, path unresolvable: fail closed
 } shdw_dirfd_status_t;
 
 // Cheap lexical standardization for hot C string comparison (no
@@ -27,23 +28,24 @@ typedef enum {
 // preserves a single trailing slash. Returns the input unchanged when
 // already canonical or absurdly long, else thread-local scratch valid
 // until the next call on this thread — compare immediately, never retain.
-const char* shdw_standardize_lexical(const char* path);
+const char *shdw_standardize_lexical(const char *path);
 // Classifies a dirfd+path pair without trusting the fd NUMBER: descriptors
 // 0-2 can be closed and reused, so a hook that exempts them filters by
 // identity, not number. Absolute paths ignore dirfd entirely; relative
 // paths resolve against AT_FDCWD (process cwd) or the dirfd's own path via
 // F_GETPATH.
-shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char* path, char* out, size_t outlen);
+shdw_dirfd_status_t shdw_resolve_dirfd_path(int dirfd, const char *path,
+                                            char *out, size_t outlen);
 
 // Applies the shared dirfd resolution to one *at path argument: returns YES
 // when the query must be denied (errno = ENOENT already set).
-BOOL shdw_at_path_denied(int dirfd, const char* pathname);
+BOOL shdw_at_path_denied(int dirfd, const char *pathname);
 
 // Entry-identity twin of shdw_at_path_denied for the *at mutators
 // (renameat/renameatx_np): identical dirfd resolution, ruleset shape and
 // errno contract, but the external-hidden verdict is the nofollow half, so a
 // link operand classifies as the entry the kernel will move, not its target.
-BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname);
+BOOL shdw_at_path_denied_nofollow(int dirfd, const char *pathname);
 
 // Entry-identity ruleset verdict for the rename family (see the nofollow
 // predicate contract above): the NoFollow query — the spelling as named,
@@ -51,7 +53,7 @@ BOOL shdw_at_path_denied_nofollow(int dirfd, const char* pathname);
 // alias classifies as the entry the mutator moves, not its target. A
 // spelling that names a restricted object still denies; a link that merely
 // points at one does not. Total (NULL-safe); leaves errno unchanged.
-BOOL shdw_path_ruleset_denied_nofollow(const char* path);
+BOOL shdw_path_ruleset_denied_nofollow(const char *path);
 
 // fd→path classification for the fd-based hooks (fstat/fstatfs/fpathconf/
 // fgetxattr/...): resolves F_GETPATH for every decision, so dup/rename/raw
@@ -77,13 +79,13 @@ BOOL shdw_fd_path_bundle_exempt(int fd);
 // no data fill. -1: pinned-hidden or verifier-ENOENT (ENOENT set); 0:
 // pinned-and-benign (caller still runs the original plus the bounded
 // post); -2: verifier unavailable (errno preserved).
-int shdw_verify_open_hidden(int dirfd, const char* pathname);
-BOOL shdw_path_is_external_hidden_lexical(const char* path);
+int shdw_verify_open_hidden(int dirfd, const char *pathname);
+BOOL shdw_path_is_external_hidden_lexical(const char *path);
 
 // Union check for a kernel-resolved spelling (mount-point OR backing-store
 // naming): F_GETPATH can name either for the same object, so both spellings
 // must hide. Used by the verify-after-use helpers.
-BOOL shdw_resolved_spelling_hidden(const char* canon);
+BOOL shdw_resolved_spelling_hidden(const char *canon);
 
 // Verify-after-use for the alias TOCTOU window: the pre-call verdict names
 // the request spelling, but a detector-owned symlink can flip before the
@@ -95,8 +97,8 @@ BOOL shdw_resolved_spelling_hidden(const char* canon);
 // hidden file reports different identities through the bindfs mount than
 // canonically (measured on device).
 BOOL shdw_fd_names_hidden(int fd);
-BOOL shdw_path_post_hidden(const char* path);
-BOOL shdw_at_post_hidden(int dirfd, const char* pathname);
+BOOL shdw_path_post_hidden(const char *path);
+BOOL shdw_at_post_hidden(int dirfd, const char *pathname);
 // Tri-state re-verification of a successful lookup: re-opens the request
 // spelling and classifies the re-opened object with the same resolving
 // shape as the substitution verifier (open, F_GETPATH, fstat), so every
@@ -108,11 +110,11 @@ BOOL shdw_at_post_hidden(int dirfd, const char* pathname);
 // original answer. Errno-preserving; no caller classification (sites gate
 // on ext).
 typedef enum {
-    SHDW_POST_ADMIT = 0,
-    SHDW_POST_DENY_HIDDEN,
-    SHDW_POST_DENY_CONTRADICTION,
+  SHDW_POST_ADMIT = 0,
+  SHDW_POST_DENY_HIDDEN,
+  SHDW_POST_DENY_CONTRADICTION,
 } shdw_post_verdict_t;
-shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname);
+shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char *pathname);
 
 // Identity-matched twin of shdw_at_post_verify for the buf-returning stat
 // lanes (stat/stat64/fstatat/fstatat64): same single re-open sample
@@ -124,26 +126,28 @@ shdw_post_verdict_t shdw_at_post_verify(int dirfd, const char* pathname);
 // Same verdict/errno contract as the twin (ENOENT set by the caller, not
 // here). Callers gate on ext; answered_* come from the filled answer
 // buffer, so buf must be non-NULL at these sites.
-shdw_post_verdict_t shdw_at_post_verify_match(int dirfd, const char* pathname,
-    uint64_t answered_dev, uint64_t answered_ino);
+shdw_post_verdict_t shdw_at_post_verify_match(int dirfd, const char *pathname,
+                                              uint64_t answered_dev,
+                                              uint64_t answered_ino);
 
 // Whether a spelling can resolve through attacker-controlled links (pure
 // string logic, no filesystem): gates verify-after-use substitution, which
 // only pays off where the kernel could resolve elsewhere than the lexical
 // verdict names.
-BOOL shdw_path_needs_verify(const char* path);
+BOOL shdw_path_needs_verify(const char *path);
 
 // readdir/readdir_r support: resolves the DIR*'s parent path (dirfd +
 // F_GETPATH) for every call and builds a RETAINED options dictionary (caller
 // must CFRelease). Sets *denied when the DIR* is a valid directory vnode
 // whose path can't be resolved — entries must be hidden (fail closed).
-NSDictionary* shdw_readdir_options(DIR* dirp, BOOL* denied);
+NSDictionary *shdw_readdir_options(DIR *dirp, BOOL *denied);
 
 // Classifies a readlink result: absolute targets are checked directly;
 // relative targets resolve against the directory CONTAINING the link (that's
 // where the kernel resolves them from). A target whose parent directory
 // can't be resolved is denied — never exposed unclassified.
-BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char* target);
+BOOL shdw_readlink_target_restricted(int dirfd, const char *pathname,
+                                     const char *target);
 
 // Objects that must present a CONSISTENT absent answer to every external API
 // (stat/lstat/access/readdir/enumeration), yet stay resolvable to Shadow's own
@@ -152,7 +156,7 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char* pathname, const char
 // dlopen/spawn must still see them). One predicate, consulted by every hook
 // surface, so no single API can expose what another hides. Exact leaf paths
 // plus the structural jb-app-container match.
-BOOL shdw_path_is_external_hidden(const char* pathname);
+BOOL shdw_path_is_external_hidden(const char *pathname);
 
 // Entry-identity half of shdw_path_is_external_hidden for the mutator family
 // (rename/renameat/renamex_np/renameatx_np): the kernel operates on the
@@ -161,7 +165,7 @@ BOOL shdw_path_is_external_hidden(const char* pathname);
 // second opinion — never kernel-resolved. A spelling that names the hidden
 // object still hides; a link that merely points at one renames like any
 // other benign entry, exactly as the kernel treats it.
-BOOL shdw_path_is_external_hidden_nofollow(const char* pathname);
+BOOL shdw_path_is_external_hidden_nofollow(const char *pathname);
 
 // Directory-listing companion to shdw_path_is_external_hidden: an enumeration
 // hook resolves a parent path via F_GETPATH, which can name a bind mount's
@@ -170,13 +174,13 @@ BOOL shdw_path_is_external_hidden_nofollow(const char* pathname);
 // point OR the backing store a jailbreak binds from), so a parent listing
 // cannot expose what the point-lookup hooks hide regardless of which name the
 // kernel reports for the directory.
-BOOL shdw_dir_leaf_external_hidden(const char* parent, const char* d_name);
+BOOL shdw_dir_leaf_external_hidden(const char *parent, const char *d_name);
 
 // YES when `pathname` is at or under a stock system prefix a jailbreak binds
 // over (/usr/lib, /usr/libexec, /System). Used to normalise the metadata a
 // bind mount over such a path leaks (statfs fs-type, stat device id) back to
 // the covering rootfs record.
-BOOL shdw_path_under_system_bind_root(const char* pathname);
+BOOL shdw_path_under_system_bind_root(const char *pathname);
 
 // YES when `path` is the backing image of injected/hidden code that every
 // filesystem, dyld-enumeration and vm_region surface already conceals from
@@ -186,18 +190,18 @@ BOOL shdw_path_under_system_bind_root(const char* pathname);
 // decision through the SAME image predicate the dyld-enumeration and NSBundle
 // hooks use (external-hidden set OR isProtectedImagePath). Callers gate on
 // isCallerExternal() at the hook site.
-BOOL shdw_region_backing_path_hidden(const char* path);
+BOOL shdw_region_backing_path_hidden(const char *path);
 
 // libproc/__proc_info region-path callnum + flavors (bsd/sys/proc_info.h; not
 // shipped in the theos SDK). PIDINFO is the __proc_info multiplexer sub-call
 // libproc's proc_pidinfo issues; the PATHINFO flavors embed the region's
 // backing vnode path.
-#define SHADOW_PROC_INFO_CALL_PIDINFO   0x2
-#define SHADOW_PROC_PIDVNODEPATHINFO      9
-#define SHADOW_PROC_PIDREGIONPATHINFO   8
-#define SHADOW_PROC_PIDREGIONPATHINFO2  22
-#define SHADOW_PROC_PIDREGIONPATHINFO3  23
-#define SHADOW_PROC_PIDREGIONPATH       31
+#define SHADOW_PROC_INFO_CALL_PIDINFO 0x2
+#define SHADOW_PROC_PIDVNODEPATHINFO 9
+#define SHADOW_PROC_PIDREGIONPATHINFO 8
+#define SHADOW_PROC_PIDREGIONPATHINFO2 22
+#define SHADOW_PROC_PIDREGIONPATHINFO3 23
+#define SHADOW_PROC_PIDREGIONPATH 31
 
 // Clears the embedded backing path out of a proc_pidinfo/__proc_info
 // region-path result whose image is hidden (shdw_region_backing_path_hidden),
@@ -207,7 +211,7 @@ BOOL shdw_region_backing_path_hidden(const char* path);
 // are left untouched. Same decision the region-path libc hooks use, so the
 // libc and raw views agree. Callers gate on isCallerExternal() + own pid at
 // the hook site.
-void shdw_region_path_result_sanitize(int flavor, void* buffer, int buffersize);
+void shdw_region_path_result_sanitize(int flavor, void *buffer, int buffersize);
 
 // Rewrites the cwd/root vnode paths of a proc_pidinfo(__proc_info)
 // PROC_PIDVNODEPATHINFO(9) result whose path the shared predicates hide
@@ -217,14 +221,14 @@ void shdw_region_path_result_sanitize(int flavor, void* buffer, int buffersize);
 // bundle/container prefix are untouched. Buffers too small to hold both
 // records are left untouched. Callers gate on isCallerExternal() + own pid
 // at the hook site.
-void shdw_vnodepath_result_sanitize(void* buffer, int buffersize);
+void shdw_vnodepath_result_sanitize(void *buffer, int buffersize);
 
 // The rootfs (mnton "/") device id, cached from the first stat("/"). Zero if
 // unavailable. Used to equalise a system bind mount's st_dev with its parent's.
 dev_t shdw_rootfs_dev(void);
 
 // Main-bundle exemption for the open family.
-BOOL shdw_path_is_main_bundle_exempt(const char* pathname);
+BOOL shdw_path_is_main_bundle_exempt(const char *pathname);
 
 // Behavioral tripwire predicate: any non-tweak caller touching a
 // jailbreak-indicator path is a detector, whatever it calls itself —
@@ -232,14 +236,14 @@ BOOL shdw_path_is_main_bundle_exempt(const char* pathname);
 // set: stock devices never have these paths and app code never touches them
 // except to probe. (The trip-on-attempt macro lives in libc.x, which pairs
 // this with its own isCallerExternal() expansion.)
-BOOL shdw_is_jb_probe(const char* path);
+BOOL shdw_is_jb_probe(const char *path);
 
 // Once detector behavior is established, reproduce a stock app sandbox's
 // write boundary independently of detector names.
 void shdw_detector_write_policy_set_enabled(BOOL enabled);
 BOOL shdw_detector_write_policy_is_enabled(void);
-BOOL shdw_detector_write_path_denied(NSString* path);
-BOOL shdw_detector_c_write_path_denied(const char* path);
+BOOL shdw_detector_write_path_denied(NSString *path);
+BOOL shdw_detector_c_write_path_denied(const char *path);
 
 // Dirfd-aware twin of shdw_detector_c_write_path_denied for the *at mutators:
 // absolute spellings consult the gate directly; relative ones are resolved
@@ -247,4 +251,4 @@ BOOL shdw_detector_c_write_path_denied(const char* path);
 // write, not the process cwd. Unresolvable dirfds admit (the kernel answers
 // EBADF, and no staging is possible through a fd the kernel rejects).
 // Total (NULL-safe); leaves errno unchanged.
-BOOL shdw_detector_c_write_path_at_denied(int dirfd, const char* path);
+BOOL shdw_detector_c_write_path_at_denied(int dirfd, const char *path);

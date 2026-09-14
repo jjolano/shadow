@@ -1,7 +1,8 @@
 #import <Foundation/Foundation.h>
 
 NSString *SHDWInstalledVersion(void);
-void SHDWLocalizeSpecifiers(NSArray *specifiers, NSBundle *bundle, NSString *table);
+void SHDWLocalizeSpecifiers(NSArray *specifiers, NSBundle *bundle,
+                            NSString *table);
 
 BOOL SHDWAppEnabled(NSUserDefaults *prefs, NSString *appID);
 void SHDWWriteAppEnabled(NSUserDefaults *prefs, NSString *appID, BOOL enabled);
@@ -21,7 +22,8 @@ void SHDWClearAppOverrides(NSUserDefaults *prefs, NSString *appID);
 // override (Detector_Aggressive inside the app dict) falls back to the global
 // Detector_Aggressive scalar when absent.
 BOOL SHDWAppAggressive(NSUserDefaults *prefs, NSString *appID);
-void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID, BOOL aggressive);
+void SHDWWriteAppAggressive(NSUserDefaults *prefs, NSString *appID,
+                            BOOL aggressive);
 
 // Light haptic on user toggle flips, matching iOS 16+ Settings' switch
 // feedback. Call from setPreferenceValue:forSpecifier:.

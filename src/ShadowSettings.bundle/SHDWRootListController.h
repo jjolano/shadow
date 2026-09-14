@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
-#import <Preferences/PSSpecifier.h>
 #import <Preferences/PSListController.h>
+#import <Preferences/PSSpecifier.h>
 
 @interface SHDWRootListController : PSListController
 - (id)readPreferenceValue:(PSSpecifier *)specifier;

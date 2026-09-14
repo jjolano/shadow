@@ -1,0 +1,29 @@
+# Project source style, enforced by the "Format check" step in
+# .github/workflows/tests.yml.
+#
+# BasedOnStyle: LLVM is deliberate and load-bearing. The already-formatted
+# sources in this tree match the LLVM defaults exactly, so pinning them means
+# a stray `clang-format -i` is a no-op instead of a surprise diff. Before this
+# file existed there was no config and no check, so formatters ran freely and
+# produced large mixed diffs that entangled unrelated work — and silently broke
+# the tests that pin real source bodies by text (they are now token-tolerant;
+# see private/notes/[private-notes].md).
+#
+# Do not add style keys that reflow more than LLVM already does: the tree is
+# clean under exactly this config, and any extra key invalidates that.
+#
+# SCOPE: .m/.h/.c/.mm/.inc only. The .x hook sources are EXEMPT and must never
+# be formatted: they are Logos-preprocessed, and clang-format has no Logos
+# support -- it rewrites `%ctor {` to `% ctor {` and collapses
+# `% group X % hook Y` onto one line, which does not compile. Any .x can gain
+# Logos directives, so the exemption is by extension, not a per-file list.
+# The format check in .github/workflows/tests.yml selects files accordingly.
+#
+# BreakStringLiterals: false is the one deliberate deviation from the LLVM
+# defaults. At the default, clang-format re-wraps long literals into adjacent
+# ones, which splits even short literals at an unlucky column -- `table:@"App"`
+# became `@"Ap" @"p"`. That is valid C, but it mangles authored text and broke
+# every gate that pins source by text. Turning it off keeps the tree clean
+# under this config (verified: no diff) and stops the churn at the source.
+BasedOnStyle: LLVM
+BreakStringLiterals: false

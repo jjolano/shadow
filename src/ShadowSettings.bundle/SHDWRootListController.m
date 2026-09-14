@@ -4,75 +4,82 @@
 #import <Shadow/Settings.h>
 
 @implementation SHDWRootListController {
-	NSUserDefaults* prefs;
+  NSUserDefaults *prefs;
 }
 
 - (NSArray *)specifiers {
-	if(!_specifiers) {
-		_specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
-		SHDWLocalizeSpecifiers(_specifiers, [NSBundle bundleForClass:[self class]], @"Root");
-		for(NSString* identifier in @[@"ApplicationsSummary", @"RootAbout"]) {
-			UIImage* icon = SHDWSettingsSymbol([identifier isEqualToString:@"RootAbout"] ? @"info.circle" : @"square.grid.2x2");
-			if(icon) [[self specifierForID:identifier] setProperty:icon forKey:@"iconImage"];
-		}
-	}
+  if (!_specifiers) {
+    _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+    SHDWLocalizeSpecifiers(_specifiers, [NSBundle bundleForClass:[self class]],
+                           @"Root");
+    for (NSString *identifier in @[ @"ApplicationsSummary", @"RootAbout" ]) {
+      UIImage *icon = SHDWSettingsSymbol(
+          [identifier isEqualToString:@"RootAbout"] ? @"info.circle"
+                                                    : @"square.grid.2x2");
+      if (icon)
+        [[self specifierForID:identifier] setProperty:icon forKey:@"iconImage"];
+    }
+  }
 
-	return _specifiers;
+  return _specifiers;
 }
 
 - (id)readPreferenceValue:(PSSpecifier *)specifier {
-	NSString* key = [specifier identifier];
+  NSString *key = [specifier identifier];
 
-	if([key isEqualToString:@"ApplicationsSummary"]) {
-		// Count apps not following the global settings: an app "follows
-		// global" until it writes an explicit activation override (App_Enabled)
-		// or a per-app aggressive override (Detector_Aggressive). Legacy
-		// App_Disabled counts too, since it also overrides the global toggle.
-		// The subtext is a bare number; with no overrides there is nothing to
-		// display, so omit the label entirely.
-		NSInteger customized = 0;
-		for(id value in [prefs dictionaryRepresentation].allValues) {
-			if(SHDWAppIsCustomized(value)) {
-				customized++;
-			}
-		}
+  if ([key isEqualToString:@"ApplicationsSummary"]) {
+    // Count apps not following the global settings: an app "follows
+    // global" until it writes an explicit activation override (App_Enabled)
+    // or a per-app aggressive override (Detector_Aggressive). Legacy
+    // App_Disabled counts too, since it also overrides the global toggle.
+    // The subtext is a bare number; with no overrides there is nothing to
+    // display, so omit the label entirely.
+    NSInteger customized = 0;
+    for (id value in [prefs dictionaryRepresentation].allValues) {
+      if (SHDWAppIsCustomized(value)) {
+        customized++;
+      }
+    }
 
-		if(customized == 0) {
-			return nil;
-		}
+    if (customized == 0) {
+      return nil;
+    }
 
-		return [NSNumberFormatter localizedStringFromNumber:@(customized) numberStyle:NSNumberFormatterDecimalStyle];
-	}
+    return [NSNumberFormatter
+        localizedStringFromNumber:@(customized)
+                      numberStyle:NSNumberFormatterDecimalStyle];
+  }
 
-	return [prefs objectForKey:[specifier identifier]];
+  return [prefs objectForKey:[specifier identifier]];
 }
 
 - (void)setPreferenceValue:(id)value forSpecifier:(PSSpecifier *)specifier {
-	SHDWToggleHaptic();
-	[prefs setObject:value forKey:[specifier identifier]];
-	[prefs synchronize];
+  SHDWToggleHaptic();
+  [prefs setObject:value forKey:[specifier identifier]];
+  [prefs synchronize];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
-	[super viewWillAppear:animated];
+  [super viewWillAppear:animated];
 
-	// Re-read on return: the summary derives from switches changed on pushed
-	// app pages, and the global switches can be wiped by Reset Settings in the
-	// About pane. Without this, popping back shows stale switch/summary state
-	// even though the stored values changed.
-	for(NSString* specID in @[ @"Global_Enabled", @"Detector_Aggressive", @"ApplicationsSummary" ]) {
-		PSSpecifier* specifier = [self specifierForID:specID];
-		if(specifier) {
-			[self reloadSpecifier:specifier];
-		}
-	}
+  // Re-read on return: the summary derives from switches changed on pushed
+  // app pages, and the global switches can be wiped by Reset Settings in the
+  // About pane. Without this, popping back shows stale switch/summary state
+  // even though the stored values changed.
+  for (NSString *specID in
+       @[ @"Global_Enabled", @"Detector_Aggressive", @"ApplicationsSummary" ]) {
+    PSSpecifier *specifier = [self specifierForID:specID];
+    if (specifier) {
+      [self reloadSpecifier:specifier];
+    }
+  }
 }
 
 - (instancetype)init {
-	if((self = [super init])) {
-		prefs = [[ShadowSettings sharedInstance] userDefaults];
-	}
+  if ((self = [super init])) {
+    prefs = [[ShadowSettings sharedInstance] userDefaults];
+  }
 
-	return self;
+  return self;
 }
 @end

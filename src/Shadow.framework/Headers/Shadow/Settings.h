@@ -5,12 +5,14 @@
 
 __attribute__((visibility("default")))
 @interface ShadowSettings : NSObject
-@property (strong, nonatomic, readonly) NSDictionary<NSString *, id>* defaultSettings;
-@property (strong, nonatomic, readonly) NSUserDefaults* userDefaults;
+@property(strong, nonatomic, readonly)
+    NSDictionary<NSString *, id> *defaultSettings;
+@property(strong, nonatomic, readonly) NSUserDefaults *userDefaults;
 
 + (instancetype)sharedInstance;
 
-- (NSDictionary<NSString *, id> *)getPreferencesForIdentifier:(NSString *)bundleIdentifier;
+- (NSDictionary<NSString *, id> *)getPreferencesForIdentifier:
+    (NSString *)bundleIdentifier;
 - (void)reset;
 @end
 #endif

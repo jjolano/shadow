@@ -12,22 +12,26 @@
 // caller's snapshot-only verdict on the mount record (f_mntfromname is
 // folded into that verdict by the caller, not here). When kept,
 // statfsFlags && mntonname == "/" ORs MNT_RDONLY into *flags.
-static inline int shdw_mount_filter(const char* mntonname, uint32_t* flags, int statfsFlags, int restricted) {
-    if(restricted) return 0;
-    if(statfsFlags && mntonname && strcmp(mntonname, "/") == 0 && flags) {
-        *flags |= MNT_RDONLY;
-    }
-    return 1;
+static inline int shdw_mount_filter(const char *mntonname, uint32_t *flags,
+                                    int statfsFlags, int restricted) {
+  if (restricted)
+    return 0;
+  if (statfsFlags && mntonname && strcmp(mntonname, "/") == 0 && flags) {
+    *flags |= MNT_RDONLY;
+  }
+  return 1;
 }
 
 // 1 = jailbreak snapshot name (hide), 0 = keep. Exact-match deny-list.
-static inline int shdw_snapshot_is_jb(const char* name) {
-    static const char* const jb_snapshots[] = { "fakefs", NULL };
-    if(!name) return 0;
-    for(int i = 0; jb_snapshots[i]; i++) {
-        if(strcmp(name, jb_snapshots[i]) == 0) return 1;
-    }
+static inline int shdw_snapshot_is_jb(const char *name) {
+  static const char *const jb_snapshots[] = {"fakefs", NULL};
+  if (!name)
     return 0;
+  for (int i = 0; jb_snapshots[i]; i++) {
+    if (strcmp(name, jb_snapshots[i]) == 0)
+      return 1;
+  }
+  return 0;
 }
 
 #endif

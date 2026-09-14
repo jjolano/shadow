@@ -1,21 +1,21 @@
 #ifndef shadow_restriction_engine_h
 #define shadow_restriction_engine_h
 
-#import <Foundation/Foundation.h>
 #import "RestrictionQuery.h"
+#import <Foundation/Foundation.h>
 
 typedef struct {
-    BOOL hasAppSandbox;
-    BOOL rootless;
-    NSString* bundlePath;
-    NSString* homePath;
-    NSArray<NSString *> *groupContainerPaths;
+  BOOL hasAppSandbox;
+  BOOL rootless;
+  NSString *bundlePath;
+  NSString *homePath;
+  NSArray<NSString *> *groupContainerPaths;
 } ShadowRestrictionContext;
 
 typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
-    ShadowPseudoSandboxModeOff = 0,
-    ShadowPseudoSandboxModeAudit = 1,
-    ShadowPseudoSandboxModeStrict = 2,
+  ShadowPseudoSandboxModeOff = 0,
+  ShadowPseudoSandboxModeAudit = 1,
+  ShadowPseudoSandboxModeStrict = 2,
 };
 
 // Complete restriction engine: resolution, ruleset storage/evaluation and
@@ -29,7 +29,7 @@ __attribute__((visibility("hidden")))
 
 // Audit sink: the paths Strict would have denied, newest first. In-memory and
 // bounded; empty unless audit mode is on. Hidden class — not ABI surface.
-- (NSArray<NSString*>*)auditWouldDenyPaths;
+- (NSArray<NSString *> *)auditWouldDenyPaths;
 - (NSUInteger)auditWouldDenyCount;
 
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;

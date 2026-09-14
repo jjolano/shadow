@@ -69,3 +69,20 @@ jobs:
       # Maintainer-script checks (packaging DEBIAN scripts, pure shell).
       - name: Maintainer scripts check
         run: sh tests/MaintainerScriptTests.sh
+
+      # Source style is pinned by .clang-format and enforced here, so a stray
+      # formatter run shows up as a failed check instead of a surprise diff.
+      # The version is pinned: clang-format output is not stable across majors,
+      # so an unpinned runner would flag formatting that is correct locally.
+      #
+      # .x hook sources are deliberately EXCLUDED and are never formatted:
+      # they are Logos-preprocessed and clang-format has no Logos support (it
+      # rewrites `%ctor {` to `% ctor {`, which does not compile). See the
+      # scope note in .clang-format.
+      - name: Source format check
+        run: |
+          pip install --quiet clang-format==23.1.1
+          clang-format --version
+          files=$(git ls-files 'src/**/*.m' 'src/**/*.h' 'src/**/*.c' 'src/**/*.mm' 'src/**/*.inc')
+          test -n "$files" || { echo 'no source files matched the format check'; exit 1; }
+          clang-format --style=file --dry-run --Werror $files

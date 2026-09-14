@@ -3,12 +3,12 @@
 
 #import <Foundation/Foundation.h>
 
-FOUNDATION_EXPORT NSString* const kShadowRulesetCacheSuffix;
+FOUNDATION_EXPORT NSString *const kShadowRulesetCacheSuffix;
 
 __attribute__((visibility("hidden")))
 @interface RulesetEngine : NSObject
 
-@property (copy, nonatomic, readonly) NSDictionary* payloadDictionary;
+@property(copy, nonatomic, readonly) NSDictionary *payloadDictionary;
 
 - (BOOL)isPathCompliant:(NSString *)path;
 - (BOOL)isPathWhitelisted:(NSString *)path;

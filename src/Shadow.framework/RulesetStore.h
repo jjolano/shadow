@@ -11,14 +11,15 @@
 // evaluation. Framework-internal (hidden visibility, not exported).
 __attribute__((visibility("hidden")))
 @interface ShadowRulesetSnapshot : NSObject {
-    NSArray<RulesetEngine *>* _rulesets;
-    NSUInteger _generation;
+  NSArray<RulesetEngine *> *_rulesets;
+  NSUInteger _generation;
 }
 
-@property (nonatomic, readonly) NSArray<RulesetEngine *>* rulesets;
-@property (nonatomic, readonly) NSUInteger generation;
+@property(nonatomic, readonly) NSArray<RulesetEngine *> *rulesets;
+@property(nonatomic, readonly) NSUInteger generation;
 
-+ (instancetype)snapshotWithRulesets:(NSArray<RulesetEngine *>*)rulesets generation:(NSUInteger)generation;
++ (instancetype)snapshotWithRulesets:(NSArray<RulesetEngine *> *)rulesets
+                          generation:(NSUInteger)generation;
 @end
 
 // Atomic ruleset store: owns scanning JBPath(@SHADOW_RULESETS),

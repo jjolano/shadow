@@ -4,5 +4,4 @@
 // Edit order HERE, not in the two tables — the tables must match this order.
 // ponytail: verification-only; X-macro generation if tables ever diverge.
 
-
 #define SHDW_PLUGIN_COUNT 32

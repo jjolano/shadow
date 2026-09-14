@@ -3,17 +3,17 @@
 
 #import <Foundation/Foundation.h>
 
-#define kShadowRestrictionEnableResolve         @"kShadowRestrictionEnableResolve"
-#define kShadowRestrictionWorkingDir            @"kShadowRestrictionWorkingDir"
-#define kShadowRestrictionNoFollow              @"kShadowRestrictionNoFollow"
+#define kShadowRestrictionEnableResolve @"kShadowRestrictionEnableResolve"
+#define kShadowRestrictionWorkingDir @"kShadowRestrictionWorkingDir"
+#define kShadowRestrictionNoFollow @"kShadowRestrictionNoFollow"
 
 // Operation intent for write/create/delete probes. A WRITE probe to a
 // restricted-classified path must be denied even when the target does not
 // exist (a detector probing for a jailbreak file it could create must not
 // get an "allowed" from the existence gates). Default (option absent) = read.
-#define kShadowRestrictionOperation             @"kShadowRestrictionOperation"
-#define kShadowRestrictionOpRead                @"kShadowRestrictionOpRead"
-#define kShadowRestrictionOpWrite               @"kShadowRestrictionOpWrite"
+#define kShadowRestrictionOperation @"kShadowRestrictionOperation"
+#define kShadowRestrictionOpRead @"kShadowRestrictionOpRead"
+#define kShadowRestrictionOpWrite @"kShadowRestrictionOpWrite"
 
 // C0-5: ruleset generation, bumped on every reload (RulesetStore.m). Exported
 // as a plain atomic — same reasoning as the internal-read flag below, plus one
@@ -21,8 +21,8 @@
 // intercepted call to decide whether its snapshot is still valid, and an
 // ObjC message send (or the store's @synchronized) on that path would give
 // back the cost the cache exists to remove.
-__attribute__((visibility("default")))
-extern _Atomic(uint64_t) shdw_ruleset_generation;
+__attribute__((
+    visibility("default"))) extern _Atomic(uint64_t) shdw_ruleset_generation;
 
 // C0-2: internal-read scope depth (Core.m). Read directly by the dylib's
 // isCallerExternal() — non-zero means this thread is inside
@@ -33,22 +33,20 @@ extern _Atomic(uint64_t) shdw_ruleset_generation;
 // costs more than everything else those hooks do. (Exported as a FUNCTION,
 // not the TLS variable: theos links the dylib against Shadow.tbd, whose
 // format cannot carry thread-local exports.)
-__attribute__((visibility("default")))
-NSUInteger shdwInternalBusy(void);
+__attribute__((visibility("default"))) NSUInteger shdwInternalBusy(void);
 
 // Harness-only deferred adapter pass. Returns NO for processes without the
 // explicit Harness profile or before ShadowCore has loaded.
-__attribute__((visibility("default")))
-BOOL shdwInstallHarnessSDKFallback(void);
+__attribute__((visibility("default"))) BOOL shdwInstallHarnessSDKFallback(void);
 
 __attribute__((visibility("default")))
 @interface Shadow : NSObject
 
-@property (strong, nonatomic, readonly) NSString* bundlePath;
-@property (strong, nonatomic, readonly) NSString* homePath;
-@property (strong, nonatomic, readonly) NSString* realHomePath;
-@property (assign, nonatomic, readonly) BOOL hasAppSandbox;
-@property (assign, nonatomic, readonly) BOOL rootless;
+@property(strong, nonatomic, readonly) NSString *bundlePath;
+@property(strong, nonatomic, readonly) NSString *homePath;
+@property(strong, nonatomic, readonly) NSString *realHomePath;
+@property(assign, nonatomic, readonly) BOOL hasAppSandbox;
+@property(assign, nonatomic, readonly) BOOL rootless;
 
 + (instancetype)sharedInstance;
 
@@ -59,7 +57,8 @@ __attribute__((visibility("default")))
 + (void)shdwExitInternalRead;
 + (BOOL)shdwIsInternalRead;
 
-+ (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid dataRoot:(NSString *)dataRoot;
++ (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid
+                                     dataRoot:(NSString *)dataRoot;
 + (NSArray<NSString *> *)shdwGroupContainersUnderRoot:(NSString *)root;
 
 // Pseudo sandbox mode is fixed for the injected process: 0 = off, 1 = audit
@@ -73,10 +72,12 @@ __attribute__((visibility("default")))
 // Absolute mount names: current snapshot, lexical matching, no refresh/resolve.
 - (BOOL)isMountPathRestricted:(const char *)path;
 - (BOOL)isPathRestricted:(NSString *)path;
-- (BOOL)isPathRestricted:(NSString *)path options:(NSDictionary<NSString *, id> *)options;
+- (BOOL)isPathRestricted:(NSString *)path
+                 options:(NSDictionary<NSString *, id> *)options;
 
 - (BOOL)isURLRestricted:(NSURL *)url;
-- (BOOL)isURLRestricted:(NSURL *)url options:(NSDictionary<NSString *, id> *)options;
+- (BOOL)isURLRestricted:(NSURL *)url
+                options:(NSDictionary<NSString *, id> *)options;
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme;
 
@@ -98,13 +99,13 @@ __attribute__((visibility("default")))
 // return/break from inside the wrapped block — so the busy flag can never
 // get stuck set; the flag itself is depth-counted in Core.m, so nested
 // scopes stay busy until the outermost one exits.
-#define SHADOW_INTERNAL_SCOPE \
-    for(BOOL _shdw_scope_active __attribute__((cleanup(shdw_scope_leave))) = ([Shadow shdwEnterInternalRead], YES); \
-        _shdw_scope_active; \
-        _shdw_scope_active = NO)
+#define SHADOW_INTERNAL_SCOPE                                                  \
+  for (BOOL _shdw_scope_active __attribute__((cleanup(shdw_scope_leave))) =    \
+           ([Shadow shdwEnterInternalRead], YES);                              \
+       _shdw_scope_active; _shdw_scope_active = NO)
 
-static inline void shdw_scope_leave(BOOL* b) {
-    (void) b;
-    [Shadow shdwExitInternalRead];
+static inline void shdw_scope_leave(BOOL *b) {
+  (void)b;
+  [Shadow shdwExitInternalRead];
 }
 #endif
