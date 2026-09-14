@@ -154,8 +154,6 @@ static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
     { "Policy_Process",               shdw_plugin_policy_nop },
     { "Policy_PseudoSandbox",         shdw_plugin_policy_nop },
 };
-static const char* const kSHDWPluginInstallerOrderCheck[] __attribute__((unused)) = { SHDW_PLUGIN_ORDER };
-_Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == sizeof(kSHDWPluginInstallerOrderCheck)/sizeof(kSHDWPluginInstallerOrderCheck[0]), "installer table drift vs SHDWPluginOrder.inc");
 _Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == SHDW_PLUGIN_COUNT, "installer count != SHDW_PLUGIN_COUNT");
 
 static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {

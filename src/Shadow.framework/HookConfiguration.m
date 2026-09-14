@@ -68,8 +68,6 @@ static const SHDWPlugin kSHDWPlugins[] = {
 };
 
 // Hybrid verification: plugin count must match canonical order
-static const char* const kSHDWPluginOrderCheck[] __attribute__((unused)) = { SHDW_PLUGIN_ORDER };
-_Static_assert(sizeof(kSHDWPlugins)/sizeof(kSHDWPlugins[0]) == sizeof(kSHDWPluginOrderCheck)/sizeof(kSHDWPluginOrderCheck[0]), "plugin registry drift vs SHDWPluginOrder.inc — edit order.inc, not tables");
 _Static_assert(sizeof(kSHDWPlugins)/sizeof(kSHDWPlugins[0]) == SHDW_PLUGIN_COUNT, "plugin count != SHDW_PLUGIN_COUNT");
 
 const SHDWPlugin* SHDWPluginRegistry(NSUInteger* outCount) {
