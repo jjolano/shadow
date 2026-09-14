@@ -3,12 +3,7 @@
 #import <Shadow/JBPath.h>
 
 #import "../common.h"
-
-static BOOL IsShadowVerificationBundle(NSString* bundleID) {
-    return [bundleID isEqualToString:@"me.jjolano.shadow.harness"]
-        || [bundleID isEqualToString:@"me.jjolano.dyldprobe"]
-        || [bundleID hasPrefix:@"me.jjolano.shadow.test."];
-}
+#import "RulesetPrivate.h"
 
 @implementation SystemRulesGenerator
 

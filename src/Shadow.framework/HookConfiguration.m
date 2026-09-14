@@ -119,36 +119,44 @@ NSDictionary<NSString*, id>* SHDWDefaultHookSettings(void) {
 
 #pragma mark - Capability metadata
 
+// Registry capability -> group kind: PrivateSym is the private-symbol (inline)
+// lane; rows with no prefKey (None/Symlookup) never contribute a group.
+static NSString* SHDWCapabilityKindName(SHDWCapabilityKind capability) {
+    switch(capability) {
+        case SHDWCapabilityFunction: return @"function";
+        case SHDWCapabilityMessage: return @"message";
+        case SHDWCapabilityPrivateSym: return @"inline";
+        default: return @"none";
+    }
+}
+
 NSString* SHDWHookGroupCapabilityKind(NSString* groupID) {
     static NSDictionary<NSString*, NSString*>* kinds = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        kinds = @{
-            SHDWUniversalURLSchemeID : @"message",
-            SHDWUniversalFoundationID : @"message",
-            SHDWUniversalHideAppsID : @"message",
-            SHDWUniversalDynamicLibrariesExtraID : @"inline",
-            SHDWUniversalEnvVarsID : @"function",
-            SHDWUniversalFilesystemID : @"function",
-            SHDWUniversalMachBootstrapID : @"function",
-            SHDWUniversalIOKitID : @"function",
-            SHDWUniversalLowLevelCID : @"function",
-            SHDWUniversalAntiDebuggingID : @"function",
-            SHDWUniversalCodeSigningID : @"function",
-            SHDWUniversalSyscallID : @"function",
-            SHDWUniversalSandboxID : @"function",
-            SHDWUniversalMemoryID : @"function",
-            SHDWUniversalPseudoSandboxModeID : @"none",
-            SHDWUniversalPathRewriteID : @"none",
-            SHDWUniversalMemoryLevelHidingID : @"none",
-            SHDWAdapterDeviceCheckID : @"message",
-            SHDWAdapterFreeRASPID : @"function",
-            SHDWAdapterDeviceSecurityKitID : @"message",
-            SHDWAdapterIOSSecuritySuiteID : @"function",
+        NSMutableDictionary<NSString*, NSString*>* map = [NSMutableDictionary new];
+        NSUInteger count = 0;
+        const SHDWPlugin* plugins = SHDWPluginRegistry(&count);
+        // FIRST registry row per prefKey wins — load-bearing for composite
+        // groups: Universal_Filesystem is the C lane's "function", never the
+        // later Universal_Filesystem_ObjC's "message".
+        for(const SHDWPlugin* plugin = plugins; plugin < plugins + count; plugin++) {
+            if(plugin->prefKey && !map[plugin->prefKey]) {
+                map[plugin->prefKey] = SHDWCapabilityKindName(plugin->capability);
+            }
+        }
+        // IDs the registry has no prefKey row for: detector-only adapters
+        // (registered in the detector table, not the hook registry) and the
+        // non-hook policy toggles.
+        [map addEntriesFromDictionary:@{
             SHDWAdapterDTTJailbreakDetectionID : @"message",
             SHDWAdapterSafeDeviceID : @"message",
             SHDWAdapterJailMonkeyID : @"message",
-        };
+            SHDWUniversalPseudoSandboxModeID : @"none",
+            SHDWUniversalPathRewriteID : @"none",
+            SHDWUniversalMemoryLevelHidingID : @"none",
+        }];
+        kinds = map;
     });
     return kinds[groupID];
 }

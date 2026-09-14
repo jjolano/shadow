@@ -14,7 +14,6 @@ typedef struct {
 
 typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
     ShadowPseudoSandboxModeOff = 0,
-    ShadowPseudoSandboxModeAudit = 1,
     ShadowPseudoSandboxModeStrict = 2,
 };
 

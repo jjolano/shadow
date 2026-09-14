@@ -3,6 +3,17 @@
 
 #import "Ruleset.h"
 
+// Shadow's own verification bundles (harness, dyld probe, per-test apps) are
+// never ruleset targets: both ruleset generators skip them so a probe app can
+// never restrict its own host. One shared static inline — each TU gets its own
+// copy (the framework emits no symbol for it) and the generators cannot drift
+// apart.
+static inline BOOL IsShadowVerificationBundle(NSString* bundleID) {
+    return [bundleID isEqualToString:@"me.jjolano.shadow.harness"]
+        || [bundleID isEqualToString:@"me.jjolano.dyldprobe"]
+        || [bundleID hasPrefix:@"me.jjolano.shadow.test."];
+}
+
 // Framework-internal RulesetEngine layout, shared by Ruleset.m (matching only)
 // and ShadowRulesetCompiler.m (parse/compile/cache/persist). All ivars moved
 // out of the public header + the old Ruleset.m extension so the compiler can

@@ -37,7 +37,7 @@ printf '%s\n' "$depends" | grep -Fq "firmware (>= $FLOOR)" || { echo "missing fi
 [ -z "$CEILING" ] || printf '%s\n' "$depends" | grep -Fq "firmware (<< $CEILING)" || { echo "missing firmware << $CEILING" >&2; exit 1; }
 
 if [ "$PROFILE" = rootful-legacy ]; then
-    for package in com.opa334.altlist.legacy com.opa334.libsandy.legacy me.jjolano.fmwk.hookkit.legacy; do
+    for package in $(grep -oE '[^ ,]+\.legacy' "$ROOT/packaging/controls/control.$PROFILE.in"); do
         printf '%s\n' "$depends" | grep -Fq "$package" || { echo "missing legacy dependency: $package" >&2; exit 1; }
     done
 fi

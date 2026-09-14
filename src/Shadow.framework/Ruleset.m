@@ -1,19 +1,15 @@
 #import "Ruleset.h"
 #import "RulesetPrivate.h"
-#import "RulesetCompiler.h"
 
 // Candidate 5: Ruleset.m retains matching only. Parsing, validation,
 // compilation and compiled-cache persistence moved to RulesetCompiler.m;
-// +rulesetWithURL: delegates there (per-URL last-known-good preserved).
+// callers use +[ShadowRulesetCompiler compileRulesetAtURL:] (per-URL
+// last-known-good preserved).
 
 NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
 
 @implementation RulesetEngine
 @synthesize payloadDictionary;
-
-+ (instancetype)rulesetWithURL:(NSURL *)url {
-    return [ShadowRulesetCompiler compileRulesetAtURL:url];
-}
 
 - (BOOL)path:(NSString *)path hasFilenamePrefix:(NSString *)prefix {
     NSUInteger prefix_len = [prefix length];

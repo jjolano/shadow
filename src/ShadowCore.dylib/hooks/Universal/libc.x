@@ -377,7 +377,7 @@ int shdw_filter_mounts(struct statfs* buf, int count, BOOL statfsFlags) {
 
         int restricted = [_shadow isMountPathRestricted:rec->f_mntonname]
             || [_shadow isMountPathRestricted:rec->f_mntfromname];
-        if(!shdw_mount_filter(rec->f_mntonname, rec->f_mntfromname,
+        if(!shdw_mount_filter(rec->f_mntonname,
             (uint32_t*) &rec->f_flags, statfsFlags, restricted)) {
             continue;  // hidden mount: removed, compacted away below
         }

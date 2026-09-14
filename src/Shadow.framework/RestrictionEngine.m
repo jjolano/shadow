@@ -205,7 +205,6 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 - (void)configurePseudoSandboxMode:(NSInteger)mode {
     ShadowPseudoSandboxMode normalized = mode >= ShadowPseudoSandboxModeStrict
         ? ShadowPseudoSandboxModeStrict
-        : mode == ShadowPseudoSandboxModeAudit ? ShadowPseudoSandboxModeAudit
         : ShadowPseudoSandboxModeOff;
 
     if(pseudoSandboxMode != normalized) {

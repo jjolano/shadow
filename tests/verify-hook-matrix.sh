@@ -60,7 +60,7 @@ checkForChanges|internal
 isPathCompliant|internal
 isPathWhitelisted|internal
 isPathBlacklisted|internal
-rulesetWithURL|internal
+compileRulesetAtURL|internal
 EOF
 }
 

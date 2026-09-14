@@ -9,10 +9,10 @@
 #endif
 
 // Returns 1 to keep the mount record, 0 to remove it. `restricted` is the
-// caller's snapshot-only verdict on f_mntonname/f_mntfromname. When
-// kept, statfsFlags && mntonname == "/" ORs MNT_RDONLY into *flags.
-static inline int shdw_mount_filter(const char* mntonname, const char* mntfromname, uint32_t* flags, int statfsFlags, int restricted) {
-    (void) mntfromname;
+// caller's snapshot-only verdict on the mount record (f_mntfromname is
+// folded into that verdict by the caller, not here). When kept,
+// statfsFlags && mntonname == "/" ORs MNT_RDONLY into *flags.
+static inline int shdw_mount_filter(const char* mntonname, uint32_t* flags, int statfsFlags, int restricted) {
     if(restricted) return 0;
     if(statfsFlags && mntonname && strcmp(mntonname, "/") == 0 && flags) {
         *flags |= MNT_RDONLY;

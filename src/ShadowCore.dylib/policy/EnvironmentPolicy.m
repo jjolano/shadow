@@ -21,49 +21,38 @@
 #import <stdlib.h>
 #import <pthread.h>
 
-BOOL shdw_env_name_hidden(const char* name) {
-    if(!name) {
+// Shared matcher for the two predicates below. `boundary` is the character
+// that must follow a safe-mode name: '\0' for a bare name (getenv view), '='
+// for the "NAME=value" entry form (*environ scans). DYLD_* covers
+// INSERT_LIBRARIES and every search-path knob; the JAILBREAKD_* and safe-mode
+// variables come from jailbreakd/loader launch contexts.
+static BOOL shdw_env_hidden(const char* s, char boundary) {
+    if(!s) {
         return NO;
     }
 
-    // DYLD_* covers INSERT_LIBRARIES and every search-path knob; the
-    // JAILBREAKD_* and safe-mode variables come from jailbreakd/loader
-    // launch contexts.
-    if(strncmp(name, "DYLD_", 5) == 0 || strncmp(name, "JAILBREAKD_", 11) == 0) {
+    if(strncmp(s, "DYLD_", 5) == 0 || strncmp(s, "JAILBREAKD_", 11) == 0) {
         return YES;
     }
 
-    if(strcmp(name, "_MSSafeMode") == 0
-    || strcmp(name, "_SafeMode") == 0
-    || strcmp(name, "_SubstituteSafeMode") == 0
-    || strcmp(name, "BOOTSTRAP_PREFIX") == 0) {
+    if((strncmp(s, "_MSSafeMode", 11) == 0 && s[11] == boundary)
+    || (strncmp(s, "_SafeMode", 9) == 0 && s[9] == boundary)
+    || (strncmp(s, "_SubstituteSafeMode", 19) == 0 && s[19] == boundary)
+    || (strncmp(s, "BOOTSTRAP_PREFIX", 16) == 0 && s[16] == boundary)) {
         return YES;
     }
 
     return NO;
 }
 
+BOOL shdw_env_name_hidden(const char* name) {
+    return shdw_env_hidden(name, '\0');
+}
+
+// Whole-entry policy for *environ scans: every dynamic-loader and
+// jailbreakd-launch variable is dropped, not just the INSERT_LIBRARIES entry.
 BOOL shdw_env_entry_hidden(const char* var) {
-    if(!var) {
-        return NO;
-    }
-
-    // Whole-entry policy for *environ scans: every dynamic-loader and
-    // jailbreakd-launch variable is dropped, not just the INSERT_LIBRARIES
-    // entry. Entries carry the "NAME=value" form, so the safe-mode flags
-    // match with the trailing '='.
-    if(strncmp(var, "DYLD_", 5) == 0 || strncmp(var, "JAILBREAKD_", 11) == 0) {
-        return YES;
-    }
-
-    if(strncmp(var, "_MSSafeMode=", 12) == 0
-    || strncmp(var, "_SafeMode=", 10) == 0
-    || strncmp(var, "_SubstituteSafeMode=", 20) == 0
-    || strncmp(var, "BOOTSTRAP_PREFIX=", 17) == 0) {
-        return YES;
-    }
-
-    return NO;
+    return shdw_env_hidden(var, '=');
 }
 
 // Thread-local PATH storage for the getenv view. One thread can't overwrite

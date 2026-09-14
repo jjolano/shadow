@@ -10,8 +10,6 @@ __attribute__((visibility("hidden")))
 
 @property (copy, nonatomic, readonly) NSDictionary* payloadDictionary;
 
-+ (instancetype)rulesetWithURL:(NSURL *)url;
-
 - (BOOL)isPathCompliant:(NSString *)path;
 - (BOOL)isPathWhitelisted:(NSString *)path;
 - (BOOL)isPathBlacklisted:(NSString *)path;

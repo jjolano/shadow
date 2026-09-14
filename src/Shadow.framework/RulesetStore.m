@@ -1,4 +1,5 @@
 #import "Ruleset.h"
+#import "RulesetCompiler.h"
 #import <Shadow/Core.h>
 #import "RulesetStore.h"
 
@@ -123,7 +124,7 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
             if(previous && [[previous objectAtIndex:0] doubleValue] == mtime) {
                 ruleset = [previous objectAtIndex:1];
             } else {
-                ruleset = [RulesetEngine rulesetWithURL:url];
+                ruleset = [ShadowRulesetCompiler compileRulesetAtURL:url];
             }
 
             if(ruleset) {
