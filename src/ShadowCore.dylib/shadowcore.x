@@ -71,7 +71,7 @@ void shdw_detector_detected(const char* reason) {
 
     shdw_detector_present = YES;
     shdw_detector_write_policy_set_enabled(YES);
-    [shdw_coordinator_instance escalateWithReason:nil];
+    [shdw_coordinator_instance escalate];
 }
 
 static void shdw_coord_envvars_c(SHDWHookSession* hooks) {
