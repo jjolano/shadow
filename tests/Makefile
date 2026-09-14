@@ -21,6 +21,11 @@ verify-path-standardize:
 verify-fd-path-freshness:
 	python3 verify-fd-path-freshness.py
 
+# Host check of the actual process-policy bodies (classification caches, pid
+# list compaction, MIB classifier, boot-args answer) with kinfo doubles.
+verify-proc-policy:
+	python3 verify-proc-policy.py
+
 # Host check of the actual raw-SVC add-image callback and initializer bodies.
 verify-svc-self-image:
 	python3 verify-svc-self-image.py
@@ -71,9 +76,9 @@ verify-rules-generation:
 verify-binary-compat:
 	bash BinaryCompatTests.sh
 
-test: verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
+test: verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean
