@@ -15,6 +15,27 @@ LANGUAGES = ("en", "ar", "zh-Hans", "zh-Hant")
 TABLES = ("Root", "App", "About")
 
 
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates locate real source snippets by text and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
 def strings(text):
     # Only the OpenStep strings-table grammar, not a general plist parser.
     token = re.compile(r'\s+|/\*.*?\*/|//[^\n]*|"(?:[^"\\]|\\.)*"|[\w.$/:-]+|[=;]', re.S)
@@ -110,13 +131,13 @@ def verify():
             # just literal localized: calls. IDs/actions use different spelling.
             required.update(re.findall(r'@"([A-Z][A-Z0-9_]+)"', source))
             lookup_tables = re.findall(r'\btable:@"([^"]+)"', source)
-            assert len(lookup_tables) == source.count('localizedStringForKey:'), controller
+            assert len(lookup_tables) == len(re.findall(anchor_pattern('localizedStringForKey:'), source)), controller
             assert all(name == table for name in lookup_tables), controller
             if controller.endswith("List"):
-                call = f'SHDWLocalizeSpecifiers(_specifiers, '
-                assert source.count(call) == 1
-                assert re.search(r'SHDWLocalizeSpecifiers\(_specifiers, .*?, @"' + table + r'"\);', source)
-                assert source.index('loadSpecifiersFromPlistName:') < source.index(call)
+                call = 'SHDWLocalizeSpecifiers(_specifiers, '
+                assert len(re.findall(anchor_pattern(call), source)) == 1
+                assert re.search(anchor_pattern(call) + r'.*?,\s*@"' + table + r'"\);', source, re.S)
+                assert anchor(source, 'loadSpecifiersFromPlistName:') < anchor(source, call)
         assert required <= english.keys(), (table, required - english.keys())
         for language in LANGUAGES:
             localized = tables[language, table]
@@ -129,9 +150,9 @@ def verify():
             assert all(localized[key] != key for key in required), (language, table)
     app = (SETTINGS / "SHDWAppListController.m").read_text()
     about = (SETTINGS / "SHDWAboutListController.m").read_text()
-    assert 'self.title = [bundle localizedStringForKey:@"APP_SETTINGS" value:nil table:@"App"]' in app
-    assert app.index('self.title = [bundle') < app.index('self.title = proxy.atl_fastDisplayName')
-    assert 'self.title = [self localized:@"ABOUT_TITLE"]' in about
+    assert re.search(anchor_pattern('self.title = [bundle localizedStringForKey:@"APP_SETTINGS" value:nil table:@"App"]'), app)
+    assert anchor(app, 'self.title = [bundle') < anchor(app, 'self.title = proxy.atl_fastDisplayName')
+    assert re.search(anchor_pattern('self.title = [self localized:@"ABOUT_TITLE"]'), about)
     print("PASS: OpenStep strings syntax, all locales, static/dynamic keys, formats, explicit pane tables and titles")
     return tables
 

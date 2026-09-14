@@ -25,19 +25,53 @@ keys = (root / "src/Shadow.framework/Headers/Shadow/SHDWPlugin.h").read_text()
 localization = runpy.run_path(str(root / "tests/verify-settings-localization.py"))
 localization_tables = localization["verify"]()
 
+
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates extract real bodies out of the settings sources and pin them.
+    A clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
+def pin_all(text, old, new):
+    """Replace every pinned occurrence, tolerant of reformat spacing.
+
+    Raises when the pin is gone, so a real rewrite still fails loudly."""
+    if re.search(anchor_pattern(old), text) is None:
+        raise ValueError(f"pinned snippet not found: {old!r}")
+    return re.sub(anchor_pattern(old), lambda _match: new, text)
+
+
+def body(text, first, last):
+    start = anchor(text, first)
+    return text[start:anchor(text, last, start)]
+
+
 # Compile the original bodies, not Python translations of their behavior.
-helpers = prefs[prefs.index("BOOL SHDWAppFollowsGlobal("):
-                prefs.index("UIImage *SHDWSettingsSymbol(")]
-parser = updates[updates.index("NSString* version = nil;"):
-                 updates.index("strongSelf->latestVersion = version;")]
+helpers = body(prefs, "BOOL SHDWAppFollowsGlobal(", "UIImage *SHDWSettingsSymbol(")
+parser = body(updates, "NSString* version = nil;", "strongSelf->latestVersion = version;")
 source = '#import <Foundation/Foundation.h>\n#import <objc/runtime.h>\n#include <assert.h>\n'
 source += "\n".join(re.findall(
     r'^#define SHDW(?:AppEnabled|AppDisabled|DetectorAggressive|SingleToggleMigration)ID\s+@"[^"]+"',
     keys, re.M))
 source += '\nBOOL SHDWAppIsCustomized(id appPrefs);\n' + helpers
 source += '#define JBPath(path) (path)\n#define THEOS_PACKAGE_INSTALL_PREFIX "/test-bootstrap"\n'
-source += prefs[prefs.index('NSString *SHDWInstalledVersion('):prefs.index('BOOL SHDWAppEnabled(')].replace(
-    'SHDWInstalledVersion(void)', 'readInstalledVersion(void)')
+source += pin_all(body(prefs, 'NSString *SHDWInstalledVersion(', 'BOOL SHDWAppEnabled('),
+                  'SHDWInstalledVersion(void)', 'readInstalledVersion(void)')
 source += '''
 static NSDictionary *localFiles;
 static NSUInteger fileReads;
@@ -60,8 +94,7 @@ static id testSymbol(id cls, SEL selector, NSString *name) {
     return [name isEqualToString:@"missing"] ? nil : [UIImage new];
 }
 '''
-source += prefs[prefs.index("UIImage *SHDWSettingsSymbol("):
-                prefs.index("BOOL SHDWAppAggressive(")]
+source += body(prefs, "UIImage *SHDWSettingsSymbol(", "BOOL SHDWAppAggressive(")
 source += r'''
 // Minimal UIKit/Preferences and session doubles execute the real controllers.
 typedef struct { double top, left, bottom, right; } UIEdgeInsets;
@@ -169,7 +202,7 @@ static NSIndexPath *row(NSInteger section, NSInteger item) {
 - (void)setProperty:(id)value forKey:(NSString *)key { self.properties[key] = value; }
 @end
 '''
-source += prefs[prefs.index('void SHDWLocalizeSpecifiers('):prefs.index('NSString *SHDWInstalledVersion(')]
+source += body(prefs, 'void SHDWLocalizeSpecifiers(', 'NSString *SHDWInstalledVersion(')
 source += r'''
 static NSDictionary *localizedTables;
 static NSString *testLanguage = @"en";
@@ -260,9 +293,9 @@ static NSString *installedVersion;
 static NSString *SHDWInstalledVersion(void) { return installedVersion; }
 @interface SHDWAboutListController : PSViewController @end
 '''
-source += about[about.index('@implementation'):about.index('- (void)openGitHub:')] + '\n@end\n'
+source += body(about, '@implementation', '- (void)openGitHub:') + '\n@end\n'
 source += '@interface SHDWUpdatesController : PSViewController @end\n'
-source += updates[updates.index('@implementation'):]
+source += updates[anchor(updates, '@implementation'):]
 source += r'''
 static void complete(NSData *data, NSInteger status, NSError *error) {
     void (^completion)(NSData *, NSURLResponse *, NSError *) = lastSession.completion;
@@ -308,8 +341,7 @@ source += '''
 @end
 @implementation SHDWRootListController
 '''
-source += root_controller[root_controller.index('- (id)readPreferenceValue:'):
-                          root_controller.index('- (void)setPreferenceValue:')] + '\n@end\n'
+source += body(root_controller, '- (id)readPreferenceValue:', '- (void)setPreferenceValue:') + '\n@end\n'
 source += '''
 static NSDictionary *parse(NSData *data, NSInteger status, NSError *error) {
     NSURLResponse *response = [[NSHTTPURLResponse alloc]

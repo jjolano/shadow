@@ -21,13 +21,6 @@ libc = LIBC.read_text()
 syscall = SYSCALL.read_text()
 svc = SVC.read_text()
 
-for stale in ("shdw_fd_cache", "shdw_readdir_cache", "SHADW_FD_CACHE", "SHADW_READDIR_CACHE"):
-    assert stale not in source and stale not in header and stale not in libc, stale
-
-assert '{ "close",' not in libc
-assert '{ "closedir",' not in libc
-assert "CFRelease(nil) is a no-op" not in libc
-
 
 def anchor_pattern(needle):
     """Regex for `needle`, tolerant of reformat spacing.
@@ -60,19 +53,42 @@ def pin(text, old, new):
     return text[:match.start()] + new + text[match.end():]
 
 
+for stale in ("shdw_fd_cache", "shdw_readdir_cache", "SHADW_FD_CACHE", "SHADW_READDIR_CACHE"):
+    assert stale not in source and stale not in header and stale not in libc, stale
+
+assert not re.search(anchor_pattern('{ "close",'), libc)
+assert not re.search(anchor_pattern('{ "closedir",'), libc)
+assert not re.search(anchor_pattern("CFRelease(nil) is a no-op"), libc)
+
+
+def span(text, first, last):
+    """Slice `text` between two anchors, tolerant of reformat spacing."""
+    start = anchor(text, first)
+    return text[start:anchor(text, last, start)]
+
+
 def body(first, last):
-    start = anchor(source, first)
-    return source[start:anchor(source, last, start)]
+    return span(source, first, last)
+
+
+def span(text, first, last):
+    start = anchor(text, first)
+    return text[start:anchor(text, last, start)]
 
 
 resolver = body("shdw_dirfd_status_t shdw_resolve_dirfd_path", "// Applies the shared dirfd resolution")
-at_path = body("BOOL shdw_at_path_denied", "// fd→path classification")
+at_path = body("BOOL shdw_at_path_denied(int dirfd", "// fd→path classification")
 fd_path = body("BOOL shdw_fd_path_restricted", "BOOL shdw_fd_path_bundle_exempt")
 fd_bundle_exempt = body("BOOL shdw_fd_path_bundle_exempt", "// Returns a retained options dict")
 readdir = body("NSDictionary* shdw_readdir_options", "// Classifies a readlink result")
-libc_fstat = libc[libc.index("static int (*original_fstat)"):libc.index("static int (*original_fstatat)(int dirfd")]
-libc_readdir_r = libc[libc.index("static int (*original_readdir_r)"):libc.index("static struct dirent* (*original_readdir)")]
-libc_readdir = libc[libc.index("static struct dirent* (*original_readdir)"):libc.index("// --- Phase 3:")]
+# The fstat slot has a deliberately-unspaced forward declaration earlier in
+# libc.x (spaced apart precisely so exact-match extraction picks the real
+# slot), so the needle carries the following definition's tokens to stay
+# unambiguous under whitespace-tolerant matching.
+libc_fstat = span(libc, "static int (*original_fstat)(int fd, struct stat* buf); static int replaced_fstat",
+                  "static int (*original_fstatat)(int dirfd")
+libc_readdir_r = span(libc, "static int (*original_readdir_r)", "static struct dirent* (*original_readdir)")
+libc_readdir = span(libc, "static struct dirent* (*original_readdir)", "// --- Phase 3:")
 post_span = body("static BOOL shdw_path_under_immutable_prefix(const char* path) {",
                  "BOOL shdw_region_backing_path_hidden")
 union_span = body("BOOL shdw_resolved_spelling_hidden(const char* canon) {",
@@ -83,7 +99,7 @@ old_at = '''        NSString* path = [NSString stringWithUTF8String:pathname];
             kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
         }];'''
 at_path = pin(at_path, old_at, "        BOOL restricted = is_at_restricted(parent, pathname);")
-at_path = at_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
+at_path = pin(at_path, "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 # The extracted span now also carries the rename-family entry-identity twin
 # (shdw_at_path_denied_nofollow): its NoFollow dirfd query pins the same
 # host stub as the following twin (in-host resolution is stubbed out, so
@@ -95,10 +111,10 @@ old_at_nofollow = '''        NSString* path = [NSString stringWithUTF8String:pat
             kShadowRestrictionNoFollow : @YES
         }];'''
 at_path = pin(at_path, old_at_nofollow, "        BOOL restricted = is_at_restricted(parent, pathname);")
-at_path = at_path.replace("shdw_path_ruleset_denied_nofollow(pathname)", "is_restricted(pathname)")
+at_path = pin(at_path, "shdw_path_ruleset_denied_nofollow(pathname)", "is_restricted(pathname)")
 
-assert "fcntl(fd, F_GETPATH, pathname) != -1" in fd_path
-fd_path = fd_path.replace("[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
+assert re.search(anchor_pattern("fcntl(fd, F_GETPATH, pathname) != -1"), fd_path)
+fd_path = pin(fd_path, "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 
 old_readdir = '''        NSDictionary* options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
         errno = saved_errno;
@@ -107,18 +123,18 @@ readdir = pin(readdir, "NSDictionary* shdw_readdir_options", "const char* shdw_r
 readdir = pin(readdir, old_readdir, '''        strlcpy(g_readdir_options, pathname, sizeof(g_readdir_options));
         errno = saved_errno;
         return g_readdir_options;''')
-readdir = readdir.replace("strlcpy(g_readdir_options", "test_strlcpy(g_readdir_options")
-readdir = readdir.replace("return nil;", "return NULL;")
+readdir = pin(readdir, "strlcpy(g_readdir_options", "test_strlcpy(g_readdir_options")
+readdir = pin(readdir, "return nil;", "return NULL;")
 
 for reader, boxed_name in (
     (libc_readdir_r, "@((*oresult)->d_name)"),
     (libc_readdir, "@(result->d_name)"),
 ):
-    assert re.search(r"if\s*\(options\)\s*\{\s*CFRelease\(", reader, re.S)
+    assert re.search(anchor_pattern("if(options) { CFRelease("), reader)
     reader = pin(reader, "NSDictionary* options = shdw_readdir_options", "const char* options = shdw_readdir_options")
-    reader = reader.replace("@autoreleasepool {", "{")
-    reader = reader.replace(f"[_shadow isPathRestricted:{boxed_name} options:options]", "false")
-    reader = reader.replace("CFRelease((__bridge CFDictionaryRef)options);", "CFRelease(options);")
+    reader = pin(reader, "@autoreleasepool {", "{")
+    reader = pin(reader, f"[_shadow isPathRestricted:{boxed_name} options:options]", "false")
+    reader = pin(reader, "CFRelease((__bridge CFDictionaryRef)options);", "CFRelease(options);")
     if boxed_name == "@((*oresult)->d_name)":
         libc_readdir_r = reader
     else:
@@ -132,8 +148,8 @@ for category, argument in (
     ("SHADW_RAW_CAT_FDXATTR", "fd"),
     ("SHADW_RAW_CAT_FREADLINK", "fd"),
 ):
-    assert re.search(rf"case {category}.*?shdw_fd_path_restricted\({argument}\)", syscall, re.S), category
-assert "shdw_fd_path_restricted((int)a0)" in svc
+    assert re.search(anchor_pattern(f"case {category}") + r".*?" + anchor_pattern(f"shdw_fd_path_restricted({argument})"), syscall, re.S), category
+assert re.search(anchor_pattern("shdw_fd_path_restricted((int)a0)"), svc)
 
 
 prefix = r'''

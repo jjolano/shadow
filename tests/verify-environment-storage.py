@@ -1,15 +1,43 @@
 """Run the production TLS lifecycle with real threads and injected key failures."""
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
+
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates locate real source snippets by text and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
 root = Path(__file__).resolve().parents[1]
 source = (root / "src/ShadowCore.dylib/policy/EnvironmentPolicy.m").read_text()
-storage = source[source.index("static _Thread_local char* shdw_env_path_storage"):
-                 source.index("// Shared PATH component filter")]
-storage += source[source.index("static void shdw_env_path_cache_invalidate(void)"):
-                  source.index("static int (*original_setenv)")]
+
+
+def body(first, last):
+    start = anchor(source, first)
+    return source[start:anchor(source, last, start)]
+
+
+storage = body("static _Thread_local char* shdw_env_path_storage", "// Shared PATH component filter")
+storage += body("static void shdw_env_path_cache_invalidate(void)", "static int (*original_setenv)")
 prefix = r'''
 #include <assert.h>
 #include <pthread.h>
@@ -82,8 +110,8 @@ with tempfile.TemporaryDirectory(prefix="shadow-env-storage-") as tmp:
         subprocess.run([str(binary), str(failure)], check=True)
 
 # Static ownership contract: capacity must be saved even when realloc stays put.
-procargs = source[source.index("void shdw_procargs2_filter("):]
-assert "if(path_entry_storage != shdw_env_procargs_path)" not in procargs
-assert "shdw_env_procargs_path_cap = path_entry_capacity;" in procargs
-assert "e[5] && shdw_env_tls_arm()" in procargs
+procargs = source[anchor(source, "void shdw_procargs2_filter("):]
+assert not re.search(anchor_pattern("if(path_entry_storage != shdw_env_procargs_path)"), procargs)
+assert re.search(anchor_pattern("shdw_env_procargs_path_cap = path_entry_capacity;"), procargs)
+assert re.search(anchor_pattern("e[5] && shdw_env_tls_arm()"), procargs)
 print("verify-environment-storage: thread cleanup, setup failures, and capacity contract passed")

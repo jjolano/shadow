@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -10,29 +11,55 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src/ShadowCore.dylib/hooks/Universal/svc_patch.x"
 
 
-def body(source: str, signature: str) -> str:
-    start = source.index("{", source.index(signature))
-    depth = 1
-    end = start + 1
-    while depth:
-        depth += (source[end] == "{") - (source[end] == "}")
-        end += 1
-    return source[source.index(signature):end]
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates extract real bodies out of the hook sources and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
 
 
 source = SOURCE.read_text()
+
+
+def body(source: str, signature: str) -> str:
+    """Brace-matched body of `signature`, tolerant of reformat spacing.
+
+    The first match wins, matching the previous exact-string extraction."""
+    head = anchor(source, signature)
+    start = anchor(source, "{", head)
+    depth, end = 1, start + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[head:end]
+
+
 skip = body(source, "static BOOL shdw_svc_skip_image(")
 callback = body(source, "static void shdw_svc_image_add(")
 install = body(source, "void shdw_svc_patch_install(void)")
 
 # The app-bundle exemption remains a path-policy decision. Scanner identity is
 # separate and must be decided before the callback looks an image up by path.
-bundle_start = skip.index("if([imagePath isEqualToString:bundlePath]")
-bundle_end = skip.index("// dyld reports", bundle_start)
-assert "return NO;" in skip[bundle_start:bundle_end]
-assert callback.index("if(!shdw_svc_own_image || mh == shdw_svc_own_image)") < callback.index("for(uint32_t")
-assert install.index("dladdr((const void*)shdw_svc_patch_install, &info)") < install.index(
-    "_dyld_register_func_for_add_image"
+bundle_start = anchor(skip, "if([imagePath isEqualToString:bundlePath]")
+bundle_end = anchor(skip, "// dyld reports", bundle_start)
+assert re.search(anchor_pattern("return NO;"), skip[bundle_start:bundle_end])
+assert anchor(callback, "if(!shdw_svc_own_image || mh == shdw_svc_own_image)") < anchor(callback, "for(uint32_t")
+assert anchor(install, "dladdr((const void*)shdw_svc_patch_install, &info)") < anchor(
+    install, "_dyld_register_func_for_add_image"
 )
 
 prefix = r'''

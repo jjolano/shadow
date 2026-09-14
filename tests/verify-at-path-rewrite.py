@@ -2,8 +2,39 @@
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
+
+
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing.
+
+    These gates extract real bodies out of the hook sources and pin them. A
+    clang-format pass must not be able to break that, so the pattern matches
+    identifier/punctuation tokens separated by any whitespace, while the
+    token sequence itself stays exact.
+    """
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
+def pin_all(text, old, new):
+    """Replace every pinned occurrence, tolerant of reformat spacing.
+
+    Raises when the pin is gone, so a real rewrite still fails loudly."""
+    if re.search(anchor_pattern(old), text) is None:
+        raise ValueError(f"pinned snippet not found: {old!r}")
+    return re.sub(anchor_pattern(old), lambda _match: new, text)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,11 +43,15 @@ PATH_REWRITE = ROOT / "src/ShadowCore.dylib/hooks/Universal/path_rewrite.c"
 
 
 source = SOURCE.read_text()
-start = source.index("static int (*original_fstatat)(int dirfd")
-end = source.index("// readdir/readdir_r filtering", start)
-hook = source[start:end].replace(
-    "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)"
-)
+
+
+def body(first, last):
+    start = anchor(source, first)
+    return source[start:anchor(source, last, start)]
+
+
+hook = body("static int (*original_fstatat)(int dirfd", "// readdir/readdir_r filtering")
+hook = pin_all(hook, "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 
 prefix = r'''
 #include <assert.h>
@@ -443,9 +478,7 @@ int main(void) {
 
 for first, last in [("static int (*original_access)", "static ssize_t (*original_readlink)"),
                     ("static int (*original_stat)", "static int (*original_lstat)")]:
-    hook += source[source.index(first):source.index(last)].replace(
-        "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)"
-    )
+    hook += pin_all(body(first, last), "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 
 with tempfile.TemporaryDirectory(prefix="shadow-at-rewrite-") as tmp:
     test = Path(tmp) / "test.c"
