@@ -21,12 +21,14 @@ typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
   // sandbox: it spares the app's own container and the stock read-only roots
   // and denies what lies outside them (/var/folders, /tmp, /var/db, the parent
   // of every app container) — iOS gives an app its temp inside its container,
-  // so those root denials are correct sandbox behaviour, not over-reach.
+  // so those root denials are the containment boundary, not over-reach.
   // Measured on device (iOS 15.6, rootless): with this armed the harness
   // cannot complete a run, because it is a system app that must reach
-  // /var/mobile/Documents, outside its container. That says nothing yet about
-  // normal apps, which was never measured, so keep this out of Settings until
-  // it is. Widen the allowlist in shdwPseudoWouldDeny before surfacing it.
+  // /var/mobile/Documents, outside its container. That says nothing about
+  // normal apps. The gate before surfacing this in Settings is therefore an
+  // accessibility enumeration, not an allowlist edit: the harness restriction
+  // tests hold a corpus of paths a stock app may reach and fail if any one of
+  // them is denied.
   ShadowPseudoSandboxModeStrict = 2,
 };
 
