@@ -230,7 +230,7 @@ grep -q 'SHDWDetectorAggressiveID' src/Shadow.framework/SettingsMigration.m || {
     echo 'SETTINGS DRIFT: Detector_Aggressive not in the live-key allowlist'
     exit 1
 }
-grep -q 'shdw_detector_aggressive' src/ShadowCore.dylib/hooks/Adapters/DeviceSecurityKit.x || {
+grep -q 'shdw_detector_aggressive' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x || {
     echo 'SETTINGS DRIFT: disable-style adapter path no longer gated on aggressive mode'
     exit 1
 }

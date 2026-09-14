@@ -29,6 +29,12 @@ static BOOL shdw_freeRASP_isEncryptedBinary(void) {
 //   * aggressive only: isEncryptedBinary forced YES + privilegedAccess
 //     (threat ordinal 1) delivery suppression. Both override a detector
 //     verdict rather than shaping the environment, so they stay opt-in.
+//     A/B basis: privilegedAccess/unofficialStore fail on the natural lane, so
+//     their suppression is load-bearing. The isEncryptedBinary force is
+//     unobservable in-harness (appIntegrity is clean on BOTH lanes) because the
+//     runner is ad-hoc-signed: a genuine encryption check passes vacuously
+//     there, while the force is exactly what matters for a sideloaded
+//     store-signed app. Kept — removal is not supported by that result.
 typedef struct {
     uint8_t uuid[16];
     uint32_t encryptedBinaryOffset;
