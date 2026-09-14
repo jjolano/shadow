@@ -1,4 +1,5 @@
-// Plugin: Policy_Process — registered in SHDWPluginRegistry (HookConfiguration.m)
+// Plugin: Policy_Process — registered in SHDWPluginRegistry
+// (HookConfiguration.m)
 #define SHDWPolicyProcessPluginID "Policy_Process"
 
 // Process policy shared by the libc and raw-syscall hook surfaces
@@ -9,9 +10,9 @@
 // sites.
 
 #import <Foundation/Foundation.h>
-#import <sys/types.h>
 #import <stddef.h>
 #import <sys/sysctl.h>
+#import <sys/types.h>
 
 struct kinfo_proc;
 
@@ -26,7 +27,7 @@ struct kinfo_proc;
 // re-classifies, results stay identical. The lock is never held across
 // classification: isCPathRestricted is an ObjC call that could re-enter
 // hooked code.
-BOOL shdw_proc_is_restricted(const struct kinfo_proc* p);
+BOOL shdw_proc_is_restricted(const struct kinfo_proc *p);
 
 // Uncached pid classification for the per-pid sysctl/sysctlbyname
 // paths (KERN_PROC_PID / KERN_PROCARGS2 of a jailbreak daemon): the list
@@ -47,7 +48,8 @@ BOOL shdw_pid_is_restricted(pid_t pid);
 
 // Original-call shape used by the KERN_PROC list filter below
 // (sysctl(2)-compatible argument order).
-typedef int (*shdw_sysctl_proc_fn)(int* name, u_int namelen, void* oldp, size_t* oldlenp, void* newp, size_t newlen);
+typedef int (*shdw_sysctl_proc_fn)(int *name, u_int namelen, void *oldp,
+                                   size_t *oldlenp, void *newp, size_t newlen);
 
 // Filtered KERN_PROC list enumeration (ALL/PGRP/TTY/UID/RUID): two-phase
 // size/full query with one churn retry, restricted processes removed, self
@@ -70,7 +72,8 @@ typedef int (*shdw_sysctl_proc_fn)(int* name, u_int namelen, void* oldp, size_t*
 // the (possibly __syscall-delegating) dispatch — the filter then sets the
 // in-progress flag that the dispatch checks (shdw_proc_list_in_progress)
 // before applying this policy again.
-int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, void* oldp, size_t* oldlenp, BOOL reentrant);
+int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int *mib, u_int miblen,
+                            void *oldp, size_t *oldlenp, BOOL reentrant);
 
 // YES while a reentrant KERN_PROC list filter is inside its original calls
 // (see shdw_proc_list_filtered).
@@ -80,16 +83,13 @@ BOOL shdw_proc_list_in_progress(void);
 // buffer in place. The buffer holds pid_t entries; returns the filtered
 // count (0 when everything was removed — the caller reads that as "no
 // processes", the same hiding the sysctl filter achieves).
-int shdw_proc_pids_filtered(pid_t* pids, int count);
-
-// Clears the trace flags a debugger leaves on our own record.
-void shdw_proc_sanitize_self_trace_flags(struct kinfo_proc* p);
+int shdw_proc_pids_filtered(pid_t *pids, int count);
 
 // Full self-record sanitization: trace flags cleared AND kp_eproc.e_ppid
 // forced to 1 — cross-API consistency: getppid() reports parent 1, so the
 // own record must say the same (a detector comparing getppid() against
 // kp_eproc.e_ppid would otherwise see the real parent (debugger, host app)).
-void shdw_proc_sanitize_self_record(struct kinfo_proc* p);
+void shdw_proc_sanitize_self_record(struct kinfo_proc *p);
 
 // Classifies a sysctl MIB as one of the process surfaces. The supported
 // KERN_PROC list selectors (ALL, PGRP, TTY, UID, RUID) classify as LIST;
@@ -97,18 +97,19 @@ void shdw_proc_sanitize_self_record(struct kinfo_proc* p);
 // malformed shapes (including KERN_PROC_PID with a non-positive pid) are
 // NONE and pass through untouched. Safe for NULL name and short namelen.
 typedef enum {
-    SHADW_PROC_MIB_NONE = 0,
-    SHADW_PROC_MIB_LIST,        // {CTL_KERN, KERN_PROC, ALL|PGRP|TTY|UID|RUID[, arg]}
-    SHADW_PROC_MIB_PID_SELF,    // {CTL_KERN, KERN_PROC, KERN_PROC_PID, self}
-    SHADW_PROC_MIB_PID_OTHER,   // {CTL_KERN, KERN_PROC, KERN_PROC_PID, >0, != self}
-    SHADW_PROC_MIB_ARGS_SELF,   // {CTL_KERN, KERN_PROCARGS, self} (legacy argv/env channel)
-    SHADW_PROC_MIB_ARGS_OTHER,  // {CTL_KERN, KERN_PROCARGS, >0, != self}
-    SHADW_PROC_MIB_ARGS2_SELF,  // {CTL_KERN, KERN_PROCARGS2, self}
-    SHADW_PROC_MIB_ARGS2_OTHER, // {CTL_KERN, KERN_PROCARGS2, >0, != self}
-    SHADW_PROC_MIB_BOOTARGS,    // {CTL_KERN, KERN_BOOTARGS}
+  SHADW_PROC_MIB_NONE = 0,
+  SHADW_PROC_MIB_LIST, // {CTL_KERN, KERN_PROC, ALL|PGRP|TTY|UID|RUID[, arg]}
+  SHADW_PROC_MIB_PID_SELF,  // {CTL_KERN, KERN_PROC, KERN_PROC_PID, self}
+  SHADW_PROC_MIB_PID_OTHER, // {CTL_KERN, KERN_PROC, KERN_PROC_PID, >0, != self}
+  SHADW_PROC_MIB_ARGS_SELF, // {CTL_KERN, KERN_PROCARGS, self} (legacy argv/env
+                            // channel)
+  SHADW_PROC_MIB_ARGS_OTHER,  // {CTL_KERN, KERN_PROCARGS, >0, != self}
+  SHADW_PROC_MIB_ARGS2_SELF,  // {CTL_KERN, KERN_PROCARGS2, self}
+  SHADW_PROC_MIB_ARGS2_OTHER, // {CTL_KERN, KERN_PROCARGS2, >0, != self}
+  SHADW_PROC_MIB_BOOTARGS,    // {CTL_KERN, KERN_BOOTARGS}
 } shdw_proc_mib_kind_t;
 
-shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen);
+shdw_proc_mib_kind_t shdw_proc_mib_kind(const int *name, u_int namelen);
 
 // kern.bootargs answer for external callers: stock devices report an empty
 // boot-args string, while jailbreak boot flags (amfi_get_out_of_my_way=1,
@@ -119,4 +120,4 @@ shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen);
 // Returns 0 on success; -1 with errno ENOMEM when the caller's buffer is
 // too short (required size still stored in *oldlenp), EFAULT when oldlenp
 // is NULL. Callers divert only read queries (newp == NULL).
-int shdw_bootargs_filtered(void* oldp, size_t* oldlenp);
+int shdw_bootargs_filtered(void *oldp, size_t *oldlenp);

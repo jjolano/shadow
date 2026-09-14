@@ -8,18 +8,18 @@
 
 #import "../hooks/hooks.h"
 
-#import <string.h>
 #import <ctype.h>
-#import <stdlib.h>
-#import <stdio.h>
-#import <unistd.h>
 #import <pthread.h>
-#import <time.h>
+#import <stdio.h>
+#import <stdlib.h>
+#import <string.h>
 #import <sys/sysctl.h>
+#import <time.h>
+#import <unistd.h>
 
 // libproc.h isn't shipped in the theos SDK; declare the symbols we need
 // (all stable libSystem exports).
-extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
+extern int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
 
 // Short process names (kp_proc.p_comm, MAXCOMLEN=16, so truncated) that
 // belong to jailbreak/reverse-engineering daemons. A sandboxed app cannot
@@ -32,26 +32,28 @@ extern int proc_pidpath(int pid, void* buffer, uint32_t buffersize);
 // tokens only. Single source: the same table backs the executable-path
 // substring check below (unified — the old pid-path checks matched only
 // sshd/frida/dropbear while kinfo matched the full list).
-static const char* const kRestrictedComm[] = {
-    "sshd", "dropbear", "frida", "cynject", "cycript",
-    "cydia", "sileo", "zebra", "substrate", "substrated",
+static const char *const kRestrictedComm[] = {
+    "sshd",       "dropbear",      "frida",       "cynject",   "cycript",
+    "cydia",      "sileo",         "zebra",       "substrate", "substrated",
     "jailbreakd", "amfid_payload", "launchdhook",
 };
 static const size_t kRestrictedCommCount =
     sizeof(kRestrictedComm) / sizeof(kRestrictedComm[0]);
 
-static BOOL shdw_comm_is_restricted(const char* comm) {
-    if(!comm || !comm[0]) return NO;
-    char lower[17];
-    size_t n = 0;
-    for(; comm[n] && n < sizeof(lower) - 1; n++) {
-        lower[n] = (char)tolower((unsigned char)comm[n]);
-    }
-    lower[n] = '\0';
-    for(size_t i = 0; i < kRestrictedCommCount; i++) {
-        if(strstr(lower, kRestrictedComm[i])) return YES;
-    }
+static BOOL shdw_comm_is_restricted(const char *comm) {
+  if (!comm || !comm[0])
     return NO;
+  char lower[17];
+  size_t n = 0;
+  for (; comm[n] && n < sizeof(lower) - 1; n++) {
+    lower[n] = (char)tolower((unsigned char)comm[n]);
+  }
+  lower[n] = '\0';
+  for (size_t i = 0; i < kRestrictedCommCount; i++) {
+    if (strstr(lower, kRestrictedComm[i]))
+      return YES;
+  }
+  return NO;
 }
 
 // Executable-path substring check sharing kRestrictedComm (single source).
@@ -59,12 +61,14 @@ static BOOL shdw_comm_is_restricted(const char* comm) {
 // separate token. Conservative by design: every token is jailbreak-specific
 // (no stock iOS path contains these), so widening the pid-path checks from
 // 3 tokens to the full table adds no stock false-positive surface.
-static BOOL shdw_path_has_restricted_token(NSString* lower) {
-    if(!lower || [lower length] == 0) return NO;
-    for(size_t i = 0; i < kRestrictedCommCount; i++) {
-        if([lower containsString:@(kRestrictedComm[i])]) return YES;
-    }
+static BOOL shdw_path_has_restricted_token(NSString *lower) {
+  if (!lower || [lower length] == 0)
     return NO;
+  for (size_t i = 0; i < kRestrictedCommCount; i++) {
+    if ([lower containsString:@(kRestrictedComm[i])])
+      return YES;
+  }
+  return NO;
 }
 
 // --- kinfo_proc classification cache (pid + process start time) -----------
@@ -75,87 +79,85 @@ static BOOL shdw_path_has_restricted_token(NSString* lower) {
 // Keyed pid+starttime (kinfo) vs pid-only (libproc) as before; only the
 // duration is shared.
 #define SHADW_PROC_CACHE_SIZE 32
-#define SHADW_PROC_CACHE_TTL 2  // seconds
+#define SHADW_PROC_CACHE_TTL 2 // seconds
 
 typedef struct {
-    pid_t pid;
-    time_t start_sec;        // kp_proc.p_starttime
-    suseconds_t start_usec;
-    time_t stamp;            // time(NULL) at fill
-    BOOL restricted;
+  pid_t pid;
+  time_t start_sec; // kp_proc.p_starttime
+  suseconds_t start_usec;
+  time_t stamp; // time(NULL) at fill
+  BOOL restricted;
 } shdw_proc_cache_entry_t;
 
 static shdw_proc_cache_entry_t shdw_proc_cache[SHADW_PROC_CACHE_SIZE];
 static NSUInteger shdw_proc_cache_next = 0;
 static pthread_mutex_t shdw_proc_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
-BOOL shdw_proc_is_restricted(const struct kinfo_proc* p) {
-    pid_t pid = p->kp_proc.p_pid;
-    time_t start_sec = p->kp_proc.p_starttime.tv_sec;
-    suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
-    time_t now = time(NULL);
+BOOL shdw_proc_is_restricted(const struct kinfo_proc *p) {
+  pid_t pid = p->kp_proc.p_pid;
+  time_t start_sec = p->kp_proc.p_starttime.tv_sec;
+  suseconds_t start_usec = p->kp_proc.p_starttime.tv_usec;
+  time_t now = time(NULL);
 
-    pthread_mutex_lock(&shdw_proc_cache_lock);
+  pthread_mutex_lock(&shdw_proc_cache_lock);
 
-    for(NSUInteger i = 0; i < SHADW_PROC_CACHE_SIZE; i++) {
-        const shdw_proc_cache_entry_t* e = &shdw_proc_cache[i];
+  for (NSUInteger i = 0; i < SHADW_PROC_CACHE_SIZE; i++) {
+    const shdw_proc_cache_entry_t *e = &shdw_proc_cache[i];
 
-        if(e->pid == pid
-        && e->start_sec == start_sec
-        && e->start_usec == start_usec
-        && now - e->stamp < SHADW_PROC_CACHE_TTL) {
-            BOOL verdict = e->restricted;
-            pthread_mutex_unlock(&shdw_proc_cache_lock);
-            return verdict;
-        }
+    if (e->pid == pid && e->start_sec == start_sec &&
+        e->start_usec == start_usec && now - e->stamp < SHADW_PROC_CACHE_TTL) {
+      BOOL verdict = e->restricted;
+      pthread_mutex_unlock(&shdw_proc_cache_lock);
+      return verdict;
     }
+  }
 
-    pthread_mutex_unlock(&shdw_proc_cache_lock);
+  pthread_mutex_unlock(&shdw_proc_cache_lock);
 
-    char path[PATH_MAX];
-    BOOL restricted = NO;
-    // p_comm is authoritative even when proc_pidpath EPERMs on a root daemon.
-    if(shdw_comm_is_restricted(p->kp_proc.p_comm)) {
-        restricted = YES;
-    } else if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        NSString *lower = [@(path) lowercaseString];
-        if (shdw_path_has_restricted_token(lower)) {
-            restricted = YES;
-        } else {
-            restricted = [_shadow isCPathRestricted:path];
-        }
+  char path[PATH_MAX];
+  BOOL restricted = NO;
+  // p_comm is authoritative even when proc_pidpath EPERMs on a root daemon.
+  if (shdw_comm_is_restricted(p->kp_proc.p_comm)) {
+    restricted = YES;
+  } else if (proc_pidpath(pid, path, sizeof(path)) > 0) {
+    NSString *lower = [@(path) lowercaseString];
+    if (shdw_path_has_restricted_token(lower)) {
+      restricted = YES;
+    } else {
+      restricted = [_shadow isCPathRestricted:path];
     }
+  }
 
+  pthread_mutex_lock(&shdw_proc_cache_lock);
 
-    pthread_mutex_lock(&shdw_proc_cache_lock);
+  NSUInteger slot = shdw_proc_cache_next;
+  shdw_proc_cache_next = (shdw_proc_cache_next + 1) % SHADW_PROC_CACHE_SIZE;
 
-    NSUInteger slot = shdw_proc_cache_next;
-    shdw_proc_cache_next = (shdw_proc_cache_next + 1) % SHADW_PROC_CACHE_SIZE;
+  shdw_proc_cache[slot].pid = pid;
+  shdw_proc_cache[slot].start_sec = start_sec;
+  shdw_proc_cache[slot].start_usec = start_usec;
+  shdw_proc_cache[slot].stamp = now;
+  shdw_proc_cache[slot].restricted = restricted;
 
-    shdw_proc_cache[slot].pid = pid;
-    shdw_proc_cache[slot].start_sec = start_sec;
-    shdw_proc_cache[slot].start_usec = start_usec;
-    shdw_proc_cache[slot].stamp = now;
-    shdw_proc_cache[slot].restricted = restricted;
-
-    pthread_mutex_unlock(&shdw_proc_cache_lock);
-    return restricted;
+  pthread_mutex_unlock(&shdw_proc_cache_lock);
+  return restricted;
 }
 
 BOOL shdw_pid_restricted_uncached(pid_t pid) {
-    if(pid <= 0) {
-        return NO;
-    }
+  if (pid <= 0) {
+    return NO;
+  }
 
-    char path[PATH_MAX];
+  char path[PATH_MAX];
 
-    if(proc_pidpath(pid, path, sizeof(path)) <= 0) {
-        return NO;  // unclassifiable: keep (same fail-open rule as the caches)
-    }
+  if (proc_pidpath(pid, path, sizeof(path)) <= 0) {
+    return NO; // unclassifiable: keep (same fail-open rule as the caches)
+  }
 
-    NSString *lower = [@(path) lowercaseString];
-    if(shdw_path_has_restricted_token(lower)) return YES;
-    return [_shadow isCPathRestricted:path];
+  NSString *lower = [@(path) lowercaseString];
+  if (shdw_path_has_restricted_token(lower))
+    return YES;
+  return [_shadow isCPathRestricted:path];
 }
 
 // --- libproc pid classification cache (pid only) ---------------------------
@@ -174,9 +176,9 @@ BOOL shdw_pid_restricted_uncached(pid_t pid) {
 // Same SHADW_PROC_CACHE_TTL as the kinfo cache above (shared duration).
 
 typedef struct {
-    pid_t pid;
-    time_t stamp;
-    BOOL restricted;
+  pid_t pid;
+  time_t stamp;
+  BOOL restricted;
 } shdw_pid_cache_entry_t;
 
 static shdw_pid_cache_entry_t shdw_pid_cache[SHADW_PID_CACHE_SIZE];
@@ -184,85 +186,85 @@ static NSUInteger shdw_pid_cache_next = 0;
 static pthread_mutex_t shdw_pid_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 BOOL shdw_pid_is_restricted(pid_t pid) {
-    // Own pid is never restricted: the process's own list entry, pidpath and
-    // pidinfo stay visible, matching the sysctl filter (which sanitizes the
-    // self record instead of dropping it).
-    if(pid == getpid()) {
-        return NO;
+  // Own pid is never restricted: the process's own list entry, pidpath and
+  // pidinfo stay visible, matching the sysctl filter (which sanitizes the
+  // self record instead of dropping it).
+  if (pid == getpid()) {
+    return NO;
+  }
+
+  time_t now = time(NULL);
+
+  pthread_mutex_lock(&shdw_pid_cache_lock);
+
+  for (NSUInteger i = 0; i < SHADW_PID_CACHE_SIZE; i++) {
+    const shdw_pid_cache_entry_t *e = &shdw_pid_cache[i];
+
+    if (e->pid == pid && now - e->stamp < SHADW_PROC_CACHE_TTL) {
+      BOOL verdict = e->restricted;
+      pthread_mutex_unlock(&shdw_pid_cache_lock);
+      return verdict;
+    }
+  }
+
+  pthread_mutex_unlock(&shdw_pid_cache_lock);
+
+  char path[PATH_MAX];
+  BOOL restricted = NO;
+
+  if (proc_pidpath(pid, path, sizeof(path)) > 0) {
+    NSString *lower = [@(path) lowercaseString];
+    if (shdw_path_has_restricted_token(lower)) {
+      restricted = YES;
+    } else {
+      restricted = [_shadow isCPathRestricted:path];
     }
 
-    time_t now = time(NULL);
-
-    pthread_mutex_lock(&shdw_pid_cache_lock);
-
-    for(NSUInteger i = 0; i < SHADW_PID_CACHE_SIZE; i++) {
-        const shdw_pid_cache_entry_t* e = &shdw_pid_cache[i];
-
-        if(e->pid == pid && now - e->stamp < SHADW_PROC_CACHE_TTL) {
-            BOOL verdict = e->restricted;
-            pthread_mutex_unlock(&shdw_pid_cache_lock);
-            return verdict;
-        }
+  } else if (original_sysctl) {
+    // Sandbox EPERM on a root daemon leaves no path to judge: fetch the
+    // kinfo record through the ORIGINAL sysctl (bypasses the hook, so no
+    // re-entry) and classify with the SAME kinfo predicate the sysctl
+    // filter uses, so both channels drop identical sets and their counts
+    // agree. Fail open when the record is unavailable.
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
+    struct kinfo_proc kp;
+    size_t len = sizeof(kp);
+    memset(&kp, 0, sizeof(kp));
+    if (original_sysctl(mib, 4, &kp, &len, NULL, 0) == 0 && len >= sizeof(kp) &&
+        kp.kp_proc.p_pid == pid) {
+      restricted = shdw_proc_is_restricted(&kp);
     }
+  }
 
-    pthread_mutex_unlock(&shdw_pid_cache_lock);
+  pthread_mutex_lock(&shdw_pid_cache_lock);
 
-    char path[PATH_MAX];
-    BOOL restricted = NO;
+  NSUInteger slot = shdw_pid_cache_next;
+  shdw_pid_cache_next = (shdw_pid_cache_next + 1) % SHADW_PID_CACHE_SIZE;
 
-    if(proc_pidpath(pid, path, sizeof(path)) > 0) {
-        NSString *lower = [@(path) lowercaseString];
-        if (shdw_path_has_restricted_token(lower)) {
-            restricted = YES;
-        } else {
-            restricted = [_shadow isCPathRestricted:path];
-        }
+  shdw_pid_cache[slot].pid = pid;
+  shdw_pid_cache[slot].stamp = now;
+  shdw_pid_cache[slot].restricted = restricted;
 
-    } else if(original_sysctl) {
-        // Sandbox EPERM on a root daemon leaves no path to judge: fetch the
-        // kinfo record through the ORIGINAL sysctl (bypasses the hook, so no
-        // re-entry) and classify with the SAME kinfo predicate the sysctl
-        // filter uses, so both channels drop identical sets and their counts
-        // agree. Fail open when the record is unavailable.
-        int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
-        struct kinfo_proc kp;
-        size_t len = sizeof(kp);
-        memset(&kp, 0, sizeof(kp));
-        if(original_sysctl(mib, 4, &kp, &len, NULL, 0) == 0
-           && len >= sizeof(kp) && kp.kp_proc.p_pid == pid) {
-            restricted = shdw_proc_is_restricted(&kp);
-        }
-    }
-
-    pthread_mutex_lock(&shdw_pid_cache_lock);
-
-    NSUInteger slot = shdw_pid_cache_next;
-    shdw_pid_cache_next = (shdw_pid_cache_next + 1) % SHADW_PID_CACHE_SIZE;
-
-    shdw_pid_cache[slot].pid = pid;
-    shdw_pid_cache[slot].stamp = now;
-    shdw_pid_cache[slot].restricted = restricted;
-
-    pthread_mutex_unlock(&shdw_pid_cache_lock);
-    return restricted;
+  pthread_mutex_unlock(&shdw_pid_cache_lock);
+  return restricted;
 }
 
-int shdw_proc_pids_filtered(pid_t* pids, int count) {
-    int out = 0;
+int shdw_proc_pids_filtered(pid_t *pids, int count) {
+  int out = 0;
 
-    for(int i = 0; i < count; i++) {
-        if(shdw_pid_is_restricted(pids[i])) {
-            continue;  // jailbreak daemon: removed from the list
-        }
-
-        if(out != i) {
-            pids[out] = pids[i];
-        }
-
-        out++;
+  for (int i = 0; i < count; i++) {
+    if (shdw_pid_is_restricted(pids[i])) {
+      continue; // jailbreak daemon: removed from the list
     }
 
-    return out;
+    if (out != i) {
+      pids[out] = pids[i];
+    }
+
+    out++;
+  }
+
+  return out;
 }
 
 // --- filtered KERN_PROC list enumeration -----------------------------------
@@ -270,168 +272,166 @@ int shdw_proc_pids_filtered(pid_t* pids, int count) {
 static _Thread_local BOOL shdw_proc_list_in_progress_flag = NO;
 
 BOOL shdw_proc_list_in_progress(void) {
-    return shdw_proc_list_in_progress_flag;
+  return shdw_proc_list_in_progress_flag;
 }
 
-int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int* mib, u_int miblen, void* oldp, size_t* oldlenp, BOOL reentrant) {
-    // Caller-owned MIB: snapshot it once so every original call (size probe,
-    // fetch, churn retry) sees the identical selector, even if the caller
-    // mutates the array from another thread mid-filter. Callers and the
-    // classifier only route 3- or 4-element lists; the copy is bounded
-    // regardless, for memory safety.
-    int snapshot[4];
-    u_int n = miblen < 4 ? miblen : 4;
+int shdw_proc_list_filtered(shdw_sysctl_proc_fn orig, int *mib, u_int miblen,
+                            void *oldp, size_t *oldlenp, BOOL reentrant) {
+  // Caller-owned MIB: snapshot it once so every original call (size probe,
+  // fetch, churn retry) sees the identical selector, even if the caller
+  // mutates the array from another thread mid-filter. Callers and the
+  // classifier only route 3- or 4-element lists; the copy is bounded
+  // regardless, for memory safety.
+  int snapshot[4];
+  u_int n = miblen < 4 ? miblen : 4;
 
-    memcpy(snapshot, mib, (size_t) n * sizeof(int));
+  memcpy(snapshot, mib, (size_t)n * sizeof(int));
 
-    if(reentrant) {
-        shdw_proc_list_in_progress_flag = YES;
+  if (reentrant) {
+    shdw_proc_list_in_progress_flag = YES;
+  }
+
+  // Size-only query: hand the kernel's own estimate back UNCHANGED. Stock
+  // KERN_PROC size-only answers the whole-table size plus KERN_PROCSLOP
+  // regardless of selector, so rewriting it to the exact filtered size is
+  // itself a filtered-list fingerprint. One direct call, no full fetch.
+  if (oldp == NULL) {
+    int ret = orig(snapshot, n, NULL, oldlenp, NULL, 0);
+    if (reentrant) {
+      shdw_proc_list_in_progress_flag = NO;
     }
+    return ret;
+  }
 
-    // Size-only query: hand the kernel's own estimate back UNCHANGED. Stock
-    // KERN_PROC size-only answers the whole-table size plus KERN_PROCSLOP
-    // regardless of selector, so rewriting it to the exact filtered size is
-    // itself a filtered-list fingerprint. One direct call, no full fetch.
-    if(oldp == NULL) {
-        int ret = orig(snapshot, n, NULL, oldlenp, NULL, 0);
-        if(reentrant) {
-            shdw_proc_list_in_progress_flag = NO;
-        }
-        return ret;
+  size_t capacity = 0;
+  int ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
+
+  if (ret != 0) {
+    if (reentrant) {
+      shdw_proc_list_in_progress_flag = NO;
     }
+    return ret; // kernel owns the error and *oldlenp
+  }
 
-    size_t capacity = 0;
-    int ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
+  // Slack for process churn between the size and full queries.
+  capacity += sizeof(struct kinfo_proc) * 8;
 
-    if(ret != 0) {
-        if(reentrant) {
-            shdw_proc_list_in_progress_flag = NO;
-        }
-        return ret;  // kernel owns the error and *oldlenp
+  struct kinfo_proc *procs = malloc(capacity);
+
+  if (!procs) {
+    errno = ENOMEM;
+    if (reentrant) {
+      shdw_proc_list_in_progress_flag = NO;
     }
+    return -1;
+  }
 
-    // Slack for process churn between the size and full queries.
-    capacity += sizeof(struct kinfo_proc) * 8;
+  size_t actual = capacity;
+  ret = orig(snapshot, n, procs, &actual, NULL, 0);
 
-    struct kinfo_proc* procs = malloc(capacity);
-
-    if(!procs) {
-        errno = ENOMEM;
-        if(reentrant) {
-            shdw_proc_list_in_progress_flag = NO;
-        }
-        return -1;
-    }
-
-    size_t actual = capacity;
-    ret = orig(snapshot, n, procs, &actual, NULL, 0);
-
-    if(ret != 0 && errno == ENOMEM) {
-        // Churn outgrew the first buffer. A full KERN_PROC fetch reports the
-        // bytes copied in *oldlenp on ENOMEM, not the required capacity, so
-        // re-probe the size through the same MIB instead of reusing it.
-        free(procs);
-
-        capacity = 0;
-        ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
-
-        if(ret != 0) {
-            if(reentrant) {
-                shdw_proc_list_in_progress_flag = NO;
-            }
-            return ret;  // kernel owns the error and *oldlenp
-        }
-
-        capacity += sizeof(struct kinfo_proc) * 8;
-        procs = malloc(capacity);
-
-        if(!procs) {
-            errno = ENOMEM;
-            if(reentrant) {
-                shdw_proc_list_in_progress_flag = NO;
-            }
-            return -1;
-        }
-
-        actual = capacity;
-        ret = orig(snapshot, n, procs, &actual, NULL, 0);
-    }
-
-    if(ret != 0) {
-        free(procs);
-        if(reentrant) {
-            shdw_proc_list_in_progress_flag = NO;
-        }
-        return ret;
-    }
-
-    int count = (int)(actual / sizeof(struct kinfo_proc));
-    int out = 0;
-
-    for(int i = 0; i < count; i++) {
-        struct kinfo_proc* p = &procs[i];
-
-        if(p->kp_proc.p_pid == getpid()) {
-            // Never report our own trace flags; and cross-API consistency:
-            // getppid() reports parent 1, so the own record must say the
-            // same (see the per-pid hooks).
-            shdw_proc_sanitize_self_record(p);
-        } else if(shdw_proc_is_restricted(p)) {
-            continue;  // jailbreak daemon: removed from the list
-        }
-
-        if(out != i) {
-            procs[out] = procs[i];
-        }
-
-        out++;
-    }
-
-    size_t needed = (size_t) out * sizeof(struct kinfo_proc);
-
-    // Capacity in whole records: copy the largest whole-record filtered
-    // prefix that fits and never a partial record (see the header contract).
-    size_t fit = (*oldlenp / sizeof(struct kinfo_proc)) * sizeof(struct kinfo_proc);
-
-    if(fit > needed) {
-        fit = needed;
-    }
-
-    if(fit != 0) {
-        memcpy(oldp, procs, fit);
-    }
-
+  if (ret != 0 && errno == ENOMEM) {
+    // Churn outgrew the first buffer. A full KERN_PROC fetch reports the
+    // bytes copied in *oldlenp on ENOMEM, not the required capacity, so
+    // re-probe the size through the same MIB instead of reusing it.
     free(procs);
 
-    if(fit < needed) {
-        // Short buffer: measured target ABI — the fitting prefix above is
-        // copied, then ENOMEM with *oldlenp = 0.
-        *oldlenp = 0;
-        errno = ENOMEM;
-        if(reentrant) {
-            shdw_proc_list_in_progress_flag = NO;
-        }
-        return -1;
+    capacity = 0;
+    ret = orig(snapshot, n, NULL, &capacity, NULL, 0);
+
+    if (ret != 0) {
+      if (reentrant) {
+        shdw_proc_list_in_progress_flag = NO;
+      }
+      return ret; // kernel owns the error and *oldlenp
     }
 
-    *oldlenp = needed;
-    if(reentrant) {
+    capacity += sizeof(struct kinfo_proc) * 8;
+    procs = malloc(capacity);
+
+    if (!procs) {
+      errno = ENOMEM;
+      if (reentrant) {
         shdw_proc_list_in_progress_flag = NO;
+      }
+      return -1;
     }
-    return 0;
+
+    actual = capacity;
+    ret = orig(snapshot, n, procs, &actual, NULL, 0);
+  }
+
+  if (ret != 0) {
+    free(procs);
+    if (reentrant) {
+      shdw_proc_list_in_progress_flag = NO;
+    }
+    return ret;
+  }
+
+  int count = (int)(actual / sizeof(struct kinfo_proc));
+  int out = 0;
+
+  for (int i = 0; i < count; i++) {
+    struct kinfo_proc *p = &procs[i];
+
+    if (p->kp_proc.p_pid == getpid()) {
+      // Never report our own trace flags; and cross-API consistency:
+      // getppid() reports parent 1, so the own record must say the
+      // same (see the per-pid hooks).
+      shdw_proc_sanitize_self_record(p);
+    } else if (shdw_proc_is_restricted(p)) {
+      continue; // jailbreak daemon: removed from the list
+    }
+
+    if (out != i) {
+      procs[out] = procs[i];
+    }
+
+    out++;
+  }
+
+  size_t needed = (size_t)out * sizeof(struct kinfo_proc);
+
+  // Capacity in whole records: copy the largest whole-record filtered
+  // prefix that fits and never a partial record (see the header contract).
+  size_t fit =
+      (*oldlenp / sizeof(struct kinfo_proc)) * sizeof(struct kinfo_proc);
+
+  if (fit > needed) {
+    fit = needed;
+  }
+
+  if (fit != 0) {
+    memcpy(oldp, procs, fit);
+  }
+
+  free(procs);
+
+  if (fit < needed) {
+    // Short buffer: measured target ABI — the fitting prefix above is
+    // copied, then ENOMEM with *oldlenp = 0.
+    *oldlenp = 0;
+    errno = ENOMEM;
+    if (reentrant) {
+      shdw_proc_list_in_progress_flag = NO;
+    }
+    return -1;
+  }
+
+  *oldlenp = needed;
+  if (reentrant) {
+    shdw_proc_list_in_progress_flag = NO;
+  }
+  return 0;
 }
 
 // --- self-record sanitization ----------------------------------------------
 
-void shdw_proc_sanitize_self_trace_flags(struct kinfo_proc* p) {
-    // CS_DEBUGGED-adjacent kernel state: never report our own trace flags.
-    p->kp_proc.p_flag &= ~P_TRACED;
-    p->kp_proc.p_flag &= ~P_SELECT;
-}
-
-void shdw_proc_sanitize_self_record(struct kinfo_proc* p) {
-    shdw_proc_sanitize_self_trace_flags(p);
-    p->kp_eproc.e_ppid = 1;
+void shdw_proc_sanitize_self_record(struct kinfo_proc *p) {
+  // CS_DEBUGGED-adjacent kernel state: never report our own trace flags.
+  p->kp_proc.p_flag &= ~P_TRACED;
+  p->kp_proc.p_flag &= ~P_SELECT;
+  p->kp_eproc.e_ppid = 1;
 }
 
 // --- sysctl MIB classification ---------------------------------------------
@@ -441,113 +441,113 @@ void shdw_proc_sanitize_self_record(struct kinfo_proc* p) {
 static int shdw_bootargs_mib[2] = {0, 0};
 static BOOL shdw_bootargs_mib_resolved = NO;
 
-shdw_proc_mib_kind_t shdw_proc_mib_kind(const int* name, u_int namelen) {
-    if(!name || namelen == 0) {
-        return SHADW_PROC_MIB_NONE;
+shdw_proc_mib_kind_t shdw_proc_mib_kind(const int *name, u_int namelen) {
+  if (!name || namelen == 0) {
+    return SHADW_PROC_MIB_NONE;
+  }
+
+  if (name[0] != CTL_KERN) {
+    return SHADW_PROC_MIB_NONE;
+  }
+
+  // KERN_BOOTARGS is a direct CTL_KERN child — but its MIB number is NOT
+  // stable across xnu builds (the theos SDK ships no constant, and a
+  // hardcoded guess answers ENOENT from the kernel on xnu-8020). Resolve
+  // the real MIB once via sysctlnametomib and classify by value. Failure
+  // to resolve classifies NONE (fail-open: pass-through untouched).
+  if (!shdw_bootargs_mib_resolved) {
+    size_t miblen = sizeof(shdw_bootargs_mib) / sizeof(shdw_bootargs_mib[0]);
+    shdw_bootargs_mib_resolved = YES; // resolve once; benign race (idempotent)
+    sysctlnametomib("kern.bootargs", shdw_bootargs_mib, &miblen);
+  }
+
+  if (shdw_bootargs_mib[0] != 0 && namelen == 2 &&
+      name[0] == shdw_bootargs_mib[0] && name[1] == shdw_bootargs_mib[1]) {
+    return SHADW_PROC_MIB_BOOTARGS;
+  }
+
+  if (namelen < 3) {
+    return SHADW_PROC_MIB_NONE;
+  }
+
+  if (name[1] == KERN_PROC) {
+    // Supported list selectors: ALL (3-element MIB; some callers append
+    // a legacy 4th zero element) and PGRP/TTY/UID/RUID (selector value
+    // + exactly one argument). SESSION and LCID are absent: the kernel
+    // answers ENOTSUP for them, so they pass through untouched.
+    if (name[2] == KERN_PROC_ALL) {
+      if (namelen == 3 || (namelen == 4 && name[3] == 0)) {
+        return SHADW_PROC_MIB_LIST;
+      }
+
+      return SHADW_PROC_MIB_NONE;
     }
 
-    if(name[0] != CTL_KERN) {
-        return SHADW_PROC_MIB_NONE;
+    if ((name[2] == KERN_PROC_PGRP || name[2] == KERN_PROC_TTY ||
+         name[2] == KERN_PROC_UID || name[2] == KERN_PROC_RUID) &&
+        namelen == 4) {
+      return SHADW_PROC_MIB_LIST;
     }
 
-    // KERN_BOOTARGS is a direct CTL_KERN child — but its MIB number is NOT
-    // stable across xnu builds (the theos SDK ships no constant, and a
-    // hardcoded guess answers ENOENT from the kernel on xnu-8020). Resolve
-    // the real MIB once via sysctlnametomib and classify by value. Failure
-    // to resolve classifies NONE (fail-open: pass-through untouched).
-    if(!shdw_bootargs_mib_resolved) {
-        size_t miblen = sizeof(shdw_bootargs_mib) / sizeof(shdw_bootargs_mib[0]);
-        shdw_bootargs_mib_resolved = YES;   // resolve once; benign race (idempotent)
-        sysctlnametomib("kern.bootargs", shdw_bootargs_mib, &miblen);
-    }
+    if (name[2] == KERN_PROC_PID && namelen == 4) {
+      if (name[3] == (int)getpid()) {
+        return SHADW_PROC_MIB_PID_SELF;
+      }
 
-    if(shdw_bootargs_mib[0] != 0 && namelen == 2 &&
-       name[0] == shdw_bootargs_mib[0] && name[1] == shdw_bootargs_mib[1]) {
-        return SHADW_PROC_MIB_BOOTARGS;
-    }
+      if (name[3] > 0) {
+        return SHADW_PROC_MIB_PID_OTHER;
+      }
 
-    if(namelen < 3) {
-        return SHADW_PROC_MIB_NONE;
-    }
-
-    if(name[1] == KERN_PROC) {
-        // Supported list selectors: ALL (3-element MIB; some callers append
-        // a legacy 4th zero element) and PGRP/TTY/UID/RUID (selector value
-        // + exactly one argument). SESSION and LCID are absent: the kernel
-        // answers ENOTSUP for them, so they pass through untouched.
-        if(name[2] == KERN_PROC_ALL) {
-            if(namelen == 3 || (namelen == 4 && name[3] == 0)) {
-                return SHADW_PROC_MIB_LIST;
-            }
-
-            return SHADW_PROC_MIB_NONE;
-        }
-
-        if((name[2] == KERN_PROC_PGRP || name[2] == KERN_PROC_TTY
-            || name[2] == KERN_PROC_UID || name[2] == KERN_PROC_RUID)
-           && namelen == 4) {
-            return SHADW_PROC_MIB_LIST;
-        }
-
-        if(name[2] == KERN_PROC_PID && namelen == 4) {
-            if(name[3] == (int) getpid()) {
-                return SHADW_PROC_MIB_PID_SELF;
-            }
-
-            if(name[3] > 0) {
-                return SHADW_PROC_MIB_PID_OTHER;
-            }
-
-            // Non-positive pid: not our record and not a classifiable
-            // other — pass through untouched.
-            return SHADW_PROC_MIB_NONE;
-        }
-
-        return SHADW_PROC_MIB_NONE;
-    }
-
-    // KERN_PROCARGS (legacy) and KERN_PROCARGS2 are direct CTL_KERN
-    // children: {CTL_KERN, KERN_PROCARGS(2), pid}. The legacy channel
-    // carries the same launch argv/envp, so it classifies the same and the
-    // hook bodies share shdw_procargs2_filter. Numbers are literals: the
-    // theos SDK only defines KERN_PROCARGS2 under __APPLE_API_UNSTABLE,
-    // and KERN_PROCARGS is always 38 (sysctl.h name list position).
-    if((name[1] == 38 || name[1] == 49) && namelen == 3) {
-        BOOL isArgs2 = (name[1] == 49);
-
-        if(name[2] == (int) getpid()) {
-            return isArgs2 ? SHADW_PROC_MIB_ARGS2_SELF : SHADW_PROC_MIB_ARGS_SELF;
-        }
-
-        if(name[2] > 0) {
-            return isArgs2 ? SHADW_PROC_MIB_ARGS2_OTHER : SHADW_PROC_MIB_ARGS_OTHER;
-        }
+      // Non-positive pid: not our record and not a classifiable
+      // other — pass through untouched.
+      return SHADW_PROC_MIB_NONE;
     }
 
     return SHADW_PROC_MIB_NONE;
+  }
+
+  // KERN_PROCARGS (legacy) and KERN_PROCARGS2 are direct CTL_KERN
+  // children: {CTL_KERN, KERN_PROCARGS(2), pid}. The legacy channel
+  // carries the same launch argv/envp, so it classifies the same and the
+  // hook bodies share shdw_procargs2_filter. Numbers are literals: the
+  // theos SDK only defines KERN_PROCARGS2 under __APPLE_API_UNSTABLE,
+  // and KERN_PROCARGS is always 38 (sysctl.h name list position).
+  if ((name[1] == 38 || name[1] == 49) && namelen == 3) {
+    BOOL isArgs2 = (name[1] == 49);
+
+    if (name[2] == (int)getpid()) {
+      return isArgs2 ? SHADW_PROC_MIB_ARGS2_SELF : SHADW_PROC_MIB_ARGS_SELF;
+    }
+
+    if (name[2] > 0) {
+      return isArgs2 ? SHADW_PROC_MIB_ARGS2_OTHER : SHADW_PROC_MIB_ARGS_OTHER;
+    }
+  }
+
+  return SHADW_PROC_MIB_NONE;
 }
 
 // --- kern.bootargs answer ---------------------------------------------------
 
-int shdw_bootargs_filtered(void* oldp, size_t* oldlenp) {
-    if(!oldlenp) {
-        errno = EFAULT;
-        return -1;
-    }
+int shdw_bootargs_filtered(void *oldp, size_t *oldlenp) {
+  if (!oldlenp) {
+    errno = EFAULT;
+    return -1;
+  }
 
-    if(!oldp) {
-        // Size-only query: an empty string is one NUL byte.
-        *oldlenp = 1;
-        return 0;
-    }
-
-    if(*oldlenp < 1) {
-        *oldlenp = 1;
-        errno = ENOMEM;
-        return -1;
-    }
-
-    ((char*) oldp)[0] = '\0';
+  if (!oldp) {
+    // Size-only query: an empty string is one NUL byte.
     *oldlenp = 1;
     return 0;
+  }
+
+  if (*oldlenp < 1) {
+    *oldlenp = 1;
+    errno = ENOMEM;
+    return -1;
+  }
+
+  ((char *)oldp)[0] = '\0';
+  *oldlenp = 1;
+  return 0;
 }
