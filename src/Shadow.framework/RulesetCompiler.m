@@ -353,6 +353,34 @@ static id shdwCacheUnwrapNil(id value) {
     return result;
 }
 
+// Builds a lowercase immutable set from a string array (load-time normalization
+// shared by scheme + bundle-ID blacklists).
++ (NSSet*)lowercaseSetFromArray:(NSArray<NSString *>*)strings {
+    NSMutableSet* lower = [NSMutableSet setWithCapacity:[strings count]];
+
+    for(NSString* s in strings) {
+        [lower addObject:[s lowercaseString]];
+    }
+
+    return [lower copy];
+}
+
+// Parses predicate format strings and ORs them together; malformed entries are
+// logged and skipped. Returns nil if none parse (same as leaving the slot unset).
++ (NSPredicate*)orPredicateFromStrings:(NSArray<NSString *>*)strings {
+    NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
+
+    for(NSString* pred_str in strings) {
+        @try {
+            [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
+        } @catch(NSException* exception) {
+            NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
+        }
+    }
+
+    return [preds count] > 0 ? [NSCompoundPredicate orPredicateWithSubpredicates:preds] : nil;
+}
+
 // Filters FileSystemStructure to a {dirs, paths} pair of sorted flat string
 // arrays; anything else is logged and skipped (malformed rulesets never
 // crash). dirs = the structure keys, paths = keys + children. Old dict
@@ -387,20 +415,8 @@ static id shdwCacheUnwrapNil(id value) {
             }
         }
 
-        // Verify sortedness; if unsorted, sort (defensive for hand-written
-        // fixtures).
-        BOOL sorted = YES;
-
-        for(NSUInteger i = 1; i < [strings count]; i++) {
-            if([[strings objectAtIndex:i - 1] compare:[strings objectAtIndex:i]] == NSOrderedDescending) {
-                sorted = NO;
-                break;
-            }
-        }
-
-        if(!sorted) {
-            strings = [[strings sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
-        }
+        // Defensive sort for hand-written fixtures (already-sorted is a no-op).
+        strings = [[strings sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
 
         [result setObject:[strings copy] forKey:key];
     }
@@ -422,13 +438,7 @@ static id shdwCacheUnwrapNil(id value) {
         // lowercases the query — see isSchemeRestricted:) so a
         // case-variant probe ("Cydia" vs "cydia") can never bypass a
         // scheme rule.
-        NSMutableSet* lower = [NSMutableSet setWithCapacity:[urlschemes count]];
-
-        for(NSString* scheme in urlschemes) {
-            [lower addObject:[scheme lowercaseString]];
-        }
-
-        ruleset->set_urlschemes = [lower copy];
+        ruleset->set_urlschemes = [self lowercaseSetFromArray:urlschemes];
     }
 
     NSArray* whitelist_paths = [self validatedStringArray:[payload objectForKey:@"WhitelistExactPaths"] forKey:@"WhitelistExactPaths"];
@@ -468,49 +478,19 @@ static id shdwCacheUnwrapNil(id value) {
     NSArray* bundleids = [self validatedStringArray:[payload objectForKey:@"BlacklistBundleIDs"] forKey:@"BlacklistBundleIDs"];
 
     if(bundleids) {
-        NSMutableSet* lower = [NSMutableSet setWithCapacity:[bundleids count]];
-
-        for(NSString* bundleID in bundleids) {
-            [lower addObject:[bundleID lowercaseString]];
-        }
-
-        ruleset->set_bundleids = [lower copy];
+        ruleset->set_bundleids = [self lowercaseSetFromArray:bundleids];
     }
 
     NSArray* whitelist_preds = [self validatedStringArray:[payload objectForKey:@"WhitelistPredicates"] forKey:@"WhitelistPredicates"];
 
     if(whitelist_preds) {
-        NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
-
-        for(NSString* pred_str in whitelist_preds) {
-            @try {
-                [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
-            } @catch(NSException* exception) {
-                NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
-            }
-        }
-
-        if([preds count] > 0) {
-            ruleset->pred_whitelist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
-        }
+        ruleset->pred_whitelist = [self orPredicateFromStrings:whitelist_preds];
     }
 
     NSArray* blacklist_preds = [self validatedStringArray:[payload objectForKey:@"BlacklistPredicates"] forKey:@"BlacklistPredicates"];
 
     if(blacklist_preds) {
-        NSMutableArray<NSPredicate *>* preds = [NSMutableArray new];
-
-        for(NSString* pred_str in blacklist_preds) {
-            @try {
-                [preds addObject:[NSPredicate predicateWithFormat:pred_str]];
-            } @catch(NSException* exception) {
-                NSLog(@"[Ruleset] invalid predicate '%@': %@; skipping", pred_str, exception);
-            }
-        }
-
-        if([preds count] > 0) {
-            ruleset->pred_blacklist = [NSCompoundPredicate orPredicateWithSubpredicates:preds];
-        }
+        ruleset->pred_blacklist = [self orPredicateFromStrings:blacklist_preds];
     }
 }
 

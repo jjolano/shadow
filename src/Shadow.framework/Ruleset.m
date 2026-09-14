@@ -86,15 +86,8 @@ NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
 
     while(tmp.length > 0) {
         if([self _structureContains:dirs path:tmp]) {
-            // Relative-root key (""): match-all iff the structure marks it
-            // (a "/" child). Absolute structures never reach "" — the walk
-            // stops at "/".
-            if(tmp.length == 0) {
-                return [self _structureContains:paths path:@"/"];
-            }
-
-            // Offset past the key plus its separator. The empty key (relative
-            // root) has no separator, so the next component starts at 0.
+            // Offset past the key plus its separator. A "/" key (tmp.length 1)
+            // has no trailing separator, so the next component starts at 1.
             NSUInteger base = (tmp.length <= 1) ? tmp.length : tmp.length + 1;
             NSRange slash = [path rangeOfString:@"/" options:0 range:NSMakeRange(base, [path length] - base)];
             NSString* component = (slash.location == NSNotFound)
@@ -117,48 +110,44 @@ NSString* const kShadowRulesetCacheSuffix = @".shadowcache";
 }
 
 - (BOOL)isPathWhitelisted:(NSString *)path {
-    // Exact set and prefix lookups first; the compound predicate last (it is a
-    // pure boolean over the input path, so OR-ing it in later is identical).
-    if([set_whitelist containsObject:path]) {
-        return YES;
-    }
-
-    if([self _path:path matchesPrefixDict:dict_whitelist matchAll:whitelist_match_all]) {
-        return YES;
-    }
-
-    return pred_whitelist ? [pred_whitelist evaluateWithObject:path] : NO;
+    return [self _path:path matchesSet:set_whitelist prefixDict:dict_whitelist matchAll:whitelist_match_all predicate:pred_whitelist];
 }
 
 - (BOOL)isPathBlacklisted:(NSString *)path {
-    if([set_blacklist containsObject:path]) {
+    return [self _path:path matchesSet:set_blacklist prefixDict:dict_blacklist matchAll:blacklist_match_all predicate:pred_blacklist];
+}
+
+// Exact set and prefix lookups first; the compound predicate last (it is a pure
+// boolean over the input path, so OR-ing it in later is identical).
+- (BOOL)_path:(NSString *)path matchesSet:(NSSet *)set prefixDict:(NSDictionary *)dict matchAll:(BOOL)matchAll predicate:(NSPredicate *)pred {
+    if([set containsObject:path]) {
         return YES;
     }
 
-    if([self _path:path matchesPrefixDict:dict_blacklist matchAll:blacklist_match_all]) {
+    if([self _path:path matchesPrefixDict:dict matchAll:matchAll]) {
         return YES;
     }
 
-    return pred_blacklist ? [pred_blacklist evaluateWithObject:path] : NO;
+    return pred ? [pred evaluateWithObject:path] : NO;
 }
 
 - (BOOL)isSchemeRestricted:(NSString *)scheme {
-    if(!scheme || [scheme length] == 0) {
-        return NO;
-    }
-
-    // C0-3: schemes are normalized to lowercase at load (_compile); lowercase
-    // the query here too so a case-variant probe can never bypass a rule.
-    return [set_urlschemes containsObject:[scheme lowercaseString]];
+    // C0-3: schemes are normalized to lowercase at load (_compile); the helper
+    // lowercases the query too so a case-variant probe can never bypass a rule.
+    return [self _value:scheme inRestrictedSet:set_urlschemes];
 }
 
 - (BOOL)isBundleIDRestricted:(NSString *)bundleID {
-    if(!bundleID || [bundleID length] == 0) {
+    return [self _value:bundleID inRestrictedSet:set_bundleids];
+}
+
+// nil/empty query is never restricted; otherwise membership in the lowercased
+// load-time set (shared by scheme + bundle-ID checks).
+- (BOOL)_value:(NSString *)value inRestrictedSet:(NSSet *)set {
+    if(!value || [value length] == 0) {
         return NO;
     }
 
-    // C0-3: same normalization as the scheme set — lowercase at load,
-    // lowercase the query here.
-    return [set_bundleids containsObject:[bundleID lowercaseString]];
+    return [set containsObject:[value lowercaseString]];
 }
 @end
