@@ -18,11 +18,13 @@ typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
   // mode Settings offers (a switch stores 1).
   ShadowPseudoSandboxModeAudit = 1,
   // Denies the pseudo set on top of the belt. Measured on device (iOS 15.6,
-  // rootless): with this armed the harness launches but never produces a
-  // report, so an instrumented app cannot complete a run — the pseudo deny set
-  // is wider than a real app sandbox's. Deliberately not offered in Settings;
-  // arm it from the pref to reproduce or to re-measure before widening the
-  // allowlist.
+  // rootless) against a captured app context: the set covers /var/folders (the
+  // system temp root), /tmp, /var/mobile (the parent of every app container)
+  // and /var/db — all of which a real app sandbox admits. With this armed an
+  // instrumented app launches but never completes a run, so it is deliberately
+  // not offered in Settings. Pinned by
+  // RestrictionTests/TestPseudoSandboxCapturedAppContext; widen the allowlist
+  // in shdwPseudoWouldDeny before ever surfacing it.
   ShadowPseudoSandboxModeStrict = 2,
 };
 
