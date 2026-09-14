@@ -14,6 +14,7 @@ typedef struct {
 
 typedef NS_ENUM(NSInteger, ShadowPseudoSandboxMode) {
     ShadowPseudoSandboxModeOff = 0,
+    ShadowPseudoSandboxModeAudit = 1,
     ShadowPseudoSandboxModeStrict = 2,
 };
 
@@ -25,6 +26,11 @@ __attribute__((visibility("hidden")))
 - (instancetype)initWithContext:(ShadowRestrictionContext)context;
 
 - (void)configurePseudoSandboxMode:(NSInteger)mode;
+
+// Audit sink: the paths Strict would have denied, newest first. In-memory and
+// bounded; empty unless audit mode is on. Hidden class — not ABI surface.
+- (NSArray<NSString*>*)auditWouldDenyPaths;
+- (NSUInteger)auditWouldDenyCount;
 
 - (BOOL)isPathRestrictedQuery:(ShadowRestrictionQuery *)query;
 - (BOOL)isMountPathRestricted:(NSString *)path;

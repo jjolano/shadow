@@ -163,10 +163,18 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
     return NO;
 }
 
+// Audit sink bound: fixed ring, newest first. Big enough for a detector's
+// probe burst, small enough that a hot evaluate loop cannot grow memory.
+static const NSUInteger kShadowAuditRingCapacity = 32;
+
 @implementation ShadowRestrictionEngine {
     ShadowRulesetStore* store;
     ShadowRestrictionContext _context;
     ShadowPseudoSandboxMode pseudoSandboxMode;
+    // Audit sink: in-memory and bounded (fixed ring, newest first). No file
+    // and no default logging — a persistent artifact or a per-query log would
+    // itself be a detection oracle. Silent unless audit mode is on.
+    NSMutableArray<NSString*>* auditPaths;
     NSString* mountRoot;
 
     // One generation-aware decision cache split by responsibility:
@@ -192,6 +200,7 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         // Captured during construction, before mount hooks are installed.
         mountRoot = [[Shadow getStandardizedPath:shdw_jbroot_prefix()] copy];
         pseudoSandboxMode = ShadowPseudoSandboxModeOff;
+        auditPaths = [NSMutableArray arrayWithCapacity:kShadowAuditRingCapacity];
         store = [ShadowRulesetStore new];
         sharedCache = [NSCache new];
         [sharedCache setCountLimit:1024];
@@ -203,13 +212,49 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
 }
 
 - (void)configurePseudoSandboxMode:(NSInteger)mode {
-    ShadowPseudoSandboxMode normalized = mode >= ShadowPseudoSandboxModeStrict
-        ? ShadowPseudoSandboxModeStrict
-        : ShadowPseudoSandboxModeOff;
+    ShadowPseudoSandboxMode normalized;
+    if(mode >= ShadowPseudoSandboxModeStrict) {
+        normalized = ShadowPseudoSandboxModeStrict;
+    } else if(mode == ShadowPseudoSandboxModeAudit) {
+        normalized = ShadowPseudoSandboxModeAudit;
+    } else {
+        normalized = ShadowPseudoSandboxModeOff;
+    }
 
     if(pseudoSandboxMode != normalized) {
         pseudoSandboxMode = normalized;
+        @synchronized(auditPaths) {
+            [auditPaths removeAllObjects];
+        }
         [sharedCache removeAllObjects];
+    }
+}
+
+// Records one would-be denial. Newest first, oldest dropped at the bound.
+// @synchronized: hooks run on arbitrary threads; an unsynchronized mutable
+// array under concurrent evaluate would corrupt the heap.
+- (void)_recordAuditWouldDenyPath:(NSString*)path {
+    if(!path.length) {
+        return;
+    }
+
+    @synchronized(auditPaths) {
+        if(auditPaths.count == kShadowAuditRingCapacity) {
+            [auditPaths removeLastObject];
+        }
+        [auditPaths insertObject:path atIndex:0];
+    }
+}
+
+- (NSArray<NSString*>*)auditWouldDenyPaths {
+    @synchronized(auditPaths) {
+        return [auditPaths copy];
+    }
+}
+
+- (NSUInteger)auditWouldDenyCount {
+    @synchronized(auditPaths) {
+        return auditPaths.count;
     }
 }
 
@@ -255,7 +300,10 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
        ([path isEqualToString:@"/private/preboot"] ||
         [path isEqualToString:@"/Library/LaunchDaemons"] ||
         [path hasSuffix:@"/embedded.mobileprovision"])) return YES;
-    if(pseudoSandboxMode == ShadowPseudoSandboxModeStrict && shdwPseudoWouldDeny(_context, path)) return YES;
+    if(pseudoSandboxMode != ShadowPseudoSandboxModeOff && shdwPseudoWouldDeny(_context, path)) {
+        if(pseudoSandboxMode == ShadowPseudoSandboxModeStrict) return YES;
+        [self _recordAuditWouldDenyPath:path];
+    }
     if(shdwIsSandboxExempt(_context, path)) return NO;
 
     ShadowRulesetSnapshot* snapshot = [store currentSnapshot];
@@ -541,8 +589,17 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot* snapshot, NSString* pa
         }
 
         done:
-        if(pseudoMode == ShadowPseudoSandboxModeStrict && pseudoWouldDeny) {
-            restricted = YES;
+        if(pseudoWouldDeny) {
+            if(pseudoMode == ShadowPseudoSandboxModeStrict) {
+                restricted = YES;
+            } else {
+                // Audit: record the would-be denial and still return the belt verdict.
+                // ponytail: a cached belt verdict short-circuits above the pseudo
+                // check, so the ring keeps the first would-deny per 0.5s cache
+                // window, not every query. Bypass sharedCache in audit mode if
+                // per-query history is ever needed.
+                [self _recordAuditWouldDenyPath:path];
+            }
         }
 
         if(cacheable) {

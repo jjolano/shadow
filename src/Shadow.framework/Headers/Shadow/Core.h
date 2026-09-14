@@ -62,9 +62,9 @@ __attribute__((visibility("default")))
 + (NSString *)shdwMCMContainerPathForBundleID:(NSString *)bid dataRoot:(NSString *)dataRoot;
 + (NSArray<NSString *> *)shdwGroupContainersUnderRoot:(NSString *)root;
 
-// Pseudo sandbox mode is fixed for the injected process: 0 = off, 2 = strict.
-// (A persisted 1, the removed audit mode, resolves to off.) ShadowCore applies
-// the resolved per-app setting at startup.
+// Pseudo sandbox mode is fixed for the injected process: 0 = off, 1 = audit
+// (record would-be denials in memory, never deny), 2 = strict. ShadowCore
+// applies the resolved per-app setting at startup.
 - (void)shdwConfigurePseudoSandboxMode:(NSInteger)mode;
 
 - (BOOL)isAddrRestricted:(const void *)addr;
