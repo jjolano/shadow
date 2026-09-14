@@ -276,15 +276,29 @@ static shdw_sec_key_ref_t shdw_replaced_SecKeyCreateRandomKey(shdw_cf_dictionary
 }
 
 void shdw_universal_passcode_status(SHDWHookSession* hooks) {
-    // ObjC: LAContext. Snapshot+register so a detector reading the current IMP
-    // still resolves to the original (consistent with other ObjC hooks).
-    Class cls = objc_getClass("LAContext");
-    if(cls) {
+    // ObjC: LAContext. LocalAuthentication is not a load-command dependency of
+    // ShadowCore, and an app can reach the class long after the UIKit event
+    // this unit installs on. A one-shot probe would drop the hook for the rest
+    // of the process, so queue the attempt: the session re-runs pending targets
+    // on every image add and dlopen. %init resolves the class when it runs, so
+    // the retry installs normally once LocalAuthentication is loaded.
+    // Snapshot+register so a detector reading the current IMP still resolves
+    // to the original (consistent with other ObjC hooks).
+    [hooks performWhenTargetAvailable:^BOOL(SHDWHookSession* session) {
+        (void)session;
+
+        Class cls = objc_getClass("LAContext");
+
+        if(!cls) {
+            return NO;
+        }
+
         SEL sel = sel_registerName("canEvaluatePolicy:error:");
         void* orig = SHDWSnapshotInstanceMethodIMP(cls, sel);
         %init(shadowhook_LAContext);
         SHDWRegisterHookedInstanceMethod(cls, sel, orig);
-    }
+        return YES;
+    }];
 
     // C: Security.framework. Rebind lane (cold detection-facing calls), skipped
     // cleanly when the symbols are absent.

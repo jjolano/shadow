@@ -239,6 +239,15 @@ if ! sed -n '/^static BOOL shdw_detect_safedevice(void) {/,/^}/p' "$autodetect" 
     echo 'ADAPTER DRIFT: partial readiness threshold changed'; rc=1
 fi
 
+# LocalAuthentication is not linked by ShadowCore and can load after the UIKit
+# event this unit installs on. Probing once would drop the hook for the whole
+# process; the install must be queued for the session's pending-target retry.
+passcode=$(sed -n '/^void shdw_universal_passcode_status(/,/^}/p' src/ShadowCore.dylib/hooks/Universal/AppEnvironment.x)
+case "$passcode" in
+    *performWhenTargetAvailable:*'objc_getClass("LAContext")'*'return NO;'*'%init(shadowhook_LAContext)'*) ;;
+    *) echo 'PASSCODE DRIFT: LAContext install must defer until the class loads'; rc=1 ;;
+esac
+
 if grep -q 'outOldPtr:&' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
     echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
     exit 1

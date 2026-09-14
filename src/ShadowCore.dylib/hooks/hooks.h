@@ -78,6 +78,37 @@
 //
 // ---------------------------------------------------------------------------
 
+// --- Target-availability contract (version-gating front) -------------------
+//
+// A hook installs only where its target exists on THIS device, and that is
+// decided by what the runtime reports — never by an OS version number:
+//
+//   * PHASE/IMAGE readiness — the lifecycle events in shadowcore.x (ctor,
+//     UIKit image, detector escalation, SDK fallback) place a unit after the
+//     images its classes need. UIKit-class groups cannot install earlier.
+//
+//   * PRESENCE PROBE — resolve the class, selector, symbol, or private dyld
+//     entry at install and skip what is absent: objc_getClass +
+//     class_getInstanceMethod, shdw_resolve_libsystem, findSymbolInImage.
+//     A target missing on this OS is terminal — it cannot appear later — so
+//     these need no retry.
+//
+//   * DEFERRAL — a target that can load AFTER its install event, i.e. any
+//     framework the payload does not link (LocalAuthentication, DeviceCheck),
+//     is queued with [hooks performWhenTargetAvailable:] and re-attempted on
+//     every image add and dlopen. A bare one-shot probe silently drops that
+//     hook for the whole process. Late-loaded detector images are separately
+//     covered by the rebind journal replay (RebindRepair.x).
+//
+// A numeric iOS comparison is allowed only for a private ABI/layout fact that
+// cannot be probed by name — currently only the dyld private entry selection
+// in dyld.x's dynamic-libraries-extra installer, where both entries can exist
+// while just one is on the live call path. Gating any other hook install on
+// kCFCoreFoundationVersionNumber is a bug: it hides the hook on OSes where the
+// target does exist, and claims coverage where it does not.
+//
+// ---------------------------------------------------------------------------
+
 // Resolve a libsystem C export by its Mach-O symbol name (e.g. "_signal") for
 // the hand-written C-function groups (sandbox/syscall/mach/iokit). Use this
 // instead of [hooks findSymbolInImage:NULL symbolName:@"_x"]: the vendored
