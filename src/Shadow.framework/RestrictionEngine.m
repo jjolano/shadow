@@ -184,9 +184,12 @@ static BOOL shdwSnapshotDeniesPath(ShadowRulesetSnapshot *snapshot,
   return NO;
 }
 
-// Audit sink bound: fixed ring, newest first. Big enough for a detector's
-// probe burst, small enough that a hot evaluate loop cannot grow memory.
-static const NSUInteger kShadowAuditRingCapacity = 32;
+// Audit sink bound: fixed ring, newest first, small enough that a hot
+// evaluate loop cannot grow memory. The bound also truncates: measured on
+// device (iOS 15.6, rootless), all 13 detector processes filled a 32-entry
+// ring and 9 of 13 still filled a 256-entry one, so treat any captured set as
+// a sample of the heaviest detectors' probes rather than the complete set.
+static const NSUInteger kShadowAuditRingCapacity = 256;
 
 @implementation ShadowRestrictionEngine {
   ShadowRulesetStore *store;
