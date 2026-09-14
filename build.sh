@@ -25,26 +25,23 @@ rm -rf "$ROOT/build"
 mkdir -p "$ROOT/build"
 
 stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
-    local profile=$1 source_profile=$1 scheme= target sdk
-    case "$profile" in
-        rootful-legacy|rootful-modern) ;;
-        rootless) scheme=rootless ;;
-        roothide) scheme=roothide ;;
-        *) echo "unknown dependency profile: $profile" >&2; return 2 ;;
-    esac
+    local profile=$1 scheme= target sdk
+    scheme=$(shadow_lane_field "$profile" SCHEME 2>/dev/null) || { echo "unknown dependency profile: $profile" >&2; return 2; }
 
     # HookKit is resolved from the Theos install (HookKit repo: make
     # install-theos), not staged here — see build-support/hookkit.mk. AltList and libSandy are
     # still built from source into prebuilt and staged into the lane sandbox.
-    local altlist="$PB/altlist/$source_profile/AltList.framework"
-    local sandy="$PB/sandy/$source_profile/libsandy.dylib"
+    local altlist="$PB/altlist/$profile/AltList.framework"
+    local sandy="$PB/sandy/$profile/libsandy.dylib"
     [ -f "$altlist/AltList" ] && [ -f "$sandy" ] || {
-        echo "missing $source_profile dependencies; run .github/scripts/build-deps.sh $source_profile" >&2
+        echo "missing $profile dependencies; run .github/scripts/build-deps.sh $profile" >&2
         return 1
     }
-    local hookkit_theos="$THEOS/lib/HookKit.framework"
-    [ "$profile" = rootful-legacy ] && hookkit_theos="$THEOS/lib/iphone/rootful-legacy/HookKit.framework"
-    [ -n "$scheme" ] && hookkit_theos="$THEOS/lib/iphone/$scheme/HookKit.framework"
+    # HookKit framework dir is owned by build-support/hookkit.mk; consume its mapping.
+    local hookkit_dir
+    hookkit_dir=$(printf 'include %s\nshdw_print:\n\t@echo $(SHADOW_HOOKKIT_DIR)\n' \
+        "$ROOT/build-support/hookkit.mk" | make -f - THEOS="$THEOS" SHADOW_LANE="$profile" shdw_print)
+    local hookkit_theos="$hookkit_dir/HookKit.framework"
     [ -f "$hookkit_theos/HookKit" ] || {
         echo "missing Theos HookKit for $profile ($hookkit_theos); run 'make install-theos' in the HookKit repo" >&2
         return 1
@@ -54,8 +51,8 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
     mkdir -p "$LIBRARY_PATH" "$INCLUDE_PATH"
     cp -R "$altlist" "$LIBRARY_PATH/AltList.framework"
     cp "$sandy" "$LIBRARY_PATH/libsandy.dylib"
-    if [ -f "$PB/sandy/$source_profile/libSandy.h" ]; then
-        cp "$PB/sandy/$source_profile/libSandy.h" "$INCLUDE_PATH/libSandy.h"
+    if [ -f "$PB/sandy/$profile/libSandy.h" ]; then
+        cp "$PB/sandy/$profile/libSandy.h" "$INCLUDE_PATH/libSandy.h"
     elif [ -f "$THEOS/include/libSandy.h" ]; then
         cp "$THEOS/include/libSandy.h" "$INCLUDE_PATH/libSandy.h"
     elif [ -f "$THEOS/vendor/include/libSandy.h" ]; then
@@ -86,7 +83,6 @@ stage_deps() { # rootful-legacy|rootful-modern|rootless|roothide
         cp "$roothide_tbd" "$LIBRARY_PATH/iphone/roothide/libroothide.tbd"
     fi
 
-    : # patched: skip vendor compat check on Linux
 }
 
 # Both ABIs' toolchain selection and validation live in $THEOS/bin/lane.sh
@@ -108,14 +104,11 @@ modern_args() { # sets MODERN_ARGS for the new arm64e ABI
 
 prepare_scheme_framework() { # rootless|roothide
     local lane=$1
-    # Invoked directly (not via the root Makefile), so the lane's ARCHS/
-    # TARGET overrides don't apply — state them explicitly. The scheme must
-    # match the main build too: a mismatched pass leaves stale caller
-    # objects compiled without -DSHADOW_ROOTHIDE while JBPath.m (whose
-    # implementations the header inlines replace) recompiles empty.
-    make -C src/Shadow.framework "SHADOW_LANE=$lane" THEOS_PACKAGE_SCHEME="$lane" \
-        ARCHS="$(shadow_lane_field "$lane" ARCHS)" \
-        TARGET="$(shadow_lane_field "$lane" TARGET)" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
+    # src/Shadow.framework/Makefile includes build-support/build-lanes.mk, which
+    # derives ARCHS/TARGET/THEOS_PACKAGE_SCHEME from SHADOW_LANE -- so the scheme
+    # matches the main build (a mismatch would leave stale caller objects compiled
+    # without -DSHADOW_ROOTHIDE while JBPath.m recompiles empty).
+    make -C src/Shadow.framework "SHADOW_LANE=$lane" "${MAKE_PATHS[@]}" ${MODERN_ARGS[@]+"${MODERN_ARGS[@]}"}
     rm -rf "$LIBRARY_PATH/iphone/$lane/Shadow.framework"
     mkdir -p "$LIBRARY_PATH/iphone/$lane"
     cp -R src/Shadow.framework/.theos/obj/debug/Shadow.framework "$LIBRARY_PATH/iphone/$lane/"
@@ -168,14 +161,12 @@ build_lane() { # profile
     # — a HookKit update that adds/removes/renames the ABI surface Shadow's
     # binding layer depends on, so it can be reviewed and adopted. Set
     # SHADOW_HOOKKIT_ABI_STRICT=1 to make drift fatal.
-    if [ -f "$ROOT/scripts/check-hookkit-abi.sh" ]; then
-        if ! "$ROOT/scripts/check-hookkit-abi.sh" "$lane"; then
-            if [ "${SHADOW_HOOKKIT_ABI_STRICT:-0}" = 1 ]; then
-                echo "HookKit ABI drift is fatal (SHADOW_HOOKKIT_ABI_STRICT=1)" >&2
-                return 1
-            fi
-            echo "WARNING: HookKit ABI drift detected for $lane (advisory; build continues)" >&2
+    if ! "$ROOT/scripts/check-hookkit-abi.sh" "$lane"; then
+        if [ "${SHADOW_HOOKKIT_ABI_STRICT:-0}" = 1 ]; then
+            echo "HookKit ABI drift is fatal (SHADOW_HOOKKIT_ABI_STRICT=1)" >&2
+            return 1
         fi
+        echo "WARNING: HookKit ABI drift detected for $lane (advisory; build continues)" >&2
     fi
     copy_dependency_packages "$lane"
 }

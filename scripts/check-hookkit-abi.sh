@@ -30,15 +30,11 @@ LANE="${1:-rootless}"
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 : "${THEOS:?THEOS must point to Theos}"
 
-# Map SHADOW_LANE -> HookKit framework dir, matching build-support/hookkit.mk.
-# rootless/roothide are Theos schemes; the two rootful lanes are BOTH the
-# default scheme with different arm64e ABIs, so they resolve under $THEOS/lib.
-case "$LANE" in
-    rootless)        FW_DIR="$THEOS/lib/iphone/rootless" ;;
-    roothide)        FW_DIR="$THEOS/lib/iphone/roothide" ;;
-    rootful-legacy)  FW_DIR="$THEOS/lib/iphone/rootful-legacy" ;;
-    *)               FW_DIR="$THEOS/lib" ;;   # rootful-modern / default
-esac
+# HookKit framework dir is owned by build-support/hookkit.mk; consume its
+# SHADOW_HOOKKIT_DIR mapping rather than re-deriving the lane->path table here.
+FW_DIR=$(printf 'include %s\nshdw_print:\n\t@echo $(SHADOW_HOOKKIT_DIR)\n' \
+    "$ROOT/build-support/hookkit.mk" \
+    | make -f - THEOS="$THEOS" SHADOW_LANE="$LANE" shdw_print)
 FW="$FW_DIR/HookKit.framework"
 [ -d "$FW" ] || FW="$THEOS/lib/HookKit.framework"   # fallback
 BIN="$FW/HookKit"

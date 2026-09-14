@@ -4,15 +4,26 @@ set -euo pipefail
 
 PROFILE=${1:-}
 shift || true
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+# Arch set, deployment targets, and arm64e ABI come from the lane matrix
+# (build-support/lanes.sh) -- never duplicate the per-lane values here.
+. "$ROOT/build-support/lanes.sh"
 case "$PROFILE" in
-    rootful-legacy) EXPECTED='armv7=9.0,armv7s=9.0,arm64=9.0,arm64e=12.0' ;;
-    rootful-modern) EXPECTED='arm64=14.0,arm64e=14.0' ;;
-    rootless|roothide) EXPECTED='arm64=15.0,arm64e=15.0' ;;
+    rootful-legacy|rootful-modern|rootless|roothide) ;;
     *) echo "usage: $0 <rootful-legacy|rootful-modern|rootless|roothide> MACH-O..." >&2; exit 2 ;;
 esac
+ARCHS=$(shadow_lane_field "$PROFILE" ARCHS)
+TARGET=$(shadow_lane_field "$PROFILE" TARGET)
+DEPLOY=$(shadow_lane_field "$PROFILE" DEPLOY)
+[ -n "$DEPLOY" ] || DEPLOY=${TARGET##*:}
+DEPLOY_ARM64E=$(shadow_lane_field "$PROFILE" DEPLOY_ARM64E)
+DEPLOY_ARM64E=${DEPLOY_ARM64E:-$DEPLOY}
+EXPECTED=
+for arch in $ARCHS; do
+    case "$arch" in arm64e) v=$DEPLOY_ARM64E ;; *) v=$DEPLOY ;; esac
+    EXPECTED="${EXPECTED:+$EXPECTED,}$arch=$v"
+done
 [ "$#" -gt 0 ] || { echo "no Mach-O files supplied" >&2; exit 2; }
-
-: "${THEOS:?THEOS must point to Theos}"
 resolve_tool() {
     local name=$1 bundled=$THEOS/toolchain/linux/iphone/bin/$1
     if [ -x "$bundled" ]; then
@@ -74,11 +85,7 @@ for binary in "$@"; do
 
         if [ "$arch" = arm64e ]; then
             header=$($OTOOL -h "$slice" | tail -n 1)
-            if [ "$PROFILE" = rootful-legacy ]; then
-                abi=0x00
-            else
-                abi=0x80
-            fi
+            case "$(shadow_lane_field "$PROFILE" ABI)" in old) abi=0x00 ;; *) abi=0x80 ;; esac
             if ! printf '%s\n' "$header" | grep -Eq "[[:space:]]16777228[[:space:]]+2[[:space:]]+${abi}[[:space:]]"; then
                 echo "$binary [$arch] ABI mismatch expected $PROFILE" >&2
                 exit 1

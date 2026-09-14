@@ -35,12 +35,3 @@ shadow_lane_field() { # <lane> <field>
     *) echo "unknown lane '$1' or field '$2'" >&2; return 1 ;;
     esac
 }
-
-# CLI mode for make $(shell): lanes.sh get <lane> <field>
-# $BASH_SOURCE (unsubscripted) is element 0 under bash and unset under dash,
-# which sources this file via build-lanes.mk -- ${BASH_SOURCE[0]} would be a
-# "Bad substitution" there.
-_lane_self=${BASH_SOURCE:-$0}
-if [ "$_lane_self" = "$0" ] && [ "${1:-}" = get ] && [ "$#" -eq 3 ]; then
-    shadow_lane_field "$2" "$3"
-fi
