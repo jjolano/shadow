@@ -36,6 +36,17 @@ def anchor(text, needle, start=0):
     return start + match.start()
 
 
+def unsplit(text):
+    """Rejoin adjacent literals (`@"A" @"B"`) that reformat wrapping may split.
+
+    The formatter wraps a long call by breaking its string literal into
+    adjacent literals, so `table:@"App"` can become `table:\n @"Ap"\n @"p"`.
+    C concatenates those back into one string, and every regex here reads the
+    logical string rather than the formatted spelling.
+    """
+    return re.sub(r'"\s*@"', "", text)
+
+
 def strings(text):
     # Only the OpenStep strings-table grammar, not a general plist parser.
     token = re.compile(r'\s+|/\*.*?\*/|//[^\n]*|"(?:[^"\\]|\\.)*"|[\w.$/:-]+|[=;]', re.S)
@@ -126,11 +137,11 @@ def verify():
             required.add(plist["title"])
         controllers = {"Root": ["RootList"], "App": ["AppList", "ATL"], "About": ["AboutList", "Updates"]}[table]
         for controller in controllers:
-            source = (SETTINGS / f"SHDW{controller}Controller.m").read_text()
+            source = unsplit((SETTINGS / f"SHDW{controller}Controller.m").read_text())
             # Includes keys in ternaries, arrays and selected-key variables, not
             # just literal localized: calls. IDs/actions use different spelling.
             required.update(re.findall(r'@"([A-Z][A-Z0-9_]+)"', source))
-            lookup_tables = re.findall(r'\btable:@"([^"]+)"', source)
+            lookup_tables = re.findall(r'\btable:\s*@"([^"]+)"', source)
             assert len(lookup_tables) == len(re.findall(anchor_pattern('localizedStringForKey:'), source)), controller
             assert all(name == table for name in lookup_tables), controller
             if controller.endswith("List"):
@@ -148,8 +159,8 @@ def verify():
                 if key in english:
                     assert tokens == placeholders(english[key]), (language, table, key)
             assert all(localized[key] != key for key in required), (language, table)
-    app = (SETTINGS / "SHDWAppListController.m").read_text()
-    about = (SETTINGS / "SHDWAboutListController.m").read_text()
+    app = unsplit((SETTINGS / "SHDWAppListController.m").read_text())
+    about = unsplit((SETTINGS / "SHDWAboutListController.m").read_text())
     assert re.search(anchor_pattern('self.title = [bundle localizedStringForKey:@"APP_SETTINGS" value:nil table:@"App"]'), app)
     assert anchor(app, 'self.title = [bundle') < anchor(app, 'self.title = proxy.atl_fastDisplayName')
     assert re.search(anchor_pattern('self.title = [self localized:@"ABOUT_TITLE"]'), about)

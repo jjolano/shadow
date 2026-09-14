@@ -32,6 +32,36 @@ esac
 MATRIX=tests/verify-hook-matrix.sh
 HOOKDIR=src/ShadowCore.dylib/hooks
 rc=0
+
+# Reformat tolerance for the source-text pins below: clang-format may respace
+# `if(x)` into `if (x)`, rewrap lines, or move a brace onto its own line, so a
+# pin compares TOKENS — the snippet and the needle both with every whitespace
+# character removed — instead of raw text. Spacing-only changes cannot break a
+# pin; a genuinely missing or reordered token still fails it.
+norm() { tr -d '[:space:]'; }
+
+# True when the whitespace-stripped "$1" contains each remaining needle, in
+# order, with all whitespace likewise stripped. Needles are literal substrings
+# (no glob interpretation), so pins carrying `[`, `*` or `?` keep meaning them.
+has_tokens() {
+ text=$(printf '%s' "$1" | norm)
+ shift
+ for needle in "$@"; do
+  needle=$(printf '%s' "$needle" | norm)
+  rest=${text#*"$needle"}
+  [ "$rest" != "$text" ] || return 1
+  text=$rest
+ done
+ return 0
+}
+
+# Same, for a pin that reads a file rather than an extracted snippet.
+file_has_tokens() {
+ file=$1
+ shift
+ [ -f "$file" ] || return 1
+ has_tokens "$(cat "$file")" "$@"
+}
 entries=$(mktemp)
 trap 'rm -f "$entries"' 0 HUP INT TERM
 
@@ -210,53 +240,55 @@ fi
 # the actual image callback must remain asynchronous.
 coordinator_ctor=$(sed -n '/^static void shdw_coordinator_ctor(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
 image_callback=$(sed -n '/^static void shdw_early_image_add(/,/^}/p' src/ShadowCore.dylib/shadowcore.x)
-case "$coordinator_ctor" in
-*'installEvent:SHDWEventCtor]'*'if(watcherEnabled)'*'shdw_early_image_add(_dyld_get_image_header(i)'*'if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {'*'[shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];'*'NSLog(@"completed hooks")'*) ;;
-*)
+if ! has_tokens "$coordinator_ctor" \
+ 'installEvent:SHDWEventCtor]' 'if(watcherEnabled)' \
+ 'shdw_early_image_add(_dyld_get_image_header(i)' \
+ 'if(__atomic_load_n(&_shdw_uikit_installed, __ATOMIC_ACQUIRE)) {' \
+ '[shdw_coordinator_instance installEvent:SHDWEventUIKitLoaded];' \
+ 'NSLog(@"completed hooks")'; then
  echo 'COORDINATOR DRIFT: observed UIKit replay must finish before ctor returns'
  exit 1
- ;;
-esac
-case "$image_callback" in
-*'installEvent:'*)
+fi
+if has_tokens "$image_callback" 'installEvent:'; then
  echo 'COORDINATOR DRIFT: image callback must not install synchronously'
  exit 1
- ;;
-*'containsString:@"uikit.framework"'*'__atomic_exchange_n(&_shdw_uikit_installed, YES'*'enqueueEvent:SHDWEventUIKitLoaded]'*) ;;
-*)
+fi
+if ! has_tokens "$image_callback" \
+ 'containsString:@"uikit.framework"' \
+ '__atomic_exchange_n(&_shdw_uikit_installed, YES' \
+ 'enqueueEvent:SHDWEventUIKitLoaded]'; then
  echo 'COORDINATOR DRIFT: UIKit notification lost its image gate or async event'
  exit 1
- ;;
-esac
+fi
 
-case "$ctor" in
-*'shdw_adapter_devicecheck_configure(prefs);'*'prefs = shdw_adapter_resolve_preferences(prefs);'*) ;;
-*)
+if ! has_tokens "$ctor" \
+ 'shdw_adapter_devicecheck_configure(prefs);' \
+ 'prefs = shdw_adapter_resolve_preferences(prefs);'; then
  echo 'ADAPTER DRIFT: authorization must be captured before presence resolution'
  rc=1
- ;;
-esac
+fi
 if [ "$(printf '%s\n' "$ctor" | grep -c 'shdw_adapter_devicecheck_configure(prefs);')" -ne 1 ]; then
  echo 'ADAPTER DRIFT: authorization must not be overwritten after resolution'
  rc=1
 fi
 devicecheck_install=$(sed -n '/^NSUInteger shdw_devicecheck_install_hooks(/,/^}/p' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m)
-case "$devicecheck_install" in
-*'if(target != DCHTargetNone && !(enabledTargets & target))'*'continue;'*'performWhenTargetAvailable:'*'if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;'*'objc_getClass(desc->className)'*'hookMessageInClass:dispatchClass'*) ;;
-*)
+if ! has_tokens "$devicecheck_install" \
+ 'if(target != DCHTargetNone && !(enabledTargets & target))' 'continue;' \
+ 'performWhenTargetAvailable:' \
+ 'if(target != DCHTargetNone && !shdw_devicecheck_target_available(target)) return NO;' \
+ 'objc_getClass(desc->className)' 'hookMessageInClass:dispatchClass'; then
  echo 'ADAPTER DRIFT: authorized rows must use shared readiness before attempting'
  rc=1
- ;;
-esac
+fi
 autodetect=src/ShadowCore.dylib/hooks/Adapters/DetectorAutoDetect.x
 availability=$(sed -n '/^BOOL shdw_devicecheck_target_available(/,/^}/p' "$autodetect")
-case "$availability" in
-*'case DCHTargetDTT: return shdw_detect_dtt();'*'case DCHTargetSafeDevice: return shdw_detect_safedevice();'*'case DCHTargetJailMonkey: return shdw_detect_jailmonkey();'*) ;;
-*)
+if ! has_tokens "$availability" \
+ 'case DCHTargetDTT: return shdw_detect_dtt();' \
+ 'case DCHTargetSafeDevice: return shdw_detect_safedevice();' \
+ 'case DCHTargetJailMonkey: return shdw_detect_jailmonkey();'; then
  echo 'ADAPTER DRIFT: readiness must reuse existing fingerprints'
  rc=1
- ;;
-esac
+fi
 if ! sed -n '/^static BOOL shdw_detect_safedevice(void) {/,/^}/p' "$autodetect" | grep -q 'return matches >= 2;'; then
  echo 'ADAPTER DRIFT: partial readiness threshold changed'
  rc=1
@@ -266,13 +298,11 @@ fi
 # event this unit installs on. Probing once would drop the hook for the whole
 # process; the install must be queued for the session's pending-target retry.
 passcode=$(sed -n '/^void shdw_universal_passcode_status(/,/^}/p' src/ShadowCore.dylib/hooks/Universal/AppEnvironment.x)
-case "$passcode" in
-*performWhenTargetAvailable:*'objc_getClass("LAContext")'*'return NO;'*'%init(shadowhook_LAContext)'*) ;;
-*)
+if ! has_tokens "$passcode" 'performWhenTargetAvailable:' 'objc_getClass("LAContext")' \
+ 'return NO;' '%init(shadowhook_LAContext)'; then
  echo 'PASSCODE DRIFT: LAContext install must defer until the class loads'
  rc=1
- ;;
-esac
+fi
 
 if grep -q 'outOldPtr:&' src/ShadowCore.dylib/hooks/Adapters/DeviceCheckHooks.m; then
  echo 'BATCHING RISK: DeviceCheck queues an original write to stack storage'
@@ -289,28 +319,23 @@ fi
 # A failed attempt must neutralize caller input without erasing a continuation
 # this session published (a live replacement may chain through it).
 apply_once=$(sed -n '/^static BOOL shdw_apply_hook_spec_once(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
-case "$apply_once" in
-*'BOOL entryLive = shdw_cell_holds_live_original(oldPtr);'*'if(oldPtr && !entryLive) {'*) ;;
-*)
+if ! has_tokens "$apply_once" \
+ 'BOOL entryLive = shdw_cell_holds_live_original(oldPtr);' 'if(oldPtr && !entryLive) {'; then
  echo 'SESSION DRIFT: setup-failure paths must snapshot then neutralize unpublished cells'
  rc=1
- ;;
-esac
+fi
 finish_helper=$(sed -n '/^static void shdw_finish_uninstalled_hook(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
-case "$finish_helper" in
-*'result.mutation == HK_MUTATION_NONE && !entryLive'*) ;;
-*)
+if ! has_tokens "$finish_helper" 'result.mutation == HK_MUTATION_NONE && !entryLive'; then
  echo 'SESSION DRIFT: clean failures must preserve earlier-attempt continuations'
  rc=1
- ;;
-esac
+fi
 if ! grep -q 'shdw_note_published_cell(oldPtr);' src/ShadowCore.dylib/SHDWHookSession.m; then
  echo 'SESSION DRIFT: published continuations are not tracked'
  rc=1
 fi
 # Every raw cell clear must sit under an entryPublished guard: only a
 # continuation from an earlier attempt may survive a failure.
-for line in $(grep -n '\*oldPtr = NULL;' src/ShadowCore.dylib/SHDWHookSession.m | cut -d: -f1); do
+for line in $(grep -n '\*oldPtr[[:space:]]*=[[:space:]]*NULL;' src/ShadowCore.dylib/SHDWHookSession.m | cut -d: -f1); do
  if [ "$line" -gt 3 ]; then
   start=$((line - 3))
  else
@@ -387,11 +412,11 @@ fi
 if ! grep -q 'SHDWUniversalHarnessBaselineID] = @YES' src/ShadowCore.dylib/shadowcore.x ||
  ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
  ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/ShadowCore.dylib/shadowcore.x ||
- ! grep -q 'prefs\[SHDWUniversalHarnessBaselineID\] != nil' src/Shadow.framework/HookConfiguration.m ||
+ ! file_has_tokens src/Shadow.framework/HookConfiguration.m 'prefs[SHDWUniversalHarnessBaselineID] != nil' ||
  ! grep -q '_harnessProfile' src/ShadowCore.dylib/HookCoordinator.m ||
- ! grep -q 'app_settings = fileAppSettings' src/Shadow.framework/Settings.m ||
+ ! file_has_tokens src/Shadow.framework/Settings.m 'app_settings = fileAppSettings' ||
  ! grep -q 'filePreferences)' src/Shadow.framework/Settings.m ||
- ! grep -q 'result\[SHDWUniversalHarnessBaselineID\] = baseline' src/Shadow.framework/Settings.m; then
+ ! file_has_tokens src/Shadow.framework/Settings.m 'result[SHDWUniversalHarnessBaselineID] = baseline'; then
  echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
  exit 1
 fi
@@ -452,7 +477,7 @@ if [ -f "[private-harness-path][private-harness]/Makefile" ] && { ! grep -q 'SHD
  echo 'HARNESS PACKAGE DRIFT: final packages must include the dyld stress library'
  exit 1
 fi
-if [ ! -f "[private-harness-path][private-harness]/EmbeddedDrivers.swift" ]; then :; elif ! grep -q 'SHDWUniversalSyscallID : @(YES)' src/Shadow.framework/HookConfiguration.m ||
+if [ ! -f "[private-harness-path][private-harness]/EmbeddedDrivers.swift" ]; then :; elif ! file_has_tokens src/Shadow.framework/HookConfiguration.m 'SHDWUniversalSyscallID : @(YES)' ||
  ! grep -q 'statuses\["rootPrivileges"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
  ! grep -q 'statuses\["hardwareCryptography"\]' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
  ! grep -q 'JailbreakDetectionSymbolicLinksCheckService()' "[private-harness-path][private-harness]/EmbeddedDrivers.swift ||
@@ -514,13 +539,10 @@ if ! printf '%s\n' "$getppid_rebind" | grep -q 'strcmp(d->symbol, "getppid") == 
  echo 'LIBC DRIFT: getppid must use the rebind-only shared-cache path'
  exit 1
 fi
-case "$getppid_rebind" in
-*"*d->original = target;"*"hookRebindSymbol:@\"getppid\""*) ;;
-*)
+if ! has_tokens "$getppid_rebind" '*d->original = target;' 'hookRebindSymbol:@"getppid"'; then
  echo 'LIBC DRIFT: getppid publishes its rebind continuation too late'
  exit 1
- ;;
-esac
+fi
 if grep -q 'LIBC | METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x; then
  echo 'LIBC DRIFT: IOSSecuritySuite overlap must use one install lane'
  exit 1
@@ -529,17 +551,14 @@ fi
 # must therefore be written directly to the caller's output cell, not staged
 # in a local that is copied out after the mutation.
 session_apply=$(sed -n '/^static BOOL shdw_apply_hook_spec(/,/^}/p' src/ShadowCore.dylib/SHDWHookSession.m)
-case "$session_apply" in
-*attemptOldPtr* | *'spec, &original,'*)
+if has_tokens "$session_apply" 'attemptOldPtr' || has_tokens "$session_apply" 'spec, &original,'; then
  echo 'HOOK SESSION DRIFT: continuation output is staged across commit'
  exit 1
- ;;
-*'spec, oldPtr, backendOverride,'*'spec, oldPtr, NULL,'*) ;;
-*)
+fi
+if ! has_tokens "$session_apply" 'spec, oldPtr, backendOverride,' 'spec, oldPtr, NULL,'; then
  echo 'HOOK SESSION DRIFT: hook attempts must publish directly to caller storage'
  exit 1
- ;;
-esac
+fi
 
 if ! grep -q 'SHADW_HOOK_GROUP_FEATURE_METADATA' src/ShadowCore.dylib/hooks/Universal/libc.x ||
  ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/IOSSecuritySuite.x ||
@@ -584,8 +603,8 @@ if grep -Rqs 'shdw_adapter_\|FreeRASP\|DeviceSecurityKit\|IOSSecuritySuite\|Devi
  echo 'BOUNDARY DRIFT: universal sources directly reference an adapter'
  exit 1
 fi
-if ! grep -q 'strncmp(path, "/private/var/jb", 15)' src/Shadow.framework/Headers/Shadow/JBPath.h ||
- ! grep -q 'shdw_is_restricted_root_with_prefix(path, NULL)' src/Shadow.framework/JBPath.m; then
+if ! file_has_tokens src/Shadow.framework/Headers/Shadow/JBPath.h 'strncmp(path, "/private/var/jb", 15)' ||
+ ! file_has_tokens src/Shadow.framework/JBPath.m 'shdw_is_restricted_root_with_prefix(path, NULL)'; then
  echo 'FREERASP DRIFT: private /var/jb alias is not covered by the shared root predicate'
  rc=1
 fi

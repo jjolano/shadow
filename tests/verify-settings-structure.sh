@@ -15,6 +15,30 @@ loader=src/Shadow.dylib/dylib.x
 settings=src/Shadow.framework/Settings.m
 profile=src/Shadow.framework/HookConfiguration.m
 
+# Reformat tolerance for the source-text pins below: clang-format may respace
+# `if(x)` into `if (x)` or wrap a long declaration onto the next line, so a pin
+# compares TOKENS — the file and the needle both with every whitespace character
+# removed — instead of raw text. Spacing-only changes cannot break a pin; a
+# genuinely missing token still fails it.
+norm() { tr -d '[:space:]'; }
+
+# True when "$1"'s whitespace-stripped text contains each remaining needle, in
+# order, all whitespace likewise stripped. Needles are literal substrings (no
+# regex/glob interpretation), so pins carrying `[`, `*` or `?` keep meaning them.
+pinned() {
+    file=$1
+    shift
+    [ -f "$file" ] || return 1
+    text=$(norm <"$file")
+    for needle in "$@"; do
+        needle=$(printf '%s' "$needle" | norm)
+        rest=${text#*"$needle"}
+        [ "$rest" != "$text" ] || return 1
+        text=$rest
+    done
+    return 0
+}
+
 if grep -Rqs --exclude-dir=.theos 'SHDWPreset' src/Shadow.framework src/ShadowCore.dylib src/ShadowSettings.bundle; then
     echo 'SETTINGS DRIFT: preset API or UI returned'
     exit 1
@@ -64,8 +88,34 @@ import sys
 from pathlib import Path
 
 
+def anchor_pattern(needle):
+    """Regex for `needle`, tolerant of reformat spacing."""
+    return r"\s*".join(
+        re.escape(tok) for tok in re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", needle)
+    )
+
+
+def anchor(text, needle, start=0):
+    """Index of `needle` in `text`, tolerant of reformat spacing."""
+    match = re.search(anchor_pattern(needle), text[start:])
+    if match is None:
+        raise ValueError(f"anchor not found: {needle!r}")
+    return start + match.start()
+
+
+def unsplit(text):
+    """Rejoin adjacent literals (`@"A" @"B"`) that reformat wrapping may split."""
+    return re.sub(r'"\s*@"', "", text)
+
+
+def has(text, needle):
+    """True when `needle` occurs in `text`, tolerant of reformat spacing and of
+    long literals the formatter wrapped into adjacent literals."""
+    return re.search(anchor_pattern(needle), unsplit(text)) is not None
+
+
 def block(source, marker):
-    start = source.index(marker)
+    start = anchor(source, marker)
     opening = source.index("{", start)
     depth = 1
     for position in range(opening + 1, len(source)):
@@ -80,9 +130,10 @@ def block(source, marker):
 
 def operations(source):
     calls = re.compile(
-        r'\[self removeSpecifier:(?P<remove>\w+) animated:[^]]+\];'
-        r'|\[self insertSpecifier:(?P<insert>\w+) '
-        r'afterSpecifier:(?P<after>.*?) animated:YES\];'
+        r'\[self\s+removeSpecifier:(?P<remove>\w+)\s+animated:[^]]+\];'
+        r'|\[self\s+insertSpecifier:(?P<insert>\w+)\s+'
+        r'afterSpecifier:(?P<after>.*?)\s+animated:YES\];',
+        re.S,
     )
     result = []
     for call in calls.finditer(source):
@@ -107,7 +158,7 @@ follow_global = block(setter, 'if([key isEqualToString:@"App_FollowGlobal"])')
 enabled = block(follow_global, "if([value boolValue])")
 disabled = block(follow_global, "} else {")
 
-assert 'aggressiveGroupSpecifier = [self specifierForID:@"AppAggressiveGroup"];' in specifiers
+assert has(specifiers, 'aggressiveGroupSpecifier = [self specifierForID:@"AppAggressiveGroup"];')
 initial_ops = operations(initial)
 on_ops = operations(enabled)
 off_ops = operations(disabled)
@@ -159,20 +210,20 @@ for _ in range(2):
 print("PASS: app controller follow-global visibility transitions (static call sequence)")
 
 reset = block(source, '- (void)resetAppSettings:')
-assert 'style:UIAlertActionStyleCancel handler:nil' in reset
+assert has(reset, 'style:UIAlertActionStyleCancel handler:nil')
 confirmation = block(reset, 'style:UIAlertActionStyleDestructive handler:')
-assert 'BOOL saved = SHDWResetApp(prefs, [self applicationID]);' in confirmation
-assert '[self reloadSpecifiers];' in confirmation
-assert confirmation.index('[self reloadSpecifiers];') < confirmation.index('if(saved)')
+assert has(confirmation, 'BOOL saved = SHDWResetApp(prefs, [self applicationID]);')
+assert has(confirmation, '[self reloadSpecifiers];')
+assert anchor(confirmation, '[self reloadSpecifiers];') < anchor(confirmation, 'if(saved)')
 success = block(confirmation, 'if(saved)')
 failure = block(confirmation, '} else {')
 assert 'SHDWToggleHaptic();' in success and confirmation.count('SHDWToggleHaptic();') == 1
-assert 'RESET_APP_FAILED' in failure and 'RESET_APP_FAILED_DESC' in failure
+assert has(failure, 'RESET_APP_FAILED') and has(failure, 'RESET_APP_FAILED_DESC')
 assert 'RESET_OK' in failure and 'SHDWToggleHaptic' not in failure
 dismissal = block(failure, '[self dismissViewControllerAnimated:YES completion:')
-assert '[self presentViewController:failure animated:YES completion:nil];' in dismissal
+assert has(dismissal, '[self presentViewController:failure animated:YES completion:nil];')
 assert reset.count('SHDWResetApp(') == 1
-assert '[self presentViewController:alert animated:YES completion:nil];' in reset
+assert has(reset, '[self presentViewController:alert animated:YES completion:nil];')
 with open(sys.argv[2], 'rb') as stream:
     reset_row = next(row for row in plistlib.load(stream)['items'] if row['id'] == 'AppReset')
 assert reset_row['action'] == 'resetAppSettings:' and reset_row['isDestructive']
@@ -191,29 +242,29 @@ for removed in ['openChangeLog', 'aboutLatestVersion', 'aboutUpdateStatus',
         if path.is_file() and path.suffix in ['.m', '.h', '.strings', '.plist']:
             assert removed not in path.read_text(), (path, removed)
 assert 'NSURLSession' not in about
-assert 'SHDWInstalledVersion() ?: [self localized:@"UNKNOWN"]' in about
+assert has(about, 'SHDWInstalledVersion() ?: [self localized:@"UNKNOWN"]')
 check = block(updates, '- (void)checkForUpdates:')
 assert updates.count('dataTaskWithURL:') == check.count('dataTaskWithURL:') == 1
-assert 'if(fetchingLatestVersion) return;' in check
+assert has(check, 'if(fetchingLatestVersion) return;')
 assert updates.count('[self checkForUpdates:') == 1
 for lifecycle in ['viewDidLoad', 'viewWillAppear:', 'viewDidDisappear:']:
     method = block(updates, '- (void)' + lifecycle)
     assert 'checkForUpdates' not in method and 'resume]' not in method
 assert 'completionHandler(nil);' in updates
-assert 'text.editable = NO;' in updates and 'text.selectable = YES;' in updates
-assert 'text.scrollEnabled = YES;' in updates and 'UIDataDetectorTypeNone' in updates
+assert has(updates, 'text.editable = NO;') and has(updates, 'text.selectable = YES;')
+assert has(updates, 'text.scrollEnabled = YES;') and 'UIDataDetectorTypeNone' in updates
 assert 'presentViewController:' not in updates
 prefs_source = (settings_dir / 'SHDWPrefs.m').read_text()
 symbol = block(prefs_source, 'UIImage *SHDWSettingsSymbol(')
-assert symbol.index('respondsToSelector:') < symbol.index('[UIImage systemImageNamed:')
+assert anchor(symbol, 'respondsToSelector:') < anchor(symbol, '[UIImage systemImageNamed:')
 assert 'UIImageRenderingModeAlwaysTemplate' in symbol
 root_source = (settings_dir / 'SHDWRootListController.m').read_text()
 list_source = (settings_dir / 'SHDWATLController.m').read_text()
 assert 'SHDWAppIsCustomized(value)' in root_source
 assert 'SHDWAppFollowsGlobal(prefs, appID)' in list_source
-assert 'cell.accessoryView = nil;' in list_source
-assert 'cell.accessibilityValue = nil;' in list_source
-assert 'cell.imageView.image =' not in list_source
+assert has(list_source, 'cell.accessoryView = nil;')
+assert has(list_source, 'cell.accessibilityValue = nil;')
+assert not has(list_source, 'cell.imageView.image =')
 for path in settings_dir.glob('*.m'):
     assert '@available(' not in path.read_text(), path
 print("PASS: reset confirmation, explicit-only Updates wiring, inline notes and legacy guards (static)")
@@ -253,24 +304,24 @@ if grep -q 'DetectorLog' src/Shadow.framework/RestrictionEngine.m; then
 fi
 
 for key in SHDWUniversalFoundationID SHDWUniversalMachBootstrapID SHDWUniversalIOKitID SHDWUniversalSyscallID; do
-    grep -q "$key : @(YES)" "$profile" || {
+    pinned "$profile" "$key : @(YES)" || {
         echo "SETTINGS DRIFT: built-in profile does not enable $key"
         exit 1
     }
 done
 
-grep -q 'result\[SHDWAppEnabledID\] = @(enabled)' "$settings" &&
+pinned "$settings" 'result[SHDWAppEnabledID] = @(enabled)' &&
 ! grep -q 'addEntriesFromDictionary' "$settings" &&
 grep -q 'SHDWApplicationEnabled' "$loader" &&
-grep -q 'bundleIdentifier.length == 0' "$settings" || {
+pinned "$settings" 'bundleIdentifier.length == 0' || {
     echo 'SETTINGS DRIFT: runtime no longer uses the fixed profile with per-app activation'
     exit 1
 }
 
-grep -q 'kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides"' "$settings" &&
+pinned "$settings" 'kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides"' &&
 grep -q 'isEqualToString:@"me.jjolano.shadow.harness"' "$settings" &&
-grep -q 'SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID' "$settings" &&
-grep -q 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' "$settings" || {
+pinned "$settings" 'SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID' \
+ 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' || {
     echo 'SETTINGS DRIFT: detector overrides must remain private to test runners'
     exit 1
 }
@@ -278,14 +329,14 @@ grep -q 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' "$settin
 # A per-app toggle edit takes the app off "follow global" by writing an
 # explicit App_Enabled and stamping the single-toggle migration marker;
 # clearing it (follow global) drops the override key.
-grep -q 'setBool:YES forKey:SHDWSingleToggleMigrationID' src/ShadowSettings.bundle/SHDWPrefs.m &&
+pinned src/ShadowSettings.bundle/SHDWPrefs.m 'setBool:YES forKey:SHDWSingleToggleMigrationID' &&
 grep -q 'removeObjectForKey:SHDWAppEnabledID' src/ShadowSettings.bundle/SHDWPrefs.m || {
     echo 'SETTINGS DRIFT: per-app toggle must use explicit single-toggle semantics with follow-global clear'
     exit 1
 }
 
 grep -q 'SHDWAppDisabledID.*SHDWAppEnabledID' src/Shadow.framework/SettingsMigration.m ||
-grep -q 'migrated\[SHDWAppEnabledID\] = @NO' src/Shadow.framework/SettingsMigration.m || {
+pinned src/Shadow.framework/SettingsMigration.m 'migrated[SHDWAppEnabledID] = @NO' || {
     echo 'SETTINGS DRIFT: legacy App_Disabled migration is missing'
     exit 1
 }
