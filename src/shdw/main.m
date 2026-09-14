@@ -87,7 +87,7 @@ static void setup_watcher(void) {
     fprintf(stderr, "shadow-watcher: watching app install/uninstall notifications\n");
 }
 
-int main(int argc, char *argv[], char *envp[]) {
+int main(int argc, char *argv[]) {
     @autoreleasepool {
         if(argc == 1) {
             printf("shdw - command line utility for Shadow\n");
@@ -118,7 +118,6 @@ int main(int argc, char *argv[], char *envp[]) {
         if(watcherMode) {
             setup_watcher();
             dispatch_main(); // never returns
-            return 0;
         }
 
         if(regenerateDb) {
