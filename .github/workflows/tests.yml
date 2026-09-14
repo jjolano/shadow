@@ -83,6 +83,10 @@ jobs:
         run: |
           pip install --quiet clang-format==23.1.1
           clang-format --version
-          files=$(git ls-files 'src/**/*.m' 'src/**/*.h' 'src/**/*.c' 'src/**/*.mm' 'src/**/*.inc')
+          # `git ls-files 'src/**/*.h'` needs a directory component, so a
+          # top-level file like src/common.h would silently go unchecked.
+          # Filter the tree by extension instead. .x is naturally excluded
+          # (it is Logos-preprocessed and must never be formatted).
+          files=$(git ls-files 'src/' | grep -E '\.(m|mm|h|c|inc)$')
           test -n "$files" || { echo 'no source files matched the format check'; exit 1; }
           clang-format --style=file --dry-run --Werror $files

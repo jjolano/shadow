@@ -1,6 +1,7 @@
-#define SHADOW_RULESETS     "/Library/Shadow/Rulesets"
-#define SHADOW_DB_PLIST     SHADOW_RULESETS "/dpkgInstalled.plist"
-#define SHADOW_PREFS_PLIST  "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
+#define SHADOW_RULESETS "/Library/Shadow/Rulesets"
+#define SHADOW_DB_PLIST SHADOW_RULESETS "/dpkgInstalled.plist"
+#define SHADOW_PREFS_PLIST                                                     \
+  "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"
 
 #import <Foundation/Foundation.h>
 
