@@ -157,14 +157,6 @@ shdw_identity_image_for_address(const void *address) {
   dispatch_queue_set_specific(_lifecycleQueue, &kSHDWHookCoordinatorQueueKey,
                               (__bridge void *)self, NULL);
 
-  // HK_Library troubleshooting override: first try this process's
-  // function/memory hooks on one backend engine. "auto" (the default)
-  // leaves routing alone; a clean override refusal retries automatic routing.
-  id hookLibrary = _prefs[SHDWHookLibraryID];
-  SHDWSetProcessBackendOverride([hookLibrary isKindOfClass:[NSString class]]
-                                    ? [(NSString *)hookLibrary UTF8String]
-                                    : NULL);
-
   SHDWBackendSet *set = [SHDWBackendSet new];
   set.hooks = [[SHDWHookSession alloc] initWithLifecycleQueue:_lifecycleQueue];
   // HK3 reports each hook request individually. These bits therefore mean

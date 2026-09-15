@@ -51,14 +51,15 @@ typedef NSString *SHDWImageRef;
 @end
 
 // Restrict this process's function/memory hooks to one HookKit backend engine
-// ID (from the HK_Library pref). "auto"/NULL/empty clears the override. Set
-// once at ShadowCore init, before hooks run. A strict override that cleanly
-// refuses a function/memory hook retries automatic routing once; partial or
-// unknown mutation never retries. The pinned HookKit exports the
-// backend-override constructor, so this is live by default; ShadowCore resolves
-// it dynamically because the hookkit dependency floor is only >= 3.0.0 and the
-// package version does not bump across the export — against an older installed
-// build the override is skipped and automatic routing stands.
+// ID. "auto"/NULL/empty clears the override. Not driven by preferences — the
+// harness's mutation-fault tool calls it directly, before hooks run. A strict
+// override that cleanly refuses a function/memory hook retries automatic
+// routing once; partial or unknown mutation never retries. The pinned HookKit
+// exports the backend-override constructor, so this is live by default;
+// ShadowCore resolves it dynamically because the hookkit dependency floor is
+// only >= 3.0.0 and the package version does not bump across the export —
+// against an older installed build the override is skipped and automatic
+// routing stands.
 FOUNDATION_EXPORT void SHDWSetProcessBackendOverride(const char *backendID);
 
 // Map a hooked-method replacement/current IMP back to its original IMP, so a

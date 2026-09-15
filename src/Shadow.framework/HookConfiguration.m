@@ -113,7 +113,6 @@ const SHDWInstallUnit *SHDWInstallUnits(NSUInteger *outCount) {
 
 NSDictionary<NSString *, id> *SHDWDefaultHookSettings(void) {
   return @{
-    SHDWHookLibraryID : @"auto",
     SHDWUniversalFilesystemID : @(YES),
     SHDWUniversalURLSchemeID : @(YES),
     SHDWUniversalEnvVarsID : @(YES),

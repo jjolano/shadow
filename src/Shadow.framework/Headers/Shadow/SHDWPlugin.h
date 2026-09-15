@@ -44,7 +44,6 @@
 #define SHDWAdapterSafeDeviceID @"Adapter_SafeDevice"
 #define SHDWAdapterJailMonkeyID @"Adapter_JailMonkey"
 
-#define SHDWHookLibraryID @"HK_Library"
 #define SHDWAppEnabledID @"App_Enabled"
 // Read-only migration keys. New settings write only App_Enabled.
 #define SHDWGlobalEnabledID @"Global_Enabled"

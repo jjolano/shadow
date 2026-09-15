@@ -10,9 +10,9 @@
 #include <dlfcn.h>
 #include <string.h>
 
-// Per-process function/memory backend override (HK_Library troubleshooting
-// pref). Set once at ShadowCore init, before any hook runs; read per hook.
-// Empty means "auto" — the runtime's own routing order.
+// Per-process function/memory backend override. Set before any hook runs
+// (the harness's mutation-fault tool drives it); read per hook. Empty means
+// "auto" — the runtime's own routing order.
 static char gSHDWBackendOverride[128];
 
 void SHDWSetProcessBackendOverride(const char *backendID) {
