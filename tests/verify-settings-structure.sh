@@ -5,8 +5,6 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
 # Device-tool path check resolves against the private harness checkout
-# (PRIVATE_HT, default tests/). Public runs skip it; private runs it.
-HT=${PRIVATE_HT:-tests}
 
 root=src/ShadowSettings.bundle/Resources/Root.plist
 app=src/ShadowSettings.bundle/Resources/App.plist
@@ -372,12 +370,3 @@ for source in "$loader" "$settings"; do
     }
 done
 
-# Canonical preference path is shared by the device tools in the private
-# harness; skip when no harness checkout is present.
-if [ -f "[private-harness-path][harness-tool].py" ]; then
-grep -q 'return "/var/mobile/Library/Preferences/me.jjolano.shadow.plist"' "[private-harness-path][harness-tool].py" &&
-grep -q '^PREFS_REMOTE=/var/mobile/Library/Preferences/me.jjolano.shadow.plist$' "[private-harness-path]" || {
-    echo 'SETTINGS DRIFT: device tools must edit the canonical preference file'
-    exit 1
-}
-fi
