@@ -68,8 +68,8 @@ SHADW_RAWSYSCALL(SYS_lstat64_extended, 4, PATH,       XATTR4)
 SHADW_RAWSYSCALL(SYS_readlink,         3, PATH,       READLINK)
 // SYS_freadlink predates the libc wrapper (number on the 15.6 floor,
 // declaration iOS 16+): same fd-based policy as the fstat family — resolve
-// via F_GETPATH, fail open when the fd has no nameable path. Probe-gated
-// ([private-notes].md): raw-SVC callers bypass the libc hook entirely.
+// via F_GETPATH, fail open when the fd has no nameable path. Probe-gated:
+// raw-SVC callers bypass the libc hook entirely.
 #ifdef SYS_freadlink
 SHADW_RAWSYSCALL(SYS_freadlink,        3, FREADLINK,  READLINK)
 #endif
@@ -117,7 +117,7 @@ SHADW_RAWSYSCALL(SYS_getattrlistbulk,   5, GETATTRLISTBULK, GETATTRLISTBULK)
 // embed the backing vnode path; the after-success category reshapes a hidden
 // image's region into an anonymous one via the SAME predicate the libc hook uses.
 SHADW_RAWSYSCALL(SYS_proc_info,        6, PROCINFO,   PROCINFO)
-// Mutator/xattr errno parity ([private-detector] mutxattr): a raw syscall(2) must not
+// Mutator/xattr errno parity: a raw syscall(2) must not
 // see an object the libc wrappers report absent. Single-path mutators share
 // CAT PATH (ruleset + external-hidden); fd variants share CAT FDXATTR;
 // link shares CAT PATHPATH (both ends). setxattr reuses the GETXATTR shape,

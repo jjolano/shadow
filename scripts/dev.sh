@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Run a script (from stdin) as root on the test device.
+# Device address and credentials come from the environment: this file is public
+# and must carry no device detail.
 set -euo pipefail
-HOST=${SHADOW_DEV_HOST:?set SHADOW_DEV_HOST to user@host for the test device}
-PASS=${SHADOW_DEV_PASS:?set SHADOW_DEV_PASS for the test device}
+: "${SHADOW_DEV_HOST:?set SHADOW_DEV_HOST to user@host for the test device}"
+: "${SHADOW_DEV_PASS:?set SHADOW_DEV_PASS for the test device}"
+HOST=$SHADOW_DEV_HOST
+PASS=$SHADOW_DEV_PASS
 sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
   -o PreferredAuthentications=password -o PubkeyAuthentication=no "$HOST" \
   "cat > /tmp/.dev_askpass.sh <<'AP'

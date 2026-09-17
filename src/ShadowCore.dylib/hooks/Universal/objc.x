@@ -10,7 +10,7 @@ static const char* (*original_class_getImageName)(Class cls);
 // its classes breaks the app itself — UIKit's _UIApplicationMainPreparations
 // resolves the app delegate via NSClassFromString, and rootless jailbreak
 // apps are installed under /private/preboot, which isCPathRestricted: treats
-// as restricted (observed on-device: [private-harness] aborted with "No class
+// as restricted (observed on-device: an injected app aborted with "No class
 // named AppDelegate is loaded" the moment hooks installed). Exempt the main
 // executable BEFORE any range verdict; canonical Shadow package images remain
 // hidden via the own-ranges check, while the broader protected-image policy
@@ -88,7 +88,7 @@ static BOOL shdw_addr_in_main_image(const void* addr) {
 // executable. Without it an injected cooperating app blinds its own
 // NSClassFromString lookups: the ruleset restricts the rootless bootstrap
 // bundle path (/private/preboot/…), so every class in the app's own
-// frameworks resolves nil (observed on-device: the harness's
+// frameworks resolves nil (observed on-device: the app's
 // DSKBridge/JBDBridge/STKBridge/IOSSBridge all missing while direct-linked
 // calls worked). Pure dyld + string ops: no ObjC, no pool, safe on
 // raw-pthread callers. Non-bundle executables (daemons) get no exemption.

@@ -6,8 +6,7 @@
 # a stray `clang-format -i` is a no-op instead of a surprise diff. Before this
 # file existed there was no config and no check, so formatters ran freely and
 # produced large mixed diffs that entangled unrelated work — and silently broke
-# the tests that pin real source bodies by text (they are now token-tolerant;
-# see private/notes/[private-notes].md).
+# the tests that pin real source bodies by text (they are now token-tolerant).
 #
 # Do not add style keys that reflow more than LLVM already does: the tree is
 # clean under exactly this config, and any extra key invalidates that.
