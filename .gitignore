@@ -9,8 +9,10 @@ tests/*.gcno
 tests/*.gcda
 tests/*.gcov
 artifacts/
-# Built framework staged by build.sh stage_deps(); theos links against it
-# via _THEOS_INTERNAL_SEARCHPATHS. Never a source checkout.
+# HookKit *headers* staged here by the private host harness (its
+# stage-hookkit-headers target) for the GNUstep container, which has no Theos.
+# Shadow's own build never stages here: it resolves HookKit from $THEOS via
+# build-support/hookkit.mk. Never a source checkout.
 vendor/HookKit.framework/
 .detector-deps/
 core

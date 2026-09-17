@@ -9,7 +9,7 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 shdw_CFLAGS += -DSHADOW_ROOTHIDE
 endif
 shdw_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
-shdw_LDFLAGS += -F../ -F../../vendor/
+shdw_LDFLAGS += -F../
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 shdw_LDFLAGS += -lroothide
 endif

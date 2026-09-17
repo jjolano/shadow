@@ -18,7 +18,7 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowSettings_CFLAGS += -DSHADOW_ROOTHIDE
 endif
 ShadowSettings_LDFLAGS = -rpath /Library/Frameworks -rpath /var/jb/Library/Frameworks -rpath /usr/lib -rpath /var/jb/usr/lib
-ShadowSettings_LDFLAGS += -F../ -F../../vendor
+ShadowSettings_LDFLAGS += -F../
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 ShadowSettings_LDFLAGS += -lroothide
 # bundle.mk stamps an absolute LC_ID_DYLIB ($(THEOS_PACKAGE_INSTALL_PREFIX)
