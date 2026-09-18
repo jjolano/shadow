@@ -36,6 +36,12 @@ verify-mount-filter:
 		verify-mount-filter.c
 	/tmp/shadow-mount-filter-test
 
+# Host check of the restricted-image span and svc branch-encoding decisions:
+# extracts the real bodies (and their constants) from the hook sources and
+# drives them with synthetic Mach-O images.
+verify-image-span:
+	python3 verify-image-span.py
+
 # Pure-C check for the anti-fishhook journal/repair core (rebind_slots.h).
 verify-rebind-repair:
 	$(CC) -std=c99 -Wall -Wextra -o /tmp/shadow-rebind-test \
@@ -76,9 +82,9 @@ verify-rules-generation:
 verify-binary-compat:
 	bash BinaryCompatTests.sh
 
-test: verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
+test: verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean
+.PHONY: test verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean

@@ -62,6 +62,12 @@ jobs:
       - name: svc path-rewrite check
         run: make -C tests verify-path-rewrite
 
+      # Host check of the restricted-image span and svc branch-encoding
+      # decisions: extracts the real bodies from the .x sources and drives them
+      # with synthetic Mach-O images.
+      - name: image span + svc branch check
+        run: make -C tests verify-image-span
+
       # Pure-C check for the anti-fishhook journal/repair core.
       - name: rebind-repair check
         run: make -C tests verify-rebind-repair
