@@ -359,8 +359,20 @@ static BOOL shdw_image_span_ex(const struct mach_header* mh, intptr_t slide,
         if(lc->cmd == LC_SEGMENT_64) {
             const struct segment_command_64* seg = (const void *)lc;
 
-            if(strcmp(seg->segname, "__PAGEZERO") != 0 && seg->vmsize > 0 &&
-               seg_count < SHDW_SPAN_MAX_SEGMENTS) {
+            if(strcmp(seg->segname, "__PAGEZERO") != 0 && seg->vmsize > 0) {
+                if(seg_count >= SHDW_SPAN_MAX_SEGMENTS) {
+                    // More segments than the run buffer holds. Dropping the
+                    // extras would yield a span that is too SHORT, which reads
+                    // as "not restricted" — the unsafe direction. Refuse to
+                    // answer instead, so the caller marks the table
+                    // unanswerable and lookups use the exact predicate.
+                    if(outOversized) {
+                        *outOversized = YES;
+                    }
+
+                    return NO;
+                }
+
                 uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
 
                 seg_start[seg_count] = s;

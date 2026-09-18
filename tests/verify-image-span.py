@@ -241,6 +241,28 @@ int main(void) {
           "wrong magic must be refused");
     free(mh);
 
+    /* More segments than the run buffer holds: refused and reported, never
+       silently truncated. A dropped segment would shorten the span, which
+       reads as "not restricted" -- the unsafe direction. */
+    {
+        enum { MANY = 40 };
+        seg_spec_t many[MANY];
+        char names[MANY][16];
+        for (int i = 0; i < MANY; i++) {
+            snprintf(names[i], sizeof(names[i]), "__SEG%d", i);
+            many[i].name = names[i];
+            many[i].vmaddr = 0x200000000ULL + (uint64_t)i * 0x1000;
+            many[i].vmsize = 0x1000;
+        }
+        mh = make_image(many, MANY);
+        oversized = NO;
+        ok = shdw_image_span_ex(mh, 0, &base, &end, &oversized);
+        CHECK(ok == NO && oversized == YES,
+              "over-long segment list must be refused and reported (ok=%d oversized=%d)",
+              ok, oversized);
+        free(mh);
+    }
+
     if (failures) { printf("%d assertion(s) failed\\n", failures); return 1; }
     printf("image span + svc branch: all assertions passed\\n");
     return 0;
