@@ -308,41 +308,118 @@ shdw_restricted_ranges_t _shdw_restricted_ranges_b = { .generation = UINT64_MAX 
 shdw_restricted_ranges_t* _shdw_restricted_ranges_published = &_shdw_restricted_ranges_a;
 static pthread_mutex_t _shdw_restricted_ranges_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Union span across an image's segments. Return addresses and the addresses
-// the hooks classify only land inside mapped segments, so the loose union is
-// exact for both range tables.
-static BOOL shdw_image_span(const struct mach_header* mh, intptr_t slide, uintptr_t* outBase, uintptr_t* outEnd) {
+// Contiguous mapping run that starts at the image's lowest real segment.
+//
+// A plain union over every segment is wrong for images in the dyld shared
+// cache. The cache splits an image's segments across per-subcache regions, so
+// an image's __DATA_CONST/__LINKEDIT can sit hundreds of megabytes from its
+// __TEXT — and __LINKEDIT reports the whole subcache's link-edit region rather
+// than the image's own. On iOS 15.8.3 this made the restricted-image table
+// record a range like /usr/lib/liblzma.5.dylib = [0x1db26c000, 0x20b024be3)
+// (848 MB), which covers every later address in the cache including
+// Security.framework and libswift_Concurrency. Every dlsym landing in one of
+// those images was then denied as a "restricted symbol lookup" and returned
+// NULL — crashing apps that dlsym stock symbols at launch (kSec* in FBSDK,
+// swift_task_escalate in CBCNews).
+//
+// Every address the hooks classify is in the image's own mapped run — return
+// addresses and resolved symbols land in __TEXT/__DATA, which for a normal
+// Mach-O image are contiguous and page-adjacent from the load address. So
+// taking the maximal contiguous run from the lowest segment keeps the answer
+// exact for ordinary images and can never stretch across an unrelated one.
+// __PAGEZERO is excluded: it is not mapped.
+//
+// Contiguity alone is not a proof: shared-cache __TEXT segments can abut, so a
+// run could in principle walk into a neighbouring image. The bound below is the
+// backstop — a span larger than any real image marks the whole table as unable
+// to answer, which routes lookups to -[Shadow isAddrRestricted:] (the exact
+// predicate) instead of guessing. Under-reporting restriction is the unsafe
+// direction, so refusing to answer beats a short answer.
+#define SHDW_SPAN_MAX_BYTES (64UL * 1024UL * 1024UL)
+
+static BOOL shdw_image_span_ex(const struct mach_header* mh, intptr_t slide,
+                               uintptr_t* outBase, uintptr_t* outEnd,
+                               BOOL* outOversized) {
+    if(outOversized) {
+        *outOversized = NO;
+    }
+
     if(!mh || mh->magic != MH_MAGIC_64) {
         return NO;
     }
 
-    uintptr_t base = UINTPTR_MAX, end = 0;
+    enum { SHDW_SPAN_MAX_SEGMENTS = 32 };
+    uintptr_t seg_start[SHDW_SPAN_MAX_SEGMENTS];
+    uintptr_t seg_end[SHDW_SPAN_MAX_SEGMENTS];
+    uint32_t seg_count = 0;
+
     const struct load_command* lc = (const void *)((const struct mach_header_64 *)mh + 1);
 
     for(uint32_t j = 0; j < mh->ncmds; j++) {
         if(lc->cmd == LC_SEGMENT_64) {
             const struct segment_command_64* seg = (const void *)lc;
-            uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
 
-            if(s < base) {
-                base = s;
-            }
+            if(strcmp(seg->segname, "__PAGEZERO") != 0 && seg->vmsize > 0 &&
+               seg_count < SHDW_SPAN_MAX_SEGMENTS) {
+                uintptr_t s = (uintptr_t) seg->vmaddr + (uintptr_t) slide;
 
-            if(s + seg->vmsize > end) {
-                end = s + seg->vmsize;
+                seg_start[seg_count] = s;
+                seg_end[seg_count] = s + (uintptr_t) seg->vmsize;
+                seg_count++;
             }
         }
 
         lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
     }
 
+    if(!seg_count) {
+        return NO;
+    }
+
+    // Lowest segment wins the base, then extend while a segment starts exactly
+    // where the run currently ends (page-adjacent continuation).
+    uintptr_t base = seg_start[0], end = seg_end[0];
+
+    for(uint32_t i = 1; i < seg_count; i++) {
+        if(seg_start[i] < base) {
+            base = seg_start[i];
+            end = seg_end[i];
+        }
+    }
+
+    BOOL grew = YES;
+
+    while(grew) {
+        grew = NO;
+
+        for(uint32_t i = 0; i < seg_count; i++) {
+            if(seg_start[i] == end && seg_end[i] > end) {
+                end = seg_end[i];
+                grew = YES;
+            }
+        }
+    }
+
     if(end <= base) {
+        return NO;
+    }
+
+    if(end - base > SHDW_SPAN_MAX_BYTES) {
+        if(outOversized) {
+            *outOversized = YES;
+        }
+
         return NO;
     }
 
     *outBase = base;
     *outEnd = end;
     return YES;
+}
+
+static BOOL shdw_image_span(const struct mach_header* mh, intptr_t slide,
+                            uintptr_t* outBase, uintptr_t* outEnd) {
+    return shdw_image_span_ex(mh, slide, outBase, outEnd, NULL);
 }
 
 // Publishes `rebuilt` into the inactive buffer. Caller holds the lock.
@@ -386,8 +463,17 @@ static void shdw_restricted_ranges_full_rebuild(void) {
         }
 
         uintptr_t base = 0, end = 0;
+        BOOL oversized = NO;
 
-        if(!shdw_image_span(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i), &base, &end)) {
+        if(!shdw_image_span_ex(_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i),
+                               &base, &end, &oversized)) {
+            if(oversized) {
+                // A span this large cannot be trusted to describe one image.
+                // Mark the whole table unanswerable so lookups use the exact
+                // predicate rather than a range that may cover unrelated ones.
+                rebuilt.overflowed = 1;
+            }
+
             continue;
         }
 
@@ -409,8 +495,27 @@ static void shdw_restricted_ranges_full_rebuild(void) {
 // span, and the table is small enough that the dedupe scan is free.
 void shdw_restricted_ranges_note_add(const struct mach_header* mh, intptr_t slide, const char* path) {
     uintptr_t base = 0, end = 0;
+    BOOL oversized = NO;
 
-    if(!shdw_image_path_is_restricted(path) || !shdw_image_span(mh, slide, &base, &end)) {
+    if(!shdw_image_path_is_restricted(path)) {
+        return;
+    }
+
+    if(!shdw_image_span_ex(mh, slide, &base, &end, &oversized)) {
+        if(oversized) {
+            // Same reasoning as the full rebuild: an untrustworthy span makes
+            // the published table unable to answer, so lookups fall back to
+            // the exact predicate instead of reading a range that may cover
+            // unrelated images.
+            pthread_mutex_lock(&_shdw_restricted_ranges_lock);
+
+            shdw_restricted_ranges_t marked = *__atomic_load_n(&_shdw_restricted_ranges_published, __ATOMIC_ACQUIRE);
+            marked.overflowed = 1;
+            shdw_restricted_ranges_publish_locked(&marked);
+
+            pthread_mutex_unlock(&_shdw_restricted_ranges_lock);
+        }
+
         return;
     }
 

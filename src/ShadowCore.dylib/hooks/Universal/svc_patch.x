@@ -367,10 +367,30 @@ static BOOL shdw_svc_skip_image(const char* path) {
 }
 
 // Redirects one image svc site to the canonical trampoline. Idempotent: a
-// patched site is a bl instruction, so a re-scan never matches it.
+// patched site is a b/bl instruction, so a re-scan never matches it.
 static _Atomic BOOL shdw_svc_far_site_seen = NO;
 
-static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* where) {
+// `ret` (x30). The trampoline has no other return encoding to handle: it only
+// ever restores x30 and returns, so a site whose fallthrough is this returns
+// through exactly the same register.
+#define SHDW_SVC_RET 0xD65F03C0U
+#define SHDW_SVC_B 0x14000000U
+#define SHDW_SVC_BL 0x94000000U
+
+// Pick the branch encoding for one site. The trampoline takes its return
+// address from lr, which BL sets to site+4 — but BL also destroys x30, and x30
+// is live at the site whenever the enclosing function is a frameless leaf.
+// Such a leaf is exactly `... svc; ret`, so for those, `B` is equivalent and
+// safe: x30 survives into the trampoline, which restores it, and its own `ret`
+// lands where the app's `ret` would have gone. Anywhere else the prologue
+// spilled x30 (the site is mid-function), lr is dead, and BL is required so the
+// trampoline returns to the instruction after the svc.
+static uint32_t shdw_svc_site_branch_opcode(uint32_t fallthrough) {
+    return fallthrough == SHDW_SVC_RET ? SHDW_SVC_B : SHDW_SVC_BL;
+}
+
+static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn,
+                                    uint32_t fallthrough, const char* where) {
     (void)where;
     uintptr_t target = 0;
 
@@ -388,7 +408,9 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn, const char* w
         return;
     }
 
-    *(uint32_t*)site = 0x94000000 | ((uint32_t)(delta >> 2) & 0x3FFFFFF);
+    *(uint32_t*)site =
+        shdw_svc_site_branch_opcode(fallthrough) |
+        ((uint32_t)(delta >> 2) & 0x3FFFFFF);
     sys_icache_invalidate((void*)site, 4);
 }
 
@@ -600,7 +622,13 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
                     continue;
                 }
 
-                shdw_svc_try_patch_site(addr + w * 4, insn, where);
+                // The instruction after the site decides the branch encoding:
+                // a following `ret` means x30 is live at the site (frameless
+                // leaf), where BL would destroy the caller's return address and
+                // leave the leaf's own `ret` jumping to itself.
+                uint32_t fallthrough = (w + 1 < nwords) ? words[w + 1] : 0;
+
+                shdw_svc_try_patch_site(addr + w * 4, insn, fallthrough, where);
             }
         }
 
