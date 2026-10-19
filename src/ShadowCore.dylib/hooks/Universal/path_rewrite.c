@@ -58,8 +58,9 @@ int shdw_path_munge_path(char *path) {
     return 0;
   }
 
-  // In-place primitive: marks the middle byte of the final component. Callers decide
-  // whether a given spelling is eligible; this function only performs the rewrite.
+  // In-place primitive: marks the middle byte of the final component.
+  // Callers decide whether a spelling is eligible; this function only
+  // performs the rewrite.
   path[off] = 0x01;
   return 1;
 }
