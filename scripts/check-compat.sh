@@ -66,11 +66,19 @@ SHDW=$(find_one -type f -path '*/usr/local/bin/shdw')
 WATCHER=$(find_one -type f -name 'me.jjolano.shadow.watcher*.plist')
 [ "$(basename "$WATCHER")" = me.jjolano.shadow.watcher.plist ] || { echo "watcher plist not shipped as me.jjolano.shadow.watcher.plist: $WATCHER" >&2; exit 1; }
 if [ "$(shadow_lane_field "$PROFILE" SCHEME)" = rootless ]; then SHDW_ARG=/var/jb/usr/local/bin/shdw; else SHDW_ARG=/usr/local/bin/shdw; fi
-# Read via plutil so the check is independent of the staged plist's encoding
-# (a lane may ship it converted rather than as the source XML text).
-LABEL=$(plutil -extract Label raw -o - "$WATCHER" 2>/dev/null || true)
+# Read through plistlib so the check does not depend on the staged plist's
+# encoding, and does not need plutil (absent on some build hosts).
+plist_get() {
+  python3 -c 'import plistlib,sys
+with open(sys.argv[1],"rb") as fh:
+    v = plistlib.load(fh)
+for k in sys.argv[2].split("."):
+    v = v[int(k)] if k.isdigit() else v[k]
+print(v)' "$1" "$2" 2>/dev/null || true
+}
+LABEL=$(plist_get "$WATCHER" Label)
 [ "$LABEL" = me.jjolano.shadow.watcher ] || { echo "watcher Label is not me.jjolano.shadow.watcher: $LABEL" >&2; exit 1; }
-ARG0=$(plutil -extract ProgramArguments.0 raw -o - "$WATCHER" 2>/dev/null || true)
+ARG0=$(plist_get "$WATCHER" ProgramArguments.0)
 [ "$ARG0" = "$SHDW_ARG" ] || { echo "watcher ProgramArguments[0] is not $SHDW_ARG: $ARG0" >&2; exit 1; }
 daemon=$(find "$TMP/root" -type f -path '*/usr/libexec/shadowd' -print)
 daemon_plist=$(find "$TMP/root" -type f -name me.jjolano.shadow.plist -print)
