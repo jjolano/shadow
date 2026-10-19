@@ -66,8 +66,12 @@ SHDW=$(find_one -type f -path '*/usr/local/bin/shdw')
 WATCHER=$(find_one -type f -name 'me.jjolano.shadow.watcher*.plist')
 [ "$(basename "$WATCHER")" = me.jjolano.shadow.watcher.plist ] || { echo "watcher plist not shipped as me.jjolano.shadow.watcher.plist: $WATCHER" >&2; exit 1; }
 if [ "$(shadow_lane_field "$PROFILE" SCHEME)" = rootless ]; then SHDW_ARG=/var/jb/usr/local/bin/shdw; else SHDW_ARG=/usr/local/bin/shdw; fi
-grep -Fq '<string>me.jjolano.shadow.watcher</string>' "$WATCHER" || { echo "watcher Label is not me.jjolano.shadow.watcher" >&2; exit 1; }
-grep -A2 -F '<key>ProgramArguments</key>' "$WATCHER" | grep -Fq "<string>$SHDW_ARG</string>" || { echo "watcher ProgramArguments[0] is not $SHDW_ARG" >&2; exit 1; }
+# Read via plutil so the check is independent of the staged plist's encoding
+# (a lane may ship it converted rather than as the source XML text).
+LABEL=$(plutil -extract Label raw -o - "$WATCHER" 2>/dev/null || true)
+[ "$LABEL" = me.jjolano.shadow.watcher ] || { echo "watcher Label is not me.jjolano.shadow.watcher: $LABEL" >&2; exit 1; }
+ARG0=$(plutil -extract ProgramArguments.0 raw -o - "$WATCHER" 2>/dev/null || true)
+[ "$ARG0" = "$SHDW_ARG" ] || { echo "watcher ProgramArguments[0] is not $SHDW_ARG: $ARG0" >&2; exit 1; }
 daemon=$(find "$TMP/root" -type f -path '*/usr/libexec/shadowd' -print)
 daemon_plist=$(find "$TMP/root" -type f -name me.jjolano.shadow.plist -print)
 [ -z "$daemon$daemon_plist" ] || { echo "package contains removed shadowd backend" >&2; exit 1; }
