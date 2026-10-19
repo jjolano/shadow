@@ -21,6 +21,21 @@ static void expect_munge(const char *orig, const char *expected) {
     assert(strlen(buf) == strlen(expected));
 }
 
+// Regression for the const-mutation defect: the natural-ENOENT rewrite must
+// produce a munged COPY and leave the caller's buffer byte-identical.
+static void expect_copy_leaves_input(const char *orig, const char *expected) {
+    char input[512];
+    char scratch[512];
+
+    strcpy(input, orig);
+    const char *out = shdw_path_rewrite_copy(input, scratch, sizeof scratch);
+
+    assert(out != NULL);
+    assert(strcmp(out, expected) == 0);
+    assert(strcmp(input, orig) == 0);   // caller's bytes untouched
+    assert(out == scratch);
+}
+
 int main(void) {
     // Only absolute *at operands may use the in-place natural-ENOENT rewrite;
     // relative names must retain their dirfd-derived meaning.
@@ -40,6 +55,24 @@ int main(void) {
     expect_munge("var/jb/ssh", "var/jb/s\x01h");
     // No '/' at all.
     expect_munge("ssh", "s\x01h");
+
+    expect_copy_leaves_input("/var/jb/usr/bin/ssh",
+                             "/var/jb/usr/bin/s\x01h");
+    expect_copy_leaves_input("/var/mobile/tmp/eff_raceswap_a_9",
+                             "/var/mobile/tmp/eff_race\x01wap_a_9");
+
+    // Already-marked spelling: the copy helper must REFUSE (NULL) rather than return
+    // an unmodified spelling, and the caller's buffer stays untouched.
+    {
+      char input[512];
+      char scratch[512];
+      strcpy(input, "/var/mobile/tmp/eff_race\x01wap_a_9");
+      assert(shdw_path_rewrite_copy(input, scratch, sizeof scratch) == NULL);
+      assert(strcmp(input, "/var/mobile/tmp/eff_race\x01wap_a_9") == 0);
+      // Test contract: the copy helper refuses already-marked input; the in-place
+      // primitive still rewrites.
+      assert(shdw_path_munge_path(input) == 1);
+    }
 
     // Nothing safe to munge: empty string, root, trailing slash.
     char buf[16];

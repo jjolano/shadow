@@ -11,6 +11,7 @@ directory containing `bin/lane.sh`; a full Theos installation is not required.
 | fresh fd/DIR path policy (host doubles) | `make -C tests verify-fd-path-freshness` |
 | mount filtering (pure C + static query contract) | `make -C tests verify-mount-filter` |
 | rebind journal/repair (pure C) | `make -C tests verify-rebind-repair` |
+| KERN_PROCARGS2 payload filter (kernel-shaped payloads) | `make -C tests verify-procargs-filter` |
 | lane/package contract | `sh tests/verify-lane-contract.sh` |
 | binary compatibility checker (synthetic tool output) | `make -C tests verify-binary-compat` |
 | hook→engine matrix drift | `sh tests/verify-hook-matrix.sh` |

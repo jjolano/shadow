@@ -896,7 +896,20 @@ void shdw_universal_sandbox(SHDWHookSession* hooks) {
     if(!original_sandbox_check) {
         original_sandbox_check = sym_sandbox_check;
     }
-    [hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
+    // fcntl carried the whole fd-path policy (F_ADDSIGS denial, F_GETPATH hiding,
+    // F_CHECK_LV) as the only member of this group installed without checking the
+    // result or falling back to a rebind — every neighbour below does both. When
+    // hookFunction: refuses fcntl, the replacement is silently absent and not one
+    // of those policies runs: measured on device as a plain F_ADDSIGS of a real
+    // jailbreak signature blob being ACCEPTED (no EINVAL) and F_GETPATH handing the
+    // app the resolved backing path of a hidden object.
+    void* sym_fcntl = (void*)fcntl;
+    if(![hooks hookFunction:fcntl withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl]) {
+        [hooks hookRebindSymbol:@"fcntl" withReplacement:replaced_fcntl outOldPtr:(void **) &original_fcntl];
+    }
+    if(!original_fcntl) {
+        original_fcntl = sym_fcntl;
+    }
     [hooks hookRebindSymbol:@"host_get_special_port" withReplacement:replaced_host_get_special_port outOldPtr:(void **) &original_host_get_special_port];
     [hooks hookRebindSymbol:@"task_get_special_port" withReplacement:replaced_task_get_special_port outOldPtr:(void **) &original_task_get_special_port];
     [hooks hookRebindSymbol:@"task_for_pid" withReplacement:replaced_task_for_pid outOldPtr:(void **) &original_task_for_pid];

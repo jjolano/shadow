@@ -25,6 +25,7 @@
 #import <sys/event.h>
 #import <sys/syscall.h>
 #import <fcntl.h>
+#import <string.h>
 #import <unistd.h>
 
 #if defined(__arm64__)
@@ -115,6 +116,7 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
            && shdw_svc_rewriteable((int)sysno, a1)
            && moff != (size_t)-1
            && shdw_path_buf_writable(path + moff)
+           && (unsigned char)path[moff] != 0x01   // marked-offset eligibility check
            && shdw_path_munge_path((char*)path)) {
             return 0;
         }
@@ -149,6 +151,7 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
            && shdw_svc_rewriteable((int)sysno, a2)
            && moff != (size_t)-1
            && shdw_path_buf_writable(path + moff)
+           && (unsigned char)path[moff] != 0x01   // marked-offset eligibility check
            && shdw_path_munge_path((char*)path)) {
             return 0;
         }
@@ -183,8 +186,9 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
 
         if(changelist && nchanges > 0) {
             pid_t self = getpid();
+            long limit = nchanges > SHDW_KEVENT_SCAN_MAX ? SHDW_KEVENT_SCAN_MAX : nchanges;
 
-            for(long i = 0; i < nchanges; i++) {
+            for(long i = 0; i < limit; i++) {
                 int16_t filter;
                 uint64_t ident;
 
@@ -220,8 +224,7 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
 // number) + lr, ask the helper, then either synthesize the errno return
 // (x0 = helper's errno, carry set — Darwin's kernel error convention) or
 // restore and execute the original svc.
-#define SHADW_SVC_TRAMPOLINE(NAME, IMM) \
-__attribute__((naked, used, noinline)) static void NAME(void) { \
+#define SHADW_SVC_TRAMPOLINE_BODY(IMM, LR_SLOT) \
     __asm__ volatile( \
         "stp x0, x1, [sp, #-16]!\n" \
         "stp x2, x3, [sp, #-16]!\n" \
@@ -241,7 +244,12 @@ __attribute__((naked, used, noinline)) static void NAME(void) { \
         /* at sp+128 (saved x3 is at sp+136). a2 must be the third syscall */ \
         /* argument (openat flags, kevent nchanges), not x3. */ \
         "ldr x3, [sp, #128]\n" \
-        "ldr x4, [sp, #8]\n" \
+        /* x4 = caller address for the external-caller gate. A site entered */ \
+        /* with B (or BL) leaves its continuation in lr, so the shared */ \
+        /* trampoline reads the saved lr (slot 8); a site routed through a */ \
+        /* per-site stub passes the site in x17 (slot 24) because the stub's */ \
+        /* own bl overwrote lr. */ \
+        "ldr x4, [sp, #" LR_SLOT "]\n" \
         "bl _shdw_svc_should_deny\n" \
         "cbz x0, 1f\n" \
         /* deny: x0 already holds the errno to synthesize (ENOENT for the */ \
@@ -275,10 +283,205 @@ __attribute__((naked, used, noinline)) static void NAME(void) { \
         "ldp x0, x1, [sp], #16\n" \
         "svc #" IMM "\n" \
         "ret\n" \
-    ); \
+    )
+
+#define SHADW_SVC_TRAMPOLINE(NAME, IMM, LR_SLOT) \
+__attribute__((naked, used, noinline)) static void NAME(void) { \
+    SHADW_SVC_TRAMPOLINE_BODY(IMM, LR_SLOT); \
 }
 
-SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_80, "0x80")
+SHADW_SVC_TRAMPOLINE(shdw_svc_trampoline_80, "0x80", "8")
+
+// Entry used by the per-site stubs below. Hidden rather than static because
+// the stub template is a file-scope asm block and cannot reference a local
+// symbol; -fvisibility=hidden keeps it image-local.
+__attribute__((naked, used, noinline, visibility("hidden"))) void
+shdw_svc_trampoline_stub_entry(void) {
+    SHADW_SVC_TRAMPOLINE_BODY("0x80", "24");
+}
+
+// `ret` (x30). The trampoline has no other return encoding to handle: it only
+// ever restores x30 and returns, so a site whose fallthrough is this returns
+// through exactly the same register.
+#define SHDW_SVC_RET 0xD65F03C0U
+#define SHDW_SVC_B 0x14000000U
+#define SHDW_SVC_BL 0x94000000U
+
+// --- Per-site continuation stubs --------------------------------------------
+// A patched site whose fallthrough is not `svc; ret` must resume at site+4,
+// and the shared trampoline returns through the address it was entered with.
+// BL supplies site+4 but destroys x30 — which is still the enclosing
+// function's return address whenever that function is a leaf, and the
+// compiler emits exactly that shape for a constant-sysno wrapper:
+//
+//     svc #0x80 ; cset w8, hs ; csinv x0, x0, xzr, eq ; ret
+//
+// The enclosing `ret` then uses the clobbered x30 and re-enters the patched
+// site, spinning forever inside the caller (measured on device: 100% of a
+// core from the syscall, the syscall itself succeeding, no further statement
+// in the caller, killed 19.1 s later by the scene-create watchdog).
+//
+// So those sites are routed with B into a small per-site stub that:
+//   * saves the enclosing function's live x30 (and x17, its scratch arg),
+//   * sets x17 = the site, so the policy gate still sees app code as the
+//     caller (its own bl overwrites lr),
+//   * calls the trampoline, which emulates or permits the syscall, preserving
+//     every register and the carry flag the caller expects,
+//   * restores x30/x17 and branches to site+4 with the result intact.
+// The stub body is a template; only the bl displacement and the two literal
+// words (site, site+4) differ per site.
+// The literal loads use local labels: a pc-relative ldr cannot carry a
+// global-symbol fixup (arm64e rejects it outright). The slot symbols exist
+// only so the C side can compute template-relative offsets, so they are
+// private_extern — nothing leaks into the exported surface.
+__asm__(
+    ".text\n"
+    ".p2align 2\n"
+    ".private_extern _shdw_svc_stub_template\n"
+    ".private_extern _shdw_svc_stub_template_bl\n"
+    ".private_extern _shdw_svc_stub_template_site\n"
+    ".private_extern _shdw_svc_stub_template_ret\n"
+    ".private_extern _shdw_svc_stub_template_end\n"
+    "_shdw_svc_stub_template:\n"
+    "stp x30, x17, [sp, #-16]!\n"
+    "ldr x17, 1f\n"
+    "_shdw_svc_stub_template_bl:\n"
+    "bl _shdw_svc_trampoline_stub_entry\n"
+    "ldp x30, x17, [sp], #16\n"
+    "_shdw_svc_stub_template_ret:\n"
+    "b 2f\n"
+    "_shdw_svc_stub_template_site:\n"
+    "1:\n"
+    ".quad 0\n"
+    "2:\n"
+    "_shdw_svc_stub_template_end:\n"
+);
+
+extern const uint8_t shdw_svc_stub_template[]
+    __attribute__((visibility("hidden")));
+extern const uint8_t shdw_svc_stub_template_bl[]
+    __attribute__((visibility("hidden")));
+extern const uint8_t shdw_svc_stub_template_site[]
+    __attribute__((visibility("hidden")));
+extern const uint8_t shdw_svc_stub_template_ret[]
+    __attribute__((visibility("hidden")));
+extern const uint8_t shdw_svc_stub_template_end[]
+    __attribute__((visibility("hidden")));
+extern void shdw_svc_trampoline_stub_entry(void);
+
+// The stub pool is a static, all-zero array in this image's own __TEXT, not a
+// fresh mapping. Placement is then deterministic (no address hunting under
+// ASLR), the stub's bl to the trampoline is always in range, and no
+// executable-anonymous mapping is required — a refused RWX/RX transition on
+// anonymous memory was an explicit way to lose interception. Its pages are
+// made writable with the same VM_PROT_COPY dance the site patch uses, which
+// also means the whole pool is written under the scan's stop-the-world cover
+// (see shdw_svc_patch_memory), never by reopening a page other threads may be
+// executing stubs from.
+#define SHDW_SVC_STUB_ARENA_BYTES (64U * 1024U)
+
+__attribute__((section("__TEXT,__svcstub"), used, aligned(8)))
+static uint8_t shdw_svc_stub_arena[SHDW_SVC_STUB_ARENA_BYTES];
+
+static size_t shdw_svc_stub_used;
+static _Atomic uint32_t shdw_svc_stub_placed;
+static _Atomic uint32_t shdw_svc_stub_skipped;
+
+// Observable from outside for exactly one reason: when a stub cannot be handed
+// out the site is left a native svc, i.e. interception is silently lost unless
+// somebody can see it. NSLog is a no-op in release builds, so a run that loses
+// raw-svc coverage used to look identical to a healthy one.
+uint32_t SHDWSVCPatchStubPlacements(void) {
+    return atomic_load_explicit(&shdw_svc_stub_placed, memory_order_relaxed);
+}
+
+uint32_t SHDWSVCPatchStubSkips(void) {
+    return atomic_load_explicit(&shdw_svc_stub_skipped, memory_order_relaxed);
+}
+
+static BOOL shdw_svc_stub_arena_protect(BOOL writable) {
+    vm_prot_t prot = writable
+                         ? (VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY)
+                         : (VM_PROT_READ | VM_PROT_EXECUTE);
+    kern_return_t kr = vm_protect(mach_task_self(),
+                                  (vm_address_t)shdw_svc_stub_arena,
+                                  (vm_size_t)SHDW_SVC_STUB_ARENA_BYTES, FALSE, prot);
+
+    if(kr != KERN_SUCCESS && writable) {
+        kr = vm_protect(mach_task_self(), (vm_address_t)shdw_svc_stub_arena,
+                        (vm_size_t)SHDW_SVC_STUB_ARENA_BYTES, FALSE,
+                        VM_PROT_READ | VM_PROT_WRITE);
+    }
+
+    return kr == KERN_SUCCESS;
+}
+
+// Called with the other threads suspended (see shdw_svc_patch_memory).
+static BOOL shdw_svc_stub_arena_open(void) {
+    return shdw_svc_stub_arena_protect(YES);
+}
+
+static void shdw_svc_stub_arena_close(void) {
+    if(!shdw_svc_stub_arena_protect(NO)) {
+        atomic_fetch_add_explicit(&shdw_svc_stub_skipped, 1, memory_order_relaxed);
+    }
+}
+
+static uintptr_t shdw_svc_stub_reserve(void) {
+    size_t bytes = (size_t)(shdw_svc_stub_template_end - shdw_svc_stub_template);
+    bytes = (bytes + 7U) & ~(size_t)7U;
+
+    if(shdw_svc_stub_used + bytes > SHDW_SVC_STUB_ARENA_BYTES) {
+        return 0;
+    }
+
+    uintptr_t slot = (uintptr_t)&shdw_svc_stub_arena[shdw_svc_stub_used];
+    shdw_svc_stub_used += bytes;
+    return slot;
+}
+
+// Build (or reuse semantics aside, one stub per site) the continuation stub
+// for one site. Returns 0 when the pool cannot be placed.
+static uintptr_t shdw_svc_stub_for_site(uintptr_t site) {
+    uintptr_t slot = shdw_svc_stub_reserve();
+
+    if(!slot) {
+        atomic_fetch_add_explicit(&shdw_svc_stub_skipped, 1, memory_order_relaxed);
+        return 0;
+    }
+
+    size_t size = (size_t)(shdw_svc_stub_template_end - shdw_svc_stub_template);
+    size_t off_bl = (size_t)(shdw_svc_stub_template_bl - shdw_svc_stub_template);
+    size_t off_site = (size_t)(shdw_svc_stub_template_site - shdw_svc_stub_template);
+    size_t off_ret = (size_t)(shdw_svc_stub_template_ret - shdw_svc_stub_template);
+
+    memcpy((void*)slot, shdw_svc_stub_template, size);
+    *(uint64_t*)((uint8_t*)slot + off_site) = (uint64_t)site;
+
+    uintptr_t bl_site = slot + off_bl;
+    uintptr_t ret_site = slot + off_ret;
+    int64_t bl_delta = (int64_t)(uintptr_t)shdw_svc_trampoline_stub_entry - (int64_t)bl_site;
+
+    // The tail branches straight to site+4 with its displacement fixed up per
+    // copy. Reaching the continuation through a hardcoded word plus
+    // `ldr x16; br x16` also worked, but it left x16 — the syscall-number
+    // register the site just loaded, the one register a site always sets —
+    // holding an address after the site, where a native svc leaves it alone.
+    int64_t ret_delta = (int64_t)(site + 4) - (int64_t)ret_site;
+
+    if(bl_delta < -0x8000000LL || bl_delta > 0x7FFFFFCLL ||
+       ret_delta < -0x8000000LL || ret_delta > 0x7FFFFFCLL) {
+        atomic_fetch_add_explicit(&shdw_svc_stub_skipped, 1, memory_order_relaxed);
+        return 0;
+    }
+
+    *(uint32_t*)bl_site = SHDW_SVC_BL | ((uint32_t)(bl_delta >> 2) & 0x3FFFFFFu);
+    *(uint32_t*)ret_site = SHDW_SVC_B | ((uint32_t)(ret_delta >> 2) & 0x3FFFFFFu);
+    sys_icache_invalidate((void*)slot, size);
+    atomic_fetch_add_explicit(&shdw_svc_stub_placed, 1, memory_order_relaxed);
+
+    return slot;
+}
 
 // --- Scanner ----------------------------------------------------------------
 
@@ -370,23 +573,15 @@ static BOOL shdw_svc_skip_image(const char* path) {
 // patched site is a b/bl instruction, so a re-scan never matches it.
 static _Atomic BOOL shdw_svc_far_site_seen = NO;
 
-// `ret` (x30). The trampoline has no other return encoding to handle: it only
-// ever restores x30 and returns, so a site whose fallthrough is this returns
-// through exactly the same register.
-#define SHDW_SVC_RET 0xD65F03C0U
-#define SHDW_SVC_B 0x14000000U
-#define SHDW_SVC_BL 0x94000000U
 
-// Pick the branch encoding for one site. The trampoline takes its return
-// address from lr, which BL sets to site+4 — but BL also destroys x30, and x30
-// is live at the site whenever the enclosing function is a frameless leaf.
-// Such a leaf is exactly `... svc; ret`, so for those, `B` is equivalent and
-// safe: x30 survives into the trampoline, which restores it, and its own `ret`
-// lands where the app's `ret` would have gone. Anywhere else the prologue
-// spilled x30 (the site is mid-function), lr is dead, and BL is required so the
-// trampoline returns to the instruction after the svc.
-static uint32_t shdw_svc_site_branch_opcode(uint32_t fallthrough) {
-    return fallthrough == SHDW_SVC_RET ? SHDW_SVC_B : SHDW_SVC_BL;
+// Sites whose fallthrough is `ret` are entered with B: x30 survives into the
+// trampoline, whose own `ret` lands where the app's `ret` would have gone.
+// Every other site needs to resume at site+4, which BL would buy by
+// destroying x30 — live whenever the enclosing function is a leaf (see the
+// stub block above). Those sites go through a per-site stub instead, also
+// reached with B, so no patched site ever clobbers x30.
+static BOOL shdw_svc_site_needs_stub(uint32_t fallthrough) {
+    return fallthrough != SHDW_SVC_RET;
 }
 
 static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn,
@@ -395,7 +590,19 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn,
     uintptr_t target = 0;
 
     if(!shdw_svc_is_instruction(insn)) return;
+
+    (void)fallthrough;
     target = (uintptr_t)shdw_svc_trampoline_80;
+
+    if(shdw_svc_site_needs_stub(fallthrough)) {
+        // Never BL: see shdw_svc_site_needs_stub. A site whose stub cannot be
+        // placed stays a native svc rather than risking a clobbered x30.
+        target = shdw_svc_stub_for_site(site);
+
+        if(!target) {
+            return;
+        }
+    }
 
     // A64 B/BL immediates are relative to the branch instruction's address.
     int64_t delta = (int64_t)target - (int64_t)site;
@@ -408,9 +615,7 @@ static void shdw_svc_try_patch_site(uintptr_t site, uint32_t insn,
         return;
     }
 
-    *(uint32_t*)site =
-        shdw_svc_site_branch_opcode(fallthrough) |
-        ((uint32_t)(delta >> 2) & 0x3FFFFFF);
+    *(uint32_t*)site = SHDW_SVC_B | ((uint32_t)(delta >> 2) & 0x3FFFFFFu);
     sys_icache_invalidate((void*)site, 4);
 }
 
@@ -602,6 +807,11 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
         uint32_t* words = (uint32_t*)addr;
         size_t nwords = scan_size / 4;
 
+        // Stubs are written while every other thread is stopped, and the pool
+        // goes back to RX before they resume: a thread already executing a
+        // stub can never see its page turn writable.
+        BOOL arena_open = shdw_svc_stub_arena_open();
+
         for(size_t w = 0; w < nwords; w++) {
             uint32_t insn = words[w];
 
@@ -622,14 +832,21 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
                     continue;
                 }
 
-                // The instruction after the site decides the branch encoding:
-                // a following `ret` means x30 is live at the site (frameless
-                // leaf), where BL would destroy the caller's return address and
-                // leave the leaf's own `ret` jumping to itself.
+                // The instruction after the site decides the route: a
+                // following `ret` returns through the x30 the site saw, so the
+                // shared trampoline can be entered with B. Anything else has to
+                // resume at site+4 and goes through a per-site stub, because BL
+                // would destroy an x30 that a leaf enclosing function still
+                // needs (svc_patch_try_patch_site documents the spin that
+                // caused on device).
                 uint32_t fallthrough = (w + 1 < nwords) ? words[w + 1] : 0;
 
                 shdw_svc_try_patch_site(addr + w * 4, insn, fallthrough, where);
             }
+        }
+
+        if(arena_open) {
+            shdw_svc_stub_arena_close();
         }
 
         // Restore execute permission before any other thread can run again.
@@ -652,7 +869,15 @@ static void shdw_svc_patch_memory(uintptr_t addr, size_t scan_size,
     }
 
     if(atomic_exchange_explicit(&shdw_svc_far_site_seen, NO, memory_order_relaxed)) {
-        NSLog(@"[Shadow][svc] svc site skipped in %s", where);
+        NSLog(@"[Shadow][svc] svc site out of reach, left native, in %s", where);
+    }
+
+    // Silent coverage loss is the failure mode worth naming: a skipped stub
+    // leaves that site a native svc, so the raw-syscall lane stops being
+    // policed while every filtered API still looks right.
+    if(SHDWSVCPatchStubSkips()) {
+        NSLog(@"[Shadow][svc] %u stubs placed, %u stub sites left native in %s",
+              SHDWSVCPatchStubPlacements(), SHDWSVCPatchStubSkips(), where);
     }
 }
 

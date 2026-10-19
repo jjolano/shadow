@@ -81,9 +81,12 @@ static int replaced_access(const char* pathname, int mode) {
     if(ext) {
         restricted = [_shadow isCPathRestricted:pathname];
 
-        if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
-            errno = caller_errno;
-            return original_access(pathname, mode);   // natural ENOENT
+        if(!hidden && restricted) {
+            const char *rw = shdw_libc_try_rewrite(pathname);
+            if(rw) {
+                errno = caller_errno;
+                return original_access(rw, mode);   // natural ENOENT (caller buffer untouched)
+            }
         }
     }
 
@@ -128,8 +131,11 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
         return original_readlink(pathname, buf, bufsize);
     }
 
-    if([_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
-        return original_readlink(pathname, buf, bufsize);   // natural ENOENT
+    if([_shadow isCPathRestricted:pathname]) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            return original_readlink(rw, buf, bufsize);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     NSString* path = [NSString stringWithUTF8String:pathname];
@@ -137,7 +143,11 @@ static ssize_t replaced_readlink(const char* pathname, char* buf, size_t bufsize
     // NoFollow: this is a link-LOCATION check — Core's resolve-before-exempt
     // must not realpath through the link, which would evaluate its target
     // instead of the link path itself.
-    if([_shadow isPathRestricted:path options:@{kShadowRestrictionNoFollow : @YES}]) {
+    // A spelling that is not valid UTF-8 produces no string, and the string
+    // engine answers NO for a nil path (silently skipping the check), so the
+    // byte verdict — the only one left — decides for those.
+    if((path && [_shadow isPathRestricted:path options:@{kShadowRestrictionNoFollow : @YES}]) ||
+       (!path && [_shadow isCPathRestricted:pathname])) {
         errno = ENOENT;
         return -1;
     }
@@ -454,6 +464,13 @@ static int (*original_getmntinfo)(struct statfs** mntbufp, int flags);
 static struct statfs* shdw_getmntinfo_buf = NULL;
 static size_t shdw_getmntinfo_cap = 0;
 
+// The overwrite-on-next-call contract is stock (see above); the realloc race is
+// not. Two concurrent external callers could otherwise memcpy into — or be
+// handed — a buffer another thread was reallocating. getmntinfo is not a hot
+// path, so one mutex around grow+copy+publish is the whole fix. No
+// os_unfair_lock: the legacy lane's floor predates it.
+static pthread_mutex_t shdw_getmntinfo_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
     if(!isCallerExternal()) {
         return original_getmntinfo(mntbufp, flags);
@@ -470,10 +487,13 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
     // static getmntinfo. Filter into our own static buffer instead.
     size_t bytes = (size_t) result * sizeof(struct statfs);
 
+    pthread_mutex_lock(&shdw_getmntinfo_lock);
+
     if(bytes > shdw_getmntinfo_cap) {
         struct statfs* grown = (struct statfs *) realloc(shdw_getmntinfo_buf, bytes);
 
         if(grown == NULL) {
+            pthread_mutex_unlock(&shdw_getmntinfo_lock);
             return result;  // OOM: hand back the unfiltered stock table
         }
 
@@ -485,6 +505,8 @@ static int replaced_getmntinfo(struct statfs** mntbufp, int flags) {
 
     result = shdw_filter_mounts(shdw_getmntinfo_buf, result, YES);
     *mntbufp = shdw_getmntinfo_buf;
+
+    pthread_mutex_unlock(&shdw_getmntinfo_lock);
 
     return result;
 }
@@ -740,7 +762,8 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
                 return sub;
             }
             int r = original_stat(pathname, buf);
-            if(r != -1 && shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
+            if(r != -1 && (shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT ||
+                           shdw_verify_open_hidden(AT_FDCWD, pathname) == -1)) {
                 memset(buf, 0, sizeof(struct stat));
                 errno = ENOENT;
                 return -1;
@@ -761,8 +784,11 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     // Reuse this call's preflight verdict for both external-only checks.
     BOOL restricted = ext && [_shadow isCPathRestricted:pathname];
 
-    if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
-        return original_stat(pathname, buf);   // natural ENOENT
+    if(!hidden && restricted) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            return original_stat(rw, buf);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     // A hidden denial traps into a scratch buffer and denies after, so it
@@ -793,6 +819,18 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
         errno = ENOENT;
         return -1;
     }
+    // The post-verify above is stability-only (one re-open sample, no
+    // hiddenness question), so a raced alias that parks on the hidden
+    // occupant for BOTH samples used to be handed back to the app — measured
+    // as a rename-swap fixture reading the hidden object's dev/ino/size/mtime
+    // (~1 run in 3, ~27% of successful stats). The spelling-based
+    // shdw_at_post_hidden answers "benign" for a benign alias no matter what it
+    // points at, so shdw_verify_open_hidden (pin + F_GETPATH + resolved-spelling
+    // classification) is the one that can see where the raced alias actually went.
+    // NOTE: measured, this hardening does NOT stop that leak — post-patch rates
+    // (2 admissions in 6 staged runs) are indistinguishable from pre-patch — so it
+    // is kept on its own terms (the fallback no longer answers unfiltered) and the
+    // leak's admit path is still open.
     // Fallback re-verification with the identity the caller already holds:
     // only when substitution did not already answer (its verdict is final —
     // re-sampling could only re-open a window the substitution closed). The
@@ -802,7 +840,8 @@ static int replaced_stat(const char* pathname, struct stat* buf) {
     // handing back the previous occupant's identity. Settled namespaces
     // still admit (both samples name the same object).
     if(sub == -2 && result != -1 && !hidden && ext && buf &&
-        shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
+        (shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT ||
+         shdw_verify_open_hidden(AT_FDCWD, pathname) == -1)) {
         memset(buf, 0, sizeof(struct stat));
         errno = ENOENT;
         return -1;
@@ -845,8 +884,11 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
         return original_lstat(pathname, NULL);
     }
 
-    if(!hidden && [_shadow isCPathRestricted:pathname] && shdw_libc_try_rewrite(pathname)) {
-        return original_lstat(pathname, buf);   // natural ENOENT
+    if(!hidden && [_shadow isCPathRestricted:pathname]) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            return original_lstat(rw, buf);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     struct stat _buf;
@@ -857,11 +899,14 @@ static int replaced_lstat(const char* pathname, struct stat* buf) {
 
         // Only use resolve flag if target is not a symlink. NoFollow keeps
         // Core's resolve-before-exempt from realpath-ing through the link:
-        // this is a link-LOCATION check, not a target check.
-        if([_shadow isPathRestricted:path options:@{
-            kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode)),
-            kShadowRestrictionNoFollow : @YES
-        }]) {
+        // this is a link-LOCATION check, not a target check. As in
+        // replaced_readlink, a non-UTF-8 spelling has no string to hand the
+        // engine, so the byte predicate decides for it.
+        if((path && [_shadow isPathRestricted:path options:@{
+                kShadowRestrictionEnableResolve : @(!S_ISLNK(_buf.st_mode)),
+                kShadowRestrictionNoFollow : @YES
+            }]) ||
+           (!path && [_shadow isCPathRestricted:pathname])) {
             errno = ENOENT;
             return -1;
         }
@@ -987,10 +1032,12 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
 
     BOOL hidden = shdw_path_is_absolute(pathname) && shdw_path_is_external_hidden_lexical(pathname);
 
-    if(!hidden && shdw_path_is_absolute(pathname)
-       && [_shadow isCPathRestricted:pathname]
-       && shdw_libc_try_rewrite(pathname)) {
-        return original_fstatat(dirfd, pathname, buf, flags);   // natural ENOENT
+    if(!hidden && shdw_path_is_absolute(pathname) &&
+       [_shadow isCPathRestricted:pathname]) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            return original_fstatat(dirfd, rw, buf, flags);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     // Relative operands joining onto the caller's own bundle pass through,
@@ -1036,7 +1083,8 @@ static int replaced_fstatat(int dirfd, const char* pathname, struct stat* buf, i
     // atomic-swap move between the answer and this sample denies as
     // contradictory instead of disclosing the previous occupant.
     if(sub == -2 && result != -1 && !hidden && buf &&
-        shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
+        (shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT ||
+         shdw_verify_open_hidden(dirfd, pathname) == -1)) {
         if(buf) {
             memset(buf, 0, sizeof(struct stat));
         }
@@ -1099,9 +1147,12 @@ static int replaced_faccessat(int dirfd, const char* pathname, int mode, int fla
     // The direct classification is only safe for absolute paths.
     BOOL restricted = shdw_path_is_absolute(pathname) && [_shadow isCPathRestricted:pathname];
 
-    if(!hidden && restricted && shdw_libc_try_rewrite(pathname)) {
-        errno = caller_errno;
-        return original_faccessat(dirfd, pathname, mode, flags);   // natural ENOENT
+    if(!hidden && restricted) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            errno = caller_errno;
+            return original_faccessat(dirfd, rw, mode, flags);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     if(!hidden && shdw_at_path_denied(dirfd, pathname)) {
@@ -1661,11 +1712,18 @@ static int replaced_ftw(const char* path, int (*fn)(const char*, const struct st
         return -1;
     }
 
+    // Save/restore rather than clearing: a walk started from inside a callback
+    // (or any nesting) would otherwise leave the OUTER walk with a NULL
+    // userfn, after which the trampoline returns 0 for every remaining entry
+    // and the caller's callback silently stops being invoked.
+    BOOL previous_filtering = shdw_ftw_filtering;
+    int (*previous_fn)(const char*, const struct stat*, int) = shdw_ftw_userfn;
+
     shdw_ftw_filtering = YES;
     shdw_ftw_userfn = fn;
     int ret = original_ftw(path, shdw_ftw_trampoline, nopenfd);
-    shdw_ftw_filtering = NO;
-    shdw_ftw_userfn = NULL;
+    shdw_ftw_filtering = previous_filtering;
+    shdw_ftw_userfn = previous_fn;
     return ret;
 }
 
@@ -1680,11 +1738,16 @@ static int replaced_nftw(const char* path, int (*fn)(const char*, const struct s
         return -1;
     }
 
+    // Same save/restore as replaced_ftw: a nested walk must not clear the
+    // outer walk's callback.
+    BOOL previous_filtering = shdw_ftw_filtering;
+    int (*previous_fn)(const char*, const struct stat*, int, struct FTW*) = shdw_nftw_userfn;
+
     shdw_ftw_filtering = YES;
     shdw_nftw_userfn = fn;
     int ret = original_nftw(path, shdw_nftw_trampoline, nopenfd, flags);
-    shdw_ftw_filtering = NO;
-    shdw_nftw_userfn = NULL;
+    shdw_ftw_filtering = previous_filtering;
+    shdw_nftw_userfn = previous_fn;
     return ret;
 }
 
@@ -1855,33 +1918,35 @@ static char* replaced_realpath(const char* pathname, char* resolved_path) {
     char* result = original_realpath(pathname, resolved_path);
 
     if(result && isCallerExternal()) {
+        // A denied realpath must not leave the resolved target in the caller's
+        // own buffer: `result` is that same buffer when resolved_path != NULL,
+        // and only the malloc'd copy is freed below.
+        #define SHDW_REALPATH_DENY(ERR)                                            \
+            do {                                                                   \
+                errno = (ERR);                                                     \
+                if(resolved_path == NULL) {                                        \
+                    free(result);                                                  \
+                } else {                                                           \
+                    resolved_path[0] = '\0';                                       \
+                }                                                                  \
+                return NULL;                                                       \
+            } while(0)
+
         if(shdw_path_is_main_bundle_exempt(pathname) || shdw_path_is_main_bundle_exempt(result)) {
             return result;
         }
         if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
-            errno = ENOENT;
-
-            if(resolved_path == NULL) {
-                // realpath malloc'd the result; it becomes unreachable once
-                // we return NULL — free it first.
-                free(result);
-            }
-
-            return NULL;
+            SHDW_REALPATH_DENY(ENOENT);
         }
 
         // The returned path is the fully resolved TARGET: a symlink chain
         // can land in a restricted location even when the input path is
         // not restricted, so check the resolved string as well.
         if(shdw_path_is_external_hidden(result) || [_shadow isCPathRestricted:result]) {
-            errno = EACCES;
-
-            if(resolved_path == NULL) {
-                free(result);
-            }
-
-            return NULL;
+            SHDW_REALPATH_DENY(EACCES);
         }
+
+        #undef SHDW_REALPATH_DENY
     }
 
     return result;
@@ -1899,16 +1964,17 @@ static int replaced_getattrlist(const char* path, struct attrlist* attrList, voi
         return original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
     }
 
-    int result = original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
-
     // Same predicate PAIR as replaced_stat: the ruleset AND the external-hidden
     // set, so ATTR_CMN_NAME can't surface an object stat/access report absent.
-    if(result != -1 && ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
+    // Denied BEFORE the original call: denying after it left the caller's
+    // attrBuf holding the real record for a caller that reads the buffer
+    // instead of the return value (the fd and *at siblings both deny first).
+    if(ext && (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path])) {
         errno = ENOENT;
         return -1;
     }
 
-    return result;
+    return original_getattrlist(path, attrList, attrBuf, attrBufSize, options);
 }
 
 // APFS snapshot enumeration: a detector can list jailbreak fakefs snapshots
@@ -2018,6 +2084,7 @@ static int replaced_fs_snapshot_list(int dirfd, struct attrlist* attrs, void* bu
             // if shdw_snapshot_is_jb(name) is 1, memmove the tail down by
             // recLen and decrement the record count. Survivors stay in place.
             size_t totalBytes = offset;  // byte extent of the records region
+            size_t originalTotal = totalBytes;
             offset = 0;
 
             // Offset-driven, not record-indexed: dropping a record slides the
@@ -2045,6 +2112,16 @@ static int replaced_fs_snapshot_list(int dirfd, struct attrlist* attrs, void* bu
                 } else {
                     offset += recLen;
                 }
+            }
+
+            if(totalBytes < originalTotal) {
+                // The dropped records' bytes stay past the returned extent:
+                // the record header, its attrs and the "fakefs" name are still
+                // readable by a whole-buffer scan, and the dropped snapshot is
+                // usually the newest (last) one. Clear what the compaction
+                // vacated — the same reason shdw_getattrlistbulk_filter clears
+                // its tail.
+                memset((char*) buf + totalBytes, 0, originalTotal - totalBytes);
             }
         }
     }
@@ -2469,6 +2546,14 @@ static int replaced_symlink(const char* path1, const char* path2) {
             linkDir = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:linkDir];
         }
 
+        if(!target || !linkDir) {
+            // The joined spelling is the only verdict on a relative target
+            // (the byte predicates saw the raw strings, not the join), and a
+            // nil here would raise out of the hook. Fail closed.
+            errno = EACCES;
+            return -1;
+        }
+
         NSString* joined = [[linkDir stringByAppendingPathComponent:target] stringByStandardizingPath];
 
         if([_shadow isCPathRestricted:[joined fileSystemRepresentation]]) {
@@ -2600,7 +2685,14 @@ static int replaced_symlinkat(const char* path1, int dirfd, const char* path2) {
         NSString* linkDir = nil;
 
         if(path2 && path2[0] == '/') {
-            linkDir = [[NSString stringWithUTF8String:path2] stringByDeletingLastPathComponent];
+            NSString* linkPath = [NSString stringWithUTF8String:path2];
+
+            if(!linkPath) {
+                errno = EACCES;
+                return -1;
+            }
+
+            linkDir = [linkPath stringByDeletingLastPathComponent];
         } else {
             char parent[PATH_MAX];
             shdw_dirfd_status_t status = shdw_resolve_dirfd_path(dirfd, path2, parent, sizeof(parent));
@@ -2609,18 +2701,34 @@ static int replaced_symlinkat(const char* path1, int dirfd, const char* path2) {
                 linkDir = [NSString stringWithUTF8String:parent];
 
                 if(path2 && path2[0]) {
-                    linkDir = [linkDir stringByAppendingPathComponent:[[NSString stringWithUTF8String:path2] stringByDeletingLastPathComponent]];
+                    NSString* linkPath = [NSString stringWithUTF8String:path2];
+
+                    if(!linkPath) {
+                        errno = EACCES;
+                        return -1;
+                    }
+
+                    linkDir = [linkDir stringByAppendingPathComponent:[linkPath stringByDeletingLastPathComponent]];
                 }
             }
         }
 
-        if(linkDir && linkDir.length) {
-            NSString* joined = [[linkDir stringByAppendingPathComponent:[NSString stringWithUTF8String:path1]] stringByStandardizingPath];
+        NSString* target = [NSString stringWithUTF8String:path1];
 
-            if([_shadow isCPathRestricted:[joined fileSystemRepresentation]]) {
-                errno = EACCES;
-                return -1;
-            }
+        if(!target || !linkDir || linkDir.length == 0) {
+            // The joined spelling is the ONLY verdict on a relative target (the
+            // byte predicates saw the raw strings, not the join), and a nil
+            // would raise out of the hook. Fail closed, like the location check
+            // above does for an unresolvable dirfd.
+            errno = EACCES;
+            return -1;
+        }
+
+        NSString* joined = [[linkDir stringByAppendingPathComponent:target] stringByStandardizingPath];
+
+        if([_shadow isCPathRestricted:[joined fileSystemRepresentation]]) {
+            errno = EACCES;
+            return -1;
         }
     }
 

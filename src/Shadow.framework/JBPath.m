@@ -3,6 +3,7 @@
 
 #import <dirent.h>
 #import <limits.h>
+#import <pthread.h>
 #import <stdlib.h>
 #import <string.h>
 #import <sys/stat.h>
@@ -22,8 +23,14 @@
 static NSString *sJBRoot = nil;
 static NSTimeInterval sJBRootExpiry = 0;
 static BOOL sJBRootEverResolved = NO; // set once a non-empty prefix resolves
+// Guards the three statics above (os_unfair_lock is forbidden on the legacy
+// lane). Recursive: the probe runs an internal-scope NSFileManager/stat walk
+// while holding the lock, and an internal hook that resolves a JBPath() on
+// this same thread must re-enter rather than self-deadlock.
+static pthread_mutex_t sJBRootLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 
-// Allowlist for the env bootstrap hint: real jbroots live under
+// Allowlist for the env bootstrap hint, tested on the realpath()-resolved
+// string so ".." and symlinks cannot escape it: real jbroots live under
 // /private/preboot/<uuid>/jb (roothide/Dopamine) or /var/jb (legacy
 // rootless). Anything else — /var/mobile, /var/containers, /tmp,
 // app-container paths — is rejected even if it exists.
@@ -46,15 +53,13 @@ static NSString *shdw_probe_jbroot(void) {
     const char *env = getenv("JBROOT");
     if (!env || !env[0])
       env = getenv("SHADOW_JBROOT");
-    if (env && env[0] && shdw_env_jbroot_allowed(env)) {
-      NSString *p = [NSString stringWithUTF8String:env];
-      BOOL exists = NO;
-      SHADOW_INTERNAL_SCOPE {
-        exists = [[NSFileManager defaultManager] fileExistsAtPath:p];
-      }
-      if (exists)
-        return p;
+    char envResolved[PATH_MAX];
+    BOOL ok = NO;
+    if (env && env[0]) {
+      SHADOW_INTERNAL_SCOPE { ok = realpath(env, envResolved) != NULL; }
     }
+    if (ok && shdw_env_jbroot_allowed(envResolved))
+      return [NSString stringWithUTF8String:envResolved];
   }
 
   // 2. realpath /var/jb
@@ -104,17 +109,20 @@ static NSString *shdw_probe_jbroot(void) {
 }
 
 NSString *shdw_jbroot_prefix(void) {
+  // The probe reassigns the strong cache; serialize it so a re-probe on one
+  // thread cannot release the string another thread is returning.
+  pthread_mutex_lock(&sJBRootLock);
   NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-  if (sJBRoot && now < sJBRootExpiry)
-    return sJBRoot;
-
-  NSString *fresh = shdw_probe_jbroot();
-  sJBRoot = [fresh copy];
-  sJBRootExpiry =
-      now + 1.0; // 1s TTL retained; env no longer re-poisons (see above)
-  if ([sJBRoot length] > 0)
-    sJBRootEverResolved = YES;
-  return sJBRoot;
+  if (!(sJBRoot && now < sJBRootExpiry)) {
+    sJBRoot = [shdw_probe_jbroot() copy];
+    sJBRootExpiry =
+        now + 1.0; // 1s TTL retained; env no longer re-poisons (see above)
+    if ([sJBRoot length] > 0)
+      sJBRootEverResolved = YES;
+  }
+  NSString *root = sJBRoot;
+  pthread_mutex_unlock(&sJBRootLock);
+  return root;
 }
 
 NSString *JBPath(NSString *path) {

@@ -26,6 +26,31 @@ size_t shdw_path_munge_offset(const char *path) {
   return comp + (len - comp) / 2;
 }
 
+const char *shdw_path_rewrite_copy(const char *path, char *scratch,
+                                   size_t scratch_size) {
+  if (path == NULL || scratch == NULL) {
+    return NULL;
+  }
+
+  size_t len = strlen(path);
+  if (len == 0 || len >= scratch_size) {
+    return NULL;
+  }
+
+  // Already-marked inputs are not eligible for rewriting.
+  size_t off = shdw_path_munge_offset(path);
+  if (off == (size_t)-1 || (unsigned char)path[off] == 0x01) {
+    return NULL;
+  }
+
+  memcpy(scratch, path, len + 1);
+  if (!shdw_path_munge_path(scratch)) {
+    return NULL;
+  }
+
+  return scratch;
+}
+
 int shdw_path_munge_path(char *path) {
   size_t off = shdw_path_munge_offset(path);
 
@@ -33,6 +58,8 @@ int shdw_path_munge_path(char *path) {
     return 0;
   }
 
+  // In-place primitive: marks the middle byte of the final component. Callers decide
+  // whether a given spelling is eligible; this function only performs the rewrite.
   path[off] = 0x01;
   return 1;
 }

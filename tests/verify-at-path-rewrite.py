@@ -82,11 +82,16 @@ static bool is_restricted(const char *path) {
     return path && (!strcmp(path, "d0") || !strcmp(path, "/restricted"));
 }
 
-static bool shdw_libc_try_rewrite(const char *path) {
-    if(!rewrite_enabled) return false;
+static const char *shdw_libc_try_rewrite(const char *path) {
+    static char rewritten[16];
+    (void)path;
+    if(!rewrite_enabled) return NULL;
     rewrites++;
-    ((char *)path)[0] = '\1';
-    return true;
+    // Mirrors the real helper's contract: a munged COPY handed back to the
+    // caller, never a write into the caller's buffer.
+    rewritten[0] = '\1';
+    rewritten[1] = 0;
+    return rewritten;
 }
 
 static bool shdw_at_path_denied(int dirfd, const char *path) {
@@ -304,9 +309,13 @@ int main(void) {
     char access_path[] = "/restricted";
     queries = 0;
     assert(replaced_access(access_path, F_OK) == -1 && queries == 1);
+    // The natural-ENOENT rewrite must not mutate the caller's buffer: the
+    // returned copy goes to the original, the caller's bytes stay identical.
+    assert(strcmp(access_path, "/restricted") == 0);
     char stat_path[] = "/restricted";
     queries = 0;
     assert(replaced_stat(stat_path, &st) == -1 && queries == 1);
+    assert(strcmp(stat_path, "/restricted") == 0);
 
     char fstatat_relative[] = "d0";
     rewrites = 0;

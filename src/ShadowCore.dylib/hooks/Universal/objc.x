@@ -38,37 +38,18 @@ static BOOL shdw_addr_in_main_image(const void* addr) {
         // main executable by scanning for the single MH_EXECUTE image.
         uint32_t mainIndex = 0;
         const struct mach_header* mh = shdw_main_executable_image_index(&mainIndex);
-        intptr_t slide = _dyld_get_image_vmaddr_slide(mainIndex);
 
         if(!mh) {
             return;
         }
 
-        // Walk segment load commands once: the image's resident span is
-        // [min(vmaddr), max(vmaddr+vmsize)) + slide.
-        const struct load_command* lc = (const struct load_command *)((const char *)mh + sizeof(struct mach_header_64));
-        uintptr_t lo = (uintptr_t)-1;
-        uintptr_t hi = 0;
+        // The shared span helper (dyld.x): contiguous segment run, __PAGEZERO
+        // excluded, and both Mach-O header shapes — the hand-rolled union this
+        // replaces read only LC_SEGMENT_64 (so armv7 answered "not main image"
+        // for every address) and folded __PAGEZERO's 0..0x4000 into the span.
+        uintptr_t lo = 0, hi = 0;
 
-        for(uint32_t i = 0; i < mh->ncmds; i++) {
-            if(lc->cmd == LC_SEGMENT_64) {
-                const struct segment_command_64* seg = (const struct segment_command_64 *)lc;
-                uintptr_t base = (uintptr_t)(seg->vmaddr + slide);
-                uintptr_t end = base + seg->vmsize;
-
-                if(base < lo) {
-                    lo = base;
-                }
-
-                if(end > hi) {
-                    hi = end;
-                }
-            }
-
-            lc = (const struct load_command *)((const char *)lc + lc->cmdsize);
-        }
-
-        if(hi > lo) {
+        if(shdw_image_span(mh, _dyld_get_image_vmaddr_slide(mainIndex), &lo, &hi) && hi > lo) {
             mainBase = lo;
             mainEnd = hi;
         }
@@ -139,7 +120,25 @@ BOOL shdw_objc_addr_is_hidden(const void* addr) {
         }
     }
 
-    return shdw_addr_is_restricted(addr);
+    if(!shdw_addr_is_restricted(addr)) {
+        return NO;
+    }
+
+    // Restricted by the engine: apply the same own-bundle exemption the
+    // path-keyed predicate applies, or one runtime API exposes what the other
+    // hides (a class resolving through NSClassFromString while its image and
+    // IMPs stay hidden). Resolving the containing image costs a dyld walk, but
+    // only for addresses the engine already restricted — the common answer
+    // returned above without one.
+    // ponytail: per-address walk on the restricted path; cache own-bundle spans
+    // from the image callbacks if a profile ever shows it.
+    const char* image = dyld_image_path_containing_address(addr);
+
+    if(image && shdw_path_in_own_bundle(image)) {
+        return NO;
+    }
+
+    return YES;
 }
 
 // Same-file check against the main executable: exact string first, then
@@ -173,14 +172,16 @@ static BOOL shdw_path_is_main_image(const char* path) {
 
 // Hiding predicate for path-keyed ObjC APIs (class_getImageName result,
 // objc_copyImageNames, objc_copyClassNamesForImage, objc_copyClassesForImage):
-// the host app's own image always resolves; Shadow artifacts and other
-// protected images stay hidden.
+// the host app's own images always resolve; Shadow artifacts and other
+// protected images stay hidden. Every predicate that hides by image consults
+// shdw_path_in_own_bundle — an exemption applied in only one of them is a
+// cross-API oracle (the class resolves, its image does not).
 BOOL shdw_objc_image_path_is_hidden(const char* path) {
     if(!path || !path[0]) {
         return NO;
     }
 
-    if(shdw_path_is_main_image(path)) {
+    if(shdw_path_is_main_image(path) || shdw_path_in_own_bundle(path)) {
         return NO;
     }
 
@@ -227,10 +228,8 @@ BOOL shdw_objc_class_is_hidden(Class cls) {
         return NO;   // runtime-native class (no loadable image) → visible
     }
 
-    if(shdw_path_in_own_bundle(image)) {
-        return NO;   // the host app's own bundled frameworks → visible
-    }
-
+    // The own-bundle exemption lives in the path-keyed predicate (single
+    // place, so the two cannot drift).
     return shdw_objc_image_path_is_hidden(image);
 }
 

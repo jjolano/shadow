@@ -83,8 +83,11 @@ int replaced_open(const char *pathname, int oflag, ...) {
 
     // Natural-ENOENT rewrite: only without O_CREAT (the munged path would
     // otherwise be CREATED as a side effect).
-    if(!(oflag & O_CREAT) && shdw_libc_try_rewrite(pathname)) {
-        return original_open(pathname, oflag);   // natural ENOENT
+    if(!(oflag & O_CREAT)) {
+        const char *rw = shdw_libc_try_rewrite(pathname);
+        if(rw) {
+            return original_open(rw, oflag);   // natural ENOENT (caller buffer untouched)
+        }
     }
 
     errno = ENOENT;
@@ -365,9 +368,14 @@ int replaced_stat64(const char* pathname, shdw_stat64_t* buf) {
     // Bounded re-verification with the answered identity (see replaced_stat
     // in libc.x): only when substitution did not already answer, so an
     // atomic-swap move between the answer and this sample denies as
-    // contradictory instead of disclosing the previous occupant.
+    // contradictory instead of disclosing the previous occupant. That check is
+    // stability-only, so a raced alias parked on the hidden occupant for BOTH
+    // samples was still handed back — the measured rename-swap identity leak.
+    // shdw_verify_open_hidden re-asks the hidden question on the RESOLVED
+    // object, which the spelling-based post checks cannot see.
     if(sub == -2 && result != -1 && ext && !hidden && buf &&
-        shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
+        (shdw_at_post_verify_match(AT_FDCWD, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT ||
+         shdw_verify_open_hidden(AT_FDCWD, pathname) == -1)) {
         memset(buf, 0, sizeof(shdw_stat64_t));
         errno = ENOENT;
         return -1;
@@ -536,7 +544,8 @@ int replaced_fstatat64(int dirfd, const char* pathname, shdw_stat64_t* buf, int 
     // in libc.x): fallback plus shape-holder — an atomic-swap move between
     // the answer and this sample denies as contradictory.
     if(sub == -2 && result != -1 && !hidden && buf &&
-        shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT) {
+        (shdw_at_post_verify_match(dirfd, pathname, (uint64_t)buf->st_dev, (uint64_t)buf->st_ino) != SHDW_POST_ADMIT ||
+         shdw_verify_open_hidden(dirfd, pathname) == -1)) {
         if(buf) {
             memset(buf, 0, sizeof(shdw_stat64_t));
         }

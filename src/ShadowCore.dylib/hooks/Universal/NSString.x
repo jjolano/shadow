@@ -132,6 +132,16 @@ static NSError* _shdw_urlReadError(NSURL* url) {
         return result;
     }
 
+    if(!outputArray) {
+        // No candidate array to filter: the completion itself is the only leak.
+        if(result > 0 && outputName && *outputName && [_shadow isPathRestricted:*outputName]) {
+            *outputName = nil;
+            return 0;
+        }
+
+        return result;
+    }
+
     NSArray<NSString *>* matches = (outputArray && *outputArray) ? *outputArray : nil;
 
     if(result > 0 && matches.count > 0) {

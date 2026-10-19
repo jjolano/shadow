@@ -186,5 +186,5 @@ SHADW_RAWSYSCALL(SYS_statfs64,         2, STATFS,     P2I)
 #ifdef SYS_fstatfs64
 SHADW_RAWSYSCALL(SYS_fstatfs64,        2, FSTATFS,    FSTATFS)
 #endif
-SHADW_RAWSYSCALL(SYS_mount,            4, PATHPATH,   RENAMEAT)
+SHADW_RAWSYSCALL(SYS_mount,            4, PATHPATH,   MOUNT)
 SHADW_RAWSYSCALL(SYS_unmount,          2, PATH,       P2I)

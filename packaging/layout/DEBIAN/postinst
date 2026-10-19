@@ -135,13 +135,16 @@ case "$1" in
             chmod 644 "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist"
             chmod 755 "$DAEMON_PATH"
             mkdir -p "$DPKG_ROOT/var/log"
+            # Files can only be here as leftovers (this package ships no
+            # backend): stop the old job and leave it stopped. Never bootstrap
+            # it — the old plist carries RunAtLoad/KeepAlive, so a bootstrap
+            # makes it live again, which both contradicts the state purge below
+            # (which ABORTS configure for a live exact job) and restarts a
+            # backend this package deliberately removed.
             if ! shadowd_stop || ! shadowd_bootout; then
                 echo "shadowd: exact daemon did not cleanly exit; ABORTING configure." >&2
                 exit 1
             fi
-            "$LAUNCHCTL_BIN" bootstrap system "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null \
-                || "$LAUNCHCTL_BIN" load -w "$DPKG_ROOT/Library/LaunchDaemons/me.jjolano.shadow.plist" 2>/dev/null \
-                || true
         fi
 
         if ! shadowd_remove_legacy_state; then

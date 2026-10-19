@@ -136,7 +136,11 @@ static void shdw_freeRASP_installEncryptedBinary(SHDWHookSession* hooks) {
 }
 
 static SHDWHookSession* shdw_freeRASP_session = nil;
-static BOOL shdw_freeRASP_installing = NO;
+// Attempt-in-flight latch: three entry points reach the installer (ctor,
+// the mach_msg lazy arming, and the 1s..12s backoff ladder), so the
+// guard has to live in the installer itself — a caller-side check is
+// only a no-op for SEQUENTIAL attempts.
+static _Atomic BOOL shdw_freeRASP_installing = NO;
 static mach_msg_return_t shdw_freeRASP_machMsg(mach_msg_header_t* msg, mach_msg_option_t option,
     mach_msg_size_t sendSize, mach_msg_size_t receiveLimit, mach_port_name_t receiveName,
     mach_msg_timeout_t timeout, mach_port_name_t notify) {
@@ -144,11 +148,8 @@ static mach_msg_return_t shdw_freeRASP_machMsg(mach_msg_header_t* msg, mach_msg_
     // deliver, often before the ctor-time patch succeeds. Attempt install
     // here (once, guarded against re-entry) so suppression arms on Talsec's
     // first IPC rather than on a fixed delay.
-    if(shdw_detector_aggressive && !shdw_freeRASP_origDeliver && shdw_freeRASP_session &&
-       !shdw_freeRASP_installing) {
-        shdw_freeRASP_installing = YES;
+    if(shdw_detector_aggressive && !shdw_freeRASP_origDeliver && shdw_freeRASP_session) {
         shdw_freeRASP_installDeliver(shdw_freeRASP_session);
-        shdw_freeRASP_installing = NO;
     }
     uint64_t marker = 0;
     if(shdw_freeRASP_enabled && msg && (option & MACH_SEND_MSG) && sendSize == 40 &&
@@ -189,7 +190,10 @@ static void shdw_freeRASP_deliver(void* threat, void* a1, void* a2) {
     }
     if(shdw_freeRASP_origDeliver) shdw_freeRASP_origDeliver(threat, a1, a2);
 }
-static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
+// Serialized: only one attempt patches at a time, so two overlapping
+// callers cannot both hook the same interior address (the second would
+// capture the first's replacement as its original).
+static void shdw_freeRASP_installDeliverLocked(SHDWHookSession* hooks) {
     if(shdw_freeRASP_origDeliver) return;
     for(uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char* name = _dyld_get_image_name(i);
@@ -203,6 +207,20 @@ static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
                   outOldPtr:(void**)&shdw_freeRASP_origDeliver];
         return;
     }
+}
+
+static void shdw_freeRASP_installDeliver(SHDWHookSession* hooks) {
+    if(shdw_freeRASP_origDeliver) {
+        return;
+    }
+
+    if(atomic_exchange_explicit(&shdw_freeRASP_installing, YES,
+                                memory_order_acq_rel)) {
+        return;  // another attempt is already walking the image list
+    }
+
+    shdw_freeRASP_installDeliverLocked(hooks);
+    atomic_store_explicit(&shdw_freeRASP_installing, NO, memory_order_release);
 }
 
 void shdw_adapter_freerasp(SHDWHookSession* hooks) {

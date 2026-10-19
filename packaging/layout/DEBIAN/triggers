@@ -1,5 +1,11 @@
 interest /var/mobile
 interest /var/jb/Applications
+interest /var/jb/Library
+interest /var/jb/usr
+interest /var/jb/etc
+interest /var/jb/var/mobile
+interest /var/jb/var/db
+interest /var/jb/var/lib
 interest /System
 interest /Applications
 interest /Library

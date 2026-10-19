@@ -122,13 +122,16 @@ static BOOL shdw_sec_code_is_own_executable(const void* code) {
 }
 
 // Shared post-failure policy: fake success ONLY for an external caller's
-// FAILED validation of our own executable.
-static shdw_osstatus_t shdw_sec_validity_apply_after(shdw_osstatus_t ret, const void* code) {
+// FAILED validation of our own executable. The caller verdict is passed IN —
+// isCallerExternal() reads the return address, so it must expand inline at
+// the hook site (hooks.h), never inside this helper: out of line it would
+// name a ShadowCore frame, read as internal, and never apply.
+static shdw_osstatus_t shdw_sec_validity_apply_after(shdw_osstatus_t ret, const void* code, BOOL callerExternal) {
     if(ret == SHDW_ERR_SEC_SUCCESS || !code) {
         return ret;
     }
 
-    if(!isCallerExternal() || !shdw_sec_code_is_own_executable(code)) {
+    if(!callerExternal || !shdw_sec_code_is_own_executable(code)) {
         return ret;
     }
 
@@ -136,11 +139,11 @@ static shdw_osstatus_t shdw_sec_validity_apply_after(shdw_osstatus_t ret, const 
 }
 
 static shdw_osstatus_t replaced_sec_code_check_validity(shdw_sec_code_ref_t code, shdw_sec_csflags_t flags, const void* requirement) {
-    return shdw_sec_validity_apply_after(original_SecCodeCheckValidity(code, flags, requirement), code);
+    return shdw_sec_validity_apply_after(original_SecCodeCheckValidity(code, flags, requirement), code, isCallerExternal());
 }
 
 static shdw_osstatus_t replaced_sec_static_code_check_validity(shdw_sec_static_code_ref_t code, shdw_sec_csflags_t flags, const void* requirement) {
-    return shdw_sec_validity_apply_after(original_SecStaticCodeCheckValidity(code, flags, requirement), code);
+    return shdw_sec_validity_apply_after(original_SecStaticCodeCheckValidity(code, flags, requirement), code, isCallerExternal());
 }
 
 static shdw_osstatus_t replaced_sec_static_code_check_validity_with_errors(shdw_sec_static_code_ref_t code, shdw_sec_csflags_t flags, const void* requirement, void** errors) {
@@ -148,7 +151,7 @@ static shdw_osstatus_t replaced_sec_static_code_check_validity_with_errors(shdw_
 
     if(ret != SHDW_ERR_SEC_SUCCESS && errors) {
         // A faked success must not leave stale error detail behind.
-        shdw_osstatus_t applied = shdw_sec_validity_apply_after(ret, code);
+        shdw_osstatus_t applied = shdw_sec_validity_apply_after(ret, code, isCallerExternal());
 
         if(applied == SHDW_ERR_SEC_SUCCESS) {
             if(*errors) {

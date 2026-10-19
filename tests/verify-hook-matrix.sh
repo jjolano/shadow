@@ -28,6 +28,7 @@ esac
 MATRIX=tests/verify-hook-matrix.sh
 HOOKDIR=src/ShadowCore.dylib/hooks
 rc=0
+examined=0
 
 # Reformat tolerance for the source-text pins below: clang-format may respace
 # `if(x)` into `if (x)`, rewrap lines, or move a brace onto its own line, so a
@@ -68,15 +69,15 @@ matrix_entries() {
  cat <<'EOF'
 isCPathRestricted|libc libc_lowlevel libc_antidebugging dyld sandbox syscall AppEnvironment svc_patch
 isMountPathRestricted|libc
-isPathRestricted:options:|libc libc_lowlevel dyld sandbox syscall NSFileManager NSString NSData NSArray NSDictionary NSFileHandle NSBundle NSProcessInfo
-isURLRestricted:options:|NSFileManager NSURL NSString NSData NSArray NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
-isSchemeRestricted|LSApplicationWorkspace
-isBundleIDRestricted|LSApplicationWorkspace
+isPathRestricted:.*options:|libc libc_lowlevel dyld sandbox NSFileManager NSString FoundationFileHiding
+isURLRestricted:.*options:|NSFileManager NSURL NSString FoundationFileHiding
+isSchemeRestricted|AppEnvironment
+isBundleIDRestricted|AppEnvironment
 isProtectedImagePath|dyld objc NSBundle ThreadImage
-isAddrRestricted|dyld objc mem sandbox NSThread NSBundle
+shdw_addr_is_restricted|dyld objc mem sandbox NSBundle ThreadImage
 evaluatePathRestriction|internal
 filterPathArray|NSFileManager
-fileNoSuchFileErrorForPath:|NSFileManager NSURL NSArray NSData NSDictionary NSFileHandle NSFileVersion NSFileWrapper NSBundle
+fileNoSuchFileErrorForPath:|NSFileManager NSString FoundationFileHiding NSBundle
 getStandardizedPath|internal
 writeDpkgRuleset|internal
 isPathRestrictedQuery|internal
@@ -98,17 +99,9 @@ if [ "$selftest_drift" = true ]; then
 fi
 
 while IFS='|' read -r pattern groups; do
- ok=1
-
- # Skip entries whose groups are not hook-file basenames.
- for g in $groups; do
-  if [ ! -f "$HOOKDIR/$g.x" ] && ! find "$HOOKDIR" -maxdepth 2 -name "$g.x" | grep -q .; then
-   ok=0
-   break
-  fi
- done
-
- [ "$ok" = 0 ] && continue
+ # `internal` rows pin engine methods that have no hook file.
+ [ "$groups" = internal ] && continue
+ examined=$((examined + 1))
 
  for g in $groups; do
   f=$(find "$HOOKDIR" -maxdepth 2 -name "$g.x" | head -1)
@@ -133,7 +126,18 @@ while IFS='|' read -r pattern groups; do
  done
 done <"$entries"
 
+if [ "$examined" -eq 0 ]; then
+ echo 'MATRIX STALE: no matrix rows were examined'
+ rc=1
+else
+ echo "matrix: $examined hook rows examined"
+fi
+
 detector=$(sed -n '/^void shdw_detector_detected/,/^}$/p' src/ShadowCore.dylib/shadowcore.x)
+if [ -z "$detector" ]; then
+ echo 'DETECTOR DRIFT: shdw_detector_detected not found in shadowcore.x'
+ rc=1
+fi
 if printf '%s\n' "$detector" | grep -Eq 'NSUserDefaults|NSLog|time\(|NSDate|writeToFile|fopen|open\('; then
  echo 'DETECTOR DRIFT: detector escalation performs logging or persistence I/O'
  rc=1
@@ -151,6 +155,10 @@ fi
 dyld_source=src/ShadowCore.dylib/hooks/Universal/dyld.x
 dyld_add=$(sed -n '/^static void replaced_dyld_register_func_for_add_image/,/^}/p' "$dyld_source")
 dyld_remove=$(sed -n '/^static void replaced_dyld_register_func_for_remove_image/,/^}/p' "$dyld_source")
+if [ -z "$dyld_add" ] || [ -z "$dyld_remove" ]; then
+ echo 'DYLD DRIFT: public image callback replacements not found in dyld.x'
+ rc=1
+fi
 if printf '%s\n%s\n' "$dyld_add" "$dyld_remove" | grep -Eq 'SHADOW_MAX_OBJC_NOTIFY_CBS|slots full|registrations dropped'; then
  echo 'DYLD DRIFT: public image callback registrations are capped or dropped'
  rc=1
@@ -312,6 +320,11 @@ if grep -Rqs 'shdw_freerasp_start_disabled\|kSHDWFreeRASPStartSymbol' src/Shadow
  ! grep -q '@"/usr/sbin/cfprefsd"' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
  ! grep -q 'msg->msgh_bits == 0x1513' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
  ! grep -q '0x444f50414d494e45ULL' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
+ # The DOPAMINE exchange is answered on the universal lane too (it owns the
+ # rebound mach_msg import slot), so the probe must stay covered there even if
+ # the adapter's own filter ever moves.
+ ! grep -qi 'SHDW_JBSERVER_MACH_MAGIC 0x444F50414D494E45ULL' src/ShadowCore.dylib/hooks/Universal/mach.x ||
+ ! grep -q 'return MACH_MSG_SUCCESS;' src/ShadowCore.dylib/hooks/Universal/mach.x ||
  ! grep -q 'shdw_freeRASP_versionForHeader' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
  ! grep -q '0x4c90' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||
  ! grep -q 'Prologue' src/ShadowCore.dylib/hooks/Adapters/FreeRASP.x ||

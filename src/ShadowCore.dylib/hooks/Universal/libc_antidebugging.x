@@ -37,6 +37,12 @@ extern int proc_listpidspath(uint32_t type, uint32_t typeinfo, const char* path,
 // the prefix layout matches it exactly (pbi_ppid at offset 0x10). Only that
 // field is ever written.
 #define SHADOW_PROC_PIDTBSDINFO 3
+// PROC_PIDTASKALLINFO(2) is { struct proc_bsdinfo pbsd; struct proc_taskinfo
+// ptinfo; } — its leading member is the SAME proc_bsdinfo flavor 3 returns, so
+// the mask below has to cover both or the real parent stays readable through
+// the other flavor (the adjacent-flavor split the on-device harness caught:
+// flavor2 ppid=81513 while getppid()/flavor-3 report 1).
+#define SHADOW_PROC_PIDTASKALLINFO 2
 
 struct shdw_proc_bsdinfo_prefix {
     uint32_t pbi_flags;    /* 0x00 */
@@ -578,7 +584,8 @@ int replaced_proc_pidinfo(int pid, int flavor, uint64_t arg, void* buffer, int b
     // PROC_PIDTBSDINFO must say the same — a detector comparing channels
     // must see one agreed record. pbi_flags shares the proc.h P_TRACED/
     // P_SELECT bits; mask the same pair ProcessPolicy.m clears.
-    if(ret > 0 && isCallerExternal() && pid == getpid() && flavor == SHADOW_PROC_PIDTBSDINFO
+    if(ret > 0 && isCallerExternal() && pid == getpid()
+    && (flavor == SHADOW_PROC_PIDTBSDINFO || flavor == SHADOW_PROC_PIDTASKALLINFO)
     && buffer && buffersize >= (int)sizeof(struct shdw_proc_bsdinfo_prefix)) {
         struct shdw_proc_bsdinfo_prefix* bsd = (struct shdw_proc_bsdinfo_prefix*) buffer;
         bsd->pbi_flags &= ~(0x00000040u | 0x00000800u);
@@ -658,8 +665,9 @@ int (*original_kevent)(int kq, const struct kevent* changelist, int nchanges, st
 int replaced_kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent* eventlist, int nevents, const struct timespec* timeout) {
     if(changelist && nchanges > 0 && isCallerExternal()) {
         pid_t self = getpid();
+        int limit = nchanges > SHDW_KEVENT_SCAN_MAX ? SHDW_KEVENT_SCAN_MAX : nchanges;
 
-        for(int i = 0; i < nchanges; i++) {
+        for(int i = 0; i < limit; i++) {
             if(changelist[i].filter == EVFILT_PROC) {
                 pid_t pid = (pid_t) changelist[i].ident;
 
@@ -683,8 +691,9 @@ int (*original_kevent64)(int kq, const struct kevent64_s* changelist, int nchang
 int replaced_kevent64(int kq, const struct kevent64_s* changelist, int nchanges, struct kevent64_s* eventlist, int nevents, unsigned int flags, const struct timespec* timeout) {
     if(changelist && nchanges > 0 && isCallerExternal()) {
         pid_t self = getpid();
+        int limit = nchanges > SHDW_KEVENT_SCAN_MAX ? SHDW_KEVENT_SCAN_MAX : nchanges;
 
-        for(int i = 0; i < nchanges; i++) {
+        for(int i = 0; i < limit; i++) {
             if(changelist[i].filter == EVFILT_PROC) {
                 pid_t pid = (pid_t) changelist[i].ident;
 

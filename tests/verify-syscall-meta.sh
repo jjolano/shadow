@@ -93,6 +93,8 @@ for fn in replaced_syscall replaced___syscall; do
             idx = index(t, "static long " fn "(int number, ...) {")
             if (idx == 0) { printf "META FAIL: %s not found in syscall.x\n", fn; exit 1 }
             body = substr(t, idx)
+            # end at the closing brace (column 0): the sibling trampoline must not satisfy these
+            body = substr(body, 1, index(body, "\n}\n"))
             # the passthrough if() must be the first thing after the comment
             if (index(body, "number != ") == 0) { printf "META FAIL: %s has no compare chain\n", fn; exit 1 }
             if (index(body, "#include \"RawSyscalls.def\"") == 0) { printf "META FAIL: %s passthrough is not def-derived\n", fn; exit 1 }

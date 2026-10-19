@@ -41,7 +41,7 @@ NSString *SHDWInstalledVersion(void) {
       if (status) {
         NSRegularExpression *regex = [NSRegularExpression
             regularExpressionWithPattern:
-                @"(?:^|\\n)Package: me\\.jjolano\\.shadow\\n(?:[^\\n]+\\n)*?Version: ([^\\n]+)"
+                @"(?:^|\\n)Package: me\\.jjolano\\.shadow(?:\\.legacy)?\\n(?:[^\\n]+\\n)*?Version: ([^\\n]+)"
                                  options:0
                                    error:nil];
         NSTextCheckingResult *match =

@@ -42,7 +42,8 @@ typedef struct {
 
 // Record one slot. Re-noting the same (start,end) refreshes the expected
 // value instead of duplicating the entry (a re-rebind legitimately changes
-// what the slot must hold).
+// what the slot must hold); a slot retired by forget_range is reused before
+// the table grows.
 static inline void shdw_rebind_slots_note(shdw_rebind_slots_t *t,
                                           uintptr_t start, size_t size,
                                           uintptr_t expected) {
@@ -53,12 +54,25 @@ static inline void shdw_rebind_slots_note(shdw_rebind_slots_t *t,
     size = sizeof(void *);
   }
   uintptr_t end = size > UINTPTR_MAX - start ? UINTPTR_MAX : start + size;
+  uint32_t retired = UINT32_MAX;
+
   for (uint32_t i = 0; i < t->count; i++) {
     if (t->slot[i].start == start && t->slot[i].end == end) {
       t->slot[i].expected = expected;
       return;
     }
+
+    // A note never records start == 0, so a zeroed pair is a tombstone.
+    if (retired == UINT32_MAX && t->slot[i].start == 0 && t->slot[i].end == 0) {
+      retired = i;
+    }
   }
+
+  if (retired != UINT32_MAX) {
+    t->slot[retired] = (shdw_rebind_slot_t){start, end, expected};
+    return;
+  }
+
   if (t->count >= SHDW_REBIND_SLOTS_MAX) {
     t->overflowed = 1;
     return;
@@ -66,24 +80,32 @@ static inline void shdw_rebind_slots_note(shdw_rebind_slots_t *t,
   t->slot[t->count++] = (shdw_rebind_slot_t){start, end, expected};
 }
 
-// Drop every entry fully inside [base, end): the image owning those slots
-// was unmapped and the addresses may be reused. Repair must never
-// dereference a stale slot (unmapped read = crash; reused mapping = wild
-// store into another image's data).
+// Drop every entry fully inside [base, end): the image owning those slots was
+// unmapped and the addresses may be reused. Repair must never dereference a
+// stale slot (unmapped read = crash; reused mapping = wild store into another
+// image's data).
+//
+// Retired by tombstone, never by compaction: readers (repair, the vm_protect
+// overlap guard) walk this table from an acquire-loaded count snapshot while an
+// image unload runs on another thread, so MOVING an entry or lowering count
+// would let a reader that still holds the old count dereference a dropped slot
+// — the exact stale-slot store this function exists to prevent. The field order
+// below keeps every transient state safe for the readers: expected first
+// (repair skips), then end (the overlap guard stops matching), then start (the
+// entry becomes reusable).
 static inline void shdw_rebind_slots_forget_range(shdw_rebind_slots_t *t,
                                                   uintptr_t base,
                                                   uintptr_t end) {
   if (!t || end <= base) {
     return;
   }
-  uint32_t kept = 0;
   for (uint32_t i = 0; i < t->count; i++) {
     if (t->slot[i].start >= base && t->slot[i].end <= end) {
-      continue;
+      t->slot[i].expected = 0;
+      t->slot[i].end = 0;
+      t->slot[i].start = 0;
     }
-    t->slot[kept++] = t->slot[i];
   }
-  t->count = kept;
 }
 
 // vm_protect-guard predicate: does [address, address+size) touch a
@@ -108,10 +130,14 @@ static inline int shdw_rebind_slots_overlap(const shdw_rebind_slots_t *t,
 
 // Repair pass: store the expected replacement into every slot whose live
 // value differs. Returns the number of slots repaired. Live cells are
-// touched with single-copy atomic access; the table itself must be stable
-// across the call (the caller holds the count snapshot discipline its
-// atomics give it: acquire-load count, repair, entries are never mutated
-// in place except the expected refresh above).
+// touched with single-copy atomic access; the table itself is never compacted
+// or reordered, so a caller's count snapshot stays valid while it walks (see
+// forget_range: it retires entries in place, and note() reuses them).
+// REQUIRES caller serialization: concurrent note/forget/repair/overlap is a
+// plain data race on these fields (a reader could pair one entry's start with
+// another's expected, or dereference a slot retired mid-walk). Every production
+// caller goes through SHDWHookSession.m's single table lock; these helpers
+// deliberately carry no atomics, and no unlocked caller is supported.
 static inline uint32_t shdw_rebind_slots_repair(const shdw_rebind_slots_t *t,
                                                 uint32_t count) {
   if (!t) {
@@ -124,6 +150,7 @@ static inline uint32_t shdw_rebind_slots_repair(const shdw_rebind_slots_t *t,
   for (uint32_t i = 0; i < count; i++) {
     uintptr_t start = t->slot[i].start;
     uintptr_t expected = t->slot[i].expected;
+
     if (!start || !expected) {
       continue;
     }

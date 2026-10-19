@@ -4,7 +4,9 @@ Both fixes are behavioural decisions living inside Logos-preprocessed .x
 sources, so this extracts the real function bodies (and the constants they
 depend on) and drives them on the host with synthetic inputs:
 
-  * shdw_svc_site_branch_opcode  -- which branch encoding a redirected svc site
+  * shdw_svc_site_needs_stub     -- which redirected svc sites need a per-site
+    continuation stub (a site that resumes at site+4 must not be reached with
+    BL, whose return address would clobber the enclosing function's live x30)
     gets. Picking BL for a frameless leaf destroys x30, turning the leaf's own
     `ret` into a self-loop (My Sun Life, 0x8BADF00D, pc == lr).
   * shdw_image_span_ex           -- the vm span recorded for one image. A union
@@ -64,8 +66,37 @@ def define(source, name):
 svc_src = SVC.read_text()
 dyld_src = DYLD.read_text()
 
-branch_fn = body(svc_src, "static uint32_t shdw_svc_site_branch_opcode(")
+stub_fn = body(svc_src, "static BOOL shdw_svc_site_needs_stub(")
 span_fn = body(dyld_src, "static BOOL shdw_image_span_ex(")
+rebuild_fn = body(dyld_src, "static void shdw_restricted_ranges_full_rebuild(")
+note_add_fn = body(dyld_src, "void shdw_restricted_ranges_note_add(")
+
+
+def check_source_pins():
+    """The span callers must refuse to answer when a restricted image has no
+    computable span.
+
+    Gating that on the oversized flag alone left any *unreadable* header
+    silently absent from a table that still published as authoritative — a
+    definitive "not restricted" for the image's whole address range (the
+    armv7/armv7s lane, before `shdw_image_span_ex` learned MH_MAGIC).
+    """
+    for label, fn in (("shdw_restricted_ranges_full_rebuild", rebuild_fn),
+                      ("shdw_restricted_ranges_note_add", note_add_fn)):
+        assert fn.strip(), f"{label}: extracted body is empty"
+        compact = "".join(fn.split())
+        at = compact.find("shdw_image_span_ex(")
+        assert at != -1, f"{label}: no image span call"
+        assert "if(oversized)" not in compact, (
+            f"{label}: the unanswerable marking must not be gated on the "
+            f"oversized flag alone")
+        tail = compact[at:at + 900]
+        stops = [i for i in (tail.find("continue;"), tail.find("return;"))
+                 if i != -1]
+        cut = min(stops) if stops else len(tail)
+        assert "overflowed=1;" in tail[:cut], (
+            f"{label}: a restricted image without a computable span must mark "
+            f"the published table unanswerable")
 
 # The extracted bodies reference these; take them from the sources verbatim so a
 # changed constant is a test failure rather than a silently stale expectation.
@@ -83,7 +114,9 @@ HARNESS = """
 typedef int BOOL;
 #define YES 1
 #define NO 0
+#define MH_MAGIC 0xfeedface
 #define MH_MAGIC_64 0xfeedfacf
+#define LC_SEGMENT 0x1
 #define LC_SEGMENT_64 0x19
 
 struct load_command { uint32_t cmd; uint32_t cmdsize; };
@@ -94,11 +127,21 @@ struct segment_command_64 {
     uint64_t fileoff; uint64_t filesize;
     uint32_t maxprot; uint32_t initprot; uint32_t nsects; uint32_t flags;
 };
-/* The extracted body casts to the 64-bit header for load-command pointer
-   arithmetic, so both names must exist with the same layout (32 bytes). */
+/* The 32-bit shapes the rootful-legacy (armv7/armv7s) lane ships. Real sizes
+   matter here: the extracted body selects the header size and the segment
+   layout from the magic, so a fake 32-byte `struct mach_header` would move the
+   load-command walk off the real 28-byte offset and the armv7 case below would
+   pass for the wrong reason. */
+struct segment_command {
+    uint32_t cmd; uint32_t cmdsize;
+    char segname[16];
+    uint32_t vmaddr; uint32_t vmsize;
+    uint32_t fileoff; uint32_t filesize;
+    uint32_t maxprot; uint32_t initprot; uint32_t nsects; uint32_t flags;
+};
 struct mach_header {
     uint32_t magic; uint32_t cputype; uint32_t cpusubtype; uint32_t filetype;
-    uint32_t ncmds; uint32_t sizeofcmds; uint32_t flags; uint32_t reserved;
+    uint32_t ncmds; uint32_t sizeofcmds; uint32_t flags;
 };
 struct mach_header_64 {
     uint32_t magic; uint32_t cputype; uint32_t cpusubtype; uint32_t filetype;
@@ -121,7 +164,7 @@ __BRANCH_FN__
 typedef struct { const char* name; uint64_t vmaddr; uint64_t vmsize; } seg_spec_t;
 
 static struct mach_header* make_image(const seg_spec_t* segs, int n) {
-    size_t need = sizeof(struct mach_header) +
+    size_t need = sizeof(struct mach_header_64) +
                   (size_t)n * sizeof(struct segment_command_64);
     char* buf = (char*)calloc(1, need);
     struct mach_header* mh = (struct mach_header*)buf;
@@ -129,7 +172,7 @@ static struct mach_header* make_image(const seg_spec_t* segs, int n) {
     mh->ncmds = (uint32_t)n;
     mh->sizeofcmds = (uint32_t)(n * sizeof(struct segment_command_64));
     struct segment_command_64* sc =
-        (struct segment_command_64*)(buf + sizeof(struct mach_header));
+        (struct segment_command_64*)(buf + sizeof(struct mach_header_64));
     for (int i = 0; i < n; i++) {
         size_t len = strlen(segs[i].name);
         if (len > 15) len = 15;
@@ -142,26 +185,46 @@ static struct mach_header* make_image(const seg_spec_t* segs, int n) {
     return mh;
 }
 
+/* 32-bit (armv7/armv7s) counterpart: 28-byte header, 32-bit segment fields. */
+static struct mach_header* make_image32(const seg_spec_t* segs, int n) {
+    size_t need = sizeof(struct mach_header) +
+                  (size_t)n * sizeof(struct segment_command);
+    char* buf = (char*)calloc(1, need);
+    struct mach_header* mh = (struct mach_header*)buf;
+    mh->magic = MH_MAGIC;
+    mh->ncmds = (uint32_t)n;
+    mh->sizeofcmds = (uint32_t)(n * sizeof(struct segment_command));
+    struct segment_command* sc =
+        (struct segment_command*)(buf + sizeof(struct mach_header));
+    for (int i = 0; i < n; i++) {
+        size_t len = strlen(segs[i].name);
+        if (len > 15) len = 15;
+        sc[i].cmd = LC_SEGMENT;
+        sc[i].cmdsize = sizeof(struct segment_command);
+        memcpy(sc[i].segname, segs[i].name, len);
+        sc[i].vmaddr = (uint32_t)segs[i].vmaddr;
+        sc[i].vmsize = (uint32_t)segs[i].vmsize;
+    }
+    return mh;
+}
+
 int main(void) {
     uintptr_t base = 0, end = 0;
     BOOL oversized = NO, ok = NO;
 
-    /* ---- svc branch encoding ---- */
-    CHECK(shdw_svc_site_branch_opcode(SHDW_SVC_RET) == SHDW_SVC_B,
-          "frameless leaf (fallthrough == ret) must encode B, got %#x",
-          shdw_svc_site_branch_opcode(SHDW_SVC_RET));
-    CHECK(shdw_svc_site_branch_opcode(0x91000000U) == SHDW_SVC_BL,
-          "mid-function site must keep BL, got %#x",
-          shdw_svc_site_branch_opcode(0x91000000U));
-
-    /* Idempotence: a patched site must never re-match the svc scan, or the
-       scanner rewrites its own output on the next image event. */
-    uint32_t svc_mask = 0xFFE0001FU, svc_opcode = 0xD4000001U;
-    uint32_t enc[2] = { shdw_svc_site_branch_opcode(SHDW_SVC_RET),
-                        shdw_svc_site_branch_opcode(0x91000000U) };
-    for (int i = 0; i < 2; i++)
-        CHECK((enc[i] & svc_mask) != svc_opcode,
-              "emitted encoding %#x would re-match the svc pattern", enc[i]);
+    /* ---- svc site routing ---- */
+    /* `svc; ret` returns through the x30 it saw, so the shared trampoline can
+       be reached with B and its own ret lands where the app's ret would. */
+    CHECK(shdw_svc_site_needs_stub(SHDW_SVC_RET) == NO,
+          "svc;ret leaf must use the shared trampoline, got stub=%d",
+          shdw_svc_site_needs_stub(SHDW_SVC_RET));
+    /* Any other fallthrough resumes at site+4, which BL buys by destroying
+       x30 — live in a leaf that continues after the svc (svc;cset;...;ret).
+       Those sites must be reached with B into a stub that preserves x30;
+       entering one with BL spins in the enclosing epilogue on device. */
+    CHECK(shdw_svc_site_needs_stub(0x91000000U) == YES,
+          "a site that resumes at site+4 must go through a stub, got stub=%d",
+          shdw_svc_site_needs_stub(0x91000000U));
 
     /* ---- image span ---- */
 
@@ -232,6 +295,44 @@ int main(void) {
           ok, oversized);
     free(mh);
 
+    /* 32-bit armv7/armv7s image (rootful-legacy lane): must yield a span. The
+       old 64-bit-only magic gate refused every 32-bit header, which published
+       an empty-but-authoritative restricted-image table on that lane (every
+       address answered "not restricted") and left the rebind journal's unload
+       prune without a range. Slide is applied the same way as the 64-bit case. */
+    const seg_spec_t legacy[] = {
+        { "__TEXT",     0x4000, 0x8000 },
+        { "__DATA",     0xc000, 0x4000 },
+        { "__LINKEDIT", 0x10000, 0x2000 },
+    };
+    mh = make_image32(legacy, 3);
+    oversized = NO;
+    CHECK(shdw_image_span_ex(mh, 0, &base, &end, &oversized) == YES,
+          "32-bit (armv7) image must yield a span");
+    CHECK(base == 0x4000ULL && end == 0x12000ULL,
+          "32-bit span must cover the contiguous run, got %#llx-%#llx",
+          (unsigned long long)base, (unsigned long long)end);
+    CHECK(oversized == NO, "32-bit image must not be flagged oversized");
+    CHECK(shdw_image_span_ex(mh, 0x1000, &base, &end, &oversized) == YES &&
+              base == 0x5000ULL && end == 0x13000ULL,
+          "32-bit span must apply the slide, got %#llx-%#llx",
+          (unsigned long long)base, (unsigned long long)end);
+    free(mh);
+
+    /* A 32-bit __PAGEZERO (4 GB reserved but unmapped on armv7) must not seed
+       the run either. */
+    const seg_spec_t legacy_pagezero[] = {
+        { "__PAGEZERO", 0x0ULL, 0x4000 },
+        { "__TEXT",     0x4000, 0x8000 },
+    };
+    mh = make_image32(legacy_pagezero, 2);
+    oversized = NO;
+    CHECK(shdw_image_span_ex(mh, 0, &base, &end, &oversized) == YES &&
+              base == 0x4000ULL && end == 0xc000ULL,
+          "32-bit __PAGEZERO must be excluded, got %#llx-%#llx",
+          (unsigned long long)base, (unsigned long long)end);
+    free(mh);
+
     /* Malformed image: refused, not guessed. */
     const seg_spec_t one[] = { { "__TEXT", 0x1000ULL, 0x1000 } };
     mh = make_image(one, 1);
@@ -272,13 +373,19 @@ int main(void) {
 
 def build_source():
     source = HARNESS.replace("__SPAN_FN__", span_fn)
-    source = source.replace("__BRANCH_FN__", branch_fn)
+    source = source.replace("__BRANCH_FN__", stub_fn)
     source = source.replace("__SVC_DEFINES__", svc_defines)
     source = source.replace("__SPAN_DEFINES__", span_defines)
     return source
 
 
 def run():
+    try:
+        check_source_pins()
+    except AssertionError as exc:
+        print(f"image span source pin: FAIL: {exc}")
+        return 1
+
     with tempfile.TemporaryDirectory() as tmp:
         c = Path(tmp) / "span_branch.c"
         exe = Path(tmp) / "span_branch"

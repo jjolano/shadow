@@ -53,12 +53,12 @@ static BOOL shdw_enumerated_entry_hidden(NSString* base, NSString* name) {
     if(!name || name.length == 0) {
         return NO;
     }
-    if(SHDWAdapterPathIsHidden(name)) {
-        return YES;
-    }
     NSString* full = name;
     if(![name isAbsolutePath] && base.length) {
         full = [base stringByAppendingPathComponent:name];
+    }
+    if(SHDWAdapterPathIsHidden(full)) {
+        return YES;
     }
     const char* c = [full UTF8String];
     if(c && shdw_path_is_external_hidden(c)) {
@@ -711,6 +711,11 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     
     if(result) {
         result = [Shadow filterPathArray:result restricted:NO options:@{kShadowRestrictionWorkingDir : path}];
+        // The ruleset filter cannot see loader-visible objects by design.
+        NSString* base = path;
+        result = [result objectsAtIndexes:[result indexesOfObjectsPassingTest:^BOOL(id obj, NSUInteger idx, BOOL* stop) {
+            return ![obj isKindOfClass:[NSString class]] || !shdw_enumerated_entry_hidden(base, obj);
+        }]];
     }
 
     return result;

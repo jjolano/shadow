@@ -236,6 +236,19 @@ static long shdw_fwd_RENAMEAT(int number, va_list args) {
     return original_syscall(number, (int) a1, (const char *) a2, (int) a3, (const char *) a4);
 }
 
+// mount(type, dir, flags, data): neither two-pair shape fits. Slot 1 is the
+// filesystem-TYPE string (not a dirfd, so the RENAMEAT reuse narrowed a
+// pointer through a 32-bit slot) and slot 3 is the flags word. The policy
+// category still judges the mount point, which is slot 2.
+static long shdw_fwd_MOUNT(int number, va_list args) {
+    intptr_t a1 = va_arg(args, intptr_t);
+    intptr_t a2 = va_arg(args, intptr_t);
+    intptr_t a3 = va_arg(args, intptr_t);
+    intptr_t a4 = va_arg(args, intptr_t);
+
+    return original_syscall(number, (const char *) a1, (const char *) a2, (int) a3, (const char *) a4);
+}
+
 static long shdw_fwd_SYMLINKAT(int number, va_list args) {
     intptr_t a1 = va_arg(args, intptr_t);
     intptr_t a2 = va_arg(args, intptr_t);
@@ -880,8 +893,9 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
 
                 if(changelist && nchanges > 0) {
                     pid_t self = getpid();
+                    int limit = nchanges > SHDW_KEVENT_SCAN_MAX ? SHDW_KEVENT_SCAN_MAX : nchanges;
 
-                    for(int i = 0; i < nchanges; i++) {
+                    for(int i = 0; i < limit; i++) {
                         if(changelist[i].filter == EVFILT_PROC) {
                             pid_t pid = (pid_t) changelist[i].ident;
 
@@ -908,8 +922,9 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
 
                 if(changelist64 && nchanges64 > 0) {
                     pid_t self = getpid();
+                    int limit = nchanges64 > SHDW_KEVENT_SCAN_MAX ? SHDW_KEVENT_SCAN_MAX : nchanges64;
 
-                    for(int i = 0; i < nchanges64; i++) {
+                    for(int i = 0; i < limit; i++) {
                         if(changelist64[i].filter == EVFILT_PROC) {
                             pid_t pid = (pid_t) changelist64[i].ident;
 

@@ -466,11 +466,45 @@ static const NSUInteger kShadowAuditRingCapacity = 256;
     static __thread BOOL lastValid = NO;
     static __thread NSUInteger lastGen = 0;
     static __thread uintptr_t lastEngine = 0;
+    static __thread NSTimeInterval lastTime = 0;
     static __thread ShadowPseudoSandboxMode lastPseudoMode =
         ShadowPseudoSandboxModeOff;
     NSUInteger gen = [store generation];
+
+    // Single writer for the fast path, so both publish sites cannot drift. The
+    // entry is only ever written for the shape the reader demands — an
+    // absolute path with no working directory: a wd-relative verdict belongs
+    // to one base directory, and storing it under the raw leaf is what let a
+    // later nil-wd query for that leaf take a verdict computed against a
+    // different directory. It also expires on the same TTL as the tier-1
+    // cache, so a path that APPEARS after an earlier miss cannot stay "not
+    // restricted" for the process lifetime. Tagged with the generation
+    // observed BEFORE evaluation, so a reload landing mid-evaluation cannot
+    // launder an old-snapshot verdict into the new generation.
+    void (^publishTLS)(BOOL) = ^(BOOL verdict) {
+      if (query.workingDirectory != nil) {
+        return;
+      }
+
+      const char *cur = [query.path fileSystemRepresentation];
+
+      if (!cur) {
+        return;
+      }
+
+      strlcpy(lastPathBuf, cur, sizeof(lastPathBuf));
+      lastVerdict = verdict;
+      lastValid = YES;
+      lastGen = gen;
+      lastEngine = (uintptr_t)self;
+      lastTime = [NSDate timeIntervalSinceReferenceDate];
+      lastPseudoMode = pseudoMode;
+    };
     if (lastValid && lastEngine == (uintptr_t)self && lastGen == gen &&
-        lastPseudoMode == pseudoMode && path && query.workingDirectory == nil &&
+        lastPseudoMode == pseudoMode &&
+        [NSDate timeIntervalSinceReferenceDate] - lastTime <=
+            kShadowDecisionCacheTTL &&
+        path && query.workingDirectory == nil &&
         query.operation == ShadowRestrictionOperationRead &&
         query.flags == ShadowRestrictionFlagResolve) {
       const char *cur = [path fileSystemRepresentation];
@@ -510,15 +544,7 @@ static const NSUInteger kShadowAuditRingCapacity = 256;
                                               cache:sharedCache];
 
       if (cached >= 0) {
-        const char *cur = [path fileSystemRepresentation];
-        if (cur) {
-          strlcpy(lastPathBuf, cur, sizeof(lastPathBuf));
-          lastVerdict = (BOOL)cached;
-          lastValid = YES;
-          lastGen = gen;
-          lastEngine = (uintptr_t)self;
-          lastPseudoMode = pseudoMode;
-        }
+        publishTLS((BOOL)cached);
         return (BOOL)cached;
       }
     }
@@ -678,17 +704,12 @@ static const NSUInteger kShadowAuditRingCapacity = 256;
     if (cacheable) {
       [self _storeVerdict:restricted
                    forKey:cacheKey
-               generation:[store generation]
+               generation:gen
                     cache:sharedCache];
-      const char *cur = [query.path fileSystemRepresentation];
-      if (cur) {
-        strlcpy(lastPathBuf, cur, sizeof(lastPathBuf));
-        lastVerdict = restricted;
-        lastValid = YES;
-        lastGen = gen;
-        lastEngine = (uintptr_t)self;
-        lastPseudoMode = pseudoMode;
-      }
+    }
+
+    if (cacheable) {
+      publishTLS(restricted);
     }
 
     return restricted;

@@ -110,6 +110,15 @@ with tempfile.TemporaryDirectory(prefix="shadow-env-storage-") as tmp:
         subprocess.run([str(binary), str(failure)], check=True)
 
 # Static ownership contract: capacity must be saved even when realloc stays put.
+# The dictionary view must be driven by the shared name predicate: a hand-kept
+# list drifts (it had already lost BOOTSTRAP_PREFIX, which getenv hid while
+# NSProcessInfo.environment still returned it).
+dict_fn = body("NSDictionary *shdw_env_sanitized_dictionary(", "// PATH: drop jailbreak components")
+assert "shdw_env_name_hidden(" in dict_fn, (
+    "shdw_env_sanitized_dictionary must use the shared name predicate")
+assert 'hasPrefix:@"DYLD_"' not in dict_fn, (
+    "the dictionary view must not keep a private env-key list")
+
 procargs = source[anchor(source, "void shdw_procargs2_filter("):]
 assert not re.search(anchor_pattern("if(path_entry_storage != shdw_env_procargs_path)"), procargs)
 assert re.search(anchor_pattern("shdw_env_procargs_path_cap = path_entry_capacity;"), procargs)

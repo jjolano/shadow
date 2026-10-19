@@ -142,27 +142,35 @@ static inline BOOL shdw_path_rewrite_enabled(void) {
   return atomic_load_explicit(&shdw_path_rewrite_active, memory_order_acquire);
 }
 
-// Natural-ENOENT rewrite for libc path hooks: munge the caller's buffer and
-// let the real function fail with the kernel's own ENOENT. Returns YES when
-// the rewrite happened (the caller returns the original's result directly).
-// Falls back to the synthetic deny when the pref is off or the buffer is not
-// writable (e.g. a __TEXT string constant).
-static inline BOOL shdw_libc_try_rewrite(const char *pathname) {
-  if (!shdw_path_rewrite_enabled()) {
-    return NO;
+// Natural-ENOENT rewrite for libc path hooks: hand the caller a munged COPY
+// and let the real function fail with the kernel's own ENOENT. Returns the
+// copy (thread-local, valid until the next call on this thread) or NULL when
+// the pref is off or the path cannot be rewritten.
+//
+// The caller's buffer is NEVER modified: stat/access/open/readlink take a
+// const char *, so writing into it would corrupt caller memory and hand a
+// detector a changed pathname after a call that is documented as pure.
+static inline const char *shdw_libc_try_rewrite(const char *pathname) {
+  static _Thread_local char rewritten[PATH_MAX];
+
+  if (!shdw_path_rewrite_enabled() || pathname == NULL) {
+    return NULL;
   }
 
-  size_t moff = shdw_path_munge_offset(pathname);
-
-  if (moff == (size_t)-1 || !shdw_path_buf_writable(pathname + moff)) {
-    return NO;
-  }
-
-  return shdw_path_munge_path((char *)pathname);
+  return shdw_path_rewrite_copy(pathname, rewritten, sizeof rewritten);
 }
 
 // Theos' Logos preprocessor emits MSHookMessageEx for %hook blocks. Route
 // that single spelling through the native HK3 session active for this unit.
+// Entry bound for the EVFILT_PROC changelist scans (kevent/kevent64 on the
+// libc, syscall(2) and inline-svc lanes). Those scans walk the caller's
+// changelist BEFORE the kernel validates it, so an oversized nchanges faults
+// inside Shadow's own frame where stock would answer EFAULT from the kernel.
+// Real changelists carry a handful of entries; past this bound the scan stops
+// and the kernel answers (stock error shape), so the filter never turns a
+// caller's bad argument into a crash in the hook.
+#define SHDW_KEVENT_SCAN_MAX 256
+
 #define MSHookMessageEx SHDWHookMessage
 
 // private symbols
@@ -287,6 +295,15 @@ static inline BOOL shdw_addr_is_restricted(const void *addr) {
 // current dyld image list. Called by dyld.x at install and from its add/remove
 // image callbacks.
 void shdw_own_ranges_refresh(void);
+
+// Contiguous mapping run of one image ([min segment vmaddr, run end) + slide,
+// __PAGEZERO excluded), for both Mach-O header shapes the lanes ship. Shared by
+// the restricted-image table, the rebind journal's unload prune and objc.x's
+// main-image span. NO when the header magic is neither MH_MAGIC nor
+// MH_MAGIC_64, or the segments are unusable: callers must treat that as
+// "cannot answer", never as "not restricted".
+BOOL shdw_image_span(const struct mach_header *mh, intptr_t slide,
+                     uintptr_t *outBase, uintptr_t *outEnd);
 
 // Exact canonical package-path matcher for Shadow's runtime images. Defined
 // in dyld.x and shared with objc.x; it is intentionally not the broader

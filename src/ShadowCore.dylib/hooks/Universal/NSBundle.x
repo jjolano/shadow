@@ -307,7 +307,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSDictionary<NSString *, id> *)infoDictionary __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
-    if(isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
+    if(isCallerExternal() && result && result[@"SignerIdentity"]) {
         NSMutableDictionary* filtered_result = [result mutableCopy];
         [filtered_result removeObjectForKey:@"SignerIdentity"];
         result = [filtered_result copy];
@@ -319,7 +319,7 @@ static void shdw_cache_main_bundle(void) {
 - (NSDictionary<NSString *, id> *)localizedInfoDictionary __attribute__((annotate("hookkit:allow_inherited"))) {
     NSDictionary* result = %orig;
 
-    if(isCallerExternal() && result && [_shadow isProtectedImagePath:[self bundlePath]]) {
+    if(isCallerExternal() && result && result[@"SignerIdentity"]) {
         NSMutableDictionary* filtered_result = [result mutableCopy];
         [filtered_result removeObjectForKey:@"SignerIdentity"];
         result = [filtered_result copy];

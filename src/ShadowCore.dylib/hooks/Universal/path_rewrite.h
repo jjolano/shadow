@@ -19,6 +19,13 @@ size_t shdw_path_munge_offset(const char *path);
 // Applies the munge in place. Returns 1 when a byte was flipped, 0 when the
 // path had nothing safe to munge.
 int shdw_path_munge_path(char *path);
+// Copies path into scratch and munges the copy; NEVER touches path itself.
+// Returns scratch on success, NULL when the path cannot be rewritten or the
+// copy would not fit. This is the only supported way for the libc hooks to
+// produce a natural-ENOENT spelling: passing the caller's own buffer to
+// shdw_path_munge_path() would corrupt a const argument.
+const char *shdw_path_rewrite_copy(const char *path, char *scratch,
+                                   size_t scratch_size);
 
 // True when the page containing `ptr` is writable (vm_region query). Used
 // before munging so a read-only buffer (e.g. a __TEXT string constant) falls

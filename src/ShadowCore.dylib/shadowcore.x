@@ -182,9 +182,15 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
 
     // Watcher replay runs after the install (it depends on the coordinator's
     // backends being resolved).
+    // The UIKit event is also the only way the passcode-status unit can ever
+    // be planned (its registry row is pref-less and self-gates on aggressive
+    // mode), so aggressive mode alone must arm the watcher: with both
+    // URL-scheme and Foundation hiding off, passcode probes would otherwise
+    // read the real device state with no log.
     BOOL watcherEnabled = shdw_coordinator_instance
         && (shdw_coordinator_instance.backends.capabilities & SHDWCapMessage)
-        && ([prefs[SHDWUniversalURLSchemeID] boolValue] || [prefs[SHDWUniversalFoundationID] boolValue]);
+        && ([prefs[SHDWUniversalURLSchemeID] boolValue] || [prefs[SHDWUniversalFoundationID] boolValue]
+            || shdw_detector_aggressive);
     __atomic_store_n(&_shdw_watcher_enabled, watcherEnabled, __ATOMIC_RELEASE);
 
     if(watcherEnabled) {

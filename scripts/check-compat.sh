@@ -60,8 +60,14 @@ SHDW=$(find_one -type f -path '*/usr/local/bin/shdw')
 
 "$(dirname "$0")/check-binary-compat.sh" "$PROFILE" "$SHADOW" "$TWEAK" "$CORE" "$SETTINGS" "$SHDW"
 
-WATCHER=$(find_one -type f -name me.jjolano.shadow.watcher.plist)
-[ -n "$WATCHER" ]
+# Exactly one watcher plist (a leftover rootless variant would be a second
+# match), under the shipped name, with the Label prerm boots out by literal
+# string and the lane's shdw path as ProgramArguments[0].
+WATCHER=$(find_one -type f -name 'me.jjolano.shadow.watcher*.plist')
+[ "$(basename "$WATCHER")" = me.jjolano.shadow.watcher.plist ] || { echo "watcher plist not shipped as me.jjolano.shadow.watcher.plist: $WATCHER" >&2; exit 1; }
+if [ "$(shadow_lane_field "$PROFILE" SCHEME)" = rootless ]; then SHDW_ARG=/var/jb/usr/local/bin/shdw; else SHDW_ARG=/usr/local/bin/shdw; fi
+grep -Fq '<string>me.jjolano.shadow.watcher</string>' "$WATCHER" || { echo "watcher Label is not me.jjolano.shadow.watcher" >&2; exit 1; }
+grep -A2 -F '<key>ProgramArguments</key>' "$WATCHER" | grep -Fq "<string>$SHDW_ARG</string>" || { echo "watcher ProgramArguments[0] is not $SHDW_ARG" >&2; exit 1; }
 daemon=$(find "$TMP/root" -type f -path '*/usr/libexec/shadowd' -print)
 daemon_plist=$(find "$TMP/root" -type f -name me.jjolano.shadow.plist -print)
 [ -z "$daemon$daemon_plist" ] || { echo "package contains removed shadowd backend" >&2; exit 1; }

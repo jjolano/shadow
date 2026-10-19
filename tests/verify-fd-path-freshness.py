@@ -95,8 +95,10 @@ union_span = body("BOOL shdw_resolved_spelling_hidden(const char* canon) {",
                   "BOOL shdw_path_under_system_bind_root")
 
 old_at = '''        NSString* path = [NSString stringWithUTF8String:pathname];
+        NSString* workingDir = [NSString stringWithUTF8String:parent];
+        if (!path || !workingDir) { errno = ENOENT; return YES; }
         BOOL restricted = [_shadow isPathRestricted:path options:@{
-            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent]
+            kShadowRestrictionWorkingDir : workingDir
         }];'''
 at_path = pin(at_path, old_at, "        BOOL restricted = is_at_restricted(parent, pathname);")
 at_path = pin(at_path, "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
@@ -106,8 +108,10 @@ at_path = pin(at_path, "[_shadow isCPathRestricted:pathname]", "is_restricted(pa
 # both agree here; device runs prove the divergence), and its absolute
 # branch consults the shared NoFollow helper, mapped to the same stub.
 old_at_nofollow = '''        NSString* path = [NSString stringWithUTF8String:pathname];
+        NSString* workingDir = [NSString stringWithUTF8String:parent];
+        if (!path || !workingDir) { errno = ENOENT; return YES; }
         BOOL restricted = [_shadow isPathRestricted:path options:@{
-            kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:parent],
+            kShadowRestrictionWorkingDir : workingDir,
             kShadowRestrictionNoFollow : @YES
         }];'''
 at_path = pin(at_path, old_at_nofollow, "        BOOL restricted = is_at_restricted(parent, pathname);")
@@ -116,7 +120,9 @@ at_path = pin(at_path, "shdw_path_ruleset_denied_nofollow(pathname)", "is_restri
 assert re.search(anchor_pattern("fcntl(fd, F_GETPATH, pathname) != -1"), fd_path)
 fd_path = pin(fd_path, "[_shadow isCPathRestricted:pathname]", "is_restricted(pathname)")
 
-old_readdir = '''        NSDictionary* options = @{kShadowRestrictionWorkingDir : [NSString stringWithUTF8String:pathname]};
+old_readdir = '''        NSString* workingDir = [NSString stringWithUTF8String:pathname];
+        if (!workingDir) { *denied = YES; errno = ENOENT; return nil; }
+        NSDictionary* options = @{kShadowRestrictionWorkingDir : workingDir};
         errno = saved_errno;
         return (__bridge NSDictionary*)CFRetain((__bridge CFDictionaryRef)options);'''
 readdir = pin(readdir, "NSDictionary* shdw_readdir_options", "const char* shdw_readdir_options")

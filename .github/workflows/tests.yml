@@ -68,6 +68,11 @@ jobs:
       - name: image span + svc branch check
         run: make -C tests verify-image-span
 
+      # KERN_PROCARGS2 payload model: the kernel's flat string layout, not the
+      # pointer-array shape the filter used to assume (which never matched).
+      - name: procargs payload filter check
+        run: make -C tests verify-procargs-filter
+
       # Pure-C check for the anti-fishhook journal/repair core.
       - name: rebind-repair check
         run: make -C tests verify-rebind-repair

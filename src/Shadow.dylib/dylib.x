@@ -69,6 +69,12 @@ extern char*** _NSGetArgv();
 
     NSUserDefaults* defaults = [[NSUserDefaults alloc] initWithSuiteName:@SHADOW_PREFS_PLIST];
     NSDictionary* app_settings = bundleIdentifier ? [defaults objectForKey:bundleIdentifier] : nil;
+    // Anything but a dictionary would raise inside SHDWApplicationEnabled's
+    // subscript — in this loader's ctor that is an uncaught exception (no @try
+    // here), so a hand-edited or foreign plist must not reach it.
+    if(![app_settings isKindOfClass:[NSDictionary class]]) {
+        app_settings = nil;
+    }
     // Sandboxed cfprefsd can omit another app's dictionary despite libSandy's file grant.
     if(!app_settings && bundleIdentifier) {
         id fileSettings = [NSDictionary dictionaryWithContentsOfFile:@SHADOW_PREFS_PLIST][bundleIdentifier];

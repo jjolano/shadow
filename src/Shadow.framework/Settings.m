@@ -107,6 +107,9 @@ static NSString *const kSHDWDetectorRunnerOverridesKey =
   NSMutableDictionary *result = [defaultSettings mutableCopy];
   NSDictionary *app_settings =
       bundleIdentifier ? [userDefaults objectForKey:bundleIdentifier] : nil;
+  if (![app_settings isKindOfClass:[NSDictionary class]]) {
+    app_settings = nil;
+  }
   NSDictionary *filePreferences = nil;
   NSDictionary *fileAppSettings = nil;
   // Sandboxed cfprefsd can omit another app's dictionary despite libSandy's

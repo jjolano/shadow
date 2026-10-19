@@ -22,10 +22,15 @@ static kern_return_t replaced_vm_protect_imports(vm_map_t task,
                                                    vm_prot_t protection) {
     if(isCallerExternal() &&
        shdw_is_import_slot_rewrite(task, address, size, setMaximum, protection)) {
-        // The write itself is refused, but the attempt proves an unhooker is
-        // active: trip the detector escalation (Tier-2) and queue a slot
-        // repair for direct-store undos the guard cannot see. Both are async
-        // — this path runs on the attacker's stack.
+        // Only the PROTECTION CHANGE is refused: a caller that ignores the
+        // return value (the fishhook idiom usually checks it) writes into a
+        // still-read-only page and faults in its own frame. The attempt proves
+        // an unhooker is active, so trip detector escalation (Tier-2) and queue
+        // a slot repair for the direct-store undos this guard cannot see.
+        // SHDWRequestRebindRepair is async; shdw_detector_detected is NOT when
+        // this runs on the main thread — escalate() installs Tier-2
+        // synchronously there so a just-returned verdict cannot race it (see
+        // HookCoordinator.m), which means this frame can block for the install.
         shdw_detector_detected("import_slot");
         SHDWRequestRebindRepair();
         return KERN_PROTECTION_FAILURE;

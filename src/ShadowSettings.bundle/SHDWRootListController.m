@@ -66,8 +66,10 @@
   // app pages, and the global switches can be wiped by Reset Settings in the
   // About pane. Without this, popping back shows stale switch/summary state
   // even though the stored values changed.
-  for (NSString *specID in
-       @[ @"Global_Enabled", @"Detector_Aggressive", @"ApplicationsSummary" ]) {
+  for (NSString *specID in @[
+         @"Global_Enabled", @"Universal_PseudoSandboxMode",
+         @"Detector_Aggressive", @"ApplicationsSummary"
+       ]) {
     PSSpecifier *specifier = [self specifierForID:specID];
     if (specifier) {
       [self reloadSpecifier:specifier];

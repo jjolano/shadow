@@ -8,6 +8,7 @@
 #import <HookKit/HookKitResolver.h>
 
 #include <dlfcn.h>
+#include <pthread.h>
 #include <string.h>
 
 // Per-process function/memory backend override. Set before any hook runs
@@ -201,6 +202,20 @@ const void *SHDWOriginalIMPForReplacement(const void *address) {
 // stores a just-superseded value and the next event repairs again).
 static shdw_rebind_slots_t gSHDWRebindSlots;
 
+// One lock over every access to that table. The table's helpers are plain C and
+// document "the caller serializes"; the callers are the installer path, the
+// image-unload callback (dlclose thread), repair (main / lifecycle queue /
+// add-image thread) and the vm_protect guard — so nothing else serializes them.
+// Tombstoning (rebind_slots.h) removed the compaction hazard, but it does not
+// remove the PAIRING hazard: a repair that loads an entry's start, loses the
+// CPU while that slot is retired and reused for another symbol, then loads the
+// new expected pointer would store another symbol's replacement into a live
+// import slot — calls jumping into the wrong hook. Recursive for same-thread
+// re-entry (a vm_protect-guard trip during an install, the svc_patch.x
+// precedent); no path nests deliberately.
+static pthread_mutex_t gSHDWRebindSlotsLock =
+    PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
+
 static void SHDWRememberImportSlot(uintptr_t start, size_t size,
                                    uintptr_t expected) {
   if (!start || !expected)
@@ -208,17 +223,26 @@ static void SHDWRememberImportSlot(uintptr_t start, size_t size,
   if (!size)
     size = sizeof(void *);
 
-  uint32_t overflowedBefore =
+  BOOL overflowTransition = NO;
+
+  pthread_mutex_lock(&gSHDWRebindSlotsLock);
+
+  BOOL overflowedBefore =
       __atomic_load_n(&gSHDWRebindSlots.overflowed, __ATOMIC_ACQUIRE);
   shdw_rebind_slots_note(&gSHDWRebindSlots, start, size, expected);
-  // Publish for acquire-load readers (note() mutates the table in place;
-  // installs are serialized on the coordinator queues, same as before).
+  // Publish for acquire-load readers (note() mutates the table in place; every
+  // access to it is serialized by gSHDWRebindSlotsLock).
   __atomic_store_n(&gSHDWRebindSlots.count, gSHDWRebindSlots.count,
                    __ATOMIC_RELEASE);
-  // Log the overflow transition once; every later drop stays silent but
-  // latched in overflowed for the verify pass.
-  if (!overflowedBefore &&
-      __atomic_load_n(&gSHDWRebindSlots.overflowed, __ATOMIC_ACQUIRE)) {
+  overflowTransition =
+      !overflowedBefore &&
+      __atomic_load_n(&gSHDWRebindSlots.overflowed, __ATOMIC_ACQUIRE);
+
+  pthread_mutex_unlock(&gSHDWRebindSlotsLock);
+
+  // Logged outside the lock: over-limit installs log once and every later drop
+  // stays silent but latched in overflowed for the verify pass.
+  if (overflowTransition) {
     NSLog(
         @"[Shadow] rebind journal full (%u slots) — further slots unguarded+unrepaired",
         __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE));
@@ -253,13 +277,17 @@ static void SHDWRememberImportSlots(hk_report_t *report,
 // Drop journaled slots owned by an unmapped image (see rebind_slots.h).
 // Repair must never dereference a stale slot address.
 void SHDWRebindForgetRange(uintptr_t base, uintptr_t end) {
+  pthread_mutex_lock(&gSHDWRebindSlotsLock);
   shdw_rebind_slots_forget_range(&gSHDWRebindSlots, base, end);
+  pthread_mutex_unlock(&gSHDWRebindSlotsLock);
 }
 
 // Check-then-store repair over the journaled slots. Returns repaired count.
 uint32_t SHDWRebindRepairSlots(void) {
+  pthread_mutex_lock(&gSHDWRebindSlotsLock);
   uint32_t count = __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE);
   uint32_t repaired = shdw_rebind_slots_repair(&gSHDWRebindSlots, count);
+  pthread_mutex_unlock(&gSHDWRebindSlotsLock);
   if (repaired) {
     NSLog(@"[Shadow] rebind repair: restored %u import slots", repaired);
   }
@@ -269,10 +297,13 @@ uint32_t SHDWRebindRepairSlots(void) {
 BOOL SHDWRangeOverlapsProtectedImportSlots(uintptr_t address, size_t size) {
   if (!address || !size)
     return NO;
+  pthread_mutex_lock(&gSHDWRebindSlotsLock);
   uint32_t count = __atomic_load_n(&gSHDWRebindSlots.count, __ATOMIC_ACQUIRE);
-  return shdw_rebind_slots_overlap(&gSHDWRebindSlots, count, address, size)
-             ? YES
-             : NO;
+  BOOL overlaps =
+      shdw_rebind_slots_overlap(&gSHDWRebindSlots, count, address, size) ? YES
+                                                                         : NO;
+  pthread_mutex_unlock(&gSHDWRebindSlotsLock);
+  return overlaps;
 }
 
 static void SHDWRememberOriginalImplementation(Method method, IMP original) {

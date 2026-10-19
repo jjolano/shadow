@@ -40,6 +40,34 @@ assert re.search(anchor_pattern('[seenPaths addObject:path];'), harvest)
 assert re.search(anchor_pattern('if(![seenPaths containsObject:cachedPath])'), harvest)
 assert re.search(anchor_pattern('[shdwCuratedRulesetEngines removeObjectForKey:cachedPath];'), harvest)
 
+# Compiled-cache freshness stamp: the compile call site produces it and the
+# reader compares it, and the two must use the same epoch. Inlining the epoch
+# per site is exactly how the writer ends up stamping a value the reader can
+# never match — the cache then stops being written or read, silently, and no
+# host check drives the real reader/writer pair (that needs a device).
+compiler = (root / "RulesetCompiler.m").read_text()
+assert re.search(
+    anchor_pattern("static NSNumber* shdw_compiledCacheStamp(NSDictionary* plistAttrs)"),
+    compiler), "the cache stamp helper is gone"
+assert len(re.findall(anchor_pattern("shdw_compiledCacheStamp("), compiler)) == 4, (
+    "expected the helper definition plus the reader, the writer and the compile call site")
+assert compiler.count("timeIntervalSince1970") == 2, (
+    "the epoch choice must live only in shdw_compiledCacheStamp (comment + body)")
+
+# The single-entry verdict fast path must have exactly ONE writer, and that
+# writer must refuse working-directory-relative queries: a second publisher
+# (the shared-cache hit path had one) stored a wd-scoped verdict under the raw
+# leaf name, so a later nil-wd query for that leaf could take a verdict
+# computed against a different directory.
+engine = (root / "RestrictionEngine.m").read_text()
+writers = engine.count("strlcpy(lastPathBuf")
+assert writers == 1, (
+    f"expected exactly one lastPathBuf writer, found {writers} — route new "
+    f"publishers through publishTLS")
+pub = body(engine, "void (^publishTLS)(BOOL)", "BOOL restricted = NO;")
+assert re.search(anchor_pattern("query.workingDirectory != nil"), pub), (
+    "publishTLS must refuse working-directory-relative verdicts")
+
 dpkg = (root / "DpkgRulesGenerator.m").read_text()
 for name in ("installed", "schemes"):
     assert re.search(anchor_pattern('[[%s allObjects] sortedArrayUsingSelector:@selector(compare:)]' % name), dpkg)

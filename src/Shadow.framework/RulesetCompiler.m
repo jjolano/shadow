@@ -12,6 +12,23 @@
 // where a path's ancestor is a non-key child).
 static const NSInteger kShadowRulesetCacheVersion = 5;
 
+// Cache stamp for one ruleset plist: NSFileModificationDate in ns, in ONE
+// convention shared by the reader, the writer and the compile call site
+// (timeIntervalSince1970 whenever the attribute is present — always on iOS;
+// GNUstep hosts may omit it and fall back to reference-date ns). Inlining the
+// epoch choice per site is how a reader/writer mismatch goes unnoticed: the
+// writer then stamps a value the reader can never match, and the compiled
+// cache silently stops being written or read.
+static NSNumber *shdw_compiledCacheStamp(NSDictionary *plistAttrs) {
+  NSDate *modified = [plistAttrs fileModificationDate];
+
+  if ([plistAttrs objectForKey:NSFileModificationDate]) {
+    return @([modified timeIntervalSince1970] * 1e9);
+  }
+
+  return @([modified timeIntervalSinceReferenceDate] * 1e9);
+}
+
 @implementation ShadowRulesetCompiler
 
 // Full load path for one ruleset URL: compiled cache first (while the
@@ -78,7 +95,12 @@ static const NSInteger kShadowRulesetCacheVersion = 5;
       }
 
       if (ruleset) {
-        [self _writeCompiledCacheForRuleset:ruleset url:url];
+        // The cache is keyed on the plist mtime the PARSE saw (not a re-stat),
+        // in the one convention shdw_compiledCacheStamp defines.
+        [self
+            _writeCompiledCacheForRuleset:ruleset
+                                      url:url
+                                  nsMtime:shdw_compiledCacheStamp(plistAttrs)];
         [lastKnownGood setObject:@[ @(mtime), ruleset ] forKey:plistPath];
         return ruleset;
       }
@@ -137,16 +159,7 @@ static id shdwCacheUnwrapNil(id value) {
 
   // v3: ns mtime only (no size); NSFileModificationDate resolution is ns on
   // iOS. Older caches lack ns key → miss (rebuilt on next compile).
-  NSNumber *nsMtime =
-      (NSNumber *)[plistAttrs objectForKey:NSFileModificationDate]
-          ? @([[plistAttrs fileModificationDate] timeIntervalSince1970] * 1e9)
-          : nil;
-  if (!nsMtime) {
-    // Fallback: reference-date ns (harness)
-    nsMtime =
-        @([[plistAttrs fileModificationDate] timeIntervalSinceReferenceDate] *
-          1e9);
-  }
+  NSNumber *nsMtime = shdw_compiledCacheStamp(plistAttrs);
   if (![cached isKindOfClass:[NSDictionary class]] ||
       ![[cached objectForKey:@"version"]
           isEqualToNumber:@(kShadowRulesetCacheVersion)] ||
@@ -307,7 +320,8 @@ static id shdwCacheUnwrapNil(id value) {
 // +[RulesetEngine _writeCompiledCacheForRuleset:url:]; v2 format, no v3
 // writer yet.
 + (void)_writeCompiledCacheForRuleset:(RulesetEngine *)ruleset
-                                  url:(NSURL *)url {
+                                  url:(NSURL *)url
+                              nsMtime:(NSNumber *)nsMtime {
   // After _compile the full payload is dead weight: the compiled lookup
   // tables are the working set (their strings are shared with the payload,
   // so nothing is lost by releasing the container shells), and the only
@@ -332,15 +346,21 @@ static id shdwCacheUnwrapNil(id value) {
     return;
   }
 
-  NSNumber *nsMtime2 =
-      (NSNumber *)[plistAttrs objectForKey:NSFileModificationDate]
-          ? @([[plistAttrs fileModificationDate] timeIntervalSince1970] * 1e9)
-          : @([[plistAttrs fileModificationDate]
-                  timeIntervalSinceReferenceDate] *
-              1e9);
+  // Re-stat ONLY to confirm the file did not move while it was parsed. The
+  // stamp itself is the mtime the parse ran against: stamping a re-stat let a
+  // plist replaced mid-compile be archived from the OLD bytes under the NEW
+  // mtime, and the reader's only freshness test is this number — so every
+  // later loader (any process, any restart) accepted a compiled cache missing
+  // whatever the newer file added.
+  NSNumber *currentMtime = shdw_compiledCacheStamp(plistAttrs);
+
+  if (![currentMtime isEqualToNumber:nsMtime]) {
+    return; // moved mid-compile: no cache entry rather than a poisoned one
+  }
+
   NSDictionary *cached = @{
     @"version" : @(kShadowRulesetCacheVersion),
-    @"nsMtime" : nsMtime2,
+    @"nsMtime" : nsMtime,
     @"payload" : reducedPayload,
     @"schemes" : ruleset->set_urlschemes ?: [NSNull null],
     @"whitelist" : ruleset->set_whitelist ?: [NSNull null],
