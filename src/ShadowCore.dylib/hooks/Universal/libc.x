@@ -1914,42 +1914,144 @@ static FILE* replaced_freopen(const char* pathname, const char* mode, FILE* stre
 }
 
 static char* (*original_realpath)(const char* pathname, char* resolved_path);
-static char* replaced_realpath(const char* pathname, char* resolved_path) {
-    char* result = original_realpath(pathname, resolved_path);
+static char* (*original_realpath_extsn)(const char* pathname, char* resolved_path);
+// Shared policy body: each installed lane keeps its own continuation, so the
+// 64-bit __DARWIN_EXTSN alias and the legacy export never forward through
+// each other's cell.
+static char* shdw_realpath_policy(char* (*original)(const char* pathname, char* resolved_path),
+                                  const char* pathname, char* resolved_path) {
+    // Stock realpath leaves errno untouched on success, so the synthetic
+    // successes below must hand back the caller's own errno; a detector can
+    // prime errno=0 and read it back after the call (class (ii) tell).
+    int caller_errno = errno;
+    BOOL ext = isCallerExternal();
 
-    if(result && isCallerExternal()) {
-        // A denied realpath must not leave the resolved target in the caller's
-        // own buffer: `result` is that same buffer when resolved_path != NULL,
-        // and only the malloc'd copy is freed below.
-        #define SHDW_REALPATH_DENY(ERR)                                            \
-            do {                                                                   \
-                errno = (ERR);                                                     \
-                if(resolved_path == NULL) {                                        \
-                    free(result);                                                  \
-                } else {                                                           \
-                    resolved_path[0] = '\0';                                       \
-                }                                                                  \
-                return NULL;                                                       \
-            } while(0)
-
-        if(shdw_path_is_main_bundle_exempt(pathname) || shdw_path_is_main_bundle_exempt(result)) {
-            return result;
+    // Deny a hidden/ruleset-restricted input BEFORE the resolver runs. The
+    // resolution is written straight into the caller's buffer, and a deny
+    // after the fact cannot un-write it: Shadow's own component hooks can
+    // fail the resolve AFTER the target was stored, so the caller would keep
+    // the hidden spelling behind a NULL/ENOENT return (measured). Clearing a
+    // supplied buffer is the only way such a deny discloses no target.
+    if(ext
+       && (shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])
+       && !shdw_path_is_main_bundle_exempt(pathname)) {
+        if(resolved_path) {
+            resolved_path[0] = '\0';
         }
-        if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
-            SHDW_REALPATH_DENY(ENOENT);
-        }
-
-        // The returned path is the fully resolved TARGET: a symlink chain
-        // can land in a restricted location even when the input path is
-        // not restricted, so check the resolved string as well.
-        if(shdw_path_is_external_hidden(result) || [_shadow isCPathRestricted:result]) {
-            SHDW_REALPATH_DENY(EACCES);
-        }
-
-        #undef SHDW_REALPATH_DENY
+        errno = ENOENT;
+        return NULL;
     }
 
+    char* result = original(pathname, resolved_path);
+
+    // Same reason on the failure lane: a NULL result allocated nothing (so
+    // nothing is freed), but the buffer may already hold the resolution the
+    // resolver gave up on, and it must not survive the error return either.
+    // On a rootless rig the failure itself can be Shadow's: the resolver's own
+    // lstat/readlink calls hit the component hooks that deny the jailbreak-root
+    // backing store (/usr/lib/dyld through procursus), so the post-resolve
+    // branch above never runs. A benign stock system input that still exists
+    // is resolved by its own name instead — never by target. `original_access`
+    // keeps the probe out of the access hook (plain access is the fallback for
+    // the un-hooked lane); a genuinely absent path fails it and stays NULL.
+    if(!result) {
+        int result_errno = errno;
+        if(ext && pathname && shdw_path_under_system_bind_root(pathname)) {
+            BOOL present = original_access ? (original_access(pathname, F_OK) == 0)
+                                           : (access(pathname, F_OK) == 0);
+            const char* stock = present ? shdw_standardize_lexical(pathname) : NULL;
+            size_t stockLen = stock ? strlen(stock) : 0;
+            if(stock && stockLen < PATH_MAX) {
+                if(resolved_path == NULL) {
+                    char* copy = strdup(stock);
+                    if(copy) {
+                        errno = caller_errno;
+                        return copy;
+                    }
+                } else {
+                    memmove(resolved_path, stock, stockLen + 1);
+                    errno = caller_errno;
+                    return resolved_path;
+                }
+            }
+        }
+        if(ext && resolved_path) {
+            resolved_path[0] = '\0';
+        }
+        errno = result_errno;
+        return NULL;
+    }
+
+    if(!ext) {
+        return result;
+    }
+
+    // A denied realpath must not leave the resolved target in the caller's
+    // own buffer: `result` is that same buffer when resolved_path != NULL,
+    // and only the malloc'd copy is freed below.
+    #define SHDW_REALPATH_DENY(ERR)                                            \
+        do {                                                                   \
+            errno = (ERR);                                                     \
+            if(resolved_path == NULL) {                                        \
+                free(result);                                                  \
+            } else {                                                           \
+                resolved_path[0] = '\0';                                       \
+            }                                                                  \
+            return NULL;                                                       \
+        } while(0)
+
+    if(shdw_path_is_main_bundle_exempt(pathname) || shdw_path_is_main_bundle_exempt(result)) {
+        return result;
+    }
+
+    // The returned path is the fully resolved TARGET: a symlink chain can
+    // land on a hidden object even when the input path is not hidden, so
+    // check the resolved spelling too. The union check covers both namings
+    // of that object — mount point (/usr/lib/...) and bind-mount backing
+    // store (.../.fakelib/..., .../procursus/basebin/...) — the same verdict
+    // the fd/F_GETPATH lanes use.
+    if(shdw_resolved_spelling_hidden(result)) {
+        SHDW_REALPATH_DENY(EACCES);
+    }
+
+    if([_shadow isCPathRestricted:result]) {
+        // The input passed the pre-call gate, so a ruleset verdict on the
+        // resolved target alone is the rootless bind-mount artifact: the
+        // same benign system object named by its jailbreak-root backing
+        // store (e.g. /usr/lib/dyld through procursus). Answer with the
+        // stock spelling — never that path. Any other restricted target
+        // keeps the pre-existing deny.
+        const char* stock = shdw_standardize_lexical(pathname);
+        size_t stockLen = stock ? strlen(stock) : 0;
+        if(!stock || stockLen >= PATH_MAX || !shdw_path_under_system_bind_root(pathname)) {
+            SHDW_REALPATH_DENY(EACCES);
+        }
+        if(resolved_path == NULL) {
+            char* copy = strdup(stock);
+            if(!copy) {
+                free(result);
+                errno = ENOMEM;
+                return NULL;
+            }
+            free(result);
+            errno = caller_errno;
+            return copy;
+        }
+        memmove(resolved_path, stock, stockLen + 1);
+        errno = caller_errno;
+        return resolved_path;
+    }
+
+    #undef SHDW_REALPATH_DENY
+
     return result;
+}
+
+static char* replaced_realpath(const char* pathname, char* resolved_path) {
+    return shdw_realpath_policy(original_realpath, pathname, resolved_path);
+}
+static char* replaced_realpath_extsn(const char* pathname, char* resolved_path) {
+    return shdw_realpath_policy(original_realpath_extsn, pathname, resolved_path);
 }
 
 static int (*original_getattrlist)(const char* path, struct attrlist* attrList, void* attrBuf, size_t attrBufSize, unsigned long options);
@@ -3280,6 +3382,10 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    METADATA, METADATA },
     { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
+    // 64-bit callers bind the __DARWIN_EXTSN alias: the SDK maps realpath()
+    // to realpath$DARWIN_EXTSN on arm64, so the legacy row alone leaves the
+    // measured call path stock. Same policy body, own continuation cell.
+    { "realpath$DARWIN_EXTSN",  (void*)&replaced_realpath_extsn,           (void**)&original_realpath_extsn,           LIBC,   LIBC },
     { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 METADATA, METADATA },
     { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               METADATA, METADATA },
     { "freadlink",              (void*)&replaced_freadlink,                (void**)&original_freadlink,                LIBC,   0 },   // iOS 16+ export; SYS_freadlink on 15.6 floor
@@ -3484,6 +3590,21 @@ static void shdw_libc_rebind_proclist(SHDWHookSession* hooks, const shdw_hook_de
     }
 }
 
+// realpath's 64-bit entrypoint is the __DARWIN_EXTSN alias (the SDK maps
+// realpath() to realpath$DARWIN_EXTSN on arm64), while legacy/32-bit and
+// dlsym binders use the realpath export. Some SDK revs publish both names at
+// the SAME shared-cache address: patching that prologue twice would replace
+// the first row's live entry hook (and its trampoline) behind a second
+// entry, so the duplicate row must not call hookFunction — it rebinds its own
+// import slots and continues through the first lane's continuation instead.
+static BOOL shdw_libc_realpath_alias_duplicate(const shdw_hook_desc_t* d, void* target) {
+    if(!d->symbol || strcmp(d->symbol, "realpath$DARWIN_EXTSN") != 0) {
+        return NO;
+    }
+    void* legacy = dlsym(RTLD_DEFAULT, "realpath");
+    return legacy && legacy == target;
+}
+
 void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // Hook installs re-enter hooked libc functions: the backend's symbol
     // resolution (dyld image walk) and Foundation file APIs call
@@ -3537,6 +3658,21 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
                 shdw_libc_rebind_proclist(hooks, d, group, target);
                 continue;
             }
+        }
+
+        // Duplicate alias address: never patch a prologue this install already
+        // patched. Rebind this name's own import slots (the legacy name's
+        // rebind never matches them) and continue through the first lane's
+        // continuation, so the ExtSN wrapper still forwards to the resolved
+        // original.
+        if(shdw_libc_realpath_alias_duplicate(d, target)) {
+            [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                    withReplacement:d->replacement
+                           outOldPtr:NULL];
+            if(d->original) {
+                *d->original = *original_realpath ? (void*)*original_realpath : target;
+            }
+            continue;
         }
 
         // The narrow metadata feature avoids the full filesystem installer
@@ -3619,7 +3755,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // both direct-branch and dlsym callers route through the filter.
             if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC) {
                 static const char* const rebindFallback[] = {
-                    "readdir", "readdir_r", "chdir", "freopen", "scandir", "scandir_b",
+                    "readdir", "readdir_r", "chdir", "freopen", "realpath", "realpath$DARWIN_EXTSN", "scandir", "scandir_b",
                     "statfs", "fstatfs", "statvfs", "fstatvfs",
                     "getmntinfo", "getmntinfo_r_np", "getfsstat",
                     "getattrlist", "getattrlistat", "getattrlistbulk",
