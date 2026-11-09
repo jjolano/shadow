@@ -35,7 +35,8 @@ extern int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
 static const char *const kRestrictedComm[] = {
     "sshd",       "dropbear",      "frida",       "cynject",   "cycript",
     "cydia",      "sileo",         "zebra",       "substrate", "substrated",
-    "jailbreakd", "amfid_payload", "launchdhook",
+    "jailbreakd", "amfid_payload", "launchdhook", "ellekit",   "jbctl",
+    "substitute", "libhooker",     "palera1n",    "roothide",  "varclean",
 };
 static const size_t kRestrictedCommCount =
     sizeof(kRestrictedComm) / sizeof(kRestrictedComm[0]);

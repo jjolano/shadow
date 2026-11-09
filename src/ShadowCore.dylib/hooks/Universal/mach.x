@@ -16,10 +16,22 @@ BOOL shdw_bootstrap_service_restricted(const char* name) {
         || strstr(name, "lh:") == name
         || strstr(name, "rbs:") == name
         || strstr(name, "org.coolstar") == name
+        || strstr(name, "com.coolstar") == name
         || strstr(name, "org.saurik") == name
         || strstr(name, "com.saurik") == name
         || strstr(name, "com.opa334") == name
         || strstr(name, "me.jjolano") == name
+        || strstr(name, "com.electrateam") == name
+        || strstr(name, "com.unc0ver") == name
+        || strstr(name, "com.xina") == name
+        || strstr(name, "com.roothide") == name
+        || strstr(name, "science.xnu") == name
+        || strstr(name, "com.llsc12") == name
+        || strstr(name, "com.samiiau") == name
+        || strstr(name, "com.spark.meridian") == name
+        || strstr(name, "com.tigisoftware") == name
+        || strstr(name, "ws.hbang") == name
+        || strcmp(name, "com.ex.substituted") == 0
         || strstr(name, "jailbreakd") == name;
 }
 

@@ -389,13 +389,22 @@ shdwQueryFromOptions(NSString *path, NSDictionary<NSString *, id> *options) {
 
     dispatch_once(&onceToken, ^{
       staticBundleIDs = [NSSet setWithArray:@[
-        @"com.saurik.cydia", @"org.coolstar.sileo", @"xyz.willy.zebra",
-        @"com.opa334.jailbreak",   // Dopamine
+        @"com.saurik.cydia",          @"org.coolstar.sileo",
+        @"xyz.willy.zebra",
+        @"com.opa334.jailbreak", // Dopamine
+        @"com.opa334.dopamine",
         @"science.xnu.underscore", // palera1n
         @"com.llsc12.palera1nloader",
         @"com.samiiau.loader", // jailbreak.app
-        @"jp.r333d.taurine", @"com.undecimus.unc0ver", @"eu.taurine.taurine",
-        @"com.apt.theos"
+        @"jp.r333d.taurine",          @"com.undecimus.unc0ver",
+        @"eu.taurine.taurine",        @"com.apt.theos",
+        @"com.electrateam.chimera",   @"org.coolstar.odyssey",
+        @"com.spark.meridian",        @"com.xina.jailbreak",
+        @"com.coolstar.electra",      @"com.roothide.bootstrap",
+        @"com.roothide.manager",      @"com.tigisoftware.filza",
+        @"ws.hbang.terminal",         @"ru.domo.cocoatop64",
+        @"org.coolstar.sileostore",   @"com.opa334.sileo",
+        @"org.coolstar.coolstor",     @"us.diatr.shshd"
       ]];
     });
 
@@ -443,7 +452,7 @@ shdwQueryFromOptions(NSString *path, NSDictionary<NSString *, id> *options) {
       protectedNames = [NSSet setWithArray:@[
         @"shadow.dylib", @"shadowcore", @"shadow.framework", @"libsandy.dylib",
         @"hookkit.framework", @"substrate", @"libsubstrate", @"substitute",
-        @"libsubstitute", @"ellekit", @"libellekit"
+        @"libsubstitute", @"ellekit", @"libellekit", @"libroot", @"libroothide"
       ]];
     });
 

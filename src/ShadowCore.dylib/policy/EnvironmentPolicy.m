@@ -24,21 +24,31 @@
 // Shared matcher for the two predicates below. `boundary` is the character
 // that must follow a safe-mode name: '\0' for a bare name (getenv view), '='
 // for the "NAME=value" entry form (*environ scans). DYLD_* covers
-// INSERT_LIBRARIES and every search-path knob; the JAILBREAKD_* and safe-mode
-// variables come from jailbreakd/loader launch contexts.
+// INSERT_LIBRARIES and every search-path knob; JAILBREAKD_* and the
+// Dopamine/rootless launch variables come from jailbreakd/loader contexts.
+// Dopamine sets DOPAMINE_INITIALIZED and LAUNCHD_UUID in launchd and leaves
+// them set; launchd passes its environ to children, so app processes inherit
+// them unless filtered here. Exact names use `boundary` so a stock name with
+// a longer spelling is not over-hidden.
 static BOOL shdw_env_hidden(const char *s, char boundary) {
   if (!s) {
     return NO;
   }
 
-  if (strncmp(s, "DYLD_", 5) == 0 || strncmp(s, "JAILBREAKD_", 11) == 0) {
+  if (strncmp(s, "DYLD_", 5) == 0 || strncmp(s, "JAILBREAKD_", 11) == 0 ||
+      strncmp(s, "DOPAMINE_", 9) == 0 || strncmp(s, "JBUPDATE_", 9) == 0) {
     return YES;
   }
 
   if ((strncmp(s, "_MSSafeMode", 11) == 0 && s[11] == boundary) ||
       (strncmp(s, "_SafeMode", 9) == 0 && s[9] == boundary) ||
       (strncmp(s, "_SubstituteSafeMode", 19) == 0 && s[19] == boundary) ||
-      (strncmp(s, "BOOTSTRAP_PREFIX", 16) == 0 && s[16] == boundary)) {
+      (strncmp(s, "BOOTSTRAP_PREFIX", 16) == 0 && s[16] == boundary) ||
+      (strncmp(s, "LAUNCHD_UUID", 12) == 0 && s[12] == boundary) ||
+      (strncmp(s, "STAGED_JAILBREAK_UPDATE", 23) == 0 && s[23] == boundary) ||
+      (strncmp(s, "DISABLE_TWEAKS", 14) == 0 && s[14] == boundary) ||
+      (strncmp(s, "JBROOT", 6) == 0 && s[6] == boundary) ||
+      (strncmp(s, "SHADOW_JBROOT", 13) == 0 && s[13] == boundary)) {
     return YES;
   }
 

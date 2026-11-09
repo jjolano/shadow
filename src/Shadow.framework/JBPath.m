@@ -134,7 +134,7 @@ NSString *JBPath(NSString *path) {
 
   if (isRootless &&
       ([path hasPrefix:@"/Library/"] || [path hasPrefix:@"/usr/"] ||
-       [path hasPrefix:@"/Applications/"])) {
+       [path hasPrefix:@"/Applications/"] || [path hasPrefix:@"/var/lib/"])) {
     if ([path hasPrefix:root])
       return path;
     return [root stringByAppendingString:path];

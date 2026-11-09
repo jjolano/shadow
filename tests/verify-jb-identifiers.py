@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([os.environ.get("CC", "cc"), "-std=c99", "-Wall", "-Wextra",
                     "-Werror", str(driver), "-o", str(binary)], check=True)
     output = subprocess.check_output([str(binary)])
-assert hashlib.sha256(output).hexdigest() == "6c5d2b391886540703dcbc607858cdaa0028018112074514ed7779bbc9254e28", "identifier data changed"
+assert hashlib.sha256(output).hexdigest() == "009ced335d7d3a46f39899f68e99e29dd24a82d4465a755c0c471a905de86387", "identifier data changed"
 assert has(appenv, '#import "jb-identifiers.h"')
 for symbol in symbols:
     assert has(appenv, 'for(const char* const* p = %s; *p; p++)' % symbol), symbol

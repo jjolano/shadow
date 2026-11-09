@@ -103,6 +103,7 @@ BOOL shdw_is_jb_probe(const char *path) {
 
   return strstr(path, "/var/binpack") != NULL ||
          strstr(path, "/binpack") != NULL || strstr(path, "/jbroot") != NULL ||
+         strstr(path, "/.jbroot") != NULL ||
          strstr(path, "/.installed_") != NULL ||
          strstr(path, "/.bootstrapped_") != NULL ||
          strstr(path, "/.procursus_strapped") != NULL ||
@@ -110,7 +111,11 @@ BOOL shdw_is_jb_probe(const char *path) {
          strstr(path, "/chimera") != NULL || strstr(path, "/odyssey") != NULL ||
          strstr(path, "/taurine") != NULL ||
          strstr(path, "/meridian") != NULL ||
+         strstr(path, "/electra") != NULL ||
          strstr(path, "/Library/Substitute") != NULL ||
+         strstr(path, "/Library/TweakInject") != NULL ||
+         strstr(path, "/usr/libexec/libhooker") != NULL ||
+         strstr(path, "/usr/lib/TweakInject") != NULL ||
          strstr(path, "/etc/apt") != NULL ||
          strstr(path, "/var/lib/undecimus") != NULL ||
          strstr(path, "/var/lib/dpkg") != NULL ||
@@ -144,9 +149,19 @@ static BOOL shdw_path_is_jb_app_container(const char *pathname) {
   static const char *const jbAppIDs[] = {
       "com.xina.jailbreak",
       "com.opa334.Dopamine",
+      "com.electrateam.chimera",
+      "org.coolstar.odyssey",
+      "com.spark.meridian",
+      "com.coolstar.electra",
+      "com.roothide.Bootstrap",
+      "com.roothide.manager",
       "com.tigisoftware.Filza",
       "org.coolstar.SileoStore",
       "ws.hbang.Terminal",
+      "ru.domo.cocoatop64",
+      "org.coolstar.coolstor",
+      "com.opa334.sileo",
+      "us.diatr.shshd",
       "xyz.willy.Zebra",
       NULL,
   };

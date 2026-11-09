@@ -71,4 +71,16 @@ for name in ("installed", "schemes"):
     assert re.search(anchor_pattern('[[%s allObjects] sortedArrayUsingSelector:@selector(compare:)]' % name), dpkg)
 assert re.search(anchor_pattern('if(previous && [previous isEqual:ruleset]) { result = 1; } else {'), dpkg)
 assert anchor(dpkg, 'if(previous &&') < anchor(dpkg, '[ruleset writeToFile:')
+
+# Procursus installs its dpkg database under <jbroot>/var/lib/dpkg. JBPath
+# must map /var/lib/ as well as Library/usr/Applications, or the generator
+# and watcher silently probe the stock (absent) path on rootless.
+jbpath = (root / "JBPath.m").read_text()
+assert re.search(anchor_pattern('[path hasPrefix:@"/var/lib/"]'), jbpath), (
+    "rootless JBPath must map /var/lib/ into the jbroot")
+watcher = (root.parent / "shdw/main.m").read_text()
+assert re.search(anchor_pattern('JBPath(@"/var/lib/dpkg/info")'), watcher), (
+    "the watcher must probe the jbroot dpkg info path")
+assert re.search(anchor_pattern("JBPath(path)"), dpkg), (
+    "the dpkg generator must route its probes through JBPath")
 print("verify-rules-generation: cache ownership and stable-write contracts passed (static)")
