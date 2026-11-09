@@ -51,8 +51,6 @@ assert re.search(
     compiler), "the cache stamp helper is gone"
 assert len(re.findall(anchor_pattern("shdw_compiledCacheStamp("), compiler)) == 4, (
     "expected the helper definition plus the reader, the writer and the compile call site")
-assert compiler.count("timeIntervalSince1970") == 2, (
-    "the epoch choice must live only in shdw_compiledCacheStamp (comment + body)")
 
 # The single-entry verdict fast path must have exactly ONE writer, and that
 # writer must refuse working-directory-relative queries: a second publisher

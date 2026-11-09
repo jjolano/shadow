@@ -7,8 +7,8 @@
 @class NSURL;
 
 // Framework-internal: parse + validate + compile + persist pipeline for
-// rulesets (Candidate 5). RulesetEngine exposes matching only; +load delegates
-// here. Hidden visibility, not exported.
+// rulesets. RulesetEngine exposes matching only; +load delegates here.
+// Hidden visibility, not exported.
 __attribute__((visibility("hidden")))
 @interface ShadowRulesetCompiler : NSObject
 

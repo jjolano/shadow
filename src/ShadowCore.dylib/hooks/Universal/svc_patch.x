@@ -44,17 +44,10 @@
 // — the munged path would otherwise be CREATED as a side effect.
 static BOOL shdw_svc_rewriteable(int sysno, uint64_t flags) {
     switch(sysno) {
-        case SYS_access: case SYS_stat: case SYS_lstat:
-        case SYS_stat64: case SYS_lstat64:
-        case SYS_stat_extended: case SYS_lstat_extended:
-        case SYS_stat64_extended: case SYS_lstat64_extended:
-        case SYS_getattrlist: case SYS_getxattr: case SYS_listxattr:
-        case SYS_readlink: case SYS_pathconf:
-        case SYS_fstatat: case SYS_fstatat64:
-        case SYS_execve:
-            return YES;
-        case SYS_open: case SYS_open_extended: case SYS_openat:
-            return ((int)flags & O_CREAT) == 0;
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) \
+        case NUM: return REWRITE == 2 ? (((int)flags & O_CREAT) == 0) : (REWRITE == 1);
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
         default:
             return NO;
     }

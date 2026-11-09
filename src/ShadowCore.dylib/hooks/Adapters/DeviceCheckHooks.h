@@ -1,5 +1,6 @@
 #import "../../SHDWHookSession.h"
 #import <Foundation/Foundation.h>
+#import <Shadow/SHDWPlugin.h>
 #import <objc/runtime.h>
 
 // Descriptor hook table.
@@ -26,6 +27,22 @@ typedef NS_OPTIONS(uint8_t, DCHTarget) {
   DCHTargetSafeDevice = 1 << 1,
   DCHTargetJailMonkey = 1 << 2,
 };
+
+// One row per configurable DeviceCheck-family adapter. Configure, resolve and
+// readiness all iterate this table, so a new target is one mapping row, one
+// detector predicate, and one registry preference row.
+typedef struct {
+  NSString *prefKey;
+  DCHTarget target;
+} SHDWDeviceCheckTargetMapping;
+
+static const SHDWDeviceCheckTargetMapping kSHDWDeviceCheckTargets[] = {
+    {SHDWAdapterDTTJailbreakDetectionID, DCHTargetDTT},
+    {SHDWAdapterSafeDeviceID, DCHTargetSafeDevice},
+    {SHDWAdapterJailMonkeyID, DCHTargetJailMonkey},
+};
+static const NSUInteger kSHDWDeviceCheckTargetCount =
+    sizeof(kSHDWDeviceCheckTargets) / sizeof(kSHDWDeviceCheckTargets[0]);
 
 BOOL shdw_devicecheck_target_available(DCHTarget target);
 

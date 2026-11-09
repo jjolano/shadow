@@ -15,6 +15,8 @@ directory containing `bin/lane.sh`; a full Theos installation is not required.
 | lane/package contract | `sh tests/verify-lane-contract.sh` |
 | binary compatibility checker (synthetic tool output) | `make -C tests verify-binary-compat` |
 | hook→engine matrix drift | `sh tests/verify-hook-matrix.sh` |
+| matrix stale-entry detector | `make -C tests hook-matrix-selftest` |
+| single plugin registry | `make -C tests verify-plugin-table` |
 | raw syscall metadata | `sh tests/verify-syscall-meta.sh` |
 | settings structure | `sh tests/verify-settings-structure.sh` |
 | JB-identifier data contract | `make -C tests jb-identifiers` |

@@ -227,16 +227,6 @@ static NSError* _shdw_urlReadError(NSURL* url) {
     return result;
 }
 
-// - (NSString *)stringByExpandingTildeInPath {
-//     NSString* result = %orig;
-
-//     if(isCallerExternal() && [_shadow isPathRestricted:result]) {
-//         return self;
-//     }
-
-//     return result;
-// }
-
 %end
 
 %hook NSAttributedString

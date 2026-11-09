@@ -1,98 +1,17 @@
-#import <Shadow/HookConfiguration.h>
-#import <Shadow/SHDWPluginOrder.inc>
+#import <Shadow/SHDWPlugin.h>
 
-// Canonical metadata for the hook lifecycle/configuration registry — see
-// SHDWPlugin.h. Pure Foundation; no behavior on its own.
-// Hybrid seam: kSHDWPlugins is the renamed kSHDWInstallUnits (alias kept).
+// Canonical metadata for the hook lifecycle/configuration registry. The same
+// ordered rows become the dylib's installer table in shadowcore.x, so IDs and
+// order cannot drift.
 
-#pragma mark - Plugin registry (renamed InstallUnits)
+#pragma mark - Plugin registry
 
-// Canonical ordered plugin table. Every lifecycle pass walks this order.
-// Hybrid: order verified against SHDWPluginOrder.inc at compile time.
+#define SHDW_PLUGIN(id, pref, phase, cap, ctor, installer)                     \
+  {id, pref, phase, cap, ctor},
 static const SHDWPlugin kSHDWPlugins[] = {
-    // Identity concealment — unconditional, installed for every enabled app.
-    {"Universal_Dyld", NULL, SHDWPhaseAlways, SHDWCapabilityFunction, 1, 1},
-    {"Universal_Filesystem_C", SHDWUniversalFilesystemID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_EnvVars_C", SHDWUniversalEnvVarsID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_EnvVars_ObjC", SHDWUniversalEnvVarsID, SHDWPhaseTier1,
-     SHDWCapabilityMessage, 1, 0},
-    {"Adapter_DeviceCheck", SHDWAdapterDeviceCheckID, SHDWPhaseSDKFallback,
-     SHDWCapabilityMessage, 1, 0},
-    {"Adapter_FreeRASP", SHDWAdapterFreeRASPID, SHDWPhaseAlways,
-     SHDWCapabilityFunction, 1, 0},
-    {"Universal_MachBootstrap", SHDWUniversalMachBootstrapID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_IOKit", SHDWUniversalIOKitID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_LowLevelC", SHDWUniversalLowLevelCID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_AntiDebugging", SHDWUniversalAntiDebuggingID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    // Code-signing self-validation concealment: rebind-lane C hooks on the
-    // Security.framework validity surface (own-executable failures only).
-    {"Universal_CodeSigning", SHDWUniversalCodeSigningID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_ObjC", NULL, SHDWPhaseAlways, SHDWCapabilityMessage, 1, 0},
-    // method_getImplementation rides the rebind lane (subMain's inline
-    // preflight refuses its tiny prologue; see shadowhook_objc_methodimpl).
-    {"Universal_ObjC_MethodImplementation", NULL, SHDWPhaseAlways,
-     SHDWCapabilityFunction, 1, 0},
-    {"Universal_Syscall", SHDWUniversalSyscallID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_Memory", SHDWUniversalMemoryID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_Sandbox", SHDWUniversalSandboxID, SHDWPhaseTier1,
-     SHDWCapabilityFunction, 1, 1},
-    {"Universal_HideClasses", NULL, SHDWPhaseAlways, SHDWCapabilityMessage, 1,
-     0},
-    {"Universal_SymbolLookup", NULL, SHDWPhaseAlways, SHDWCapabilitySymlookup,
-     1, 1},
-    // dlopen_internal: ctor installs it pref-gated; detector escalation
-    // installs it unconditionally (the coordinator gates on the backend).
-    {"Universal_DynamicLibrariesExtra", SHDWUniversalDynamicLibrariesExtraID,
-     SHDWPhaseEscalation, SHDWCapabilityPrivateSym, 1, 1},
-    // Generic detector integrity: reveal pre-Shadow IMPs and protect only
-    // import slots Shadow actually rebound. Installed on detector evidence.
-    {"Universal_DetectorIntegrity", NULL, SHDWPhaseTier2,
-     SHDWCapabilityFunction, 0, 0},
-    // Tier-2: ObjC-method swizzles install on first detector evidence.
-    {"Universal_Filesystem_ObjC", SHDWUniversalFilesystemID, SHDWPhaseTier2,
-     SHDWCapabilityMessage, 0, 0},
-    {"Universal_Foundation_ObjC", SHDWUniversalFoundationID, SHDWPhaseTier2,
-     SHDWCapabilityMessage, 0, 0},
-    {"Universal_HideApps", SHDWUniversalHideAppsID, SHDWPhaseTier2,
-     SHDWCapabilityMessage, 0, 0},
-    // UIKit-load groups (the classes only exist once UIKit is loaded).
-    {"Universal_URLScheme", SHDWUniversalURLSchemeID, SHDWPhaseUIKit,
-     SHDWCapabilityMessage, 0, 0},
-    {"Universal_Foundation_UIKit", SHDWUniversalFoundationID, SHDWPhaseUIKit,
-     SHDWCapabilityMessage, 0, 0},
-    // LAContext + Security passcode-status neutralizer; self-gates on
-    // aggressive
-    // mode internally. UIKit phase (LocalAuthentication/Security load with the
-    // app UI). Message+function mix, so declare the message-capable UIKit slot.
-    {"Universal_PasscodeStatus", NULL, SHDWPhaseUIKit, SHDWCapabilityMessage, 0,
-     0},
-    {"Adapter_DeviceSecurityKit", SHDWAdapterDeviceSecurityKitID,
-     SHDWPhaseSDKFallback, SHDWCapabilityMessage, 1, 0},
-    {"Adapter_IOSSecuritySuite", SHDWAdapterIOSSecuritySuiteID,
-     SHDWPhaseSDKFallback, SHDWCapabilityFunction, 1, 0},
-    // Policy plugins — evaluated via RestrictionEngine / policy/*.m, not via
-    // HookCoordinator install. Registered here so SHDWPluginRegistry is the
-    // single source for hook+policy metadata. Never installed via HookPlan
-    // (ctorInstall 0). Pref gating lives in policy code, not planner.
-    {"Policy_Path", NULL, SHDWPhaseAlways, SHDWCapabilityNone, 0, 0},
-    {"Policy_Environment", NULL, SHDWPhaseAlways, SHDWCapabilityNone, 0, 0},
-    {"Policy_Process", NULL, SHDWPhaseAlways, SHDWCapabilityNone, 0, 0},
-    {"Policy_PseudoSandbox", NULL, SHDWPhaseAlways, SHDWCapabilityNone, 0, 0},
+#include <Shadow/SHDWPlugins.def>
 };
-
-// Hybrid verification: plugin count must match canonical order
-_Static_assert(sizeof(kSHDWPlugins) / sizeof(kSHDWPlugins[0]) ==
-                   SHDW_PLUGIN_COUNT,
-               "plugin count != SHDW_PLUGIN_COUNT");
+#undef SHDW_PLUGIN
 
 const SHDWPlugin *SHDWPluginRegistry(NSUInteger *outCount) {
   if (outCount) {
@@ -112,36 +31,26 @@ const SHDWInstallUnit *SHDWInstallUnits(NSUInteger *outCount) {
 #pragma mark - Built-in profile
 
 NSDictionary<NSString *, id> *SHDWDefaultHookSettings(void) {
-  return @{
-    SHDWUniversalFilesystemID : @(YES),
-    SHDWUniversalURLSchemeID : @(YES),
-    SHDWUniversalEnvVarsID : @(YES),
-    SHDWUniversalFoundationID : @(YES),
-    SHDWUniversalMachBootstrapID : @(YES),
-    SHDWUniversalIOKitID : @(YES),
-    SHDWUniversalLowLevelCID : @(YES),
-    SHDWUniversalAntiDebuggingID : @(YES),
-    SHDWUniversalCodeSigningID : @(YES),
-    SHDWUniversalDynamicLibrariesExtraID : @(YES),
-    SHDWUniversalSyscallID : @(YES),
-    SHDWUniversalSandboxID : @(YES),
-    SHDWUniversalMemoryID : @(YES),
-    SHDWUniversalHideAppsID : @(YES),
-    SHDWUniversalPseudoSandboxModeID : @(0),
-    SHDWUniversalPathRewriteID : @(YES),
-    SHDWUniversalMemoryLevelHidingID : @(YES),
-    SHDWAdapterDeviceCheckID : @(YES),
-    SHDWAdapterFreeRASPID : @(YES),
-    SHDWAdapterDeviceSecurityKitID : @(YES),
-    SHDWAdapterIOSSecuritySuiteID : @(YES),
-    SHDWAdapterDTTJailbreakDetectionID : @(YES),
-    SHDWAdapterSafeDeviceID : @(YES),
-    SHDWAdapterJailMonkeyID : @(YES),
-    // Off by default: the natural, stock-shaped bypasses run for every
-    // enabled app; disable-style neutralizers only activate when the user
-    // opts into aggressive mode (globally or per app).
-    SHDWDetectorAggressiveID : @(NO)
-  };
+  NSMutableDictionary<NSString *, id> *settings = [NSMutableDictionary new];
+  NSUInteger count = 0;
+  const SHDWPlugin *plugins = SHDWPluginRegistry(&count);
+
+  for (NSUInteger i = 0; i < count; i++) {
+    const SHDWPlugin *plugin = &plugins[i];
+    if (plugin->prefKey) {
+      settings[plugin->prefKey] = @YES;
+    }
+  }
+
+  // Modes, not hook toggles: both are resolved from userDefaults/per-app
+  // state, so they stay out of the installer rows.
+  settings[SHDWUniversalPseudoSandboxModeID] = @(0);
+  // Off by default: the natural, stock-shaped bypasses run for every enabled
+  // app; disable-style neutralizers only activate when the user opts into
+  // aggressive mode (globally or per app).
+  settings[SHDWDetectorAggressiveID] = @(NO);
+
+  return [settings copy];
 }
 
 #pragma mark - Capability metadata
@@ -178,17 +87,9 @@ NSString *SHDWHookGroupCapabilityKind(NSString *groupID) {
         map[plugin->prefKey] = SHDWCapabilityKindName(plugin->capability);
       }
     }
-    // IDs the registry has no prefKey row for: detector-only adapters
-    // (registered in the detector table, not the hook registry) and the
-    // non-hook policy toggles.
-    [map addEntriesFromDictionary:@{
-      SHDWAdapterDTTJailbreakDetectionID : @"message",
-      SHDWAdapterSafeDeviceID : @"message",
-      SHDWAdapterJailMonkeyID : @"message",
-      SHDWUniversalPseudoSandboxModeID : @"none",
-      SHDWUniversalPathRewriteID : @"none",
-      SHDWUniversalMemoryLevelHidingID : @"none",
-    }];
+    // Pseudo-sandbox is a mode, not an installer row, so its key is the one
+    // capability entry the registry cannot derive.
+    map[SHDWUniversalPseudoSandboxModeID] = @"none";
     kinds = map;
   });
   return kinds[groupID];
@@ -199,10 +100,10 @@ NSString *SHDWHookGroupCapabilityKind(NSString *groupID) {
 static BOOL SHDWPluginEnabled(const SHDWPlugin *plugin,
                               NSDictionary<NSString *, id> *prefs,
                               SHDWLifecycleEvent event) {
-  // Harness frameworks load per detector. Both baseline and prearmed test
-  // modes defer target-dependent adapters until that first pass has loaded
-  // every target; production apps have no Harness profile key and
-  // retain their early adapter behavior.
+  // Harness frameworks load per detector. The Harness profile key defers
+  // target-dependent adapters until that first pass has loaded every target;
+  // production apps have no such key and retain their early adapter
+  // behavior.
   if (plugin->phase == SHDWPhaseSDKFallback && event == SHDWEventCtor &&
       prefs[SHDWUniversalHarnessBaselineID] != nil) {
     return NO;
@@ -258,7 +159,7 @@ NSArray<NSString *> *SHDWPluginPlan(NSDictionary<NSString *, id> *prefs,
       continue;
     if (!SHDWPluginCapable(plugin, caps))
       continue;
-    [plan addObject:[NSString stringWithUTF8String:plugin->unitID]];
+    [plan addObject:[NSString stringWithUTF8String:plugin->pluginID]];
   }
   return plan;
 }

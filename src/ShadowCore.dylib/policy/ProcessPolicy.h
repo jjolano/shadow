@@ -1,7 +1,3 @@
-// Plugin: Policy_Process — registered in SHDWPluginRegistry
-// (HookConfiguration.m)
-#define SHDWPolicyProcessPluginID "Policy_Process"
-
 // Process policy shared by the libc and raw-syscall hook surfaces
 // (hooks/libc.x, hooks/syscall.x): PID classification (jailbreak daemon by
 // executable path) with its caches, KERN_PROC list filtering, MIB

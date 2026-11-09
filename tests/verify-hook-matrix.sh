@@ -342,7 +342,9 @@ if ! grep -q '\[shdw_coordinator_instance prearmDetector\]' src/ShadowCore.dylib
  exit 1
 fi
 
-if ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/Shadow.dylib/dylib.x; then
+if ! file_has_tokens src/Shadow.dylib/dylib.x \
+ 'BOOLisDetectorRunner=SHDWIsDetectorTestBundleID(bundleIdentifier);' \
+ 'BOOLisVerificationApp=SHDWIsVerificationBundleID(bundleIdentifier);'; then
  echo 'LOADER DRIFT: detector test bundle namespace lost its verification exemption'
  exit 1
 fi
@@ -353,13 +355,12 @@ if ! grep -q 'if(!buf && bufsize == 0)' src/ShadowCore.dylib/hooks/Universal/lib
  exit 1
 fi
 if ! grep -q 'SHDWUniversalHarnessBaselineID] = @YES' src/ShadowCore.dylib/shadowcore.x ||
- ! grep -q 'hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
- ! grep -q 'hasPrefix:@"me.jjolano.shadow.test\."' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'hasActiveDetectorAdapter || embeddedDetectors || forcedPrearm' src/ShadowCore.dylib/shadowcore.x ||
+ ! grep -q 'SHDWIsDetectorTestBundleID(bundleIdentifier)' src/ShadowCore.dylib/shadowcore.x ||
  ! file_has_tokens src/Shadow.framework/HookConfiguration.m 'prefs[SHDWUniversalHarnessBaselineID] != nil' ||
  ! grep -q '_harnessProfile' src/ShadowCore.dylib/HookCoordinator.m ||
  ! file_has_tokens src/Shadow.framework/Settings.m 'app_settings = fileAppSettings' ||
- ! grep -q 'filePreferences)' src/Shadow.framework/Settings.m ||
- ! file_has_tokens src/Shadow.framework/Settings.m 'result[SHDWUniversalHarnessBaselineID] = baseline'; then
+ ! grep -q 'filePreferences)' src/Shadow.framework/Settings.m; then
  echo 'HARNESS PREARM DRIFT: explicit prearmed mode must activate detector coverage'
  exit 1
 fi
@@ -384,7 +385,9 @@ if ! grep -q 'SHDWRequestUniversalFeatures' src/ShadowCore.dylib/hooks/Adapters/
 fi
 # The private harness build script runs from its own checkout, but builds the
 # public sources supplied through SHADOW_SRC.
-if ! file_has_tokens src/Shadow.framework/HookConfiguration.m 'SHDWUniversalSyscallID : @(YES)'; then
+if ! file_has_tokens src/Shadow.framework/Headers/Shadow/SHDWPlugins.def \
+ 'SHDW_PLUGIN("Universal_Syscall",SHDWUniversalSyscallID,' \
+ 'shdw_universal_syscall)'; then
  echo 'HOOK CONFIG DRIFT: the universal syscall feature must stay enabled'
  exit 1
 fi

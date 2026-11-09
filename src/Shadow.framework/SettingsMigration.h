@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 
-// Applies the one-time Hook_* -> Universal_/Adapter_ preference rename.
-// Canonical values win and legacy keys are omitted from the result.
+// Normalizes a stored preferences dictionary: legacy App_Disabled becomes
+// App_Enabled, and obsolete scalar keys are pruned to the live surface.
 FOUNDATION_EXPORT NSDictionary<NSString *, id> *
 SHDWMigratedHookSettings(NSDictionary<NSString *, id> *settings);

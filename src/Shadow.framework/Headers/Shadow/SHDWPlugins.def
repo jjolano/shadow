@@ -1,0 +1,122 @@
+// SHDWPlugins.def — canonical ordered plugin registry.
+//
+// Included with SHDW_PLUGIN(id, prefKey, phase, capability, ctorInstall,
+// installer) defined per translation unit:
+//   * Shadow.framework expands metadata;
+//   * ShadowCore.dylib expands the installer table (installer is the
+//     dylib-side function, or NULL when the row is metadata only).
+// Do not keep a second ordered table: adding a row here is the whole edit.
+//
+// Fields:
+//   id           canonical unit/plugin ID (also the coordinator inventory key)
+//   prefKey      plist preference key, or NULL for unconditional rows
+//   phase        lifecycle phase used by SHDWPluginPlan
+//   capability   backend role reported by SHDWHookGroupCapabilityKind
+//   ctorInstall  planned on the ctor event
+//   installer    ShadowCore installer function, or NULL
+//
+// Every row with a prefKey is on in the built-in profile; modes with a
+// non-YES default (pseudo-sandbox, aggressive) are not registry rows.
+
+#ifndef SHDW_PLUGIN
+#error "SHDWPlugins.def requires SHDW_PLUGIN to be defined"
+#endif
+
+// Identity concealment — unconditional, installed for every enabled app.
+SHDW_PLUGIN("Universal_Dyld", NULL, SHDWPhaseAlways, SHDWCapabilityFunction,
+            1, shdw_universal_dyld)
+SHDW_PLUGIN("Universal_Filesystem_C", SHDWUniversalFilesystemID,
+            SHDWPhaseTier1, SHDWCapabilityFunction, 1,
+            shdw_universal_filesystem_c)
+SHDW_PLUGIN("Universal_EnvVars_C", SHDWUniversalEnvVarsID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_coord_envvars_c)
+SHDW_PLUGIN("Universal_EnvVars_ObjC", SHDWUniversalEnvVarsID, SHDWPhaseTier1,
+            SHDWCapabilityMessage, 1, shdw_universal_nsprocessinfo)
+SHDW_PLUGIN("Adapter_DeviceCheck", SHDWAdapterDeviceCheckID,
+            SHDWPhaseSDKFallback, SHDWCapabilityMessage, 1,
+            shdw_adapter_devicecheck)
+SHDW_PLUGIN("Adapter_FreeRASP", SHDWAdapterFreeRASPID, SHDWPhaseAlways,
+            SHDWCapabilityFunction, 1, shdw_adapter_freerasp)
+SHDW_PLUGIN("Universal_MachBootstrap", SHDWUniversalMachBootstrapID,
+            SHDWPhaseTier1, SHDWCapabilityFunction, 1,
+            shdw_universal_mach_bootstrap)
+SHDW_PLUGIN("Universal_IOKit", SHDWUniversalIOKitID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_universal_iokit)
+SHDW_PLUGIN("Universal_LowLevelC", SHDWUniversalLowLevelCID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_universal_low_level_c)
+SHDW_PLUGIN("Universal_AntiDebugging", SHDWUniversalAntiDebuggingID,
+            SHDWPhaseTier1, SHDWCapabilityFunction, 1,
+            shdw_universal_antidebugging)
+// Code-signing self-validation concealment: rebind-lane C hooks on the
+// Security.framework validity surface (own-executable failures only).
+SHDW_PLUGIN("Universal_CodeSigning", SHDWUniversalCodeSigningID,
+            SHDWPhaseTier1, SHDWCapabilityFunction, 1,
+            shdw_universal_codesigning)
+SHDW_PLUGIN("Universal_ObjC", NULL, SHDWPhaseAlways, SHDWCapabilityMessage, 1,
+            shdw_universal_objc)
+// method_getImplementation rides the rebind lane (subMain's inline preflight
+// refuses its tiny prologue; see shadowhook_objc_methodimpl).
+SHDW_PLUGIN("Universal_ObjC_MethodImplementation", NULL, SHDWPhaseAlways,
+            SHDWCapabilityFunction, 1, shdw_universal_objc_methodimpl)
+SHDW_PLUGIN("Universal_Syscall", SHDWUniversalSyscallID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_universal_syscall)
+SHDW_PLUGIN("Universal_Memory", SHDWUniversalMemoryID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_universal_memory)
+SHDW_PLUGIN("Universal_Sandbox", SHDWUniversalSandboxID, SHDWPhaseTier1,
+            SHDWCapabilityFunction, 1, shdw_universal_sandbox)
+SHDW_PLUGIN("Universal_HideClasses", NULL, SHDWPhaseAlways,
+            SHDWCapabilityMessage, 1, shdw_universal_hide_classes)
+SHDW_PLUGIN("Universal_SymbolLookup", NULL, SHDWPhaseAlways,
+            SHDWCapabilitySymlookup, 1, shdw_coord_symlookup)
+// dlopen_internal: ctor installs it pref-gated; detector escalation installs
+// it unconditionally (the coordinator gates on the backend).
+SHDW_PLUGIN("Universal_DynamicLibrariesExtra",
+            SHDWUniversalDynamicLibrariesExtraID, SHDWPhaseEscalation,
+            SHDWCapabilityPrivateSym, 1,
+            shdw_universal_dynamic_libraries_extra)
+// Generic detector integrity: reveal pre-Shadow IMPs and protect only import
+// slots Shadow actually rebound. Installed on detector evidence.
+SHDW_PLUGIN("Universal_DetectorIntegrity", NULL, SHDWPhaseTier2,
+            SHDWCapabilityFunction, 0, shdw_coord_detector_integrity)
+// Tier-2: ObjC-method swizzles install on first detector evidence.
+SHDW_PLUGIN("Universal_Filesystem_ObjC", SHDWUniversalFilesystemID,
+            SHDWPhaseTier2, SHDWCapabilityMessage, 0,
+            shdw_coord_filesystem_objc)
+SHDW_PLUGIN("Universal_Foundation_ObjC", SHDWUniversalFoundationID,
+            SHDWPhaseTier2, SHDWCapabilityMessage, 0,
+            shdw_coord_foundation_objc)
+SHDW_PLUGIN("Universal_HideApps", SHDWUniversalHideAppsID, SHDWPhaseTier2,
+            SHDWCapabilityMessage, 0, shdw_universal_hide_apps)
+// UIKit-load groups (the classes only exist once UIKit is loaded).
+SHDW_PLUGIN("Universal_URLScheme", SHDWUniversalURLSchemeID,
+            SHDWPhaseUIKit, SHDWCapabilityMessage, 0,
+            shdw_universal_url_scheme)
+SHDW_PLUGIN("Universal_Foundation_UIKit", SHDWUniversalFoundationID,
+            SHDWPhaseUIKit, SHDWCapabilityMessage, 0,
+            shdw_universal_foundation_uikit)
+// LAContext + Security passcode-status neutralizer; self-gates on aggressive.
+SHDW_PLUGIN("Universal_PasscodeStatus", NULL, SHDWPhaseUIKit,
+            SHDWCapabilityMessage, 0, shdw_universal_passcode_status)
+SHDW_PLUGIN("Adapter_DeviceSecurityKit", SHDWAdapterDeviceSecurityKitID,
+            SHDWPhaseSDKFallback, SHDWCapabilityMessage, 1,
+            shdw_adapter_devicesecuritykit)
+SHDW_PLUGIN("Adapter_IOSSecuritySuite", SHDWAdapterIOSSecuritySuiteID,
+            SHDWPhaseSDKFallback, SHDWCapabilityFunction, 1,
+            shdw_adapter_iossecuritysuite)
+
+// Preference keys that are not installer entries: detector-only adapters and
+// feature modes. Never planned; they exist here so the profile, capability
+// metadata and override filtering share one domain list.
+SHDW_PLUGIN("Adapter_DTTJailbreakDetection",
+            SHDWAdapterDTTJailbreakDetectionID, SHDWPhaseAlways,
+            SHDWCapabilityMessage, 0, NULL)
+SHDW_PLUGIN("Adapter_SafeDevice", SHDWAdapterSafeDeviceID, SHDWPhaseAlways,
+            SHDWCapabilityMessage, 0, NULL)
+SHDW_PLUGIN("Adapter_JailMonkey", SHDWAdapterJailMonkeyID, SHDWPhaseAlways,
+            SHDWCapabilityMessage, 0, NULL)
+SHDW_PLUGIN("Universal_PathRewrite", SHDWUniversalPathRewriteID,
+            SHDWPhaseAlways, SHDWCapabilityNone, 0, NULL)
+SHDW_PLUGIN("Universal_MemoryLevelHiding", SHDWUniversalMemoryLevelHidingID,
+            SHDWPhaseAlways, SHDWCapabilityNone, 0, NULL)
+
+#undef SHDW_PLUGIN

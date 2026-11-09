@@ -316,12 +316,11 @@ if grep -q 'DetectorLog' src/Shadow.framework/RestrictionEngine.m; then
     exit 1
 fi
 
-for key in SHDWUniversalFoundationID SHDWUniversalMachBootstrapID SHDWUniversalIOKitID SHDWUniversalSyscallID; do
-    pinned "$profile" "$key : @(YES)" || {
-        echo "SETTINGS DRIFT: built-in profile does not enable $key"
-        exit 1
-    }
-done
+# Built-in profile: every registry row with a preference key is on.
+pinned "$profile" 'settings[plugin->prefKey] = @YES;' || {
+    echo 'SETTINGS DRIFT: built-in profile no longer enables registry rows'
+    exit 1
+}
 
 pinned "$settings" 'result[SHDWAppEnabledID] = @(enabled)' &&
 ! grep -q 'addEntriesFromDictionary' "$settings" &&
@@ -332,9 +331,8 @@ pinned "$settings" 'bundleIdentifier.length == 0' || {
 }
 
 pinned "$settings" 'kSHDWDetectorRunnerOverridesKey = @"Test_DetectorOverrides"' &&
-grep -q 'isEqualToString:@"me.jjolano.shadow.harness"' "$settings" &&
-pinned "$settings" 'SHDWAdapterDeviceCheckID, SHDWAdapterFreeRASPID' \
- 'SHDWAdapterDeviceSecurityKitID, SHDWAdapterIOSSecuritySuiteID' || {
+grep -q 'SHDWIsHarnessBundleID(bundleIdentifier)' "$settings" &&
+pinned "$settings" '[key hasPrefix:@"Adapter_"]' || {
     echo 'SETTINGS DRIFT: detector overrides must remain private to test runners'
     exit 1
 }

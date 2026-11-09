@@ -1,6 +1,3 @@
-// Plugin: Policy_Path — registered in SHDWPluginRegistry (HookConfiguration.m)
-#define SHDWPolicyPathPluginID "Policy_Path"
-
 // Path/fd/dirfd classification shared by the libc and raw-syscall hook
 // surfaces (hooks/libc.x, hooks/syscall.x): dirfd-aware *at classification,
 // fresh fd/DIR path resolution, readlink target resolution and
@@ -9,6 +6,7 @@
 // preserves caller errno; denial helpers set their documented policy errno.
 
 #import <Foundation/Foundation.h>
+#import <Shadow/WritePolicy.h>
 #import <dirent.h>
 #import <stddef.h>
 #import <stdint.h>

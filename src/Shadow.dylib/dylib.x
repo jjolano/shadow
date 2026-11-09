@@ -35,10 +35,8 @@ extern char*** _NSGetArgv();
     // The verification apps are their own test subjects: they install to
     // /Applications (rooted) or /var/jb/Applications (rootless) — both
     // denied below — so without these exact exceptions they cannot be hooked.
-    BOOL isDetectorRunner = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."];
-    BOOL isVerificationApp = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]
-        || [bundleIdentifier isEqualToString:@"me.jjolano.dyldprobe"]
-        || isDetectorRunner;
+    BOOL isDetectorRunner = SHDWIsDetectorTestBundleID(bundleIdentifier);
+    BOOL isVerificationApp = SHDWIsVerificationBundleID(bundleIdentifier);
 
     // Platform binaries, loaders and the jbroot itself stay unhooked:
     // stability (no detector surface there) + SpringBoard excluded above for

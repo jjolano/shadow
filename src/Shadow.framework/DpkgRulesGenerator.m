@@ -1,5 +1,6 @@
 #import <Shadow/Core+Utilities.h>
 #import <Shadow/JBPath.h>
+#import <Shadow/SHDWPlugin.h>
 #import <Shadow/SystemRulesGenerator.h>
 
 #import "../common.h"
@@ -66,7 +67,7 @@
             NSDictionary *plist =
                 [[NSBundle bundleWithPath:JBPath(path)] infoDictionary];
 
-            if (!IsShadowVerificationBundle(
+            if (!SHDWIsVerificationBundleID(
                     [plist objectForKey:@"CFBundleIdentifier"])) {
               for (NSDictionary *type in
                    [plist objectForKey:@"CFBundleURLTypes"]) {

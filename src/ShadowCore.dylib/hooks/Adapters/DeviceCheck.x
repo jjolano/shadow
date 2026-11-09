@@ -5,14 +5,10 @@
 static DCHTarget s_enabledTargets = DCHTargetDTT | DCHTargetSafeDevice | DCHTargetJailMonkey;
 void shdw_adapter_devicecheck_configure(NSDictionary* prefs) {
     s_enabledTargets = DCHTargetNone;
-    if([prefs[SHDWAdapterDTTJailbreakDetectionID] boolValue]) {
-        s_enabledTargets |= DCHTargetDTT;
-    }
-    if([prefs[SHDWAdapterSafeDeviceID] boolValue]) {
-        s_enabledTargets |= DCHTargetSafeDevice;
-    }
-    if([prefs[SHDWAdapterJailMonkeyID] boolValue]) {
-        s_enabledTargets |= DCHTargetJailMonkey;
+    for(NSUInteger i = 0; i < kSHDWDeviceCheckTargetCount; i++) {
+        if([prefs[kSHDWDeviceCheckTargets[i].prefKey] boolValue]) {
+            s_enabledTargets |= kSHDWDeviceCheckTargets[i].target;
+        }
     }
 }
 

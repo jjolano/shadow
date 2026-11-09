@@ -3,7 +3,7 @@
 
 // Import-slot journal + check-then-store repair core (anti-fishhook).
 //
-// Split out of SHDWHookSession.m so the host test harness can exercise it:
+// Split out of SHDWHookSession.m so host tests can exercise it:
 // SHDWHookSession.m pulls HookKit/ObjC and only builds for iOS, while
 // everything here is plain C over <stdint.h>/<stddef.h>. The process-global
 // instance, the HookKit artifact ingestion that fills it, and the rebind-spec

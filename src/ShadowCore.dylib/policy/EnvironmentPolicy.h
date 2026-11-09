@@ -1,7 +1,3 @@
-// Plugin: Policy_Environment — registered in SHDWPluginRegistry
-// (HookConfiguration.m)
-#define SHDWPolicyEnvironmentPluginID "Policy_Environment"
-
 // Environment sanitization policy — the single source for how environment
 // data is filtered for external callers across every surface that exposes
 // it: getenv, *environ/_NSGetEnviron, -[NSProcessInfo environment/arguments]

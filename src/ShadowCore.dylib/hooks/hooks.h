@@ -38,8 +38,8 @@
 #import "../../common.h"
 #import "../HookRuntime.h"
 #import <Shadow.h>
-#import <Shadow/HookConfiguration.h>
 #import <Shadow/JBPath.h>
+#import <Shadow/SHDWPlugin.h>
 
 #import "../SHDWHookSession.h"
 
@@ -64,10 +64,10 @@
 // MUST stay on the rebind lane (currently: syscall.x — syscall, csops,
 // ___syscall, _sysctlbyname, ___sysctlbyname, _csops_audittoken,
 // _NSGetEnviron; rationale: hottest concurrent calls AND byte-integrity
-// surface). tools/hookprobe's `hooks|<symbol> prologue clean` battery pins
-// this at runtime — moving one of these to the inline lane turns that probe
-// FAIL by design. New detection-hot hooks go rebind-first; deviating needs a
-// written rationale here.
+// surface). The device probe battery's prologue-clean check pins this at
+// runtime — moving one of these to the inline lane turns that probe FAIL by
+// design. New detection-hot hooks go rebind-first; deviating needs a written
+// rationale here.
 //
 // Rebinds self-heal against anti-fishhook undos: every rebind journals its
 // import slots (SHDWHookSession.m) and specs (RebindRepair.x); slot stores
@@ -206,7 +206,7 @@ static inline const char *shdw_libc_try_rewrite(const char *pathname) {
 // images. The internal-read scope remains the truth signal before a range
 // refresh; outside ranges and scopes everyone is external.
 // The tables themselves, and the pure lookup over them, live in ranges.h so
-// the host harness can test the lookup without this file's iOS-only headers.
+// host tests can exercise the lookup without this file's iOS-only headers.
 #import "Universal/ranges.h"
 
 extern shdw_own_ranges_t _shdw_own_ranges_a;

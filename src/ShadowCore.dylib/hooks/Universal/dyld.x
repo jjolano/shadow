@@ -963,9 +963,8 @@ static const struct mach_header* replaced_dyld_image_header_containing_address(c
 
 // The exported _dyld_get_image_header_containing_address alias (dyld4,
 // iOS 15+) leaks exactly like dyld_image_header_containing_address; hook it
-// with the same replacement. Its own original slot is unused — the body
-// resolves through the direct-linked symbol's original.
-static const struct mach_header* (*original_dyld_get_image_header_containing_address)(const void* addr);
+// with the same replacement, which forwards through the direct-linked
+// symbol's original.
 
 // --- Address-attribution siblings (plan Wave 1c): every dyld SPI that maps
 // an address or header back to an image must answer "unknown" for protected
@@ -2925,7 +2924,7 @@ void shdw_universal_dyld(SHDWHookSession* hooks) {
     void* getImageHeaderContainingAddressPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_get_image_header_containing_address"];
 
     if(getImageHeaderContainingAddressPtr) {
-        [hooks hookFunction:getImageHeaderContainingAddressPtr withReplacement:replaced_dyld_image_header_containing_address outOldPtr:(void **) &original_dyld_get_image_header_containing_address];
+        [hooks hookFunction:getImageHeaderContainingAddressPtr withReplacement:replaced_dyld_image_header_containing_address outOldPtr:NULL];
     }
 
     void* getImageUuidPtr = [hooks findSymbolInImage:libdyldImage symbolName:@"_dyld_get_image_uuid"];

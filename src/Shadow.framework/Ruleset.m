@@ -1,11 +1,7 @@
 #import "Ruleset.h"
 #import "RulesetPrivate.h"
 
-// Candidate 5: Ruleset.m retains matching only. Parsing, validation,
-// compilation and compiled-cache persistence moved to RulesetCompiler.m;
-// callers use +[ShadowRulesetCompiler compileRulesetAtURL:] (per-URL
-// last-known-good preserved).
-
+// Matching only; parse/compile/persist lives in RulesetCompiler.m.
 NSString *const kShadowRulesetCacheSuffix = @".shadowcache";
 
 @implementation RulesetEngine
@@ -65,7 +61,6 @@ NSString *const kShadowRulesetCacheSuffix = @".shadowcache";
       containsObject:parent];
 }
 
-// Binary search over a sorted flat array of paths.
 - (BOOL)_structureContains:(NSArray *)array path:(NSString *)path {
   if (!array || !path)
     return NO;
@@ -140,8 +135,6 @@ NSString *const kShadowRulesetCacheSuffix = @".shadowcache";
            predicate:pred_blacklist];
 }
 
-// Exact set and prefix lookups first; the compound predicate last (it is a pure
-// boolean over the input path, so OR-ing it in later is identical).
 - (BOOL)_path:(NSString *)path
     matchesSet:(NSSet *)set
     prefixDict:(NSDictionary *)dict
@@ -168,8 +161,6 @@ NSString *const kShadowRulesetCacheSuffix = @".shadowcache";
   return [self _value:bundleID inRestrictedSet:set_bundleids];
 }
 
-// nil/empty query is never restricted; otherwise membership in the lowercased
-// load-time set (shared by scheme + bundle-ID checks).
 - (BOOL)_value:(NSString *)value inRestrictedSet:(NSSet *)set {
   if (!value || [value length] == 0) {
     return NO;

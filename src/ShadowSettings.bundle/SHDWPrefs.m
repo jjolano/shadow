@@ -1,8 +1,8 @@
 #import "SHDWPrefs.h"
 
 #import <Preferences/PSSpecifier.h>
-#import <Shadow/HookConfiguration.h>
 #import <Shadow/JBPath.h>
+#import <Shadow/SHDWPlugin.h>
 #import <UIKit/UIKit.h>
 
 void SHDWLocalizeSpecifiers(NSArray *specifiers, NSBundle *bundle,

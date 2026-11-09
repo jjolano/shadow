@@ -5,9 +5,8 @@
 
 // Canonical plugin registry — single source of truth for hook/policy
 // lifecycle, built-in profile and planner. Pure Foundation; safe to link
-// from any binary and from the host test harness.
-// Hybrid seam: SHDWPlugin is the renamed SHDWInstallUnit (type alias kept
-// for compat), SHDWPluginRegistry is the renamed SHDWInstallUnits.
+// from any binary. The InstallUnit names are compatibility aliases for
+// existing consumers.
 
 #if defined(__GNUC__) && (__GNUC__ >= 4)
 #define SHDW_EXPORT __attribute__((visibility("default")))
@@ -43,6 +42,27 @@
 #define SHDWAdapterDTTJailbreakDetectionID @"Adapter_DTTJailbreakDetection"
 #define SHDWAdapterSafeDeviceID @"Adapter_SafeDevice"
 #define SHDWAdapterJailMonkeyID @"Adapter_JailMonkey"
+
+// Verification apps are their own test subjects: they install outside the
+// normal app locations and must stay hookable/ruleset-exempt. Keep each
+// identity separate — call sites intentionally use different subsets.
+#define SHDWHarnessBundleID @"me.jjolano.shadow.harness"
+#define SHDWDyldProbeBundleID @"me.jjolano.dyldprobe"
+#define SHDWDetectorTestBundlePrefix @"me.jjolano.shadow.test."
+
+static inline BOOL SHDWIsHarnessBundleID(NSString *bundleID) {
+  return [bundleID isEqualToString:SHDWHarnessBundleID];
+}
+
+static inline BOOL SHDWIsDetectorTestBundleID(NSString *bundleID) {
+  return [bundleID hasPrefix:SHDWDetectorTestBundlePrefix];
+}
+
+static inline BOOL SHDWIsVerificationBundleID(NSString *bundleID) {
+  return SHDWIsHarnessBundleID(bundleID) ||
+         [bundleID isEqualToString:SHDWDyldProbeBundleID] ||
+         SHDWIsDetectorTestBundleID(bundleID);
+}
 
 #define SHDWAppEnabledID @"App_Enabled"
 // Read-only migration keys. New settings write only App_Enabled.
@@ -123,16 +143,15 @@ typedef NS_ENUM(NSInteger, SHDWCapabilityKind) {
   SHDWCapabilityPrivateSym,
 };
 
-// One installable plugin = one installer call with one backend role.
+// One registry row = one installer call (or one metadata entry).
 // Renamed from SHDWInstallUnit; pluginID is canonical, unitID is compat alias
-// via macro.
+// via macro. Every row with a prefKey is enabled in the built-in profile.
 typedef struct {
   const char *pluginID;
   NSString *prefKey;
   SHDWLifecyclePhase phase;
   SHDWCapabilityKind capability;
   unsigned ctorInstall : 1;
-  unsigned verify : 1;
 } SHDWPlugin;
 #ifndef unitID
 #define unitID pluginID

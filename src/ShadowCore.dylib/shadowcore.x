@@ -114,46 +114,13 @@ static void shdw_coord_foundation_objc(SHDWHookSession* hooks) {
     shdw_universal_nstask(hooks);
 }
 
-static void shdw_plugin_policy_nop(SHDWHookSession* hooks) { (void)hooks; }
-
-// Must stay in SHDWPluginRegistry() order (Hybrid: verified vs SHDWPluginOrder.inc).
-#import <Shadow/SHDWPluginOrder.inc>
+// Same ordered rows as SHDWPluginRegistry(); installer is NULL for
+// metadata-only rows, which the planner never emits.
+#define SHDW_PLUGIN(id, pref, phase, cap, ctor, installer) { id, installer },
 static const SHDWPluginInstaller kSHDWPluginInstallers[] = {
-    { "Universal_Dyld",                       shdw_universal_dyld },
-    { "Universal_Filesystem_C",               shdw_universal_filesystem_c },
-    { "Universal_EnvVars_C",                  shdw_coord_envvars_c },
-    { "Universal_EnvVars_ObjC",               shdw_universal_nsprocessinfo },
-    { "Adapter_DeviceCheck",                   shdw_adapter_devicecheck },
-    { "Adapter_FreeRASP",                      shdw_adapter_freerasp },
-    { "Universal_MachBootstrap",              shdw_universal_mach_bootstrap },
-    { "Universal_IOKit",                      shdw_universal_iokit },
-    { "Universal_LowLevelC",                  shdw_universal_low_level_c },
-    { "Universal_AntiDebugging",              shdw_universal_antidebugging },
-    { "Universal_CodeSigning",                shdw_universal_codesigning },
-    { "Universal_ObjC",                       shdw_universal_objc },
-    { "Universal_ObjC_MethodImplementation",  shdw_universal_objc_methodimpl },
-    { "Universal_Syscall",                    shdw_universal_syscall },
-    { "Universal_Memory",                     shdw_universal_memory },
-    { "Universal_Sandbox",                    shdw_universal_sandbox },
-    { "Universal_HideClasses",                shdw_universal_hide_classes },
-    { "Universal_SymbolLookup",               shdw_coord_symlookup },
-    { "Universal_DynamicLibrariesExtra",      shdw_universal_dynamic_libraries_extra },
-    { "Universal_DetectorIntegrity",          shdw_coord_detector_integrity },
-    { "Universal_Filesystem_ObjC",            shdw_coord_filesystem_objc },
-    { "Universal_Foundation_ObjC",            shdw_coord_foundation_objc },
-    { "Universal_HideApps",                   shdw_universal_hide_apps },
-    { "Universal_URLScheme",                  shdw_universal_url_scheme },
-    { "Universal_Foundation_UIKit",           shdw_universal_foundation_uikit },
-    { "Universal_PasscodeStatus",             shdw_universal_passcode_status },
-    { "Adapter_DeviceSecurityKit",             shdw_adapter_devicesecuritykit },
-    { "Adapter_IOSSecuritySuite",              shdw_adapter_iossecuritysuite },
-    // Policy plugins — no hook install, evaluated via RestrictionEngine
-    { "Policy_Path",                  shdw_plugin_policy_nop },
-    { "Policy_Environment",           shdw_plugin_policy_nop },
-    { "Policy_Process",               shdw_plugin_policy_nop },
-    { "Policy_PseudoSandbox",         shdw_plugin_policy_nop },
+#include <Shadow/SHDWPlugins.def>
 };
-_Static_assert(sizeof(kSHDWPluginInstallers)/sizeof(kSHDWPluginInstallers[0]) == SHDW_PLUGIN_COUNT, "installer count != SHDW_PLUGIN_COUNT");
+#undef SHDW_PLUGIN
 
 static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
     shdw_coordinator_instance =
@@ -235,17 +202,12 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
         // Capture authorization independently of current target readiness.
         shdw_adapter_devicecheck_configure(prefs);
         prefs = shdw_adapter_resolve_preferences(prefs);
-        BOOL hasActiveDetectorAdapter = NO;
-        for(NSString* key in @[ SHDWAdapterDTTJailbreakDetectionID, SHDWAdapterSafeDeviceID,
-                                SHDWAdapterJailMonkeyID ]) {
-            hasActiveDetectorAdapter |= [prefs[key] boolValue];
-        }
-        // Behavioral prearm for image/class-linked detectors whose adapters
-        // are always-on (FreeRASP/Talsec, DeviceSecurityKit, IOSSecuritySuite,
-        // BAT): their presence at ctor means detector code will run, so arm
-        // Tier-2 now. Harness baseline unaffected: the harness links none of
-        // these, and SDKFallback deferral is planner-gated, not prearm-gated.
-        hasActiveDetectorAdapter |= shdw_adapter_has_known_detector();
+        // Behavioral prearm for image/class-linked detectors and the
+        // DeviceCheck-family targets. Resolution already masks each target
+        // preference with availability, so one availability scan covers both.
+        // Harness baseline unaffected: its SDKFallback deferral is
+        // planner-gated, not prearm-gated.
+        BOOL hasActiveDetectorAdapter = shdw_adapter_has_known_detector();
 
         // The adapter's raw-syscall coverage is additive to the universal
         // groups and follows its own switch.
@@ -254,7 +216,7 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             if([effectivePrefs[SHDWAdapterFreeRASPID] boolValue]) {
                 shdw_adapter_freerasp_prepare_preferences(effectivePrefs);
             }
-            if([bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"]) {
+            if(SHDWIsHarnessBundleID(bundleIdentifier)) {
                 effectivePrefs[SHDWUniversalHarnessBaselineID] = @YES;
             }
             prefs = [effectivePrefs copy];
@@ -281,19 +243,14 @@ static void shdw_coordinator_ctor(NSDictionary<NSString*, id>* prefs) {
             // Swift source builds and Talsec binaries have no stable direct
             // hook ABI. Prearm framework-independent Tier-2 coverage before
             // detector code can run. Production adapter switches install at
-            // construction; the harness keeps its deferred fallback event.
-            // Harness sets this false only for its explicit prearmed mode.
-            // Prearm the detector-only units before its first real detector
-            // runs; normal Harness launches retain the universal baseline.
-            // Embedded detectors (harness links Talsec/DeviceSecurityKit/IOSSB
-            // frameworks directly) count as an active detector presence, same
-            // as the old isolated runners' linked images did.
-            BOOL harnessPrearmed = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"] &&
-                ![prefs[SHDWUniversalHarnessBaselineID] boolValue];
-            BOOL embeddedDetectors = [bundleIdentifier isEqualToString:@"me.jjolano.shadow.harness"];
-            BOOL forcedPrearm = [bundleIdentifier hasPrefix:@"me.jjolano.shadow.test."] ||
+            // construction; the harness's SDKFallback deferral is
+            // planner-gated, not prearm-gated. Embedded detectors (the
+            // harness links these frameworks directly) count as an active
+            // detector presence.
+            BOOL embeddedDetectors = SHDWIsHarnessBundleID(bundleIdentifier);
+            BOOL forcedPrearm = SHDWIsDetectorTestBundleID(bundleIdentifier) ||
                 bundleIdentifier.length == 0;
-            if(hasActiveDetectorAdapter || harnessPrearmed || embeddedDetectors || forcedPrearm) {
+            if(hasActiveDetectorAdapter || embeddedDetectors || forcedPrearm) {
                 shdw_detector_present = YES;
                 shdw_detector_write_policy_set_enabled(YES);
                 [shdw_coordinator_instance prearmDetector];

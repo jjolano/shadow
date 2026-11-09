@@ -1,5 +1,4 @@
 #import "AdapterHooks.h"
-static BOOL shdw_freeRASP_enabled = YES;
 static BOOL shdw_freeRASP_active = NO;
 static mach_msg_return_t (*shdw_freeRASP_originalMachMsg)(mach_msg_header_t*, mach_msg_option_t,
     mach_msg_size_t, mach_msg_size_t, mach_port_name_t, mach_msg_timeout_t, mach_port_name_t) = NULL;
@@ -54,14 +53,6 @@ static const shdw_freeRASP_version_t shdw_freeRASP_versions[] = {
         .deliverOffset = 0x3d534,
         .deliverPrologue = { 0xff, 0x03, 0x01, 0xd1, 0xf6, 0x57, 0x01, 0xa9 },
     },
-    // TODO: second pinned row for the next TalsecRuntime version. Fill in the
-    // observed LC_UUID from the debug log below, then one-time RE the two
-    // offsets + first 8 prologue bytes and append, e.g.:
-    // { .uuid = { 0x.., ... (16 bytes, otool -l) },
-    //   .encryptedBinaryOffset = 0x....,
-    //   .encryptedBinaryPrologue = { 0x.., ... (8 bytes) },
-    //   .deliverOffset = 0x......,
-    //   .deliverPrologue = { 0x.., ... (8 bytes) } },
 };
 #define SHDW_FREERASP_VERSION_COUNT (sizeof(shdw_freeRASP_versions) / sizeof(shdw_freeRASP_versions[0]))
 
@@ -152,7 +143,7 @@ static mach_msg_return_t shdw_freeRASP_machMsg(mach_msg_header_t* msg, mach_msg_
         shdw_freeRASP_installDeliver(shdw_freeRASP_session);
     }
     uint64_t marker = 0;
-    if(shdw_freeRASP_enabled && msg && (option & MACH_SEND_MSG) && sendSize == 40 &&
+    if(msg && (option & MACH_SEND_MSG) && sendSize == 40 &&
        msg->msgh_bits == 0x1513 && msg->msgh_id == 0x400000ce) {
         memcpy(&marker, (uint8_t*)msg + 24, sizeof(marker));
         if(marker == 0x444f50414d494e45ULL && isCallerExternal()) return MACH_SEND_INVALID_DEST;
@@ -181,7 +172,7 @@ static BOOL shdw_adapter_freerasp_hides_path(NSString* path) {
 #define SHDW_FREERASP_THREAT_UNOFFICIAL_STORE 11
 static void (*shdw_freeRASP_origDeliver)(void* threat, void* a1, void* a2) = NULL;
 static void shdw_freeRASP_deliver(void* threat, void* a1, void* a2) {
-    if(threat && shdw_freeRASP_enabled && shdw_detector_aggressive) {
+    if(threat && shdw_detector_aggressive) {
         unsigned ordinal = (unsigned)*((unsigned char*)threat + 0x38);
         if(ordinal == SHDW_FREERASP_THREAT_PRIVILEGED_ACCESS ||
            ordinal == SHDW_FREERASP_THREAT_UNOFFICIAL_STORE) {
@@ -268,6 +259,5 @@ void shdw_adapter_freerasp(SHDWHookSession* hooks) {
 // its write probes use the detector-gated stock sandbox policy. Talsec.start
 // is never replaced or suppressed.
 void shdw_adapter_freerasp_prepare_preferences(NSMutableDictionary* prefs) {
-    shdw_freeRASP_enabled = YES;
     prefs[SHDWUniversalSyscallID] = @YES;
 }

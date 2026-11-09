@@ -3,7 +3,7 @@
 
 // Image address-range tables, and the pure lookup over them.
 //
-// Split out of hooks.h so the host test harness can exercise the lookup:
+// Split out of hooks.h so host tests can exercise the lookup:
 // hooks.h pulls UIKit, mach and sandbox headers and only builds for iOS, while
 // everything here is plain C over <stdint.h>. hooks.h wraps this with the
 // atomics, the dyld walk that fills the tables, and the -[Shadow

@@ -512,7 +512,7 @@ static long shdw_fwd_PROCINFO(int number, va_list args) {
 
 static long shdw_syscall_forward(int number, va_list args) {
     switch(number) {
-#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) case NUM: return shdw_fwd_##FWD(NUM, args);
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) case NUM: return shdw_fwd_##FWD(NUM, args);
 #include "RawSyscalls.def"
 #undef SHADW_RAWSYSCALL
         default:
@@ -544,11 +544,23 @@ static int shdw_raw_sysctl_original(int* name, u_int namelen, void* oldp, size_t
 // svc_patch.x).
 shdw_raw_syscall_category_t shdw_raw_syscall_category(int number) {
     switch(number) {
-#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) case NUM: return SHADW_RAW_CAT_##CAT;
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) case NUM: return SHADW_RAW_CAT_##CAT;
 #include "RawSyscalls.def"
 #undef SHADW_RAWSYSCALL
         default:
             return SHADW_RAW_CAT_NONE;
+    }
+}
+
+// Rows that return a live fd on success. Generated from the registry so a new
+// open-family syscall cannot miss the after-success alias verification.
+static BOOL shdw_raw_returns_fd(int number) {
+    switch(number) {
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) case NUM: return FD != 0;
+#include "RawSyscalls.def"
+#undef SHADW_RAWSYSCALL
+        default:
+            return NO;
     }
 }
 
@@ -1197,10 +1209,8 @@ static long shdw_syscall_dispatch(int number, BOOL ext, va_list args) {
         // the handed-out fd, not the request spelling, decides.
         // Deterministic: the fd pins the object. (Raw stat/access keep
         // pre-check-only windows — noted as a residual.)
-        if((number == SYS_open || number == SYS_open_nocancel ||
-            number == SYS_open_extended || number == SYS_open_dprotected_np ||
-            number == SYS_openat || number == SYS_openat_nocancel) &&
-           result >= 0 && shdw_fd_names_hidden((int)result)) {
+        if(shdw_raw_returns_fd(number) && result >= 0 &&
+           shdw_fd_names_hidden((int)result)) {
             close((int)result);
             errno = ENOENT;
             return -1;
@@ -1383,7 +1393,7 @@ static long replaced_syscall(int number, ...) {
     // `number` (clang folds the trailing constant-true operand away and
     // lowers the rest to cmp/branch only).
     if(
-#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) number != NUM &&
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) number != NUM &&
 #include "RawSyscalls.def"
 #undef SHADW_RAWSYSCALL
     1) {
@@ -1414,7 +1424,7 @@ static long replaced___syscall(int number, ...) {
     // `number` (no helper calls — they would clobber the argument
     // registers the zero-argument forward relies on).
     if(
-#define SHADW_RAWSYSCALL(NUM, ARITY, CAT, FWD) number != NUM &&
+#define SHADW_RAWSYSCALL(NUM, CAT, FWD, REWRITE, FD) number != NUM &&
 #include "RawSyscalls.def"
 #undef SHADW_RAWSYSCALL
     1) {

@@ -72,15 +72,8 @@ static int replaced_objc_getClassList(Class* buffer, int bufferCount) {
     if(!isCallerExternal()) {
         return original_objc_getClassList(buffer, bufferCount);
     }
-    // Predecessor capture can be skipped by an alternate installer (same
-    // hazard documented for method_getImplementation below): calling through
-    // NULL jumps to PC=0 (observed on-device from class-enumeration
-    // callers). Fail visible instead. TOCTOU-hardened: classes can register
-    // between the size probe and the fill, so retry once on growth.
-    if(!original_objc_getClassList) {
-        NSLog(@"[Shadow] objc_getClassList predecessor missing; failing visible");
-        return 0;
-    }
+    // TOCTOU-hardened: classes can register between the size probe and the
+    // fill, so retry once on growth.
     int total = original_objc_getClassList(NULL, 0);
 
     if(total <= 0) {

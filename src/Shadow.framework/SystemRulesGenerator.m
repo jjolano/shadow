@@ -2,6 +2,7 @@
 #import "RulesetCompiler.h"
 #import "RulesetPrivate.h"
 #import <Shadow/Core+Utilities.h>
+#import <Shadow/SHDWPlugin.h>
 #import <Shadow/SystemRulesGenerator.h>
 
 #import <MobileCoreServices/LSApplicationProxy.h>
@@ -879,7 +880,7 @@ static BOOL IsCryptexZone(NSString *zonePath) {
 
   for (LSApplicationProxy *proxy in [workspace allInstalledApplications]) {
     NSString *bundleID = [proxy bundleIdentifier];
-    if (IsShadowVerificationBundle(bundleID)) {
+    if (SHDWIsVerificationBundleID(bundleID)) {
       continue;
     }
 

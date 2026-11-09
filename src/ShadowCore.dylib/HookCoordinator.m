@@ -11,12 +11,9 @@
 #import <string.h>
 #import <sys/stat.h>
 
-// Installed-state bitset, indexed by plugin index in SHDWPluginRegistry()
-// (renamed from SHDWInstallUnits). The installer table's row order should
-// match the metadata table's order for the hook plugins (SHDWPluginInstaller
-// carries pluginID/unitID precisely so the coordinator can cross-check and,
-// if they ever disagree, fall back to a per-ID lookup). Policy plugins have
-// no installer (they are evaluated via RestrictionEngine).
+// Installed-state bitset, indexed by plugin index in SHDWPluginRegistry().
+// Installer rows are resolved by canonical pluginID, so the table may be
+// sparse and need not mirror registry order.
 #define SHDW_MAX_UNITS 64
 
 static char kSHDWHookCoordinatorQueueKey;
@@ -351,7 +348,7 @@ shdw_identity_image_for_address(const void *address) {
   const SHDWPlugin *plugins = SHDWPluginRegistry(&count);
 
   for (NSUInteger i = 0; i < count; i++) {
-    if ([[NSString stringWithUTF8String:plugins[i].unitID]
+    if ([[NSString stringWithUTF8String:plugins[i].pluginID]
             isEqualToString:unitID]) {
       return i;
     }
@@ -360,9 +357,11 @@ shdw_identity_image_for_address(const void *address) {
   return NSNotFound;
 }
 
+// Installer tables may be partial, so resolve by canonical ID rather than
+// assuming the registry index is an installer index.
 - (const SHDWPluginInstaller *)installerForUnitID:(NSString *)unitID {
   for (NSUInteger i = 0; i < _installerCount; i++) {
-    if (strcmp(_installers[i].unitID, unitID.UTF8String) == 0) {
+    if (strcmp(_installers[i].pluginID, unitID.UTF8String) == 0) {
       return (const SHDWPluginInstaller *)&_installers[i];
     }
   }
@@ -511,15 +510,20 @@ shdw_identity_image_for_address(const void *address) {
 
     NSUInteger pluginCount = 0;
     const SHDWPlugin *plugins = SHDWPluginRegistry(&pluginCount);
-    const SHDWPlugin *plugin = index < pluginCount ? &plugins[index] : NULL;
+
+    if (index >= pluginCount) {
+      NSLog(@"[Shadow][coordinator] unit index out of range: %@", unitID);
+      continue;
+    }
+
     const SHDWPluginInstaller *installer = [self installerForUnitID:unitID];
 
-    if (!installer) {
+    if (!installer || !installer->install) {
       NSLog(@"[Shadow][coordinator] no installer for unit %@", unitID);
       continue;
     }
 
-    NSLog(@"[Shadow][coordinator] + %s", plugin->unitID);
+    NSLog(@"[Shadow][coordinator] + %s", plugins[index].pluginID);
 
     SHDWHookSession *previous = SHDWHookSessionSetCurrent(self.backends.hooks);
     @try {

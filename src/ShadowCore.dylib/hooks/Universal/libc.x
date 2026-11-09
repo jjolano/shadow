@@ -1248,7 +1248,6 @@ static int replaced_readdir_r(DIR* dirp, struct dirent* entry, struct dirent** o
                 @autoreleasepool {
                     if([_shadow isPathRestricted:@((*oresult)->d_name) options:options]
                        || shdw_dir_entry_external_hidden(options, (*oresult)->d_name)) {
-                        // call readdir again to skip ahead
                         result = original_readdir_r(dirp, entry, oresult);
                     } else {
                         break;
@@ -1291,7 +1290,6 @@ static struct dirent* replaced_readdir(DIR* dirp) {
             @autoreleasepool {
                 if([_shadow isPathRestricted:@(result->d_name) options:options]
                    || shdw_dir_entry_external_hidden(options, result->d_name)) {
-                    // call readdir again to skip ahead
                     result = original_readdir(dirp);
                 } else {
                     break;
@@ -2209,8 +2207,7 @@ static int replaced_fs_snapshot_list(int dirfd, struct attrlist* attrs, void* bu
                 const char* nameStr = (char*) buf + offset + kNameRefOffset + nameOffset;
 
                 if(shdw_snapshot_is_jb(nameStr)) {
-                    // Remove: shift the tail down over this record; the next
-                    // record now starts at the same offset.
+                    // The next record now starts at the same offset.
                     memmove((char*) buf + offset, (char*) buf + offset + recLen, totalBytes - (offset + recLen));
                     totalBytes -= recLen;
                     result--;
@@ -3349,6 +3346,16 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
+// Per-row install behavior that used to live in separate symbol-name lists.
+enum {
+    SHDW_HOOK_FALLBACK_REBIND = 1 << 0, // inline refusal -> rebind existing imports
+    SHDW_HOOK_PROC_LIST_REBIND = 1 << 1, // libproc/kevent import-slot fallback
+};
+
+// NULL-original continuations (wait family): table rows point at these cells,
+// the replacements read them per call.
+static void* shdw_wait_continuations[4];
+
 // Shared descriptor metadata for installation and symbol lookup.
 typedef struct {
     const char* symbol;     // dlsym name (C identifier, unmangled)
@@ -3356,6 +3363,8 @@ typedef struct {
     void** original;        // original-slot out pointer (NULL = TU-local cell, see below)
     uint32_t installGroups; // bitmask: hooked when one of these groups installs
     uint32_t verifyGroups;  // required-export group mask (zero for optional exports)
+    uint32_t flags;         // SHDW_HOOK_* install behavior
+    void** continuation;    // NULL-original continuation cell (wait family)
 } shdw_hook_desc_t;
 
 #define LIBC   SHADW_HOOK_GROUP_LIBC
@@ -3369,83 +3378,83 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // Installing them again through libc would replace their predecessor with
     // an already-live entry hook and recurse.
     { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   METADATA, METADATA },
-    { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC },
+    { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
-    { "exchangedata",             (void*)&replaced_exchangedata,             (void**)&original_exchangedata,             LIBC,   LIBC },
+    { "exchangedata",             (void*)&replaced_exchangedata,             (void**)&original_exchangedata,             LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "creat",                  (void*)&replaced_creat,                    (void**)&original_creat,                    LIBC,   LIBC },
-    { "statfs",                 (void*)&replaced_statfs,                   (void**)&original_statfs,                   LIBC,   LIBC },
-    { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC },
-    { "statvfs",                (void*)&replaced_statvfs,                  (void**)&original_statvfs,                  LIBC,   LIBC },
-    { "fstatvfs",               (void*)&replaced_fstatvfs,                 (void**)&original_fstatvfs,                 LIBC,   LIBC },
+    { "statfs",                 (void*)&replaced_statfs,                   (void**)&original_statfs,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstatfs",                (void*)&replaced_fstatfs,                  (void**)&original_fstatfs,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "statvfs",                (void*)&replaced_statvfs,                  (void**)&original_statvfs,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstatvfs",               (void*)&replaced_fstatvfs,                 (void**)&original_fstatvfs,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "stat",                   (void*)&replaced_stat,                     (void**)&original_stat,                     METADATA, METADATA },
     { "lstat",                  (void*)&replaced_lstat,                    (void**)&original_lstat,                    METADATA, METADATA },
     { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                METADATA, METADATA },
-    { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC },
-    { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC },
+    { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    METADATA, METADATA },
-    { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC },
-    { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC },
+    { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     // 64-bit callers bind the __DARWIN_EXTSN alias: the SDK maps realpath()
     // to realpath$DARWIN_EXTSN on arm64, so the legacy row alone leaves the
     // measured call path stock. Same policy body, own continuation cell.
-    { "realpath$DARWIN_EXTSN",  (void*)&replaced_realpath_extsn,           (void**)&original_realpath_extsn,           LIBC,   LIBC },
+    { "realpath$DARWIN_EXTSN",  (void*)&replaced_realpath_extsn,           (void**)&original_realpath_extsn,           LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "readlink",               (void*)&replaced_readlink,                 (void**)&original_readlink,                 METADATA, METADATA },
     { "readlinkat",             (void*)&replaced_readlinkat,               (void**)&original_readlinkat,               METADATA, METADATA },
     { "freadlink",              (void*)&replaced_freadlink,                (void**)&original_freadlink,                LIBC,   0 },   // iOS 16+ export; SYS_freadlink on 15.6 floor
-    { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC },
-    { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC },
-    { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC },
+    { "link",                   (void*)&replaced_link,                     (void**)&original_link,                     LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "getmntinfo",             (void*)&replaced_getmntinfo,               (void**)&original_getmntinfo,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "getattrlist",            (void*)&replaced_getattrlist,              (void**)&original_getattrlist,              LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fs_snapshot_list",       (void*)&replaced_fs_snapshot_list,         (void**)&original_fs_snapshot_list,         LIBC,   LIBC },
-    { "getxattr",               (void*)&replaced_getxattr,                 (void**)&original_getxattr,                 LIBC,   LIBC },
-    { "listxattr",              (void*)&replaced_listxattr,                (void**)&original_listxattr,                LIBC,   LIBC },
-    { "setxattr",               (void*)&replaced_setxattr,                 (void**)&original_setxattr,                 LIBC,   LIBC },
-    { "removexattr",            (void*)&replaced_removexattr,              (void**)&original_removexattr,              LIBC,   LIBC },
-    { "fgetxattr",              (void*)&replaced_fgetxattr,                (void**)&original_fgetxattr,                LIBC,   LIBC },
-    { "flistxattr",             (void*)&replaced_flistxattr,               (void**)&original_flistxattr,               LIBC,   LIBC },
-    { "fsetxattr",              (void*)&replaced_fsetxattr,                (void**)&original_fsetxattr,                LIBC,   LIBC },
-    { "fremovexattr",           (void*)&replaced_fremovexattr,             (void**)&original_fremovexattr,             LIBC,   LIBC },
-    { "fgetattrlist",           (void*)&replaced_fgetattrlist,             (void**)&original_fgetattrlist,             LIBC,   LIBC },
-    { "getattrlistat",          (void*)&replaced_getattrlistat,            (void**)&original_getattrlistat,            LIBC,   LIBC },
+    { "getxattr",               (void*)&replaced_getxattr,                 (void**)&original_getxattr,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "listxattr",              (void*)&replaced_listxattr,                (void**)&original_listxattr,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "setxattr",               (void*)&replaced_setxattr,                 (void**)&original_setxattr,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "removexattr",            (void*)&replaced_removexattr,              (void**)&original_removexattr,              LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fgetxattr",              (void*)&replaced_fgetxattr,                (void**)&original_fgetxattr,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "flistxattr",             (void*)&replaced_flistxattr,               (void**)&original_flistxattr,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fsetxattr",              (void*)&replaced_fsetxattr,                (void**)&original_fsetxattr,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fremovexattr",           (void*)&replaced_fremovexattr,             (void**)&original_fremovexattr,             LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fgetattrlist",           (void*)&replaced_fgetattrlist,             (void**)&original_fgetattrlist,             LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "getattrlistat",          (void*)&replaced_getattrlistat,            (void**)&original_getattrlistat,            LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "setattrlist",            (void*)&replaced_setattrlist,              (void**)&original_setattrlist,              LIBC,   0 },
     { "setattrlistat",          (void*)&replaced_setattrlistat,            (void**)&original_setattrlistat,            LIBC,   0 },
-    { "getattrlistbulk",        (void*)&replaced_getattrlistbulk,          (void**)&original_getattrlistbulk,          LIBC,   LIBC },
+    { "getattrlistbulk",        (void*)&replaced_getattrlistbulk,          (void**)&original_getattrlistbulk,          LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "symlink",                (void*)&replaced_symlink,                  (void**)&original_symlink,                  LIBC,   LIBC },
-    { "rename",                 (void*)&replaced_rename,                   (void**)&original_rename,                   LIBC,   LIBC },
-    { "remove",                 (void*)&replaced_remove,                   (void**)&original_remove,                   LIBC,   LIBC },
-    { "unlink",                 (void*)&replaced_unlink,                   (void**)&original_unlink,                   LIBC,   LIBC },
-    { "unlinkat",               (void*)&replaced_unlinkat,                 (void**)&original_unlinkat,                 LIBC,   LIBC },
-    { "linkat",                 (void*)&replaced_linkat,                   (void**)&original_linkat,                   LIBC,   LIBC },
-    { "symlinkat",              (void*)&replaced_symlinkat,                (void**)&original_symlinkat,                LIBC,   LIBC },
-    { "renameat",               (void*)&replaced_renameat,                 (void**)&original_renameat,                 LIBC,   LIBC },
-    { "renamex_np",             (void*)&replaced_renamex_np,               (void**)&original_renamex_np,               LIBC,   LIBC },
-    { "renameatx_np",           (void*)&replaced_renameatx_np,             (void**)&original_renameatx_np,             LIBC,   LIBC },
-    { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC },
+    { "rename",                 (void*)&replaced_rename,                   (void**)&original_rename,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "remove",                 (void*)&replaced_remove,                   (void**)&original_remove,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "unlink",                 (void*)&replaced_unlink,                   (void**)&original_unlink,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "unlinkat",               (void*)&replaced_unlinkat,                 (void**)&original_unlinkat,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "linkat",                 (void*)&replaced_linkat,                   (void**)&original_linkat,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "symlinkat",              (void*)&replaced_symlinkat,                (void**)&original_symlinkat,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "renameat",               (void*)&replaced_renameat,                 (void**)&original_renameat,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "renamex_np",             (void*)&replaced_renamex_np,               (void**)&original_renamex_np,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "renameatx_np",           (void*)&replaced_renameatx_np,             (void**)&original_renameatx_np,             LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fchmodat",               (void*)&replaced_fchmodat,                 (void**)&original_fchmodat,                 LIBC,   LIBC },
     { "fchownat",               (void*)&replaced_fchownat,                 (void**)&original_fchownat,                 LIBC,   0 },
     { "rmdir",                  (void*)&replaced_rmdir,                    (void**)&original_rmdir,                    LIBC,   LIBC },
-    { "pathconf",               (void*)&replaced_pathconf,                 (void**)&original_pathconf,                 LIBC,   LIBC },
+    { "pathconf",               (void*)&replaced_pathconf,                 (void**)&original_pathconf,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fpathconf",              (void*)&replaced_fpathconf,                (void**)&original_fpathconf,                LIBC,   LIBC },
-    { "utimes",                 (void*)&replaced_utimes,                   (void**)&original_utimes,                   LIBC,   LIBC },
+    { "utimes",                 (void*)&replaced_utimes,                   (void**)&original_utimes,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "futimes",                (void*)&replaced_futimes,                  (void**)&original_futimes,                  LIBC,   LIBC },
     { "fchdir",                 (void*)&replaced_fchdir,                   (void**)&original_fchdir,                   LIBC,   LIBC },
     // Phase 1 mutators: plain-path deny ENOENT (rmdir contract), fd deny
     // EBADF (futimes contract). All present since the 15.6 floor.
     { "mkdir",                  (void*)&replaced_mkdir,                    (void**)&original_mkdir,                    LIBC,   LIBC },
-    { "chmod",                  (void*)&replaced_chmod,                    (void**)&original_chmod,                    LIBC,   LIBC },
-    { "lchmod",                 (void*)&replaced_lchmod,                   (void**)&original_lchmod,                   LIBC,   LIBC },
+    { "chmod",                  (void*)&replaced_chmod,                    (void**)&original_chmod,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "lchmod",                 (void*)&replaced_lchmod,                   (void**)&original_lchmod,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fchmod",                 (void*)&replaced_fchmod,                   (void**)&original_fchmod,                   LIBC,   LIBC },
-    { "chown",                  (void*)&replaced_chown,                    (void**)&original_chown,                    LIBC,   LIBC },
-    { "lchown",                 (void*)&replaced_lchown,                   (void**)&original_lchown,                   LIBC,   LIBC },
+    { "chown",                  (void*)&replaced_chown,                    (void**)&original_chown,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "lchown",                 (void*)&replaced_lchown,                   (void**)&original_lchown,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fchown",                 (void*)&replaced_fchown,                   (void**)&original_fchown,                   LIBC,   LIBC },
     { "mknod",                  (void*)&replaced_mknod,                    (void**)&original_mknod,                    LIBC,   LIBC },
     { "mkfifo",                 (void*)&replaced_mkfifo,                   (void**)&original_mkfifo,                   LIBC,   LIBC },
-    { "truncate",               (void*)&replaced_truncate,                 (void**)&original_truncate,                 LIBC,   LIBC },
+    { "truncate",               (void*)&replaced_truncate,                 (void**)&original_truncate,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "ftruncate",              (void*)&replaced_ftruncate,                (void**)&original_ftruncate,               LIBC,   LIBC },
     { "chflags",                (void*)&replaced_chflags,                  (void**)&original_chflags,                 LIBC,   LIBC },
     { "lchflags",               (void*)&replaced_lchflags,                 (void**)&original_lchflags,                LIBC,   LIBC },
     { "fchflags",               (void*)&replaced_fchflags,                 (void**)&original_fchflags,                LIBC,   LIBC },
     { "futimens",               (void*)&replaced_futimens,                 (void**)&original_futimens,                LIBC,   LIBC },
-    { "lutimes",                (void*)&replaced_lutimes,                  (void**)&original_lutimes,                 LIBC,   LIBC },
+    { "lutimes",                (void*)&replaced_lutimes,                  (void**)&original_lutimes,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     // Phase 2 copy/clone: dual-endpoint (src+dst) classification. Present
     // since the 15.6 floor; fd/state resolution fails open.
     { "copyfile",               (void*)&replaced_copyfile,                (void**)&original_copyfile,               LIBC,   LIBC },
@@ -3456,22 +3465,22 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // Phase 3 dir-enum conveniences: post-success output filters over the
     // already-filtered readdir/getdirentries64 substrate. globfree is a
     // pass-through for dlsym-policy agreement (no realloc in the filter).
-    { "scandir",                (void*)&replaced_scandir,                 (void**)&original_scandir,                LIBC,   LIBC },
+    { "scandir",                (void*)&replaced_scandir,                 (void**)&original_scandir,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
 #ifdef __BLOCKS__
-    { "scandir_b",              (void*)&replaced_scandir_b,               (void**)&original_scandir_b,              LIBC,   0 },
+    { "scandir_b",              (void*)&replaced_scandir_b,               (void**)&original_scandir_b,              LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},
 #endif
-    { "glob",                   (void*)&replaced_glob,                    (void**)&original_glob,                   LIBC,   LIBC },
+    { "glob",                   (void*)&replaced_glob,                    (void**)&original_glob,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "globfree",               (void*)&replaced_globfree,                (void**)&original_globfree,               LIBC,   0 },
 #ifdef __BLOCKS__
-    { "glob_b",                 (void*)&replaced_glob_b,                  (void**)&original_glob_b,                 LIBC,   0 },
+    { "glob_b",                 (void*)&replaced_glob_b,                  (void**)&original_glob_b,                 LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},
 #endif
-    { "fts_open",               (void*)&replaced_fts_open,                (void**)&original_fts_open,               LIBC,   LIBC },
-    { "fts_read",               (void*)&replaced_fts_read,                (void**)&original_fts_read,               LIBC,   LIBC },
-    { "fts_children",           (void*)&replaced_fts_children,            (void**)&original_fts_children,           LIBC,   0 },
-    { "fts_close",              (void*)&replaced_fts_close,               (void**)&original_fts_close,              LIBC,   0 },
-    { "ftw",                    (void*)&replaced_ftw,                     (void**)&original_ftw,                    LIBC,   LIBC },
-    { "nftw",                   (void*)&replaced_nftw,                    (void**)&original_nftw,                   LIBC,   LIBC },
-    { "__readdir_unlocked",     (void*)&replaced___readdir_unlocked,     (void**)&original___readdir_unlocked,     LIBC,   LIBC },
+    { "fts_open",               (void*)&replaced_fts_open,                (void**)&original_fts_open,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fts_read",               (void*)&replaced_fts_read,                (void**)&original_fts_read,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fts_children",           (void*)&replaced_fts_children,            (void**)&original_fts_children,           LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},
+    { "fts_close",              (void*)&replaced_fts_close,               (void**)&original_fts_close,              LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},
+    { "ftw",                    (void*)&replaced_ftw,                     (void**)&original_ftw,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "nftw",                   (void*)&replaced_nftw,                    (void**)&original_nftw,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "__readdir_unlocked",     (void*)&replaced___readdir_unlocked,     (void**)&original___readdir_unlocked,     LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     // Phase 4 CFPreferences: same suite gate as NSUserDefaults (predicate
     // lives in AppEnvironment.x). Reads denied, sync fails closed, writes
     // pass through (unobservable).
@@ -3479,12 +3488,12 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "CFPreferencesCopyValue", (void*)&replaced_CFPreferencesCopyValue, (void**)&original_CFPreferencesCopyValue, LIBC, LIBC },
     { "CFPreferencesCopyMultiple", (void*)&replaced_CFPreferencesCopyMultiple, (void**)&original_CFPreferencesCopyMultiple, LIBC, LIBC },
     { "CFPreferencesAppSynchronize", (void*)&replaced_CFPreferencesAppSynchronize, (void**)&original_CFPreferencesAppSynchronize, LIBC, 0 },
-    { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC },
-    { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC },
-    { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC },
+    { "getfsstat",              (void*)&replaced_getfsstat,                (void**)&original_getfsstat,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstat",                  (void*)&replaced_fstat,                    (void**)&original_fstat,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstatat",                (void*)&replaced_fstatat,                  (void**)&original_fstatat,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     // installed-only (verification excluded, matching the old code's exempt lists)
-    { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0 },   // iOS 11+ gate: dlsym is the availability check
-    { "getmntinfo_r_np",        (void*)&shdw_replaced_getmntinfo_r_np,     (void**)&original_getmntinfo_r_np,          LIBC,   0 },   // iOS 16+ export
+    { "utimensat",              (void*)&replaced_utimensat,                (void**)&original_utimensat,                LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},   // iOS 11+ gate: dlsym is the availability check
+    { "getmntinfo_r_np",        (void*)&shdw_replaced_getmntinfo_r_np,     (void**)&original_getmntinfo_r_np,          LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},   // iOS 16+ export
     { "mkfifoat",               (void*)&replaced_mkfifoat,                 (void**)&original_mkfifoat,                 LIBC,   0 },   // iOS 16+ export
     { "mknodat",                (void*)&replaced_mknodat,                  (void**)&original_mknodat,                  LIBC,   0 },   // iOS 16+ export
 
@@ -3492,19 +3501,19 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "getenv",                 (void*)&replaced_getenv,                   (void**)&original_getenv,                   ENVVAR, ENVVAR },
 
     // lowlevel group
-    { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW },
-    { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW },
+    { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW, SHDW_HOOK_FALLBACK_REBIND},
+    { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW, SHDW_HOOK_FALLBACK_REBIND},
     { "open_nocancel",          (void*)&replaced_open_nocancel,            (void**)&original_open_nocancel,            LOW,    0 },
     { "openat_nocancel",        (void*)&replaced_openat_nocancel,          (void**)&original_openat_nocancel,          LOW,    0 },
     { "opendir",                (void*)&replaced_opendir,                  (void**)&original_opendir,                  LOW,    LOW },
     { "__opendir2",             (void*)&replaced___opendir2,               (void**)&original___opendir2,               LOW,    LOW },
-    { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0 },
-    { "openat_dprotected_np",   (void*)&replaced_openat_dprotected_np,     (void**)&original_openat_dprotected_np,     LOW,    0 },
-    { "openat_authenticated_np",(void*)&replaced_openat_authenticated_np,  (void**)&original_openat_authenticated_np,  LOW,    0 },
-    { "stat64",                 (void*)&replaced_stat64,                   (void**)&original_stat64,                   LOW,    0 },
-    { "lstat64",                (void*)&replaced_lstat64,                  (void**)&original_lstat64,                  LOW,    0 },
-    { "fstat64",                (void*)&replaced_fstat64,                  (void**)&original_fstat64,                  LOW,    0 },
-    { "fstatat64",              (void*)&replaced_fstatat64,                (void**)&original_fstatat64,                LOW,    0 },
+    { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "openat_dprotected_np",   (void*)&replaced_openat_dprotected_np,     (void**)&original_openat_dprotected_np,     LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "openat_authenticated_np",(void*)&replaced_openat_authenticated_np,  (void**)&original_openat_authenticated_np,  LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "stat64",                 (void*)&replaced_stat64,                   (void**)&original_stat64,                   LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "lstat64",                (void*)&replaced_lstat64,                  (void**)&original_lstat64,                  LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstat64",                (void*)&replaced_fstat64,                  (void**)&original_fstat64,                  LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "fstatat64",              (void*)&replaced_fstatat64,                (void**)&original_fstatat64,                LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
 
     // antidebugging group
     { "ptrace",                 (void*)&replaced_ptrace,                   (void**)&original_ptrace,                   ANTIDBG,  ANTIDBG },
@@ -3522,26 +3531,26 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // wait4/wait3/waitid have no original cell (outOldPtr NULL): only the
     // out-param is sanitized post-success, never forwarded — same pattern
     // as the execle/execlp/execl/execv sandbox rows.
-    { "wait4",                  (void*)&replaced_wait4,                    NULL,                                         ANTIDBG,  0 },
-    { "waitpid",                (void*)&replaced_waitpid,                  NULL,                                         ANTIDBG,  0 },
-    { "wait3",                  (void*)&replaced_wait3,                    NULL,                                         ANTIDBG,  0 },
-    { "waitid",                 (void*)&replaced_waitid,                   NULL,                                         ANTIDBG,  0 },
+    { "wait4",                  (void*)&replaced_wait4,                    NULL,                                         ANTIDBG,  0, 0, &shdw_wait_continuations[0]},
+    { "waitpid",                (void*)&replaced_waitpid,                  NULL,                                         ANTIDBG,  0, 0, &shdw_wait_continuations[1]},
+    { "wait3",                  (void*)&replaced_wait3,                    NULL,                                         ANTIDBG,  0, 0, &shdw_wait_continuations[2]},
+    { "waitid",                 (void*)&replaced_waitid,                   NULL,                                         ANTIDBG,  0, 0, &shdw_wait_continuations[3]},
     { "getrlimit",              (void*)&replaced_getrlimit,                (void**)&original_getrlimit,                ANTIDBG,  ANTIDBG },
-    { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0 },
-    { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0 },
-    { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0 },
-    { "proc_name",              (void*)&replaced_proc_name,                (void**)&original_proc_name,                ANTIDBG,  0 },
-    { "proc_listpidspath",      (void*)&replaced_proc_listpidspath,        (void**)&original_proc_listpidspath,        ANTIDBG,  0 },
-    { "proc_regionfilename",    (void*)&replaced_proc_regionfilename,      (void**)&original_proc_regionfilename,      ANTIDBG,  0 },
-    { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0 },
-    { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0 },
+    { "proc_listpids",          (void*)&replaced_proc_listpids,            (void**)&original_proc_listpids,            ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_listallpids",       (void*)&replaced_proc_listallpids,         (void**)&original_proc_listallpids,         ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_pidinfo",           (void*)&replaced_proc_pidinfo,             (void**)&original_proc_pidinfo,             ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_name",              (void*)&replaced_proc_name,                (void**)&original_proc_name,                ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_listpidspath",      (void*)&replaced_proc_listpidspath,        (void**)&original_proc_listpidspath,        ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_regionfilename",    (void*)&replaced_proc_regionfilename,      (void**)&original_proc_regionfilename,      ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_pidpath",           (void*)&replaced_proc_pidpath,             (void**)&original_proc_pidpath,             ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
+    { "proc_pidpath_audittoken",(void*)&replaced_proc_pidpath_audittoken,  (void**)&original_proc_pidpath_audittoken,  ANTIDBG,  0, SHDW_HOOK_PROC_LIST_REBIND},
     // Phase 4: kill(pid, 0) liveness probe — ESRCH agrees with filtered lists.
     { "kill",                   (void*)&replaced_kill,                     (void**)&original_kill,                     ANTIDBG,  ANTIDBG },
     // Phase 4: kevent EVFILT_PROC registration liveness probe — same ESRCH
     // dead-shape discipline as kill (see libc_antidebugging.x).
-    { "kevent",                 (void*)&replaced_kevent,                   (void**)&original_kevent,                   ANTIDBG,  ANTIDBG },
+    { "kevent",                 (void*)&replaced_kevent,                   (void**)&original_kevent,                   ANTIDBG,  ANTIDBG, SHDW_HOOK_PROC_LIST_REBIND},
     // kevent64 twin — same EVFILT_PROC ESRCH policy (see libc_antidebugging.x).
-    { "kevent64",               (void*)&replaced_kevent64,                 (void**)&original_kevent64,                 ANTIDBG,  ANTIDBG },
+    { "kevent64",               (void*)&replaced_kevent64,                 (void**)&original_kevent64,                 ANTIDBG,  ANTIDBG, SHDW_HOOK_PROC_LIST_REBIND},
     // Phase 4 pass-throughs (dlsym-policy agreement only — bodies forward
     // untouched; see libc_antidebugging.x rationale per symbol).
     { "uname",                  (void*)&replaced_uname,                   (void**)&original_uname,                   ANTIDBG,  0 },
@@ -3557,7 +3566,8 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
 
 // Fills a NULL-original row's continuation cell from the pre-hook dlsym at
 // install (wait family). Defined below, next to the dlsym policy.
-static void shdw_libc_resolve_null_original(const char* symbol, void* target);
+static void shdw_libc_resolve_null_original(const shdw_hook_desc_t* d,
+                                            void* target);
 
 // Import-slot fallback for the process-list surface (ANTIDEBUG group): an
 // iOS 15 shared-cache entrypoint can fail the dladdr identity check or refuse
@@ -3565,31 +3575,20 @@ static void shdw_libc_resolve_null_original(const char* symbol, void* target);
 // reaches these symbols through an import or dlsym, so the rebind lane alone
 // covers them. Keeps the verified export as the continuation so the
 // replacement can always forward. No-op for any other symbol or group.
-static void shdw_libc_rebind_proclist(SHDWHookSession* hooks, const shdw_hook_desc_t* d, uint32_t group, void* target) {
-    if(group != SHADW_HOOK_GROUP_ANTIDEBUG || !d->original) {
+static void shdw_libc_rebind_proclist(SHDWHookSession* hooks,
+                                      const shdw_hook_desc_t* d,
+                                      uint32_t group, void* target) {
+    if(group != SHADW_HOOK_GROUP_ANTIDEBUG || !d->original ||
+       !(d->flags & SHDW_HOOK_PROC_LIST_REBIND)) {
         return;
     }
 
-    static const char* const names[] = {
-        "proc_listpids", "proc_listallpids",
-        "proc_pidinfo", "proc_name", "proc_listpidspath", "proc_regionfilename",
-        "proc_pidpath", "proc_pidpath_audittoken",
-        "kevent", "kevent64",
-        NULL,
-    };
+    [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+            withReplacement:d->replacement
+                   outOldPtr:d->original];
 
-    for(int i = 0; names[i]; i++) {
-        if(strcmp(d->symbol, names[i]) == 0) {
-            [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
-                    withReplacement:d->replacement
-                           outOldPtr:d->original];
-
-            if(*d->original == NULL) {
-                *d->original = target;
-            }
-
-            return;
-        }
+    if(*d->original == NULL) {
+        *d->original = target;
     }
 }
 
@@ -3642,7 +3641,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // resolving here keeps the cell in lockstep with the install.
             // The alias check still gates the hookFunction call per row —
             // wait4/waitpid/wait3/waitid are real exports, never aliases.
-            shdw_libc_resolve_null_original(d->symbol, target);
+            shdw_libc_resolve_null_original(d, target);
         }
 
         // Optional compatibility exports may resolve to a modern alias
@@ -3728,26 +3727,15 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // lane the metadata hooks prove works here) and keep the verified
             // export as the continuation so both direct-branch and dlsym callers
             // route through the filter.
-            if(!installed && d->original && group == SHADW_HOOK_GROUP_LOWLEVEL) {
-                static const char* const rebindFallback[] = {
-                    "open", "openat",
-                    "open_dprotected_np", "openat_dprotected_np",
-                    "openat_authenticated_np",
-                    "stat64", "lstat64", "fstat64", "fstatat64",
-                    NULL,
-                };
-                for(int r = 0; rebindFallback[r]; r++) {
-                    if(strcmp(d->symbol, rebindFallback[r]) == 0) {
-                        [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
-                                withReplacement:d->replacement
-                                       outOldPtr:d->original];
-                        if(*d->original == NULL) {
-                            *d->original = target;
-                        }
-                        installed = YES;
-                        break;
-                    }
+            if(!installed && d->original && group == SHADW_HOOK_GROUP_LOWLEVEL &&
+               (d->flags & SHDW_HOOK_FALLBACK_REBIND)) {
+                [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                        withReplacement:d->replacement
+                               outOldPtr:d->original];
+                if(*d->original == NULL) {
+                    *d->original = target;
                 }
+                installed = YES;
             }
 
             // and mount-table entrypoints: when the inline patch is refused the
@@ -3756,39 +3744,18 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             // the existing imports (fishhook lane, which the metadata hooks prove
             // works here) and keep the verified export as the continuation so
             // both direct-branch and dlsym callers route through the filter.
-            if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC) {
-                static const char* const rebindFallback[] = {
-                    "readdir", "readdir_r", "chdir", "freopen", "realpath", "realpath$DARWIN_EXTSN", "scandir", "scandir_b",
-                    "statfs", "fstatfs", "statvfs", "fstatvfs",
-                    "getmntinfo", "getmntinfo_r_np", "getfsstat",
-                    "getattrlist", "getattrlistat", "getattrlistbulk",
-                    "fts_open", "fts_read", "fts_children", "fts_close", "ftw", "nftw",
-                    "__readdir_unlocked",
-                    "glob", "glob_b",
-                    "fstat", "fstatat", "fgetattrlist",
-                    "chmod", "lchmod", "chown", "lchown",
-                    "truncate", "pathconf", "utimes", "lutimes", "utimensat", "link", "exchangedata",
-                    "linkat", "unlinkat", "renameat", "symlinkat", "mkdirat",
-                    "rename", "remove", "unlink", "renamex_np", "renameatx_np",
-                    "getxattr", "listxattr", "setxattr", "removexattr",
-                    "fgetxattr", "flistxattr", "fsetxattr", "fremovexattr",
-                    NULL,
-                };
-                for(int r = 0; rebindFallback[r]; r++) {
-                    if(strcmp(d->symbol, rebindFallback[r]) == 0) {
-                        [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
-                                withReplacement:d->replacement
-                                       outOldPtr:d->original];
-                        // Keep the verified export as the continuation when the
-                        // rebind found no slot to journal an original into, so
-                        // the replacement can always forward.
-                        if(*d->original == NULL) {
-                            *d->original = target;
-                        }
-                        installed = YES;
-                        break;
-                    }
+            if(!installed && d->original && group == SHADW_HOOK_GROUP_LIBC &&
+               (d->flags & SHDW_HOOK_FALLBACK_REBIND)) {
+                [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                        withReplacement:d->replacement
+                               outOldPtr:d->original];
+                // Keep the verified export as the continuation when the rebind
+                // found no slot to journal an original into, so the
+                // replacement can always forward.
+                if(*d->original == NULL) {
+                    *d->original = target;
                 }
+                installed = YES;
             }
 
             // sysctl's shared-cache export (iOS 15) can refuse a safe inline
@@ -3838,29 +3805,21 @@ void shdw_universal_feature_filesystem_metadata(SHDWHookSession* hooks) {
 }
 
 // NULL-original continuations: rows installed with outOldPtr NULL (wait
-// family) forward through the pre-hook dlsym captured below at install.
-// Same shape as the sandbox resolved_fork fallback: the replacement reads
-// the cell per call, and the dlsym policy treats a resolved cell as
-// installed.
-static void* shdw_wait_continuations[4];
-
-static void shdw_libc_resolve_null_original(const char* symbol, void* target) {
-    static const char* const names[] = { "wait4", "waitpid", "wait3", "waitid" };
-
-    for(size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        if(strcmp(symbol, names[i]) == 0) {
-            shdw_wait_continuations[i] = target;
-            return;
-        }
+// family) forward through the pre-hook dlsym captured at install. Same shape
+// as the sandbox resolved_fork fallback: the replacement reads the cell per
+// call, and the dlsym policy treats a resolved cell as installed.
+static void shdw_libc_resolve_null_original(const shdw_hook_desc_t* d,
+                                            void* target) {
+    if(d->continuation) {
+        *d->continuation = target;
     }
 }
 
 void* shdw_libc_null_original(const char* symbol) {
-    static const char* const names[] = { "wait4", "waitpid", "wait3", "waitid" };
-
-    for(size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        if(strcmp(symbol, names[i]) == 0) {
-            return shdw_wait_continuations[i];
+    for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
+        const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
+        if(strcmp(symbol, d->symbol) == 0) {
+            return d->continuation ? *d->continuation : NULL;
         }
     }
 

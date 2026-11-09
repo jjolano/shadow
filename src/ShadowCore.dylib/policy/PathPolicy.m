@@ -1,7 +1,5 @@
-// Path/fd/dirfd classification. All bodies migrated verbatim from
-// hooks/libc.x (and the raw-syscall twin in hooks/syscall.x, which had an
-// identical dirfd resolver); a behavior change here changes every hook
-// surface at once.
+// Path/fd/dirfd classification shared by the libc and raw-syscall hook
+// surfaces; a behavior change here changes every surface at once.
 
 #import "PathPolicy.h"
 
@@ -27,12 +25,6 @@ BOOL shdw_detector_write_policy_is_enabled(void) {
                               memory_order_acquire);
 }
 
-static BOOL shdw_path_is_within(NSString *path, NSString *root) {
-  return path.length && root.length &&
-         ([path isEqualToString:root] ||
-          [path hasPrefix:[root stringByAppendingString:@"/"]]);
-}
-
 BOOL shdw_detector_write_path_denied(NSString *path) {
   if (!shdw_detector_write_policy_is_enabled() || !path.length) {
     return NO;
@@ -55,21 +47,11 @@ BOOL shdw_detector_write_path_denied(NSString *path) {
     if (!absolute.length)
       return NO;
 
-    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
-    if ([bundleID hasPrefix:@"me.jjolano.shadow.test."] &&
-        shdw_path_is_within(absolute,
-                            @"/var/mobile/Documents/ShadowDetectorTests"))
-      return NO;
-    if (shdw_path_is_within(absolute, shadow.bundlePath))
-      return YES;
-    if (shdw_path_is_within(absolute, shadow.homePath))
-      return NO;
-    if (shdw_path_is_within(absolute,
-                            @"/var/mobile/Containers/Shared/AppGroup"))
-      return NO;
-    if ([absolute isEqualToString:@"/dev/null"])
-      return NO;
-    return YES;
+    // The C surface cannot enumerate the engine's context, so it keeps the
+    // broad app-group root the pre-refactor policy used.
+    return SHDWDetectorWritePathDenied(
+        absolute, YES, shadow.hasAppSandbox, shadow.bundlePath, shadow.homePath,
+        nil, @"/var/mobile/Containers/Shared/AppGroup");
   }
 }
 

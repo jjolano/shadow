@@ -4,6 +4,24 @@
 #import "Core.h"
 #import <Foundation/Foundation.h>
 
+// Root aliases the ruleset vocabulary treats as one path. Input must already
+// be slash/dot-normalized and have no trailing slash (except "/" itself).
+static inline NSString *SHDWPathApplyingRootAliases(NSString *path) {
+  if ([path isEqualToString:@"/private/var"] ||
+      [path hasPrefix:@"/private/var/"]) {
+    path = [path substringFromIndex:8];
+  }
+  if ([path isEqualToString:@"/private/etc"] ||
+      [path hasPrefix:@"/private/etc/"]) {
+    path = [path substringFromIndex:8];
+  }
+  // After the /private/var rewrite, /private/var/tmp is /var/tmp.
+  if ([path isEqualToString:@"/var/tmp"] || [path hasPrefix:@"/var/tmp/"]) {
+    path = [path substringFromIndex:4];
+  }
+  return path;
+}
+
 @interface Shadow (Utilities)
 + (NSString *)getStandardizedPath:(NSString *)path;
 + (NSString *)getExecutablePath;

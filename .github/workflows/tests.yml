@@ -51,6 +51,15 @@ jobs:
       - name: Hook→engine matrix drift check
         run: sh tests/verify-hook-matrix.sh
 
+      - name: Hook→engine matrix stale-entry detector
+        run: make -C tests hook-matrix-selftest
+
+      - name: Single plugin registry check
+        run: make -C tests verify-plugin-table
+
+      - name: Rules generation contract
+        run: make -C tests verify-rules-generation
+
       - name: Raw syscall metadata check
         run: sh tests/verify-syscall-meta.sh
 

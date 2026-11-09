@@ -253,8 +253,8 @@ DIR* replaced___opendir2(const char* pathname, int flags) {
 // __opendir2 internally WITHOUT going through the rebindable PLT entry (the
 // fishhook lane only intercepts import-table references), so hooking only
 // __opendir2 leaves the public API visible to detectors that call opendir()
-// directly (observed via the hookprobe battery: opendir("/var/jb") returned
-// a handle while stat/open on the same path were filtered). Hook the public
+// directly (observed on-device: opendir("/var/jb") returned a handle while
+// stat/open on the same path were filtered). Hook the public
 // symbol too; when it is a weak alias of __opendir2 both entries chain to
 // the same replacement, and the guard keeps the redirect idempotent.
 DIR* (*original_opendir)(const char* pathname);

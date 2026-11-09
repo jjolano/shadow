@@ -76,12 +76,11 @@ static BOOL shdw_detect_bat(void) {
 // Apple's DeviceCheck framework is deliberately NOT a signal (benign
 // AppAttest use would de-stealth); the DeviceCheck adapter's detectors are
 // the DTT/SafeDevice/JailMonkey trio below.
-static BOOL shdw_detect_dtt(void);
-static BOOL shdw_detect_safedevice(void);
-static BOOL shdw_detect_jailmonkey(void);
 BOOL shdw_adapter_has_known_detector(void) {
-    return shdw_detect_dtt() || shdw_detect_safedevice() || shdw_detect_jailmonkey() ||
-        shdw_detect_freerasp() || shdw_detect_iossecuritysuite() ||
+    for(NSUInteger i = 0; i < kSHDWDeviceCheckTargetCount; i++) {
+        if(shdw_devicecheck_target_available(kSHDWDeviceCheckTargets[i].target)) return YES;
+    }
+    return shdw_detect_freerasp() || shdw_detect_iossecuritysuite() ||
         shdw_detect_devicesecuritykit() || shdw_detect_bat();
 }
 
@@ -116,14 +115,11 @@ BOOL shdw_devicecheck_target_available(DCHTarget target) {
 
 NSDictionary* shdw_adapter_resolve_preferences(NSDictionary* prefs) {
     NSMutableDictionary* effective = [prefs mutableCopy];
-    NSDictionary<NSString*, NSNumber*>* detected = @{
-        SHDWAdapterDTTJailbreakDetectionID : @(shdw_devicecheck_target_available(DCHTargetDTT)),
-        SHDWAdapterSafeDeviceID : @(shdw_devicecheck_target_available(DCHTargetSafeDevice)),
-        SHDWAdapterJailMonkeyID : @(shdw_devicecheck_target_available(DCHTargetJailMonkey)),
-    };
 
-    for(NSString* key in detected) {
-        effective[key] = @([prefs[key] boolValue] && [detected[key] boolValue]);
+    for(NSUInteger i = 0; i < kSHDWDeviceCheckTargetCount; i++) {
+        NSString* key = kSHDWDeviceCheckTargets[i].prefKey;
+        BOOL available = shdw_devicecheck_target_available(kSHDWDeviceCheckTargets[i].target);
+        effective[key] = @([prefs[key] boolValue] && available);
     }
 
     return [effective copy];

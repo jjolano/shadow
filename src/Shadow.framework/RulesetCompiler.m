@@ -2,10 +2,8 @@
 #import "Ruleset.h"
 #import "RulesetPrivate.h"
 
-// Candidate 5: RulesetCompiler — parse + validate + compile + persist. The
-// matching side stays in Ruleset.m; everything else (including the per-URL
-// last-known-good and the compiled-cache read/write, v2 format untouched)
-// lives here. Framework-internal: not exported, not in exported_symbols.txt.
+// Parse + validate + compile + persist; matching stays in Ruleset.m.
+// Framework-internal: not exported, not in exported_symbols.txt.
 
 // Bumped to 5: v5 structure is a {dirs, paths} pair of sorted flat arrays
 // (was dict-of-dir→children; v4's single flat array broke shallow structures
@@ -34,8 +32,8 @@ static NSNumber *shdw_compiledCacheStamp(NSDictionary *plistAttrs) {
 // Full load path for one ruleset URL: compiled cache first (while the
 // plist's mtime+size are unchanged), then parse + compile, then persist.
 // Per-URL last-known-good: if a later reload fails, keep serving the
-// previously parsed ruleset instead of dropping it. Verbatim move of the old
-// +[RulesetEngine rulesetWithURL:]. Entries are keyed by path and validated
+// previously parsed ruleset instead of dropping it. Entries are keyed by path
+// and validated
 // against the plist's mtime, so a changed file's stale entry is unreachable
 // (and replaced on the next successful compile), and entries whose file no
 // longer exists are evicted on the next compile — the dict stays bounded to
@@ -126,8 +124,7 @@ static id shdwCacheUnwrapNil(id value) {
 
 // Loads and validates the compiled cache for a ruleset URL. Returns nil on a
 // miss, an mtime/size mismatch, an unreadable/corrupt archive, or a
-// type-invalid payload — callers then fall back to parse + compile. Verbatim
-// move of the old +[RulesetEngine _rulesetFromCompiledCacheForURL:].
+// type-invalid payload — callers then fall back to parse + compile.
 + (RulesetEngine *)_rulesetFromCompiledCacheForURL:(NSURL *)url {
   NSString *plistPath = [url path];
   NSDictionary *plistAttrs =
@@ -187,7 +184,7 @@ static id shdwCacheUnwrapNil(id value) {
 // Type-validates and installs the cached compiled state. Returns NO on any
 // type mismatch so the caller falls back to _compile; the cache file is
 // Shadow's own artifact but a corrupt or stale-format file must never crash
-// a lookup. Verbatim move of the old -[RulesetEngine _restoreFromCache:].
+// a lookup.
 + (BOOL)_restoreFromCache:(NSDictionary *)cached
               intoRuleset:(RulesetEngine *)ruleset {
   if (![[cached objectForKey:@"payload"] isKindOfClass:[NSDictionary class]]) {
@@ -316,9 +313,7 @@ static id shdwCacheUnwrapNil(id value) {
 
 // Best-effort archive of the compiled state next to the plist, keyed by the
 // plist's mtime and size. Never fails the compile path: unreadable or
-// read-only rulesets dirs just skip caching. Verbatim move of the old
-// +[RulesetEngine _writeCompiledCacheForRuleset:url:]; v2 format, no v3
-// writer yet.
+// read-only rulesets dirs just skip caching.
 + (void)_writeCompiledCacheForRuleset:(RulesetEngine *)ruleset
                                   url:(NSURL *)url
                               nsMtime:(NSNumber *)nsMtime {
@@ -402,7 +397,6 @@ static id shdwCacheUnwrapNil(id value) {
 
 // Filters a payload value to an NSArray of NSStrings; non-array values and
 // non-string entries are logged and skipped (malformed rulesets never crash).
-// Verbatim move of the old -[RulesetEngine _validatedStringArray:forKey:].
 + (NSArray<NSString *> *)validatedStringArray:(id)value forKey:(NSString *)key {
   if (![value isKindOfClass:[NSArray class]]) {
     if (value) {
@@ -509,8 +503,7 @@ static id shdwCacheUnwrapNil(id value) {
   return result;
 }
 
-// Compiles a ruleset's payload into its lookup tables. Verbatim move of the
-// old -[RulesetEngine _compile].
+// Compiles a ruleset's payload into its lookup tables.
 + (void)_compileRuleset:(RulesetEngine *)ruleset {
   NSDictionary *payload = ruleset.payloadDictionary;
 
@@ -603,8 +596,7 @@ static id shdwCacheUnwrapNil(id value) {
 // Normalizes prefix rules exactly like the old _normalizePaths (trim, strip
 // trailing slash) and groups them by parent directory: parent -> set of full
 // prefixes. A bare "/" entry matches every path (same as hasFilenamePrefix)
-// and is recorded in *outMatchAll instead of the dict. Verbatim move of the
-// old -[RulesetEngine _compilePrefixDict:matchAll:].
+// and is recorded in *outMatchAll instead of the dict.
 + (NSDictionary<NSString *, NSSet<NSString *> *> *)
     compilePrefixDict:(NSArray<NSString *> *)paths
              matchAll:(BOOL *)outMatchAll {

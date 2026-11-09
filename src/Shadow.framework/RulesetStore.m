@@ -59,8 +59,8 @@ _Atomic(uint64_t) shdw_ruleset_generation = 0;
   NSDictionary *attrs =
       [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
   NSDate *mod_date = [attrs fileModificationDate];
-  // ns mtime: iOS gives ns; host harness may be 1s-granularity but we still
-  // store ns
+  // ns mtime: iOS gives ns; host filesystems may be 1s-granularity but we
+  // still store ns
   return mod_date ? [mod_date timeIntervalSince1970] * 1e9 : 0.0;
 }
 

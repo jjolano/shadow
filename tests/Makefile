@@ -92,12 +92,23 @@ verify-environment-storage:
 verify-rules-generation:
 	python3 verify-rules-generation.py
 
+verify-plugin-table:
+	python3 verify-plugin-table.py
+
 verify-binary-compat:
 	bash BinaryCompatTests.sh
 
-test: verify-realpath-buffer verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-mount-filter verify-rebind-repair verify-procargs-filter lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat
+# The matrix's own stale-entry detector must fail on a deliberate drift entry.
+hook-matrix-selftest:
+	@if sh verify-hook-matrix.sh --selftest-drift >/tmp/shadow-matrix-selftest.log 2>&1; then \
+		echo 'MATRIX SELFTEST: stale entry was not detected'; exit 1; \
+	fi
+	@grep -q 'MATRIX STALE' /tmp/shadow-matrix-selftest.log || { \
+		echo 'MATRIX SELFTEST: failure was not the stale-entry path'; exit 1; }
+
+test: verify-realpath-buffer verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-mount-filter verify-rebind-repair verify-procargs-filter lane-contract hook-matrix hook-matrix-selftest syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-plugin-table verify-binary-compat
 
 clean:
 	rm -f harness harness.d
 
-.PHONY: test verify-realpath-buffer verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-procargs-filter verify-mount-filter verify-rebind-repair lane-contract hook-matrix syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-binary-compat clean
+.PHONY: test verify-realpath-buffer verify-path-rewrite verify-at-path-rewrite verify-path-standardize verify-fd-path-freshness verify-proc-policy verify-svc-self-image verify-image-span verify-procargs-filter verify-mount-filter verify-rebind-repair lane-contract hook-matrix hook-matrix-selftest syscall-meta settings-structure jb-identifiers verify-environment-storage verify-rules-generation verify-plugin-table verify-binary-compat clean

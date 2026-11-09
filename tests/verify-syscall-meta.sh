@@ -3,8 +3,8 @@
 #
 #   raw syscalls (hooks/RawSyscalls.def — single source of truth for the
 #   syscall(2)/__syscall(2) intercept set):
-#     - every entry is well-formed with a unique SYS_ number, an ARITY, a
-#       policy CAT and a forwarding shape FWD;
+#     - every entry is well-formed with a unique SYS_ number, a policy CAT,
+#       a forwarding shape FWD, a rewrite lane and an fd-return flag;
 #     - every FWD has a shdw_fwd_<FWD> forwarding body in syscall.x;
 #     - every CAT is a defined SHADW_RAW_CAT_<CAT> category with a dispatch
 #       case in syscall.x;
@@ -48,21 +48,53 @@ awk -v def="$DEF" -v syscall="$SYSCALL" '
     function has(needle,    s) { s = getfile(syscall); return index(s, needle) > 0 }
     function getfile(path,    s, line) { s = ""; while ((getline line < path) > 0) s = s line "\n"; close(path); return s }
     BEGIN {
+        # Natural-ENOENT rewrite lane: 1 = always, 2 = only without O_CREAT.
+        # Every other intercepted number must stay 0.
+        rw["SYS_access"] = 1; rw["SYS_stat"] = 1; rw["SYS_lstat"] = 1
+        rw["SYS_stat64"] = 1; rw["SYS_lstat64"] = 1
+        rw["SYS_stat_extended"] = 1; rw["SYS_lstat_extended"] = 1
+        rw["SYS_stat64_extended"] = 1; rw["SYS_lstat64_extended"] = 1
+        rw["SYS_getattrlist"] = 1; rw["SYS_getxattr"] = 1
+        rw["SYS_listxattr"] = 1; rw["SYS_readlink"] = 1
+        rw["SYS_pathconf"] = 1; rw["SYS_fstatat"] = 1
+        rw["SYS_fstatat64"] = 1; rw["SYS_execve"] = 1
+        rw["SYS_open"] = 2; rw["SYS_open_extended"] = 2
+        rw["SYS_openat"] = 2
+        # FD-returning open family: the raw dispatch verifies the returned
+        # descriptor after success. Every other intercepted number returns 0.
+        fdret["SYS_open"] = 1; fdret["SYS_open_nocancel"] = 1
+        fdret["SYS_open_extended"] = 1; fdret["SYS_open_dprotected_np"] = 1
+        fdret["SYS_openat"] = 1; fdret["SYS_openat_nocancel"] = 1
         n = 0
         while ((getline line < def) > 0) {
             gsub(/^[ \t]+|[ \t]+$/, "", line)
             if (line == "" || line ~ /^\/\// || line ~ /^#/) continue
-            if (line !~ /^SHADW_RAWSYSCALL\(SYS_[A-Za-z0-9_]+,[ \t]*[0-9]+,[ \t]*[A-Z0-9_]+,[ \t]*[A-Z0-9_]+\)$/) {
+            if (line !~ /^SHADW_RAWSYSCALL\(SYS_[A-Za-z0-9_]+,[ \t]*[A-Z0-9_]+,[ \t]*[A-Z0-9_]+,[ \t]*[0-2],[ \t]*[01]\)$/) {
                 printf "META FAIL: malformed def entry: %s\n", line
                 exit 2
             }
             split(line, f, /[(),]+/)
-            num = f[2]; cat = f[4]; fwd = f[5]
+            num = f[2]; cat = f[3]; fwd = f[4]; rewrite = f[5]; fd = f[6]
             gsub(/^[ \t]+|[ \t]+$/, "", num)
             gsub(/^[ \t]+|[ \t]+$/, "", cat)
             gsub(/^[ \t]+|[ \t]+$/, "", fwd)
+            gsub(/^[ \t]+|[ \t]+$/, "", rewrite)
+            gsub(/^[ \t]+|[ \t]+$/, "", fd)
             if (seen[num]++) {
                 printf "META FAIL: duplicate syscall %s in %s\n", num, def
+                exit 2
+            }
+            if ((num in rw) && rewrite != rw[num]) {
+                printf "META FAIL: %s rewrite lane is %s, expected %s\n", num, rewrite, rw[num]
+                exit 2
+            }
+            if (!(num in rw) && rewrite != 0) {
+                printf "META FAIL: %s is not rewriteable but has lane %s\n", num, rewrite
+                exit 2
+            }
+            expected_fd = (num in fdret) ? 1 : 0
+            if (fd != expected_fd) {
+                printf "META FAIL: %s fd-return flag is %s, expected %s\n", num, fd, expected_fd
                 exit 2
             }
             n++
@@ -80,9 +112,30 @@ awk -v def="$DEF" -v syscall="$SYSCALL" '
             }
         }
         if (n == 0) { printf "META FAIL: no entries parsed from %s\n", def; exit 2 }
+        for (expected in rw) {
+            if (!(expected in seen)) {
+                printf "META FAIL: rewriteable syscall %s is missing from %s\n", expected, def
+                exit 2
+            }
+        }
+        for (expected in fdret) {
+            if (!(expected in seen)) {
+                printf "META FAIL: fd-returning syscall %s is missing from %s\n", expected, def
+                exit 2
+            }
+        }
         printf "raw syscalls: %d intercepted numbers, all with forwarding + policy metadata\n", n
     }
 ' || rc=1
+
+# the raw-svc natural-ENOENT rewrite set must derive from the same def (no
+# second syscall-number list), and open-family rewrites must stay O_CREAT-aware
+svc="$HOOKDIR/Universal/svc_patch.x"
+svc_rewrite=$(sed -n '/^static BOOL shdw_svc_rewriteable/,/^}/p' "$svc")
+if ! printf '%s\n' "$svc_rewrite" | grep -q 'RawSyscalls.def' ||
+   ! printf '%s\n' "$svc_rewrite" | grep -q 'O_CREAT'; then
+    fail "svc rewrite eligibility is not def-derived or lost its O_CREAT gate"
+fi
 
 # both trampolines must derive the passthrough from the def
 for fn in replaced_syscall replaced___syscall; do
