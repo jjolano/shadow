@@ -1638,6 +1638,9 @@ static void* replaced_dlsym(void* handle, const char* symbol) {
         // every fishhook-rebound export resolves to its replacement — the
         // GOT-vs-dlsym comparison then agrees for those symbols too.
         void* extra = shdw_sym_policy_lookup_libc(symbol);
+        if(!extra) {
+            extra = shdw_sym_policy_lookup_syscall(symbol);
+        }
 
         if(!extra) {
             extra = shdw_sym_policy_lookup_mach(symbol);
@@ -1837,6 +1840,9 @@ static void* shdw_cfbundle_attributed(void* addr, CFStringRef symbolName) {
             // Same per-file fallback as replaced_dlsym: fishhook-rebound
             // libc/mach/sandbox/mem exports resolve to their replacements.
             void* extra = shdw_sym_policy_lookup_libc(name);
+            if(!extra) {
+                extra = shdw_sym_policy_lookup_syscall(name);
+            }
 
             if(!extra) {
                 extra = shdw_sym_policy_lookup_mach(name);

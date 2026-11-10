@@ -10,8 +10,13 @@
 #import <limits.h>
 #import <stdatomic.h>
 #import <string.h>
+#import <stdlib.h>
 #import <sys/stat.h>
 #import <unistd.h>
+#import <stdint.h>
+#import <mach/mach.h>
+#import <mach/vm_map.h>
+#import <sys/mman.h>
 
 static _Atomic BOOL shdw_detector_write_policy_active = NO;
 
@@ -1308,4 +1313,153 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char *pathname,
       stringByAppendingPathComponent:targetString] stringByStandardizingPath];
 
   return [_shadow isCPathRestricted:[joined fileSystemRepresentation]];
+}
+
+shdw_accessx_snapshot_status_t shdw_accessx_snapshot(
+    const void *entries, size_t size, void **snapshot) {
+  if (!snapshot) {
+    return SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE;
+  }
+  *snapshot = NULL;
+  if (size < 18 || size > 16 * 1024) {
+    return SHDW_ACCESSX_SNAPSHOT_MALFORMED;
+  }
+
+  void *copy = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                    MAP_ANON | MAP_PRIVATE, -1, 0);
+  if (copy == MAP_FAILED) {
+    return SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE;
+  }
+
+  vm_size_t copied = 0;
+  kern_return_t kr = vm_read_overwrite(
+      mach_task_self(), (vm_address_t)(uintptr_t)entries, (vm_size_t)size,
+      (vm_address_t)(uintptr_t)copy, &copied);
+  if (kr != KERN_SUCCESS || copied != (vm_size_t)size) {
+    munmap(copy, size);
+    if (kr == KERN_INVALID_ADDRESS || kr == KERN_PROTECTION_FAILURE ||
+        (kr == KERN_SUCCESS && copied != (vm_size_t)size)) {
+      return SHDW_ACCESSX_SNAPSHOT_SOURCE_FAULT;
+    }
+    return SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE;
+  }
+  *snapshot = copy;
+  return SHDW_ACCESSX_SNAPSHOT_READY;
+}
+
+size_t shdw_accessx_filter(const void *entries, size_t size, int *results) {
+  const size_t kDescSize = 16;
+  const size_t kMaxTableSize = 16 * 1024;
+  const size_t kMaxDescriptors = 100;
+
+  if (!entries || !results || size < kDescSize + 2 ||
+      size > kMaxTableSize) {
+    return 0;
+  }
+
+  const unsigned char *base = (const unsigned char *)entries;
+  size_t desc_max = (size - 2) / kDescSize;
+  size_t desc_actual = desc_max;
+
+  // First pass: same validation and downward adjustment as the kernel, so
+  // the slots this function touches are exactly the ones it answered.
+  for (size_t i = 0; i < desc_actual; i++) {
+    uint32_t offset;
+    memcpy(&offset, base + i * kDescSize, sizeof(offset));
+    size_t j = (size_t)offset / kDescSize;
+
+    if (j > desc_max || (j != 0 && j <= i) || offset >= size) {
+      return 0; // a shape the kernel would have rejected: nothing was written
+    }
+    if (j == 0) {
+      if (i == 0) {
+        return 0; // a first-slot chain is EINVAL
+      }
+      continue;
+    }
+    if (j < desc_actual) {
+      desc_actual = j;
+    }
+  }
+
+  if (desc_actual == 0 || desc_actual > kMaxDescriptors) {
+    return 0; // the kernel caps this at ENOMEM; a success cannot exceed it
+  }
+
+  BOOL chain_external_hidden = NO;
+  BOOL chain_ruleset_hidden = NO;
+
+  for (size_t i = 0; i < desc_actual; i++) {
+    uint32_t offset;
+    memcpy(&offset, base + i * kDescSize, sizeof(offset));
+
+    if (offset == 0) {
+      int current_result;
+      memcpy(&current_result, (unsigned char *)results + i * sizeof(int),
+             sizeof(current_result));
+      if (chain_external_hidden ||
+          (chain_ruleset_hidden && current_result == 0)) {
+        int err = ENOENT;
+        memcpy((unsigned char *)results + i * sizeof(int), &err, sizeof(err));
+      }
+      continue;
+    }
+
+    // Keep the name bound inside the copied entry buffer.
+    if (offset >= size) {
+      chain_external_hidden = NO;
+      chain_ruleset_hidden = NO;
+      continue;
+    }
+
+    // XNU NUL-terminates its private copy at size-1; bound the caller's
+    // spelling there, then classify a NUL-terminated local copy. A name too
+    // long to bound is left to the kernel's own answer (fail open; the
+    // kernel's path limit already rejected it).
+    size_t maxlen = size - 1 - (size_t)offset;
+    const char *path = (const char *)(base + offset);
+    size_t len = strnlen(path, maxlen);
+
+    if (len >= PATH_MAX) {
+      chain_external_hidden = NO;
+      chain_ruleset_hidden = NO;
+      continue;
+    }
+
+    char name[PATH_MAX];
+    size_t copy = (len == maxlen) ? maxlen : len;
+    memcpy(name, path, copy);
+    name[copy] = '\0';
+
+    if (shdw_path_is_main_bundle_exempt(name)) {
+      chain_external_hidden = NO;
+      chain_ruleset_hidden = NO;
+      continue;
+    }
+
+    chain_external_hidden = shdw_path_is_external_hidden(name);
+    chain_ruleset_hidden = [_shadow isCPathRestricted:name];
+
+    int current_result;
+    memcpy(&current_result, (unsigned char *)results + i * sizeof(int),
+           sizeof(current_result));
+    if (chain_external_hidden ||
+        (chain_ruleset_hidden && current_result == 0)) {
+      int err = ENOENT;
+      memcpy((unsigned char *)results + i * sizeof(int), &err, sizeof(err));
+    }
+  }
+  return desc_actual;
+}
+
+BOOL shdw_accessx_write_results(int *results, const int *private_results,
+                                size_t count) {
+  if (!results || !private_results || count == 0 || count > 100) {
+    return NO;
+  }
+
+  size_t bytes = count * sizeof(*private_results);
+  return vm_write(mach_task_self(), (vm_address_t)(uintptr_t)results,
+                  (vm_offset_t)(uintptr_t)private_results,
+                  (mach_msg_type_number_t)bytes) == KERN_SUCCESS;
 }

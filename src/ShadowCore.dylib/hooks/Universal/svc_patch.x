@@ -27,6 +27,9 @@
 #import <fcntl.h>
 #import <string.h>
 #import <unistd.h>
+#import <errno.h>
+#import <sys/mman.h>
+
 
 #if defined(__arm64__)
 
@@ -56,11 +59,70 @@ static BOOL shdw_svc_rewriteable(int sysno, uint64_t flags) {
 // --- Trampoline helper ------------------------------------------------------
 // Runs with the app's registers saved on the stack (see the trampoline
 // asm). A normal C function: may clobber x0-x18/lr freely, must preserve
-// x19-x28 (the compiler does). Returns 0 = allow (execute the original
-// svc), otherwise the errno the trampoline synthesizes with carry set
-// (ENOENT for the path shapes, ESRCH for the kevent liveness shapes).
+// x19-x28 (the compiler does). The precheck returns zero = allow, positive
+// errno = synthesize an error, or -1 = route ACCESSX through its C helper.
 // Plain C linkage (Logos emits ObjC .m, no mangling), so the inline-asm
-// `bl _shdw_svc_should_deny` resolves.
+// `bl` symbols resolve.
+// Run ACCESSX through syscall(2) from ShadowCore itself: the syscall hook
+// sees this as an internal call and forwards the private buffers unchanged.
+static int shdw_svc_accessx_snapshot_error(
+    shdw_accessx_snapshot_status_t status, size_t size) {
+    switch(status) {
+        case SHDW_ACCESSX_SNAPSHOT_READY:
+            return 0;
+        case SHDW_ACCESSX_SNAPSHOT_MALFORMED:
+            return size > (16 * 1024) ? ENOMEM : EINVAL;
+        case SHDW_ACCESSX_SNAPSHOT_SOURCE_FAULT:
+            return EFAULT;
+        case SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE:
+            return ENOENT;
+    }
+    return ENOENT;
+}
+
+__attribute__((used, noinline)) int shdw_svc_accessx(
+    const void *entries, size_t size, int *results, uid_t uid,
+    uintptr_t caller_lr) {
+    if(!shdw_caller_is_external((const void*)caller_lr)) {
+        return ENOENT;
+    }
+
+    int caller_errno = errno;
+    int private_results[128] = {0};
+    void *snapshot = NULL;
+    shdw_accessx_snapshot_status_t status =
+        shdw_accessx_snapshot(entries, size, &snapshot);
+    int snapshot_error = shdw_svc_accessx_snapshot_error(status, size);
+    if(snapshot_error != 0) {
+        errno = caller_errno;
+        return snapshot_error;
+    }
+
+
+    int result = (int)syscall(SYS_access_extended, snapshot, size,
+                              private_results, uid);
+    int final_errno = errno;
+    if(result == 0) {
+        size_t count = shdw_accessx_filter(snapshot, size, private_results);
+        if(count == 0) {
+            result = -1;
+            final_errno = ENOENT;
+        } else if(!shdw_accessx_write_results(results, private_results, count)) {
+            result = -1;
+            final_errno = EFAULT;
+        }
+    }
+
+    munmap(snapshot, size);
+    if(result == 0) {
+        errno = caller_errno;
+        return 0;
+    }
+    errno = caller_errno;
+    return final_errno;
+}
+
+
 __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_t a0, uint64_t a1, uint64_t a2, uintptr_t caller_lr) {
     // The patched site is in app/detector code by construction (system and
     // Shadow images are never scanned), but keep the same caller gate the
@@ -72,6 +134,13 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
     }
 
     shdw_raw_syscall_category_t cat = shdw_raw_syscall_category((int)sysno);
+
+    if(cat == SHADW_RAW_CAT_ACCESSX) {
+        // The trampoline routes this external call through the shared
+        // snapshot/private-results/filter/copyout path after the policy gate.
+        return -1;
+    }
+
 
     if(cat == SHADW_RAW_CAT_PATH) {
         const char* path = (const char*)a0;
@@ -243,39 +312,65 @@ __attribute__((used, noinline)) int shdw_svc_should_deny(uint64_t sysno, uint64_
         /* per-site stub passes the site in x17 (slot 24) because the stub's */ \
         /* own bl overwrote lr. */ \
         "ldr x4, [sp, #" LR_SLOT "]\n" \
-        "bl _shdw_svc_should_deny\n" \
-        "cbz x0, 1f\n" \
-        /* deny: x0 already holds the errno to synthesize (ENOENT for the */ \
-        /* path shapes, ESRCH for kevent) — set carry (Darwin's kernel */ \
-        /* error convention) and return, keeping x0 */ \
-        "mov x1, #0x20000000\n" \
-        "msr nzcv, x1\n" \
-        "ldp x18, lr, [sp], #16\n" \
-        "ldp x16, x17, [sp], #16\n" \
-        "ldp x14, x15, [sp], #16\n" \
-        "ldp x12, x13, [sp], #16\n" \
-        "ldp x10, x11, [sp], #16\n" \
-        "ldp x8, x9, [sp], #16\n" \
-        "ldp x6, x7, [sp], #16\n" \
-        "ldp x4, x5, [sp], #16\n" \
-        "ldp x2, x3, [sp], #16\n" \
-        "ldr x1, [sp, #8]\n" \
-        "add sp, sp, #16\n" \
-        "ret\n" \
-        "1:\n" \
-        /* allow: restore everything, execute the original svc */ \
-        "ldp x18, lr, [sp], #16\n" \
-        "ldp x16, x17, [sp], #16\n" \
-        "ldp x14, x15, [sp], #16\n" \
-        "ldp x12, x13, [sp], #16\n" \
-        "ldp x10, x11, [sp], #16\n" \
-        "ldp x8, x9, [sp], #16\n" \
-        "ldp x6, x7, [sp], #16\n" \
-        "ldp x4, x5, [sp], #16\n" \
-        "ldp x2, x3, [sp], #16\n" \
-        "ldp x0, x1, [sp], #16\n" \
-        "svc #" IMM "\n" \
-        "ret\n" \
+"bl _shdw_svc_should_deny\n" \
+"cmn w0, #1\n" \
+"b.eq 3f\n" \
+"cbz w0, 1f\n" \
+/* deny: x0 holds errno; set carry and preserve x0. */ \
+"2:\n" \
+"mov x1, #0x20000000\n" \
+"msr nzcv, x1\n" \
+"ldp x18, lr, [sp], #16\n" \
+"ldp x16, x17, [sp], #16\n" \
+"ldp x14, x15, [sp], #16\n" \
+"ldp x12, x13, [sp], #16\n" \
+"ldp x10, x11, [sp], #16\n" \
+"ldp x8, x9, [sp], #16\n" \
+"ldp x6, x7, [sp], #16\n" \
+"ldp x4, x5, [sp], #16\n" \
+"ldp x2, x3, [sp], #16\n" \
+"ldr x1, [sp, #8]\n" \
+"add sp, sp, #16\n" \
+"ret\n" \
+/* ACCESSX helper performs the syscall and returns errno (or zero). */ \
+"3:\n" \
+"ldr x0, [sp, #144]\n" \
+"ldr x1, [sp, #152]\n" \
+"ldr x2, [sp, #128]\n" \
+"ldr x3, [sp, #136]\n" \
+"ldr x4, [sp, #" LR_SLOT "]\n" \
+"bl _shdw_svc_accessx\n" \
+"cbz w0, 4f\n" \
+"b 2b\n" \
+"4:\n" \
+"msr nzcv, xzr\n" \
+"ldp x18, lr, [sp], #16\n" \
+"ldp x16, x17, [sp], #16\n" \
+"ldp x14, x15, [sp], #16\n" \
+"ldp x12, x13, [sp], #16\n" \
+"ldp x10, x11, [sp], #16\n" \
+"ldp x8, x9, [sp], #16\n" \
+"ldp x6, x7, [sp], #16\n" \
+"ldp x4, x5, [sp], #16\n" \
+"ldp x2, x3, [sp], #16\n" \
+"ldr x1, [sp, #8]\n" \
+"add sp, sp, #16\n" \
+"mov x0, #0\n" \
+"ret\n" \
+"1:\n" \
+/* allow: restore everything, execute the original svc */ \
+"ldp x18, lr, [sp], #16\n" \
+"ldp x16, x17, [sp], #16\n" \
+"ldp x14, x15, [sp], #16\n" \
+"ldp x12, x13, [sp], #16\n" \
+"ldp x10, x11, [sp], #16\n" \
+"ldp x8, x9, [sp], #16\n" \
+"ldp x6, x7, [sp], #16\n" \
+"ldp x4, x5, [sp], #16\n" \
+"ldp x2, x3, [sp], #16\n" \
+"ldp x0, x1, [sp], #16\n" \
+"svc #" IMM "\n" \
+"ret\n" \
     )
 
 #define SHADW_SVC_TRAMPOLINE(NAME, IMM, LR_SLOT) \

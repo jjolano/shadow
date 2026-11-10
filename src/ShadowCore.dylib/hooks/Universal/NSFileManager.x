@@ -56,6 +56,45 @@ static NSDictionary* _shdw_writeOptions(NSFileManager* fm, BOOL allAbsolute) {
              kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
 }
 
+static NSDictionary* _shdw_writeNoFollowOptions(NSFileManager* fm, BOOL allAbsolute) {
+    if(allAbsolute) {
+        return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite,
+                 kShadowRestrictionNoFollow : @YES};
+    }
+
+    return @{kShadowRestrictionOperation : kShadowRestrictionOpWrite,
+             kShadowRestrictionNoFollow : @YES,
+             kShadowRestrictionWorkingDir : [fm currentDirectoryPath]};
+}
+
+static BOOL shdw_foundation_path_denied(NSFileManager* fm, NSString* path, NSDictionary* options, BOOL nofollow) {
+    if(!path) {
+        return NO;
+    }
+    NSString* absolute = [path isAbsolutePath] ? path : [[fm currentDirectoryPath] stringByAppendingPathComponent:path];
+    const char* cpath = [absolute UTF8String];
+    if(cpath && shdw_path_is_main_bundle_exempt(cpath)) {
+        return NO;
+    }
+    BOOL externalHidden = nofollow
+        ? shdw_path_is_external_hidden_nofollow(cpath)
+        : shdw_path_is_external_hidden(cpath);
+    if(externalHidden) {
+        return YES;
+    }
+    NSDictionary* policyOptions = options;
+    if(nofollow && ![options[kShadowRestrictionNoFollow] boolValue]) {
+        NSMutableDictionary* merged = options ? [options mutableCopy] : [NSMutableDictionary dictionary];
+        merged[kShadowRestrictionNoFollow] = @YES;
+        policyOptions = merged;
+    }
+    return [_shadow isPathRestricted:path options:policyOptions];
+}
+
+static BOOL shdw_foundation_url_denied(NSURL* url, NSDictionary* options, BOOL nofollow) {
+    return url.isFileURL && shdw_foundation_path_denied([NSFileManager defaultManager], url.path, options, nofollow);
+}
+
 // Enumeration results consult the same hidden set the point lookups hide:
 // a listed entry the access()/stat() hooks report absent must not survive
 // a listing. The ruleset filters below cannot see these objects by design,
@@ -232,7 +271,7 @@ static NSArray* shdw_enumerator_filter_all(NSArray* array, NSString* base) {
 // runs inside the internal scope so Shadow's own opendir/readdir hooks pass
 // it through unfiltered. Depth-capped; fails open (NO) on any error, since
 // the site's root check already denied the directly-restricted case.
-static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary* options, int depth) {
+static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary* options, int depth, BOOL nofollow) {
     if(!path || depth > 64) {
         return NO;
     }
@@ -260,11 +299,17 @@ static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary
                 @autoreleasepool {
                     NSString* child = [path stringByAppendingPathComponent:@(entry->d_name)];
 
-                    // Any restricted descendant — a file or a directory — denies.
-                    if([_shadow isPathRestricted:child options:options]) {
+                    NSString* absoluteChild = child;
+                    if(![absoluteChild isAbsolutePath]) {
+                        NSString* workingDir = options[kShadowRestrictionWorkingDir];
+                        if(workingDir.length) {
+                            absoluteChild = [workingDir stringByAppendingPathComponent:absoluteChild];
+                        }
+                    }
+                    if(shdw_foundation_path_denied([NSFileManager defaultManager], absoluteChild, options, nofollow)) {
                         restricted = YES;
                     } else if(lstat(child.UTF8String, &st) == 0 && S_ISDIR(st.st_mode)
-                        && shdw_has_restricted_descendant_internal(child, options, depth + 1)) {
+                        && shdw_has_restricted_descendant_internal(child, options, depth + 1, nofollow)) {
                         restricted = YES;
                     }
                 }
@@ -283,8 +328,8 @@ static BOOL shdw_has_restricted_descendant_internal(NSString* path, NSDictionary
     return restricted;
 }
 
-static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options) {
-    return shdw_has_restricted_descendant_internal(path, options, 0);
+static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options, BOOL nofollow) {
+    return shdw_has_restricted_descendant_internal(path, options, 0, nofollow);
 }
 
 %group shadowhook_NSFileManager
@@ -534,9 +579,9 @@ static BOOL shdw_has_restricted_descendant(NSString* path, NSDictionary* options
         return %orig;
     }
 
-    if([_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+    if(shdw_foundation_path_denied(self, path, _shdw_optionsForAbsolute(self, [path isAbsolutePath]), NO)) {
         if(error) {
-            *error = [Shadow fileNoSuchFileErrorForPath:path];
+            *error = [Shadow fileErrorWithCode:NSFileReadNoSuchFileError path:path url:nil];
         }
 
         return nil;
@@ -722,16 +767,28 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary<NSFileAttributeKey, id> *)attributesOfFileSystemForPath:(NSString *)path error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
-        if(error) {
-            *error = [Shadow fileNoSuchFileErrorForPath:path];
+    if(isCallerExternal()) {
+        const char* cpath = path.fileSystemRepresentation;
+        if(cpath && shdw_path_is_main_bundle_exempt(cpath)) {
+            return %orig;
         }
-
-        return nil;
+        if(cpath && shdw_path_is_external_hidden(cpath)) {
+            if(error) {
+                *error = [Shadow fileErrorWithCode:NSFileReadNoSuchFileError path:path url:nil];
+            }
+            return nil;
+        }
+        if([_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
+            if(error) {
+                *error = [Shadow fileErrorWithCode:NSFileReadNoSuchFileError path:path url:nil];
+            }
+            return nil;
+        }
     }
 
     return %orig;
 }
+
 
 - (BOOL)getRelationship:(NSURLRelationship *)outRelationship ofDirectoryAtURL:(NSURL *)directoryURL toItemAtURL:(NSURL *)otherURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal() && ([_shadow isURLRestricted:directoryURL options:nil] || [_shadow isURLRestricted:otherURL options:nil])) {
@@ -778,8 +835,15 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (NSDictionary *)fileSystemAttributesAtPath:(NSString *)path __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])]) {
-        return nil;
+    if(isCallerExternal()) {
+        const char* cpath = path.fileSystemRepresentation;
+        if(cpath && shdw_path_is_main_bundle_exempt(cpath)) {
+            return %orig;
+        }
+        if(cpath && (shdw_path_is_external_hidden(cpath)
+                     || [_shadow isPathRestricted:path options:_shdw_optionsForAbsolute(self, [path isAbsolutePath])])) {
+            return nil;
+        }
     }
 
     return %orig;
@@ -827,7 +891,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)replaceItemAtURL:(NSURL *)originalItemURL withItemAtURL:(NSURL *)newItemURL backupItemName:(NSString *)backupItemName options:(NSFileManagerItemReplacementOptions)options resultingItemURL:(NSURL * _Nullable *)resultingURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && ([_shadow isURLRestricted:originalItemURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:newItemURL options:shdw_restriction_write_options()])) {
+    if(isCallerExternal() && (shdw_foundation_url_denied(originalItemURL, shdw_restriction_write_options(), YES) || shdw_foundation_url_denied(newItemURL, shdw_restriction_write_options(), YES))) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
@@ -838,7 +902,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Subtree preflight: replacing a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
     if(isCallerExternal() && [originalItemURL isFileURL]
-        && shdw_has_restricted_descendant([originalItemURL path], shdw_restriction_write_options())) {
+        && shdw_has_restricted_descendant([originalItemURL path], shdw_restriction_write_options(), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:originalItemURL];
         }
@@ -850,7 +914,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)copyItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
+    if(isCallerExternal() && (shdw_foundation_url_denied(srcURL, nil, NO) || shdw_foundation_url_denied(dstURL, _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES))) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -861,7 +925,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Subtree preflight: copying a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
     if(isCallerExternal() && [srcURL isFileURL]
-        && shdw_has_restricted_descendant([srcURL path], nil)) {
+        && shdw_has_restricted_descendant([srcURL path], nil, NO)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -874,8 +938,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)copyItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
-        if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
-            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
+        if(shdw_foundation_path_denied(self, srcPath, _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath]), NO)
+            || shdw_foundation_path_denied(self, dstPath, _shdw_writeNoFollowOptions(self, [dstPath isAbsolutePath]), YES)) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -885,7 +949,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
         // Subtree preflight: copying a directory that contains a restricted
         // descendant must be denied even when the root itself is allowed.
-        if(shdw_has_restricted_descendant(srcPath, _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath]))) {
+        if(shdw_has_restricted_descendant(srcPath, _shdw_optionsForAbsolute(self, [srcPath isAbsolutePath]), NO)) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -898,7 +962,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)moveItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:shdw_restriction_write_options()] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
+    if(isCallerExternal() && (shdw_foundation_url_denied(srcURL, shdw_restriction_write_options(), YES) || shdw_foundation_url_denied(dstURL, shdw_restriction_write_options(), YES))) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -909,7 +973,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Subtree preflight: moving a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
     if(isCallerExternal() && [srcURL isFileURL]
-        && shdw_has_restricted_descendant([srcURL path], shdw_restriction_write_options())) {
+        && shdw_has_restricted_descendant([srcURL path], shdw_restriction_write_options(), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -922,8 +986,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)moveItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
-        if([_shadow isPathRestricted:srcPath options:_shdw_writeOptions(self, [srcPath isAbsolutePath])]
-            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
+        if(shdw_foundation_path_denied(self, srcPath, _shdw_writeNoFollowOptions(self, [srcPath isAbsolutePath]), YES)
+            || shdw_foundation_path_denied(self, dstPath, _shdw_writeNoFollowOptions(self, [dstPath isAbsolutePath]), YES)) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -933,7 +997,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
         // Subtree preflight: moving a directory that contains a restricted
         // descendant must be denied even when the root itself is allowed.
-        if(shdw_has_restricted_descendant(srcPath, _shdw_writeOptions(self, [srcPath isAbsolutePath]))) {
+        if(shdw_has_restricted_descendant(srcPath, _shdw_writeNoFollowOptions(self, [srcPath isAbsolutePath]), YES)) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -1065,7 +1129,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)linkItemAtURL:(NSURL *)srcURL toURL:(NSURL *)dstURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && ([_shadow isURLRestricted:srcURL options:nil] || [_shadow isURLRestricted:dstURL options:shdw_restriction_write_options()])) {
+    if(isCallerExternal() && (shdw_foundation_url_denied(srcURL, nil, YES) || shdw_foundation_url_denied(dstURL, _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES))) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:srcURL];
         }
@@ -1078,8 +1142,8 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
 - (BOOL)linkItemAtPath:(NSString *)srcPath toPath:(NSString *)dstPath error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
     if(isCallerExternal()) {
-        if([_shadow isPathRestricted:srcPath options:_shdw_optionsForAbsolute(self, [srcPath isAbsolutePath])]
-            || [_shadow isPathRestricted:dstPath options:_shdw_writeOptions(self, [dstPath isAbsolutePath])]) {
+        if(shdw_foundation_path_denied(self, srcPath, _shdw_optionsForNoFollow(self, [srcPath isAbsolutePath]), YES)
+            || shdw_foundation_path_denied(self, dstPath, _shdw_writeNoFollowOptions(self, [dstPath isAbsolutePath]), YES)) {
             if(error) {
                 *error = [Shadow fileNoSuchFileErrorForPath:srcPath];
             }
@@ -1092,7 +1156,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeFileAtPath:(NSString *)path handler:(id)handler __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && shdw_foundation_path_denied(self, path, _shdw_writeNoFollowOptions(self, [path isAbsolutePath]), YES)) {
         return NO;
     }
 
@@ -1108,7 +1172,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtURL:(NSURL *)url withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
+    if(isCallerExternal() && shdw_foundation_url_denied(url, _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -1120,7 +1184,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)createDirectoryAtPath:(NSString *)path withIntermediateDirectories:(BOOL)createIntermediates attributes:(NSDictionary<NSFileAttributeKey, id> *)attributes error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && shdw_foundation_path_denied(self, path, _shdw_writeNoFollowOptions(self, [path isAbsolutePath]), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -1140,7 +1204,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtURL:(NSURL *)URL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isURLRestricted:URL options:shdw_restriction_write_options()]) {
+    if(isCallerExternal() && shdw_foundation_url_denied(URL, _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
@@ -1151,7 +1215,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Subtree preflight: removing a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
     if(isCallerExternal() && [URL isFileURL]
-        && shdw_has_restricted_descendant([URL path], shdw_restriction_write_options())) {
+        && shdw_has_restricted_descendant([URL path], _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:URL];
         }
@@ -1163,7 +1227,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)removeItemAtPath:(NSString *)path error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isPathRestricted:path options:_shdw_writeOptions(self, [path isAbsolutePath])]) {
+    if(isCallerExternal() && shdw_foundation_path_denied(self, path, _shdw_writeNoFollowOptions(self, [path isAbsolutePath]), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -1173,7 +1237,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 
     // Subtree preflight: removing a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
-    if(isCallerExternal() && shdw_has_restricted_descendant(path, _shdw_writeOptions(self, [path isAbsolutePath]))) {
+    if(isCallerExternal() && shdw_has_restricted_descendant(path, _shdw_writeNoFollowOptions(self, [path isAbsolutePath]), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForPath:path];
         }
@@ -1185,7 +1249,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
 }
 
 - (BOOL)trashItemAtURL:(NSURL *)url resultingItemURL:(NSURL * _Nullable *)outResultingURL error:(NSError * _Nullable *)error __attribute__((annotate("hookkit:allow_inherited"))) {
-    if(isCallerExternal() && [_shadow isURLRestricted:url options:shdw_restriction_write_options()]) {
+    if(isCallerExternal() && shdw_foundation_url_denied(url, _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }
@@ -1196,7 +1260,7 @@ static NSString* _shdw_resolveLinkDestination(NSString* linkPath, NSString* dest
     // Subtree preflight: trashing a directory that contains a restricted
     // descendant must be denied even when the root itself is allowed.
     if(isCallerExternal() && [url isFileURL]
-        && shdw_has_restricted_descendant([url path], shdw_restriction_write_options())) {
+        && shdw_has_restricted_descendant([url path], _shdw_writeNoFollowOptions([NSFileManager defaultManager], YES), YES)) {
         if(error) {
             *error = [Shadow fileNoSuchFileErrorForURL:url];
         }

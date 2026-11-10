@@ -8,10 +8,12 @@
 #import <stdlib.h>
 #import <unistd.h>
 #import <limits.h>
+#import <sys/mman.h>
 #import <sys/xattr.h>
 #import <sys/resource.h>
 #import <sys/attr.h>
 #import <sys/stdio.h>
+#import <sys/mount.h>
 #import <sys/snapshot.h>
 #import <copyfile.h>
 #import <sys/clonefile.h>
@@ -123,6 +125,63 @@ static int replaced_access(const char* pathname, int mode) {
 
     errno = result_errno;
     return result;
+}
+
+static int (*original_accessx_np)(const void* entries, size_t size, int* results, uid_t uid);
+static int (*original_access_extended)(const void* entries, size_t size, int* results, uid_t uid);
+
+static int shdw_accessx_call(const void* entries, size_t size, int* results, uid_t uid,
+                             int (*original)(const void*, size_t, int*, uid_t)) {
+    int caller_errno = errno;
+    int private_results[128] = {0};
+    void *snapshot = NULL;
+    shdw_accessx_snapshot_status_t status =
+        shdw_accessx_snapshot(entries, size, &snapshot);
+    if(status == SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    const void *input = status == SHDW_ACCESSX_SNAPSHOT_READY ? snapshot : entries;
+    int result = original(input, size, private_results, uid);
+    int final_errno = errno;
+    if(result == 0) {
+        if(status != SHDW_ACCESSX_SNAPSHOT_READY) {
+            result = -1;
+            final_errno = ENOENT;
+        } else {
+            size_t count = shdw_accessx_filter(snapshot, size, private_results);
+            if(count == 0) {
+                result = -1;
+                final_errno = ENOENT;
+            } else if(!shdw_accessx_write_results(results, private_results, count)) {
+                result = -1;
+                final_errno = EFAULT;
+            } else {
+                final_errno = caller_errno;
+            }
+        }
+    }
+
+    if(snapshot) {
+        munmap(snapshot, size);
+    }
+    errno = final_errno;
+    return result;
+}
+
+static int replaced_accessx_np(const void* entries, size_t size, int* results, uid_t uid) {
+    if(!isCallerExternal()) {
+        return original_accessx_np(entries, size, results, uid);
+    }
+    return shdw_accessx_call(entries, size, results, uid, original_accessx_np);
+}
+
+static int replaced_access_extended(const void* entries, size_t size, int* results, uid_t uid) {
+    if(!isCallerExternal()) {
+        return original_access_extended(entries, size, results, uid);
+    }
+    return shdw_accessx_call(entries, size, results, uid, original_access_extended);
 }
 
 static ssize_t (*original_readlink)(const char* pathname, char* buf, size_t bufsize);
@@ -1305,6 +1364,7 @@ static struct dirent* replaced_readdir(DIR* dirp) {
 
     return result;
 }
+
 
 // --- Phase 3: dir-enumeration conveniences. scandir/glob/fts/nftw all
 // bottom out at readdir/getdirentries64 (already filtered), but they
@@ -2713,9 +2773,14 @@ static int replaced_rename(const char* old, const char* new) {
     return -1;
 }
 
+static BOOL shdw_remove_path_denied(const char* pathname) {
+    return pathname && !shdw_path_is_main_bundle_exempt(pathname)
+        && shdw_path_ruleset_denied_nofollow(pathname);
+}
+
 static int (*original_remove)(const char* pathname);
 static int replaced_remove(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !shdw_remove_path_denied(pathname)) {
         return original_remove(pathname);
     }
 
@@ -2725,7 +2790,7 @@ static int replaced_remove(const char* pathname) {
 
 static int (*original_unlink)(const char* pathname);
 static int replaced_unlink(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !shdw_remove_path_denied(pathname)) {
         return original_unlink(pathname);
     }
 
@@ -2999,6 +3064,19 @@ static int replaced_mkdir(const char* pathname, mode_t mode) {
     return -1;
 }
 
+static int (*original_chmodx_np)(const char* pathname, filesec_t fsec);
+static int replaced_chmodx_np(const char* pathname, filesec_t fsec) {
+    BOOL ext = isCallerExternal();
+    if(!ext || shdw_path_is_main_bundle_exempt(pathname)) {
+        return original_chmodx_np(pathname, fsec);
+    }
+    if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+    return original_chmodx_np(pathname, fsec);
+}
+
 static int (*original_chmod)(const char* pathname, mode_t mode);
 static int replaced_chmod(const char* pathname, mode_t mode) {
     if(!isCallerExternal() || !(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname])) {
@@ -3113,22 +3191,28 @@ static int replaced_ftruncate(int fd, off_t length) {
 
 static int (*original_chflags)(const char* pathname, __uint32_t flags);
 static int replaced_chflags(const char* pathname, __uint32_t flags) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    BOOL ext = isCallerExternal();
+    if(!ext || shdw_path_is_main_bundle_exempt(pathname)) {
         return original_chflags(pathname, flags);
     }
-
-    errno = ENOENT;
-    return -1;
+    if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+    return original_chflags(pathname, flags);
 }
 
 static int (*original_lchflags)(const char* pathname, __uint32_t flags);
 static int replaced_lchflags(const char* pathname, __uint32_t flags) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    BOOL ext = isCallerExternal();
+    if(!ext || shdw_path_is_main_bundle_exempt(pathname)) {
         return original_lchflags(pathname, flags);
     }
-
-    errno = ENOENT;
-    return -1;
+    if(shdw_path_is_external_hidden(pathname) || [_shadow isCPathRestricted:pathname]) {
+        errno = ENOENT;
+        return -1;
+    }
+    return original_lchflags(pathname, flags);
 }
 
 static int (*original_fchflags)(int fd, __uint32_t flags);
@@ -3137,13 +3221,18 @@ static int replaced_fchflags(int fd, __uint32_t flags) {
         return original_fchflags(fd, flags);
     }
 
-    if(shdw_fd_path_restricted(fd)) {
+    char pathname[PATH_MAX];
+    if(fcntl(fd, F_GETPATH, pathname) != -1 &&
+       !shdw_path_is_main_bundle_exempt(pathname) &&
+       (shdw_path_is_external_hidden(pathname) ||
+        [_shadow isCPathRestricted:pathname])) {
         errno = EBADF;
         return -1;
     }
 
     return original_fchflags(fd, flags);
 }
+
 
 static int (*original_futimens)(int fd, const struct timespec times[2]);
 static int replaced_futimens(int fd, const struct timespec times[2]) {
@@ -3177,24 +3266,98 @@ static int replaced_lutimes(const char* pathname, const struct timeval times[2])
 // the COPYFILE_STATE (copyfile_state_get SRC/DST_FILENAME or _FD) or the
 // dirfd — never just the string args.
 
-// Resolves one copyfile_state endpoint to a restricted verdict: prefers
-// the FILENAME string when set (exact path), else the FD via fresh F_GETPATH.
-// Fail open (NO) when neither is set — an unset endpoint can't name a
-// restricted path.
+// Match the FD's mount to /usr/lib, then accept its top-level visible alias
+// only when realpath proves it names the same path as F_GETPATH.
+static BOOL shdw_copy_visible_alias(const char* fdpath,
+                                   const char* fdfrom, const char* fdon,
+                                   const char* libfrom, const char* libon,
+                                   const char* visible_root,
+                                   char* visible, size_t visible_size) {
+    if(!fdpath || !fdfrom || !fdon || !libfrom || !libon ||
+       !visible_root || !visible || !visible_size ||
+       strcmp(fdfrom, libfrom) != 0 || strcmp(fdon, libon) != 0) {
+        return NO;
+    }
+    const char* leaf = strrchr(fdpath, '/');
+    if(!leaf || !leaf[1]) return NO;
+    char candidate[PATH_MAX], resolved[PATH_MAX];
+    int n = snprintf(candidate, sizeof(candidate), "%s/%s", visible_root, leaf + 1);
+    if(n <= 0 || n >= (int)sizeof(candidate) ||
+       !realpath(candidate, resolved) || strcmp(resolved, fdpath) != 0) {
+        return NO;
+    }
+    n = snprintf(visible, visible_size, "%s", candidate);
+    return n > 0 && n < (int)visible_size;
+}
+
+BOOL shdw_fd_visible_path_restricted(int fd) {
+    int saved_errno = errno;
+    char path[PATH_MAX];
+    BOOL restricted = NO;
+    if(fd >= 0 && fcntl(fd, F_GETPATH, path) != -1 &&
+       !shdw_path_is_main_bundle_exempt(path)) {
+        if(shdw_resolved_spelling_hidden(path)) {
+            restricted = YES;
+        } else {
+            struct statfs fd_mount, lib_mount;
+            char visible[PATH_MAX];
+            if(fstatfs(fd, &fd_mount) == 0 && statfs("/usr/lib", &lib_mount) == 0 &&
+               shdw_copy_visible_alias(path,
+                   fd_mount.f_mntfromname, fd_mount.f_mntonname,
+                   lib_mount.f_mntfromname, lib_mount.f_mntonname,
+                   "/usr/lib", visible, sizeof(visible))) {
+                restricted = shdw_path_is_external_hidden(visible) ||
+                    [_shadow isCPathRestricted:visible];
+            } else {
+                restricted = shdw_path_is_external_hidden(path) ||
+                    [_shadow isCPathRestricted:path];
+            }
+        }
+    }
+    errno = saved_errno;
+    return restricted;
+}
+
+static BOOL shdw_copy_source_path_restricted(const char* path) {
+    return path && path[0] &&
+        (shdw_path_is_external_hidden(path) || [_shadow isCPathRestricted:path]);
+}
+
+// A caller-provided source spelling is authoritative when available. Only
+// consult source FDs when neither copyfile's argument nor state names a path.
+static BOOL shdw_copyfile_source_restricted(copyfile_state_t state, const char* sourcePath, int fallbackFd) {
+    BOOL hasPath = NO;
+    const char* statePath = NULL;
+    if(state && copyfile_state_get(state, COPYFILE_STATE_SRC_FILENAME,
+                                   (void*)&statePath) == 0 &&
+       statePath && statePath[0]) {
+        hasPath = YES;
+        if(shdw_copy_source_path_restricted(statePath)) return YES;
+    }
+    if(sourcePath && sourcePath[0]) {
+        hasPath = YES;
+        if(shdw_copy_source_path_restricted(sourcePath)) return YES;
+    }
+    if(hasPath) return NO;
+
+    int stateFd = -1;
+    if(state && copyfile_state_get(state, COPYFILE_STATE_SRC_FD, &stateFd) == 0 &&
+       stateFd >= 0 && shdw_fd_visible_path_restricted(stateFd)) {
+        return YES;
+    }
+    return fallbackFd >= 0 && shdw_fd_visible_path_restricted(fallbackFd);
+}
+
+// Destination state follows the existing destination FD/path policy.
 static BOOL shdw_copyfile_state_endpoint_restricted(copyfile_state_t state, uint32_t fnFlag, uint32_t fdFlag) {
     if(state) {
         const char* fn = NULL;
         if(copyfile_state_get(state, fnFlag, (void*)&fn) == 0 && fn && fn[0]) {
-            if([_shadow isCPathRestricted:fn]) {
-                return YES;
-            }
-        } else {
-            int fd = -1;
-            if(copyfile_state_get(state, fdFlag, &fd) == 0 && fd >= 0) {
-                if(shdw_fd_path_restricted(fd)) {
-                    return YES;
-                }
-            }
+            return [_shadow isCPathRestricted:fn];
+        }
+        int fd = -1;
+        if(copyfile_state_get(state, fdFlag, &fd) == 0 && fd >= 0) {
+            return shdw_fd_path_restricted(fd);
         }
     }
     return NO;
@@ -3206,14 +3369,8 @@ static int replaced_copyfile(const char* from, const char* to, copyfile_state_t 
         return original_copyfile(from, to, state, flags);
     }
 
-    // String args first (cheap, no state deref); then the state endpoints,
-    // which may name DIFFERENT paths than the strings (COPYFILE_STATE fds
-    // override when set). Both halves of the pair: the external-hidden set
-    // (following — a copy reads the source target and materialises the
-    // dest, so an alias names its target here) and the ruleset.
-    if((from && (shdw_path_is_external_hidden(from) || [_shadow isCPathRestricted:from])) ||
+    if(shdw_copyfile_source_restricted(state, from, -1) ||
        (to && (shdw_path_is_external_hidden(to) || [_shadow isCPathRestricted:to])) ||
-       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_SRC_FILENAME, COPYFILE_STATE_SRC_FD) ||
        shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_DST_FILENAME, COPYFILE_STATE_DST_FD)) {
         errno = ENOENT;
         return -1;
@@ -3228,15 +3385,16 @@ static int replaced_fcopyfile(int from_fd, int to_fd, copyfile_state_t state, co
         return original_fcopyfile(from_fd, to_fd, state, flags);
     }
 
-    if(shdw_fd_path_restricted(from_fd) || shdw_fd_path_restricted(to_fd) ||
-       shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_SRC_FILENAME, COPYFILE_STATE_SRC_FD) ||
+    if(shdw_copyfile_source_restricted(state, NULL, from_fd) ||
+       shdw_fd_path_restricted(to_fd) ||
        shdw_copyfile_state_endpoint_restricted(state, COPYFILE_STATE_DST_FILENAME, COPYFILE_STATE_DST_FD)) {
-        errno = EBADF;
+        errno = ENOENT;
         return -1;
     }
 
     return original_fcopyfile(from_fd, to_fd, state, flags);
 }
+
 
 static int (*original_clonefile)(const char* src, const char* dst, uint32_t flags);
 static int replaced_clonefile(const char* src, const char* dst, uint32_t flags) {
@@ -3276,8 +3434,8 @@ static int replaced_fclonefileat(int srcfd, int dst_dirfd, const char* dst, uint
         return original_fclonefileat(srcfd, dst_dirfd, dst, flags);
     }
 
-    if(shdw_fd_path_restricted(srcfd)) {
-        errno = EBADF;
+    if(shdw_fd_visible_path_restricted(srcfd)) {
+        errno = ENOENT;
         return -1;
     }
 
@@ -3290,7 +3448,7 @@ static int replaced_fclonefileat(int srcfd, int dst_dirfd, const char* dst, uint
 
 static int (*original_rmdir)(const char* pathname);
 static int replaced_rmdir(const char* pathname) {
-    if(!isCallerExternal() || ![_shadow isCPathRestricted:pathname]) {
+    if(!isCallerExternal() || !shdw_remove_path_denied(pathname)) {
         return original_rmdir(pathname);
     }
 
@@ -3346,6 +3504,19 @@ static int replaced_futimes(int fd, const struct timeval times[2]) {
     return original_futimes(fd, times);
 }
 
+static int (*original_getdirentries64)(int fd, char* buf, int nbytes, long* basep);
+static int replaced_getdirentries64(int fd, char* buf, int nbytes, long* basep) {
+    int result = original_getdirentries64(fd, buf, nbytes, basep);
+    int result_errno = errno;
+    if(isCallerExternal() && result > 0 && buf) {
+        char dir[PATH_MAX];
+        if(fcntl(fd, F_GETPATH, dir) != -1 && !shdw_path_is_main_bundle_exempt(dir)) {
+            result = (int) shdw_dirents_filtered(buf, result, dir);
+        }
+    }
+    errno = result_errno;
+    return result;
+}
 // Per-row install behavior that used to live in separate symbol-name lists.
 enum {
     SHDW_HOOK_FALLBACK_REBIND = 1 << 0, // inline refusal -> rebind existing imports
@@ -3378,6 +3549,13 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // Installing them again through libc would replace their predecessor with
     // an already-live entry hook and recurse.
     { "access",                 (void*)&replaced_access,                   (void**)&original_access,                   METADATA, METADATA },
+    // Extended-access family: accessx_np and the exported __access_extended
+    // syscall stub (dlsym-resolvable). The iOS-15 shared-cache inline patch
+    // can be refused; the import-slot rebind fallback plus the dlsym symbol
+    // policy keep both the direct and the dlsym lanes on the replacement.
+    { "accessx_np",             (void*)&replaced_accessx_np,               (void**)&original_accessx_np,               LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "__access_extended",      (void*)&replaced_access_extended,          (void**)&original_access_extended,          LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "chmodx_np",              (void*)&replaced_chmodx_np,                (void**)&original_chmodx_np,                LIBC,   0, SHDW_HOOK_FALLBACK_REBIND},
     { "chdir",                  (void*)&replaced_chdir,                    (void**)&original_chdir,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "chroot",                 (void*)&replaced_chroot,                   (void**)&original_chroot,                   LIBC,   LIBC },
     { "exchangedata",             (void*)&replaced_exchangedata,             (void**)&original_exchangedata,             LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
@@ -3391,6 +3569,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "faccessat",              (void*)&replaced_faccessat,                (void**)&original_faccessat,                METADATA, METADATA },
     { "readdir_r",              (void*)&replaced_readdir_r,                (void**)&original_readdir_r,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "readdir",                (void*)&replaced_readdir,                  (void**)&original_readdir,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "__getdirentries64",      (void*)&replaced_getdirentries64,           (void**)&original_getdirentries64,           LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fopen",                  (void*)&replaced_fopen,                    (void**)&original_fopen,                    METADATA, METADATA },
     { "freopen",                (void*)&replaced_freopen,                  (void**)&original_freopen,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "realpath",               (void*)&replaced_realpath,                 (void**)&original_realpath,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
@@ -3431,7 +3610,7 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "mkdirat",                (void*)&replaced_mkdirat,                  (void**)&original_mkdirat,                  LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fchmodat",               (void*)&replaced_fchmodat,                 (void**)&original_fchmodat,                 LIBC,   LIBC },
     { "fchownat",               (void*)&replaced_fchownat,                 (void**)&original_fchownat,                 LIBC,   0 },
-    { "rmdir",                  (void*)&replaced_rmdir,                    (void**)&original_rmdir,                    LIBC,   LIBC },
+    { "rmdir",                  (void*)&replaced_rmdir,                    (void**)&original_rmdir,                    LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "pathconf",               (void*)&replaced_pathconf,                 (void**)&original_pathconf,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "fpathconf",              (void*)&replaced_fpathconf,                (void**)&original_fpathconf,                LIBC,   LIBC },
     { "utimes",                 (void*)&replaced_utimes,                   (void**)&original_utimes,                   LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
@@ -3450,9 +3629,9 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     { "mkfifo",                 (void*)&replaced_mkfifo,                   (void**)&original_mkfifo,                   LIBC,   LIBC },
     { "truncate",               (void*)&replaced_truncate,                 (void**)&original_truncate,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "ftruncate",              (void*)&replaced_ftruncate,                (void**)&original_ftruncate,               LIBC,   LIBC },
-    { "chflags",                (void*)&replaced_chflags,                  (void**)&original_chflags,                 LIBC,   LIBC },
-    { "lchflags",               (void*)&replaced_lchflags,                 (void**)&original_lchflags,                LIBC,   LIBC },
-    { "fchflags",               (void*)&replaced_fchflags,                 (void**)&original_fchflags,                LIBC,   LIBC },
+    { "chflags",                (void*)&replaced_chflags,                  (void**)&original_chflags,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "lchflags",               (void*)&replaced_lchflags,                 (void**)&original_lchflags,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
+    { "fchflags",               (void*)&replaced_fchflags,                 (void**)&original_fchflags,                LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     { "futimens",               (void*)&replaced_futimens,                 (void**)&original_futimens,                LIBC,   LIBC },
     { "lutimes",                (void*)&replaced_lutimes,                  (void**)&original_lutimes,                 LIBC,   LIBC, SHDW_HOOK_FALLBACK_REBIND},
     // Phase 2 copy/clone: dual-endpoint (src+dst) classification. Present
@@ -3503,8 +3682,9 @@ static const shdw_hook_desc_t shdw_libc_hooks[] = {
     // lowlevel group
     { "open",                   (void*)&replaced_open,                     (void**)&original_open,                     LOW,    LOW, SHDW_HOOK_FALLBACK_REBIND},
     { "openat",                 (void*)&replaced_openat,                   (void**)&original_openat,                   LOW,    LOW, SHDW_HOOK_FALLBACK_REBIND},
-    { "open_nocancel",          (void*)&replaced_open_nocancel,            (void**)&original_open_nocancel,            LOW,    0 },
-    { "openat_nocancel",        (void*)&replaced_openat_nocancel,          (void**)&original_openat_nocancel,          LOW,    0 },
+    { "openx_np",               (void*)&replaced_openx_np,                 (void**)&original_openx_np,                 LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "open$NOCANCEL",          (void*)&replaced_open_dollar_nocancel,     (void**)&original_open_dollar_nocancel,     LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
+    { "openat$NOCANCEL",        (void*)&replaced_openat_dollar_nocancel,   (void**)&original_openat_dollar_nocancel,   LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
     { "opendir",                (void*)&replaced_opendir,                  (void**)&original_opendir,                  LOW,    LOW },
     { "__opendir2",             (void*)&replaced___opendir2,               (void**)&original___opendir2,               LOW,    LOW },
     { "open_dprotected_np",     (void*)&replaced_open_dprotected_np,       (void**)&original_open_dprotected_np,       LOW,    0, SHDW_HOOK_FALLBACK_REBIND},
@@ -3617,6 +3797,7 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
     // observed on-device). Mark the install as an internal read so those
     // replacements short-circuit to their originals.
     [Shadow shdwEnterInternalRead];
+    void *accessx_np_target = NULL;
     for(size_t i = 0; i < sizeof(shdw_libc_hooks) / sizeof(shdw_libc_hooks[0]); i++) {
         const shdw_hook_desc_t* d = &shdw_libc_hooks[i];
 
@@ -3631,6 +3812,9 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
 
         if(!target) {
             continue;
+        }
+        if(strcmp(d->symbol, "accessx_np") == 0) {
+            accessx_np_target = target;
         }
 
         if(!d->original) {
@@ -3662,11 +3846,17 @@ void shdw_libc_install_group(SHDWHookSession* hooks, uint32_t group) {
             }
         }
 
-        // Duplicate alias address: never patch a prologue this install already
-        // patched. Rebind this name's own import slots (the legacy name's
-        // rebind never matches them) and continue through the first lane's
-        // continuation, so the ExtSN wrapper still forwards to the resolved
-        // original.
+        if(strcmp(d->symbol, "__access_extended") == 0 &&
+           accessx_np_target && accessx_np_target == target) {
+            [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
+                    withReplacement:d->replacement
+                           outOldPtr:NULL];
+            if(d->original) {
+                *d->original = *original_accessx_np
+                    ? (void *)*original_accessx_np : target;
+            }
+            continue;
+        }
         if(shdw_libc_realpath_alias_duplicate(d, target)) {
             [hooks hookRebindSymbol:[NSString stringWithUTF8String:d->symbol]
                     withReplacement:d->replacement

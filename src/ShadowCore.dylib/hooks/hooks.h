@@ -296,6 +296,9 @@ static inline BOOL shdw_addr_is_restricted(const void *addr) {
 // image callbacks.
 void shdw_own_ranges_refresh(void);
 
+long shdw_dirents_filtered(char* buf, long count, const char* dir);
+BOOL shdw_fd_visible_path_restricted(int fd);
+
 // Contiguous mapping run of one image ([min segment vmaddr, run end) + slide,
 // __PAGEZERO excluded), for both Mach-O header shapes the lanes ship. Shared by
 // the restricted-image table, the rebind journal's unload prune and objc.x's
@@ -393,7 +396,8 @@ extern void shdw_detector_detected(const char *reason);
 // Raw-syscall policy categories (hooks/Universal/syscall.x dispatch;
 // shared with the svc-patch trampoline in hooks/Universal/svc_patch.x).
 typedef enum {
-  SHADW_RAW_CAT_NONE = 0,  // forwarded, never inspected (access_extended)
+  SHADW_RAW_CAT_NONE = 0,  // forwarded, never inspected (no current row)
+  SHADW_RAW_CAT_ACCESSX,   // access_extended batch: after-success per-entry
   SHADW_RAW_CAT_PTRACE,    // PT_DENY_ATTACH short-circuit
   SHADW_RAW_CAT_PATH,      // single pathname inspection
   SHADW_RAW_CAT_AT,        // dirfd-aware *at inspection
@@ -541,12 +545,14 @@ extern int (*original_open)(const char *pathname, int oflag, ...);
 extern int replaced_open(const char *pathname, int oflag, ...);
 extern int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 extern int replaced_openat(int dirfd, const char *pathname, int oflag, ...);
-extern int (*original_open_nocancel)(const char *pathname, int oflag, ...);
-extern int replaced_open_nocancel(const char *pathname, int oflag, ...);
-extern int (*original_openat_nocancel)(int dirfd, const char *pathname,
-                                       int oflag, ...);
-extern int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag,
-                                    ...);
+extern int (*original_openx_np)(const char *pathname, int oflag, filesec_t filesec);
+extern int replaced_openx_np(const char *pathname, int oflag, filesec_t filesec);
+extern int (*original_open_dollar_nocancel)(const char *pathname, int oflag, ...);
+extern int replaced_open_dollar_nocancel(const char *pathname, int oflag, ...);
+extern int (*original_openat_dollar_nocancel)(int dirfd, const char *pathname,
+                                              int oflag, ...);
+extern int replaced_openat_dollar_nocancel(int dirfd, const char *pathname,
+                                           int oflag, ...);
 extern DIR *(*original___opendir2)(const char *pathname, int flags);
 extern DIR *replaced___opendir2(const char *pathname, int flags);
 extern DIR *(*original_opendir)(const char *pathname);
@@ -679,6 +685,7 @@ void *shdw_sym_policy_lookup_libc(const char *name);
 void *shdw_sym_policy_lookup_mach(const char *name);
 void *shdw_sym_policy_lookup_sandbox(const char *name);
 void *shdw_sym_policy_lookup_mem(const char *name);
+void *shdw_sym_policy_lookup_syscall(const char *name);
 // Reverse map: hooked-libc replacement address -> original function address,
 // so dladdr on a dlsym-returned replacement resolves to the system image.
 void *shdw_sym_original_for_replacement_libc(const void *addr);

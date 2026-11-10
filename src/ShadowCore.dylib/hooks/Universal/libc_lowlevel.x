@@ -165,29 +165,22 @@ int replaced_openat(int dirfd, const char *pathname, int oflag, ...) {
     return fd;
 }
 
-int (*original_open_nocancel)(const char *pathname, int oflag, ...);
-int replaced_open_nocancel(const char *pathname, int oflag, ...) {
-    mode_t mode = 0;
-    if(oflag & O_CREAT) {
-        va_list args;
-        va_start(args, oflag);
-        mode = (mode_t) va_arg(args, int);
-        va_end(args);
-    }
+int (*original_openx_np)(const char *pathname, int oflag, filesec_t filesec);
+int replaced_openx_np(const char *pathname, int oflag, filesec_t filesec) {
     BOOL ext = isCallerExternal();
+    if(ext && (oflag & O_CREAT) && shdw_detector_c_write_path_denied(pathname)) {
+        errno = ENOENT;
+        return -1;
+    }
     if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
-        if(oflag & O_CREAT) return original_open_nocancel(pathname, oflag, mode);
-        return original_open_nocancel(pathname, oflag);
+        return original_openx_np(pathname, oflag, filesec);
     }
     if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
         errno = ENOENT;
         return -1;
     }
     if(!ext || ![_shadow isCPathRestricted:pathname]) {
-        int fd;
-        if(oflag & O_CREAT) fd = original_open_nocancel(pathname, oflag, mode);
-        else fd = original_open_nocancel(pathname, oflag);
-        // Verify-after-use (alias TOCTOU): the handed-out fd decides.
+        int fd = original_openx_np(pathname, oflag, filesec);
         if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
             close(fd);
             errno = ENOENT;
@@ -199,8 +192,8 @@ int replaced_open_nocancel(const char *pathname, int oflag, ...) {
     return -1;
 }
 
-int (*original_openat_nocancel)(int dirfd, const char *pathname, int oflag, ...);
-int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag, ...) {
+int (*original_openat_dollar_nocancel)(int dirfd, const char *pathname, int oflag, ...);
+int replaced_openat_dollar_nocancel(int dirfd, const char *pathname, int oflag, ...) {
     mode_t mode = 0;
     if(oflag & O_CREAT) {
         va_list args;
@@ -210,20 +203,76 @@ int replaced_openat_nocancel(int dirfd, const char *pathname, int oflag, ...) {
     }
     BOOL ext = isCallerExternal();
     if(!ext) {
-        if(oflag & O_CREAT) return original_openat_nocancel(dirfd, pathname, oflag, mode);
-        return original_openat_nocancel(dirfd, pathname, oflag);
+        if(oflag & O_CREAT) return original_openat_dollar_nocancel(dirfd, pathname, oflag, mode);
+        return original_openat_dollar_nocancel(dirfd, pathname, oflag);
+    }
+    if((oflag & O_CREAT) && shdw_detector_c_write_path_denied(pathname)) {
+        errno = ENOENT;
+        return -1;
+    }
+    if(pathname && pathname[0] == '/') {
+        if(shdw_path_is_main_bundle_exempt(pathname)) {
+            if(oflag & O_CREAT) return original_openat_dollar_nocancel(dirfd, pathname, oflag, mode);
+            return original_openat_dollar_nocancel(dirfd, pathname, oflag);
+        }
+    } else if(pathname && pathname[0] != '\0') {
+        char parent[PATH_MAX];
+        if(shdw_resolve_dirfd_path(dirfd, pathname, parent, sizeof(parent)) == SHADW_DIRFD_OK) {
+            char joined[PATH_MAX * 2];
+            int n = snprintf(joined, sizeof(joined), "%s/%s", parent, pathname);
+            if(n > 0 && n < (int)sizeof(joined) && shdw_path_is_main_bundle_exempt(joined)) {
+                if(oflag & O_CREAT) return original_openat_dollar_nocancel(dirfd, pathname, oflag, mode);
+                return original_openat_dollar_nocancel(dirfd, pathname, oflag);
+            }
+        }
     }
     if(shdw_at_path_denied(dirfd, pathname)) return -1;
     int fd;
-    if(oflag & O_CREAT) fd = original_openat_nocancel(dirfd, pathname, oflag, mode);
-    else fd = original_openat_nocancel(dirfd, pathname, oflag);
-    // Verify-after-use (alias TOCTOU): the handed-out fd decides.
-    if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+    if(oflag & O_CREAT) fd = original_openat_dollar_nocancel(dirfd, pathname, oflag, mode);
+    else fd = original_openat_dollar_nocancel(dirfd, pathname, oflag);
+    if(fd >= 0 && shdw_fd_names_hidden(fd)) {
         close(fd);
         errno = ENOENT;
         return -1;
     }
     return fd;
+}
+
+int (*original_open_dollar_nocancel)(const char *pathname, int oflag, ...);
+int replaced_open_dollar_nocancel(const char *pathname, int oflag, ...) {
+    mode_t mode = 0;
+    if(oflag & O_CREAT) {
+        va_list args;
+        va_start(args, oflag);
+        mode = (mode_t) va_arg(args, int);
+        va_end(args);
+    }
+    BOOL ext = isCallerExternal();
+    if(ext && (oflag & O_CREAT) && shdw_detector_c_write_path_denied(pathname)) {
+        errno = ENOENT;
+        return -1;
+    }
+    if(ext && shdw_path_is_main_bundle_exempt(pathname)) {
+        if(oflag & O_CREAT) return original_open_dollar_nocancel(pathname, oflag, mode);
+        return original_open_dollar_nocancel(pathname, oflag);
+    }
+    if(ext && shdw_path_is_external_hidden_lexical(pathname)) {
+        errno = ENOENT;
+        return -1;
+    }
+    if(!ext || ![_shadow isCPathRestricted:pathname]) {
+        int fd;
+        if(oflag & O_CREAT) fd = original_open_dollar_nocancel(pathname, oflag, mode);
+        else fd = original_open_dollar_nocancel(pathname, oflag);
+        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+            close(fd);
+            errno = ENOENT;
+            return -1;
+        }
+        return fd;
+    }
+    errno = ENOENT;
+    return -1;
 }
 
 DIR* (*original___opendir2)(const char* pathname, int flags);
@@ -609,7 +658,7 @@ int replaced_open_dprotected_np(const char* path, int flags, int class, int dpfl
             fd = original_open_dprotected_np(path, flags, class, dpflags);
         }
         // Verify-after-use (alias TOCTOU): the handed-out fd decides.
-        if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
+    if(fd >= 0 && ext && shdw_fd_names_hidden(fd)) {
             close(fd);
             errno = ENOENT;
             return -1;

@@ -60,10 +60,12 @@ prefix = r'''
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/mman.h>
 typedef bool BOOL;
 static bool external = true;
 static int rewrites;
@@ -120,6 +122,30 @@ static bool shdw_path_is_external_hidden(const char *path) {
 
 static bool shdw_path_is_external_hidden_lexical(const char *path) {
     (void)path;
+    return false;
+}
+/* The accessx_np/__access_extended wrappers live beside replaced_access; this
+   extraction region only drives the access lane, so the shared batch filter
+   is a no-op double here (verify-accessx-filter covers it). */
+typedef enum {
+    SHDW_ACCESSX_SNAPSHOT_READY,
+    SHDW_ACCESSX_SNAPSHOT_MALFORMED,
+    SHDW_ACCESSX_SNAPSHOT_SOURCE_FAULT,
+    SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE,
+} shdw_accessx_snapshot_status_t;
+static shdw_accessx_snapshot_status_t shdw_accessx_snapshot(
+    const void *entries, size_t size, void **snapshot) {
+    (void)entries; (void)size;
+    *snapshot = NULL;
+    return SHDW_ACCESSX_SNAPSHOT_MALFORMED;
+}
+static size_t shdw_accessx_filter(const void *entries, size_t size, int *results) {
+    (void)entries; (void)size; (void)results;
+    return 0;
+}
+static bool shdw_accessx_write_results(int *results, const int *private_results,
+                                      size_t count) {
+    (void)results; (void)private_results; (void)count;
     return false;
 }
 static int verify_gate_result;

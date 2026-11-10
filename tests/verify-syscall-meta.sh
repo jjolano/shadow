@@ -128,6 +128,21 @@ awk -v def="$DEF" -v syscall="$SYSCALL" '
     }
 ' || rc=1
 
+# rmdir stays on its reachable PATH branch with the safe ruleset-only,
+# nofollow policy; no mutation-path rewrite may target a potentially existing sibling.
+rmdir_path_case=$(awk '
+    /case SHADW_RAW_CAT_PATH: \{/ { in_path = 1 }
+    in_path { print }
+    in_path && /\} break;/ { exit }
+' "$SYSCALL")
+if ! grep -Fq 'SHADW_RAWSYSCALL(SYS_rmdir, PATH, P1, 0, 0)' "$DEF" ||
+   ! printf '%s\n' "$rmdir_path_case" | grep -Fq 'number == SYS_rmdir' ||
+   ! printf '%s\n' "$rmdir_path_case" | grep -Fq 'shdw_path_is_main_bundle_exempt(pathname)' ||
+   ! printf '%s\n' "$rmdir_path_case" | grep -Fq 'shdw_path_ruleset_denied_nofollow(pathname)' ||
+   grep -Fq 'rmdir_rewrite_path' "$SYSCALL"; then
+    fail "raw rmdir does not retain the reachable safe ruleset policy"
+fi
+
 # the raw-svc natural-ENOENT rewrite set must derive from the same def (no
 # second syscall-number list), and open-family rewrites must stay O_CREAT-aware
 svc="$HOOKDIR/Universal/svc_patch.x"
