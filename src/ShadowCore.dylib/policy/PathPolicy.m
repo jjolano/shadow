@@ -8,15 +8,15 @@
 
 #import <fcntl.h>
 #import <limits.h>
-#import <stdatomic.h>
-#import <string.h>
-#import <stdlib.h>
-#import <sys/stat.h>
-#import <unistd.h>
-#import <stdint.h>
 #import <mach/mach.h>
 #import <mach/vm_map.h>
+#import <stdatomic.h>
+#import <stdint.h>
+#import <stdlib.h>
+#import <string.h>
 #import <sys/mman.h>
+#import <sys/stat.h>
+#import <unistd.h>
 
 static _Atomic BOOL shdw_detector_write_policy_active = NO;
 
@@ -1315,8 +1315,8 @@ BOOL shdw_readlink_target_restricted(int dirfd, const char *pathname,
   return [_shadow isCPathRestricted:[joined fileSystemRepresentation]];
 }
 
-shdw_accessx_snapshot_status_t shdw_accessx_snapshot(
-    const void *entries, size_t size, void **snapshot) {
+shdw_accessx_snapshot_status_t
+shdw_accessx_snapshot(const void *entries, size_t size, void **snapshot) {
   if (!snapshot) {
     return SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE;
   }
@@ -1325,8 +1325,8 @@ shdw_accessx_snapshot_status_t shdw_accessx_snapshot(
     return SHDW_ACCESSX_SNAPSHOT_MALFORMED;
   }
 
-  void *copy = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                    MAP_ANON | MAP_PRIVATE, -1, 0);
+  void *copy =
+      mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
   if (copy == MAP_FAILED) {
     return SHDW_ACCESSX_SNAPSHOT_UNAVAILABLE;
   }
@@ -1352,8 +1352,7 @@ size_t shdw_accessx_filter(const void *entries, size_t size, int *results) {
   const size_t kMaxTableSize = 16 * 1024;
   const size_t kMaxDescriptors = 100;
 
-  if (!entries || !results || size < kDescSize + 2 ||
-      size > kMaxTableSize) {
+  if (!entries || !results || size < kDescSize + 2 || size > kMaxTableSize) {
     return 0;
   }
 

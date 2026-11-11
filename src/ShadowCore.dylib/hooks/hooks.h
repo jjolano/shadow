@@ -296,7 +296,7 @@ static inline BOOL shdw_addr_is_restricted(const void *addr) {
 // image callbacks.
 void shdw_own_ranges_refresh(void);
 
-long shdw_dirents_filtered(char* buf, long count, const char* dir);
+long shdw_dirents_filtered(char *buf, long count, const char *dir);
 BOOL shdw_fd_visible_path_restricted(int fd);
 
 // Contiguous mapping run of one image ([min segment vmaddr, run end) + slide,
@@ -545,9 +545,12 @@ extern int (*original_open)(const char *pathname, int oflag, ...);
 extern int replaced_open(const char *pathname, int oflag, ...);
 extern int (*original_openat)(int dirfd, const char *pathname, int oflag, ...);
 extern int replaced_openat(int dirfd, const char *pathname, int oflag, ...);
-extern int (*original_openx_np)(const char *pathname, int oflag, filesec_t filesec);
-extern int replaced_openx_np(const char *pathname, int oflag, filesec_t filesec);
-extern int (*original_open_dollar_nocancel)(const char *pathname, int oflag, ...);
+extern int (*original_openx_np)(const char *pathname, int oflag,
+                                filesec_t filesec);
+extern int replaced_openx_np(const char *pathname, int oflag,
+                             filesec_t filesec);
+extern int (*original_open_dollar_nocancel)(const char *pathname, int oflag,
+                                            ...);
 extern int replaced_open_dollar_nocancel(const char *pathname, int oflag, ...);
 extern int (*original_openat_dollar_nocancel)(int dirfd, const char *pathname,
                                               int oflag, ...);
